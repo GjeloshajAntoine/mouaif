@@ -32,11 +32,12 @@ function compactValue(v) {
   if (v && typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
+const CHAT_TARGET_TOOLS = new Set(['get_chat', 'update_chat', 'change_working_folder', 'start_chat', 'delete_chat', 'attach_chat_image', 'list_chat_attachments']);
 export function approvalTitle(request) {
   const args = request.details?.args || request.args || {};
   if (request.tool === 'create_mcp_app' && args.request !== undefined) return 'Prepare app draft';
   if (request.tool === 'task') return ({ list: 'List tasks', create: 'Create task', update_progress: 'Update task', complete: 'Complete task' })[args.action] || 'Manage task';
-  const count = args.edits?.length || args.files?.length || args.commands?.length;
+  const count = args.edits?.length || (request.tool === 'group_read' && args.files?.length) || args.commands?.length;
   const title = TITLES[request.tool] || request.tool.replace(/^mcp__/, '').replace(/__/g, ' · ').replace(/_/g, ' ');
   return count ? title + ' (' + count + ')' : title;
 }
@@ -64,9 +65,15 @@ export function approvalText(request) {
     lines.push([args.path, args.query].filter(Boolean).join(': ') + (args.include ? ' (' + args.include + ')' : ''));
   } else if (tool === 'list_files') {
     lines.push(args.pattern || 'all files');
-  } else if (tool === 'group_read' || tool === 'group_edit') {
+  } else  if (tool === 'group_read' || tool === 'group_edit') {
     const list = args[tool === 'group_read' ? 'files' : 'edits'] || [];
-    lines.push(list.map(x => x && (x.path || x.file) || '?').join(', '));
+    lines.push(list.map(x => {
+      if (!x) return '?';
+      const p = x.path || x.file || '?';
+      return tool === 'group_edit' && (x.oldText != null || x.newText != null)
+        ? p + '\n- ' + String(x.oldText || '') + '\n+ ' + String(x.newText || '')
+        : p;
+    }).join('\n'));
   } else if (tool === 'delete_chat') {
     const t = details.targetChat;
     lines.push('Delete "' + (t ? t.title + '" (' + t.id + ')' : (args.chatId || 'chat') + '"') + ' permanently');
@@ -77,7 +84,9 @@ export function approvalText(request) {
   } else if (tool === 'webpreview') {
     lines.push([args.url || request.summary, args.viewport, args.mode].filter(Boolean).join(' · '));
   } else {
-    if (details.targetChat) lines.push('Chat: ' + details.targetChat.title + ' (' + details.targetChat.id + ')');
+    if (details.targetChat && CHAT_TARGET_TOOLS.has(tool)) {
+      lines.push('Chat: ' + details.targetChat.title + ' (' + details.targetChat.id + ')');
+    }
     const entries = Object.entries(args).filter(([k, v]) => v !== undefined && !(k === 'chatId' && details.targetChat?.id === v));
     if (entries.length) lines.push(entries.map(([k, v]) => k + ': ' + compactValue(v)).join(' · '));
     else if (request.summary || request.cmd) lines.push(request.summary || request.cmd);

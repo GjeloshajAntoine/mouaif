@@ -227,11 +227,33 @@ export function formatToolArgs(args, toolName) {
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'report_progress') return args.title || '';
-if (name === 'webpreview') return args.url || '';
-if (name === 'restart_app') return args.reason || '';
-if (name === 'mouaif') return mouaifArgSummary(args);
-try { return JSON.stringify(args, null, 2); }
-
+  if (name === 'webpreview') return args.url || '';
+  if (name === 'restart_app') return args.reason || '';
+  if (name === 'mouaif') return mouaifArgSummary(args);
+  if (name === 'get_settings') return (args.scope || 'app') + (Array.isArray(args.keys) && args.keys.length ? ': ' + args.keys.join(', ') : '');
+  if (name === 'update_settings') {
+    const keys = [...Object.keys(args.patch || {}), ...(args.unset || [])];
+    return (args.scope || 'project') + (keys.length ? ': ' + keys.join(', ') : '');
+  }
+  if (name === 'list_chats') return args.limit ? 'limit ' + args.limit : '';
+  if (name === 'get_chat' || name === 'delete_chat') return args.chatId || '';
+  if (name === 'create_chat') return args.title || args.topic || '';
+  if (name === 'update_chat') return [args.chatId, args.title || args.modelId].filter(Boolean).join(' · ');
+  if (name === 'change_working_folder') return args.directory || '.';
+  if (name === 'search_models' || name === 'search_chats') return args.query || '';
+  if (name === 'start_chat') return [args.chatId, args.content].filter(Boolean).join(': ');
+  if (name === 'attach_chat_image') return args.path || '';
+  if (name === 'list_chat_attachments') return args.chatId || '';
+  if (name === 'create_mcp_app') return args.name || args.filename || args.path || '';
+  if (name === 'subagent_messages' || name === 'subagent_status' || name === 'subagent_stop') return args.callId || '';
+  if (name === 'subagent_send') return [args.callId, args.message].filter(Boolean).join(': ');
+  if (name === 'subagent_group_create') return args.name || args.objective || '';
+  if (name === 'subagent_group_update') return [args.groupId, args.action, args.name].filter(Boolean).join(' · ');
+  if (name === 'subagent_publish' || name === 'subagent_read') return args.name || '';
+  if (name === 'subagent_group_status') return args.groupId || '';
+  if (name === 'subagent_decision' || name === 'subagent_conflict') return [args.groupId, args.name].filter(Boolean).join(' · ');
+  if (args && typeof args === 'object' && !Array.isArray(args) && Object.keys(args).length === 0) return '';
+  try { return JSON.stringify(args, null, 2); }
   catch { return String(args); }
 }
 
@@ -273,6 +295,11 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'webpreview') return String(args.url || '');
   if (name === 'restart_app') return String(args.reason || '');
   if (name === 'mouaif') return mouaifArgSummary(args);
+  if (args && typeof args === 'object' && !Array.isArray(args)) {
+    const entries = Object.entries(args).filter(([, v]) => v !== undefined);
+    if (!entries.length) return '';
+    return entries.map(([k, v]) => k + ': ' + (v && typeof v === 'object' ? JSON.stringify(v) : String(v))).join(' · ');
+  }
   try { return JSON.stringify(args, null, 2); } catch { return String(args); }
 }
 
@@ -338,6 +365,10 @@ export function formatResultSummary(name, r) {
       return r.bytes != null ? kind + ' · ' + formatBytes(r.bytes) : kind;
     }
     if (r.lines != null) return r.lines + ' line' + (r.lines === 1 ? '' : 's');
+    if (r.startLine != null && r.endLine != null) {
+      const count = Math.max(0, Number(r.endLine) - Number(r.startLine) + 1);
+      return count + ' line' + (count === 1 ? '' : 's');
+    }
     if (r.chars != null) return r.chars + ' chars';
     if (r.size != null && r.size < 1024) return r.size + 'B';
     if (r.size != null) return Math.round(r.size / 1024) + 'KB';
@@ -385,6 +416,47 @@ export function formatResultSummary(name, r) {
     if (Array.isArray(r.tasks)) return r.tasks.length + ' task' + (r.tasks.length === 1 ? '' : 's');
     return null;
   }
+  if (n === 'list_chats' || n === 'search_chats') {
+    const count = r.returned != null ? r.returned : (Array.isArray(r.chats) ? r.chats.length : null);
+    return count != null ? count + ' chat' + (count === 1 ? '' : 's') : null;
+  }
+  if (n === 'get_chat' || n === 'create_chat' || n === 'update_chat') {
+    return (r.chat && (r.chat.title || r.chat.id)) || r.chatId || null;
+  }
+  if (n === 'delete_chat') return r.deleted ? 'deleted' : null;
+  if (n === 'change_working_folder') return r.workingDirectory || null;
+  if (n === 'search_models') {
+    const count = r.returned != null ? r.returned : (Array.isArray(r.models) ? r.models.length : null);
+    return count != null ? count + ' model' + (count === 1 ? '' : 's') : null;
+  }
+  if (n === 'start_chat') return r.started ? 'started' : null;
+  if (n === 'attach_chat_image') return (r.attachment && r.attachment.name) || r.target || null;
+  if (n === 'list_chat_attachments') {
+    const list = r.attachments || r.messages;
+    return Array.isArray(list) ? list.length + ' image' + (list.length === 1 ? '' : 's') : null;
+  }
+  if (n === 'get_settings' || n === 'update_settings') return r.scope || null;
+  if (n === 'list_projects') {
+    return Array.isArray(r.projects) ? r.projects.length + ' project' + (r.projects.length === 1 ? '' : 's') : null;
+  }
+  if (n === 'get_app_info') return r.version ? 'v' + r.version : null;
+  if (n === 'list_features') {
+    const keys = Object.keys(r).filter(k => k !== 'ok');
+    return keys.length ? keys.length + ' features' : null;
+  }
+  if (n === 'create_mcp_app') return r.mode === 'request' ? 'draft' : (r.server && r.server.status) || null;
+  if (n === 'webpreview') return r.mode || null;
+  if (n === 'subagent_status' || n === 'subagent_stop' || n === 'subagent_send' || n === 'subagent_decision') {
+    return r.state || null;
+  }
+  if (n === 'subagent_messages') {
+    return Array.isArray(r.lines) ? r.lines.length + ' msg' + (r.lines.length === 1 ? '' : 's') : (r.state || null);
+  }
+  if (n === 'subagent_group_create' || n === 'subagent_group_status' || n === 'subagent_group_update') {
+    return Array.isArray(r.members) ? r.members.length + ' member' + (r.members.length === 1 ? '' : 's') : (r.groupId || null);
+  }
+  if (n === 'subagent_publish' || n === 'subagent_read') return r.name || null;
+  if (n === 'subagent_conflict') return (r.conflict && r.conflict.state) || null;
   return null;
 }
 

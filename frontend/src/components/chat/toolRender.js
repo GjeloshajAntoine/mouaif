@@ -300,12 +300,13 @@ export function teardownImageLightbox() {
 // Grouped by directory: one small dir label per group, then one line
 // per file with just the basename. Fewer DOM nodes and no repeated
 // path prefix on every row.
-function renderListFilesToolResult(body, r) {
+function renderListFilesToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
-  meta.push(r.pattern ? ('pattern ' + r.pattern) : 'all text and image files');
+  const pat = (r && r.pattern) || (args && typeof args === 'object' ? args.pattern : '');
+  meta.push(pat ? ('pattern ' + pat) : 'all text and image files');
   if (Array.isArray(r.entries)) {
     meta.push(r.entries.length + ' shown');
     if (r.total != null && r.total !== r.entries.length) meta.push(r.total + ' total'); // legacy results only
@@ -362,7 +363,9 @@ function renderSearchFilesToolResult(body, r, args) {
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
   const scope = args && typeof args === 'object' ? String(args.path || '').trim() : '';
+  const include = args && typeof args === 'object' ? String(args.include || '').trim() : '';
   if (scope) meta.push('in ' + scope);
+  if (include) meta.push(include);
   meta.push(r.query ? ('search ' + r.query) : 'no query');
   if (Array.isArray(r.matches)) meta.push(r.matches.length + ' matches');
   if (r.filesScanned != null) meta.push(r.filesScanned + ' files');
@@ -538,8 +541,8 @@ function renderWebpreviewToolResult(body, r, args) {
 // no record of what was asked — a response with no request beside it. Like
 // the shell card it is rendered ABOVE the result, so every expanded card
 // reads "what ran, then what came back".
-function renderGenericToolResult(body, r, args) {
-  const argsBlock = args != null ? buildToolArgs(args, null) : null;
+function renderGenericToolResult(body, r, args, toolName) {
+  const argsBlock = args != null ? buildToolArgs(args, toolName || null) : null;
   if (argsBlock) body.appendChild(argsBlock);
   if (r && Array.isArray(r.content)) {
     const lines = [];
@@ -577,16 +580,20 @@ function renderGenericToolResult(body, r, args) {
   }
 }
 
-// renderMouaifToolResult(body, r)
+// renderMouaifToolResult(body, r, args, name)
 //
 // `mouaif` results are heterogeneous (a chat list, a settings object, an
 // attachment ack). One shape is worth its own rendering: a chat list is
 // what the user asks for most, and the raw JSON of 20 chats is unreadable
 // on a phone. Everything else falls through to the generic JSON preview.
-function renderMouaifToolResult(body, r) {
-  if (typeof r === 'string') r = coerceToolResult(r, 'mouaif');
+function renderMouaifToolResult(body, r, args, name) {
+  if (typeof r === 'string') r = coerceToolResult(r, name || 'mouaif');
   if (r && Array.isArray(r.chats)) {
     body.classList.add('tool-preview', 'tool-preview--mouaif');
+    if (args != null) {
+      const block = buildToolArgs(args, name || 'mouaif');
+      if (block) body.appendChild(block);
+    }
     if (!r.chats.length) {
       const empty = document.createElement('div');
       empty.className = 'tool-preview__note';
@@ -620,7 +627,7 @@ function renderMouaifToolResult(body, r) {
     body.appendChild(note);
     return;
   }
-  renderGenericToolResult(body, r);
+  renderGenericToolResult(body, r, args, name);
 }
 
 // renderTaskToolResult(body, r)
@@ -816,20 +823,20 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'group_cli') return renderGroupCliToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
   if (name === 'group_read' || name === 'group_edit') return renderFileBatchToolResult(body, r, name);
-  if (name === 'list_files') return renderListFilesToolResult(body, r);
+  if (name === 'list_files') return renderListFilesToolResult(body, r, args);
   if (name === 'search_files') return renderSearchFilesToolResult(body, r, args);
   if (name === 'edit_file') return renderEditFileToolResult(body, r);
   if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r, args);
-  if (['list_chats', 'search_chats', 'mouaif'].includes(name)) return renderMouaifToolResult(body, r);
+  if (['list_chats', 'search_chats', 'mouaif'].includes(name)) return renderMouaifToolResult(body, r, args, name);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after
     // this body fill. Nothing else to add here.
     return;
   }
-  renderGenericToolResult(body, r, args);
+  renderGenericToolResult(body, r, args, name);
 }
 
 // formatToolResult(toolResult) -> string

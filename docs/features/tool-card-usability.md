@@ -9,7 +9,7 @@ Chat tool cards explain the proposed operation, its target, and its result in a 
 ### Review an approval
 
 - The single-line header names the action (for example **Run command** or **Edit files (2)**) alongside the tool identifier.
-- The compact monospace body shows the essential target and change (command, file path and replacement lines, named chat, or key=value arguments) without repeating default fields. Secret-shaped fields remain redacted.
+- The compact monospace body shows only the relevant target and change (command, file path and replacement lines, target chat when the tool acts on a specific chat, or `key: value` arguments) without repeating the calling chat on unrelated tools. Secret-shaped fields remain redacted.
 - Subagent approvals retain their per-run model picker and shared-image list.
 - **Once**, **Session**, **Always**, and **Deny** sit on a single compact row (`--tap-sm` height, keyboard shortcuts `1`–`4` and `Escape`), with the full permission scope exposed on hover/title and assistive labels.
 
@@ -21,8 +21,9 @@ The status line stays hidden until a decision is submitted. A submitted decision
 
 ### Read a result
 
-- Ordinary tool headers stay compact single-line rows that span the full card width and support tap, keyboard focus, Enter/Space, and expanded-state announcements.
-- Long requests start folded behind **Command · show full request** or **Arguments · show full request**, leaving output reachable without reading the whole command first. Opening it uses the same card-body scroller, not another nested scroll box.
+- Ordinary tool headers stay compact single-line rows that show a human verb, a concise argument summary (instead of raw JSON or `{}`), and a result summary badge (`2 lines`, `1 chat`, `project`, `running`, etc.).
+- Long requests start folded behind **Command · show full request** or **Arguments · show full request**, leaving output reachable without reading the whole command first. Short arguments render on a single `key: value` line. Opening a folded request uses the same card-body scroller, not another nested scroll box.
+- File listings and searches include the call's glob pattern and file filter (`include`) in the result header.
 - Structured fallback results format top-level fields as compact `key: value` lines while preserving nested objects and arrays. Larger payloads (>600 characters or capped) offer **View full details (bounded)**.
 - Batches containing both successes and failures use a warning-colored **Partial success** status and retain failure counts.
 - Explicit open/closed choices continue to survive result arrival and unchanged transcript reconciliation.

@@ -262,14 +262,14 @@ const CASES = [
     result: { content: [{ type: 'text', text: 'result text' }] },
     headFragment: '"query": "weather"',
     // The MCP card showed only the response; it must also show the request.
-    bodyFragment: '"query": "weather"'
+    bodyFragment: 'query: weather'
   },
   {
     name: 'git_diff_unstaged', id: 'call_git',
     args: { repo_path: '/proj' },
     result: { content: [{ type: 'text', text: 'diff --git a' }] },
     headFragment: 'repo_path',
-    bodyFragment: 'repo_path'
+    bodyFragment: 'repo_path: /proj'
   }
 ];
 
