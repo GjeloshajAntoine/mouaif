@@ -44,15 +44,15 @@ The successful-result handler treated both an untouched card and an explicitly o
 
 The handler now distinguishes an explicit open (`_userCollapsed === false`) from the untouched default. Explicitly opened cards stay open; deliberately closed cards stay closed; untouched successful cards still default to collapsed. This is an in-session state fix, not new persistence across a full browser reload.
 
-### Implemented: approval and result usability
+### Implemented: compact approval and result usability
 
-The production cards now address the review findings, rather than hiding them with mockup-only styles:
+The production cards and mockup stay compact on narrow screens:
 
-- Ordinary headers have a 44px minimum target, keyboard focus, Enter/Space support, and expanded-state announcements.
-- Generic results retain nested data and provide **View full details (bounded)** instead of discarding objects and arrays.
+- Ordinary headers stay single-line rows with full-width tap areas, keyboard focus, Enter/Space support, and expanded-state announcements.
+- Generic results format structured objects as compact `key: value` lines while keeping nested data and offering **View full details (bounded)** when payloads are large or capped.
 - Long requests start folded behind **show full request**, leaving output accessible while preserving one card-body scroller and production height caps.
 - Mixed batches show a warning-colored **Partial success** state, with success/failure counts retained.
-- Approval cards show plain-language actions, proposed arguments, available before snapshots, named chats, and working folders. Broader grants require scope acknowledgement; decisions show pending, retry, and approved/denied feedback in place. Catalogue mounts opt out of autofocus and auto-scroll.
+- Approval cards show compact action titles, essential arguments or diffs, and a single-row **Once / Session / Always / Deny** bar with Sending, Retry, and Approved/Denied feedback in place. Catalogue mounts opt out of autofocus and auto-scroll, and the mockup uses a compact sticky control bar without per-card wrapper headings.
 
 See [Readable tool approvals and results](./tool-card-usability.md) for usage, limits, and permission semantics. Existing modes and grants are unchanged. Rich bespoke summaries for every external MCP tool are outside this generic review harness.
 

@@ -455,7 +455,16 @@ export function formatReadableToolResult(r, structured = false) {
     [key, /api.?key|password|secret|authorization|cookie|credential|(?:access|refresh|auth)[_-]?token/i.test(key) ? '[redacted]' : bound(item, depth + 1)])
     .concat(entries.length > 100 ? [['[preview]', 'additional fields capped']] : []));
   };
-  try { return JSON.stringify(bound(r), null, 2); } catch { return '[result could not be displayed]'; }
+  const safe = bound(r);
+  if (!structured && safe && typeof safe === 'object' && !Array.isArray(safe)) {
+    const lines = [];
+    for (const [k, v] of Object.entries(safe)) {
+      if (v == null || v === '') continue;
+      lines.push(k + ': ' + (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+    }
+    if (lines.length) return lines.join('\n');
+  }
+  try { return JSON.stringify(safe, null, 2); } catch { return '[result could not be displayed]'; }
 }
 
 // parsePlainFileToolResult(text) -> object

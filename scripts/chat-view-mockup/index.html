@@ -3,46 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>mouaif — expanded tool review</title>
+  <title>mouaif — tool review</title>
   <link rel="stylesheet" href="./mockup.css">
 </head>
 <body>
-  <header class="review-header">
-    <h1>Chat tool review</h1>
-    <p>Real renderers, synthetic data. No tools run and no chats or settings are changed.</p>
-    <p id="coverage" role="status"></p>
-  </header>
-  <nav class="review-controls" aria-label="Review controls">
-    <label>Find a tool<input id="search" type="search" placeholder="Tool name or family"></label>
-    <label>Family<select id="family"><option value="all">All families</option></select></label>
-    <label>Show<select id="view"><option value="results">Expanded results</option><option value="approvals">Approvals for every tool</option></select></label>
-    <label>Render path<select id="render-path"><option value="call-first">Live: call → result</option><option value="result-first">Result first with recovered arguments</option><option value="reconciled">Persisted transcript replay</option></select></label>
-    <div class="review-actions">
-      <button id="expand" type="button">Expand all</button>
-      <button id="collapse" type="button">Collapse all</button>
-      <button id="reconcile" type="button">Replay unchanged</button>
-      <button id="reset-approvals" type="button" hidden>Reset approval examples</button>
+  <nav class="review-bar" aria-label="Review controls">
+    <div class="review-bar__row">
+      <select id="view" aria-label="Show"><option value="results">Results</option><option value="approvals">Approvals</option></select>
+      <select id="family" aria-label="Family"><option value="all">All families</option></select>
+      <input id="search" type="search" placeholder="Filter tool…">
+      <span id="visible-count" class="review-bar__count" role="status"></span>
     </div>
-    <p id="review-status" role="status" aria-live="polite">All result cards start expanded. Production height caps stay intact.</p>
+    <div class="review-bar__row">
+      <select id="render-path" aria-label="Render path"><option value="call-first">Call → result</option><option value="result-first">Result first</option><option value="reconciled">Replay</option></select>
+      <button id="expand" type="button">Expand</button>
+      <button id="collapse" type="button">Collapse</button>
+      <button id="reconcile" type="button">Replay</button>
+      <button id="reset-approvals" type="button" hidden>Reset</button>
+    </div>
+    <p id="review-status" class="review-bar__status" role="status" aria-live="polite" hidden></p>
+    <span id="coverage" hidden></span>
   </nav>
   <main>
-    <section class="review-findings" aria-labelledby="findings-title">
-      <h2 id="findings-title">What to check</h2>
-      <ul>
-        <li><a href="#state-transition">State retention</a>: opening a running card must survive its successful result and an unchanged replay.</li>
-        <li><a href="#long-command">Readable output</a>: long requests start folded. Open “show full request” to inspect the command.</li>
-        <li><a href="#tool-get_settings">Complete detail</a>: nested results remain visible; use “View full details” for the bounded structured preview.</li>
-        <li><a href="#tool-shell">Accessible headers</a>: try tap, Tab, Enter, and Space; ordinary headers now have a 44px target.</li>
-        <li><a href="#tool-group_read">Partial failures</a>: mixed batches use a warning-colored “Partial success” status.</li>
-      </ul>
-    </section>
-    <section aria-labelledby="tools-title">
-      <h2 id="tools-title">Every tool, expanded</h2>
-      <p id="visible-count" role="status"></p>
-      <div id="tools"></div>
-      <p id="no-matches" hidden>No matching tools. Clear the search or choose another family.</p>
-    </section>
-    <section id="states" aria-labelledby="states-title"><h2 id="states-title">Live, failure, and interaction states</h2></section>
+    <div id="tools"></div>
+    <p id="no-matches" hidden>No matching tools.</p>
+    <section id="states" aria-label="Interaction states"></section>
   </main>
   <script src="./mockup.js"></script>
 </body>

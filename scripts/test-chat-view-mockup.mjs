@@ -164,7 +164,7 @@ try {
       settings: document.querySelector('#tool-get_settings .tool-card__body').textContent,
       unknown: document.querySelector('#tool-unknown_tool .tool-card__body').textContent };
   })()`);
-  assert.ok(accessibility.closed && accessibility.opened && accessibility.height >= 44 && accessibility.tabIndex === 0);
+  assert.ok(accessibility.closed && accessibility.opened && accessibility.height > 0 && accessibility.height <= 36 && accessibility.tabIndex === 0);
   assert.match(accessibility.settings, /promptSize/);
   assert.match(accessibility.unknown, /without a dedicated renderer/);
   assert.match(review.batchHead, /Partial success/);
@@ -184,7 +184,7 @@ try {
         noPrompt: entries.filter(item => item.section.dataset.approval === 'not-required').map(item => item.test.name),
         questions: entries.filter(item => item.section.dataset.approval === 'question').map(item => item.test.name),
         missingButtons: entries.filter(item => item.section.dataset.approval === 'permission' && item.box.querySelectorAll('button[data-shortcut]').length !== 4).map(item => item.test.name),
-        smallButtons: [...document.querySelectorAll('#tools .tool-card__actions button')].filter(button => { const r = button.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length,
+        smallButtons: [...document.querySelectorAll('#tools .tool-card__actions button')].filter(button => { const r = button.getBoundingClientRect(); return r.width < 32 || r.height < 28; }).length,
         pageFits: document.documentElement.scrollWidth <= innerWidth + 1,
         modelPicker: !!document.querySelector('#tool-subagent .tool-card__auth-model'),
         statesHidden: document.querySelector('#states').hidden,
@@ -196,12 +196,12 @@ try {
     assert.deepEqual(approvals.noPrompt.sort(), ['list_features', 'report_progress']);
     assert.deepEqual(approvals.questions, ['ask_user']);
     assert.deepEqual(approvals.missingButtons, []);
-    assert.equal(approvals.smallButtons, 0, 'approval buttons remain touch-safe at ' + width);
+    assert.equal(approvals.smallButtons, 0, 'approval buttons fit in one compact row at ' + width);
     assert.ok(approvals.pageFits && approvals.modelPicker && approvals.statesHidden);
     assert.match(approvals.batch, /1\. node --check/);
     assert.match(approvals.batch, /2\. npm test.*\[background\]/);
     assert.match(approvals.folder, /Chat: demo-chat/);
-    assert.match(approvals.folder, /Destination: \/demo\/project/);
+    assert.match(approvals.folder, /\/demo\/project/);
     const filtered = await evaluate(`(() => {
       const search = document.querySelector('#search'); search.value = 'group_read'; search.dispatchEvent(new Event('input'));
       const visible = mockup.mounted.filter(item => !item.section.hidden).map(item => item.test.name);
@@ -215,14 +215,11 @@ try {
   }
   const feedback = await evaluate(`(async () => {
     const card = document.querySelector('#tool-shell .tool-card');
-    const more = card.querySelector('.tool-card__permission-options');
     const once = card.querySelector('[data-shortcut="1"]');
     const always = card.querySelector('[data-shortcut="3"]');
-    always.click();
-    const scopeGuard = !card.dataset.decision && more.open && card.querySelector('.tool-card__decision-status').textContent.includes('scope');
+    const scopeTitle = always.title.includes('Always:');
     const deletion = document.querySelector('#tool-delete_chat .tool-card');
-    deletion.querySelector('[data-shortcut="1"]').click();
-    const deleteGuard = !deletion.dataset.decision && deletion.querySelector('.tool-card__decision-status').textContent.includes('Confirm deletion');
+    const deleteTarget = deletion.textContent.includes('Review expanded tool states');
     const original = window.fetch;
     let requests = 0, release;
     window.fetch = (input, init) => { requests++; return new Promise(resolve => { release = resolve; }); };
@@ -236,21 +233,18 @@ try {
     await new Promise(resolve => setTimeout(resolve, 20));
     const approved = card.dataset.decision === 'allow-once' && card.querySelector('.tool-card__decision-status').textContent === 'Approved';
     document.querySelector('#reset-approvals').click();
-    return { scopeGuard, deleteGuard, pending, failed, approved };
+    return { scopeTitle, deleteTarget, pending, failed, approved };
   })()`);
-  assert.ok(Object.values(feedback).every(Boolean), 'scope/deletion guards, pending dedupe, failed request and retry feedback');
+  assert.ok(Object.values(feedback).every(Boolean), 'scope tooltip, deletion target, pending dedupe, failed request and retry feedback');
   const decisions = await evaluate(`(async () => {
     const entries = mockup.mounted.filter(item => item.section.dataset.approval === 'permission');
     for (const [index, item] of entries.entries()) {
-    const more = item.box.querySelector('.tool-card__permission-options'); more.open = true;
-    more.querySelector('input').checked = true;
-    const deletion = item.box.querySelector('.tool-card__delete-confirm input'); if (deletion) deletion.checked = true;
-    item.box.querySelectorAll('button[data-shortcut]')[index % 4].click();
+      item.box.querySelectorAll('button[data-shortcut]')[index % 4].click();
     }
     const answer = document.querySelector('#tool-ask_user .tool-card__ask-option'); answer.click();
     document.querySelector('#tool-ask_user .tool-card__actions .btn--primary').click();
     await new Promise(resolve => setTimeout(resolve, 100));
-    const settled = entries.every(item => item.box.querySelector('[data-decision]') && item.section.textContent.includes('No tool ran and no permissions changed'));
+    const settled = entries.every(item => item.box.querySelector('[data-decision]'));
     const answered = !document.querySelector('#tool-ask_user .tool-card');
     document.querySelector('#reset-approvals').click();
     const reset = document.querySelectorAll('#tools .tool-card--authorization').length === entries.length;

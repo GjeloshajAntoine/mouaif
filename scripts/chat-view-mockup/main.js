@@ -38,12 +38,9 @@ for (const [id, name] of Object.entries({ ...groupNames, mcp: 'MCP', fallback: '
   option.value = id; option.textContent = name; family.appendChild(option);
 }
 
-function panel(parent, id, title, note) {
+function panel(parent, id) {
   const section = document.createElement('article');
   section.className = 'review-case'; section.id = id;
-  const heading = document.createElement('h3'); heading.textContent = title;
-  section.appendChild(heading);
-  if (note) { const p = document.createElement('p'); p.textContent = note; section.appendChild(p); }
   const box = document.createElement('div');
   box.className = 'chat-view__transcript review-box';
   section.appendChild(box); parent.appendChild(section);
@@ -93,30 +90,28 @@ function applyFilter() {
     item.section.hidden = !matches;
     if (matches) visible++;
   }
-  document.querySelector('#visible-count').textContent = visible + ' of ' + mounted.length + ' tool examples';
+  document.querySelector('#visible-count').textContent = visible + '/' + mounted.length;
   document.querySelector('#no-matches').hidden = visible !== 0;
 }
 
 function drawApproval(test, host, id) {
-  const note = document.createElement('p');
-  note.textContent = approvalNote(test.name);
-  host.section.insertBefore(note, host.box);
   if (test.name === 'report_progress' || test.name === 'list_features') {
+    const note = document.createElement('p');
+    note.className = 'review-case__note';
+    note.textContent = test.name + ' · ' + approvalNote(test.name);
+    host.section.insertBefore(note, host.box);
     host.section.dataset.approval = 'not-required';
     return { ...host, test };
   }
   host.section.dataset.approval = test.name === 'ask_user' ? 'question' : 'permission';
   if (test.name === 'ask_user') {
-    askUserCard({ callId: id, ...test.args }, '/demo/project', 'demo-chat', host.refs,
-      message => { note.textContent = 'Demo: ' + message + '. Reset approval examples to try again.'; }, { autoScroll: false });
+    askUserCard({ callId: id, ...test.args }, '/demo/project', 'demo-chat', host.refs, () => {}, { autoScroll: false });
   } else {
     void authorizationCard(approvalRequest(test, id, approvalController.signal),
       '/demo/project', 'demo-chat', host.refs, () => {}, {
         chat: { providerId: 'demo-provider', modelId: 'demo-model' },
         models: [{ id: 'demo-model', provider: 'demo-provider', label: 'Demo model' }]
-      }, { autoFocus: false, autoScroll: false }).then(decision => {
-        note.textContent = 'Demo decision: ' + decision + '. No tool ran and no permissions changed. Reset approval examples to try again.';
-      });
+      }, { autoFocus: false, autoScroll: false });
   }
   return { ...host, card: host.box.firstElementChild, test };
 }
@@ -130,27 +125,24 @@ function renderTools() {
   document.querySelector('#reset-approvals').hidden = !approvals;
   renderPath.disabled = approvals;
   states.hidden = approvals;
-  document.querySelector('#tools-title').textContent = approvals ? 'Approvals for every tool' : 'Every tool, expanded';
-  status.textContent = approvals ? 'Demo only. Allow / Deny never runs a tool or changes permissions. No-prompt tools are labelled.'
-    : 'All result cards start expanded. Production height caps stay intact.';
+  status.hidden = true;
   for (const test of TOOL_CASES) {
     const groupId = toolGroupId(test.name) || (test.name.startsWith('mcp__') ? 'mcp' : 'fallback');
-    const host = panel(tools, 'tool-' + test.name, test.name, groupNames[groupId] || groupId);
+    const host = panel(tools, 'tool-' + test.name);
     host.section.dataset.family = groupId;
     mounted.push(approvals ? drawApproval(test, host, 'approval-' + test.name)
     : draw(test, host, 'review-' + test.name, renderPath.value));
   }
   applyFilter();
   const covered = nativeNames.filter(name => TOOL_CASES.some(test => test.name === name)).length;
-  document.querySelector('#coverage').textContent = covered + ' / ' + nativeNames.length
-    + ' native tools · 2 MCP examples · 1 fallback' + (approvals ? ' · approval states' : ' · live and failure cases below');
+  document.querySelector('#coverage').textContent = covered + ' / ' + nativeNames.length;
 }
 
 search.addEventListener('input', applyFilter);
 family.addEventListener('change', applyFilter);
 view.addEventListener('change', renderTools);
 document.querySelector('#reset-approvals').addEventListener('click', renderTools);
-renderPath.addEventListener('change', () => { renderTools(); status.textContent = 'Rebuilt through ' + renderPath.selectedOptions[0].textContent + '.'; });
+renderPath.addEventListener('change', () => { renderTools(); status.hidden = false; status.textContent = 'Rebuilt through ' + renderPath.selectedOptions[0].textContent + '.'; });
 document.querySelector('#expand').addEventListener('click', () => mounted.forEach(item => setExpanded(item.card, true)));
 document.querySelector('#collapse').addEventListener('click', () => mounted.forEach(item => setExpanded(item.card, false)));
 document.querySelector('#reconcile').addEventListener('click', () => {
@@ -159,12 +151,13 @@ document.querySelector('#reconcile').addEventListener('click', () => {
     reconcileTranscriptRows(item.state, item.refs, [0, 1]);
     return item.box.firstElementChild === item.card && item.card.classList.contains('is-expanded') === wasOpen;
   });
+  status.hidden = false;
   status.textContent = stable ? 'Replay kept every card and its expanded / collapsed state.' : 'State changed during replay — inspect the cards.';
 });
 
 renderTools();
 
-const transition = panel(states, 'state-transition', 'Running → successful result', 'Open or close this running shell, then finish it. A deliberate choice must survive the result.');
+const transition = panel(states, 'state-transition');
 const shell = TOOL_CASES.find(test => test.name === 'shell');
 appendToolCallCard({ id: 'transition-shell', name: shell.name, args: shell.args }, transition.refs);
 handleShellOutputEvent({ id: 'transition-shell', stream: 'stdout', delta: 'Checking syntax…\n' }, transition.refs);
@@ -175,20 +168,20 @@ finish.addEventListener('click', () => {
 });
 transition.section.appendChild(finish);
 
-for (const [id, title, test, note] of [
-  ['long-command', 'Long command → folded request, readable output', LONG_CASE, 'Open the full request if needed. The production body cap and one-scroller layout are unchanged.'],
-  ['failed-tool', 'Failed tool', { name: 'read_file', args: { path: 'src/missing.js' }, ok: false, result: { error: 'ENOENT: file not found: src/missing.js' } }, 'Errors auto-expand in production.'],
-  ['dismissed-question', 'Dismissed question', { name: 'ask_user', args: { question: 'Continue?' }, ok: false, result: { cancelled: true } }, 'A deliberate dismissal is not a tool execution failure.'],
-  ['empty-result', 'No matching files', { name: 'list_files', args: { pattern: 'missing/**/*.js' }, result: { entries: [], truncated: false } }, 'Empty is a valid result, not a loading state.'],
-  ['read-image', 'Image read result', { name: 'read_file', args: { path: 'docs/images/review.png' }, result: { kind: 'image', relPath: 'docs/images/review.png', mimeType: 'image/png', bytes: 70, content: [{ type: 'image', data: IMAGE.split(',')[1], mimeType: 'image/png' }] } }, 'Synthetic 1px PNG; tap opens the production image lightbox.'],
-  ['completed-progress', 'Completed progress', { name: 'report_progress', args: { title: 'Review complete', current: 3, total: 3, status: 'completed' }, result: { title: 'Review complete', current: 3, total: 3, status: 'completed' } }, 'Completion must not look like an active spinner.'],
-  ['failed-progress', 'Failed progress', { name: 'report_progress', args: { title: 'Review blocked', current: 1, total: 3, status: 'failed' }, result: { title: 'Review blocked', current: 1, total: 3, status: 'failed', message: 'Browser unavailable.' } }, 'Failure keeps the actual percentage rather than pretending completion.']
-]) draw(test, panel(states, id, title, note), id, 'call-first');
+for (const [id, , test] of [
+  ['long-command', 'Long command', LONG_CASE],
+  ['failed-tool', 'Failed tool', { name: 'read_file', args: { path: 'src/missing.js' }, ok: false, result: { error: 'ENOENT: file not found: src/missing.js' } }],
+  ['dismissed-question', 'Dismissed question', { name: 'ask_user', args: { question: 'Continue?' }, ok: false, result: { cancelled: true } }],
+  ['empty-result', 'No matching files', { name: 'list_files', args: { pattern: 'missing/**/*.js' }, result: { entries: [], truncated: false } }],
+  ['read-image', 'Image read result', { name: 'read_file', args: { path: 'docs/images/review.png' }, result: { kind: 'image', relPath: 'docs/images/review.png', mimeType: 'image/png', bytes: 70, content: [{ type: 'image', data: IMAGE.split(',')[1], mimeType: 'image/png' }] } }],
+  ['completed-progress', 'Completed progress', { name: 'report_progress', args: { title: 'Review complete', current: 3, total: 3, status: 'completed' }, result: { title: 'Review complete', current: 3, total: 3, status: 'completed' } }],
+  ['failed-progress', 'Failed progress', { name: 'report_progress', args: { title: 'Review blocked', current: 1, total: 3, status: 'failed' }, result: { title: 'Review blocked', current: 1, total: 3, status: 'failed', message: 'Browser unavailable.' } }]
+]) draw(test, panel(states, id), id, 'call-first');
 
-const question = panel(states, 'pending-question', 'Question awaiting an answer', 'Interactive locally: answering never posts to a server.');
+const question = panel(states, 'pending-question');
 askUserCard({ callId: 'review-question', ...TOOL_CASES.find(test => test.name === 'ask_user').args,
   multiSelect: false, presets: ['Expanded tools'] }, '/demo/project', 'demo-chat', question.refs, () => {}, { autoScroll: false });
-const approval = panel(states, 'pending-approval', 'Tool awaiting approval', 'Production authorization card; demo decisions stay inside this page, never in the real app.');
+const approval = panel(states, 'pending-approval');
 void authorizationCard({ callId: 'review-approval', tool: 'shell', cmd: 'node --check src/example.js', timeoutMs: 30000 },
   '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] }, { autoFocus: false, autoScroll: false });
 

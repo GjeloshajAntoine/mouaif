@@ -40,7 +40,6 @@
   max-width: 100%;
   overflow: hidden;
   cursor: pointer;
-  min-height: 2.75rem;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -155,7 +154,7 @@
 .tool-card__pill--ok   { background: var(--success); animation: none; }
 .tool-card__pill--err  { background: var(--danger); animation: none; }
 .tool-card__pill--partial { background: var(--warning); animation: none; }
-.tool-preview__structured summary, details.tool-preview__args > summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; white-space: normal; }
+.tool-preview__structured summary, details.tool-preview__args > summary { display: flex; align-items: center; cursor: pointer; white-space: normal; padding: 1px 0; }
 .tool-preview__structured { white-space: normal; }
 .tool-preview__structured .tool-preview__pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes tool-card-pulse {
@@ -986,33 +985,29 @@ color: var(--fg-soft);
   padding: 2px 0 0 17px;
   display: block;
   white-space: pre-wrap;
-  font-size: 0.72rem;
-  line-height: 1.35;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.3;
   color: var(--fg-soft);
 }
-.tool-card--authorization .tool-card__name { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 0.85rem; }
-.tool-card__decision-status { margin: 0.5rem 0; font-size: 0.85rem; color: var(--fg-soft); }
-.tool-card__permission-options { padding: 0.5rem; white-space: normal; border: 1px solid var(--border); border-radius: var(--r-sm); }
-.tool-card__permission-options summary { min-height: 2.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; }
-.tool-card__permission-options summary::before { content: '▸'; }
-.tool-card__permission-options[open] summary::before { content: '▾'; }
-.tool-card__permission-options p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; }
-.tool-card__permission-options label, .tool-card__delete-confirm { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; font-size: 0.8rem; }
-.tool-card__permission-options .btn { min-height: 2.75rem; margin: 0.25rem; }
+.tool-card--authorization .tool-card__name { max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.72rem; }
+.tool-card__decision-status { margin: 2px 0 0 17px; font-size: 0.72rem; color: var(--fg-soft); }
 .tool-card--authorization [hidden] { display: none !important; }
 .tool-card--decided { border-color: var(--border); }
 .tool-card--authorization .tool-card__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
-  margin-top: 4px;
+  margin-top: 2px;
   padding-left: 17px;
 }
 .tool-card--authorization .tool-card__actions .btn {
-  min-height: var(--tap);
-  min-width: var(--tap);
-  font-size: 0.72rem;
-  padding: 0 8px;
+  flex: 1 1 0;
+  min-height: var(--tap-sm);
+  min-width: 0;
+  font-size: 0.68rem;
+  padding: 0 4px;
+  white-space: nowrap;
 }
 
 /* Per-run model picker on the subagent authorization card. Mobile

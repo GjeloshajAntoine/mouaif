@@ -56,7 +56,7 @@ function buildToolArgs(args, name) {
   wrap.className = 'tool-preview__args';
   const label = document.createElement(longRequest ? 'summary' : 'div');
   label.className = 'tool-preview__meta';
-  label.textContent = (name === 'shell' ? 'Request · Command' : 'Request · Arguments') + (longRequest ? ' · show full request' : '');
+  label.textContent = (name === 'shell' ? 'Command' : 'Arguments') + (longRequest ? ' · show full request' : '');
   const pre = createPreviewPre(full, 'tool-preview__pre tool-preview__pre--args');
   wrap.appendChild(label);
   wrap.appendChild(pre);
@@ -490,7 +490,6 @@ function renderShellToolResult(body, r, args) {
     out.push(r.stderr);
   }
   if (cmdArgs) body.appendChild(cmdArgs);
-  renderToolMeta(body, ['Result']);
   renderPreviewPre(body, out.length ? out.join('\n\n') : '(exit ' + (r.exitCode ?? 0) + ', no output)', 'tool-preview__terminal');
 }
 
@@ -543,7 +542,6 @@ function renderGenericToolResult(body, r, args) {
   const argsBlock = args != null ? buildToolArgs(args, null) : null;
   if (argsBlock) body.appendChild(argsBlock);
   if (r && Array.isArray(r.content)) {
-    renderToolMeta(body, ['Result']);
     const lines = [];
     for (const c of r.content) {
       if (c && typeof c.text === 'string') lines.push(c.text);
@@ -562,10 +560,10 @@ function renderGenericToolResult(body, r, args) {
     if (lines.length) renderPreviewPre(body, lines.join('\n'), 'tool-preview__pre');
     return;
   }
-  renderToolMeta(body, ['Result']);
   const preview = formatReadableToolResult(r);
-  renderPreviewPre(body, preview.length > 16000 ? preview.slice(0, 16000) + '\n[preview capped — expand details]' : preview, 'tool-preview__pre');
-  if (r && typeof r === 'object') {
+  const capped = preview.length > 16000;
+  renderPreviewPre(body, capped ? preview.slice(0, 16000) + '\n[preview capped — expand details]' : preview, 'tool-preview__pre');
+  if (r && typeof r === 'object' && (capped || preview.length > 600)) {
     const details = document.createElement('details');
     details.className = 'tool-preview__structured';
     const summary = document.createElement('summary'); summary.textContent = 'View full details (bounded)';

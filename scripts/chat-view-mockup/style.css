@@ -2,38 +2,39 @@
 
 /* Only the review shell is styled here. Never lift production card caps or
    change their type, overflow, focus, or touch targets: those are under review. */
-html, body { height: auto; min-height: 100%; overflow: visible; }
-body { margin: 0; font-family: system-ui, sans-serif; }
-.review-header, .review-controls, main {
+html, body { height: auto; min-height: 100%; overflow: visible; margin: 0; font-family: system-ui, sans-serif; }
+.review-bar {
+  position: sticky; top: 0; z-index: 20;
   width: 100%; max-width: 46rem; margin-inline: auto;
-  padding: 0.75rem max(0.75rem, env(safe-area-inset-right)) 0.75rem max(0.75rem, env(safe-area-inset-left));
+  padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 4px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.review-bar__row { display: flex; align-items: center; gap: 4px; width: 100%; }
+.review-bar input, .review-bar select, .review-bar button, .review-case > button {
+  box-sizing: border-box; min-height: 26px; height: 26px; max-width: 100%; min-width: 0;
+  padding: 0 6px; font-size: 0.72rem; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.review-bar input { flex: 1 1 80px; }
+.review-bar select { flex: 0 1 auto; }
+.review-bar button { flex: 1 1 auto; cursor: pointer; white-space: nowrap; }
+.review-bar__count { font-size: 0.65rem; font-family: var(--font-mono); color: var(--muted); white-space: nowrap; padding: 0 2px; }
+.review-bar__status { margin: 0; font-size: 0.68rem; color: var(--fg-soft); }
+main {
+  width: 100%; max-width: 46rem; margin-inline: auto;
+  padding: 4px max(8px, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   box-sizing: border-box;
 }
-.review-header { padding-top: max(1rem, env(safe-area-inset-top)); }
-h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
-h2 { font-size: 1rem; margin: 1rem 0 0.5rem; }
-p, li { font-size: 0.85rem; line-height: 1.5; }
-p { margin: 0.25rem 0; color: var(--fg-soft); }
-ul { padding-left: 1.25rem; }
-li { margin-block: 0.5rem; }
-a { color: var(--accent); }
-.review-controls { display: grid; gap: 0.75rem; background: var(--surface); border-block: 1px solid var(--border); }
-.review-controls label { display: grid; gap: 0.25rem; font-size: 0.85rem; }
-.review-controls input, .review-controls select, .review-actions button, .review-case > button {
-  box-sizing: border-box; min-height: 2.75rem; max-width: 100%; min-width: 0;
-  padding: 0.5rem 0.75rem; font: inherit; color: var(--fg);
-  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 0.5rem;
-}
-.review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.review-actions button { flex: 1 1 auto; }
-.review-case { margin: 1rem 0; padding: 0.75rem 0; border-top: 1px solid var(--border); scroll-margin-top: 1rem; }
-.review-case h3 { margin: 0 0 0.5rem; font-size: 0.9rem; overflow-wrap: anywhere; }
-.review-case > p { margin-bottom: 0.5rem; }
+.review-case { margin: 0; padding: 2px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent); scroll-margin-top: 4.5rem; }
+.review-case__note { margin: 0; padding: 2px 4px; font-size: 0.68rem; color: var(--muted); }
 .review-box.chat-view__transcript { width: 100%; min-height: 0; max-height: none; overflow: visible; flex: none; padding: 0; }
-.review-box > .tool-card, .review-box > .chat-msg { content-visibility: visible; contain-intrinsic-size: none; }
+.review-box.chat-view__transcript > .tool-card,
+.review-box.chat-view__transcript > .chat-msg { content-visibility: visible !important; contain-intrinsic-size: none !important; animation: none !important; }
 .review-box .chat-msg, .review-box .tool-card { animation: none !important; }
-.review-case > button { margin-top: 0.5rem; }
-.review-findings { border: 1px solid var(--border-strong); border-radius: 0.5rem; padding: 0.75rem; }
+.review-case > button { margin-top: 2px; cursor: pointer; }
 .review-case[hidden], [hidden] { display: none !important; }
-main { padding-bottom: max(2rem, env(safe-area-inset-bottom)); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
