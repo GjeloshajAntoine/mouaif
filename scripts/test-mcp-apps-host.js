@@ -36,7 +36,9 @@ const raw = (url, headers, method = 'POST') => new Promise((resolve, reject) => 
   const req = http.request(url, { method, headers: { 'Content-Type': 'application/json', ...headers } }, res => {
     res.resume(); resolve(res.statusCode);
   });
-  req.on('error', reject); req.end('{}');
+  req.on('error', reject);
+  if (method === 'GET' || method === 'HEAD') req.end();
+  else req.end('{}');
 });
 const post = async (route, body = {}) => {
   const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -85,6 +87,24 @@ const post = async (route, body = {}) => {
     assert.equal(JSON.stringify([...proxy.headers]).includes(secret), false);
     assert.equal((await fetch(mount.url, { headers: { Referer: base + '/' } })).status, 403, 'ticket cannot be replayed');
     assert.equal((await fetch(mount.origin + '/api/settings')).status, 404);
+    const httpsApp = createServer(0, { publicOrigin: 'https://apps.example.com' });
+    await new Promise(resolve => httpsApp.listen(0, '127.0.0.1', resolve));
+    try {
+    const httpsBase = 'http://127.0.0.1:' + httpsApp.address().port;
+    const httpsMounted = await fetch(httpsBase + '/api/mcp/apps/mount', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(async r => ({ status: r.status, body: await r.json() }));
+    assert.equal(httpsMounted.status, 200, JSON.stringify(httpsMounted.body));
+    assert.equal(httpsMounted.body.enabled, true);
+    assert.equal(httpsMounted.body.origin, 'null');
+    assert.match(httpsMounted.body.url, /^https:\/\/apps\.example\.com\/api\/mcp\/apps\/sandbox\//);
+    const tokenPath = new URL(httpsMounted.body.url).pathname;
+    assert.equal(await raw(httpsBase + tokenPath, { Referer: 'https://apps.example.com/', Host: 'apps.example.com' }, 'GET'), 200);
+    assert.equal(await raw(httpsBase + tokenPath, { Referer: 'https://apps.example.com/', Host: 'apps.example.com' }, 'GET'), 403, 'HTTPS sandbox ticket cannot be replayed');
+    } finally {
+    httpsApp.closeAllConnections();
+    await new Promise(resolve => httpsApp.close(resolve));
+    }
     const route = '/api/mcp/apps/' + mount.id;
     for (const headers of [{ Origin: 'null' }, { Origin: 'http://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Site': 'same-site' }]) {
     const res = await fetch(base + route + '/status', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{}' });

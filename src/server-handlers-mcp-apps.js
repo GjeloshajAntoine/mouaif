@@ -74,6 +74,10 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
 
   async function handle(req, res, parsed, publicOrigin) {
     try {
+    const sandboxMatch = parsed.pathname.match(/^\/api\/mcp\/apps\/sandbox\/([A-Za-z0-9_-]+)$/);
+    if (sandboxMatch) {
+      return sandbox.handleProxy(req, res, sandboxMatch[1]);
+    }
     const origin = expectedOrigin(req, publicOrigin);
     // Keep no-Origin CLI calls, but reject browser cross-site/no-Origin
     // traffic and opaque frames. The ordinary access gate still applies.

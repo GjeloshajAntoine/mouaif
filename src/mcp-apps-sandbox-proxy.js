@@ -1,8 +1,8 @@
-// Trusted outer proxy, served only by the isolated sandbox listener.
+// Trusted outer proxy, served by the isolated sandbox listener or sandboxed HTTPS route.
 (() => {
   if (window.parent === window || !document.referrer) return;
   const hostOrigin = new URL(document.referrer).origin;
-  if (hostOrigin === location.origin) return;
+  if (window.origin !== 'null' && hostOrigin === location.origin) return;
   try { void window.parent.document; return; } catch { /* isolation confirmed */ }
   const inner = document.createElement('iframe');
   inner.setAttribute('sandbox', 'allow-scripts');

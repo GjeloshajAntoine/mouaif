@@ -135,7 +135,8 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
     ),
     status && h('p', { role: 'status' }, status),
     mount && !failed && h('iframe', { ref: frame, title: mount.title,
-      sandbox: 'allow-scripts allow-same-origin', referrerPolicy: 'origin',
+      sandbox: mount.origin === 'null' ? 'allow-scripts' : 'allow-scripts allow-same-origin',
+      referrerPolicy: 'origin',
       allow: "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'",
       style: { height: mode === 'fullscreen' ? '100%' : height + 'px' } })
   );

@@ -1,9 +1,11 @@
 import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge';
 
 // The SDK transport checks source but posts to '*'. This host transport also
-// pins the sandbox origin and never sends app data to a navigated frame.
+// pins the sandbox origin (or '*' when the outer proxy is an opaque 'null'
+// origin served with CSP sandbox) and never sends app data to a navigated frame.
 export function originTransport(target, origin) {
   let listener;
+  const targetOrigin = origin === 'null' ? '*' : origin;
   return {
     async start() {
       listener = event => {
@@ -12,7 +14,7 @@ export function originTransport(target, origin) {
       };
       window.addEventListener('message', listener);
     },
-    async send(message) { target.postMessage(message, origin); },
+    async send(message) { target.postMessage(message, targetOrigin); },
     async close() { window.removeEventListener('message', listener); this.onclose?.(); }
   };
 }

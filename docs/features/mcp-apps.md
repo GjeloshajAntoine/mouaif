@@ -14,7 +14,7 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 App frames and sandbox wrappers have transparent backgrounds: unpainted app areas show the chat backdrop in inline mode. An app's own background is preserved; fullscreen retains its normal sheet backdrop. Transparency does not change sandbox isolation or permissions.
 
-The initial deployment supports **direct HTTP** clients using an app-managed second listener on an ephemeral port. That port must be reachable from the client. HTTPS, reverse proxies which do not expose that port, unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
+The host supports both **direct HTTP** (using an app-managed second listener on an ephemeral port) and **HTTPS / reverse-proxy** deployments (serving the single-use outer sandbox proxy at `/api/mcp/apps/sandbox/:token` with `Content-Security-Policy: sandbox allow-scripts` so it runs in an opaque `null` origin without needing an extra browser-facing port). Unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
 
 **App text messages are automatic:** a view can send `ui/message` with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; use interactive views only from servers you trust to initiate prompts. Disable their source tools through the existing tool permissions when needed. Existing tool approvals still apply to the AI's actions.
 

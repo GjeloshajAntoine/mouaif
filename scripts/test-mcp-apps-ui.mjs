@@ -48,8 +48,17 @@ const server = http.createServer(async (req, res) => {
   const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   let body = '';
   for await (const chunk of req) body += chunk;
+  if (req.url?.startsWith('/api/mcp/apps/sandbox/')) {
+    return (server._samePortSandbox || sandbox).handleProxy(req, res, req.url.slice('/api/mcp/apps/sandbox/'.length));
+  }
   if (req.url === '/api/mcp/apps/mount') {
     mountCount++;
+    if (mountCount === 2) {
+      const samePortSandbox = createSandboxService({ samePort: true });
+      ticket = await samePortSandbox.issue(base, buildPolicy({}, base));
+      server._samePortSandbox = samePortSandbox;
+      return json(200, { enabled: true, id: 'fixture', title: 'SDK fixture', html, url: ticket.url, origin: ticket.origin, csp: {}, arguments: { value: 7 }, result: { content: [{ type: 'text', text: 'original result' }] } });
+    }
     ticket = await sandbox.issue(base, buildPolicy({}, base));
     return json(200, { enabled: true, id: 'fixture', title: 'SDK fixture', html, url: ticket.url, origin: ticket.origin, csp: {}, arguments: { value: 7 }, result: { content: [{ type: 'text', text: 'original result' }] } });
   }
@@ -63,7 +72,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'DELETE') { deleted++; return json(200, { ok: true }); }
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); res.end(js); return; }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); res.end(css); return; }
-  res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" });
+  res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' http://127.0.0.1:*" });
   res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="app"></div><p id="fallback">text fallback remains</p><script type="module" src="/app.js"></script>');
 });
 let chrome, cdp;
@@ -124,9 +133,14 @@ try {
   // Wrong-source messages cannot resize or initialize the app.
   await evaluate("window.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:9999}},location.origin)");
   assert.equal(await evaluate("parseInt(document.querySelector('.mcp-app iframe').style.height) <= innerHeight * .7"), true);
+  await evaluate("document.querySelectorAll('.mcp-app button')[1].click()");
+  for (let i = 0; i < 100 && await evaluate("document.querySelector('.mcp-app button')?.textContent") !== 'Retry'; i++) await sleep(20);
+  await evaluate("document.querySelector('.mcp-app button').click()");
+  for (let i = 0; i < 100; i++) { if (await evaluate("!!document.querySelector('.mcp-app iframe') && !document.querySelector('.mcp-app [role=status]')")) break; await sleep(100); }
+  assert.equal(await evaluate("document.querySelector('.mcp-app [role=status]')?.textContent || ''"), '', 'HTTPS CSP-sandboxed proxy initializes official App SDK');
   await evaluate('window.unmount()');
-  for (let i = 0; deleted === 0 && i < 100; i++) await sleep(20);
-  assert.equal(deleted, 1, 'unmount revokes mount');
+  for (let i = 0; deleted < 2 && i < 100; i++) await sleep(20);
+  assert.equal(deleted, 2, 'unmount revokes mount');
   assert.equal(await evaluate("document.querySelector('#fallback').textContent"), 'text fallback remains');
   console.log('PASS official App SDK initialization, mobile/fullscreen, origin isolation, header CSP, approval/denial, unsupported context and lifecycle');
 } finally {
