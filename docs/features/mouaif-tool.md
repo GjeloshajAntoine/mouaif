@@ -2,7 +2,7 @@
 
 ## Overview
 
-Twenty-two ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **7 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+23 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **8 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -31,6 +31,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is relative to the calling chat's working folder (the project by default), `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
 | `list_chat_attachments` | Show draft and message image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
+| `create_mcp_app` | Create and start a trusted local single-file MCP App from `source` + `filename` or project-relative `path`; requires explicit approval and opens in its tool card. Alternatively `request` prepares an unsent development draft. See [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). |
 | `get_settings` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
 | `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
 | `list_projects` | List the registered projects (id, name, path, cost). |
@@ -66,9 +67,11 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
+| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
+
+`create_mcp_app` is a mouaif leaf, but registering/starting its fixed adapter always requires an explicit approval even under **Allow**, like `update_settings` writes to permission keys. Request-only development drafts use the ordinary gate; MCP permissions are never widened.
 
 The mouaif family also carries the tools that act on the app itself rather than on one project: **Restart app** (`restart_app`), **Feature report** (`list_features`) and the grouped CLI batch tool (`group_cli`, see [Grouped CLI tool](grouped-cli-tool.md)). They are leaves of this family now, so a family `Allow` — including one earned by choosing **Always allow** on any mouaif call — also covers an app restart and a batch of shell commands. Store `tools.restart_app` / `tools.list_features` / `tools.group_cli` to override one leaf on its own. `list_features` is read-only, so it is never shown an approval card; an `off` on the family or the leaf hides it from the model. `group_cli` runs commands, so it keeps the ordinary approval card and its card lists every command in the batch.
 

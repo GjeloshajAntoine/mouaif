@@ -24,14 +24,23 @@ const html = renderHtml(`
 const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', contents: `
   import { h, render } from 'preact';
   import { InstantMcpApp } from './frontend/src/components/settings/InstantMcpApp.jsx';
-  import { McpAppFrame } from './frontend/src/components/chat/McpAppFrame.jsx';
+  import { appendToolCallCard, appendToolResultCard } from './frontend/src/components/chat/transcript.js';
   render(h(InstantMcpApp, { projectDir: '/fixture', onImported: () => window.imported = true }), document.querySelector('#form'));
-  render(h(McpAppFrame, { projectDir: '/fixture', chatId: 'chat', callId: 'call' }), document.querySelector('#frame'));
+  const root = document.querySelector('#frame');
+  const refs = { transcript: { current: root }, pinnedToBottom: { current: false }, pendingCount: { current: 0 },
+    jumpBtn: { current: null }, usageSummary: { current: null }, _suspendScrollPin: true,
+    mcpAppContext: { projectDir: '/fixture', chatId: 'chat' } };
+  appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
+  appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
+    result: { ok: true, server: { id: 'one' }, path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
+  window.nativeCard = root.querySelector('.tool-card');
+  window.nativeLazy = !root.querySelector('.mcp-app');
+  window.nativeCard.querySelector('.tool-card__head').click();
 ` }, bundle: true, write: false, outdir: '/tmp/instant-ui', format: 'esm' });
 const js = bundle.outputFiles.find(file => file.path.endsWith('.js')).text;
 const css = bundle.outputFiles.find(file => file.path.endsWith('.css')).text;
 let base, chrome, cdp;
-const imports = [], requests = [], appMessages = [];
+const imports = [], requests = [], appMessages = [], mounts = [];
 const server = http.createServer(async (req, res) => {
   const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   let raw = ''; for await (const chunk of req) raw += chunk;
@@ -42,6 +51,7 @@ const server = http.createServer(async (req, res) => {
     requests.push(JSON.parse(raw)); return json(201, { chatId: 'devchat', path: '.mouaif/mcp-apps/unique.html' });
   }
   if (req.url === '/api/mcp/apps/mount') {
+    mounts.push(JSON.parse(raw));
     const ticket = await sandbox.issue(base, buildPolicy({}, base));
     return json(200, { enabled: true, id: 'fixture', title: 'Single-file app', html, ...ticket, csp: {},
       arguments: {}, result: { content: [{ type: 'text', text: 'ready' }] } });
@@ -82,10 +92,15 @@ try {
   await cdp.evaluate("document.querySelector('.instant-mcp-app button').click()");
   for (let i = 0; !imports.length && i < 100; i++) await sleep(50);
   assert.deepEqual(imports, [{ projectDir: '/fixture', name: 'On-the-fly app', path: 'counter.js' }], 'form serializes JSON');
+  // Receiving the request is earlier than parsing its response and calling
+  // onImported; wait for the callback, not just the fixture's request log.
+  for (let i = 0; !await cdp.evaluate('window.imported') && i < 100; i++) await sleep(50);
   assert.equal(await cdp.evaluate('window.imported'), true);
   let appEvaluate;
   for (let i = 0; !appEvaluate && i < 100; i++) { appEvaluate = await cdp.appContext(); if (!appEvaluate) await sleep(50); }
   assert(appEvaluate, 'single-file app initializes in opaque sandbox');
+  assert.equal(await cdp.evaluate('window.nativeLazy'), true, 'native creation card stays lazy until expanded');
+  assert.deepEqual(mounts, [{ projectDir: '/fixture', chatId: 'chat', callId: 'native-create' }], 'native card binds by persisted call identity only');
   for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#ready').textContent") !== 'initialized'; i++) await sleep(50);
   assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'initialized');
   assert.equal(await appEvaluate("[document.documentElement,document.body].every(e=>getComputedStyle(e).backgroundColor==='rgba(0, 0, 0, 0)')"), true, 'app shell stays transparent');
@@ -93,7 +108,10 @@ try {
   async function assertBackdrop(rgb, label) {
     await cdp.evaluate("document.querySelector('.mcp-app iframe').scrollIntoView({block:'center'})");
     await sleep(100); // wait for cross-process frame compositing
-    const point = await cdp.evaluate("(()=>{const r=document.querySelector('.mcp-app iframe').getBoundingClientRect();return [Math.floor(r.right-16),Math.floor(r.bottom-16)];})()");
+    // A transcript card can leave transparent space below the auto-sized
+    // author body. Sample inside its painted box, not that trailing space.
+    const bodyBottom = await appEvaluate('document.body.getBoundingClientRect().bottom');
+    const point = await cdp.evaluate(`(()=>{const r=document.querySelector('.mcp-app iframe').getBoundingClientRect();return [Math.floor(r.right-16),Math.floor(r.top+Math.min(r.height,${bodyBottom})-16)];})()`);
     const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const pixel = await cdp.evaluate(`(async()=>{
       const bytes=Uint8Array.from(atob(${JSON.stringify(screenshot.data)}),c=>c.charCodeAt(0));

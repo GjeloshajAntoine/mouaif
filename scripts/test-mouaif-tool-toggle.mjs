@@ -184,7 +184,7 @@ function cardHandlers(filter, toolAuth) {
   assert.equal(s._seenGroup.names.at(-1), 'webpreview');
   assert.equal(s._seenGroup.next, false);
   props.onToggleGroup('mouaif-settings', true);
-  assert.equal(s._seenGroup.names[0], 'get_settings');
+  assert.equal(s._seenGroup.names[0], 'create_mcp_app');
   // A catalog-backed group is untouched: its children ids ARE tool names.
   props.onToggleTool('shell', 'shell', false);
   assert.equal(s._seenTool.name, 'shell', 'a plain tool row keeps its own name');
@@ -381,7 +381,7 @@ try {
   assert.equal(converted.tools.delete_chat.mode, 'ask', 'existing ordinary permissions are untouched');
   same(converted.prompts[0].preset.tools, ['get_app_info']);
   same(converted.agents[0].tools, ['shell', 'list_chats']);
-  assert.equal(converted.defaultAgent.tools.length, 15);
+  assert.equal(converted.defaultAgent.tools.length, require('../src/tools/appToolNames.js').TOOL_NAMES.length);
   assert.deepEqual(migration.config(converted), converted, 'migration is idempotent');
   settingsStore.setProject(home, legacy);
   settingsStore.setApp({ tools: { mouaif: { mode: 'allow' }, 'mouaif:delete': { mode: 'off' } } });

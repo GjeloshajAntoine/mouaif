@@ -76,6 +76,7 @@ const ACTIONS = Object.freeze({
   working_folder: 'chats',
   settings_get: 'settings',
   settings_update: 'settings',
+  app_create: 'apps',
   project_list: 'projects',
   info: 'info'
 });
@@ -84,6 +85,7 @@ const AREAS = Object.freeze({
   chats: 'List, read, create, update, delete, and search this project\u2019s chats.',
   attachments: 'Attach an image file from the project to a chat draft or to a user message.',
   settings: 'Read and write app-level settings and the project\u2019s .mouaif.json.',
+  apps: 'Create local single-file MCP Apps or prepare development drafts.',
   projects: 'List the projects registered in the app.',
   info: 'Describe the mouaif feature state and this tool\u2019s actions.'
 });
@@ -105,10 +107,10 @@ const GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif-settings',
     name: 'mouaif',
-    description: 'app & project settings \u00b7 projects \u00b7 feature info',
-    areas: Object.freeze(['settings', 'projects', 'info']),
+    description: 'app & project settings \u00b7 local apps \u00b7 projects \u00b7 feature info',
+    areas: Object.freeze(['settings', 'apps', 'projects', 'info']),
     actions: Object.freeze(
-      ACTION_NAMES.filter((name) => ['settings', 'projects', 'info'].includes(ACTIONS[name]))
+    ACTION_NAMES.filter((name) => ['settings', 'apps', 'projects', 'info'].includes(ACTIONS[name]))
     )
   })
 ]);
@@ -127,6 +129,10 @@ const PARAMETERS = {
           description: 'Target chat id.'
         },
         title: { type: 'string', description: 'Chat title (max 200 chars).' },
+        name: { type: 'string', description: 'App name (1–100 characters; default On-the-fly app).' },
+        filename: { type: 'string', description: 'Required with source: .html/.htm or browser .js/.mjs filename.' },
+        source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge.' },
+        request: { type: 'string', description: 'Prepare a separate unsent development chat draft (1–16000 characters); does not generate or start an app.' },
         topic: {
           type: 'string',
           description: 'Opening draft text for the new chat (max 400 chars).'
@@ -197,6 +203,7 @@ const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
     properties.limit = { ...properties.limit, description: 'Maximum models to return (default 20, max 100).' };
     properties.providerId = { type: 'string', description: 'Restrict results to this provider connection id; omit to search all configured providers.' };
   }
+  if (name === 'create_mcp_app') properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder. Must resolve inside the project.' };
   if (name === 'start_chat') properties.content = { type: 'string', description: 'Prompt to send to the selected chat (required, max 200000 chars). Starts an AI turn, not a draft.' };
   return [name, { type: 'function', function: { name, description: definition.description,
     parameters: { type: 'object', properties, required: definition.required || [], additionalProperties: false }
@@ -783,12 +790,37 @@ async function runInfo(args, opts) {
   return ok(result);
 }
 
+async function runApps(args, opts) {
+  const projectDir = require('../instant-mcp-apps.js').projectRoot(resolveProjectDir(opts));
+  if (opts.signal?.aborted) throw typedError('EABORTED', 'App creation cancelled');
+  const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args) };
+  if (result.chatId) return ok(result);
+  const mcp = require('../mcp.js');
+  try {
+    if (opts.signal?.aborted) throw typedError('EABORTED', 'App start cancelled');
+    result.server = await mcp.startServer(projectDir, result.server.id);
+    if (opts.signal?.aborted) {
+      await mcp.stopServer(projectDir, result.server.id);
+      throw typedError('EABORTED', 'App start cancelled');
+    }
+    result.viewTool = mcp.composedToolName(result.server.slug, 'view');
+    result.content = [{ type: 'text', text: result.server.name + ' is ready. Expand this tool card to open the app.' }];
+    return ok(result);
+  } catch (error) {
+    // Registration already succeeded: return its identity so a retry can use
+    // Settings to start it rather than creating a duplicate app/file.
+    return { ok: false, content: JSON.stringify({ ...result, ok: false, code: error.code || 'EMCP_RPC', message: error.message }),
+      result: { ...result, ok: false, code: error.code || 'EMCP_RPC', message: error.message } };
+  }
+}
+
 // ---- Dispatcher ----------------------------------------------------------
 
 const HANDLERS = {
   chats: runChats,
   attachments: runAttachments,
   settings: (args, opts) => runSettings(args, opts),
+  apps: runApps,
   projects: runProjects,
   info: runInfo
 };

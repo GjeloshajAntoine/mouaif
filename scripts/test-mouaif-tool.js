@@ -71,9 +71,9 @@ async function main() {
     return listed.join(',') === mouaif.ACTION_NAMES.slice().sort().join(',');
   })());
   check('a category lists only its own areas\u2019 actions', mouaif.GROUPS[0].actions.every((a) => ['chats', 'attachments'].includes(mouaif.ACTIONS[a]))
-    && mouaif.GROUPS[1].actions.every((a) => ['settings', 'projects', 'info'].includes(mouaif.ACTIONS[a])));
+    && mouaif.GROUPS[1].actions.every((a) => ['settings', 'apps', 'projects', 'info'].includes(mouaif.ACTIONS[a])));
   check('the chats category lists chat, model, and attachment actions', mouaif.GROUPS[0].actions.join(',') === 'list,get,create,update,delete,search,model_search,start,attach,list_attachments,working_folder');
-  check('the settings category lists the four settings + project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,project_list,info');
+  check('the app category lists settings, app creation and project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,app_create,project_list,info');
 
   // --- 2) Authorization category -----------------------------------------
   const authState = authz.getAuthorization(projectDir);

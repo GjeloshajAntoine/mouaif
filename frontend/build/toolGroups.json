@@ -60,6 +60,7 @@
     "source": "mouaif",
     "authKey": "mouaif",
     "tools": [
+      "create_mcp_app",
       "get_settings",
       "update_settings",
       "list_projects",

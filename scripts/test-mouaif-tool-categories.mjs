@@ -68,8 +68,8 @@ same(categories[0].tools.map((t) => t.id), [
   'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview'
 ], 'the chats category lists its fifteen tools');
 same(categories[1].tools.map((t) => t.id), [
-  'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli'
-], 'the settings category lists its seven tools');
+  'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli'
+], 'the settings category lists its eight tools');
 // More than one child is what gives the row its chevron and count in ToolTree.
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
 // The row no longer reads as a bare tool: no child is named `mouaif`.
@@ -134,7 +134,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 22, 'twenty-two tools, each listed once');
+assert.equal(actions.size, 23, 'twenty-three tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are

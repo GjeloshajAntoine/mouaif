@@ -174,6 +174,36 @@ async function main() {
   assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'ordinary writes keep allow');
   assert.equal(out.ok, true);
 
+  const mcp = require('../src/mcp.js');
+  const appArgs = { action: 'app_create', name: 'Inline counter', filename: 'counter.html', source: '<!doctype html><button>Counter</button>' };
+  const appCount = mcp.listServers(projectDir).length;
+  out = await call(host, appArgs, { decision: 'deny' });
+  assert.equal(out.ok, false);
+  assert.equal(mcp.listServers(projectDir).length, appCount, 'denied registration has no effects');
+  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif/mcp-apps')), false, 'denial does not write source');
+  out = await call(host, appArgs, { mode: 'off' });
+  assert.equal(out.ok, false);
+  assert.equal(out.events.some(event => event.type === 'authorization_required'), false);
+  out = await call(host, appArgs, { decision: 'allow-once' });
+  assert.equal(out.ok, true);
+  assert.equal(out.returned.server.status, 'ready');
+  assert.equal(out.returned.viewTool, mcp.composedToolName(out.returned.server.slug, 'view'));
+  assert.equal(fs.readFileSync(path.join(projectDir, out.returned.path), 'utf8'), appArgs.source);
+  assert.ok(out.events.find(event => event.type === 'authorization_required').payload.summary.includes('counter.html'));
+  assert.equal(authz.effectiveConfig(projectDir, out.returned.viewTool, host.id).mode, 'ask', 'creation does not grant MCP permissions');
+  out = await call(host, { action: 'app_create', request: 'Build a checklist' });
+  assert.equal(out.ok, true);
+  assert.ok(chats.getChat(projectDir, out.returned.chatId).draft.includes('Build a checklist'));
+  assert.equal(out.events.some(event => event.type === 'authorization_required'), false, 'request-only draft honors allow');
+  assert.equal(mcp.listServers(projectDir).length, appCount + 1);
+
+  // A family Off also hides and blocks the new native tool.
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'off' } } });
+  out = await call(host, appArgs, { advertised: false });
+  assert.equal(out.ok, false);
+  assert.equal(mcp.listServers(projectDir).length, appCount + 1);
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'ask' } } });
+
   // The running chat cannot delete itself.
   out = await call(host, { action: 'delete', chatId: host.id, confirm: true });
   assert.equal(out.ok, false);
@@ -185,7 +215,8 @@ async function main() {
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
-}).finally(() => {
+}).finally(async () => {
+  await require('../src/mcp.js').stopAll();
   global.fetch = originalFetch;
   settings.close();
   fs.rmSync(home, { recursive: true, force: true });

@@ -102,4 +102,37 @@ function developmentDraft(request, filename) {
     + 'Do not register servers or enable MCP Apps without the user importing the file.';
 }
 
-module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, newSourcePath, developmentDraft };
+// Shared by the Settings HTTP routes and the model-facing native tool.
+function createApp(projectDir, body) {
+  const root = projectRoot(projectDir);
+  const name = body.name === undefined ? 'On-the-fly app' : body.name;
+  if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw err('EBADINPUT', 'App name must be 1–100 characters');
+  const title = name.trim();
+  const inputs = ['request', 'path', 'source'].filter(key => body[key] !== undefined);
+  if (inputs.length !== 1) throw err('EBADINPUT', 'Provide exactly one request, path or source');
+  if (inputs[0] !== 'source' && body.filename !== undefined) throw err('EBADINPUT', 'filename is only used with source');
+  if (inputs[0] === 'request') {
+    if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 16000) throw err('EBADINPUT', 'App request must be 1–16000 characters');
+    const filename = newSourcePath(root);
+    const chats = require('./chats.js');
+    const chat = chats.createChat(root, { title: 'Build app: ' + title });
+    chats.updateChat(root, chat.id, { draft: developmentDraft(body.request.trim(), filename) });
+    return { chatId: chat.id, path: filename, url: '#/chat/' + encodeURIComponent(chat.id) };
+  }
+  let filename;
+  if (inputs[0] === 'path') {
+    const { source, kind } = readSource(root, body.path);
+    renderHtml(source, kind, title);
+    filename = body.path;
+  } else {
+    const kind = sourceKind(body.filename);
+    renderHtml(body.source, kind, title);
+    filename = newSourcePath(root, kind);
+    fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
+  }
+  const server = require('./mcp.js').addServer(root, { scope: 'project', name: title,
+    command: process.execPath, args: [path.join(__dirname, 'instant-mcp-app-server.js'), root, filename, title], cwd: root });
+  return { server, path: filename };
+}
+
+module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, newSourcePath, developmentDraft, createApp };

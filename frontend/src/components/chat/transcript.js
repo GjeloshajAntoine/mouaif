@@ -1617,7 +1617,7 @@ if (!card) {
     // rows the user opened or folded while the run was streaming.
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
-    if (toolResult.name?.startsWith('mcp__') && id && refs.mcpAppContext) {
+    if ((toolResult.name?.startsWith('mcp__') || (toolResult.name === 'create_mcp_app' && toolResult.ok && toolResult.result?.server)) && id && refs.mcpAppContext) {
       const context = refs.mcpAppContext;
       const app = document.createElement('div');
       body.prepend(app);

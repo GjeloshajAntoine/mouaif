@@ -42,7 +42,8 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       const session = mcp._sessions.get(mount.projectDir + '::' + mount.serverId);
       if (!server || session !== mount.session || session?.status !== 'ready') throw err('EMCP_APP_GONE', 'MCP App server disconnected');
       if (!chats.getChat(mount.projectDir, mount.chatId)) throw err('EMCP_APP_GONE', 'Chat was removed');
-      if (authz.effectiveConfig(mount.projectDir, mount.sourceTool, mount.chatId).mode === 'off') {
+      if ((mount.creationTool && authz.effectiveConfig(mount.projectDir, mount.creationTool, mount.chatId).mode === 'off')
+      || authz.effectiveConfig(mount.projectDir, mount.sourceTool, mount.chatId).mode === 'off') {
         throw err('ETOOL_DISABLED', 'MCP App source tool is disabled');
       }
       const tool = session.tools.find(t => mcp.composedToolName(server.slug, t.name) === mount.sourceTool);
@@ -89,14 +90,32 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         const call = rows.find(r => r.role === 'tool' && r.phase === 'call' && r.toolCallId === callId);
         const result = rows.find(r => r.role === 'tool' && r.phase === 'result' && r.toolCallId === callId);
         if (!call || !result) throw err('EMCP_NOTFOUND', 'Completed tool call not found');
-        const parsedTool = mcp.parseServerSlugAndToolName(call.name);
+        let parsedTool = mcp.parseServerSlugAndToolName(call.name);
+        let creationTool;
+        if (call.name === 'create_mcp_app') {
+        // Only a completed native creation result may bind to the fixed
+        // trusted adapter. Browser-provided server IDs/HTML remain ignored.
+        let created;
+        try { created = JSON.parse(result.content); } catch { /* invalid result */ }
+        if (created?.ok !== true || !created.server?.id) return sendJSON(res, 200, { enabled: false });
+        const entry = mcp.listServers(projectDir).find(s => s.id === created.server.id);
+        const path = require('node:path');
+        const root = require('./instant-mcp-apps.js').projectRoot(projectDir);
+        if (!entry || entry.scope !== 'project' || entry.command !== process.execPath
+        || entry.args?.[0] !== path.join(__dirname, 'instant-mcp-app-server.js')
+        || entry.args?.[1] !== root || entry.args?.[2] !== created.path) throw err('EBADINPUT', 'Not a trusted local app adapter');
+        parsedTool = { serverSlug: entry.slug, toolName: 'view' };
+        creationTool = call.name;
+        }
         if (!parsedTool) throw err('EBADINPUT', 'Not an MCP tool call');
+        const sourceTool = mcp.composedToolName(parsedTool.serverSlug, parsedTool.toolName);
         const server = mcp.listServers(projectDir).find(s => s.slug === parsedTool.serverSlug);
         if (!server) throw err('EMCP_NOTFOUND', 'MCP server not found');
-        if (authz.effectiveConfig(projectDir, call.name, chatId).mode === 'off') throw err('ETOOL_DISABLED', 'MCP tool is disabled');
+        if (authz.effectiveConfig(projectDir, call.name, chatId).mode === 'off'
+        || authz.effectiveConfig(projectDir, sourceTool, chatId).mode === 'off') throw err('ETOOL_DISABLED', 'MCP tool is disabled');
         // Do not silently start stopped servers merely to render old results.
         const session = mcp._sessions.get(projectDir + '::' + server.id);
-        const tool = session?.tools.find(t => mcp.composedToolName(server.slug, t.name) === call.name);
+        const tool = session?.tools.find(t => mcp.composedToolName(server.slug, t.name) === sourceTool);
         const uri = tool?._meta?.ui?.resourceUri;
         if (!uri || !apps.toolVisibleTo(tool, 'model')) return sendJSON(res, 200, { enabled: false });
         const epoch = session.appResourceEpoch;
@@ -112,7 +131,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         const id = crypto.randomBytes(24).toString('base64url');
         let toolResult;
         try { toolResult = JSON.parse(result.content); } catch { toolResult = { content: [{ type: 'text', text: result.content }] }; }
-        const mount = { id, hostOrigin: origin, projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session, sourceTool: call.name,
+        const mount = { id, hostOrigin: origin, projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session, sourceTool, creationTool,
         epoch, title: server.name + ' — ' + tool.name, ticket,
         expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
         mounts.set(id, mount);
@@ -120,7 +139,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         sandbox.bind(ticket.token, () => { validate(mount); });
         return sendJSON(res, 200, { enabled: true, id, url: ticket.url, origin: ticket.origin,
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
-          arguments: call.args || {}, result: toolResult });
+          arguments: creationTool ? {} : call.args || {}, result: toolResult });
       }
       const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });
