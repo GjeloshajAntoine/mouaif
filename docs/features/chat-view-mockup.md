@@ -19,7 +19,9 @@ npm run mockup:chat -- --port=5743
 npm run mockup:chat -- --build
 ```
 
-Build output is `.mouaif/chat-view-mockup/index.html`. The built page can be opened from disk for visual review; answering questions and authorizing fixture cards requires the preview server.
+Build output is `.mouaif/chat-view-mockup/index.html`. The built page can be opened from disk, including its local question and authorization examples. On a phone, use the app's local preview proxy URL for the printed loopback address rather than opening loopback directly.
+
+The renderer bundle is transported as a base64 data-script URL so the proxy's root-path rewriter cannot corrupt JavaScript regex literals. Without this, the introduction rendered but the tool cards never loaded. Regression checks now open the page through the production preview proxy, not just directly.
 
 - Search by tool name or family, or select a family.
 - Switch between **Live: call → result**, **Result first with recovered arguments**, and **Persisted transcript replay**. Switching paths intentionally remounts examples in their initial expanded state.
@@ -29,7 +31,7 @@ Build output is `.mouaif/chat-view-mockup/index.html`. The built page can be ope
 
 The page covers all 43 current native tools, two representative MCP text/image results, and an unknown-tool fallback. It is not an exhaustive catalogue of external MCP tools or every argument combination. Embedded MCP Apps and provider/network behavior are covered by their own tests, not simulated here.
 
-Nothing runs a shell command, deletes a chat, changes settings, restarts the app, or registers an MCP server. The preview serves synthetic data and only a stub decision endpoint; other API requests return 404.
+Nothing runs a shell command, deletes a chat, changes settings, restarts the app, or registers an MCP server. The preview serves synthetic data. Question and authorization decisions are handled locally inside the preview, including when opened through mouaif's local preview proxy; they never reach the app's real authorization API. Other API requests return 404.
 
 ## Review findings
 
@@ -69,7 +71,7 @@ These remaining findings are documented, not silently restyled by the mockup. Th
 - `main.js` calls `appendToolCallCard`, `appendToolResultCard`, `reconcileTranscriptRows`, `handleShellOutputEvent`, `askUserCard`, and `authorizationCard` from production. It does not implement substitute cards.
 - `style.css` imports the production stylesheet. Only document scrolling, entry animation, off-screen row skipping, and the surrounding review shell are adjusted. Card-body and subagent height caps are unchanged.
 - `scripts/chat-view-mockup.mjs` bundles with the existing esbuild dependency and serves from loopback with `Cache-Control: no-store`. No installation or application-server restart is needed.
-- `npm run test:chat-mockup` tests tool inventory, expanded bodies, three rendering paths, stable open/closed replay, result transitions, filters, image zoom, local question/authorization actions, runtime errors, and narrow-width overflow. It is also included in `test:browser-build`.
+- `npm run test:chat-mockup` tests direct loading and delivery through the production preview proxy, tool inventory, expanded bodies, three rendering paths, stable open/closed replay, result transitions, filters, image zoom, local question/authorization actions, runtime errors, and narrow-width overflow. It also checks that demo decisions cannot reach an app-origin API and is included in `test:browser-build`.
 
 ```bash
 npm run test:chat-mockup

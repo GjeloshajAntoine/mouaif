@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { TOOL_GROUPS } from '../frontend/src/toolGroups.js';
@@ -17,6 +18,17 @@ assert.equal(new Set(TOOL_CASES.map(test => test.name)).size, TOOL_CASES.length,
 assert.deepEqual(TOOL_CASES.filter(test => nativeNames.includes(test.name)).map(test => test.name).sort(), nativeNames,
   'every native tool has a deliberate fixture; new catalog tools must add one');
 const server = await serveMockup();
+// Reproduce the exact proxy delivery path used on a phone. No live app,
+// authentication bypass, or real authorization endpoint is involved.
+const { handlePreviewProxy } = require('../src/previewProxy.js');
+let escapedApiRequests = 0;
+const proxy = http.createServer(async (req, res) => {
+  const parsed = new URL(req.url, 'http://localhost');
+  if (await handlePreviewProxy(req, res, parsed)) return;
+  if (parsed.pathname.startsWith('/api/')) escapedApiRequests++;
+  res.writeHead(404); res.end('No app endpoint in this fixture');
+});
+await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
 let chrome, cdp, profile;
 try {
   const binary = findChrome();
@@ -50,6 +62,11 @@ try {
   await cdp.send('Page.navigate', { url: 'http://127.0.0.1:' + server.address().port + '/' });
   for (let i = 0; i < 100 && !await evaluate('!!window.mockup?.ready'); i++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(await evaluate('!!window.mockup?.ready'), true, 'review fixture loaded');
+
+  const proxyUrl = 'http://127.0.0.1:' + proxy.address().port + '/api/preview/http/127.0.0.1:' + server.address().port + '/';
+  await cdp.send('Page.navigate', { url: proxyUrl });
+  for (let i = 0; i < 100 && !await evaluate('!!window.mockup?.ready'); i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(await evaluate('!!window.mockup?.ready'), true, 'cards load through the production preview proxy');
 
   for (const width of [360, 390, 430]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
@@ -136,10 +153,12 @@ try {
   const isolation = await fetch('http://127.0.0.1:' + server.address().port + '/api/chats');
   assert.equal(isolation.status, 404, 'preview has no live app API');
   assert.equal(exceptions.length, 0);
-  console.log('PASS all ' + nativeNames.length + ' native tools + MCP/fallback, 3 render paths, state retention, filters, isolation, and 360/390/430px widths');
+  assert.equal(escapedApiRequests, 0, 'fixture interactions never reach an app-origin API');
+  console.log('PASS all ' + nativeNames.length + ' native tools + MCP/fallback, production preview proxy, 3 render paths, state retention, filters, isolation, and 360/390/430px widths');
 } finally {
   cdp?.close();
   if (chrome) { const exited = new Promise(resolve => chrome.once('exit', resolve)); chrome.kill(); await exited; }
+  proxy.closeAllConnections(); await new Promise(resolve => proxy.close(resolve));
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   if (profile) fs.rmSync(profile, { recursive: true, force: true });
 }

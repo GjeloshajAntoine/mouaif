@@ -16,6 +16,17 @@ export async function buildMockup() {
     loader: { '.svg': 'dataurl', '.png': 'dataurl', '.woff2': 'dataurl', '.woff': 'dataurl' }
   });
   const files = new Map(bundle.outputFiles.map(file => [path.basename(file.path), file.contents]));
+  // The app's local-preview proxy rewrites root paths in JavaScript, but its
+  // text matcher also mistakes regex literals for paths and breaks this real
+  // renderer bundle. Transport the unchanged bundle as a data-script URL so
+  // the existing proxy only sees a small loader, not executable source to
+  // rewrite. No eval, tool execution, or app-server change is needed.
+  const scriptUrl = 'data:text/javascript;base64,' + Buffer.from(files.get('mockup.js')).toString('base64');
+  files.set('mockup.js', Buffer.from(
+    'const script = document.createElement("script");\n'
+    + 'script.src = ' + JSON.stringify(scriptUrl) + ';\n'
+    + 'document.body.appendChild(script);\n'
+  ));
   // Keep one predictable stylesheet name in the standalone HTML.
   files.set('mockup.css', files.get('style.css'));
   files.delete('style.css');

@@ -6,6 +6,20 @@ import { appendToolCallCard, appendToolResultCard, handleShellOutputEvent,
 import { askUserCard, authorizationCard } from '../../frontend/src/components/chat/cards.js';
 import { TOOL_CASES, LONG_CASE, IMAGE, refs } from './fixtures.js';
 
+// Keep production approval/question controls local even when this page is
+// served through the app-origin preview proxy (which cannot forward POST).
+// Never send synthetic decisions to the real app's authorization endpoint.
+const browserFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href);
+  if (url.pathname.startsWith('/api/')) {
+    const decision = url.pathname === '/api/tools/authorization/decision' && init?.method === 'POST';
+    return Promise.resolve(new Response(JSON.stringify(decision ? { ok: true } : { error: 'Preview has no app API' }),
+      { status: decision ? 200 : 404, headers: { 'Content-Type': 'application/json' } }));
+  }
+  return browserFetch(input, init);
+};
+
 const tools = document.querySelector('#tools');
 const states = document.querySelector('#states');
 const status = document.querySelector('#review-status');
@@ -132,7 +146,7 @@ for (const [id, title, test, note] of [
 const question = panel(states, 'pending-question', 'Question awaiting an answer', 'Interactive locally: answering never posts to a server.');
 askUserCard({ callId: 'review-question', ...TOOL_CASES.find(test => test.name === 'ask_user').args,
   multiSelect: false, presets: ['Expanded tools'] }, '/demo/project', 'demo-chat', question.refs, () => {});
-const approval = panel(states, 'pending-approval', 'Tool awaiting approval', 'Production authorization card; decisions are handled by the isolated preview server only.');
+const approval = panel(states, 'pending-approval', 'Tool awaiting approval', 'Production authorization card; demo decisions stay inside this page, never in the real app.');
 void authorizationCard({ callId: 'review-approval', tool: 'shell', cmd: 'node --check src/example.js', timeoutMs: 30000 },
   '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] });
 
