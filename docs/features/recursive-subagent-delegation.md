@@ -2,11 +2,11 @@
 
 ## Overview
 
-Subagents can delegate to children and create/coördinate their own cooperative groups when the root depth budget enables recursion. One root turn owns the entire tree; each local parent controls only its direct children, and conflicts escalate upward without automatic consensus, merges or rollback.
+Subagents can delegate to their own nested subagents and create/coördinate their own cooperative groups by default, bounded by a finite root depth budget. One root turn owns the entire tree; each local parent controls only its direct children, and conflicts escalate upward without automatic consensus, merges or rollback.
 
 ## Usage
 
-Set finite app/project settings before starting a root turn:
+Recursion works out of the box. To change the budgets, set finite app/project settings before starting a root turn:
 
 ```json
 {
@@ -18,7 +18,7 @@ Set finite app/project settings before starting a root turn:
 }
 ```
 
-Defaults are depth **1**, concurrency **4**, total admitted runs **32**. Depth 1 preserves non-recursive behavior; increase it to opt in. Depth accepts 1–8, concurrency 1–32 and total runs 1–256. Invalid, infinite or non-integer limits reject before execution. Limits are captured at root start; a child cannot reset or increase them.
+Defaults are depth **3**, concurrency **4**, total admitted runs **32**: the root's child and grandchild can each launch subagents, and the depth-3 leaf cannot. Set `maxDepth: 1` to opt out of recursion (children then do not see launch/control tools). Depth accepts 1–8, concurrency 1–32 and total runs 1–256. Invalid, infinite or non-integer limits reject before execution. Limits are captured at root start; a child cannot reset or increase them.
 
 Use the same `subagent` tool synchronously or with `background:true`. Children inherit the actual advertised parent tool surface, then the selected agent may narrow it. A recursive child can declare a local group using `subagent_group_create`, launch its members and use immediate status, read-only messages, explicit sends, cancellation and contract approval on its own children/groups. Depth-exhausted children do not advertise launch/control tools, and forged launches still hit the depth guard.
 

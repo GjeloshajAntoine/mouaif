@@ -6,6 +6,11 @@ const PARENT_TOOLS = Object.freeze(['subagent_messages', 'subagent_status', 'sub
 const SIBLING_TOOLS = Object.freeze(['subagent_publish', 'subagent_read', 'subagent_group_status', 'subagent_decision', 'subagent_conflict']);
 const TOOL_NAMES = Object.freeze([...PARENT_TOOLS, ...SIBLING_TOOLS]);
 const FAMILY_NAMES = Object.freeze(['subagent', ...TOOL_NAMES]);
+// Root-tree budgets when settings omit subagentLimits. Depth 3 lets a child
+// and a grandchild delegate by default (root → child → grandchild → leaf);
+// the leaf level stops advertising launch/control tools. Settings may lower
+// it to 1 for non-recursive delegation or raise it to 8.
+const DEFAULT_LIMITS = Object.freeze({ maxDepth: 3, maxConcurrent: 4, maxRuns: 32 });
 const error = (code, message) => Object.assign(new Error(message), { code });
 const spec = (name, description, properties, required = []) => ({ type: 'function', function: {
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
@@ -49,7 +54,8 @@ class Scope {
     if (!parentScope) {
       this.allRuns = new Map(); this.scopes = new Set(); this.escalations = []; this.publicationCount = 0; this.active = 0; this.queue = [];
       this.limits = {};
-      for (const [name, fallback, max] of [['maxDepth', 1, 8], ['maxConcurrent', 4, 32], ['maxRuns', 32, 256]]) {
+      for (const [name, max] of [['maxDepth', 8], ['maxConcurrent', 32], ['maxRuns', 256]]) {
+        const fallback = DEFAULT_LIMITS[name];
         const value = limits[name] ?? fallback;
         if (!Number.isInteger(value) || value < 1 || value > max) throw error('EBADINPUT', name + ' must be a finite integer from 1 to ' + max);
         this.limits[name] = value;
@@ -329,4 +335,4 @@ class Scope {
   }
 }
 
-module.exports = { Scope, SPECS, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS };
+module.exports = { Scope, SPECS, DEFAULT_LIMITS, TOOL_NAMES, FAMILY_NAMES, PARENT_TOOLS, SIBLING_TOOLS };

@@ -21,7 +21,9 @@ const server = http.createServer((req, res) => {
     if (nested) {
       childStarted = true;
       assert.ok(body.messages.some((m) => typeof m.content === 'string' && m.content.includes('shared HTTP goal')));
-      assert.ok(!body.tools.some((t) => t.function.name === 'subagent_group_update'));
+      // Default depth budget: a member is a local parent for its own groups;
+      // approving the parent's group is still rejected by validateControl.
+      assert.ok(body.tools.some((t) => t.function.name === 'subagent_group_update'));
       const last = body.messages.filter((m) => m.role === 'tool').at(-1);
       if (!last) return send('subagent_publish', { name: 'HTTP-artifact', summary: 'ready', files: ['src/a.js'] }, 'artifact');
       return send();

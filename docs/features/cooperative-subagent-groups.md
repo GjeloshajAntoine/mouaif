@@ -2,7 +2,7 @@
 
 ## Overview
 
-A cooperative group gives turn-scoped subagent work a shared objective, declared members and dependency readiness. Each local parent coordinates its own children and approves only its own group contracts. Recursive delegation is opt-in, rooted in one finite-budget run tree; conflicts can escalate upward to the root. No automatic consensus, merges or rollback.
+A cooperative group gives turn-scoped subagent work a shared objective, declared members and dependency readiness. Each local parent coordinates its own children and approves only its own group contracts. Recursive delegation is on by default, rooted in one finite-budget run tree; conflicts can escalate upward to the root. No automatic consensus, merges or rollback.
 
 ## Usage
 
@@ -51,7 +51,7 @@ Status does not wait and rejects `waitMs`. Observation tools share a 256-call tu
 
 ## Limits and permissions
 
-All twelve Subagent-family functions retain the existing gate and per-leaf overrides. Child-visible metadata/proposal tools still honor the parent's tool selection and the agent allowlist; forged cross-scope and ancestor controls fail before approval. No new REST endpoint, persistent scratchpad, consensus process, automatic merge or rollback is added. See [Recursive delegation](recursive-subagent-delegation.md) for opt-in nested child/group controls and root-shared budgets.
+All twelve Subagent-family functions retain the existing gate and per-leaf overrides. Child-visible metadata/proposal tools still honor the parent's tool selection and the agent allowlist; forged cross-scope and ancestor controls fail before approval. No new REST endpoint, persistent scratchpad, consensus process, automatic merge or rollback is added. See [Recursive delegation](recursive-subagent-delegation.md) for default-on nested child/group controls and root-shared budgets.
 
 Limits: eight groups per turn, 32 members per group, 32 delegations total by default (configurable root budget), 64 decisions/conflicts per group, 64 artifacts per turn, 64 send receipts per child, 16 queued messages, and 256 observation calls. Handles disappear when the parent turn ends or the worker restarts. Shared summaries and model prose are not a secrecy boundary.
 

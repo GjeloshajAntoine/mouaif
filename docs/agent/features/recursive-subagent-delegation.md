@@ -2,11 +2,11 @@
 
 ## Overview
 
-This user-approved correction extends committed cooperative groups `d9786e18` in the existing isolated follow-up worktree. The old blanket nested `EPARENT_ONLY`/no-recursion contract is superseded by rooted local-parent controls and opt-in finite budgets.
+This user-approved correction extends committed cooperative groups `d9786e18` in the existing isolated follow-up worktree. The old blanket nested `EPARENT_ONLY`/no-recursion contract is superseded by rooted local-parent controls and finite budgets (default `maxDepth` 3, so nested subagents can delegate without configuration).
 
 ## Usage
 
-See [public contract](../../features/recursive-subagent-delegation.md). Configure `subagentLimits` before a root turn, then use the existing tools; no tool names, REST endpoints or default port change.
+See [public contract](../../features/recursive-subagent-delegation.md). Optionally configure `subagentLimits` before a root turn (default depth 3; `maxDepth: 1` disables recursion), then use the existing tools; no tool names, REST endpoints or default port change.
 
 ```bash
 npm run test:subagent-recursion
@@ -24,7 +24,7 @@ npm run test:subagent-prompt
 
 ## Verification and limitations
 
-Scope tests cover default opt-in, invalid finite limits, identities, local control, ancestor deadlock rejection, scoped artifacts, upward arbitration, depth/total/provider concurrency limits and subtree abort. The HTTP fixture demonstrates real two-level synchronous recursion with concurrency 1 and a child-created background member group with concurrency 2, inherited forged-tool rejection and exact descendant prompt/completion/live/final cost totals. Scope tests also verify a common bounded shutdown deadline across a hung subtree, late completion callbacks exactly once, queued provider cancellation and inherited Off rejection before effects. Existing group/HTTP/orchestration, workspace/serve smoke, cost and authorization regressions remain required.
+Scope tests cover the default depth-3 budget, `maxDepth: 1` opt-out, invalid finite limits, identities, local control, ancestor deadlock rejection, scoped artifacts, upward arbitration, depth/total/provider concurrency limits and subtree abort. The HTTP fixture demonstrates real two-level synchronous recursion with concurrency 1 and a child-created background member group with concurrency 2, inherited forged-tool rejection and exact descendant prompt/completion/live/final cost totals. Scope tests also verify a common bounded shutdown deadline across a hung subtree, late completion callbacks exactly once, queued provider cancellation and inherited Off rejection before effects. Existing group/HTTP/orchestration, workspace/serve smoke, cost and authorization regressions remain required.
 
 Verified: recursion/group/subagent-prompt suites, workspace/serve smoke, delegated live/total cost, authorization-clear-grants, stream-abort, tool-feedback, tool catalog, prompt/snapshot, static containment/compression, touched-file syntax, web build, docs link/internal builds and published-site consistency. No new UI layout was introduced; existing generic nested cards are reused. The web build retains the existing large-chunk warning.
 

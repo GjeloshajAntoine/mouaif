@@ -37,7 +37,7 @@ Only the parent can list, message or stop runs. Children see publish/read and th
 
 ### Cooperative groups
 
-See [Cooperative subagent groups](cooperative-subagent-groups.md) for objective/member declarations, dependency readiness, workspace-aware artifact discovery, proposed versus parent-approved contracts, conflicts and arbitration. Each local parent coordinates its own children; [recursive delegation](recursive-subagent-delegation.md) is opt-in through shared finite root limits.
+See [Cooperative subagent groups](cooperative-subagent-groups.md) for objective/member declarations, dependency readiness, workspace-aware artifact discovery, proposed versus parent-approved contracts, conflicts and arbitration. Each local parent coordinates its own children; nested subagents can delegate further by default ([recursive delegation](recursive-subagent-delegation.md), depth 3, shared finite root limits).
 
 ### Ending the turn
 

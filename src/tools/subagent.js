@@ -2,13 +2,13 @@
 
 // Native `subagent` tool — delegates a focused prompt to a nested model call.
 // Nested calls inherit the model and a narrowed project tool surface. Recursive
-// launch is opt-in through root-shared finite subagentLimits. Tool authorization is
+// launch is on by default and bounded by root-shared finite subagentLimits. Tool authorization is
 // still enforced by the normal gate. The result is returned as an ordinary tool
 // result for the parent assistant to summarize or use. When the model emits
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Recursive delegation is allowed when root subagentLimits.maxDepth exceeds 1; local parents control only their own children within shared finite budgets. Set background:true to get a turn-scoped handle and steer with subagent_send and observe with subagent_messages/status/stop; unfinished children are cancelled when the parent turn ends. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
+const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Nested subagents may delegate further up to the root subagentLimits.maxDepth (default 3); local parents control only their own children within shared finite budgets. Set background:true to get a turn-scoped handle and steer with subagent_send and observe with subagent_messages/status/stop; unfinished children are cancelled when the parent turn ends. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 

@@ -40,7 +40,17 @@ const result = () => ({ ok: true, result: { text: 'done' } });
   root.stop(a); assert.ok(b.controller.signal.aborted);
   resolveB(result()); resolveA(result()); await a.promise; await root.finish();
   assert.equal(root.allRuns.size, 0);
-  const depth = new Scope('/p', 'c');
+  // Default budget lets nested subagents delegate (root -> child -> grandchild -> leaf).
+  const defaults = new Scope('/p', 'c');
+  assert.deepEqual(defaults.limits, { maxDepth: 3, maxConcurrent: 4, maxRuns: 32 });
+  const d1 = defaults.start('d1', '', () => new Promise(() => {}), () => {}); await tick();
+  const d2 = defaults.child(d1).start('d2', '', () => new Promise(() => {}), () => {}); await tick();
+  const d3 = defaults.child(d1).child(d2).start('d3', '', () => new Promise(() => {}), () => {}); await tick();
+  assert.equal(d3.depth, 3);
+  assert.throws(() => defaults.child(d1).child(d2).child(d3).start('d4', '', async () => result(), () => {}), { code: 'EDEPTH' });
+  await defaults.finish();
+  // maxDepth 1 still opts out of recursion.
+  const depth = new Scope('/p', 'c', null, { maxDepth: 1 });
   const parent = depth.start('p', '', () => new Promise(() => {}), () => {}); await tick();
   assert.throws(() => depth.child(parent).start('too-deep', '', async () => result(), () => {}), { code: 'EDEPTH' });
   await depth.finish();

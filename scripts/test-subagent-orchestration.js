@@ -171,7 +171,9 @@ async function integration() {
       assert.ok(steeringObserved);
       const wireIds = settled[0].data.result.toolEvents.filter((e) => e.name === 'tool_call').map((e) => e.data.id);
       assert.ok(wireIds.every((id) => /^[A-Za-z0-9_-]+$/.test(id)), 'namespaced tool IDs remain provider-compatible');
-        for (const name of ['subagent', ...PARENT_TOOLS]) assert.ok(!nestedTools.includes(name), name + ' parent only');
+        // Default depth budget (3): a child is itself a local parent, so it
+        // keeps launch/control tools for its own nested subagents.
+        for (const name of ['subagent', ...PARENT_TOOLS]) assert.ok(nestedTools.includes(name), name + ' available to nested subagent by default');
         for (const name of SIBLING_TOOLS) assert.ok(nestedTools.includes(name));
         assert.deepEqual(settled[0].data.result.published, ['draft']);
         const done = events.find((e) => e.name === 'done');
