@@ -1,5 +1,18 @@
 # Chat element mockup — maintainer notes
 
+## Current tool review
+
+Use the tracked [chat view mockup](../../features/chat-view-mockup.md) for current
+expanded tool states: `npm run mockup:chat` builds the real renderers from
+`scripts/chat-view-mockup/`. Its coverage test tracks all native tools in
+`frontend/src/toolGroups.js` and checks live, result-first, and persisted replay
+at phone widths. Source and fixtures are committed; only build output lives
+under `.mouaif/`.
+
+The older catalogue described below remains useful for bubbles, header cards,
+and usage chips, but is legacy local scaffolding, not the source of truth for
+tool coverage. Do not recreate its old 11-tool list as the current inventory.
+
 ## Overview
 
 `mouaif` has no component library or storybook: every chat element is

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>mouaif — expanded tool review</title>
+  <link rel="stylesheet" href="./mockup.css">
+</head>
+<body>
+  <header class="review-header">
+    <h1>Chat tool review</h1>
+    <p>Real renderers, synthetic data. No tools run and no chats or settings are changed.</p>
+    <p id="coverage" role="status"></p>
+  </header>
+  <nav class="review-controls" aria-label="Review controls">
+    <label>Find a tool<input id="search" type="search" placeholder="Tool name or family"></label>
+    <label>Family<select id="family"><option value="all">All families</option></select></label>
+    <label>Render path<select id="render-path"><option value="call-first">Live: call → result</option><option value="result-first">Result first with recovered arguments</option><option value="reconciled">Persisted transcript replay</option></select></label>
+    <div class="review-actions">
+      <button id="expand" type="button">Expand all</button>
+      <button id="collapse" type="button">Collapse all</button>
+      <button id="reconcile" type="button">Replay unchanged</button>
+    </div>
+    <p id="review-status" role="status" aria-live="polite">All result cards start expanded. Production height caps stay intact.</p>
+  </nav>
+  <main>
+    <section class="review-findings" aria-labelledby="findings-title">
+      <h2 id="findings-title">What to check</h2>
+      <ul>
+        <li><a href="#state-transition">State retention</a>: opening a running card must survive its successful result and an unchanged replay.</li>
+        <li><a href="#long-command">Hidden output</a>: long arguments can fill the 40dvh body before any result is visible. Scroll inside the card.</li>
+        <li><a href="#tool-get_settings">Missing detail</a>: the generic preview skips nested objects and arrays. A settings result can show only its scope; some results say “(no preview)”.</li>
+        <li><a href="#tool-shell">Small, tap-only headers</a>: the ordinary header is below the 44px touch target and is not keyboard-focusable. Role alone is not keyboard support.</li>
+        <li><a href="#tool-group_read">Partial failures</a>: a successful batch envelope can still contain failed entries; check whether the head makes this clear.</li>
+      </ul>
+    </section>
+    <section aria-labelledby="tools-title">
+      <h2 id="tools-title">Every tool, expanded</h2>
+      <p id="visible-count" role="status"></p>
+      <div id="tools"></div>
+      <p id="no-matches" hidden>No matching tools. Clear the search or choose another family.</p>
+    </section>
+    <section id="states" aria-labelledby="states-title"><h2 id="states-title">Live, failure, and interaction states</h2></section>
+  </main>
+  <script src="./mockup.js"></script>
+</body>
+</html>
