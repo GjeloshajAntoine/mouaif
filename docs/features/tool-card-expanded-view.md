@@ -6,7 +6,7 @@ Every tool call the model makes renders as a compact card in the transcript: one
 
 ## Usage
 
-Tap a tool card's header row to expand or collapse it.
+Tap a tool card's header row to expand or collapse it, or focus it and press Enter/Space. Headers have a 44px minimum touch target and announce their expanded state. See [Readable tool approvals and results](./tool-card-usability.md).
 
 | Tool | Expanded card shows |
 | --- | --- |
@@ -26,7 +26,7 @@ Behavior notes:
 - **A listed path or a matched line wraps, never clips.** These rows used `text-overflow: ellipsis`; the expanded card is the only place a result is readable, so a clipped row meant the content was nowhere.
 - **Successful cards default to collapsed.** If the user explicitly opened a running card, its successful result keeps it open. A deliberate collapse also survives the result. Automatic live expansion alone does not override the default.
 - **Failed cards auto-expand**, so the error is visible without a tap.
-- **One scroller per card.** The card body is the only part of an expanded card that scrolls vertically. The arguments block and the live or final output grow inside it and scroll with it, so on a touch screen a swipe never gets caught by a smaller box nested inside the card. A very long command pushes the output further down, but both stay inside the body's height cap (`scripts/test-tool-card-single-scroller.js`).
+- **One scroller per card.** The card body is the only part of an expanded card that scrolls vertically. The arguments block and the live or final output grow inside it and scroll with it, so on a touch screen a swipe never gets caught by a smaller box nested inside the card. A long request starts folded under **show full request**, so output is not buried; opening it reveals the full request inside that same body's height cap (`scripts/test-tool-card-single-scroller.js`).
 - **A shell card is one terminal.** The command is not a separate surface: no second colour, and no divider line between the command and its output. The two sections are separated by space alone.
 - **That terminal is one visible box.** The background, border, radius and padding live on the card body element itself, not on either section; the command and the output are both transparent inside it, so the card reads as a single bounded terminal against the page rather than as unboxed text. Without this the body was invisible on a dark theme, because its colour (`--bg`) is the same as the page behind it. The surface cannot live on a child: which child carried it would depend on render order, and on the error path the status line is drawn *between* the command and the output, so a child border would split one card into two.
 - **Long output scrolls inside the card**, capped at 40% of the viewport height.

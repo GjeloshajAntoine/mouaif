@@ -8,7 +8,8 @@ import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
-import { groupAuthKey, isBinaryTool, FAMILY_OF } from '../../toolGroups.js';
+import { groupAuthKey, isBinaryTool, FAMILY_OF, TOOL_GROUPS } from '../../toolGroups.js';
+import { approvalTitle, approvalText, permissionExplanation } from './approvalDetails.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -624,7 +625,7 @@ function knownToolNames(state) {
 // second time beside the new one.
 export function removePendingAuthorizationCards(refs) {
   if (!refs || !refs.transcript || !refs.transcript.current) return;
-  const selector = '.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id]';
+  const selector = '.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id], [data-auth-decision-id]';
   for (const card of refs.transcript.current.querySelectorAll(selector)) {
     card.remove();
   }
@@ -689,7 +690,7 @@ host._selected = () => selected;
 return host;
 }
 
-export function authorizationCard(request, projectDir, chatId, refs, resume, state, { autoFocus = true } = {}) {
+export function authorizationCard(request, projectDir, chatId, refs, resume, state, { autoFocus = true, autoScroll = true } = {}) {
   return new Promise((resolve) => {
     if (!refs.transcript.current || request.signal?.aborted) return resolve('deny');
     const card = document.createElement('div');
@@ -709,17 +710,14 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1 5h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg>';
     const name = document.createElement('div');
     name.className = 'tool-card__name';
-    name.textContent = request.tool === 'change_working_folder' ? 'Change working folder' : request.tool || 'tool';
+    name.textContent = approvalTitle(request);
     const title = document.createElement('div');
     title.className = 'tool-card__role';
     title.textContent = request.tool === 'change_working_folder' ? 'permission needed' : 'authorization required';
     head.appendChild(icon); head.appendChild(name); head.appendChild(title);
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
-    detail.textContent = request.tool === 'change_working_folder'
-    ? [request.summary || 'Change where this chat works', 'Project: ' + request.projectDir].join('\n')
-    : [request.summary || request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
-      .filter(Boolean).join('\n');
+    detail.textContent = approvalText(request);
     // A delegation that shares chat images lists them (names only, no
     // pixels), so the user knows what goes to the delegated model.
     const sharedImages = request.tool === 'subagent' && Array.isArray(request.images) ? request.images : [];
@@ -734,6 +732,40 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     const modelPicker = buildAuthModelPicker(state, request, projectDir);
     const actions = document.createElement('div');
     actions.className = 'tool-card__actions';
+    const feedback = document.createElement('p');
+    feedback.className = 'tool-card__decision-status';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    feedback.textContent = 'Waiting for your approval';
+    const more = document.createElement('details');
+    more.className = 'tool-card__permission-options';
+    const moreTitle = document.createElement('summary');
+    moreTitle.textContent = 'More permission options';
+    more.appendChild(moreTitle);
+    const explanation = document.createElement('p');
+    explanation.textContent = permissionExplanation(request, TOOL_GROUPS.find(group => group.authKey === FAMILY_OF[request.tool])?.tools || []);
+    more.appendChild(explanation);
+    const confirmScope = document.createElement('label');
+    const scopeCheck = document.createElement('input');
+    scopeCheck.type = 'checkbox';
+    confirmScope.appendChild(scopeCheck);
+    const scopeLabel = document.createElement('span');
+    scopeLabel.textContent = 'I understand the broader scope above';
+    confirmScope.appendChild(scopeLabel);
+    more.appendChild(confirmScope);
+    let deleteCheck;
+    let confirmDelete;
+    if (request.tool === 'delete_chat') {
+    confirmDelete = document.createElement('label');
+    confirmDelete.className = 'tool-card__delete-confirm';
+    deleteCheck = document.createElement('input'); deleteCheck.type = 'checkbox';
+    confirmDelete.appendChild(deleteCheck);
+    const label = document.createElement('span'); label.textContent = 'Delete the named chat and its transcript permanently';
+    confirmDelete.appendChild(label);
+    }
+    let pending = false;
+    let settled = false;
+    let retryDecision = null;
     const buttons = [];
     for (const [decision, label, shortcut] of [
       ['allow-once', 'Allow once', '1'],
@@ -744,12 +776,25 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'btn' + (decision === 'deny' ? ' btn--danger' : '');
-      button.textContent = label + ' [' + shortcut + ']';
+      button.textContent = label;
+      button.title = 'Keyboard: ' + shortcut;
       button.setAttribute('aria-label', label + ' (' + shortcut + ')');
       button.dataset.shortcut = shortcut;
       button.addEventListener('click', async () => {
-        for (const child of actions.querySelectorAll('button')) child.disabled = true;
-        const body = { projectDir, chatId, callId: request.callId, decision };
+      if (pending || settled) return;
+      if (decision !== 'deny' && deleteCheck && !deleteCheck.checked) {
+      feedback.textContent = 'Confirm deletion of the named chat first.'; return;
+      }
+      if (decision === 'allow-session' || decision === 'allow-always') {
+      if (!more.open || !scopeCheck.checked) {
+        more.open = true; feedback.textContent = 'Review and confirm the broader permission scope first.'; return;
+      }
+      }
+      pending = true;
+      feedback.textContent = 'Sending…';
+      card.setAttribute('aria-busy', 'true');
+      for (const child of buttons) child.disabled = true;
+      const body = { projectDir, chatId, callId: request.callId, decision };
         // Fold the picked model + thinking level into the decision
         // payload so the subagent dispatcher can run this call on them.
         // Only when the card showed a picker and the user chose a
@@ -768,27 +813,43 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
           }
           if (Object.keys(payload).length) body.payload = payload;
         }
+        try {
         const r = await fetchJson('/api/tools/authorization/decision', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        if (r.status !== 200) {
-          for (const child of actions.querySelectorAll('button')) child.disabled = false;
-          if (refs.status.current) {
-            refs.status.current.textContent = 'authorization failed: HTTP ' + r.status;
-            refs.status.current.dataset.state = 'error';
-          }
-          return;
+        if (r.status !== 200) throw new Error('HTTP ' + r.status);
+        } catch (error) {
+        pending = false;
+        card.setAttribute('aria-busy', 'false');
+        for (const child of buttons) child.disabled = false;
+        feedback.textContent = 'Could not confirm your decision. Retry, or check the chat if the connection was interrupted.';
+        retryDecision = decision; retry.hidden = false;
+        return;
         }
+        if (request.signal?.aborted) return;
+        settled = true; pending = false;
+        card.setAttribute('aria-busy', 'false');
         request.signal?.removeEventListener('abort', cancel);
-        card.remove();
-        if (decision !== 'deny' && typeof resume === 'function') await resume();
+        card.dataset.decision = decision;
+        feedback.textContent = decision === 'deny' ? 'Denied' : 'Approved';
+        actions.hidden = true; more.hidden = true; retry.hidden = true;
+        // Keep visible feedback until the corresponding call/result replaces
+        // this overlay. The pending queue must no longer discover it.
+        card.dataset.authDecisionId = request.callId || '';
+        delete card.dataset.authCallId;
+        card.classList.add('tool-card--decided');
         resolve(decision);
+        if (decision !== 'deny' && typeof resume === 'function') {
+        try { await resume(); } catch { feedback.textContent = 'Approved, but resuming failed. Check the chat before retrying the tool.'; }
+        }
       });
-      actions.appendChild(button);
+      if (decision === 'allow-session' || decision === 'allow-always') more.appendChild(button);
+      else actions.appendChild(button);
       buttons.push(button);
     }
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.className = 'btn'; retry.textContent = 'Retry decision'; retry.hidden = true;
+    retry.addEventListener('click', () => buttons.find(button => button.dataset.shortcut === ({ 'allow-once': '1', 'allow-session': '2', 'allow-always': '3', deny: '4' })[retryDecision])?.click());
     // Keyboard shortcuts: 1-4 to select, Esc to deny.
 //
 // Scoped to the card's own controls. The card also hosts the per-run subagent
@@ -812,16 +873,19 @@ if (b) { b.click(); }
 card.addEventListener('keydown', onKey);
     // Live prompts focus the first decision for keyboard shortcuts. A review
     // catalogue can opt out so mounting many examples does not jump the page.
-    if (autoFocus && buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
+    if (autoFocus && buttons[0]) { setTimeout(() => { if (!settled && card.isConnected) buttons[0].focus(); }, 100); }
     card.appendChild(head); card.appendChild(detail);
+    if (confirmDelete) card.appendChild(confirmDelete);
     if (modelPicker) card.appendChild(modelPicker);
-    card.appendChild(actions);
+    card.appendChild(actions); card.appendChild(more); card.appendChild(feedback); card.appendChild(retry);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);
     // The card must be visible the moment it lands — a question or
     // authorization prompt that mounts below the fold is the same as
     // not mounting it at all.
-    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
+    if (autoScroll) {
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
+    }
   });
 }
 

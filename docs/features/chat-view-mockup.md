@@ -44,29 +44,17 @@ The successful-result handler treated both an untouched card and an explicitly o
 
 The handler now distinguishes an explicit open (`_userCollapsed === false`) from the untouched default. Explicitly opened cards stay open; deliberately closed cards stay closed; untouched successful cards still default to collapsed. This is an in-session state fix, not new persistence across a full browser reload.
 
-### Open: ordinary headers are too small and not keyboard accessible
+### Implemented: approval and result usability
 
-In the phone fixture, an ordinary expanded shell header measures approximately 14.4 CSS pixels high, below the 44px touch-target requirement. It is a `div` with `role="button"`, but has no tab stop, Enter/Space handler, or `aria-expanded` state. Dense neighboring cards make accidental taps likely.
+The production cards now address the review findings, rather than hiding them with mockup-only styles:
 
-Suggested follow-up: use a properly named keyboard-operable control with a 44px target and expose its expanded state, without making nested controls part of that button.
+- Ordinary headers have a 44px minimum target, keyboard focus, Enter/Space support, and expanded-state announcements.
+- Generic results retain nested data and provide **View full details (bounded)** instead of discarding objects and arrays.
+- Long requests start folded behind **show full request**, leaving output accessible while preserving one card-body scroller and production height caps.
+- Mixed batches show a warning-colored **Partial success** state, with success/failure counts retained.
+- Approval cards show plain-language actions, proposed arguments, available before snapshots, named chats, and working folders. Broader grants require scope acknowledgement; decisions show pending, retry, and approved/denied feedback in place. Catalogue mounts opt out of autofocus and auto-scroll.
 
-### Open: generic previews can hide the actual result
-
-The generic formatter displays scalar top-level fields, but skips nested objects and arrays. This is worse than a large JSON dump: `get_settings` can display only `scope: project`, `search_models` can omit the model rows, and the unknown-tool example containing only an array displays `(no preview)` despite having data. The preview should make the useful outcome readable and retain a bounded route to the full structured result.
-
-Suggested follow-up: mobile summaries for common app/orchestration results and a bounded structured fallback. Keep request and response distinguishable.
-
-### Open: long arguments hide output below the fold
-
-The long-command example has about 790px of content inside a roughly 318px body at an 800px viewport height. Output follows the complete command, so the first view can contain no output and offer little indication that more is below.
-
-Suggested follow-up: a visible output jump or independently collapsible long request, preserving one vertical scroller per card. Do not “fix” the review by lifting the production height cap.
-
-### Review: partial success is informative but visually mixed
-
-The grouped-read example says `1 succeeded · 1 failed`, while the envelope still has an `ok` status dot. The summary already contains the failure count; the review should not claim it is absent. A warning/partial-success treatment would reduce the conflicting signals.
-
-These remaining findings are documented, not silently restyled by the mockup. Their fixes should be separately tested and reviewed.
+See [Readable tool approvals and results](./tool-card-usability.md) for usage, limits, and permission semantics. Existing modes and grants are unchanged. Rich bespoke summaries for every external MCP tool are outside this generic review harness.
 
 ## Review coverage
 

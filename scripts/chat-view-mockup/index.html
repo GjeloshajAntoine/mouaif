@@ -30,10 +30,10 @@
       <h2 id="findings-title">What to check</h2>
       <ul>
         <li><a href="#state-transition">State retention</a>: opening a running card must survive its successful result and an unchanged replay.</li>
-        <li><a href="#long-command">Hidden output</a>: long arguments can fill the 40dvh body before any result is visible. Scroll inside the card.</li>
-        <li><a href="#tool-get_settings">Missing detail</a>: the generic preview skips nested objects and arrays. A settings result can show only its scope; some results say “(no preview)”.</li>
-        <li><a href="#tool-shell">Small, tap-only headers</a>: the ordinary header is below the 44px touch target and is not keyboard-focusable. Role alone is not keyboard support.</li>
-        <li><a href="#tool-group_read">Partial failures</a>: a successful batch envelope can still contain failed entries; check whether the head makes this clear.</li>
+        <li><a href="#long-command">Readable output</a>: long requests start folded. Open “show full request” to inspect the command.</li>
+        <li><a href="#tool-get_settings">Complete detail</a>: nested results remain visible; use “View full details” for the bounded structured preview.</li>
+        <li><a href="#tool-shell">Accessible headers</a>: try tap, Tab, Enter, and Space; ordinary headers now have a 44px target.</li>
+        <li><a href="#tool-group_read">Partial failures</a>: mixed batches use a warning-colored “Partial success” status.</li>
       </ul>
     </section>
     <section aria-labelledby="tools-title">

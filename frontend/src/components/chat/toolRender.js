@@ -51,11 +51,12 @@ function buildToolArgs(args, name) {
   // non-empty string, which would render an "Arguments" block containing
   // nothing useful. A call with no arguments shows no block.
   if (!full || !full.trim() || full.trim() === '{}' || full.trim() === '[]') return null;
-  const wrap = document.createElement('div');
+  const longRequest = full.length > 1000 || full.split('\n').length > 12;
+  const wrap = document.createElement(longRequest ? 'details' : 'div');
   wrap.className = 'tool-preview__args';
-  const label = document.createElement('div');
+  const label = document.createElement(longRequest ? 'summary' : 'div');
   label.className = 'tool-preview__meta';
-  label.textContent = name === 'shell' ? 'Command' : 'Arguments';
+  label.textContent = (name === 'shell' ? 'Request · Command' : 'Request · Arguments') + (longRequest ? ' · show full request' : '');
   const pre = createPreviewPre(full, 'tool-preview__pre tool-preview__pre--args');
   wrap.appendChild(label);
   wrap.appendChild(pre);
@@ -489,6 +490,7 @@ function renderShellToolResult(body, r, args) {
     out.push(r.stderr);
   }
   if (cmdArgs) body.appendChild(cmdArgs);
+  renderToolMeta(body, ['Result']);
   renderPreviewPre(body, out.length ? out.join('\n\n') : '(exit ' + (r.exitCode ?? 0) + ', no output)', 'tool-preview__terminal');
 }
 
@@ -541,6 +543,7 @@ function renderGenericToolResult(body, r, args) {
   const argsBlock = args != null ? buildToolArgs(args, null) : null;
   if (argsBlock) body.appendChild(argsBlock);
   if (r && Array.isArray(r.content)) {
+    renderToolMeta(body, ['Result']);
     const lines = [];
     for (const c of r.content) {
       if (c && typeof c.text === 'string') lines.push(c.text);
@@ -559,7 +562,21 @@ function renderGenericToolResult(body, r, args) {
     if (lines.length) renderPreviewPre(body, lines.join('\n'), 'tool-preview__pre');
     return;
   }
-  renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+  renderToolMeta(body, ['Result']);
+  const preview = formatReadableToolResult(r);
+  renderPreviewPre(body, preview.length > 16000 ? preview.slice(0, 16000) + '\n[preview capped — expand details]' : preview, 'tool-preview__pre');
+  if (r && typeof r === 'object') {
+    const details = document.createElement('details');
+    details.className = 'tool-preview__structured';
+    const summary = document.createElement('summary'); summary.textContent = 'View full details (bounded)';
+    details.appendChild(summary);
+    let built = false;
+    details.addEventListener('toggle', () => {
+      if (built || !details.open) return;
+      built = true; renderPreviewPre(details, formatReadableToolResult(r, true), 'tool-preview__pre');
+    });
+    body.appendChild(details);
+  }
 }
 
 // renderMouaifToolResult(body, r)

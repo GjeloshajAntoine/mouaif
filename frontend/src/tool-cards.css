@@ -40,9 +40,11 @@
   max-width: 100%;
   overflow: hidden;
   cursor: pointer;
+  min-height: 2.75rem;
   user-select: none;
   -webkit-user-select: none;
 }
+.tool-card__head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tool-card__chev {
   flex: 0 0 auto;
   display: inline-flex;
@@ -152,6 +154,10 @@
 }
 .tool-card__pill--ok   { background: var(--success); animation: none; }
 .tool-card__pill--err  { background: var(--danger); animation: none; }
+.tool-card__pill--partial { background: var(--warning); animation: none; }
+.tool-preview__structured summary, details.tool-preview__args > summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; white-space: normal; }
+.tool-preview__structured { white-space: normal; }
+.tool-preview__structured .tool-preview__pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes tool-card-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); opacity: 1; }
   50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); opacity: .65; }
@@ -984,6 +990,17 @@ color: var(--fg-soft);
   line-height: 1.35;
   color: var(--fg-soft);
 }
+.tool-card--authorization .tool-card__name { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 0.85rem; }
+.tool-card__decision-status { margin: 0.5rem 0; font-size: 0.85rem; color: var(--fg-soft); }
+.tool-card__permission-options { padding: 0.5rem; white-space: normal; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.tool-card__permission-options summary { min-height: 2.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; }
+.tool-card__permission-options summary::before { content: '▸'; }
+.tool-card__permission-options[open] summary::before { content: '▾'; }
+.tool-card__permission-options p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; }
+.tool-card__permission-options label, .tool-card__delete-confirm { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; font-size: 0.8rem; }
+.tool-card__permission-options .btn { min-height: 2.75rem; margin: 0.25rem; }
+.tool-card--authorization [hidden] { display: none !important; }
+.tool-card--decided { border-color: var(--border); }
 .tool-card--authorization .tool-card__actions {
   display: flex;
   flex-wrap: wrap;
@@ -993,6 +1010,7 @@ color: var(--fg-soft);
 }
 .tool-card--authorization .tool-card__actions .btn {
   min-height: var(--tap);
+  min-width: var(--tap);
   font-size: 0.72rem;
   padding: 0 8px;
 }

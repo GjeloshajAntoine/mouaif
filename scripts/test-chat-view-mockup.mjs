@@ -131,10 +131,10 @@ try {
     document.querySelector('.image-lightbox__close').click();
     document.querySelector('#pending-question .tool-card__ask-preset-chip').click();
     document.querySelector('#pending-approval .tool-card__actions button').click();
-    for (let i = 0; i < 100 && (document.querySelector('#pending-approval .tool-card') || document.querySelector('#pending-question .tool-card')); i++) await new Promise(resolve => setTimeout(resolve, 20));
+    for (let i = 0; i < 100 && (!document.querySelector('#pending-approval [data-decision]') || document.querySelector('#pending-question .tool-card')); i++) await new Promise(resolve => setTimeout(resolve, 20));
     return { lightbox, closed: !document.querySelector('.image-lightbox'),
       answered: !document.querySelector('#pending-question .tool-card'),
-      approved: !document.querySelector('#pending-approval .tool-card') };
+      approved: document.querySelector('#pending-approval .tool-card__decision-status')?.textContent === 'Approved' };
   })()`);
   assert.ok(interactions.lightbox && interactions.closed && interactions.answered && interactions.approved,
     'image viewer and isolated question/approval actions work');
@@ -147,7 +147,27 @@ try {
       batchHead: document.querySelector('#tool-group_read .tool-card__head').textContent };
   })()`);
   console.log('Review observations: ' + JSON.stringify(review));
-  assert.ok(review.longContentHeight > review.longBodyHeight, 'review preserves production overflow instead of hiding it');
+  const requestFold = await evaluate(`(() => {
+    const details = document.querySelector('#long-command details.tool-preview__args');
+    const closed = !!details && !details.open;
+    details.open = true;
+    const body = details.closest('.tool-card__body');
+    return { closed, overflows: body.scrollHeight > body.clientHeight };
+  })()`);
+  assert.ok(requestFold.closed && requestFold.overflows, 'long requests start folded and remain fully readable on expand');
+  const accessibility = await evaluate(`(() => {
+    const head = document.querySelector('#tool-shell .tool-card__head');
+    head.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const closed = head.getAttribute('aria-expanded') === 'false';
+    head.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    return { closed, opened: head.getAttribute('aria-expanded') === 'true', height: head.getBoundingClientRect().height, tabIndex: head.tabIndex,
+      settings: document.querySelector('#tool-get_settings .tool-card__body').textContent,
+      unknown: document.querySelector('#tool-unknown_tool .tool-card__body').textContent };
+  })()`);
+  assert.ok(accessibility.closed && accessibility.opened && accessibility.height >= 44 && accessibility.tabIndex === 0);
+  assert.match(accessibility.settings, /promptSize/);
+  assert.match(accessibility.unknown, /without a dedicated renderer/);
+  assert.match(review.batchHead, /Partial success/);
   assert.deepEqual(await evaluate('window.fixtureErrors'), [], 'no browser runtime errors');
 
   // Open the exact approval deep link the user receives, through the proxy.
@@ -163,7 +183,7 @@ try {
         nativeCount: entries.filter(item => mockup.nativeNames.includes(item.test.name)).length,
         noPrompt: entries.filter(item => item.section.dataset.approval === 'not-required').map(item => item.test.name),
         questions: entries.filter(item => item.section.dataset.approval === 'question').map(item => item.test.name),
-        missingButtons: entries.filter(item => item.section.dataset.approval === 'permission' && item.box.querySelectorAll('.tool-card__actions button').length !== 4).map(item => item.test.name),
+        missingButtons: entries.filter(item => item.section.dataset.approval === 'permission' && item.box.querySelectorAll('button[data-shortcut]').length !== 4).map(item => item.test.name),
         smallButtons: [...document.querySelectorAll('#tools .tool-card__actions button')].filter(button => { const r = button.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length,
         pageFits: document.documentElement.scrollWidth <= innerWidth + 1,
         modelPicker: !!document.querySelector('#tool-subagent .tool-card__auth-model'),
@@ -193,13 +213,44 @@ try {
     assert.equal(await evaluate("!!document.activeElement.closest('#tools .tool-card')"), false,
     'bulk prompts never steal keyboard focus');
   }
+  const feedback = await evaluate(`(async () => {
+    const card = document.querySelector('#tool-shell .tool-card');
+    const more = card.querySelector('.tool-card__permission-options');
+    const once = card.querySelector('[data-shortcut="1"]');
+    const always = card.querySelector('[data-shortcut="3"]');
+    always.click();
+    const scopeGuard = !card.dataset.decision && more.open && card.querySelector('.tool-card__decision-status').textContent.includes('scope');
+    const deletion = document.querySelector('#tool-delete_chat .tool-card');
+    deletion.querySelector('[data-shortcut="1"]').click();
+    const deleteGuard = !deletion.dataset.decision && deletion.querySelector('.tool-card__decision-status').textContent.includes('Confirm deletion');
+    const original = window.fetch;
+    let requests = 0, release;
+    window.fetch = (input, init) => { requests++; return new Promise(resolve => { release = resolve; }); };
+    once.click(); once.click();
+    const pending = card.getAttribute('aria-busy') === 'true' && requests === 1 && card.querySelector('.tool-card__decision-status').textContent === 'Sending…';
+    release(new Response('{}', { status: 503 }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const failed = !card.dataset.decision && !card.querySelector('button:not([data-shortcut])').hidden && card.textContent.includes('Retry');
+    window.fetch = original;
+    [...card.querySelectorAll('button')].find(button => button.textContent === 'Retry decision').click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const approved = card.dataset.decision === 'allow-once' && card.querySelector('.tool-card__decision-status').textContent === 'Approved';
+    document.querySelector('#reset-approvals').click();
+    return { scopeGuard, deleteGuard, pending, failed, approved };
+  })()`);
+  assert.ok(Object.values(feedback).every(Boolean), 'scope/deletion guards, pending dedupe, failed request and retry feedback');
   const decisions = await evaluate(`(async () => {
     const entries = mockup.mounted.filter(item => item.section.dataset.approval === 'permission');
-    for (const [index, item] of entries.entries()) item.box.querySelectorAll('.tool-card__actions button')[index % 4].click();
+    for (const [index, item] of entries.entries()) {
+    const more = item.box.querySelector('.tool-card__permission-options'); more.open = true;
+    more.querySelector('input').checked = true;
+    const deletion = item.box.querySelector('.tool-card__delete-confirm input'); if (deletion) deletion.checked = true;
+    item.box.querySelectorAll('button[data-shortcut]')[index % 4].click();
+    }
     const answer = document.querySelector('#tool-ask_user .tool-card__ask-option'); answer.click();
     document.querySelector('#tool-ask_user .tool-card__actions .btn--primary').click();
     await new Promise(resolve => setTimeout(resolve, 100));
-    const settled = entries.every(item => !item.box.querySelector('.tool-card') && item.section.textContent.includes('No tool ran and no permissions changed'));
+    const settled = entries.every(item => item.box.querySelector('[data-decision]') && item.section.textContent.includes('No tool ran and no permissions changed'));
     const answered = !document.querySelector('#tool-ask_user .tool-card');
     document.querySelector('#reset-approvals').click();
     const reset = document.querySelectorAll('#tools .tool-card--authorization').length === entries.length;

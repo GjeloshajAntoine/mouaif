@@ -53,6 +53,8 @@ async function call(chat, legacyArgs, { mode = 'allow', decision, advertised = m
       events.push({ type, payload });
       if (type === 'authorization_required') {
         assert.equal(payload.tool, name);
+        assert.ok(payload.details && payload.details.args, 'approval stream carries bounded proposed arguments');
+        assert.ok(Array.isArray(payload.details.permissionScope), 'approval stream discloses persistent grant scope');
         assert.ok(decision, 'ask mode must have an explicit test decision');
         authz.recordDecision(projectDir, chat.id, payload.callId, decision);
       }

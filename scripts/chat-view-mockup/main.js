@@ -62,6 +62,7 @@ function setExpanded(card, expanded) {
   card.classList.toggle('is-expanded', expanded);
   // The same user intent marker that a production header tap writes.
   card._userCollapsed = !expanded;
+  card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(expanded));
   if (expanded && typeof card._lazyBody === 'function') card._lazyBody();
   // The delegated tool previews are production toggles too; expand them
   // for the all-expanded review rather than hiding evidence a level down.
@@ -113,7 +114,7 @@ function drawApproval(test, host, id) {
       '/demo/project', 'demo-chat', host.refs, () => {}, {
         chat: { providerId: 'demo-provider', modelId: 'demo-model' },
         models: [{ id: 'demo-model', provider: 'demo-provider', label: 'Demo model' }]
-      }, { autoFocus: false }).then(decision => {
+      }, { autoFocus: false, autoScroll: false }).then(decision => {
         note.textContent = 'Demo decision: ' + decision + '. No tool ran and no permissions changed. Reset approval examples to try again.';
       });
   }
@@ -175,7 +176,7 @@ finish.addEventListener('click', () => {
 transition.section.appendChild(finish);
 
 for (const [id, title, test, note] of [
-  ['long-command', 'Long command → output below the fold', LONG_CASE, 'The production 40dvh cap is unchanged; no mockup-only uncap hides the problem.'],
+  ['long-command', 'Long command → folded request, readable output', LONG_CASE, 'Open the full request if needed. The production body cap and one-scroller layout are unchanged.'],
   ['failed-tool', 'Failed tool', { name: 'read_file', args: { path: 'src/missing.js' }, ok: false, result: { error: 'ENOENT: file not found: src/missing.js' } }, 'Errors auto-expand in production.'],
   ['dismissed-question', 'Dismissed question', { name: 'ask_user', args: { question: 'Continue?' }, ok: false, result: { cancelled: true } }, 'A deliberate dismissal is not a tool execution failure.'],
   ['empty-result', 'No matching files', { name: 'list_files', args: { pattern: 'missing/**/*.js' }, result: { entries: [], truncated: false } }, 'Empty is a valid result, not a loading state.'],
@@ -189,7 +190,7 @@ askUserCard({ callId: 'review-question', ...TOOL_CASES.find(test => test.name ==
   multiSelect: false, presets: ['Expanded tools'] }, '/demo/project', 'demo-chat', question.refs, () => {}, { autoScroll: false });
 const approval = panel(states, 'pending-approval', 'Tool awaiting approval', 'Production authorization card; demo decisions stay inside this page, never in the real app.');
 void authorizationCard({ callId: 'review-approval', tool: 'shell', cmd: 'node --check src/example.js', timeoutMs: 30000 },
-  '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] }, { autoFocus: false });
+  '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] }, { autoFocus: false, autoScroll: false });
 
 // Deliberately bounded public diagnostics for browser tests and review tools.
 window.mockup = { mounted, nativeNames, ready: true };

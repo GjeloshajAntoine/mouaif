@@ -30,6 +30,7 @@ const id = cssEscape(String(callId));
 const existing = refs.transcript.current.querySelector(
 '.tool-card--authorization[data-auth-call-id="' + id + '"],' +
 '.tool-card--ask-user[data-auth-call-id="' + id + '"],' +
+'[data-auth-decision-id="' + id + '"],' +
 '[data-tool-id="' + id + '"]'
 );
 return !existing;
@@ -46,13 +47,14 @@ return !existing;
 export function removeOverlayCardByCallId(refs, callId) {
 if (!callId || !refs.transcript || !refs.transcript.current) return;
 const selector = '.tool-card--authorization[data-auth-call-id="' + cssEscape(String(callId)) + '"],' +
-'.tool-card--ask-user[data-auth-call-id="' + cssEscape(String(callId)) + '"]';
+'.tool-card--ask-user[data-auth-call-id="' + cssEscape(String(callId)) + '"],' +
+'[data-auth-decision-id="' + cssEscape(String(callId)) + '"]';
 for (const card of refs.transcript.current.querySelectorAll(selector)) card.remove();
 }
 
 export function removeOverlayCards(refs) {
 if (!refs || !refs.transcript || !refs.transcript.current) return;
-for (const card of refs.transcript.current.querySelectorAll('.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id]')) {
+for (const card of refs.transcript.current.querySelectorAll('.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id], [data-auth-decision-id]')) {
 card.remove();
 }
 }

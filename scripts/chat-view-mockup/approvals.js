@@ -16,7 +16,11 @@ export function approvalRequest({ name, args }, callId, signal) {
     summary = args.path || args.query || '';
   else if (name.startsWith('mcp__')) summary = name + (first ? ' ' + first : '');
   else if (name === 'create_mcp_app') summary = 'Prepare development draft: ' + args.name;
-  return { tool: name, callId, summary, cmd: args.cmd, path: args.path, query: args.query,
+  const details = { args, workingDirectory: '/demo/project',
+    targetChat: { title: 'Review expanded tool states', id: args.chatId || 'demo-chat' },
+    ...(name === 'update_settings' ? { before: { promptSize: 'very-small' } } : {}),
+    ...(name === 'update_chat' ? { before: { title: 'Review expanded tool states' } } : {}) };
+  return { tool: name, callId, summary, details, cmd: args.cmd, path: args.path, query: args.query,
     projectDir: '/demo/project', timeoutMs: 30000, signal,
     ...(name === 'subagent' ? { subagentModel: { providerId: 'demo-provider', modelId: 'demo-model', source: 'chat model' } } : {}) };
 }

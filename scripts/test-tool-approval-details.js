@@ -1,0 +1,47 @@
+'use strict';
+require('./lib/test-home.js').isolate('mouaif-approval-details-');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { buildApprovalDetails } = require('../src/toolApproval.js');
+const settings = require('../src/settings.js');
+const chats = require('../src/chats.js');
+const auth = require('../src/tools/authorization.js');
+(async () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-project-'));
+  try {
+    settings.setProject(projectDir, { promptSize: 'average', tools: { shell: { mode: 'ask' } } });
+    const chat = chats.createChat(projectDir, { title: 'Named review chat' });
+    const base = { projectDir, chatId: chat.id };
+    const settingsDetails = buildApprovalDetails({ ...base, tool: 'update_settings', args: { patch: { promptSize: 'extensive', apiKey: 'do-not-expose', nested: { password: 'hidden' } } } });
+    assert.equal(settingsDetails.before.promptSize, 'average');
+    assert.equal(settingsDetails.args.patch.apiKey, '[redacted]');
+    assert.equal(settingsDetails.args.patch.nested.password, '[redacted]');
+    assert.equal(settingsDetails.targetChat.title, 'Named review chat');
+    const changed = buildApprovalDetails({ ...base, tool: 'update_chat', args: { chatId: chat.id, title: 'New title' } });
+    assert.equal(changed.before.title, 'Named review chat');
+    const shell = buildApprovalDetails({ ...base, tool: 'shell', args: { cmd: 'echo safe' } });
+    assert.equal(shell.workingDirectory, projectDir);
+    const read = buildApprovalDetails({ ...base, tool: 'read_file', args: { path: 'a.js', startLine: 4, endLine: 9 } });
+    assert.ok(read.permissionScope.includes('write_file'), 'persistent file-family scope is disclosed accurately');
+    assert.equal(read.args.endLine, 9);
+    fs.writeFileSync(path.join(projectDir, 'sample.js'), 'old value\n');
+    const existing = buildApprovalDetails({ ...base, tool: 'write_file', args: { path: 'sample.js', content: 'new value' } });
+    assert.equal(existing.fileExists, true); assert.equal(existing.fileBefore, 'old value\n');
+    settings.setProject(projectDir, { hideFileContent: [{ path: 'sample.js', ranges: [{ start: 1, end: 1 }] }] });
+    const hidden = buildApprovalDetails({ ...base, tool: 'edit_file', args: { path: 'sample.js', oldText: 'old', newText: 'new' } });
+    assert.ok(hidden.fileBefore.includes('[hidden]')); assert.ok(!hidden.fileBefore.includes('old value'));
+    const fresh = buildApprovalDetails({ ...base, tool: 'write_file', args: { path: 'new.js', content: 'new value' } });
+    assert.equal(fresh.fileExists, false);
+    const outside = buildApprovalDetails({ ...base, tool: 'edit_file', args: { path: '../outside' } });
+    assert.equal(outside.fileBefore, undefined);
+    const pending = await auth.authorize({ ...base, tool: 'shell', callId: 'detail-call', args: { cmd: 'echo safe' }, cmd: 'echo safe' });
+    const request = auth.listPending(projectDir, chat.id)[0];
+    assert.equal(request.details.workingDirectory, projectDir, 'pending recovery carries the same context');
+    auth.recordDecision(projectDir, chat.id, 'detail-call', 'allow-once');
+    await pending.wait;
+    assert.equal(settings.getProject(projectDir).tools.shell.mode, 'ask', 'display changes never grant permissions');
+    console.log('PASS approval context, before snapshots, secret redaction, actual grant scope, pending recovery, and unchanged permissions');
+  } finally { fs.rmSync(projectDir, { recursive: true, force: true }); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

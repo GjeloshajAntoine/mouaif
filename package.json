@@ -32,7 +32,7 @@
     "dev": "node bin/mouaif.js serve --watch",
     "dev:web": "vite --config frontend/vite.config.js",
     "mockup:chat": "node scripts/chat-view-mockup.mjs",
-    "test:chat-mockup": "node scripts/test-chat-view-mockup.mjs",
+    "test:chat-mockup": "node scripts/test-tool-approval-details.js && node scripts/test-tool-card-display.mjs && node scripts/test-chat-view-mockup.mjs",
     "test:codex": "node scripts/test-codex-provider.js && node scripts/test-codex-ui.mjs",
     "test:mcp-apps": "node scripts/test-mcp-apps-detection.js && node scripts/test-mcp-apps-host.js && node scripts/test-mcp-apps-ui.mjs && node scripts/test-mcp-apps-e2e.mjs",
     "test:instant-mcp-apps": "node scripts/test-instant-mcp-apps.js && node scripts/test-instant-mcp-apps-ui.mjs",

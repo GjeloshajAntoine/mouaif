@@ -354,7 +354,8 @@ async function runSingleToolCall(c, cx) {
         query: args && args.query,
         summary,
         timeoutMs: args && args.timeoutMs,
-        args
+        args,
+        workspaceChatId: opts && opts.workspaceChatId
       });
       // The gate returns the timeout it resolved against the project's
       // `defaultTimeoutMs` / `maxTimeoutMs`. That value — never the raw
@@ -415,6 +416,9 @@ async function runSingleToolCall(c, cx) {
             path: args && args.path,
             query: args && args.query,
             summary,
+            details: require('./toolApproval.js').buildApprovalDetails({
+            tool: c.name, args, projectDir: opts.projectDir, chatId: opts.chatId, workspaceChatId: opts.workspaceChatId
+            }),
             images: authImages,
             subagentModel,
             timeoutMs: clampedTimeoutMs,

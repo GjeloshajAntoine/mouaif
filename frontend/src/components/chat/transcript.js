@@ -823,10 +823,11 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
   const ok = typeof okHint === 'boolean' ? okHint : !(r && r.error);
   const status = row.querySelector('.tool-card__pill');
   if (status) {
-    status.className = 'tool-card__pill ' + (ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
-    status.textContent = ok ? 'ok' : 'error';
+    const partial = r && r.failedCount > 0 && r.succeededCount > 0;
+    status.className = 'tool-card__pill ' + (partial ? 'tool-card__pill--partial' : ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
+    status.textContent = partial ? 'Partial success' : ok ? 'ok' : 'error';
   }
-  const summary = (ok || isExpectedToolFailure(name, r, ok)) ? formatResultSummary(name, r) : null;
+  const summary = (ok || (r && r.failedCount > 0 && r.succeededCount > 0) || isExpectedToolFailure(name, r, ok)) ? formatResultSummary(name, r) : null;
   if (summary) {
     let summaryEl = row.querySelector('.tool-card__result-summary');
     if (!summaryEl) {
@@ -956,6 +957,8 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, t
   const head = document.createElement('div');
   head.className = 'tool-card__head';
   head.setAttribute('role', 'button');
+  head.setAttribute('tabindex', '0');
+  head.setAttribute('aria-expanded', 'false');
   const chev = document.createElement('span');
   chev.className = 'tool-card__chev';
   chev.setAttribute('aria-hidden', 'true');
@@ -1028,6 +1031,7 @@ function finishToolCardHead(head, toolName, args, pillClass, pillText, resultSum
     // the user closed stays collapsed when the successful result
     // lands (see appendToolResultCard).
     card._userCollapsed = !card.classList.contains('is-expanded');
+    head.setAttribute('aria-expanded', String(!card._userCollapsed));
     // Result bodies build lazily on first expand (see
     // appendToolResultCard). Triggering the build here — inside the
     // toggle handler that always runs on tap — is robust regardless of
@@ -1037,6 +1041,10 @@ function finishToolCardHead(head, toolName, args, pillClass, pillText, resultSum
     if (card.classList.contains('is-expanded') && typeof card._lazyBody === 'function') {
       card._lazyBody();
     }
+  });
+  head.addEventListener('keydown', event => {
+    if (event.target !== head || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault(); head.click();
   });
   return head;
 }
@@ -1097,7 +1105,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   // "running" forever.
   if (toolCall.id) {
     for (const stale of refs.transcript.current.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
-      if (stale.dataset.authCallId === String(toolCall.id)) stale.remove();
+    if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(toolCall.id)) stale.remove();
     }
   }
   // Progress is the call's card, not a transient second row below it. Use
@@ -1171,6 +1179,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
 // Other tools have no expandable body until a tool_result arrives.
 // Their header already shows the call arguments; creating a body here
 // would expose placeholder text instead of actual tool output.
+  card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
   transcriptInsert(refs, card);
   afterTranscriptAppend(refs, true);
   // Park the minted id when the provider gave us none, so the matching
@@ -1311,6 +1320,7 @@ export function handleShellOutputEvent(data, refs) {
   // _userCollapsed undefined, so it still opens on the first delta.
   if (!card.classList.contains('is-expanded') && !card._userCollapsed) {
     card.classList.add('is-expanded');
+    card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', 'true');
   }
   const hint = card.querySelector('.tool-card__shell-live-hint');
   if (hint && hint.textContent !== 'Running…') hint.textContent = 'Running…';
@@ -1513,9 +1523,10 @@ export function appendToolResultCard(toolResult, refs) {
   const id = toolResult.id || takeAnonToolCallId(refs, toolResult.name);
   let card = id ? findToolCard(refs, id) : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
-  const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
-  const pillText = toolResult.ok ? 'ok' : 'error';
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+  const partial = rawR && rawR.failedCount > 0 && rawR.succeededCount > 0;
+  const pillClass = partial ? 'tool-card__pill--partial' : toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
+  const pillText = partial ? 'Partial success' : toolResult.ok ? 'ok' : 'error';
 const level = toolResult.ok ? progressLevelOf(toolResult.name, rawR) : null;
 if (level && (normalizeToolName(toolResult.name) === 'report_progress'
   || (rawR && (rawR.action === 'progress_updated' || rawR.action === 'completed')))) {
@@ -1528,7 +1539,7 @@ if (level && (normalizeToolName(toolResult.name) === 'report_progress'
   }
   return;
 }
-const summary = (toolResult.ok || isExpectedToolFailure(toolResult && toolResult.name, rawR, toolResult.ok))
+const summary = (toolResult.ok || partial || isExpectedToolFailure(toolResult && toolResult.name, rawR, toolResult.ok))
   ? formatResultSummary(toolResult && toolResult.name, rawR)
   : null;
 // Publish a successful capture immediately. Tool result bodies are lazy and
@@ -1597,6 +1608,9 @@ if (!card) {
     // stay as they are, errors auto-expand below.
   }
   if (isSubagent) card.classList.add('tool-card--subagent');
+  for (const receipt of refs.transcript.current.querySelectorAll('[data-auth-decision-id]')) {
+    if (receipt.dataset.authDecisionId === String(id)) receipt.remove();
+  }
   const body = card.querySelector('.tool-card__body');
   if (body) {
     // Defer the full result-body build until the card is first
@@ -1663,6 +1677,7 @@ card.classList.add('is-expanded');
 } else if (isSubagent) {
 if (!card._userCollapsed) card.classList.add('is-expanded');
 } else if (card._userCollapsed !== false) card.classList.remove('is-expanded');
+  card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
   // `_userCollapsed === false` means the user explicitly opened the card.
   // Keep that choice when a running tool settles; only untouched successful
   // cards default to collapsed (and deliberately closed ones stay closed).
@@ -1673,6 +1688,7 @@ if (!card._userCollapsed) card.classList.add('is-expanded');
 function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary, toolArgs) {
   const oldHead = card.querySelector(':scope > .tool-card__head');
   const fresh = buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs);
+  fresh.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
   if (oldHead && oldHead.parentNode === card) {
     card.replaceChild(fresh, oldHead);
   } else {
@@ -2544,7 +2560,7 @@ return true;
 // and SSE events — so a rebuild must carry them across, and must never
 // hide them from `authCardGuard` / `removeOverlayCards` (both look the
 // cards up in the live DOM).
-const OVERLAY_CARD_SELECTOR = '.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]';
+const OVERLAY_CARD_SELECTOR = '.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id], [data-auth-decision-id]';
 // clearTranscriptRows(root)
 //
 // Empty the transcript for a rebuild WITHOUT detaching the overlay
@@ -2729,6 +2745,7 @@ function restoreExpandedState(exp, root) {
       card._userCollapsed = true;
       card.classList.remove('is-expanded');
     }
+    card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
     // A card whose body was already built before the rebuild builds it
     // again up front so the transcript is identical after the rebuild —
     // not an empty body waiting for a tap that already happened.
@@ -2870,7 +2887,7 @@ function hasClass(el, name) {
 // every pass (see clearTranscriptRows). The reconciler never matches,
 // moves, or removes them.
 function isOverlayCard(el) {
-  return !!(el && el.dataset && el.dataset.authCallId);
+  return !!(el && el.dataset && (el.dataset.authCallId || el.dataset.authDecisionId));
 }
 
 // isMessageRowNode(el) -> bool

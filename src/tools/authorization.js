@@ -933,7 +933,8 @@ async function authorize(input) {
       shell: input.shell,
       timeoutMs: input.timeoutMs,
       projectDir,
-      args: input.args && typeof input.args === 'object' ? input.args : undefined
+      args: input.args && typeof input.args === 'object' ? input.args : undefined,
+      details: require('../toolApproval.js').buildApprovalDetails(input)
     }
   });
   // A child's abort removes ONLY this pending decision. Never cancel the

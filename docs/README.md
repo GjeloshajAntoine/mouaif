@@ -78,6 +78,7 @@ One page per feature: what it does and how to use it.
 
 - [Chat](features/chat-ui.md) — the conversation view, composer, and per-chat controls.
 - [Chat view mockup](features/chat-view-mockup.md) — reproducible expanded-tool review, state-retention checks, and mobile usability findings.
+- [Readable tool approvals and results](features/tool-card-usability.md) — clear targets, explicit grant scope, retry feedback, accessible headers, and bounded structured results.
 - [Chat scroll navigation](features/chat-scroll-nav.md) — arrows to step to the previous / next message or jump to the bottom.
 - [Chat switcher](features/chat-switcher.md) — jump between a project's chats from the chat header.
 - [@-mentions](features/at-mention.md) — insert files, agents, actions, and tools from the composer.

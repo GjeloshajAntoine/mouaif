@@ -419,24 +419,43 @@ export function progressLevelOf(name, r) {
 //
 // Best-effort string view of a structured result. Used when the
 // per-tool renderer doesn't have a richer preview.
-export function formatReadableToolResult(r) {
+export function formatReadableToolResult(r, structured = false) {
   if (r == null) return '';
   if (typeof r === 'string') {
     const s = r.trim();
-    try { return formatReadableToolResult(JSON.parse(s)); } catch { return r; }
+    try { return formatReadableToolResult(JSON.parse(s), structured); } catch { return r; }
   }
-  if (r.error) return typeof r.error === 'string' ? r.error : (r.error.message || 'error');
-  if (typeof r.output === 'string') return r.output;
-  if (typeof r.text === 'string') return r.text;
-  if (typeof r.stdout === 'string' || typeof r.stderr === 'string') {
-    return [r.stdout, r.stderr].filter(Boolean).join('\n');
+  if (!structured) {
+    if (r.error) return typeof r.error === 'string' ? r.error : (r.error.message || 'error');
+    if (typeof r.output === 'string') return r.output;
+    if (typeof r.text === 'string') return r.text;
+    if (typeof r.stdout === 'string' || typeof r.stderr === 'string') {
+      return [r.stdout, r.stderr].filter(Boolean).join('\n');
+    }
   }
-  const lines = [];
-  for (const [k, v] of Object.entries(r)) {
-    if (v == null || v === '') continue;
-    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') lines.push(k + ': ' + v);
-  }
-  return lines.length ? lines.join('\n') : '(no preview)';
+  if (typeof r !== 'object') return String(r);
+  const seen = new WeakSet();
+  let nodes = 0;
+  let remaining = 60000;
+  const bound = (value, depth = 0) => {
+    if (++nodes > 2000 || remaining <= 0) return '[preview limit reached]';
+    if (typeof value === 'string') {
+      const cap = Math.min(12000, remaining);
+      remaining -= Math.min(value.length, cap);
+      return value.length > cap ? value.slice(0, cap) + '… [capped]' : value;
+    }
+    if (!value || typeof value !== 'object') return value;
+    if (seen.has(value)) return '[circular]';
+    if (depth > 8) return '[nested detail capped]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.slice(0, 100).map(item => bound(item, depth + 1))
+      .concat(value.length > 100 ? ['[additional items capped]'] : []);
+    const entries = Object.entries(value);
+    return Object.fromEntries(entries.slice(0, 100).map(([key, item]) =>
+    [key, /api.?key|password|secret|authorization|cookie|credential|(?:access|refresh|auth)[_-]?token/i.test(key) ? '[redacted]' : bound(item, depth + 1)])
+    .concat(entries.length > 100 ? [['[preview]', 'additional fields capped']] : []));
+  };
+  try { return JSON.stringify(bound(r), null, 2); } catch { return '[result could not be displayed]'; }
 }
 
 // parsePlainFileToolResult(text) -> object

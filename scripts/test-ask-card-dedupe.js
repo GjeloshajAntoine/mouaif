@@ -495,6 +495,19 @@ function main() {
           return Promise.resolve().then(() => Promise.resolve()).then(() => {
             check('a late authorization prompt does not mount beside its call card',
               el3.querySelectorAll('.tool-card--authorization').length === 0);
+            const receipt = createElement('div');
+            receipt.className = 'tool-card tool-card--authorization tool-card--decided';
+            receipt.dataset.authDecisionId = 'call_receipt';
+            el3.appendChild(receipt);
+            check('decision receipt blocks a stale approval remount', !overlay.authCardGuard(refs3, 'call_receipt'));
+            transcript.appendToolCallCard({ id: 'call_receipt', name: 'shell', args: { cmd: 'echo ok' } }, refs3);
+            check('matching call replaces its decision receipt', !receipt.parentNode);
+            const resultReceipt = createElement('div');
+            resultReceipt.className = 'tool-card tool-card--authorization tool-card--decided';
+            resultReceipt.dataset.authDecisionId = 'call_result_receipt';
+            el3.appendChild(resultReceipt);
+            transcript.appendToolResultCard({ id: 'call_result_receipt', name: 'shell', ok: false, result: { error: 'Denied' } }, refs3);
+            check('result-first path replaces a decision receipt', !resultReceipt.parentNode);
             console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
             if (failed) process.exitCode = 1;
             resolve();
