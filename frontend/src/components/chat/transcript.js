@@ -1662,7 +1662,10 @@ if (!toolResult.ok) {
 card.classList.add('is-expanded');
 } else if (isSubagent) {
 if (!card._userCollapsed) card.classList.add('is-expanded');
-} else if (!card._userCollapsed) card.classList.remove('is-expanded');
+} else if (card._userCollapsed !== false) card.classList.remove('is-expanded');
+  // `_userCollapsed === false` means the user explicitly opened the card.
+  // Keep that choice when a running tool settles; only untouched successful
+  // cards default to collapsed (and deliberately closed ones stay closed).
   afterTranscriptAppend(refs, true);
 }
 

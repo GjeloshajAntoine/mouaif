@@ -332,6 +332,22 @@ function main() {
       'body=' + JSON.stringify(body.replace(/\n+/g, ' | ')) + ' wanted=' + JSON.stringify(c.bodyFragment));
   }
 
+  // The result may settle while the user is reading the running card.
+  // false is an explicit expand; undefined is the untouched default.
+  for (const c of CASES) {
+    for (const choice of [undefined, false, true]) {
+      const refs = makeRefs();
+      const card = mod.appendToolCallCard({ id: c.id, name: c.name, args: c.args }, refs);
+      card.classList.add('is-expanded');
+      card._userCollapsed = choice;
+      mod.appendToolResultCard({ id: c.id, name: c.name, ok: true, result: c.result }, refs);
+      check(c.name + ': successful result honors user choice ' + String(choice),
+        card.classList.contains('is-expanded') === (choice === false));
+      check(c.name + ': result keeps the same card for choice ' + String(choice),
+        refs.transcript.current.children[0] === card);
+    }
+  }
+
   // ---- 4. A call with no arguments adds no empty block --------------
   {
     const refs = makeRefs();
