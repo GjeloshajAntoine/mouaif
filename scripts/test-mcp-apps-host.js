@@ -65,8 +65,7 @@ const post = async (route, body = {}) => {
     messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'call', toolCallId: callId, name, args: { sample: true }, content: '{}' });
     messages.appendMessage(projectDir, chat.id, { role: 'tool', phase: 'result', toolCallId: callId, name, ok: true, content: JSON.stringify({ content: [{ type: 'text', text: 'fallback' }] }) });
     const body = { projectDir, chatId: chat.id, callId };
-    assert.equal((await post('/api/mcp/apps/mount', body)).body.enabled, false);
-    settings.setProject(projectDir, { mcpApps: { enabled: true } });
+    assert.equal((await post('/api/mcp/apps/mount', body)).body.enabled, true, 'apps work without project opt-in');
     assert.equal((await post('/api/mcp/apps/mount', { ...body, callId: 'forged' })).status, 404);
     const mounted = await post('/api/mcp/apps/mount', body);
     assert.equal(mounted.status, 200, JSON.stringify(mounted.body));
@@ -159,9 +158,10 @@ const post = async (route, body = {}) => {
     authz.setAuthorization(projectDir, { mcp: { tools: { [name]: { mode: 'off' } } } });
     await check();
     authz.setAuthorization(projectDir, { mcp: { tools: { [name]: { mode: 'ask' } } } });
-    view = await fresh(); check = await assertRevoked(view, 'ETOOL_DISABLED');
-    settings.setProject(projectDir, { mcpApps: { enabled: false } }); await check();
-    settings.setProject(projectDir, { mcpApps: { enabled: true } });
+    view = await fresh();
+    settings.setProject(projectDir, { mcpApps: { enabled: false } });
+    assert.equal((await post('/api/mcp/apps/' + view.id + '/status')).status, 200, 'legacy opt-out does not revoke views');
+    assert.equal((await post('/api/mcp/apps/mount', body)).body.enabled, true, 'legacy opt-out does not block new views');
     view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_STALE');
     const liveSession = mcp._sessions.get(projectDir + '::' + server.id);
     const source = liveSession.tools.find(t => t.name === 'view');
@@ -194,7 +194,7 @@ const post = async (route, body = {}) => {
     await mcp.stopServer(projectDir, server.id); await mcp.startServer(projectDir, server.id); await check();
     view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_GONE');
     chats.deleteChat(projectDir, chat.id); await check();
-    console.log('PASS MCP Apps actual HTTP routes, opt-in, identity binding, CSP, server-scoped approvals, denial, replay, updates and teardown');
+    console.log('PASS MCP Apps actual HTTP routes, always-enabled views, identity binding, CSP, server-scoped approvals, denial, replay, updates and teardown');
   } finally {
     releaseUpstream?.();
     upstream.closeAllConnections(); if (upstream.listening) await new Promise(resolve => upstream.close(resolve));

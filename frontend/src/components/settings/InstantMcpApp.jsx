@@ -39,7 +39,7 @@ export function InstantMcpApp({ projectDir, onImported }) {
         setActiveProject(projectDir, '');
         nav('chat/' + encodeURIComponent(result.body.chatId));
       } else {
-        setStatus('Added. Enable MCP Apps in project settings, start the server, then ask a chat to open its view tool.');
+        setStatus('Added. Start the server, then ask a chat to open its view tool.');
         onImported();
       }
     } catch (error) {

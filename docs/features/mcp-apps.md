@@ -6,8 +6,8 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 ## Usage
 
-1. Enable **Settings → This project → General → MCP Apps**. It is off by default.
-2. Restart the relevant MCP server using its Settings lifecycle control so it receives the Apps capability at initialization.
+1. MCP Apps are always available for compatible project MCP tools; there is no project enable/disable switch. Legacy `mcpApps.enabled` values are ignored.
+2. Start the relevant MCP server using its Settings lifecycle control. Restart servers connected before this update so they receive the Apps capability at initialization.
 3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
 5. Use **Fullscreen** / **Inline** for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
@@ -16,13 +16,13 @@ App frames and sandbox wrappers have transparent backgrounds: unpainted app area
 
 The initial deployment supports **direct HTTP** clients using an app-managed second listener on an ephemeral port. That port must be reachable from the client. HTTPS, reverse proxies which do not expose that port, unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
 
-**App text messages are automatic:** a view can send `ui/message` with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; enable MCP Apps only for servers you trust to initiate prompts. Existing tool approvals still apply to the AI's actions.
+**App text messages are automatic:** a view can send `ui/message` with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; use interactive views only from servers you trust to initiate prompts. Disable their source tools through the existing tool permissions when needed. Existing tool approvals still apply to the AI's actions.
 
 Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot select another chat/model or insert assistant/system authority. They are rejected while the chat is running and limited to one attempt per chat per 5 seconds, including across remounts. The app receives only an acknowledgement, never conversation history or the AI response. Once accepted, the turn continues if the view closes; use the normal chat Stop control to cancel it.
 
 Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.
 
-For local single-file apps or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). Imports reuse this host and its opt-in/security restrictions.
+For local single-file apps or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). Imports reuse this host and its sandbox/tool-permission restrictions.
 
 ## Official reference
 
@@ -36,7 +36,7 @@ The installed official SDK is pinned to `@modelcontextprotocol/ext-apps@2.0.3`, 
 - HTTP-header CSP defaults deny network connections. Validated public HTTPS resources and HTTPS/WSS connections can be allowed only when declared by the app. Host/private origins, wildcard rules, CSP fragments, nested frames, dedicated app domains and external base URIs are rejected in this initial host.
 - The isolated listener serves only single-use, host-bound proxy tickets, no app API, session-cookie setting, service worker or HTML resource routes. App HTML arrives over a source-and-origin-checked message channel; proxy responses are `no-store`. Reload requires a fresh mount.
 - **Different ports do not isolate cookies.** `HttpOnly` prevents JavaScript reads, not browser transmission: same-host sandbox requests can carry main-app cookies. The trusted listener ignores cookie/auth headers and does not reflect them into HTML, responses or bridge messages. Separate-hostname HTTPS hosting with a reviewed cookie policy remains required before production rollout; prefer a separate registrable domain.
-- Every operation rechecks the live server generation, registered server, source-tool visibility/resource URI, tool Off settings, project opt-in and chat existence. Invalid mounts revoke their ticket and pending approvals; late tool results are not returned to a revoked app. APIs pin the mount's exact host origin, reject null/cross-site browser requests, and accept only the documented HTTP methods. No-Origin non-browser CLI access retains the ordinary access policy.
+- Every operation rechecks the live server generation, registered server, source-tool visibility/resource URI, tool Off settings and chat existence. Invalid mounts revoke their ticket and pending approvals; late tool results are not returned to a revoked app. APIs pin the mount's exact host origin, reject null/cross-site browser requests, and accept only the documented HTTP methods. No-Origin non-browser CLI access retains the ordinary access policy.
 - AppBridge performs initialization. Tool input is delivered before the original result. Unknown/unimplemented requests are rejected; capabilities are not advertised merely because the overview lists them.
 - Mount identities come from persisted tool call/result rows. The app cannot select another project, chat or server, or nominate its approval call ID. Only raw tools with app visibility on its own server are callable, through existing per-chat/per-tool authorization.
 - Resource reads are session-scoped and bounded to 16 cached HTML resources of at most 1 MiB each. Updates invalidate the cache and mounted views detect resource/session changes; they fall back and offer Retry rather than injecting replacement HTML into an initialized app.
@@ -52,7 +52,7 @@ All routes use the main app's normal access and same-origin authorization. Frame
 | POST | `/api/mcp/apps/mount` | Bind `{ projectDir, chatId, callId }` to a completed MCP tool result; return an isolated view mount, or disabled/fallback. |
 | POST | `/api/mcp/apps/:mountId/call` | Call a bound server tool with `{ requestId, name, arguments }`; `409 EAUTH_REQUIRED` returns a server-generated approval request for the existing decision endpoint. |
 | POST | `/api/mcp/apps/:mountId/message` | Accept `{ role: "user", content: [{ type: "text", text }] }` and automatically start the bound chat's normal AI turn; returns `{}` only. |
-| POST | `/api/mcp/apps/:mountId/status` | Detect resource/session changes, expiry or revoked project opt-in. |
+| POST | `/api/mcp/apps/:mountId/status` | Detect resource/session changes, expiry or revoked tool permissions. |
 | POST | `/api/mcp/apps/:mountId/cancel` | Cancel a host request ID and its outstanding approval. |
 | DELETE | `/api/mcp/apps/:mountId` | Revoke the mount and cancel outstanding calls. |
 

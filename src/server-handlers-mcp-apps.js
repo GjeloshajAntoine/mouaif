@@ -1,6 +1,5 @@
 'use strict';
 const crypto = require('node:crypto');
-const settings = require('./settings.js');
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const mcp = require('./mcp.js');
@@ -39,7 +38,6 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (!mount || mounts.get(mount.id) !== mount || mount.expires <= Date.now() || mount.lease <= Date.now()) {
         throw err('EMCP_APP_GONE', 'MCP App was closed or expired');
       }
-      if (settings.getProject(mount.projectDir).mcpApps?.enabled !== true) throw err('ETOOL_DISABLED', 'MCP Apps are disabled');
       const server = mcp.listServers(mount.projectDir).find(s => s.id === mount.serverId && s.slug === mount.serverSlug);
       const session = mcp._sessions.get(mount.projectDir + '::' + mount.serverId);
       if (!server || session !== mount.session || session?.status !== 'ready') throw err('EMCP_APP_GONE', 'MCP App server disconnected');
@@ -84,7 +82,6 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (parsed.pathname === '/api/mcp/apps/mount' && req.method === 'POST') {
         const { projectDir, chatId, callId } = body;
         if (typeof projectDir !== 'string' || typeof chatId !== 'string' || typeof callId !== 'string') throw err('EBADINPUT', 'projectDir, chatId and callId are required');
-        if (settings.getProject(projectDir).mcpApps?.enabled !== true) return sendJSON(res, 200, { enabled: false });
         if (!chats.getChat(projectDir, chatId)) throw err('EMCP_NOTFOUND', 'Chat not found');
         // The frame identity and original tool input/result come from persisted
         // transcript rows, never server IDs or HTML supplied by the browser.

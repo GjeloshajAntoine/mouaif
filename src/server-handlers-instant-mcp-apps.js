@@ -46,7 +46,7 @@ async function handleInstantMcpApps(req, res, parsed, publicOrigin) {
       fs.writeFileSync(path.join(projectDir, filename), body.source, { flag: 'wx', mode: 0o600 });
     }
     // Existing MCP registry/lifecycle and tool permissions remain authoritative.
-    // The new server is stopped, and MCP Apps remains opt-in.
+    // The new server is stopped; sandbox and tool permissions still apply.
     const server = mcp.addServer(projectDir, { scope: 'project', name,
       command: process.execPath, args: [path.join(__dirname, 'instant-mcp-app-server.js'), projectDir, filename, name], cwd: projectDir });
     return sendJSON(res, 201, { server, path: filename });

@@ -22,7 +22,7 @@ This separates app development from your current feature conversation. Multiple 
 1. Choose **Single HTML / JS file**.
 2. Upload one `.html`, `.htm`, `.js`, or `.mjs` file, or enter its existing project-relative path.
 3. Tap **Add app**. Uploaded source is saved under `.mouaif/mcp-apps/`; an existing path is referenced in place.
-4. Enable **Settings → This project → General → MCP Apps**, start the new MCP server, and ask a chat to call its `view` tool. Expand the completed tool card to open the app.
+4. Start the new MCP server and ask a chat to call its `view` tool. MCP Apps are always available for compatible project tools. Expand the completed tool card to open the app.
 
 HTML must be self-contained, with inline CSS and browser JavaScript. Browser-JS files receive a mobile page shell and a `<main id="app">` mount point. External imports, CDN assets, Node APIs and network requests are not supported by this zero-network adapter. JavaScript source is never executed on the Node server.
 
@@ -44,7 +44,7 @@ document.querySelector('#explain').onclick = async () => {
 };
 ```
 
-App-authored user messages automatically start a normal response in the bound chat and can consume provider credits. All [MCP Apps limitations and trust warnings](./mcp-apps.md) still apply, including the initial direct-HTTP/second-port deployment restriction. Import does not enable MCP Apps, start the server, weaken tool permissions, or grant device/network access.
+App-authored user messages automatically start a normal response in the bound chat and can consume provider credits. All [MCP Apps limitations and trust warnings](./mcp-apps.md) still apply, including the initial direct-HTTP/second-port deployment restriction. Import does not start the server, weaken tool permissions, or grant device/network access.
 
 Use the existing MCP server controls to start, stop, edit or remove the adapter. Removing its registry entry does not delete the source file. Edit a referenced file and close/retry its view to reload it; there is no file watcher or hot-reload protocol. Uploaded files are copies, not links to the phone's original file. The adapter configuration contains absolute runtime/project paths; re-import after moving a project or the installed runtime. `.mouaif/` may be Git-ignored; keep deliberately versioned apps in a regular project directory and import their paths.
 

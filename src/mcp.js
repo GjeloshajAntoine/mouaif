@@ -1100,7 +1100,7 @@ async function startServer(projectDir, serverId) {
     capabilities: {
       // roots: expose the active project as the MCP server's writable workspace.
       roots: { listChanged: false },
-      ...(hasProject && settings.getProject(projectDir).mcpApps?.enabled === true ? {
+      ...(hasProject ? {
         extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [mcpApps.MIME_TYPE] } }
       } : {})
       // sampling: not supported — mouaif is a thin client, not an LLM host
