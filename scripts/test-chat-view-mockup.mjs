@@ -150,11 +150,71 @@ try {
   assert.ok(review.longContentHeight > review.longBodyHeight, 'review preserves production overflow instead of hiding it');
   assert.deepEqual(await evaluate('window.fixtureErrors'), [], 'no browser runtime errors');
 
+  // Open the exact approval deep link the user receives, through the proxy.
+  await cdp.send('Page.navigate', { url: proxyUrl + '?view=approvals' });
+  for (let i = 0; i < 100 && !await evaluate('!!window.mockup?.ready'); i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(await evaluate('document.querySelector("#view").value'), 'approvals');
+  for (const width of [360, 390, 430]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
+    const approvals = await evaluate(`(() => {
+      document.querySelector('#reset-approvals').click();
+      const entries = mockup.mounted;
+      return { count: entries.length,
+        nativeCount: entries.filter(item => mockup.nativeNames.includes(item.test.name)).length,
+        noPrompt: entries.filter(item => item.section.dataset.approval === 'not-required').map(item => item.test.name),
+        questions: entries.filter(item => item.section.dataset.approval === 'question').map(item => item.test.name),
+        missingButtons: entries.filter(item => item.section.dataset.approval === 'permission' && item.box.querySelectorAll('.tool-card__actions button').length !== 4).map(item => item.test.name),
+        smallButtons: [...document.querySelectorAll('#tools .tool-card__actions button')].filter(button => { const r = button.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length,
+        pageFits: document.documentElement.scrollWidth <= innerWidth + 1,
+        modelPicker: !!document.querySelector('#tool-subagent .tool-card__auth-model'),
+        statesHidden: document.querySelector('#states').hidden,
+        batch: document.querySelector('#tool-group_cli .tool-card__body').textContent,
+        folder: document.querySelector('#tool-change_working_folder .tool-card__body').textContent };
+    })()`);
+    assert.equal(approvals.count, TOOL_CASES.length);
+    assert.equal(approvals.nativeCount, nativeNames.length);
+    assert.deepEqual(approvals.noPrompt.sort(), ['list_features', 'report_progress']);
+    assert.deepEqual(approvals.questions, ['ask_user']);
+    assert.deepEqual(approvals.missingButtons, []);
+    assert.equal(approvals.smallButtons, 0, 'approval buttons remain touch-safe at ' + width);
+    assert.ok(approvals.pageFits && approvals.modelPicker && approvals.statesHidden);
+    assert.match(approvals.batch, /1\. node --check/);
+    assert.match(approvals.batch, /2\. npm test.*\[background\]/);
+    assert.match(approvals.folder, /Chat: demo-chat/);
+    assert.match(approvals.folder, /Destination: \/demo\/project/);
+    const filtered = await evaluate(`(() => {
+      const search = document.querySelector('#search'); search.value = 'group_read'; search.dispatchEvent(new Event('input'));
+      const visible = mockup.mounted.filter(item => !item.section.hidden).map(item => item.test.name);
+      search.value = ''; search.dispatchEvent(new Event('input'));
+      return visible;
+    })()`);
+    assert.deepEqual(filtered, ['group_read'], 'approval examples share search');
+    await new Promise(resolve => setTimeout(resolve, 200));
+    assert.equal(await evaluate("!!document.activeElement.closest('#tools .tool-card')"), false,
+    'bulk prompts never steal keyboard focus');
+  }
+  const decisions = await evaluate(`(async () => {
+    const entries = mockup.mounted.filter(item => item.section.dataset.approval === 'permission');
+    for (const [index, item] of entries.entries()) item.box.querySelectorAll('.tool-card__actions button')[index % 4].click();
+    const answer = document.querySelector('#tool-ask_user .tool-card__ask-option'); answer.click();
+    document.querySelector('#tool-ask_user .tool-card__actions .btn--primary').click();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const settled = entries.every(item => !item.box.querySelector('.tool-card') && item.section.textContent.includes('No tool ran and no permissions changed'));
+    const answered = !document.querySelector('#tool-ask_user .tool-card');
+    document.querySelector('#reset-approvals').click();
+    const reset = document.querySelectorAll('#tools .tool-card--authorization').length === entries.length;
+    const view = document.querySelector('#view'); view.value = 'results'; view.dispatchEvent(new Event('change'));
+    return { settled, answered, reset, restored: mockup.mounted.every(item => item.card?.classList.contains('is-expanded')) };
+  })()`);
+  assert.ok(decisions.settled && decisions.answered && decisions.reset && decisions.restored,
+    'all demo decisions, question answer, reset, and switching back to results work');
+  assert.deepEqual(await evaluate('window.fixtureErrors'), [], 'approval preview has no runtime errors');
+
   const isolation = await fetch('http://127.0.0.1:' + server.address().port + '/api/chats');
   assert.equal(isolation.status, 404, 'preview has no live app API');
   assert.equal(exceptions.length, 0);
   assert.equal(escapedApiRequests, 0, 'fixture interactions never reach an app-origin API');
-  console.log('PASS all ' + nativeNames.length + ' native tools + MCP/fallback, production preview proxy, 3 render paths, state retention, filters, isolation, and 360/390/430px widths');
+  console.log('PASS all ' + nativeNames.length + ' native tools + MCP/fallback, approval gallery/decisions/reset, production preview proxy, 3 render paths, state retention, filters, isolation, and 360/390/430px widths');
 } finally {
   cdp?.close();
   if (chrome) { const exited = new Promise(resolve => chrome.once('exit', resolve)); chrome.kill(); await exited; }

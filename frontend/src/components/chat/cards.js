@@ -689,7 +689,7 @@ host._selected = () => selected;
 return host;
 }
 
-export function authorizationCard(request, projectDir, chatId, refs, resume, state) {
+export function authorizationCard(request, projectDir, chatId, refs, resume, state, { autoFocus = true } = {}) {
   return new Promise((resolve) => {
     if (!refs.transcript.current || request.signal?.aborted) return resolve('deny');
     const card = document.createElement('div');
@@ -810,8 +810,9 @@ const b = buttons.find((b) => b.dataset.shortcut === e.key);
 if (b) { b.click(); }
 }
 card.addEventListener('keydown', onKey);
-    // Auto-focus the first button so keyboard shortcuts work immediately.
-    if (buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
+    // Live prompts focus the first decision for keyboard shortcuts. A review
+    // catalogue can opt out so mounting many examples does not jump the page.
+    if (autoFocus && buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
     card.appendChild(head); card.appendChild(detail);
     if (modelPicker) card.appendChild(modelPicker);
     card.appendChild(actions);
@@ -833,7 +834,7 @@ card.addEventListener('keydown', onKey);
 // the /api/tools/authorization/decision endpoint, and the auth gate's
 // `wait()` resolves with the payload so the runner can fold both
 // into the `tool` message the model sees.
-export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
+export function askUserCard(request, projectDir, chatId, refs, setChatStatus, { autoScroll = true } = {}) {
   if (!refs.transcript.current) return;
   const card = document.createElement('div');
   card.className = 'tool-card tool-card--ask-user';
@@ -1043,7 +1044,9 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   // to the first option so the user can answer with the on-screen
   // keyboard. The `extra` textarea is below the options; tapping
   // it later is one tap away.
-  try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
+  if (autoScroll) {
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
+  }
 }
 
 // toggleToolGroup(names, next, state, refs, updateChat)

@@ -15,11 +15,13 @@
   <nav class="review-controls" aria-label="Review controls">
     <label>Find a tool<input id="search" type="search" placeholder="Tool name or family"></label>
     <label>Family<select id="family"><option value="all">All families</option></select></label>
+    <label>Show<select id="view"><option value="results">Expanded results</option><option value="approvals">Approvals for every tool</option></select></label>
     <label>Render path<select id="render-path"><option value="call-first">Live: call → result</option><option value="result-first">Result first with recovered arguments</option><option value="reconciled">Persisted transcript replay</option></select></label>
     <div class="review-actions">
       <button id="expand" type="button">Expand all</button>
       <button id="collapse" type="button">Collapse all</button>
       <button id="reconcile" type="button">Replay unchanged</button>
+      <button id="reset-approvals" type="button" hidden>Reset approval examples</button>
     </div>
     <p id="review-status" role="status" aria-live="polite">All result cards start expanded. Production height caps stay intact.</p>
   </nav>

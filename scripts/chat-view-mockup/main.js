@@ -5,6 +5,7 @@ import { appendToolCallCard, appendToolResultCard, handleShellOutputEvent,
   reconcileTranscriptRows } from '../../frontend/src/components/chat/transcript.js';
 import { askUserCard, authorizationCard } from '../../frontend/src/components/chat/cards.js';
 import { TOOL_CASES, LONG_CASE, IMAGE, refs } from './fixtures.js';
+import { approvalRequest, approvalNote } from './approvals.js';
 
 // Keep production approval/question controls local even when this page is
 // served through the app-origin preview proxy (which cannot forward POST).
@@ -26,7 +27,10 @@ const status = document.querySelector('#review-status');
 const search = document.querySelector('#search');
 const family = document.querySelector('#family');
 const renderPath = document.querySelector('#render-path');
+const view = document.querySelector('#view');
+view.value = new URLSearchParams(location.search).get('view') === 'approvals' ? 'approvals' : 'results';
 const mounted = [];
+let approvalController;
 const nativeNames = TOOL_GROUPS.flatMap(group => group.tools);
 const groupNames = Object.fromEntries(TOOL_GROUPS.map(group => [group.id, group.name]));
 for (const [id, name] of Object.entries({ ...groupNames, mcp: 'MCP', fallback: 'Fallback' })) {
@@ -92,22 +96,59 @@ function applyFilter() {
   document.querySelector('#no-matches').hidden = visible !== 0;
 }
 
+function drawApproval(test, host, id) {
+  const note = document.createElement('p');
+  note.textContent = approvalNote(test.name);
+  host.section.insertBefore(note, host.box);
+  if (test.name === 'report_progress' || test.name === 'list_features') {
+    host.section.dataset.approval = 'not-required';
+    return { ...host, test };
+  }
+  host.section.dataset.approval = test.name === 'ask_user' ? 'question' : 'permission';
+  if (test.name === 'ask_user') {
+    askUserCard({ callId: id, ...test.args }, '/demo/project', 'demo-chat', host.refs,
+      message => { note.textContent = 'Demo: ' + message + '. Reset approval examples to try again.'; }, { autoScroll: false });
+  } else {
+    void authorizationCard(approvalRequest(test, id, approvalController.signal),
+      '/demo/project', 'demo-chat', host.refs, () => {}, {
+        chat: { providerId: 'demo-provider', modelId: 'demo-model' },
+        models: [{ id: 'demo-model', provider: 'demo-provider', label: 'Demo model' }]
+      }, { autoFocus: false }).then(decision => {
+        note.textContent = 'Demo decision: ' + decision + '. No tool ran and no permissions changed. Reset approval examples to try again.';
+      });
+  }
+  return { ...host, card: host.box.firstElementChild, test };
+}
+
 function renderTools() {
+  approvalController?.abort();
+  approvalController = new AbortController();
   mounted.length = 0; tools.replaceChildren();
+  const approvals = view.value === 'approvals';
+  for (const id of ['expand', 'collapse', 'reconcile']) document.getElementById(id).hidden = approvals;
+  document.querySelector('#reset-approvals').hidden = !approvals;
+  renderPath.disabled = approvals;
+  states.hidden = approvals;
+  document.querySelector('#tools-title').textContent = approvals ? 'Approvals for every tool' : 'Every tool, expanded';
+  status.textContent = approvals ? 'Demo only. Allow / Deny never runs a tool or changes permissions. No-prompt tools are labelled.'
+    : 'All result cards start expanded. Production height caps stay intact.';
   for (const test of TOOL_CASES) {
     const groupId = toolGroupId(test.name) || (test.name.startsWith('mcp__') ? 'mcp' : 'fallback');
     const host = panel(tools, 'tool-' + test.name, test.name, groupNames[groupId] || groupId);
     host.section.dataset.family = groupId;
-    mounted.push(draw(test, host, 'review-' + test.name, renderPath.value));
+    mounted.push(approvals ? drawApproval(test, host, 'approval-' + test.name)
+    : draw(test, host, 'review-' + test.name, renderPath.value));
   }
   applyFilter();
   const covered = nativeNames.filter(name => TOOL_CASES.some(test => test.name === name)).length;
   document.querySelector('#coverage').textContent = covered + ' / ' + nativeNames.length
-    + ' native tools · 2 MCP examples · 1 fallback · live and failure cases below';
+    + ' native tools · 2 MCP examples · 1 fallback' + (approvals ? ' · approval states' : ' · live and failure cases below');
 }
 
 search.addEventListener('input', applyFilter);
 family.addEventListener('change', applyFilter);
+view.addEventListener('change', renderTools);
+document.querySelector('#reset-approvals').addEventListener('click', renderTools);
 renderPath.addEventListener('change', () => { renderTools(); status.textContent = 'Rebuilt through ' + renderPath.selectedOptions[0].textContent + '.'; });
 document.querySelector('#expand').addEventListener('click', () => mounted.forEach(item => setExpanded(item.card, true)));
 document.querySelector('#collapse').addEventListener('click', () => mounted.forEach(item => setExpanded(item.card, false)));
@@ -145,10 +186,10 @@ for (const [id, title, test, note] of [
 
 const question = panel(states, 'pending-question', 'Question awaiting an answer', 'Interactive locally: answering never posts to a server.');
 askUserCard({ callId: 'review-question', ...TOOL_CASES.find(test => test.name === 'ask_user').args,
-  multiSelect: false, presets: ['Expanded tools'] }, '/demo/project', 'demo-chat', question.refs, () => {});
+  multiSelect: false, presets: ['Expanded tools'] }, '/demo/project', 'demo-chat', question.refs, () => {}, { autoScroll: false });
 const approval = panel(states, 'pending-approval', 'Tool awaiting approval', 'Production authorization card; demo decisions stay inside this page, never in the real app.');
 void authorizationCard({ callId: 'review-approval', tool: 'shell', cmd: 'node --check src/example.js', timeoutMs: 30000 },
-  '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] });
+  '/demo/project', 'demo-chat', approval.refs, () => {}, { chat: {}, models: [] }, { autoFocus: false });
 
 // Deliberately bounded public diagnostics for browser tests and review tools.
 window.mockup = { mounted, nativeNames, ready: true };
