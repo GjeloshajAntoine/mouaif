@@ -32,10 +32,9 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', 
     mcpAppContext: { projectDir: '/fixture', chatId: 'chat' } };
   appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
   appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
-    result: { ok: true, server: { id: 'one' }, path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
+    result: { ok: true, name: 'Single-file app', path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
   window.nativeCard = root.querySelector('.tool-card');
-  window.nativeLazy = !root.querySelector('.mcp-app');
-  window.nativeCard.querySelector('.tool-card__head').click();
+  window.nativeAutoExpanded = window.nativeCard.classList.contains('is-expanded') && !!root.querySelector('.mcp-app');
 ` }, bundle: true, write: false, outdir: '/tmp/instant-ui', format: 'esm' });
 const js = bundle.outputFiles.find(file => file.path.endsWith('.js')).text;
 const css = bundle.outputFiles.find(file => file.path.endsWith('.css')).text;
@@ -99,7 +98,7 @@ try {
   let appEvaluate;
   for (let i = 0; !appEvaluate && i < 100; i++) { appEvaluate = await cdp.appContext(); if (!appEvaluate) await sleep(50); }
   assert(appEvaluate, 'single-file app initializes in opaque sandbox');
-  assert.equal(await cdp.evaluate('window.nativeLazy'), true, 'native creation card stays lazy until expanded');
+  assert.equal(await cdp.evaluate('window.nativeAutoExpanded'), true, 'native creation card auto-expands and mounts immediately');
   assert.deepEqual(mounts, [{ projectDir: '/fixture', chatId: 'chat', callId: 'native-create' }], 'native card binds by persisted call identity only');
   for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#ready').textContent") !== 'initialized'; i++) await sleep(50);
   assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'initialized');

@@ -444,7 +444,7 @@ export function formatResultSummary(name, r) {
     const keys = Object.keys(r).filter(k => k !== 'ok');
     return keys.length ? keys.length + ' features' : null;
   }
-  if (n === 'create_mcp_app') return r.mode === 'request' ? 'draft' : (r.server && r.server.status) || null;
+  if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : (r.server && r.server.status) || (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
   if (n === 'subagent_status' || n === 'subagent_stop' || n === 'subagent_send' || n === 'subagent_decision') {
     return r.state || null;

@@ -313,15 +313,15 @@ async function runSingleToolCall(c, cx) {
         if (keys.length) { forcePrompt = true; summary = 'permission keys: ' + keys.join(', '); }
       }
       if (c.name === 'create_mcp_app') {
-      // Registering an MCP adapter is a configuration mutation, just like
-      // update_settings writing mcp: Allow/session grants must not bypass
-      // the user's decision. The request-only draft has no adapter effects.
+      // Creating an interactive app in the chat card always prompts the user
+      // even when the family or tool is Allow. The request-only draft has no
+      // side effects beyond an unsent draft.
       forcePrompt = args.request === undefined;
       summary = args.request !== undefined
       ? 'Prepare development draft: ' + (args.name || 'On-the-fly app')
-      : 'Create and start trusted local MCP App: ' + (args.name || 'On-the-fly app')
-        + '\nSource: ' + (args.path || args.filename || '(missing filename)')
-        + '\nNo installs, Node execution of app source or permission changes.';
+      : 'Create and open local MCP App in this chat: ' + (args.name || 'On-the-fly app')
+      + '\nSource: ' + (args.path || args.filename || '(missing filename)')
+      + '\nNo installs, Node execution of app source, MCP server registration or permission changes.';
       }
       // A delegation that shares chat images names them on the approval
       // card (metadata only), so the user sees what leaves the chat.

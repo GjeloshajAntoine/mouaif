@@ -1554,6 +1554,7 @@ export function appendToolResultCard(toolResult, refs) {
   let card = id ? findToolCard(refs, id) : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+  const isMcpAppCreate = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && (rawR.path || rawR.server) && !rawR.chatId);
   const partial = rawR && rawR.failedCount > 0 && rawR.succeededCount > 0;
   const pillClass = partial ? 'tool-card__pill--partial' : toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = partial ? 'Partial success' : toolResult.ok ? 'ok' : 'error';
@@ -1661,7 +1662,7 @@ if (!card) {
     // rows the user opened or folded while the run was streaming.
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
-    if ((toolResult.name?.startsWith('mcp__') || (toolResult.name === 'create_mcp_app' && toolResult.ok && toolResult.result?.server)) && id && refs.mcpAppContext) {
+    if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
       const context = refs.mcpAppContext;
       const app = document.createElement('div');
       body.prepend(app);
@@ -1679,11 +1680,9 @@ if (!card) {
     // Leaving its body lazy meant a finished run rendered as a bare
     // "Subagent · task · ok" header with nothing under it until the user
     // guessed that the row is tappable — the transcript looked like the run
-    // had produced nothing. Delegate cards keep the body VISIBLE (a
-    // delegation is a rare, deliberate action, not the tool-heavy chatter the
-    // lazy path was added for), still built on first paint rather than
-    // deferred.
-    if (isSubagent || card.classList.contains('is-expanded') || !toolResult.ok) {
+    // had produced nothing. Delegate cards and newly created MCP Apps keep
+    // the body VISIBLE, still built on first paint rather than deferred.
+    if (isSubagent || isMcpAppCreate || card.classList.contains('is-expanded') || !toolResult.ok) {
     // Errors auto-expand — build immediately so the failure is visible.
     lazyBody();
     } else {
@@ -1699,12 +1698,12 @@ if (!card) {
 // Expand errors automatically so the user sees what went wrong.
 // Successful results stay collapsed; webpreview publishes its image to the
 // dedicated dock above the composer rather than expanding in the transcript.
-// A subagent card is the exception: its built body IS the delegated
-// transcript, so it stays expanded (never over a deliberate collapse) instead
-// of showing a header with an invisible conversation under it.
+// Subagent cards and on-the-fly MCP App creations are the exceptions: their
+// built body IS the interactive surface, so they stay expanded (never over a
+// deliberate collapse) instead of hiding the result under a collapsed header.
 if (!toolResult.ok) {
 card.classList.add('is-expanded');
-} else if (isSubagent) {
+} else if (isSubagent || isMcpAppCreate) {
 if (!card._userCollapsed) card.classList.add('is-expanded');
 } else if (card._userCollapsed !== false) card.classList.remove('is-expanded');
   card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));

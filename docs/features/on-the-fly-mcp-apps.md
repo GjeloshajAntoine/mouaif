@@ -8,13 +8,13 @@ Create a local MCP App from a request or a single HTML/browser-JavaScript file, 
 
 ### From a chat tool
 
-Ask the assistant to create an interactive app. The native **`create_mcp_app`** tool lives in the **mouaif** tool family and accepts exactly one of:
+Ask the assistant to create an interactive app. The native **`create_mcp_app`** tool lives in the **mouaif** tool family and accepts:
 
-- `source` plus `filename` (`.html`, `.htm`, `.js`, or `.mjs`): writes a new uniquely named source file, registers the fixed trusted adapter, and starts it.
-- `path`: imports an existing file relative to the original project folder (not the chat's alternate working folder), registers the adapter, and starts it.
+- `source` plus `filename` (`.html`, `.htm`, `.js`, or `.mjs`): writes a uniquely named source file and renders the interactive app directly inside the current chat's tool card (without registering a project-wide MCP server).
+- `path`: renders an existing file relative to the original project folder (not the chat's alternate working folder) directly inside the current chat's tool card (without registering a project-wide MCP server).
 - `request`: prepares a separate development chat with an unsent draft. This mode does not generate source, register a server, start an AI response, or spend credits.
 
-`name` is optional. File creation/import always requires an explicit approval, even when the family or tool is **Allow**. **Off** hides and blocks it. Denying approval writes no file and registers no server. No tool permissions are changed; MCP **Off** still blocks the app view and app-originated tool calls use the existing MCP authorization.
+`name` is optional. File creation/import always requires an explicit approval, even when the family or tool is **Allow**. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
 
 ```json
 {
@@ -24,7 +24,7 @@ Ask the assistant to create an interactive app. The native **`create_mcp_app`** 
 }
 ```
 
-Expand the successful creation tool card to use the app immediately. The result includes `server`, `path` and `viewTool` for later use. New MCP view tools become available on subsequent chat turns; the current turn's tool schema remains stable. If adapter startup fails, the error includes the registered server and source path so it can be started from Settings without recreating the app.
+The successful creation tool card automatically expands and opens the app view immediately in the current chat. Its result includes `name` and `path`. Inside the app, await `window.mouaifAppReady` and call `window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: '...' }] })` to communicate back with the agent in the current chat.
 
 All existing single-file limits, transparent backgrounds, SDK injection, sandbox isolation and deployment restrictions below apply equally to the native tool. It accepts no custom command, environment, provider credentials or arbitrary project directory.
 

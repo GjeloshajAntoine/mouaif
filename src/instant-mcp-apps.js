@@ -103,7 +103,10 @@ function developmentDraft(request, filename) {
 }
 
 // Shared by the Settings HTTP routes and the model-facing native tool.
-function createApp(projectDir, body) {
+// Settings imports (`registerServer: true`, the default) register a stopped
+// project MCP server; the chat tool (`registerServer: false`) keeps the app
+// scoped to the current chat's tool card without adding a project MCP server.
+function createApp(projectDir, body, options = {}) {
   const root = projectRoot(projectDir);
   const name = body.name === undefined ? 'On-the-fly app' : body.name;
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw err('EBADINPUT', 'App name must be 1–100 characters');
@@ -129,6 +132,9 @@ function createApp(projectDir, body) {
     renderHtml(body.source, kind, title);
     filename = newSourcePath(root, kind);
     fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
+  }
+  if (options.registerServer === false) {
+    return { name: title, path: filename };
   }
   const server = require('./mcp.js').addServer(root, { scope: 'project', name: title,
     command: process.execPath, args: [path.join(__dirname, 'instant-mcp-app-server.js'), root, filename, title], cwd: root });

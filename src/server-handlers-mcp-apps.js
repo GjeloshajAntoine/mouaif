@@ -38,12 +38,17 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (!mount || mounts.get(mount.id) !== mount || mount.expires <= Date.now() || mount.lease <= Date.now()) {
         throw err('EMCP_APP_GONE', 'MCP App was closed or expired');
       }
+      if (!chats.getChat(mount.projectDir, mount.chatId)) throw err('EMCP_APP_GONE', 'Chat was removed');
+      if (mount.creationTool) {
+        if (authz.effectiveConfig(mount.projectDir, mount.creationTool, mount.chatId).mode === 'off') {
+          throw err('ETOOL_DISABLED', 'MCP App source tool is disabled');
+        }
+        return null;
+      }
       const server = mcp.listServers(mount.projectDir).find(s => s.id === mount.serverId && s.slug === mount.serverSlug);
       const session = mcp._sessions.get(mount.projectDir + '::' + mount.serverId);
       if (!server || session !== mount.session || session?.status !== 'ready') throw err('EMCP_APP_GONE', 'MCP App server disconnected');
-      if (!chats.getChat(mount.projectDir, mount.chatId)) throw err('EMCP_APP_GONE', 'Chat was removed');
-      if ((mount.creationTool && authz.effectiveConfig(mount.projectDir, mount.creationTool, mount.chatId).mode === 'off')
-      || authz.effectiveConfig(mount.projectDir, mount.sourceTool, mount.chatId).mode === 'off') {
+      if (authz.effectiveConfig(mount.projectDir, mount.sourceTool, mount.chatId).mode === 'off') {
         throw err('ETOOL_DISABLED', 'MCP App source tool is disabled');
       }
       const tool = session.tools.find(t => mcp.composedToolName(server.slug, t.name) === mount.sourceTool);
@@ -90,23 +95,34 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         const call = rows.find(r => r.role === 'tool' && r.phase === 'call' && r.toolCallId === callId);
         const result = rows.find(r => r.role === 'tool' && r.phase === 'result' && r.toolCallId === callId);
         if (!call || !result) throw err('EMCP_NOTFOUND', 'Completed tool call not found');
-        let parsedTool = mcp.parseServerSlugAndToolName(call.name);
-        let creationTool;
         if (call.name === 'create_mcp_app') {
-        // Only a completed native creation result may bind to the fixed
-        // trusted adapter. Browser-provided server IDs/HTML remain ignored.
         let created;
         try { created = JSON.parse(result.content); } catch { /* invalid result */ }
-        if (created?.ok !== true || !created.server?.id) return sendJSON(res, 200, { enabled: false });
-        const entry = mcp.listServers(projectDir).find(s => s.id === created.server.id);
-        const path = require('node:path');
-        const root = require('./instant-mcp-apps.js').projectRoot(projectDir);
-        if (!entry || entry.scope !== 'project' || entry.command !== process.execPath
-        || entry.args?.[0] !== path.join(__dirname, 'instant-mcp-app-server.js')
-        || entry.args?.[1] !== root || entry.args?.[2] !== created.path) throw err('EBADINPUT', 'Not a trusted local app adapter');
-        parsedTool = { serverSlug: entry.slug, toolName: 'view' };
-        creationTool = call.name;
+        if (created?.ok !== true || !created.path || created.chatId) return sendJSON(res, 200, { enabled: false });
+        if (authz.effectiveConfig(projectDir, call.name, chatId).mode === 'off') throw err('ETOOL_DISABLED', 'MCP tool is disabled');
+        const instantApps = require('./instant-mcp-apps.js');
+        const root = instantApps.projectRoot(projectDir);
+        const { source, kind } = instantApps.readSource(root, created.path);
+        const appName = created.name || created.server?.name || 'On-the-fly app';
+        const html = instantApps.renderHtml(source, kind, appName);
+        const policy = buildPolicy({ csp: { connectDomains: [], resourceDomains: [] } }, origin);
+        if (mounts.size >= 64) throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
+        const ticket = await sandbox.issue(origin, policy);
+        if (mounts.size >= 64) {
+        sandbox.revoke(ticket.token);
+        throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');
         }
+        const id = crypto.randomBytes(24).toString('base64url');
+        const mount = { id, hostOrigin: origin, projectDir, chatId, creationTool: call.name,
+        title: appName, ticket, expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
+        mounts.set(id, mount);
+        validate(mount);
+        sandbox.bind(ticket.token, () => { validate(mount); });
+        return sendJSON(res, 200, { enabled: true, id, url: ticket.url, origin: ticket.origin,
+        title: mount.title, html, csp: policy.csp, permissions: {},
+        arguments: {}, result: created });
+        }
+        let parsedTool = mcp.parseServerSlugAndToolName(call.name);
         if (!parsedTool) throw err('EBADINPUT', 'Not an MCP tool call');
         const sourceTool = mcp.composedToolName(parsedTool.serverSlug, parsedTool.toolName);
         const server = mcp.listServers(projectDir).find(s => s.slug === parsedTool.serverSlug);
@@ -131,7 +147,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         const id = crypto.randomBytes(24).toString('base64url');
         let toolResult;
         try { toolResult = JSON.parse(result.content); } catch { toolResult = { content: [{ type: 'text', text: result.content }] }; }
-        const mount = { id, hostOrigin: origin, projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session, sourceTool, creationTool,
+        const mount = { id, hostOrigin: origin, projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session, sourceTool,
         epoch, title: server.name + ' — ' + tool.name, ticket,
         expires: Date.now() + 30 * 60 * 1000, lease: Date.now() + 20000, requests: new Map() };
         mounts.set(id, mount);
@@ -139,7 +155,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         sandbox.bind(ticket.token, () => { validate(mount); });
         return sendJSON(res, 200, { enabled: true, id, url: ticket.url, origin: ticket.origin,
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
-          arguments: creationTool ? {} : call.args || {}, result: toolResult });
+          arguments: call.args || {}, result: toolResult });
       }
       const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });
@@ -194,6 +210,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       }
       if (match[2] !== 'call' || req.method !== 'POST') throw err('EBADINPUT', 'Unsupported App operation');
       if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.requestId)) throw err('EBADINPUT', 'requestId is required');
+      if (!session) throw err('EMCP_VISIBILITY', 'Tool is not app-callable on this server');
       let request = mount.requests.get(body.requestId);
       if (!request) {
         if (mount.requests.size >= 64) throw err('EMCP_APP_LIMIT', 'MCP App call limit reached; reload');

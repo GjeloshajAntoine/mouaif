@@ -101,26 +101,24 @@ async function post(route, body, headers = {}) {
     const messages = require('../src/messages.js');
     const host = chats.createChat(projectDir, { title: 'Native app host' });
     const opts = { projectDir, chatId: host.id };
+    const serverCount = mcp.listServers(projectDir).length;
     const nativeCreated = await native.runAppTool('create_mcp_app', { name: 'Native app', filename: 'native.html', source: html }, opts);
     assert.equal(nativeCreated.ok, true, nativeCreated.content);
-    assert.equal(nativeCreated.result.server.status, 'ready');
+    assert.equal(nativeCreated.result.name, 'Native app');
+    assert.equal(nativeCreated.result.server, undefined, 'native tool does not register a project MCP server');
+    assert.equal(mcp.listServers(projectDir).length, serverCount, 'MCP server list stays untouched');
     const callId = 'native-app-call';
     messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: callId, content: '{}' });
     messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: callId, content: nativeCreated.content });
     const mounted = await post('mount', { chatId: host.id, callId });
     assert.equal(mounted.status, 200, JSON.stringify(mounted.body));
-    assert.equal(mounted.body.enabled, true, 'native creation card mounts the app');
+    assert.equal(mounted.body.enabled, true, 'native creation card mounts the app directly');
     assert.deepEqual(mounted.body.arguments, {}, 'creation source is not forwarded as view arguments');
     assert.match(mounted.body.html, /Counter/);
-    const viewTool = nativeCreated.result.viewTool;
     authz.setAuthorization(projectDir, { tools: { create_mcp_app: { mode: 'off' } } });
     assert.equal((await post(mounted.body.id + '/status', {})).status, 403, 'native Off revokes existing mount');
     assert.equal((await post('mount', { chatId: host.id, callId })).status, 403);
     authz.setAuthorization(projectDir, { tools: { create_mcp_app: { mode: 'ask' } } });
-    authz.setAuthorization(projectDir, { mcp: { tools: { [viewTool]: { mode: 'off' } } } });
-    assert.equal((await post('mount', { chatId: host.id, callId })).status, 403, 'MCP Off still blocks native app mount');
-    authz.setAuthorization(projectDir, { mcp: { tools: { [viewTool]: { mode: 'ask' } } } });
-    const serverCount = mcp.listServers(projectDir).length;
     const chatCount = chats.countChats(projectDir);
     for (const args of [{}, { path: 'counter.html', source: html }, { request: 'test', source: html },
     { source: html }, { filename: 'x.ts', source: html }, { filename: 'x.html', source: '' },
@@ -137,21 +135,17 @@ async function post(route, body, headers = {}) {
     assert.equal(mcp.listServers(projectDir).length, serverCount);
     const jsNative = await native.runAppTool('create_mcp_app', { filename: 'native.js', source: nodeSource }, opts);
     assert.equal(jsNative.ok, true);
-    await mcp.callTool(projectDir, jsNative.result.server.slug, 'view', {});
+    assert.equal(mcp.listServers(projectDir).length, serverCount, 'JS native app does not register a project MCP server');
+    const jsCallId = 'native-js-call';
+    messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: jsCallId, content: '{}' });
+    messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: jsCallId, content: jsNative.content });
+    const jsMounted = await post('mount', { chatId: host.id, callId: jsCallId });
+    assert.equal(jsMounted.status, 200);
     assert.equal(fs.existsSync(sentinel), false, 'native source is never executed in Node');
     const pathNative = await native.runAppTool('create_mcp_app', { path: 'counter.html' }, { ...opts, workingDir: home });
     assert.equal(pathNative.ok, true, 'native paths stay relative to original project');
     assert.equal(pathNative.result.path, 'counter.html');
-    const startServer = mcp.startServer;
-    try {
-    mcp.startServer = async () => { throw Object.assign(new Error('fixture startup failure'), { code: 'EMCP_RPC' }); };
-    const failed = await native.runAppTool('create_mcp_app', { path: 'counter.html' }, opts);
-    assert.equal(failed.ok, false);
-    assert.equal(failed.result.ok, false);
-    assert.equal(failed.result.code, 'EMCP_RPC');
-    assert.ok(mcp.listServers(projectDir).some(entry => entry.id === failed.result.server.id), 'start error retains recoverable registered server');
-    assert.equal(failed.result.path, 'counter.html');
-    } finally { mcp.startServer = startServer; }
+    assert.equal(mcp.listServers(projectDir).length, serverCount);
     assert.equal((await fetch(base + '/')).status, 200, 'existing frontend serve flow');
     console.log('PASS instant MCP Apps imports, official SDK injection, stdio discovery, JS isolation, request drafts, bounds and traversal/origin guards');
   } finally {

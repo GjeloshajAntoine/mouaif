@@ -188,22 +188,22 @@ async function main() {
   assert.equal(out.events.some(event => event.type === 'authorization_required'), false);
   out = await call(host, appArgs, { decision: 'allow-once' });
   assert.equal(out.ok, true);
-  assert.equal(out.returned.server.status, 'ready');
-  assert.equal(out.returned.viewTool, mcp.composedToolName(out.returned.server.slug, 'view'));
+  assert.equal(out.returned.name, 'Inline counter');
+  assert.equal(out.returned.server, undefined, 'native tool does not register a project MCP server');
   assert.equal(fs.readFileSync(path.join(projectDir, out.returned.path), 'utf8'), appArgs.source);
   assert.ok(out.events.find(event => event.type === 'authorization_required').payload.summary.includes('counter.html'));
-  assert.equal(authz.effectiveConfig(projectDir, out.returned.viewTool, host.id).mode, 'ask', 'creation does not grant MCP permissions');
+  assert.equal(mcp.listServers(projectDir).length, appCount, 'server list remains untouched');
   out = await call(host, { action: 'app_create', request: 'Build a checklist' });
   assert.equal(out.ok, true);
   assert.ok(chats.getChat(projectDir, out.returned.chatId).draft.includes('Build a checklist'));
   assert.equal(out.events.some(event => event.type === 'authorization_required'), false, 'request-only draft honors allow');
-  assert.equal(mcp.listServers(projectDir).length, appCount + 1);
+  assert.equal(mcp.listServers(projectDir).length, appCount);
 
   // A family Off also hides and blocks the new native tool.
   authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'off' } } });
   out = await call(host, appArgs, { advertised: false });
   assert.equal(out.ok, false);
-  assert.equal(mcp.listServers(projectDir).length, appCount + 1);
+  assert.equal(mcp.listServers(projectDir).length, appCount);
   authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'ask' } } });
 
   // The running chat cannot delete itself.
