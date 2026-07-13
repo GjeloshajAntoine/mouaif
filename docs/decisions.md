@@ -56,7 +56,7 @@ The "trace to file" feature is a **user export**, not a background stream and no
 ## 9. Build order — settings first
 
 - The next `feat:` commit implements app + project settings (decisions 1 + 2) and ships with `docs/features/app-and-project-settings.md`.
-- After that: virtual list primitive → models → folder picker → **AI client core (4 providers + Copilot, key-only, server proxy, SSE) → auth (keytar + per-model auth + loopback callback skeleton) → OpenAI OAuth → Anthropic OAuth → Google OAuth → GitHub Copilot OAuth → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector**.
+- After that: virtual list primitive → models → folder picker → **AI client core (4 providers + Copilot, key-only, server proxy, SSE) → auth (keytar + per-model auth + loopback callback skeleton) → Anthropic OAuth → Google OAuth → GitHub Copilot OAuth → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector**.
 
 ## 10. AI client — server-side proxy with SSE streaming
 
@@ -75,6 +75,6 @@ The "trace to file" feature is a **user export**, not a background stream and no
 
 ## 12. OAuth — one provider per commit
 
-- Each provider gets its own `feat:` commit and its own `docs/features/oauth-<provider>.md`. Commits: OpenAI → Anthropic → Google → GitHub Copilot.
+- Each provider that exposes an OAuth flow for third-party clients gets its own `feat:` commit and its own `docs/features/oauth-<provider>.md`. Commits: Anthropic → Google → GitHub Copilot.
 - Each commit reuses the loopback callback skeleton from decision 11; only the authorization endpoint, token endpoint, client id, and scopes differ.
 
