@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
+const ai = require('./ai.js');
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -101,9 +102,14 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleProjects(req, res, parsed);
   }
 
+  // AI proxy (server-side call to upstream providers; SSE stream back)
+  if (urlPath.startsWith('/api/ai/')) {
+    return handleAI(req, res, parsed);
+  }
+
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)'] });
   }
 
   // REST: GET /data
@@ -299,6 +305,94 @@ async function handleProjects(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'projects' });
+}
+
+// ---- AI API -------------------------------------------------------------
+// Server-side proxy. The browser POSTs /api/ai/chat with { modelId,
+// messages, projectDir? } and the server resolves the model record from
+// the app + project settings, calls the upstream provider, and streams
+// the response back as SSE.
+//
+// Implements docs/decisions.md section 10. Auth = apikey only in this
+// commit; auth = oauth returns ENOAUTH (typed SSE error).
+
+function resolveModel(modelId, projectDir) {
+  if (!modelId || typeof modelId !== 'string') {
+    const e = new Error('modelId is required');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  const resolved = settings.getResolved(projectDir || null);
+  const list = Array.isArray(resolved.models) ? resolved.models : [];
+  const m = list.find(x => x && x.id === modelId);
+  if (!m) {
+    const e = new Error('Model not found: ' + modelId);
+    e.code = 'EMODEL_NOT_FOUND';
+    throw e;
+  }
+  // Backfill auth default for models created before this commit.
+  if (!m.auth) m.auth = 'apikey';
+  return m;
+}
+
+async function handleAI(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+
+  // GET /api/ai/models?projectDir=<abs>  -> list models visible to this project
+  if (urlPath === '/api/ai/models' && method === 'GET') {
+    const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
+    const resolved = settings.getResolved(projectDir || null);
+    const models = (resolved.models || []).map(m => ({
+      id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
+    }));
+    return sendJSON(res, 200, { models, providers: Object.keys(ai.ENDPOINTS) });
+  }
+
+  // POST /api/ai/chat  body: { modelId, messages, projectDir? }  -> SSE stream
+  if (urlPath === '/api/ai/chat' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+
+    let model;
+    try { model = resolveModel(body.modelId, body.projectDir); }
+    catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code }); }
+
+    // Open SSE.
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    // Initial comment so the client sees headers immediately.
+    res.write(': connected\n\n');
+
+    const controller = new AbortController();
+    req.on('close', () => { try { controller.abort(); } catch { /* ignore */ } });
+
+    function emit(name, data) {
+      try {
+        res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
+      } catch { /* socket already closed */ }
+    }
+
+    const result = await ai.streamChat({
+      model,
+      messages: body.messages || [],
+      signal: controller.signal,
+      onEvent: (name, data) => emit(name, data)
+    });
+
+    if (!result.ok) {
+      emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
+    }
+    res.end();
+    return;
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'ai' });
 }
 
 function createServer(port = DEFAULT_PORT) {

@@ -10,6 +10,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
 - [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
+- [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 5 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, GitHub Copilot reserved). Apikey only; OAuth lands in a follow-up commit.
 
 ## Architectural decisions
 

@@ -56,4 +56,24 @@ The "trace to file" feature is a **user export**, not a background stream and no
 ## 9. Build order — settings first
 
 - The next `feat:` commit implements app + project settings (decisions 1 + 2) and ships with `docs/features/app-and-project-settings.md`.
-- After that: virtual list primitive → models → folder picker → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector.
+- After that: virtual list primitive → models → folder picker → **AI client core (4 providers + Copilot, key-only, server proxy, SSE) → auth (keytar + per-model auth + loopback callback skeleton) → OpenAI OAuth → Anthropic OAuth → Google OAuth → GitHub Copilot OAuth → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector**.
+
+## 10. AI client — server-side proxy with SSE streaming
+
+- The mobile UI never holds an API key. All provider calls go through `POST /api/ai/chat` on the mouaif server, which streams the response back over SSE.
+- Provider set, this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are key-only in this commit; `github-copilot` is documented but its auth lands with the OAuth commits.
+- Model record is extended to `{ id, provider, label, baseUrl, apiKey, auth: 'apikey' | 'oauth', oauthAccount?: string, contextWindow }`. Additive — existing models without `auth` are treated as `'apikey'`.
+- Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
+- 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.
+
+## 11. Auth — keytar token store + per-model auth + loopback callback
+
+- OAuth tokens live in the OS keychain via `keytar`. New runtime dependency. App settings keep a non-secret index of `{ provider, account }` so the UI can list "logged in as ..." without touching the keychain.
+- Loopback callback: `mouaif serve` exposes `GET /oauth/callback` on the same port. The user does the login in their system browser; the provider redirects back to the local server; the server exchanges the code, stores the token in keytar, and the UI polls `GET /api/auth/status?provider=...` to learn when login finished.
+- Per-model auth: a model with `auth: 'oauth'` is resolved to the matching `oauthAccount`; if missing, the proxy returns a typed `ENOAUTH` error and the UI prompts to sign in.
+
+## 12. OAuth — one provider per commit
+
+- Each provider gets its own `feat:` commit and its own `docs/features/oauth-<provider>.md`. Commits: OpenAI → Anthropic → Google → GitHub Copilot.
+- Each commit reuses the loopback callback skeleton from decision 11; only the authorization endpoint, token endpoint, client id, and scopes differ.
+

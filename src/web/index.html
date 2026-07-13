@@ -27,6 +27,24 @@
       <div id="scroller" class="demo__scroller" tabindex="0" aria-label="List of 10000 items"></div>
       <p id="stats" class="demo__stats" aria-live="polite"></p>
     </section>
+
+    <section class="chat">
+      <h2 class="chat__title">AI test</h2>
+      <p class="chat__hint">Send a single message through <code>/api/ai/chat</code>. Pick a model in app settings first.</p>
+      <div class="chat__row">
+        <label for="modelId" class="chat__label">Model id</label>
+        <input id="modelId" class="chat__input" type="text" placeholder="e.g. gpt-4o-mini" />
+      </div>
+      <div class="chat__row">
+        <label for="prompt" class="chat__label">Prompt</label>
+        <textarea id="prompt" class="chat__input" rows="2" placeholder="Say something"></textarea>
+      </div>
+      <div class="chat__row chat__row--actions">
+        <button id="send" class="chat__send" type="button">Send</button>
+        <span id="chatStatus" class="chat__status" aria-live="polite"></span>
+      </div>
+      <pre id="chatOut" class="chat__out" aria-label="Assistant reply"></pre>
+    </section>
   </main>
 
   <!-- Mobile-first, no build step yet. Preact + Vite land in a later commit. -->
