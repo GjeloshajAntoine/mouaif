@@ -6,6 +6,7 @@ const os = require('os');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
+const auth = require('./auth.js');
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -107,9 +108,19 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleAI(req, res, parsed);
   }
 
+  // Auth API (account list, sign-out, status polling)
+  if (urlPath.startsWith('/api/auth/')) {
+    return handleAuth(req, res, parsed);
+  }
+
+  // OAuth loopback callback (provider redirects here after login)
+  if (urlPath === '/oauth/callback' && method === 'GET') {
+    return handleOAuthCallback(req, res, parsed);
+  }
+
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'GET /oauth/callback'] });
   }
 
   // REST: GET /data
@@ -395,6 +406,140 @@ async function handleAI(req, res, parsed) {
   return sendJSON(res, 404, { error: 'Not found', scope: 'ai' });
 }
 
+// ---- Auth API -----------------------------------------------------------
+// Implements docs/decisions.md section 11.
+//
+//   GET    /api/auth/accounts                       -> { accounts: { openai: [...], ... } }
+//   GET    /api/auth/status?provider=<name>         -> { provider, accounts: [...], hasExchange: bool }
+//   DELETE /api/auth/accounts/:provider/:account    -> { ok: true }
+//
+// The OAuth loopback callback (GET /oauth/callback) and the per-provider
+// exchange registration live in src/auth.js + handleOAuthCallback below.
+
+async function handleAuth(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  if (urlPath === '/api/auth/accounts' && method === 'GET') {
+    return sendJSON(res, 200, { accounts: auth.listAccounts() });
+  }
+
+  if (urlPath === '/api/auth/status' && method === 'GET') {
+    const provider = typeof q.provider === 'string' ? q.provider : '';
+    if (!provider) return sendJSON(res, 400, { error: 'provider query param is required' });
+    if (!auth.SUPPORTED_PROVIDERS.includes(provider)) {
+      return sendJSON(res, 400, { error: 'Unknown provider', provider });
+    }
+    const accounts = auth.listAccounts();
+    return sendJSON(res, 200, {
+      provider,
+      accounts: accounts[provider] || [],
+      hasExchange: !!auth.getExchange(provider)
+    });
+  }
+
+  const delMatch = urlPath.match(/^\/api\/auth\/accounts\/([a-z0-9-]+)\/(.+)$/);
+  if (delMatch && method === 'DELETE') {
+    const provider = delMatch[1];
+    const account = decodeURIComponent(delMatch[2]);
+    if (!auth.SUPPORTED_PROVIDERS.includes(provider)) {
+      return sendJSON(res, 400, { error: 'Unknown provider', provider });
+    }
+    try {
+      const r = auth.deleteToken(provider, account);
+      return sendJSON(res, 200, Object.assign({ ok: true }, r));
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'EKEYRING' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'auth' });
+}
+
+// ---- OAuth loopback callback -------------------------------------------
+// The provider redirects the user's browser here with
+//   ?provider=<name>&state=<opaque>&code=<authcode>&error=<optional>
+// We look up the pending record, hand the code to the provider's
+// exchange function (registered via auth.registerExchange), persist the
+// resulting token in the keyring, and reply with a tiny HTML page so the
+// user can close the tab.
+
+async function handleOAuthCallback(req, res, parsed) {
+  const q = parsed.query || {};
+  const provider = typeof q.provider === 'string' ? q.provider : '';
+  const state = typeof q.state === 'string' ? q.state : '';
+  const code = typeof q.code === 'string' ? q.code : '';
+  const errorParam = typeof q.error === 'string' ? q.error : '';
+
+  function htmlPage(title, body) {
+    const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '<p>You can close this tab.</p></body></html>';
+  }
+
+  if (!provider || !auth.SUPPORTED_PROVIDERS.includes(provider)) {
+    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth callback', '<p class="err">Unknown or missing provider.</p>'));
+    return;
+  }
+  if (errorParam) {
+    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('Sign-in failed', '<p class="err">' + errorParam + '</p>'));
+    return;
+  }
+  if (!state || !code) {
+    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth callback', '<p class="err">Missing state or code.</p>'));
+    return;
+  }
+
+  const pending = auth.consumePending(provider, state);
+  if (!pending) {
+    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth callback', '<p class="err">No pending sign-in matches this state. Start the sign-in again from the app.</p>'));
+    return;
+  }
+
+  const exchange = auth.getExchange(provider);
+  if (!exchange) {
+    // No provider-specific flow registered yet. Per-provider commits
+    // call auth.registerExchange(name, fn) to enable the real flow.
+    res.writeHead(501, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth not configured', '<p class="err">Sign-in for <code>' + provider + '</code> is not configured in this build. A later commit will register the provider exchange.</p>'));
+    return;
+  }
+
+  let out;
+  try {
+    out = await exchange({ pending, code });
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth exchange failed', '<p class="err">' + (e && e.message || 'unknown error') + '</p>'));
+    return;
+  }
+  if (!out || out.error) {
+    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('OAuth exchange failed', '<p class="err">' + (out && out.error || 'exchange returned no token') + '</p>'));
+    return;
+  }
+
+  try {
+    const blob = JSON.stringify({
+      accessToken: out.accessToken,
+      refreshToken: out.refreshToken || null,
+      expiresAt: out.expiresAt || null,
+      scope: out.scope || pending.scopes || null
+    });
+    const account = out.account || pending.accountHint || 'default';
+    await auth.setToken(provider, account, blob);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + account + '</code>.</p>'));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlPage('Keyring write failed', '<p class="err">' + e.message + '</p>'));
+  }
+}
+
 function createServer(port = DEFAULT_PORT) {
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
@@ -403,7 +548,7 @@ function createServer(port = DEFAULT_PORT) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings };
+module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth };
 
 // ---- Static /web/ serving -----------------------------------------------
 

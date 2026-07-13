@@ -1,0 +1,289 @@
+'use strict';
+
+// Auth — @napi-rs/keyring wrapper + non-secret account index.
+//
+// Implements docs/decisions.md section 11. OAuth tokens live in the OS
+// keychain; the app SQLite store keeps a non-secret index of which
+// provider/account pairs are signed in, so the UI can list "logged in
+// as ..." without ever touching the keychain.
+//
+// In this commit, the keyring is the only auth storage. Provider-specific
+// OAuth flows (authorization endpoints, code exchange, refresh) land in
+// later commits — one per provider. The loopback callback in src/index.js
+// is wired but provider-neutral: it routes by `provider` and stores the
+// token blob returned by the provider's exchange.
+//
+// Public surface:
+//
+//   const auth = require('./auth.js');
+//
+//   await auth.setToken('openai', 'me@example.com', JSON.stringify(blob));
+//   const blob = await auth.getToken('openai', 'me@example.com'); // string | null
+//   await auth.deleteToken('openai', 'me@example.com');
+//
+//   auth.listAccounts(); // -> { openai: ['me@example.com'], anthropic: [], ... }
+//   auth.resolveAccount(model); // -> account string or null, for a model with auth='oauth'
+//   auth.tokenForModel(model);  // -> blob string or null, the credential the AI client needs
+//
+//   auth.recordPending(provider, { state, codeVerifier?, redirectUri, scopes, accountHint? });
+//   auth.consumePending(provider, state);  // -> the pending record or null
+//   auth.clearPending(provider, state);
+//
+// Errors are typed: EKEYRING (OS keychain unavailable), ENOENT (no such
+// account), EBADINPUT (validation), EPROVIDER (unknown provider).
+
+const { Entry } = require('@napi-rs/keyring');
+const settings = require('./settings.js');
+
+// 'mouaif' is the keyring service prefix; per-provider accounts are
+// namespaced under 'mouaif/<provider>'. Linux/Windows Credential Manager
+// will show entries with the full name; we do not strip the prefix.
+const SERVICE_PREFIX = 'mouaif';
+
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot'];
+
+function serviceName(provider) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    const e = new Error('Unknown provider: ' + provider);
+    e.code = 'EPROVIDER';
+    throw e;
+  }
+  return SERVICE_PREFIX + '/' + provider;
+}
+
+function validateAccount(provider, account) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    const e = new Error('Unknown provider: ' + provider);
+    e.code = 'EPROVIDER';
+    throw e;
+  }
+  if (!account || typeof account !== 'string' || !account.length) {
+    const e = new Error('Account is required');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+}
+
+// ---- Token CRUD --------------------------------------------------------
+
+async function setToken(provider, account, blob) {
+  validateAccount(provider, account);
+  if (typeof blob !== 'string') {
+    const e = new Error('Token blob must be a string');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  let entry;
+  try {
+    entry = new Entry(serviceName(provider), account);
+    entry.setPassword(blob);
+  } catch (e) {
+    const wrapped = new Error('Keyring set failed: ' + (e && e.message || e));
+    wrapped.code = 'EKEYRING';
+    wrapped.cause = e;
+    throw wrapped;
+  }
+  // Update the non-secret index only after the keychain write succeeded.
+  indexAdd(provider, account);
+  return { provider, account };
+}
+
+function getToken(provider, account) {
+  validateAccount(provider, account);
+  let entry;
+  try {
+    entry = new Entry(serviceName(provider), account);
+    return entry.getPassword();
+  } catch (e) {
+    // @napi-rs/keyring throws when the entry does not exist. That's our
+    // "no such account" signal; map it to null so callers don't have to
+    // distinguish "absent" from "wrong password".
+    const msg = (e && e.message) || String(e);
+    if (/no matching entry|not found|No such file/i.test(msg)) return null;
+    const wrapped = new Error('Keyring get failed: ' + msg);
+    wrapped.code = 'EKEYRING';
+    wrapped.cause = e;
+    throw wrapped;
+  }
+}
+
+function deleteToken(provider, account) {
+  validateAccount(provider, account);
+  try {
+    const entry = new Entry(serviceName(provider), account);
+    entry.deletePassword();
+    indexRemove(provider, account);
+    return { provider, account, deleted: true };
+  } catch (e) {
+    // deletePassword throws if the entry does not exist; we treat that
+    // as a successful no-op (idempotent delete).
+    const msg = (e && e.message) || String(e);
+    if (/no matching entry|not found|No such file/i.test(msg)) {
+      indexRemove(provider, account);
+      return { provider, account, deleted: false };
+    }
+    const wrapped = new Error('Keyring delete failed: ' + msg);
+    wrapped.code = 'EKEYRING';
+    wrapped.cause = e;
+    throw wrapped;
+  }
+}
+
+// ---- Non-secret account index ------------------------------------------
+// The keychain is the source of truth for credentials; this index is a
+// hint so the UI can list "signed in accounts" without round-tripping
+// the keychain. Out of sync is recoverable: getToken/deleteToken still
+// work, and the index can be rebuilt by walking the keychain (later
+// commit, when @napi-rs/keyring exposes a find-by-service API).
+
+function readIndex() {
+  const app = settings.getApp();
+  const raw = app.authAccounts;
+  const out = {};
+  for (const p of SUPPORTED_PROVIDERS) {
+    out[p] = Array.isArray(raw && raw[p]) ? raw[p].slice() : [];
+  }
+  return out;
+}
+
+function writeIndex(idx) {
+  settings.setApp({ authAccounts: idx });
+}
+
+function indexAdd(provider, account) {
+  const idx = readIndex();
+  if (!idx[provider].includes(account)) idx[provider].push(account);
+  idx[provider].sort();
+  writeIndex(idx);
+}
+
+function indexRemove(provider, account) {
+  const idx = readIndex();
+  idx[provider] = idx[provider].filter(a => a !== account);
+  writeIndex(idx);
+}
+
+function listAccounts() {
+  return readIndex();
+}
+
+// ---- Model integration -------------------------------------------------
+
+function resolveAccount(model) {
+  if (!model || model.auth !== 'oauth') return null;
+  if (model.oauthAccount) return model.oauthAccount;
+  // Fallback: if the model has no explicit account but the user has a
+  // single account on that provider, use it. Multi-account users must
+  // set oauthAccount explicitly.
+  const idx = readIndex();
+  const list = idx[model.provider] || [];
+  if (list.length === 1) return list[0];
+  return null;
+}
+
+function tokenForModel(model) {
+  const account = resolveAccount(model);
+  if (!account) return null;
+  return getToken(model.provider, account);
+}
+
+// ---- Pending OAuth state ----------------------------------------------
+// Used by the loopback callback to remember which (state, code_verifier,
+// redirect_uri, scopes) tuple the client started, so the callback can
+// finish the exchange. The state is opaque, generated by the client and
+// echoed by the provider. Persisted in the app store (not the keychain —
+// these are not secrets per se, but the code_verifier is a PKCE secret
+// and we treat it as one).
+//
+// In-memory would be enough for a single-process server, but the
+// callback is a separate HTTP request and the rest of the auth commit's
+// code can land across processes (CLI + server). SQLite is the right
+// home; we use the same app_kv table with a 'auth_pending' key.
+
+function readPending() {
+  const app = settings.getApp();
+  return Array.isArray(app.authPending) ? app.authPending : [];
+}
+
+function writePending(list) {
+  settings.setApp({ authPending: list });
+}
+
+function recordPending(provider, rec) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    const e = new Error('Unknown provider: ' + provider);
+    e.code = 'EPROVIDER';
+    throw e;
+  }
+  if (!rec || !rec.state) {
+    const e = new Error('state is required');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  const list = readPending().filter(p => !(p.provider === provider && p.state === rec.state));
+  list.push(Object.assign({ provider, createdAt: new Date().toISOString() }, rec));
+  writePending(list);
+}
+
+function consumePending(provider, state) {
+  const list = readPending();
+  const idx = list.findIndex(p => p.provider === provider && p.state === state);
+  if (idx === -1) return null;
+  const [rec] = list.splice(idx, 1);
+  writePending(list);
+  return rec;
+}
+
+function clearPending(provider, state) {
+  writePending(readPending().filter(p => !(p.provider === provider && p.state === state)));
+}
+
+module.exports = {
+  // introspection
+  SUPPORTED_PROVIDERS,
+  SERVICE_PREFIX,
+  // token CRUD
+  setToken,
+  getToken,
+  deleteToken,
+  // index
+  listAccounts,
+  // model helpers (used by src/ai.js)
+  resolveAccount,
+  tokenForModel,
+  // pending OAuth state
+  recordPending,
+  consumePending,
+  clearPending,
+  // provider exchange registration (used by per-provider OAuth commits)
+  registerExchange,
+  getExchange
+};
+
+// ---- Provider exchange registration -----------------------------------
+// Each per-provider OAuth commit calls registerExchange('openai', async fn)
+// where `fn` takes the pending record + the authorization code and
+// returns { accessToken, refreshToken?, expiresAt?, account } or
+// { error: '...' }. The callback in src/index.js calls getExchange(provider)
+// to find the right fn. If none is registered, the callback returns 501
+// with a clear message — that is the expected state in this commit.
+
+const _exchanges = Object.create(null);
+
+function registerExchange(provider, fn) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    const e = new Error('Unknown provider: ' + provider);
+    e.code = 'EPROVIDER';
+    throw e;
+  }
+  if (typeof fn !== 'function') {
+    const e = new Error('Exchange must be a function');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  _exchanges[provider] = fn;
+}
+
+function getExchange(provider) {
+  return _exchanges[provider] || null;
+}

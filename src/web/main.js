@@ -161,3 +161,28 @@ function parseSSEFrame(frame) {
   if (!dataLines.length) return null;
   return { eventName, data: dataLines.join('\n') };
 }
+
+// ---- Auth panel --------------------------------------------------------
+// Fetches the account index from the server. The per-provider sign-in
+// flow is provider-specific and lands in later commits; this commit only
+// shows what's in the index.
+
+const $authOut = document.getElementById('authOut');
+async function refreshAuth() {
+  try {
+    const r = await fetch('/api/auth/accounts');
+    if (!r.ok) { $authOut.textContent = 'HTTP ' + r.status; return; }
+    const data = await r.json();
+    const accounts = data.accounts || {};
+    const lines = [];
+    for (const p of Object.keys(accounts)) {
+      const list = accounts[p];
+      lines.push((list && list.length ? list.join(', ') : '(none)') + '  — ' + p);
+    }
+    $authOut.textContent = lines.length ? lines.join('\n') : 'no providers';
+  } catch (e) {
+    $authOut.textContent = 'network error';
+  }
+}
+refreshAuth();
+setInterval(refreshAuth, 5000);

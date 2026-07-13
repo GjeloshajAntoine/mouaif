@@ -45,6 +45,12 @@
       </div>
       <pre id="chatOut" class="chat__out" aria-label="Assistant reply"></pre>
     </section>
+
+    <section class="auth">
+      <h2 class="auth__title">Auth</h2>
+      <p class="auth__hint">OAuth tokens live in the OS keychain. Per-provider sign-in lands in a later commit; this panel shows the current account index from <code>/api/auth/accounts</code>.</p>
+      <pre id="authOut" class="auth__out" aria-label="Auth status">loading...</pre>
+    </section>
   </main>
 
   <!-- Mobile-first, no build step yet. Preact + Vite land in a later commit. -->

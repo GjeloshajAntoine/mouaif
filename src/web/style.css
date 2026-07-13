@@ -188,3 +188,43 @@ textarea.chat__input {
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   font-size: 0.9rem;
 }
+
+/* Auth panel */
+.auth {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.auth__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.auth__hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 12px;
+}
+
+.auth__hint code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  background: var(--row-alt);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.auth__out {
+  margin: 0;
+  padding: 12px;
+  background: var(--row);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 44px;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}

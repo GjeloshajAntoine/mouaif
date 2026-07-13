@@ -41,6 +41,10 @@ const DEFAULTS = Object.freeze({
   // Registered projects. Shape: { id, path, name, createdAt }. Filled in by
   // src/projects.js when the user picks a folder. Empty by default.
   projects: [],
+  // Non-secret account index for OAuth sign-ins. Shape:
+  //   { openai: ['me@example.com'], anthropic: [], google: [], 'github-copilot': [] }
+  // The actual tokens live in the OS keychain via src/auth.js.
+  authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
   // Default trace-to-file state for new chats. Per-chat toggle overrides.

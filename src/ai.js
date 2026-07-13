@@ -81,9 +81,39 @@ function endpointFor(model) {
 
 function requireApiKey(model) {
   if (model.auth === 'oauth') {
-    const e = new Error('Model "' + model.id + '" uses OAuth, which is not implemented in this commit.');
-    e.code = 'ENOAUTH';
-    throw e;
+    // OAuth path: the access token comes from the OS keychain via
+    // src/auth.js. The keychain is keyed by auth provider (openai,
+    // anthropic, google, github-copilot), not by AI client provider
+    // (openai-compatible, etc). The model record carries the auth
+    // provider name in `authProvider`; if absent, we fall back to
+    // `model.provider`.
+    const authMod = require('./auth.js');
+    const authProvider = model.authProvider || model.provider;
+    const lookModel = Object.assign({}, model, { provider: authProvider });
+    const token = authMod.tokenForModel(lookModel);
+    if (!token) {
+      const e = new Error(
+        'No OAuth account is signed in for provider "' + authProvider + '"' +
+        (model.oauthAccount ? '' : ' (no oauthAccount on model, no signed-in account found)') +
+        '. Sign in via the loopback callback.'
+      );
+      e.code = 'ENOAUTH';
+      throw e;
+    }
+    let parsed;
+    try { parsed = JSON.parse(token); }
+    catch {
+      const e = new Error('Stored OAuth token for "' + authProvider + '" is not valid JSON');
+      e.code = 'EOAUTH_BLOB';
+      throw e;
+    }
+    if (!parsed.accessToken) {
+      const e = new Error('Stored OAuth token for "' + authProvider + '" has no accessToken');
+      e.code = 'EOAUTH_BLOB';
+      throw e;
+    }
+    model.__accessToken = parsed.accessToken;
+    return;
   }
   if (!model.apiKey || typeof model.apiKey !== 'string') {
     const e = new Error('Model "' + model.id + '" has no apiKey.');
@@ -94,10 +124,16 @@ function requireApiKey(model) {
 
 // ---- Request builders --------------------------------------------------
 
+// Returns the effective bearer-style credential: the OAuth access token
+// if one was resolved by requireApiKey, otherwise the plain apiKey.
+function credential(model) {
+  return model.__accessToken || model.apiKey;
+}
+
 function buildOpenAIRequest(model, messages, stream) {
   return {
     url: joinUrl(model.baseUrl, ENDPOINTS['openai-compatible'].chatPath),
-    headers: { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(model.apiKey) },
+    headers: { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) },
     body: {
       model: model.id,
       messages,
@@ -111,7 +147,7 @@ function buildAnthropicRequest(model, messages, stream) {
   const chatMessages = messages.filter(m => m.role !== 'system');
   return {
     url: joinUrl(ENDPOINTS.anthropic.baseUrl, ENDPOINTS.anthropic.chatPath),
-    headers: { 'Content-Type': 'application/json', ...ENDPOINTS.anthropic.authHeader(model.apiKey) },
+    headers: { 'Content-Type': 'application/json', ...ENDPOINTS.anthropic.authHeader(credential(model)) },
     body: {
       model: model.id,
       max_tokens: model.maxTokens || 1024,
@@ -133,7 +169,7 @@ function buildGeminiRequest(model, messages, stream) {
   if (systemMsg) body.systemInstruction = { role: 'system', parts: [{ text: systemMsg.content }] };
   return {
     url,
-    headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(model.apiKey) },
+    headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
     body
   };
 }
