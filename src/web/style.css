@@ -228,3 +228,66 @@ textarea.chat__input {
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   font-size: 0.85rem;
 }
+
+.auth__sub {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 16px 0 4px;
+}
+
+.auth__row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.auth__button {
+  font: inherit;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 0 16px;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.auth__button:disabled {
+  opacity: 0.6;
+}
+
+.auth__status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-height: 1em;
+}
+
+.auth__input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--row);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 44px;
+  flex: 1;
+  min-width: 0;
+}
+
+.auth__help p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 8px 0;
+}
+
+.auth__help code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  background: var(--row-alt);
+  padding: 1px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}

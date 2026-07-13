@@ -12,6 +12,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 5 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
+- [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
 
 ## Architectural decisions
 

@@ -7,6 +7,12 @@ const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
+const oauthAnthropic = require('./oauth-anthropic.js');
+
+// Register Anthropic's per-provider exchange function with the auth
+// skeleton. Idempotent; safe to call from require-time side effects
+// because auth.registerExchange overwrites cleanly.
+oauthAnthropic.register();
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -108,7 +114,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleAI(req, res, parsed);
   }
 
-  // Auth API (account list, sign-out, status polling)
+  // Auth API (account list, sign-out, status polling, sign-in)
   if (urlPath.startsWith('/api/auth/')) {
     return handleAuth(req, res, parsed);
   }
@@ -117,10 +123,15 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   if (urlPath === '/oauth/callback' && method === 'GET') {
     return handleOAuthCallback(req, res, parsed);
   }
+  // No-browser fallback: the UI POSTs { provider, state, code } and
+  // gets a JSON response. Same exchange as the GET path.
+  if (urlPath === '/oauth/callback' && method === 'POST') {
+    return handleOAuthCallbackPost(req, res, parsed);
+  }
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'GET /oauth/callback'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
   }
 
   // REST: GET /data
@@ -454,6 +465,48 @@ async function handleAuth(req, res, parsed) {
     }
   }
 
+  // POST /api/auth/sign-in/anthropic  -> { authorizeUrl, state, expiresAt }
+  // The UI calls this, opens authorizeUrl in the user's browser, and
+  // polls GET /api/auth/status?provider=anthropic until hasExchange
+  // (already registered) and accounts include the signed-in email.
+  if (urlPath === '/api/auth/sign-in/anthropic' && method === 'POST') {
+    if (!auth.getExchange('anthropic')) {
+      return sendJSON(res, 501, { error: 'Anthropic OAuth is not registered in this build' });
+    }
+    let body = {};
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+
+    const state = oauthAnthropic.newState();
+    const verifier = oauthAnthropic.newVerifier();
+    const redirectUri = body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback');
+    const scope = body.scope || oauthAnthropic.DEFAULT_SCOPE;
+
+    auth.recordPending('anthropic', {
+      state,
+      codeVerifier: verifier,
+      redirectUri,
+      scopes: scope,
+      accountHint: body.accountHint || ''
+    });
+
+    const authorizeUrl = oauthAnthropic.buildAuthorizeUrl({
+      redirectUri,
+      state,
+      verifier,
+      scope
+    });
+
+    return sendJSON(res, 200, {
+      authorizeUrl,
+      state,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      // Echoed for debugging; the production base is https://api.anthropic.com
+      // unless MOUAIF_ANTHROPIC_API_BASE is set (test override).
+      apiBase: oauthAnthropic.DEFAULT_API_BASE
+    });
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'auth' });
 }
 
@@ -465,64 +518,42 @@ async function handleAuth(req, res, parsed) {
 // resulting token in the keyring, and reply with a tiny HTML page so the
 // user can close the tab.
 
-async function handleOAuthCallback(req, res, parsed) {
-  const q = parsed.query || {};
-  const provider = typeof q.provider === 'string' ? q.provider : '';
-  const state = typeof q.state === 'string' ? q.state : '';
-  const code = typeof q.code === 'string' ? q.code : '';
-  const errorParam = typeof q.error === 'string' ? q.error : '';
+// Shared by the browser redirect (GET) and the no-browser fallback
+// (POST). The shape of the response differs by route: GET renders a
+// tiny HTML page, POST returns JSON. The exchange and keyring write
+// are the same in both cases.
+function htmlPage(title, body) {
+  const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '<p>You can close this tab.</p></body></html>';
+}
 
-  function htmlPage(title, body) {
-    const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '<p>You can close this tab.</p></body></html>';
-  }
-
+async function finishOAuth({ provider, state, code, errorParam, format }) {
   if (!provider || !auth.SUPPORTED_PROVIDERS.includes(provider)) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth callback', '<p class="err">Unknown or missing provider.</p>'));
-    return;
+    return { status: 400, error: 'Unknown or missing provider', code: 'EBADPROVIDER' };
   }
   if (errorParam) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('Sign-in failed', '<p class="err">' + errorParam + '</p>'));
-    return;
+    return { status: 400, error: errorParam, code: 'EPROVIDER_ERROR' };
   }
   if (!state || !code) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth callback', '<p class="err">Missing state or code.</p>'));
-    return;
+    return { status: 400, error: 'Missing state or code', code: 'EBADINPUT' };
   }
-
   const pending = auth.consumePending(provider, state);
   if (!pending) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth callback', '<p class="err">No pending sign-in matches this state. Start the sign-in again from the app.</p>'));
-    return;
+    return { status: 400, error: 'No pending sign-in matches this state. Start the sign-in again from the app.', code: 'ENOPENDING' };
   }
-
   const exchange = auth.getExchange(provider);
   if (!exchange) {
-    // No provider-specific flow registered yet. Per-provider commits
-    // call auth.registerExchange(name, fn) to enable the real flow.
-    res.writeHead(501, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth not configured', '<p class="err">Sign-in for <code>' + provider + '</code> is not configured in this build. A later commit will register the provider exchange.</p>'));
-    return;
+    return { status: 501, error: 'Sign-in for ' + provider + ' is not configured in this build.', code: 'ENOEXCHANGE' };
   }
-
   let out;
   try {
     out = await exchange({ pending, code });
   } catch (e) {
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth exchange failed', '<p class="err">' + (e && e.message || 'unknown error') + '</p>'));
-    return;
+    return { status: 500, error: e.message || 'exchange threw', code: e.code || 'EEXCHANGE' };
   }
   if (!out || out.error) {
-    res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('OAuth exchange failed', '<p class="err">' + (out && out.error || 'exchange returned no token') + '</p>'));
-    return;
+    return { status: 400, error: (out && out.error) || 'exchange returned no token', code: 'EEXCHANGE' };
   }
-
   try {
     const blob = JSON.stringify({
       accessToken: out.accessToken,
@@ -532,12 +563,45 @@ async function handleOAuthCallback(req, res, parsed) {
     });
     const account = out.account || pending.accountHint || 'default';
     await auth.setToken(provider, account, blob);
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + account + '</code>.</p>'));
+    return { status: 200, account };
   } catch (e) {
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(htmlPage('Keyring write failed', '<p class="err">' + e.message + '</p>'));
+    return { status: 500, error: e.message, code: e.code || 'EKEYRING' };
   }
+}
+
+async function handleOAuthCallback(req, res, parsed) {
+  const q = parsed.query || {};
+  const provider = typeof q.provider === 'string' ? q.provider : '';
+  const state = typeof q.state === 'string' ? q.state : '';
+  const code = typeof q.code === 'string' ? q.code : '';
+  const errorParam = typeof q.error === 'string' ? q.error : '';
+
+  const result = await finishOAuth({ provider, state, code, errorParam, format: 'html' });
+  res.writeHead(result.status, { 'Content-Type': 'text/html; charset=utf-8' });
+  if (result.status === 200) {
+    res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + result.account + '</code>.</p>'));
+  } else if (result.code === 'EPROVIDER_ERROR') {
+    res.end(htmlPage('Sign-in failed', '<p class="err">' + result.error + '</p>'));
+  } else if (result.code === 'ENOEXCHANGE') {
+    res.end(htmlPage('OAuth not configured', '<p class="err">Sign-in for <code>' + provider + '</code> is not configured in this build. A later commit will register the provider exchange.</p>'));
+  } else {
+    res.end(htmlPage('OAuth callback', '<p class="err">' + (result.error || 'unknown error') + '</p>'));
+  }
+}
+
+async function handleOAuthCallbackPost(req, res, parsed) {
+  let body = {};
+  try { body = await readJsonBody(req); }
+  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const provider = typeof body.provider === 'string' ? body.provider : '';
+  const state = typeof body.state === 'string' ? body.state : '';
+  const code = typeof body.code === 'string' ? body.code : '';
+  const errorParam = typeof body.error === 'string' ? body.error : '';
+  const result = await finishOAuth({ provider, state, code, errorParam, format: 'json' });
+  if (result.status === 200) {
+    return sendJSON(res, 200, { ok: true, provider, account: result.account });
+  }
+  return sendJSON(res, result.status, { ok: false, error: result.error, code: result.code });
 }
 
 function createServer(port = DEFAULT_PORT) {
@@ -548,7 +612,7 @@ function createServer(port = DEFAULT_PORT) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth };
+module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic };
 
 // ---- Static /web/ serving -----------------------------------------------
 

@@ -48,8 +48,22 @@
 
     <section class="auth">
       <h2 class="auth__title">Auth</h2>
-      <p class="auth__hint">OAuth tokens live in the OS keychain. Per-provider sign-in lands in a later commit; this panel shows the current account index from <code>/api/auth/accounts</code>.</p>
+      <p class="auth__hint">OAuth tokens live in the OS keychain. The accounts list is read from <code>/api/auth/accounts</code>.</p>
       <pre id="authOut" class="auth__out" aria-label="Auth status">loading...</pre>
+
+      <h3 class="auth__sub">Sign in with Anthropic</h3>
+      <p class="auth__hint">Opens the public Anthropic OAuth flow. PKCE S256. The access token is stored in the OS keychain under <code>mouaif/anthropic</code>.</p>
+      <div class="auth__row">
+        <button id="signInAnthropic" class="auth__button" type="button">Sign in with Anthropic</button>
+        <span id="signInStatus" class="auth__status" aria-live="polite"></span>
+      </div>
+      <div id="signInHelp" class="auth__help" hidden>
+        <p>After authorizing, the browser redirects to <code id="signInCallback"></code>. If you used the no-browser path, paste the <code>code</code> from the redirected URL here:</p>
+        <div class="auth__row">
+          <input id="codeInput" class="auth__input" type="text" placeholder="code from ?code=..." />
+          <button id="completeCode" class="auth__button" type="button">Complete sign-in</button>
+        </div>
+      </div>
     </section>
   </main>
 

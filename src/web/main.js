@@ -163,9 +163,10 @@ function parseSSEFrame(frame) {
 }
 
 // ---- Auth panel --------------------------------------------------------
-// Fetches the account index from the server. The per-provider sign-in
-// flow is provider-specific and lands in later commits; this commit only
-// shows what's in the index.
+// Fetches the account index from the server and exposes the per-provider
+// sign-in flow. Each provider gets its own button + the no-browser
+// fallback (paste the `code` from the redirected URL) for headless
+// environments.
 
 const $authOut = document.getElementById('authOut');
 async function refreshAuth() {
@@ -186,3 +187,96 @@ async function refreshAuth() {
 }
 refreshAuth();
 setInterval(refreshAuth, 5000);
+
+// Sign in with Anthropic.
+const $signInAnthropic = document.getElementById('signInAnthropic');
+const $signInStatus = document.getElementById('signInStatus');
+const $signInHelp = document.getElementById('signInHelp');
+const $signInCallback = document.getElementById('signInCallback');
+const $codeInput = document.getElementById('codeInput');
+const $completeCode = document.getElementById('completeCode');
+
+let pendingState = null;
+let pendingRedirect = null;
+
+$signInAnthropic.addEventListener('click', async () => {
+  $signInAnthropic.disabled = true;
+  $signInStatus.textContent = 'starting sign-in…';
+  try {
+    const r = await fetch('/api/auth/sign-in/anthropic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) {
+      $signInStatus.textContent = 'HTTP ' + r.status;
+      $signInAnthropic.disabled = false;
+      return;
+    }
+    const data = await r.json();
+    pendingState = data.state;
+    pendingRedirect = data.authorizeUrl;
+    // Open the authorize URL in a new tab; the user signs in there and
+    // the browser comes back to /oauth/callback on the mouaif server,
+    // which finishes the flow. Poll /api/auth/accounts for the new
+    // account to appear.
+    window.open(pendingRedirect, '_blank', 'noopener');
+    $signInCallback.textContent = window.location.origin + '/oauth/callback';
+    $signInHelp.hidden = false;
+    $signInStatus.textContent = 'waiting for browser…';
+    // Poll the account list; the loopback callback updates it.
+    const before = new Set(((await (await fetch('/api/auth/accounts')).json()).accounts || {}).anthropic || []);
+    const started = Date.now();
+    while (Date.now() - started < 5 * 60 * 1000) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const accounts = ((await (await fetch('/api/auth/accounts')).json()).accounts || {}).anthropic || [];
+        const fresh = accounts.filter(a => !before.has(a));
+        if (fresh.length) {
+          $signInStatus.textContent = 'signed in as ' + fresh[0];
+          $signInAnthropic.disabled = false;
+          return;
+        }
+      } catch {}
+    }
+    $signInStatus.textContent = 'timed out. Paste the code from the redirect URL below if your browser could not reach this host.';
+    $signInAnthropic.disabled = false;
+  } catch (e) {
+    $signInStatus.textContent = 'network error';
+    $signInAnthropic.disabled = false;
+  }
+});
+
+// No-browser fallback: paste the `code` from the redirected URL.
+$completeCode.addEventListener('click', async () => {
+  const raw = ($codeInput.value || '').trim();
+  if (!pendingState || !pendingRedirect) {
+    $signInStatus.textContent = 'click "Sign in with Anthropic" first';
+    return;
+  }
+  // Accept either a bare `code`, or the full redirect URL.
+  let code = raw;
+  try {
+    const u = new URL(raw);
+    const c = u.searchParams.get('code');
+    if (c) code = c;
+  } catch { /* not a URL, treat as a bare code */ }
+  if (!code) {
+    $signInStatus.textContent = 'paste the code from the redirect URL';
+    return;
+  }
+  $completeCode.disabled = true;
+  $signInStatus.textContent = 'exchanging…';
+  try {
+    const r = await fetch('/oauth/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'anthropic', state: pendingState, code })
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      $signInStatus.textContent = 'signed in as ' + data.account;
+    } else {
+      $signInStatus.textContent = 'failed: ' + (data.error || ('HTTP ' + r.status));
+    }
+  } catch (e) {
+    $signInStatus.textContent = 'network error';
+  }
+  $completeCode.disabled = false;
+});

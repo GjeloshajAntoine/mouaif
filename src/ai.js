@@ -38,7 +38,21 @@ const ENDPOINTS = {
     baseUrl: 'https://api.anthropic.com',
     chatPath: '/v1/messages',
     anthropicVersion: '2023-06-01',
-    authHeader: (apiKey) => ({ 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' })
+    // Per the official `ant` CLI source and the platform.claude.com
+    // docs: API-key auth uses the `x-api-key` header; OAuth user_oauth
+    // tokens use `Authorization: Bearer ...` and require the
+    // `anthropic-beta: oauth-2025-04-20` header. The header is decided
+    // at request time from model.auth so the same provider can serve
+    // both flows.
+    authHeader: (cred, model) => {
+      if (model && model.auth === 'oauth') {
+        return {
+          'Authorization': 'Bearer ' + cred,
+          'anthropic-beta': 'oauth-2025-04-20'
+        };
+      }
+      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01' };
+    }
   },
   'gemini': {
     // Gemini uses a per-model action path; see buildRequest.
@@ -146,8 +160,15 @@ function buildAnthropicRequest(model, messages, stream) {
   const systemMsg = messages.find(m => m.role === 'system');
   const chatMessages = messages.filter(m => m.role !== 'system');
   return {
-    url: joinUrl(ENDPOINTS.anthropic.baseUrl, ENDPOINTS.anthropic.chatPath),
-    headers: { 'Content-Type': 'application/json', ...ENDPOINTS.anthropic.authHeader(credential(model)) },
+    // model.baseUrl wins when set, so test mocks and Anthropic-compatible
+    // proxies (Bedrock, Vertex, Foundry) can route the call. Production
+    // Anthropic usage leaves baseUrl unset, in which case the
+    // per-provider default applies.
+    url: joinUrl(model.baseUrl || ENDPOINTS.anthropic.baseUrl, ENDPOINTS.anthropic.chatPath),
+    headers: {
+      'Content-Type': 'application/json',
+      ...ENDPOINTS.anthropic.authHeader(credential(model), model)
+    },
     body: {
       model: model.id,
       max_tokens: model.maxTokens || 1024,
