@@ -441,3 +441,212 @@ $loadProject.addEventListener('click', async () => {
 
 loadSettings();
 setInterval(loadSettings, 30000);
+
+// ---- Projects panel ----------------------------------------------------
+// Renders one card per registered project. Each card has its own chat
+// list (scrolling inside the card, not the page) and a "New chat"
+// button. The options menu offers rename / open folder / unregister.
+//
+// Per docs/decisions.md §2, the resolved view is the source of truth
+// for which projects exist; we read /api/projects/registered and
+// /api/chats?projectDir=... per project.
+
+const $refreshProjects = document.getElementById('refreshProjects');
+const $projectsList = document.getElementById('projectsList');
+const $projectsStatus = document.getElementById('projectsStatus');
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString();
+}
+
+async function loadProjects() {
+  setStatus($projectsStatus, 'loading…');
+  let r;
+  try { r = await fetchJson('/api/projects/registered'); }
+  catch (e) { setStatus($projectsStatus, 'network error'); return; }
+  if (r.status !== 200) { setStatus($projectsStatus, 'HTTP ' + r.status); return; }
+  const list = r.body.projects || [];
+  $projectsList.innerHTML = '';
+  if (!list.length) {
+    const empty = document.createElement('li');
+    empty.className = 'projects__empty';
+    empty.textContent = 'No projects registered. Use the project picker (not yet wired here) to add one.';
+    $projectsList.appendChild(empty);
+    setStatus($projectsStatus, list.length + ' projects');
+    return;
+  }
+  setStatus($projectsStatus, list.length + ' projects');
+  // Render cards sequentially; each card fetches its own chats.
+  for (const project of list) {
+    const li = document.createElement('li');
+    li.className = 'project-card';
+    li.appendChild(renderProjectCard(project));
+    $projectsList.appendChild(li);
+    // Load chats asynchronously; render the chat list when they arrive.
+    loadProjectChats(li, project);
+  }
+}
+
+function renderProjectCard(project) {
+  const frag = document.createDocumentFragment();
+
+  const head = document.createElement('div');
+  head.className = 'project-card__head';
+  const name = document.createElement('div');
+  name.className = 'project-card__name';
+  name.textContent = project.name || project.path;
+  head.appendChild(name);
+  head.appendChild(renderProjectMenu(project));
+  frag.appendChild(head);
+
+  const pathEl = document.createElement('div');
+  pathEl.className = 'project-card__path';
+  pathEl.textContent = project.path;
+  frag.appendChild(pathEl);
+
+  const chats = document.createElement('ul');
+  chats.className = 'project-card__chats';
+  chats.setAttribute('aria-label', 'Chats in ' + (project.name || project.path));
+  const placeholder = document.createElement('li');
+  placeholder.className = 'project-card__chats-empty';
+  placeholder.dataset.placeholder = '1';
+  placeholder.textContent = 'loading chats…';
+  chats.appendChild(placeholder);
+  frag.appendChild(chats);
+
+  const newBtn = document.createElement('button');
+  newBtn.className = 'project-card__new';
+  newBtn.type = 'button';
+  newBtn.textContent = '+ New chat';
+  newBtn.addEventListener('click', () => createProjectChat(project, newBtn, chats));
+  frag.appendChild(newBtn);
+
+  return frag;
+}
+
+function renderProjectMenu(project) {
+  const wrap = document.createElement('div');
+  wrap.className = 'project-card__menu';
+
+  const btn = document.createElement('button');
+  btn.className = 'project-card__menu-btn';
+  btn.type = 'button';
+  btn.textContent = '⋯';
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', 'Project options');
+  wrap.appendChild(btn);
+
+  const pop = document.createElement('div');
+  pop.className = 'project-card__menu-pop';
+  pop.hidden = true;
+  pop.setAttribute('role', 'menu');
+
+  function close() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  function toggle() { pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', String(!pop.hidden)); }
+  btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+  document.addEventListener('click', () => close());
+
+  function addItem(label, fn, danger) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (danger) b.setAttribute('data-danger', '1');
+    b.addEventListener('click', (e) => { e.stopPropagation(); close(); fn(); });
+    pop.appendChild(b);
+  }
+  addItem('Rename…', () => renameProject(project));
+  addItem('Unregister', () => unregisterProject(project), true);
+
+  wrap.appendChild(pop);
+  return wrap;
+}
+
+async function loadProjectChats(cardLi, project) {
+  const ul = cardLi.querySelector('.project-card__chats');
+  let r;
+  try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path)); }
+  catch (e) { renderChatList(ul, [], project); return; }
+  if (r.status !== 200) { renderChatList(ul, [], project); return; }
+  renderChatList(ul, r.body.chats || [], project);
+}
+
+function renderChatList(ul, chats, project) {
+  ul.innerHTML = '';
+  if (!chats.length) {
+    const empty = document.createElement('li');
+    empty.className = 'project-card__chats-empty';
+    empty.textContent = 'no chats yet';
+    ul.appendChild(empty);
+    return;
+  }
+  for (const c of chats) {
+    const li = document.createElement('li');
+    const title = document.createElement('span');
+    title.className = 'project-card__chat-title';
+    title.textContent = c.title || c.id;
+    li.appendChild(title);
+    const meta = document.createElement('span');
+    meta.className = 'project-card__chat-meta';
+    meta.textContent = c.promptSize + ' · ' + fmtDate(c.lastOpenedAt || c.createdAt);
+    li.appendChild(meta);
+    const del = document.createElement('button');
+    del.className = 'project-card__chat-delete';
+    del.type = 'button';
+    del.textContent = '×';
+    del.setAttribute('aria-label', 'Delete chat ' + (c.title || c.id));
+    del.addEventListener('click', () => deleteProjectChat(project, c, li, ul));
+    li.appendChild(del);
+    ul.appendChild(li);
+  }
+}
+
+async function createProjectChat(project, btn, ul) {
+  btn.disabled = true;
+  const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir: project.path }) });
+  btn.disabled = false;
+  if (r.status !== 201) { alert('create chat failed: HTTP ' + r.status); return; }
+  // Replace the empty-state placeholder if present, otherwise prepend.
+  const empty = ul.querySelector('.project-card__chats-empty');
+  if (empty) { /* fall through to full re-render via reload */ }
+  await loadProjectChats(btn.parentElement.parentElement || ul.parentElement.parentElement, project);
+}
+
+async function deleteProjectChat(project, chat, li, ul) {
+  if (!confirm('Delete chat "' + (chat.title || chat.id) + '"?')) return;
+  const r = await fetchJson('/api/chats/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(project.path), { method: 'DELETE' });
+  if (r.status !== 200) { alert('delete failed: HTTP ' + r.status); return; }
+  li.remove();
+  if (!ul.children.length) renderChatList(ul, [], project);
+}
+
+async function renameProject(project) {
+  const next = prompt('Rename project', project.name || project.path);
+  if (next == null) return;
+  const trimmed = next.trim();
+  if (!trimmed || trimmed === project.name) return;
+  const r = await fetchJson('/api/projects/registered/' + encodeURIComponent(project.id), {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: trimmed })
+  });
+  if (r.status !== 200) { alert('rename failed: HTTP ' + r.status); return; }
+  const nameEl = document.querySelector('.project-card .project-card__name');
+  if (nameEl) nameEl.textContent = trimmed;
+}
+
+async function unregisterProject(project) {
+  if (!confirm('Unregister project "' + (project.name || project.path) + '"? The folder on disk is not touched.')) return;
+  const r = await fetchJson('/api/projects/registered/' + encodeURIComponent(project.id), { method: 'DELETE' });
+  if (r.status !== 200) { alert('unregister failed: HTTP ' + r.status); return; }
+  loadProjects();
+}
+
+$refreshProjects.addEventListener('click', loadProjects);
+loadProjects();

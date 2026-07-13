@@ -381,6 +381,220 @@ textarea.chat__input {
   font-size: 0.9rem;
 }
 
+/* Projects panel */
+.projects {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.projects__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.projects__hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 12px;
+}
+
+.projects__hint code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  background: var(--row-alt);
+  padding: 1px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.projects__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.projects__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.projects__list .projects__empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  padding: 12px 4px;
+}
+
+/* Project card */
+.project-card {
+  background: var(--row);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-card__name {
+  font-weight: 600;
+  font-size: 1rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card__path {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  word-break: break-all;
+  margin-top: -4px;
+}
+
+.project-card__menu {
+  position: relative;
+}
+
+.project-card__menu-btn {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 36px;
+  min-width: 44px;
+  font-weight: 600;
+}
+
+.project-card__menu-btn[aria-expanded="true"] {
+  background: var(--row-alt);
+}
+
+.project-card__menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.project-card__menu-pop button {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 10px 12px;
+  min-height: 44px;
+  border-radius: 6px;
+}
+
+.project-card__menu-pop button:hover {
+  background: var(--row);
+}
+
+.project-card__menu-pop button[data-danger="1"] {
+  color: #ff8a8a;
+}
+
+.project-card__chats {
+  /* Scroll inside the card, not the page. */
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 4px 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-card__chats li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--row-alt);
+}
+
+.project-card__chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card__chat-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.project-card__chat-delete {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.project-card__chat-delete:hover {
+  color: #ff8a8a;
+}
+
+.project-card__chats-empty {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+  padding: 8px 10px;
+}
+
+.project-card__new {
+  font: inherit;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  min-height: 44px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+.project-card__new:disabled {
+  opacity: 0.6;
+}
+
 /* Auth panel */
 .auth {
   margin-top: 24px;

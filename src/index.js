@@ -8,6 +8,7 @@ const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
+const chats = require('./chats.js');
 
 // Register Anthropic's per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -129,9 +130,17 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleOAuthCallbackPost(req, res, parsed);
   }
 
+  // Chats (per-project chat list). The projectDir is part of the URL so
+  // the routes are stable and cacheable; for the common case the
+  // mobile UI ships it as a query string. PUT and DELETE carry it in
+  // the JSON body.
+  if (urlPath === '/api/chats' || urlPath.startsWith('/api/chats/')) {
+    return handleChats(req, res, parsed);
+  }
+
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
   }
 
   // REST: GET /data
@@ -368,6 +377,133 @@ function projectsErrorStatus(err) {
   }
 }
 
+// ---- Chats API --------------------------------------------------------
+// Per-project chat list. All routes need a projectDir (query string
+// for GET/DELETE, JSON body for POST/PATCH). The chat itself is
+// identified by a short hex id generated at creation time.
+//
+// Endpoints:
+//   GET    /api/chats?projectDir=<abs>          -> { chats: [...] }
+//   GET    /api/chats/:id?projectDir=<abs>      -> { chat } | 404
+//   POST   /api/chats                            { projectDir, title?, trace?, promptSize? }
+//   PATCH  /api/chats/:id                        { projectDir, title?, trace?, promptSize? }
+//   POST   /api/chats/:id/touch                  { projectDir }      (bumps lastOpenedAt)
+//   DELETE /api/chats/:id?projectDir=<abs>      -> { ok, removed }
+
+async function handleChats(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  function chatError(e) {
+    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
+    if (e && e.code === 'EBADINPUT') return 400;
+    return 500;
+  }
+
+  function readProjectDir(body) {
+    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const dir = fromQuery || fromBody;
+    if (!dir) return null;
+    return dir;
+  }
+
+  // GET /api/chats?projectDir=<abs>
+  if (urlPath === '/api/chats' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { chats: chats.listChats(dir) });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/chats/:id?projectDir=<abs>
+  let m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'GET') {
+    const id = decodeURIComponent(m[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats   body: { projectDir, title?, trace?, promptSize? }
+  if (urlPath === '/api/chats' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chat = chats.createChat(dir, body || {});
+      return sendJSON(res, 201, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize? }
+  m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'PATCH') {
+    const id = decodeURIComponent(m[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chat = chats.updateChat(dir, id, body || {});
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/touch   body: { projectDir }
+  m = urlPath.match(/^\/api\/chats\/([^/]+)\/touch$/);
+  if (m && method === 'POST') {
+    const id = decodeURIComponent(m[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chat = chats.touchChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // DELETE /api/chats/:id?projectDir=<abs>
+  m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    const id = decodeURIComponent(m[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const removed = chats.deleteChat(dir, id);
+      if (!removed) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { ok: true, removed: id });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+}
+
 async function handleProjects(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -395,6 +531,18 @@ async function handleProjects(req, res, parsed) {
     const ok = projects.removeProject(delMatch[1]);
     if (!ok) return sendJSON(res, 404, { error: 'Not found', id: delMatch[1] });
     return sendJSON(res, 200, { ok: true });
+  }
+
+  // PATCH /api/projects/registered/:id  body: { name }
+  if (delMatch && method === 'PATCH') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const name = body && typeof body.name === 'string' ? body.name : '';
+    if (!name.trim()) return sendJSON(res, 400, { error: 'name is required' });
+    const updated = projects.renameProject(delMatch[1], name);
+    if (!updated) return sendJSON(res, 404, { error: 'Not found', id: delMatch[1] });
+    return sendJSON(res, 200, { project: updated });
   }
 
   // POST /api/projects  body: { action, ... }
@@ -715,7 +863,7 @@ function createServer(port = DEFAULT_PORT) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic };
+module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, chats };
 
 // ---- Static /web/ serving -----------------------------------------------
 

@@ -103,6 +103,16 @@
       <pre id="projectOut" class="settings__out" hidden></pre>
     </section>
 
+    <section class="projects">
+      <h2 class="projects__title">Projects</h2>
+      <p class="projects__hint">Each card is a registered project. The chat list scrolls inside the card so the page itself stays put. New chats inherit the project's <code>promptSize</code> and <code>traceByDefault</code> settings.</p>
+      <div class="projects__toolbar">
+        <button id="refreshProjects" class="settings__button" type="button">Refresh</button>
+        <span id="projectsStatus" class="settings__status" aria-live="polite"></span>
+      </div>
+      <ul id="projectsList" class="projects__list" aria-label="Registered projects"></ul>
+    </section>
+
     <section class="auth">
       <h2 class="auth__title">Auth</h2>
       <p class="auth__hint">OAuth tokens live in the OS keychain. The accounts list is read from <code>/api/auth/accounts</code>.</p>

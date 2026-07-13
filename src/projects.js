@@ -179,6 +179,23 @@ function removeProject(pid) {
   return true;
 }
 
+// Rename a registered project's display label. The on-disk folder
+// is not touched. Trims and validates the new name; returns null if
+// the project doesn't exist or the name is empty.
+function renameProject(pid, newName) {
+  if (!pid || typeof pid !== 'string') return null;
+  if (typeof newName !== 'string') return null;
+  const trimmed = newName.trim();
+  if (!trimmed) return null;
+  const list = readProjects();
+  const idx = list.findIndex(p => p.id === pid);
+  if (idx < 0) return null;
+  const updated = Object.assign({}, list[idx], { name: trimmed });
+  list[idx] = updated;
+  writeProjects(list);
+  return updated;
+}
+
 module.exports = {
   // filesystem
   listDir,
@@ -188,6 +205,7 @@ module.exports = {
   getProject,
   registerProject,
   removeProject,
+  renameProject,
   // helpers (exported for tests + future inspector)
   isUnderHome,
   ensureSafeRoot,
