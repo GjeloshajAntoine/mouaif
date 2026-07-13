@@ -53,18 +53,20 @@ These rules apply to every change made in this workspace. Follow them without be
 These features exist or are planned. Keep this list in sync with the codebase as features land.
 
 - **Virtual list with low memory and low CPU** — windowed rendering, recycled nodes, no forced reflow on scroll.
-- **No pre-made model list** — models are user-defined, fetched on demand or configured per project.
+- **No pre-made model list** — models are user-defined (slug id), persisted in the app settings store, configured per project. See [docs/decisions.md](../docs/decisions.md) §3.
 - **Custom prompts** — user-authored system/role prompts, stored per project.
 - **Three prompt-size profiles**:
   - `very-small`: tool names with short descriptions, no full schemas.
   - `average`: compact prompt + full tool list.
   - `extensive`: full prompt + best-practice guidance and examples.
-- **Trace-to-file option** — toggle that streams agent/chat traces to a local file for debugging.
-- **App-level vs project-level settings** — settings can live globally (app) or in a per-project config file.
+- **Trace-to-file option** — toggle that streams agent/chat traces to a local file for debugging. NDJSON, append-only, no rotation, off by default. See [docs/decisions.md](../docs/decisions.md) §5.
+- **App-level vs project-level settings** — settings can live globally (app SQLite store) or in a per-project `.mouaif.json`; project overrides app. See [docs/decisions.md](../docs/decisions.md) §1–§2.
 - **Project-grouped chat list** — chats are grouped under a project card; the chat list scrolls inside the card, not the page.
 - **Tabbed mobile UI with custom DevTools-style inspector**:
   - Tabs: **Chats**, **Inspector** (rebuilt from scratch on top of Chrome DevTools data — not a thin wrapper), **Settings**.
   - The inspector must be a from-scratch mobile-friendly UI, not the default Chrome panel embedded in an iframe.
+  - Data source: Chrome DevTools Protocol (CDP) over WebSocket. See [docs/decisions.md](../docs/decisions.md) §6.
+  - Scaffold: **Preact + Vite**, served by `mouaif serve` at `/web/`. See [docs/decisio anywhere on the filesystem) plus a "create new folder" action. See [docs/decisions.md](../docs/decisions.md) §4
 - **Project card actions** — "New chat" and a per-project options menu on each project card.
 - **New-project folder picker** — creating a project opens a folder list (existing dirs) plus a "create new folder" action.
 

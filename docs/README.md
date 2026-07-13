@@ -6,4 +6,8 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 
 <!-- New feature docs must be added here in the same commit that introduces them. -->
 
-- _No feature docs yet._ Each new feature lands with its own `features/<name>.md`.
+- [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
+
+## Architectural decisions
+
+See [decisions.md](decisions.md) for the locked-in stack, storage, and build order.
