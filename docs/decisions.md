@@ -66,10 +66,11 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
 - 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.
 
-## 11. Auth — keytar token store + per-model auth + loopback callback
+## 11. Auth — @napi-rs/keyring token store + per-model auth + loopback callback
 
-- OAuth tokens live in the OS keychain via `keytar`. New runtime dependency. App settings keep a non-secret index of `{ provider, account }` so the UI can list "logged in as ..." without touching the keychain.
-- Loopback callback: `mouaif serve` exposes `GET /oauth/callback` on the same port. The user does the login in their system browser; the provider redirects back to the local server; the server exchanges the code, stores the token in keytar, and the UI polls `GET /api/auth/status?provider=...` to learn when login finished.
+- OAuth tokens live in the OS keychain via `@napi-rs/keyring` (a napi-rs binding to `keyring-rs`, cross-platform: Windows Credential Manager, macOS Keychain, Linux Secret Service / libsecret). Chosen over `keytar` because keytar is unmaintained and rebuilds frequently fail on modern Node. New runtime dependency.
+- App settings keep a non-secret index of `{ provider, account }` so the UI can list "logged in as ..." without touching the keychain.
+- Loopback callback: `mouaif serve` exposes `GET /oauth/callback` on the same port. The user does the login in their system browser; the provider redirects back to the local server; the server exchanges the code, stores the token in the keyring, and the UI polls `GET /api/auth/status?provider=...` to learn when login finished.
 - Per-model auth: a model with `auth: 'oauth'` is resolved to the matching `oauthAccount`; if missing, the proxy returns a typed `ENOAUTH` error and the UI prompts to sign in.
 
 ## 12. OAuth — one provider per commit
