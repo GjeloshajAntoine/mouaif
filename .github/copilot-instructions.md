@@ -59,7 +59,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
   - `very-small`: tool names with short descriptions, no full schemas.
   - `average`: compact prompt + full tool list.
   - `extensive`: full prompt + best-practice guidance and examples.
-- **Trace-to-file option** — toggle that streams agent/chat traces to a local file for debugging. NDJSON, append-only, no rotation, off by default. See [docs/decisions.md](../docs/decisions.md) §5.
+- **Trace-to-file option** — per-chat toggle (off by default) that writes that chat's events to `<projectDir>/.mouaif/traces/<chatId>.ndjson` in NDJSON, append-only, no rotation, so the user can commit the file with the project. Independent of chat storage; a one-shot "Export trace" action is also available. See [docs/decisions.md](../docs/decisions.md) §5.
 - **App-level vs project-level settings** — settings can live globally (app SQLite store) or in a per-project `.mouaif.json`; project overrides app. See [docs/decisions.md](../docs/decisions.md) §1–§2.
 - **Project-grouped chat list** — chats are grouped under a project card; the chat list scrolls inside the card, not the page.
 - **Tabbed mobile UI with custom DevTools-style inspector**:

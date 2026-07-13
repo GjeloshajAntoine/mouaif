@@ -34,4 +34,4 @@ Endpoints:
 
 ## Related
 
-- Future: `docs/features/trace-to-file.md` will reuse the SSE broadcast path.
+- Future: `docs/features/trace-to-file.md` writes per-chat NDJSON to `<projectDir>/.mouaif/traces/<chatId>.ndjson`. It does not reuse this SSE broadcast path; the trace is a project-local file, not a global stream.

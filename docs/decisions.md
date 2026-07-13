@@ -23,11 +23,17 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
 - Picker shows any directory the user has permission to read.
 - Mobile UI must implement its own directory browser from day one (no native FS picker).
 
-## 5. Trace-to-file — NDJSON, append-only, no rotation
+## 5. Trace-to-file — per-chat export to a project-relative file
 
-- Off by default.
-- Path: `~/.mouaif/trace.ndjson`. NDJSON, one event per line, append-only.
-- No rotation. The user is responsible for cleanup during long sessions.
+The "trace to file" feature is a **user export**, not a background stream and not a chat-storage mechanism. It exists so a user can commit a chat's transcript next to the rest of the project source and treat it like any other file in the repo.
+
+- **Scope: the chat the toggle is on.** Nothing is traced unless the user opts this chat in.
+- **Trigger: per-chat toggle**, off by default. There is no app-wide or project-wide default; every chat starts untraced.
+- **Path: `<projectDir>/.mouaif/traces/<chatId>.ndjson`.** Lives next to the project so it can be `git add`-ed with the rest of the source. If the chat has no project, the user is prompted to pick one before tracing starts (no surprise writes outside the project).
+- **Format: NDJSON, one event per line, append-only.** Each line is one of `user message | assistant message | tool call | tool result | system event | error`, with `{ ts, type, ...payload }`. The filename identifies the chat, so the `chatId` is not duplicated on every line.
+- **Lifecycle: while the toggle is on, every new event for the chat is appended.** Toggling off closes the file handle; the file is kept. Toggling on again opens it in append mode and continues. No rotation, no TTL, no auto-cleanup — the file is the user's source file.
+- **Relationship to chat storage: independent.** The transcript of the chat is stored wherever the chat store decides (per decision 1, that will be the app SQLite store). The trace file is a *view* of that store, written out as a plain file. Deleting the trace file does not delete the chat; deleting the chat does not delete the trace file.
+- **Export is also available without toggling.** The chat UI exposes a one-shot "Export trace" action that writes the same NDJSON shape to a path the user picks, without leaving the toggle on.
 
 ## 6. Inspector — Chrome DevTools Protocol (CDP) over WebSocket
 
