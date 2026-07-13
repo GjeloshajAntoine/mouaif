@@ -38,6 +38,9 @@ const DEFAULTS = Object.freeze({
   // User-defined models. Shape: { id, provider, label, baseUrl, apiKey, contextWindow }.
   // Empty by default. The user adds entries via /api/models.
   models: [],
+  // Registered projects. Shape: { id, path, name, createdAt }. Filled in by
+  // src/projects.js when the user picks a folder. Empty by default.
+  projects: [],
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
   // Default trace-to-file state for new chats. Per-chat toggle overrides.

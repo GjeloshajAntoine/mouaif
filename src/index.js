@@ -2,7 +2,9 @@ const http = require('http');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const settings = require('./settings.js');
+const projects = require('./projects.js');
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -52,7 +54,7 @@ function broadcast(event, data) {
 
 function handleRequest(req, res, activePort = DEFAULT_PORT) {
   const parsed = url.parse(req.url, true);
-  const path = parsed.pathname;
+  const urlPath = parsed.pathname;
   const method = req.method;
 
   // CORS headers
@@ -67,45 +69,50 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   }
 
   // SSE endpoint
-  if (path === '/events' && method === 'GET') {
+  if (urlPath === '/events' && method === 'GET') {
     return handleSSE(req, res);
   }
 
   // Static /web/ (mobile UI bundle). Files live in src/web/. Alias
   // /web/virtual-list.js -> src/virtual-list.js so the same source powers
   // both the Node require() and the browser module.
-  if (path === '/web' || path === '/web/') {
+  if (urlPath === '/web' || urlPath === '/web/') {
     return serveWebFile(res, 'index.html');
   }
-  if (path.startsWith('/web/')) {
-    return serveWebRequest(res, path.slice('/web/'.length));
+  if (urlPath.startsWith('/web/')) {
+    return serveWebRequest(res, urlPath.slice('/web/'.length));
   }
 
   // Browser auto-requests a favicon. Reply 204 (no body) so the console
   // doesn't pile up 404s; we don't ship a real favicon in this commit.
-  if (path === '/favicon.ico' && method === 'GET') {
+  if (urlPath === '/favicon.ico' && method === 'GET') {
     res.writeHead(204);
     res.end();
     return;
   }
 
   // Settings API
-  if (path.startsWith('/api/settings')) {
+  if (urlPath.startsWith('/api/settings')) {
     return handleSettings(req, res, parsed);
   }
 
+  // Projects API (folder picker + registered projects)
+  if (urlPath.startsWith('/api/projects')) {
+    return handleProjects(req, res, parsed);
+  }
+
   // REST: GET /
-  if (path === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project'] });
+  if (urlPath === '/' && method === 'GET') {
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id'] });
   }
 
   // REST: GET /data
-  if (path === '/data' && method === 'GET') {
+  if (urlPath === '/data' && method === 'GET') {
     return sendJSON(res, 200, store);
   }
 
   // REST: POST /data
-  if (path === '/data' && method === 'POST') {
+  if (urlPath === '/data' && method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -144,12 +151,12 @@ function readJsonBody(req) {
 }
 
 async function handleSettings(req, res, parsed) {
-  const path = parsed.pathname;
+  const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
 
   // GET /api/settings -> { app, defaults, home }
-  if (path === '/api/settings' && method === 'GET') {
+  if (urlPath === '/api/settings' && method === 'GET') {
     return sendJSON(res, 200, {
       home: settings.MOUAIF_HOME,
       defaults: settings.DEFAULTS,
@@ -158,7 +165,7 @@ async function handleSettings(req, res, parsed) {
   }
 
   // GET /api/settings/resolved?projectDir=<abs path>
-  if (path === '/api/settings/resolved' && method === 'GET') {
+  if (urlPath === '/api/settings/resolved' && method === 'GET') {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -170,7 +177,7 @@ async function handleSettings(req, res, parsed) {
   }
 
   // PUT /api/settings/app  body: { ...patch }   (shallow merge into app store)
-  if (path === '/api/settings/app' && method === 'PUT') {
+  if (urlPath === '/api/settings/app' && method === 'PUT') {
     let patch;
     try { patch = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
@@ -183,7 +190,7 @@ async function handleSettings(req, res, parsed) {
   }
 
   // PUT /api/settings/project  body: { projectDir, ...patch }
-  if (path === '/api/settings/project' && method === 'PUT') {
+  if (urlPath === '/api/settings/project' && method === 'PUT') {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
@@ -200,6 +207,98 @@ async function handleSettings(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'settings' });
+}
+
+// ---- Projects API -------------------------------------------------------
+// Stable contract for the mobile UI. Two surfaces:
+//
+//   Filesystem picker (the new-project folder list):
+//     GET  /api/projects?dir=<abs>     -> { dir, entries: [{ name, path, hasChildren }] }
+//     POST /api/projects  body: { action: "list",   dir: "<abs>" }
+//     POST /api/projects  body: { action: "create", parent: "<abs>", name: "<name>" }
+//
+//   Registered projects (the user's chosen projects):
+//     GET    /api/projects/registered                          -> { projects: [...] }
+//     POST   /api/projects  body: { action: "register", dir: "<abs>" }
+//     DELETE /api/projects/registered/:id                       -> { ok: true }
+//
+// All paths must be under the user home unless MOUAIF_ALLOW_ANY_ROOT=1.
+
+function projectsErrorStatus(err) {
+  switch (err && err.code) {
+    case 'EBADPATH':       return 400;
+    case 'EOUTSIDE_HOME':  return 403;
+    case 'ENOENT':         return 404;
+    case 'ENOTDIR':        return 400;
+    case 'EACCES':         return 403;
+    case 'EEXIST':         return 409;
+    case 'EREAD':          return 500;
+    default:               return 400;
+  }
+}
+
+async function handleProjects(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  // GET /api/projects?dir=<abs>  -> list subdirs
+  if (urlPath === '/api/projects' && method === 'GET') {
+    const dir = typeof q.dir === 'string' && q.dir ? q.dir : os.homedir();
+    try {
+      const result = projects.listDir(dir);
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, projectsErrorStatus(e), { error: e.message, code: e.code, path: e.path || dir });
+    }
+  }
+
+  // GET /api/projects/registered
+  if (urlPath === '/api/projects/registered' && method === 'GET') {
+    return sendJSON(res, 200, { projects: projects.listProjects() });
+  }
+
+  // DELETE /api/projects/registered/:id
+  const delMatch = urlPath.match(/^\/api\/projects\/registered\/([A-Za-z0-9_-]+)$/);
+  if (delMatch && method === 'DELETE') {
+    const ok = projects.removeProject(delMatch[1]);
+    if (!ok) return sendJSON(res, 404, { error: 'Not found', id: delMatch[1] });
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  // POST /api/projects  body: { action, ... }
+  if (urlPath === '/api/projects' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const action = body && body.action;
+    try {
+      if (action === 'list') {
+        const dir = typeof body.dir === 'string' && body.dir ? body.dir : os.homedir();
+        return sendJSON(res, 200, projects.listDir(dir));
+      }
+      if (action === 'create') {
+        if (typeof body.parent !== 'string' || typeof body.name !== 'string' || !body.name) {
+          return sendJSON(res, 400, { error: 'parent and name are required' });
+        }
+        const target = path.join(body.parent, body.name);
+        const out = projects.createDir(target);
+        return sendJSON(res, 201, { ...out, parent: body.parent, name: body.name });
+      }
+      if (action === 'register') {
+        if (typeof body.dir !== 'string' || !body.dir) {
+          return sendJSON(res, 400, { error: 'dir is required' });
+        }
+        const row = projects.registerProject(body.dir);
+        return sendJSON(res, 200, { project: row });
+      }
+      return sendJSON(res, 400, { error: 'Unknown action', action });
+    } catch (e) {
+      return sendJSON(res, projectsErrorStatus(e), { error: e.message, code: e.code, path: e.path });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'projects' });
 }
 
 function createServer(port = DEFAULT_PORT) {

@@ -9,6 +9,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
 - [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
 - [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
+- [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 
 ## Architectural decisions
 
