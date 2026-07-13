@@ -1,8 +1,11 @@
 const http = require('http');
 const url = require('url');
+const fs = require('fs');
+const path = require('path');
 const settings = require('./settings.js');
 
 const DEFAULT_PORT = 5732;
+const WEB_DIR = path.join(__dirname, 'web');
 
 // Store connected SSE clients
 const sseClients = new Set();
@@ -66,6 +69,24 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   // SSE endpoint
   if (path === '/events' && method === 'GET') {
     return handleSSE(req, res);
+  }
+
+  // Static /web/ (mobile UI bundle). Files live in src/web/. Alias
+  // /web/virtual-list.js -> src/virtual-list.js so the same source powers
+  // both the Node require() and the browser module.
+  if (path === '/web' || path === '/web/') {
+    return serveWebFile(res, 'index.html');
+  }
+  if (path.startsWith('/web/')) {
+    return serveWebRequest(res, path.slice('/web/'.length));
+  }
+
+  // Browser auto-requests a favicon. Reply 204 (no body) so the console
+  // doesn't pile up 404s; we don't ship a real favicon in this commit.
+  if (path === '/favicon.ico' && method === 'GET') {
+    res.writeHead(204);
+    res.end();
+    return;
   }
 
   // Settings API
@@ -190,3 +211,39 @@ function createServer(port = DEFAULT_PORT) {
 }
 
 module.exports = { createServer, broadcast, DEFAULT_PORT, settings };
+
+// ---- Static /web/ serving -----------------------------------------------
+
+const WEB_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.js':   'application/javascript; charset=utf-8',
+  '.mjs':  'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+  '.ico':  'image/x-icon'
+};
+
+function serveWebFile(res, absOrRel, opts) {
+  const abs = path.isAbsolute(absOrRel)
+    ? absOrRel
+    : path.join(WEB_DIR, absOrRel);
+  if (!abs.startsWith(WEB_DIR) && !(opts && opts.allowOutside)) {
+    return sendJSON(res, 400, { error: 'Bad path' });
+  }
+  fs.readFile(abs, (err, data) => {
+    if (err) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
+    res.writeHead(200, { 'Content-Type': WEB_MIME[path.extname(abs)] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+function serveWebRequest(res, relPath) {
+  if (!relPath) return serveWebFile(res, 'index.html');
+  // /web/virtual-list.js -> src/virtual-list.js (single source of truth).
+  if (relPath === 'virtual-list.js') {
+    return serveWebFile(res, path.join(__dirname, 'virtual-list.js'), { allowOutside: true });
+  }
+  return serveWebFile(res, relPath);
+}
