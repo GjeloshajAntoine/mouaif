@@ -46,6 +46,63 @@
       <pre id="chatOut" class="chat__out" aria-label="Assistant reply"></pre>
     </section>
 
+    <section class="settings">
+      <h2 class="settings__title">Settings</h2>
+      <p class="settings__hint">App-level settings are stored in <code>~/.mouaif/store.sqlite</code>. They are the default; project settings override per project.</p>
+
+      <h3 class="settings__sub">App</h3>
+      <div class="settings__row">
+        <label for="promptSize" class="settings__label">Default prompt size</label>
+        <select id="promptSize" class="settings__input">
+          <option value="very-small">very-small</option>
+          <option value="average">average</option>
+          <option value="extensive">extensive</option>
+        </select>
+      </div>
+      <div class="settings__row settings__row--inline">
+        <label for="traceByDefault" class="settings__label">Trace to file by default</label>
+        <input id="traceByDefault" type="checkbox" class="settings__checkbox" />
+      </div>
+      <div class="settings__row settings__row--actions">
+        <button id="saveApp" class="settings__button settings__button--primary" type="button">Save app settings</button>
+        <button id="resetApp" class="settings__button" type="button">Reset app</button>
+        <span id="appStatus" class="settings__status" aria-live="polite"></span>
+      </div>
+
+      <h3 class="settings__sub">Models</h3>
+      <p class="settings__hint">Add an entry per model you want to chat with. API keys are stored as plain text in the app SQLite store.</p>
+      <ul id="modelsList" class="models__list" aria-label="Configured models"></ul>
+      <details class="models__add">
+        <summary>Add a model</summary>
+        <div class="settings__row"><label for="mId" class="settings__label">id (slug)</label><input id="mId" class="settings__input" type="text" placeholder="gpt-4o-mini" /></div>
+        <div class="settings__row"><label for="mProvider" class="settings__label">provider</label>
+          <select id="mProvider" class="settings__input">
+            <option value="openai-compatible">openai-compatible</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+            <option value="ollama">ollama</option>
+          </select>
+        </div>
+        <div class="settings__row"><label for="mLabel" class="settings__label">label</label><input id="mLabel" class="settings__input" type="text" placeholder="GPT-4o mini" /></div>
+        <div class="settings__row"><label for="mBaseUrl" class="settings__label">base URL (optional)</label><input id="mBaseUrl" class="settings__input" type="text" placeholder="https://api.openai.com" /></div>
+        <div class="settings__row"><label for="mApiKey" class="settings__label">API key</label><input id="mApiKey" class="settings__input" type="password" placeholder="sk-..." /></div>
+        <div class="settings__row settings__row--actions">
+          <button id="addModel" class="settings__button settings__button--primary" type="button">Add</button>
+          <span id="addModelStatus" class="settings__status" aria-live="polite"></span>
+        </div>
+      </details>
+
+      <h3 class="settings__sub">Project</h3>
+      <p class="settings__hint">Project settings live in <code>&lt;projectDir&gt;/.mouaif.json</code> and override app-level values for that project.</p>
+      <div class="settings__row"><label for="projectDir" class="settings__label">project directory</label><input id="projectDir" class="settings__input" type="text" placeholder="C:/path/to/project" /></div>
+      <div class="settings__row settings__row--inline">
+        <label for="loadProject" class="settings__label">load</label>
+        <button id="loadProject" class="settings__button" type="button">Load</button>
+        <span id="projectStatus" class="settings__status" aria-live="polite"></span>
+      </div>
+      <pre id="projectOut" class="settings__out" hidden></pre>
+    </section>
+
     <section class="auth">
       <h2 class="auth__title">Auth</h2>
       <p class="auth__hint">OAuth tokens live in the OS keychain. The accounts list is read from <code>/api/auth/accounts</code>.</p>

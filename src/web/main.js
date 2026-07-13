@@ -280,3 +280,164 @@ $completeCode.addEventListener('click', async () => {
   }
   $completeCode.disabled = false;
 });
+
+// ---- Settings panel ----------------------------------------------------
+// Reads /api/settings, lets the user edit the app-level settings
+// (prompt size, trace default) and the models list, and load a
+// project's settings on demand. No state, no caching — every action
+// hits the server, so the page is always truthful.
+
+const $promptSize = document.getElementById('promptSize');
+const $traceByDefault = document.getElementById('traceByDefault');
+const $saveApp = document.getElementById('saveApp');
+const $resetApp = document.getElementById('resetApp');
+const $appStatus = document.getElementById('appStatus');
+const $modelsList = document.getElementById('modelsList');
+const $mId = document.getElementById('mId');
+const $mProvider = document.getElementById('mProvider');
+const $mLabel = document.getElementById('mLabel');
+const $mBaseUrl = document.getElementById('mBaseUrl');
+const $mApiKey = document.getElementById('mApiKey');
+const $addModel = document.getElementById('addModel');
+const $addModelStatus = document.getElementById('addModelStatus');
+const $projectDir = document.getElementById('projectDir');
+const $loadProject = document.getElementById('loadProject');
+const $projectStatus = document.getElementById('projectStatus');
+const $projectOut = document.getElementById('projectOut');
+
+async function fetchJson(url, init) {
+  const r = await fetch(url, init);
+  const text = await r.text();
+  let body; try { body = JSON.parse(text || '{}'); } catch { body = text; }
+  return { status: r.status, body };
+}
+
+function setStatus(node, msg) { if (node) node.textContent = msg; }
+
+let currentApp = {};
+
+async function loadSettings() {
+  const r = await fetchJson('/api/settings');
+  if (r.status !== 200) { setStatus($appStatus, 'HTTP ' + r.status); return; }
+  currentApp = r.body.app || {};
+  // Defaults: settings.DEFAULTS has promptSize='average' and traceByDefault=false.
+  $promptSize.value = currentApp.promptSize || 'average';
+  $traceByDefault.checked = !!currentApp.traceByDefault;
+  renderModels(currentApp.models || []);
+  setStatus($appStatus, '');
+}
+
+function renderModels(list) {
+  $modelsList.innerHTML = '';
+  if (!list.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'No models configured. Add one below.';
+    empty.style.color = 'var(--muted)';
+    $modelsList.appendChild(empty);
+    return;
+  }
+  for (const m of list) {
+    const li = document.createElement('li');
+    const row = document.createElement('div');
+    row.className = 'models__row';
+    const idSpan = document.createElement('span');
+    idSpan.className = 'models__id';
+    idSpan.textContent = m.id + '  (' + m.provider + ')';
+    const del = document.createElement('button');
+    del.className = 'models__delete';
+    del.type = 'button';
+    del.textContent = 'Delete';
+    del.addEventListener('click', () => deleteModel(m.id));
+    row.appendChild(idSpan);
+    row.appendChild(del);
+    const meta = document.createElement('div');
+    meta.className = 'models__meta';
+    meta.textContent = [m.label, m.baseUrl, m.apiKey ? 'key: •••' : null, m.auth && m.auth !== 'apikey' ? 'auth: ' + m.auth : null].filter(Boolean).join('  ·  ');
+    li.appendChild(row);
+    li.appendChild(meta);
+    $modelsList.appendChild(li);
+  }
+}
+
+$saveApp.addEventListener('click', async () => {
+  $saveApp.disabled = true;
+  setStatus($appStatus, 'saving…');
+  const r = await fetchJson('/api/settings/app', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ promptSize: $promptSize.value, traceByDefault: !!$traceByDefault.checked })
+  });
+  $saveApp.disabled = false;
+  if (r.status === 200) { currentApp = r.body.app || currentApp; setStatus($appStatus, 'saved.'); }
+  else setStatus($appStatus, 'HTTP ' + r.status);
+});
+
+$resetApp.addEventListener('click', async () => {
+  if (!confirm('Reset all app-level settings to defaults? Models and other keys will be cleared.')) return;
+  $resetApp.disabled = true;
+  setStatus($appStatus, 'resetting…');
+  const r = await fetchJson('/api/settings/app/reset', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keys: ['models', 'promptSize', 'traceByDefault', 'authAccounts', 'projects', 'flags'] })
+  });
+  $resetApp.disabled = false;
+  if (r.status === 200) { currentApp = r.body.app || {}; await loadSettings(); setStatus($appStatus, 'reset.'); }
+  else setStatus($appStatus, 'HTTP ' + r.status);
+});
+
+$addModel.addEventListener('click', async () => {
+  const id = ($mId.value || '').trim();
+  const provider = $mProvider.value;
+  const label = ($mLabel.value || '').trim() || id;
+  const baseUrl = ($mBaseUrl.value || '').trim();
+  const apiKey = ($mApiKey.value || '').trim();
+  if (!id) { setStatus($addModelStatus, 'id is required'); return; }
+  $addModel.disabled = true;
+  setStatus($addModelStatus, 'adding…');
+  const body = { id, provider, label };
+  if (baseUrl) body.baseUrl = baseUrl;
+  if (apiKey) body.apiKey = apiKey;
+  const r = await fetchJson('/api/settings/app/models', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  $addModel.disabled = false;
+  if (r.status === 200) {
+    currentApp.models = r.body.models;
+    renderModels(r.body.models);
+    setStatus($addModelStatus, 'added ' + id + '.');
+    $mId.value = ''; $mLabel.value = ''; $mBaseUrl.value = ''; $mApiKey.value = '';
+  } else {
+    setStatus($addModelStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''));
+  }
+});
+
+async function deleteModel(id) {
+  if (!confirm('Delete model ' + id + '?')) return;
+  const r = await fetchJson('/api/settings/app/models/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (r.status === 200) {
+    currentApp.models = r.body.models;
+    renderModels(r.body.models);
+  } else {
+    alert('delete failed: HTTP ' + r.status);
+  }
+}
+
+$loadProject.addEventListener('click', async () => {
+  const dir = ($projectDir.value || '').trim();
+  if (!dir) { setStatus($projectStatus, 'projectDir is required'); return; }
+  $loadProject.disabled = true;
+  setStatus($projectStatus, 'loading…');
+  const r = await fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(dir));
+  $loadProject.disabled = false;
+  if (r.status === 200) {
+    setStatus($projectStatus, 'path: ' + r.body.path);
+    $projectOut.hidden = false;
+    $projectOut.textContent = JSON.stringify(r.body.project, null, 2);
+  } else {
+    setStatus($projectStatus, 'HTTP ' + r.status);
+    $projectOut.hidden = true;
+  }
+});
+
+loadSettings();
+setInterval(loadSettings, 30000);

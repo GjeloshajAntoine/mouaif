@@ -131,7 +131,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
   }
 
   // REST: GET /data
@@ -204,6 +204,23 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
+  // GET /api/settings/project?projectDir=<abs path>  -> { project, path }
+  // Raw project file (no app merge, no defaults). The UI uses this to
+  // show the project-level values separately from the resolved view.
+  if (urlPath === '/api/settings/project' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, {
+        project: settings.getProject(dir),
+        path: settings.getProjectPath(dir)
+      });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // PUT /api/settings/app  body: { ...patch }   (shallow merge into app store)
   if (urlPath === '/api/settings/app' && method === 'PUT') {
     let patch;
@@ -229,6 +246,92 @@ async function handleSettings(req, res, parsed) {
     try {
       const next = settings.setProject(projectDir, patch);
       return sendJSON(res, 200, { project: next, path: settings.getProjectPath(projectDir) });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // POST /api/settings/app/models  body: { ...model }
+  // Adds a model to the app-level models array, or merges into an
+  // existing entry with the same id. `id` is required; `provider` is
+  // required on add but optional on re-add (the existing entry is the
+  // source of truth for that field). Returns the merged model and the
+  // updated models array.
+  if (urlPath === '/api/settings/app/models' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body !== 'object' || !body.id || typeof body.id !== 'string') {
+      return sendJSON(res, 400, { error: 'id is required' });
+    }
+    const app = settings.getApp();
+    const models = Array.isArray(app.models) ? app.models.slice() : [];
+    const idx = models.findIndex(m => m && m.id === body.id);
+    if (idx < 0 && !body.provider) {
+      return sendJSON(res, 400, { error: 'provider is required when adding a new model' });
+    }
+    const merged = Object.assign({}, idx >= 0 ? models[idx] : {}, body);
+    if (idx >= 0) models[idx] = merged; else models.push(merged);
+    try {
+      const next = settings.setApp({ models });
+      return sendJSON(res, 200, { model: merged, models: next.models });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // DELETE /api/settings/app/models/:id  -> { ok, removed, models }
+  const delModelMatch = urlPath.match(/^\/api\/settings\/app\/models\/([A-Za-z0-9._-]+)$/);
+  if (delModelMatch && method === 'DELETE') {
+    const id = delModelMatch[1];
+    const app = settings.getApp();
+    const models = Array.isArray(app.models) ? app.models.slice() : [];
+    const idx = models.findIndex(m => m && m.id === id);
+    if (idx < 0) return sendJSON(res, 404, { error: 'Model not found', id });
+    const [removed] = models.splice(idx, 1);
+    try {
+      settings.setApp({ models });
+      return sendJSON(res, 200, { ok: true, removed, models });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // POST /api/settings/app/reset  body: { keys: ['models', 'flags'] }
+  // Clears the listed app-level keys, restoring them to defaults.
+  // Implementation: build a fresh patch that contains only the keys
+  // NOT in the reset list. setApp shallow-merges, so omitting a key
+  // from the patch is a no-op — we need a stronger reset, so we
+  // explicitly delete the keys from a clone of the current app and
+  // write that clone back.
+  if (urlPath === '/api/settings/app/reset' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const keys = Array.isArray(body && body.keys) ? body.keys : [];
+    const allowed = new Set(Object.keys(settings.DEFAULTS));
+    const bad = keys.filter(k => !allowed.has(k));
+    if (bad.length) return sendJSON(res, 400, { error: 'Unknown key(s)', bad });
+    // Build a fresh object that omits the reset keys, then write it
+    // through. SQLite stores the new object verbatim (setApp uses
+    // { ...current, ...patch } internally; here we pass a patch that
+    // does NOT include the reset keys, but the merged result still
+    // contains them because the stored `current` does). So we need a
+    // explicit delete: a special-cased "replace" path. The simplest
+    // correct approach is to use the app store's underlying SQL: an
+    // UPSERT of an object that has the keys removed.
+    const current = settings.getApp();
+    const next = Object.assign({}, current);
+    for (const k of keys) delete next[k];
+    try {
+      // setApp is shallow-merge; passing the trimmed object and using
+      // a direct write would be ideal, but we don't expose a
+      // replace-at-the-root method. Cheapest correct option: pass an
+      // empty patch alongside a sentinel, OR just deep-copy the app
+      // and write the trimmed version through a new method.
+      // -> we add setAppReplace for this.
+      const result = settings.setAppReplace(next);
+      return sendJSON(res, 200, { app: result, reset: keys });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }

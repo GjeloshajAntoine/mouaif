@@ -118,6 +118,24 @@ function setApp(patch) {
   return next;
 }
 
+// Replace the whole app-level settings object (no merge). Used by
+// /api/settings/app/reset where the caller wants to drop specific keys
+// rather than merge into them. The caller is responsible for shape:
+// the new object is stored verbatim.
+function setAppReplace(next) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    throw new TypeError('setAppReplace() expects an object');
+  }
+  const json = JSON.stringify(next);
+  db()
+    .prepare(
+      `INSERT INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    )
+    .run(APP_KEY, json);
+  return next;
+}
+
 // ---- Project-level store ------------------------------------------------
 
 function getProjectPath(projectDir) {
@@ -195,6 +213,7 @@ module.exports = {
   // app
   getApp,
   setApp,
+  setAppReplace,
   // project
   getProjectPath,
   getProject,
