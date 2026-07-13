@@ -1,0 +1,34 @@
+{
+  "name": "mouaif",
+  "version": "1.0.0",
+  "description": "CLI tool with integrated HTTP server — REST API + Server-Sent Events",
+  "main": "src/index.js",
+  "bin": {
+    "mouaif": "./bin/mouaif.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/mouaif.js",
+    "dev": "node --watch bin/mouaif.js",
+    "prepublishOnly": "node -c bin/mouaif.js && node -c src/index.js"
+  },
+  "keywords": [
+    "cli",
+    "server",
+    "sse",
+    "rest",
+    "http"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "commander": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

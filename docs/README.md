@@ -7,6 +7,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 <!-- New feature docs must be added here in the same commit that introduces them. -->
 
 - [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
+- [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
 
 ## Architectural decisions
 
