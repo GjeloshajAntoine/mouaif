@@ -177,7 +177,8 @@ function AuthPanel() {
   const signInCallback = useRef(null);
   const codeInput = useRef(null);
   const completeCode = useRef(null);
-  let pendingState = null, pendingRedirect = null;
+  const pendingState = useRef(null);
+  const pendingRedirect = useRef(null);
 
   async function startSignIn() {
     signInAnthropic.current.disabled = true;
@@ -185,9 +186,9 @@ function AuthPanel() {
     try {
       const r = await fetchJson('/api/auth/sign-in/anthropic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (r.status !== 200) { signInStatus.current.textContent = 'HTTP ' + r.status; signInAnthropic.current.disabled = false; return; }
-      pendingState = r.body.state;
-      pendingRedirect = r.body.authorizeUrl;
-      window.open(pendingRedirect, '_blank', 'noopener');
+      pendingState.current = r.body.state;
+      pendingRedirect.current = r.body.authorizeUrl;
+      window.open(pendingRedirect.current, '_blank', 'noopener');
       signInCallback.current.textContent = r.body.redirectUri || (window.location.origin + '/oauth/callback?provider=anthropic');
       signInHelp.current.hidden = false;
       signInStatus.current.textContent = 'waiting for browser…';
@@ -210,14 +211,14 @@ function AuthPanel() {
 
   async function completeWithCode() {
     const raw = (codeInput.current.value || '').trim();
-    if (!pendingState || !pendingRedirect) { signInStatus.current.textContent = 'click "Sign in with Anthropic" first'; return; }
+    if (!pendingState.current || !pendingRedirect.current) { signInStatus.current.textContent = 'click "Sign in with Anthropic" first'; return; }
     let code = raw;
     try { const u = new URL(raw); const c = u.searchParams.get('code'); if (c) code = c; } catch {}
     if (!code) { signInStatus.current.textContent = 'paste the code from the redirect URL'; return; }
     completeCode.current.disabled = true;
     signInStatus.current.textContent = 'exchanging…';
     try {
-      const r = await fetchJson('/oauth/callback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'anthropic', state: pendingState, code }) });
+      const r = await fetchJson('/oauth/callback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'anthropic', state: pendingState.current, code }) });
       if (r.status === 200 && r.body.ok) signInStatus.current.textContent = 'signed in as ' + r.body.account;
       else signInStatus.current.textContent = 'failed: ' + (r.body.error || ('HTTP ' + r.status));
     } catch (err) { if (signInStatus.current) signInStatus.current.textContent = 'network error'; }
