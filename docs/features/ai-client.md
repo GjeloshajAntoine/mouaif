@@ -76,7 +76,7 @@ const result = await ai.streamChat({
 - Source: [src/ai.js](../../src/ai.js). Public surface: `streamChat`, `chat`, `ENDPOINTS`, plus the `BUILDERS` and `PARSERS` maps for extensibility.
 - Server wiring: [src/index.js](../../src/index.js) → `handleAI()`. Model resolution is `settings.getResolved(projectDir).models` (decision §2).
 - `AbortController`: the request's `close` event aborts the upstream fetch, so closing the tab or navigating away cancels the model call.
-- Demo: the mobile UI at `/web/` has an "AI test" panel that posts to `/api/ai/chat` and renders the stream. The virtual list demo still works below it.
+- UI integration: the chat composer posts to `/api/chats/:id/messages/stream`, which delegates to this AI client and renders the normalized SSE stream. The former standalone AI-test panel has been removed.
 
 ## Related
 

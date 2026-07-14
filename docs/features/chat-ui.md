@@ -96,12 +96,12 @@ All four controls share a single `updateChat(patch)` helper. On success it overw
 
 ## Implementation notes
 
-- Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Total bundle is ~35 KB JS + ~9 KB CSS, ~14 KB + ~2 KB gzipped.
+- Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/web/` route prefers `src/web/dist/`, falls back to `src/web/` for dev.
 - Messages: [src/messages.js](../../src/messages.js) — per-chat file `<projectDir>/.mouaif.messages.<chatId>.json`. Robust read (drops malformed entries), throws `MOUAIF_PROJECT_PARSE_ERROR` (422) only if the file itself is corrupt.
 - Trace: [src/trace.js](../../src/trace.js) — per-chat NDJSON writer, no-op when `chat.trace` is false or the directory can't be created.
-- Top nav: Projects / Settings / Auth. Settings is where the model editor lives; Auth is where the Anthropic sign-in button lives. Each has a back link to `#/projects`.
-- Dropped (intentionally): the previous `AI test` panel and the `Virtual list demo`. They were dev-time affordances; the chat view replaces the AI test, and the virtual list primitive is now bundled into the chat transcript if needed. The dead code is gone from `main.jsx` (no `useMemo` or `createVirtualList` imports left).
+- Bottom nav: Projects / Inspector / Settings / Auth. Settings contains the model editor; Auth contains Anthropic sign-in; Inspector contains the CDP Console and Network panels.
+- Dropped (intentionally): the previous `AI test` panel and the `Virtual list demo`. They were dev-time affordances; the chat view replaces the AI test, while the Inspector now consumes the virtual-list primitive.
 
 ## Related
 
@@ -109,4 +109,4 @@ All four controls share a single `updateChat(patch)` helper. On success it overw
 - AI proxy that powers the stream: [docs/features/ai-client.md](./ai-client.md).
 - Per-project chat bookkeeping: [docs/features/project-card.md](./project-card.md).
 - Auth panel: [docs/features/auth.md](./auth.md).
-- The original virtual-list primitive: [docs/features/virtual-list.md](./virtual-list.md). The primitive still lives at `src/web/src/virtual-list.js` for the chat transcript (used in `ChatView`'s per-message rendering) but the demo at the top of the old page is gone.
+- The virtual-list primitive: [docs/features/virtual-list.md](./virtual-list.md). It lives at `src/web/src/virtual-list.js` and powers the Inspector Console and Network panels.

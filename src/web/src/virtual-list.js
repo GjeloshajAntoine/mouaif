@@ -10,9 +10,6 @@
 //   import { createVirtualList } from '/web/virtual-list.js';
 //   const list = createVirtualList({ scroller, itemHeight: 44, overscan: 4, render, data });
 //
-// Usage (Node, CJS):
-//   const { createVirtualList, computeRange } = require('mouaif/src/virtual-list.js');
-//
 // Public surface:
 //   createVirtualList(options) -> { setData, getData, refresh, scrollToIndex, destroy, _range }
 //   computeRange({ itemHeight, overscan, scrollTop, viewportHeight, count })
@@ -21,8 +18,7 @@
 
 'use strict';
 
-// ---- Pure range math (no DOM). Used by the browser driver and the
-// server-side smoke tests in docs/features/virtual-list.md. -------------
+// ---- Pure range math (no DOM). Used by the browser driver. ------------
 
 export function computeRange(opts) {
   const { itemHeight, overscan, scrollTop, viewportHeight, count } = opts;
@@ -190,13 +186,3 @@ export function createVirtualList(options) {
   return { setData, getData, refresh, scrollToIndex, destroy, _range: function () { return lastRange; } };
 }
 
-// ---- CJS shim ----------------------------------------------------------
-// Lets `require('./virtual-list.js')` work in Node without bundling.
-// The browser ignores this block (it never reaches module.exports).
-
-if (typeof module === 'object' && module && module.exports) {
-  module.exports = { createVirtualList, computeRange, DEFAULTS };
-  module.exports.createVirtualList = createVirtualList;
-  module.exports.computeRange = computeRange;
-  module.exports.DEFAULTS = DEFAULTS;
-}
