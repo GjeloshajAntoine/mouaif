@@ -93,7 +93,12 @@ function endpointFor(model) {
   return def;
 }
 
-function requireApiKey(model) {
+// requireApiKey(model, def) — returns true when the model has a usable
+// credential (or doesn't need one), throws a typed error otherwise.
+// The def is the ENDPOINTS[model.provider] record, passed in by the
+// caller so we can branch on the provider's auth shape (e.g. Ollama's
+// authHeader: () => ({}) doesn't take a credential at all).
+function requireApiKey(model, def) {
   if (model.auth === 'oauth') {
     // OAuth path: the access token comes from the OS keychain via
     // src/auth.js. The keychain is keyed by auth provider (openai,
@@ -127,13 +132,18 @@ function requireApiKey(model) {
       throw e;
     }
     model.__accessToken = parsed.accessToken;
-    return;
+    return true;
   }
   if (!model.apiKey || typeof model.apiKey !== 'string') {
+    // Providers whose authHeader takes no parameters (Ollama today)
+    // don't need a credential. We detect that by arity: zero = no
+    // credential, one or more = needs a key. Robust to future providers.
+    if (def && typeof def.authHeader === 'function' && def.authHeader.length === 0) return true;
     const e = new Error('Model "' + model.id + '" has no apiKey.');
     e.code = 'ENOAPIKEY';
     throw e;
   }
+  return true;
 }
 
 // ---- Request builders --------------------------------------------------
@@ -414,7 +424,7 @@ async function streamChat(opts) {
   let def, build, parse;
   try {
     def = endpointFor(model);
-    requireApiKey(model);
+    requireApiKey(model, def);
     build = BUILDERS[model.provider];
     parse = PARSERS[model.provider];
   } catch (e) {
