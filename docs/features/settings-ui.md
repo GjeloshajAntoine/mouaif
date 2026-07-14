@@ -43,12 +43,22 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 
 ### Mobile UI
 
-The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. It has four subsections:
+The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. The screen is a stack of focused sub-views, each with its own back link; the bottom tab bar is hidden on the sub-views so the content owns the full viewport height.
 
-- **App** — `Default prompt size` (select). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads. Trace has no app-wide default: each chat starts off and exposes its own opt-in toggle.
-- **Providers** — app-level provider connections with provider id, API base URL, authentication method, and either an API key or OAuth account. Saving the same provider updates its connection. API-key authentication requires a key except for Ollama. No model ID or model label appears here because this section configures providers, not models.
-- **Project overrides** — paste a project directory and click Load. The raw `<projectDir>/.mouaif.json` is loaded into a JSON editor (textarea); this is where project model records are defined, for example `{ "models": [{ "id": "gpt-4o", "provider": "openai-compatible" }] }`. **Save** PUTs the parsed JSON through `/api/settings/project`, and **Revert** restores the loaded text.
-- **Resolved (effective for project)** — read-only. The `defaults → app → project` merge result for the loaded project directory. The `apiKey` of any model is redacted to `•••` so a resolved view never echoes a secret back into the DOM. This is the view the chat layer actually reads (decision §2); what it shows is what the user gets at chat time.
+| Hash route | View | Purpose |
+|------------|------|---------|
+| `#/settings` | `SettingsHomeView` | Card list: providers, project overrides, app defaults, GitHub Copilot OAuth app, about / reset. |
+| `#/settings/providers` | `SettingsProvidersView` | List of configured providers + an `+ Add provider` entry. |
+| `#/settings/providers/new` | `SettingsProviderEditView` | New provider form. |
+| `#/settings/providers/<id>` | `SettingsProviderEditView` | Edit / delete an existing provider. |
+| `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt size` (select). Save writes to `PUT /api/settings/app`. |
+| `#/settings/project` | `SettingsProjectView` | Directory input + Load; the raw `<projectDir>/.mouaif.json` JSON editor + the resolved view for the same directory. |
+| `#/settings/copilot` | `SettingsCopilotView` | The GitHub Copilot OAuth `client_id` used by the loopback flow. |
+| `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |
+
+The provider form has all fields on one screen: provider id (locked after creation), API base URL, authentication mode, an API key (when the auth is `apikey`) or an OAuth-account <select> with an inline sign-in helper (when the auth is `oauth`). The reserved `github-copilot` provider forces `auth: oauth` and disables the `apikey` option, so a user cannot submit a model the server would later reject with `ENOAUTH`.
+
+The project view loads both the raw project file and the resolved view in parallel. Saving the project refreshes the resolved view in the same tap.
 
 The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
 
@@ -64,15 +74,16 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and sa
 
 ## Implementation notes
 
-- **Secret redaction** — API keys are accepted on model writes but are never
+- **Secret redaction** — API keys are accepted on provider writes but are never
   serialized back to the browser. Settings responses replace the key with
   `hasApiKey: true`; the UI uses that boolean to render `key: •••`. This
-  applies to app, project, resolved, model-create, model-delete, and reset
+  applies to app, project, resolved, provider-create, and provider-delete
   responses.
 
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
-- Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/main.jsx](../../src/web/src/main.jsx). Polls `GET /api/settings` every 30 s so the page is truthful even if another client changes settings.
+- Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/main.jsx](../../src/web/src/main.jsx). The settings screen is a stack of focused sub-views routed by the hash (`#/settings`, `#/settings/providers/<id>`, …); the bottom tab bar is hidden on sub-views so the content owns the full viewport height. `/api/settings` is fetched on demand and cached briefly in module scope; cache-busting `force: true` happens on save, delete, and the about-reset path.
+- **Settings shared bits** (declared at the top of [main.jsx](../../src/web/src/main.jsx)) — `loadApp`, `saveApp`, `resetAppKeys`, `loadAccounts`, `appProviders`, `providerDef`, `authNsForProvider`, `setStatus`, and the `SETTINGS_PROVIDERS` constant. The provider list is the single source of truth for the `<select>` and matches `src/ai.js → ENDPOINTS`.
 
 ## Related
 

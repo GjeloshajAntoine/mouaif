@@ -42,6 +42,18 @@ function parseHash() {
   // redirecting the retired standalone route to Settings.
   if (h === 'auth') return { name: 'settings' };
   if (h === 'inspector') return { name: 'inspector' };
+  // Settings sub-views: providers, project overrides, GitHub Copilot.
+  // Each is a focused screen reached from the settings home.
+  if (h === 'settings/providers') return { name: 'settingsProviders' };
+  if (h === 'settings/providers/new') return { name: 'settingsProviderNew' };
+  if (h.startsWith('settings/providers/')) {
+    const id = decodeURIComponent(h.slice('settings/providers/'.length));
+    if (id && id !== 'new') return { name: 'settingsProviderEdit', id };
+  }
+  if (h === 'settings/project') return { name: 'settingsProject' };
+  if (h === 'settings/defaults') return { name: 'settingsDefaults' };
+  if (h === 'settings/copilot') return { name: 'settingsCopilot' };
+  if (h === 'settings/about') return { name: 'settingsAbout' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);
     const [chatId, qs] = rest.split('?');
@@ -66,12 +78,26 @@ function nav(toHash) {
 
 function App() {
   const view = route.value;
-  const showTabBar = view.name !== 'chat' && view.name !== 'picker';
+  // The settings sub-views own their back navigation, so they
+  // hide the bottom tab bar to give the content the full
+  // available height (same as the chat drill-in).
+  const showTabBar = view.name !== 'chat' && view.name !== 'picker'
+    && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
+    && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
+    && view.name !== 'settingsDefaults' && view.name !== 'settingsCopilot'
+    && view.name !== 'settingsAbout';
   let body = null;
   if (view.name === 'chats') body = h(ProjectsView, null);
   else if (view.name === 'picker') body = h(ProjectPickerView, { dir: view.dir });
   else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
-  else if (view.name === 'settings') body = h(SettingsView, null);
+  else if (view.name === 'settings') body = h(SettingsHomeView, null);
+  else if (view.name === 'settingsProviders') body = h(SettingsProvidersView, null);
+  else if (view.name === 'settingsProviderNew') body = h(SettingsProviderEditView, { id: '' });
+  else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
+  else if (view.name === 'settingsProject') body = h(SettingsProjectView, null);
+  else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
+  else if (view.name === 'settingsCopilot') body = h(SettingsCopilotView, null);
+  else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);
   return h('div', { class: 'app__shell' },
@@ -148,560 +174,911 @@ function parseSSEFrame(frame) {
   return { eventName, data: dataLines.join('\n') };
 }
 
-function AuthPanel() {
-  const authOut = useRef(null);
-  const refreshAuth = async () => {
-    try {
-      const r = await fetchJson('/api/auth/accounts');
-      if (r.status !== 200) { authOut.current.textContent = 'HTTP ' + r.status; return; }
-      const data = r.body;
-      const accounts = data.accounts || {};
-      const lines = [];
-      for (const p of Object.keys(accounts)) {
-        const list = accounts[p] || [];
-        lines.push((list.length ? list.join(', ') : '(none)') + '  — ' + p);
-      }
-      authOut.current.textContent = lines.length ? lines.join('\n') : 'no providers';
-    } catch (err) { if (authOut.current) authOut.current.textContent = 'network error'; }
-  };
-  useEffect(() => { refreshAuth(); const t = setInterval(refreshAuth, 5000); return () => clearInterval(t); }, []);
+// ============================================================================
+// Settings — clean sub-view architecture
+// ============================================================================
+//
+// The previous incarnation of this screen stacked App / Providers /
+// Provider accounts / GitHub Copilot / Project overrides into one
+// wall of H2s, with a single 500-line SettingsPanel that mixed form
+// state, ref-management, and direct DOM writes. The form for adding
+// a provider buried the OAuth-account <select> behind a
+// visibility-toggled row, the project-override section reused a raw
+// <textarea>, and the OAuth sign-in block lived on the same screen
+// as the provider it signed in to — so editing a connection and
+// signing in were the same screen, with no back button between them.
+//
+// Shared bits:
+//   - loadApp()        GET /api/settings; cached in module scope.
+//   - saveApp(patch)   PUT /api/settings/app (shallow merge).
+//   - resetApp(keys)   POST /api/settings/app/reset.
+//   - listAccounts()   GET /api/auth/accounts; cached briefly.
+//   - signIn(provider) start the loopback flow, poll for the new account.
+//   - toast(text, state) renders into a small ref-attached bar.
 
-  const signInAnthropic = useRef(null);
-  const signInStatus = useRef(null);
-  const signInHelp = useRef(null);
-  const codeInput = useRef(null);
-  const completeCode = useRef(null);
-  const authorizeLink = useRef(null);
-  const pendingState = useRef(null);
-  const pendingRedirect = useRef(null);
+// ---- Settings shared data ---------------------------------------------
 
-  async function startSignIn() {
-    signInAnthropic.current.disabled = true;
-    signInStatus.current.textContent = 'starting sign-in…';
+let _appCache = null;       // last /api/settings response body
+let _appCacheAt = 0;        // epoch ms of the last fetch
+const APP_CACHE_TTL_MS = 4000;
+
+async function loadApp({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && _appCache && (now - _appCacheAt) < APP_CACHE_TTL_MS) return _appCache;
+  const r = await fetchJson('/api/settings');
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  _appCache = r.body || {};
+  _appCacheAt = now;
+  return _appCache;
+}
+
+function appProviders() {
+  return (_appCache && Array.isArray(_appCache.app && _appCache.app.providers)) ? _appCache.app.providers : [];
+}
+
+async function saveApp(patch) {
+  const r = await fetchJson('/api/settings/app', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch || {})
+  });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  _appCache = Object.assign({}, _appCache, { app: r.body.app || (_appCache && _appCache.app) || {} });
+  return _appCache;
+}
+
+async function resetAppKeys(keys) {
+  const r = await fetchJson('/api/settings/app/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keys: keys || [] })
+  });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  _appCache = Object.assign({}, _appCache, { app: r.body.app || {} });
+  return _appCache;
+}
+
+let _accountsCache = null;
+let _accountsCacheAt = 0;
+const ACCOUNTS_CACHE_TTL_MS = 5000;
+
+async function loadAccounts({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && _accountsCache && (now - _accountsCacheAt) < ACCOUNTS_CACHE_TTL_MS) return _accountsCache;
+  const r = await fetchJson('/api/auth/accounts');
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  _accountsCache = (r.body && r.body.accounts) || {};
+  _accountsCacheAt = now;
+  return _accountsCache;
+}
+
+// ---- Settings constants ----------------------------------------------
+
+// The five providers the AI client knows about. The set is the
+// source of truth for the provider <select> and the "+ Add provider"
+// screen; it matches src/ai.js -> ENDPOINTS.
+const SETTINGS_PROVIDERS = [
+  { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'OpenAI, Together, Groq, LM Studio, Ollama (via /v1), any OpenAI-shaped API.' },
+  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Claude Messages API. Use the OAuth flow below for Claude Pro/Max; otherwise paste an API key.' },
+  { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Google AI Studio / Gemini API. API key authentication.' },
+  { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'Local Ollama server. No API key required.' },
+  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Requires OAuth. A Copilot subscription on the signed-in account is required to chat.', reserved: true }
+];
+
+function providerDef(id) {
+  return SETTINGS_PROVIDERS.find(p => p.id === id) || null;
+}
+
+// Map an AI client provider id to the keyring namespace. The
+// keyring is keyed by the auth provider (openai, anthropic, ...),
+// not by the AI client provider name. Today the two are identical
+// for everything except openai-compatible, which shares the openai
+// namespace.
+function authNsForProvider(id) {
+  if (id === 'openai-compatible') return 'openai';
+  return id;
+}
+
+// ---- Tiny toast helper -----------------------------------------------
+
+function setStatus(ref, text, state) {
+  if (!ref || !ref.current) return;
+  ref.current.textContent = text || '';
+  if (state) ref.current.dataset.state = state;
+  else delete ref.current.dataset.state;
+}
+
+// ============================================================================
+// SettingsHomeView
+// ============================================================================
+//
+// The landing screen for /settings. A single column of cards, each
+// tapping into a focused sub-view. The cards are the only place
+// where the user sees a summary of "what's set up"; the sub-views
+// are where the user makes changes.
+
+function SettingsHomeView() {
+  // Most-recent values for each card. Updated in load(). Refs
+  // are used for the summary lines so we don't re-render the
+  // whole tree on every refresh.
+  const providerCount = useRef(null);
+  const projectCount = useRef(null);
+  const accountsCount = useRef(null);
+  const promptSize = useRef(null);
+  const copilot = useRef(null);
+
+  async function load() {
     try {
-      const r = await fetchJson('/api/auth/sign-in/anthropic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      if (r.status !== 200) {
-        signInStatus.current.textContent = 'HTTP ' + r.status;
-        signInAnthropic.current.disabled = false;
-        return;
+      const [app, accounts] = await Promise.all([loadApp({ force: true }), loadAccounts({ force: true })]);
+      if (providerCount.current) {
+        const n = appProviders().length;
+        providerCount.current.textContent = n + (n === 1 ? ' provider configured' : ' providers configured');
       }
-      pendingState.current = r.body.state;
-      pendingRedirect.current = r.body.authorizeUrl;
-      signInHelp.current.hidden = false;
-      if (authorizeLink.current) authorizeLink.current.href = pendingRedirect.current;
-      // A URL obtained asynchronously cannot be opened reliably as a popup:
-      // browsers no longer associate it with the original click. Present a
-      // real link instead; tapping it is a fresh user gesture and works on
-      // mobile, desktop, and strict popup-blocker configurations.
-      signInStatus.current.textContent = 'ready — tap Continue with Anthropic';
-      signInAnthropic.current.disabled = false;
-      const beforeResp = await fetchJson('/api/auth/accounts');
-      const beforeAccounts = (beforeResp.body && beforeResp.body.accounts) || {};
-      const before = new Set(beforeAccounts.anthropic || []);
-      const started = Date.now();
-      while (Date.now() - started < 5 * 60 * 1000) {
-        await new Promise(r => setTimeout(r, 1500));
-        try {
-          const accounts = ((await fetchJson('/api/auth/accounts')).body.accounts || {}).anthropic || [];
-          const fresh = accounts.filter(a => !before.has(a));
-          if (fresh.length) { signInStatus.current.textContent = 'signed in as ' + fresh[0]; signInAnthropic.current.disabled = false; return; }
-        } catch {}
+      if (projectCount.current) {
+        const projects = (app.app && Array.isArray(app.app.projects)) ? app.app.projects : [];
+        const n = projects.length;
+        projectCount.current.textContent = n + (n === 1 ? ' project' : ' projects');
       }
-      signInStatus.current.textContent = 'timed out. Paste the code from the redirect URL below if your browser could not reach this host.';
-    } catch (err) {
-      if (signInStatus.current) signInStatus.current.textContent = 'network error';
-      if (signInAnthropic.current) signInAnthropic.current.disabled = false;
+      if (accountsCount.current) {
+        let n = 0;
+        for (const k of Object.keys(accounts || {})) n += (accounts[k] || []).length;
+        accountsCount.current.textContent = n ? (n + (n === 1 ? ' account signed in' : ' accounts signed in')) : 'no accounts signed in';
+      }
+      if (promptSize.current) {
+        const size = (app.app && app.app.promptSize) || 'average';
+        promptSize.current.textContent = 'default prompt size: ' + size;
+      }
+      if (copilot.current) {
+        const c = (app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
+        copilot.current.textContent = c ? 'custom client_id' : 'using default';
+      }
+    } catch (e) { /* leave summary blank; the sub-views will show their own errors */ }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  // A card is a single <a> with a title, a one-line summary, and
+  // a chevron. Tap navigates to the sub-view; the sub-view owns
+  // the back button.
+  function card(to, title, summaryRef, extra) {
+    return h('a', { href: '#/' + to, class: 'card', 'aria-label': title },
+      h('div', { class: 'card__main' },
+        h('div', { class: 'card__title' }, title),
+        h('div', { ref: summaryRef, class: 'card__summary' }, '—')
+      ),
+      h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+    );
+  }
+
+  return h('section', { class: 'settings-home' },
+    h('h2', { class: 'settings-home__lead' }, 'Settings'),
+    card('settings/providers', 'Provider connections', providerCount,
+      h('p', { class: 'settings-home__hint' }, 'OpenAI, Anthropic, Gemini, Ollama, GitHub Copilot. Credentials are stored once and used by every project.')),
+    card('settings/project', 'Project overrides', projectCount,
+      h('p', { class: 'settings-home__hint' }, 'Per-project settings live in .mouaif.json inside the project folder. Models reference a provider above.')),
+    h('h3', null, 'App defaults'),
+    card('settings/defaults', 'App defaults', promptSize,
+      h('p', { class: 'settings-home__hint' }, 'Default prompt-size profile for new chats.')),
+    card('settings/copilot', 'GitHub Copilot OAuth app', copilot,
+      h('p', { class: 'settings-home__hint' }, 'Custom OAuth client_id so Copilot sign-in works on this host.')),
+    h('a', { href: '#/settings/about', class: 'card', 'aria-label': 'About' },
+      h('div', { class: 'card__main' },
+        h('div', { class: 'card__title' }, 'About & reset'),
+        h('div', { class: 'card__summary' }, 'Storage location and destructive actions')
+      ),
+      h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+    )
+  );
+}
+
+// ============================================================================
+// SettingsProvidersView — list of configured providers + an "Add" entry
+// ============================================================================
+
+function SettingsProvidersView() {
+  const listEl = useRef(null);
+  const statusEl = useRef(null);
+
+  async function load() {
+    try {
+      await loadApp({ force: true });
+    } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); return; }
+    render();
+  }
+
+  function render() {
+    if (!listEl.current) return;
+    listEl.current.innerHTML = '';
+    const list = appProviders();
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'providers__empty';
+      li.textContent = 'No providers yet. Tap "Add provider" to configure your first connection.';
+      listEl.current.appendChild(li);
+      setStatus(statusEl, '0 providers');
+      return;
     }
+    for (const p of list) {
+      listEl.current.appendChild(renderProviderRow(p));
+    }
+    setStatus(statusEl, list.length + (list.length === 1 ? ' provider' : ' providers'), 'success');
   }
 
-  async function completeWithCode() {
-    const raw = (codeInput.current.value || '').trim();
-    if (!pendingState.current || !pendingRedirect.current) { signInStatus.current.textContent = 'click "Sign in with Anthropic" first'; return; }
-    let code = raw;
-    try { const u = new URL(raw); const c = u.searchParams.get('code'); if (c) code = c; } catch {}
-    if (!code) { signInStatus.current.textContent = 'paste the code from the redirect URL'; return; }
-    completeCode.current.disabled = true;
-    signInStatus.current.textContent = 'exchanging…';
-    try {
-      const r = await fetchJson('/oauth/callback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'anthropic', state: pendingState.current, code }) });
-      if (r.status === 200 && r.body.ok) signInStatus.current.textContent = 'signed in as ' + r.body.account;
-      else signInStatus.current.textContent = 'failed: ' + (r.body.error || ('HTTP ' + r.status));
-    } catch (err) { if (signInStatus.current) signInStatus.current.textContent = 'network error'; }
-    completeCode.current.disabled = false;
+  function renderProviderRow(p) {
+    const li = document.createElement('li');
+    li.className = 'provider-row';
+
+    const main = document.createElement('a');
+    main.className = 'provider-row__main';
+    main.href = '#/settings/providers/' + encodeURIComponent(p.id);
+    const def = providerDef(p.id);
+    const name = document.createElement('div');
+    name.className = 'provider-row__name';
+    name.textContent = (def && def.label) || p.id;
+    const meta = document.createElement('div');
+    meta.className = 'provider-row__meta';
+    const auth = p.auth || 'apikey';
+    const bits = [];
+    if (p.baseUrl) bits.push(p.baseUrl);
+    if (auth === 'oauth') {
+      bits.push('OAuth');
+      if (p.oauthAccount) bits.push('as ' + p.oauthAccount);
+    } else if (p.hasApiKey) {
+      bits.push('key saved');
+    } else {
+      bits.push('no key');
+    }
+    meta.textContent = bits.join('  ·  ');
+    main.appendChild(name);
+    main.appendChild(meta);
+
+    const chev = document.createElement('div');
+    chev.className = 'provider-row__chev';
+    chev.textContent = '›';
+    main.appendChild(chev);
+
+    li.appendChild(main);
+    return li;
   }
 
-  return h('section', null,
-    h('h2', null, 'Provider accounts'),
-    h('pre', { ref: authOut, class: 'settings__out', 'aria-label': 'Auth status' }, 'loading…'),
-    h('h3', null, 'Connect Anthropic'),
-    h('div', { class: 'row' },
-      h('button', { ref: signInAnthropic, class: 'btn btn--primary', type: 'button', onClick: startSignIn }, 'Sign in'),
-      h('span', { ref: signInStatus, class: 'status', 'aria-live': 'polite' })
+  useEffect(() => { load(); }, []);
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'Provider connections')
     ),
-    h('div', { ref: signInHelp, class: 'auth__help', hidden: true },
-      h('a', { ref: authorizeLink, class: 'btn btn--primary', target: '_blank', rel: 'noopener' }, 'Continue with Anthropic'),
-      h('p', { class: 'hint hint--compact' }, 'After authorizing, return here. If the callback cannot reach this device, paste the full redirect URL or its code below.'),
-      h('div', { class: 'row' },
-        h('input', { ref: codeInput, class: 'input', type: 'text', placeholder: '?code=... from redirect URL' }),
-        h('button', { ref: completeCode, class: 'btn btn--primary', type: 'button', onClick: completeWithCode }, 'Complete')
+    h('section', null,
+      h('p', { class: 'hint hint--compact' }, 'Credentials are stored once at the app level. Each project\'s models reference one of these providers.'),
+      h('ul', { ref: listEl, class: 'providers__list', 'aria-label': 'Configured providers' }),
+      h('div', { class: 'row row--actions' },
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
+        h('a', { href: '#/settings/providers/new', class: 'btn btn--primary' }, '+ Add provider')
       )
     )
   );
 }
 
-function SettingsPanel() {
-  const promptSize = useRef(null);
+// ============================================================================
+// SettingsProviderEditView — single-provider editor (used for new + edit)
+// ============================================================================
+//
+// One provider at a time, with all of the relevant fields visible
+// at once. Auth mode and OAuth account stay in lockstep with the
+// <select>; reserved providers (github-copilot) force oauth and
+// disable the apiKey option.
+
+function SettingsProviderEditView(props) {
+  const id = props.id || '';
+
+  // The form refs. Keeping them flat keeps the JSX readable.
+  const idSel = useRef(null);
+  const baseUrl = useRef(null);
+  const authSel = useRef(null);
+  const apiKey = useRef(null);
+  const oauthAccount = useRef(null);
   const saveBtn = useRef(null);
-  const resetBtn = useRef(null);
-  const appStatus = useRef(null);
+  const deleteBtn = useRef(null);
+  const statusEl = useRef(null);
 
-  const providersList = useRef(null);
-  const pProvider = useRef(null), pBaseUrl = useRef(null), pApiKey = useRef(null);
-  const pAuth = useRef(null), pOauthAccount = useRef(null);
-  const addProviderBtn = useRef(null), providerStatus = useRef(null);
+  // The OAuth sign-in helper. Lives in the form because the user
+  // always needs to sign in before an OAuth provider can be saved.
+  const signInStatus = useRef(null);
 
-  // Project + resolved view controls.
-  const resolvedDir = useRef(null), resolvedStatus = useRef(null), resolvedOut = useRef(null);
-  const projectDir = useRef(null), loadProject = useRef(null), projectStatus = useRef(null);
-  const projectEditor = useRef(null), saveProject = useRef(null), revertProject = useRef(null);
+  // Cache the loaded record so the form does not flicker on every
+  // field change. Updated by load().
+  let current = null;
+  let accounts = {};
 
-  // Known default base URLs per provider. Used to auto-fill the
-  // baseUrl field when the user picks a provider, so they never
-  // have to type these known values.
-  const DEFAULT_BASE_URLS = {
-    'openai-compatible': 'https://api.openai.com/v1',
-    'anthropic': 'https://api.anthropic.com',
-    'gemini': 'https://generativelanguage.googleapis.com',
-    'ollama': 'http://127.0.0.1:11434',
-    'github-copilot': 'https://api.githubcopilot.com'
-  };
+  async function load() {
+    try {
+      await loadApp({ force: true });
+      accounts = await loadAccounts({ force: true });
+    } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); return; }
+    current = id ? appProviders().find(p => p && p.id === id) : null;
+    if (id && !current) { setStatus(statusEl, 'Provider not found', 'error'); return; }
 
-  let currentApp = {};
-  let currentProject = {};
-  let currentResolved = {};
-  let lastAccounts = {};
-
-  // When the provider <select> changes, auto-fill the baseUrl field
-  // with a known default (if the field is still empty or was the
-  // previous default).
-  function onProviderChange() {
-    const p = pProvider.current ? pProvider.current.value : 'openai-compatible';
-    const configured = (currentApp.providers || []).find(provider => provider && provider.id === p);
-    const defaultUrl = DEFAULT_BASE_URLS[p] || '';
-    const current = pBaseUrl.current ? pBaseUrl.current.value.trim() : '';
-    // Only overwrite if empty or matches any known default URL, so
-    // user customisations are never silently clobbered.
-    const knownDefaults = Object.values(DEFAULT_BASE_URLS);
-    if (!current || knownDefaults.includes(current)) {
-      if (pBaseUrl.current) pBaseUrl.current.value = (configured && configured.baseUrl) || defaultUrl;
+    if (idSel.current) {
+      idSel.current.value = id || 'openai-compatible';
+      if (id) idSel.current.disabled = true; // the id is the upsert key; do not let the user silently rename
     }
-    if (pAuth.current) pAuth.current.value = (configured && configured.auth) || 'apikey';
-    if (pOauthAccount.current) {
-      const account = (configured && configured.oauthAccount) || '';
-      if (account) pOauthAccount.current.setAttribute('data-prev', account);
-      else pOauthAccount.current.removeAttribute('data-prev');
-    }
-    onAuthOrProviderChange();
+    syncAuth();
+    syncOauthAccountOptions();
+    syncBaseUrl();
+    if (apiKey.current) apiKey.current.value = ''; // never pre-fill; the redacted form shows the hint instead
+    if (deleteBtn.current) deleteBtn.current.hidden = !id;
+    if (baseUrl.current) baseUrl.current.value = (current && current.baseUrl) || '';
+    renderKeyHint();
+    setStatus(statusEl, '');
   }
 
-  async function loadSettings() {
-    const r = await fetchJson('/api/settings');
-    if (r.status !== 200) { if (appStatus.current) appStatus.current.textContent = 'HTTP ' + r.status; return; }
-    currentApp = r.body.app || {};
-    if (promptSize.current) promptSize.current.value = currentApp.promptSize || 'average';
-    renderProviders(currentApp.providers || []);
-    if (appStatus.current) appStatus.current.textContent = '';
-  }
+  // ---- Form sync helpers ------------------------------------------
 
-  async function refreshAccounts() {
-    const r = await fetchJson('/api/auth/accounts');
-    if (r.status === 200) lastAccounts = (r.body && r.body.accounts) || {};
-    return lastAccounts;
-  }
-
-  // Map an AI client provider to the keyring namespace. The keyring
-  // is keyed by the auth provider (openai, anthropic, google,
-  // github-copilot), not by the AI client provider name. Today the
-  // two are identical for the providers in the dropdown, but we go
-  // through this helper so the mapping is in one place when it
-  // eventually diverges.
-  function providerKeyringNamespace(provider) {
-    if (provider === 'openai-compatible') return 'openai';
-    return provider;
-  }
-
-  function renderOauthAccountOptions(provider) {
-    const sel = pOauthAccount.current;
-    if (!sel) return;
-    const ns = providerKeyringNamespace(provider);
-    const accounts = (lastAccounts[ns] || []).slice();
-    sel.innerHTML = '';
-    // Spec: with multiple signed-in accounts, the user must pick
-    // one explicitly (decision §11). We enforce that here by
-    // disabling the empty "(auto)" option when count > 1; the
-    // submit path below also rejects an empty value in that case.
-    if (accounts.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '(no accounts signed in for "' + provider + '")';
-      opt.disabled = true;
-      opt.selected = true;
-      sel.appendChild(opt);
-      sel.value = '';
-      return;
+  function syncAuth() {
+    if (!authSel.current) return;
+    const def = providerDef(idSel.current.value);
+    const reserved = !!(def && def.reserved);
+    // For reserved providers, force oauth. Otherwise respect
+    // the select's current value.
+    let wantAuth = authSel.current.value;
+    if (reserved) wantAuth = 'oauth';
+    if (authSel.current.value !== wantAuth) authSel.current.value = wantAuth;
+    // Disable the apiKey option for reserved providers.
+    for (const opt of authSel.current.querySelectorAll('option')) {
+      if (opt.value === 'apikey') opt.disabled = reserved;
     }
-    if (accounts.length === 1) {
-      // Auto is fine for a single signed-in account; pre-select it
-      // so the field is never in an unsaved state by default.
-      const opt0 = document.createElement('option');
-      opt0.value = '';
-      opt0.textContent = '(auto — ' + accounts[0] + ')';
-      sel.appendChild(opt0);
-    } else {
-      const opt0 = document.createElement('option');
-      opt0.value = '';
-      opt0.textContent = '(pick an account)';
-      opt0.disabled = true;
-      opt0.selected = true;
-      sel.appendChild(opt0);
-    }
-    for (const a of accounts) {
-      const opt = document.createElement('option');
-      opt.value = a;
-      opt.textContent = a;
-      sel.appendChild(opt);
-    }
-    // Re-apply the previously picked account if it's still valid.
-    const prev = sel.getAttribute('data-prev');
-    if (prev && accounts.includes(prev)) sel.value = prev;
-  }
-
-  function renderProviders(list) {
-    providersList.current.innerHTML = '';
-    if (!list.length) {
-      const empty = document.createElement('li');
-      empty.textContent = 'No providers configured. Add one below.';
-      empty.style.color = 'var(--muted)';
-      providersList.current.appendChild(empty);
-      return;
-    }
-    for (const provider of list) {
-      const li = document.createElement('li');
-      const row = document.createElement('div'); row.className = 'models__row';
-      const idSpan = document.createElement('span'); idSpan.className = 'models__id';
-      idSpan.textContent = provider.id;
-      const actions = document.createElement('div'); actions.className = 'models__actions';
-      const del = document.createElement('button'); del.className = 'btn btn--danger'; del.type = 'button'; del.textContent = 'Delete';
-      del.addEventListener('click', () => deleteProvider(provider.id));
-      actions.appendChild(del);
-      row.appendChild(idSpan); row.appendChild(actions);
-      const meta = document.createElement('div'); meta.className = 'models__meta';
-      const auth = provider.auth || 'apikey';
-      const bits = [provider.baseUrl];
-      if (auth === 'oauth') {
-        bits.push('auth: oauth');
-        if (provider.oauthAccount) bits.push('account: ' + provider.oauthAccount);
-      } else if (provider.hasApiKey) {
-        bits.push('key: •••');
-      }
-      meta.textContent = bits.filter(Boolean).join('  ·  ');
-      li.appendChild(row); li.appendChild(meta);
-      providersList.current.appendChild(li);
-    }
-  }
-
-  async function saveApp() {
-    saveBtn.current.disabled = true;
-    appStatus.current.textContent = 'saving…';
-    const r = await fetchJson('/api/settings/app', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promptSize: promptSize.current.value }) });
-    saveBtn.current.disabled = false;
-    if (r.status === 200) { currentApp = r.body.app || currentApp; appStatus.current.textContent = 'saved.'; }
-    else appStatus.current.textContent = 'HTTP ' + r.status;
-  }
-
-  async function resetApp() {
-    if (!confirm('Reset all app-level settings to defaults? Providers and other keys will be cleared.')) return;
-    resetBtn.current.disabled = true;
-    appStatus.current.textContent = 'resetting…';
-    const r = await fetchJson('/api/settings/app/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: ['providers', 'models', 'promptSize', 'authAccounts', 'projects', 'flags'] }) });
-    resetBtn.current.disabled = false;
-    if (r.status === 200) { currentApp = r.body.app || {}; await loadSettings(); appStatus.current.textContent = 'reset.'; }
-    else appStatus.current.textContent = 'HTTP ' + r.status;
-  }
-
-  async function addProvider() {
-    const id = pProvider.current.value;
-    const configured = (currentApp.providers || []).find(provider => provider && provider.id === id);
-    const baseUrl = (pBaseUrl.current.value || '').trim();
-    const apiKey = (pApiKey.current.value || '').trim();
-    const auth = pAuth.current ? pAuth.current.value : 'apikey';
-    const oauthAccount = pOauthAccount.current ? (pOauthAccount.current.value || '').trim() : '';
-    // Require apiKey when auth is apikey and the provider needs one
-    // (Ollama is the only exception — it needs no credential).
-    if (auth === 'apikey' && id !== 'ollama' && !apiKey && !(configured && configured.hasApiKey)) {
-      providerStatus.current.textContent = 'API key is required for ' + id + ' — paste your key in the field';
-      pApiKey.current.focus();
-      return;
-    }
-    if (auth === 'oauth') {
-      // Re-fetch so we don't accidentally publish a stale empty list
-      // if the user signed in in the provider accounts section.
-      await refreshAccounts();
-      const list = lastAccounts[providerKeyringNamespace(id)] || [];
-      if (list.length === 0) {
-        providerStatus.current.textContent = 'no signed-in account for "' + id + '" — connect the provider below first';
-        return;
-      }
-      // Spec (decision §11): with multiple signed-in accounts, the
-      // user must pick one explicitly. The empty value is reserved
-      // for the single-account auto fallback.
-      if (list.length > 1 && !oauthAccount) {
-        providerStatus.current.textContent = 'pick which signed-in account this provider uses';
-        return;
-      }
-    }
-    addProviderBtn.current.disabled = true;
-    providerStatus.current.textContent = 'saving…';
-    const body = { id, auth };
-    if (baseUrl) body.baseUrl = baseUrl;
-    if (auth === 'apikey' && apiKey) body.apiKey = apiKey;
-    if (auth === 'oauth' && oauthAccount) body.oauthAccount = oauthAccount;
-    const r = await fetchJson('/api/settings/app/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    addProviderBtn.current.disabled = false;
-    if (r.status === 200) {
-      currentApp.providers = r.body.providers;
-      renderProviders(r.body.providers);
-      providerStatus.current.textContent = 'saved ' + id + '.';
-      pApiKey.current.value = '';
-      if (pOauthAccount.current) {
-        const saved = r.body.provider && r.body.provider.oauthAccount;
-        pOauthAccount.current.setAttribute('data-prev', saved || '');
-        renderOauthAccountOptions(id);
-      }
-    } else providerStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
-  }
-
-  async function deleteProvider(id) {
-    if (!confirm('Delete provider ' + id + '?')) return;
-    const r = await fetchJson('/api/settings/app/providers/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (r.status === 200) { currentApp.providers = r.body.providers; renderProviders(r.body.providers); }
-    else alert('delete failed: HTTP ' + r.status);
-  }
-
-  useEffect(() => {
-    Promise.all([loadSettings(), refreshAccounts()]).then(() => {
-      // Run the provider change handler once so the form starts in a
-      // consistent state with auto-filled fields. Defer one frame so
-      // the details element's children are guaranteed to be in the DOM
-      // and refs attached.
-      requestAnimationFrame(() => onProviderChange());
-    });
-    const t = setInterval(loadSettings, 30000);
-    const ta = setInterval(refreshAccounts, 10000);
-    return () => { clearInterval(t); clearInterval(ta); };
-  }, []);
-
-  // When the user toggles auth <-> oauth, or picks a different
-  // provider, refresh the oauthAccount <select> so it lists the
-  // signed-in emails for that provider (if any). For apikey auth,
-  // we still rebuild the select so the "(auto — none signed in)"
-  // hint stays accurate, but the field is hidden via CSS below.
-  // github-copilot is reserved (decision §10): apikey auth is not
-  // meaningful for it, so the auth select snaps to "oauth" and the
-  // apikey option is disabled when the user picks it.
-  function onAuthOrProviderChange() {
-    const provider = pProvider.current ? pProvider.current.value : 'openai-compatible';
-    let auth = pAuth.current ? pAuth.current.value : 'apikey';
-    if (provider === 'github-copilot' && auth === 'apikey') {
-      auth = 'oauth';
-      if (pAuth.current) pAuth.current.value = 'oauth';
-    }
-    // Toggle the apikey/oauth row visibility.
-    const details = pAuth.current && pAuth.current.closest('details');
-    if (details) {
-      for (const row of details.querySelectorAll('.row--apikey, .row--oauth')) {
+    // Show / hide the right rows. Both rows live in the DOM and
+    // toggle visibility via a class; that keeps the form layout
+    // stable when the user switches auth.
+    const section = authSel.current.closest('section');
+    if (section) {
+      for (const row of section.querySelectorAll('.row--apikey, .row--oauth')) {
         const showWhen = row.getAttribute('data-show-when');
         if (!showWhen) continue;
-        row.classList.toggle('is-hidden', showWhen !== auth);
-      }
-      // Disable the apikey option for reserved providers so the
-      // form cannot be tricked into a state the server would later
-      // reject with ENOAUTH.
-      if (pAuth.current) {
-        for (const opt of pAuth.current.querySelectorAll('option')) {
-          if (opt.value === 'apikey') opt.disabled = (provider === 'github-copilot');
-        }
+        row.classList.toggle('is-hidden', showWhen !== wantAuth);
       }
     }
-    // Also auto-fill the baseUrl.
-    const defaultUrl = DEFAULT_BASE_URLS[provider] || '';
-    const current = pBaseUrl.current ? pBaseUrl.current.value.trim() : '';
-    const knownDefaults = Object.values(DEFAULT_BASE_URLS);
-    if (!current || knownDefaults.includes(current)) {
-      if (pBaseUrl.current) pBaseUrl.current.value = defaultUrl;
-    }
-    refreshAccounts().then(() => renderOauthAccountOptions(provider));
   }
 
-  // Resolved view: GET /api/settings/resolved?projectDir=...
-  // Renders the merge result so the user can see what is actually
-  // in effect for a project (decision §2). Re-uses the project
-  // directory input; Load populates both the resolved view and the
-  // editable project JSON.
-  async function loadProjectAndResolved() {
-    const dir = (projectDir.current.value || '').trim();
-    if (!dir) { projectStatus.current.textContent = 'projectDir is required'; return; }
-    loadProject.current.disabled = true;
-    projectStatus.current.textContent = 'loading…';
-    let ok = true;
-    // Project raw + resolved in parallel.
+  function syncOauthAccountOptions() {
+    if (!oauthAccount.current) return;
+    const ns = authNsForProvider(idSel.current.value);
+    const list = (accounts[ns] || []).slice();
+    oauthAccount.current.innerHTML = '';
+    if (list.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = '— no accounts yet; sign in below —';
+      opt.disabled = true; opt.selected = true;
+      oauthAccount.current.appendChild(opt);
+      oauthAccount.current.value = '';
+      return;
+    }
+    if (list.length === 1) {
+      const opt0 = document.createElement('option');
+      opt0.value = ''; opt0.textContent = '(auto — ' + list[0] + ')';
+      oauthAccount.current.appendChild(opt0);
+    } else {
+      const opt0 = document.createElement('option');
+      opt0.value = ''; opt0.textContent = '(pick an account)';
+      opt0.disabled = true; opt0.selected = true;
+      oauthAccount.current.appendChild(opt0);
+    }
+    for (const a of list) {
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      oauthAccount.current.appendChild(opt);
+    }
+    const cur = (current && current.oauthAccount) || '';
+    if (cur && list.includes(cur)) oauthAccount.current.value = cur;
+  }
+
+  function syncBaseUrl() {
+    if (!baseUrl.current) return;
+    const def = providerDef(idSel.current.value);
+    const configured = (current && current.id === idSel.current.value) ? current : null;
+    const target = (configured && configured.baseUrl) || (def && def.defaultBaseUrl) || '';
+    const cur = baseUrl.current.value.trim();
+    // Don't clobber a user-typed URL on provider change. Only set
+    // the default if the field is empty or still matches the
+    // previous default.
+    const known = SETTINGS_PROVIDERS.map(p => p.defaultBaseUrl).filter(Boolean);
+    if (!cur || known.includes(cur)) baseUrl.current.value = target;
+  }
+
+  function renderKeyHint() {
+    // The apiKey field is type=password and starts empty. Render
+    // a small "key saved" hint inline so the user knows the
+    // existing key is in place without us echoing the secret.
+    // Only relevant for the apikey auth mode.
+    const section = authSel.current && authSel.current.closest('section');
+    const hint = section && section.querySelector('.key-hint');
+    if (!hint) return;
+    const wantAuth = authSel.current && authSel.current.value;
+    if (wantAuth === 'apikey' && current && current.hasApiKey) {
+      hint.textContent = 'a key is already saved for this provider; leave the field empty to keep it';
+      hint.hidden = false;
+    } else {
+      hint.textContent = '';
+      hint.hidden = true;
+    }
+  }
+
+  // ---- Sign in (oauth providers only) -----------------------------
+
+  async function startSignIn() {
+    const provider = idSel.current.value;
+    const def = providerDef(provider);
+    if (!def) { setStatus(signInStatus, 'unknown provider', 'error'); return; }
+    setStatus(signInStatus, 'starting sign-in…', 'busy');
+    let r;
+    try {
+      r = await fetchJson('/api/auth/sign-in/' + encodeURIComponent(provider), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+    } catch (err) { setStatus(signInStatus, 'network error', 'error'); return; }
+    if (r.status !== 200) { setStatus(signInStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
+    // Open the provider's authorize URL in a new tab. A new tab
+    // is a fresh user gesture so popups are not blocked.
+    const win = window.open(r.body.authorizeUrl, '_blank', 'noopener');
+    if (!win) setStatus(signInStatus, 'popup blocked — open the URL manually', 'error');
+    setStatus(signInStatus, 'waiting for ' + def.label + ' to redirect back…', 'busy');
+
+    // Poll for the new account so the OAuth-account <select> can
+    // be re-populated while the user is still at the provider.
+    const before = new Set((accounts[authNsForProvider(provider)] || []).slice());
+    const start = Date.now();
+    while (Date.now() - start < 5 * 60 * 1000) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const next = await loadAccounts({ force: true });
+        accounts = next;
+        const list = (next[authNsForProvider(provider)] || []);
+        const fresh = list.filter(a => !before.has(a));
+        if (fresh.length) {
+          syncOauthAccountOptions();
+          setStatus(signInStatus, 'signed in as ' + fresh[0], 'success');
+          return;
+        }
+      } catch { /* keep polling */ }
+    }
+    setStatus(signInStatus, 'timed out. Paste the redirect URL or its code below.', 'error');
+  }
+
+  // ---- Save / delete ----------------------------------------------
+
+  async function save() {
+    if (saveBtn.current) saveBtn.current.disabled = true;
+    setStatus(statusEl, 'saving…', 'busy');
+    const providerId = idSel.current.value;
+    const def = providerDef(providerId);
+    const auth = (def && def.reserved) ? 'oauth' : authSel.current.value;
+    const base = (baseUrl.current.value || '').trim();
+    const key = (apiKey.current.value || '').trim();
+    const account = (oauthAccount.current.value || '').trim();
+
+    // Re-fetch accounts so we don't accidentally publish a stale
+    // empty list when the user just signed in.
+    if (auth === 'oauth') {
+      try { accounts = await loadAccounts({ force: true }); } catch { /* fall through */ }
+      const list = accounts[authNsForProvider(providerId)] || [];
+      if (!list.length) { setStatus(statusEl, 'sign in to ' + providerId + ' first', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
+      if (list.length > 1 && !account) { setStatus(statusEl, 'pick which signed-in account to use', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    }
+    if (auth === 'apikey' && providerId !== 'ollama' && !key && !(current && current.hasApiKey)) {
+      setStatus(statusEl, 'API key is required for ' + providerId, 'error');
+      if (apiKey.current) apiKey.current.focus();
+      if (saveBtn.current) saveBtn.current.disabled = false;
+      return;
+    }
+    const body = { id: providerId, auth };
+    if (base) body.baseUrl = base;
+    if (auth === 'apikey' && key) body.apiKey = key;
+    if (auth === 'oauth' && account) body.oauthAccount = account;
+    let r;
+    try {
+      r = await fetchJson('/api/settings/app/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (err) { setStatus(statusEl, 'network error', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    if (saveBtn.current) saveBtn.current.disabled = false;
+    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
+    setStatus(statusEl, 'saved ' + providerId, 'success');
+    // Refresh local cache and bounce back to the list.
+    _appCache = null; _appCacheAt = 0;
+    nav('settings/providers');
+  }
+
+  async function deleteProvider() {
+    if (!id) return;
+    if (!confirm('Delete provider "' + id + '"? Models in your projects that reference it will stop working until you re-add it.')) return;
+    if (deleteBtn.current) deleteBtn.current.disabled = true;
+    setStatus(statusEl, 'deleting…', 'busy');
+    let r;
+    try {
+      r = await fetchJson('/api/settings/app/providers/' + encodeURIComponent(id), { method: 'DELETE' });
+    } catch (err) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
+    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
+    _appCache = null; _appCacheAt = 0;
+    nav('settings/providers');
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const def = id ? providerDef(id) : null;
+  const titleText = id ? ((def && def.label) || id) : 'Add provider';
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings/providers', class: 'view-back', 'aria-label': 'Back to providers' }, '←'),
+      h('h2', { class: 'view-title' }, titleText)
+    ),
+    h('section', null,
+      def && def.hint ? h('p', { class: 'hint hint--compact' }, def.hint) : null,
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-id' }, 'Provider'),
+        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, onChange: () => { syncAuth(); syncOauthAccountOptions(); syncBaseUrl(); renderKeyHint(); } },
+          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id }, p.label))
+        )
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-base' }, 'API base URL'),
+        h('input', { ref: baseUrl, class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1' })
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
+        h('select', { ref: authSel, class: 'input', id: 'sp-auth', onChange: () => { syncAuth(); renderKeyHint(); syncOauthAccountOptions(); } },
+          h('option', { value: 'apikey' }, 'API key'),
+          h('option', { value: 'oauth' }, 'OAuth')
+        )
+      ),
+      h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
+        h('label', { class: 'label', for: 'sp-key' }, 'Provider API key'),
+        h('input', { ref: apiKey, class: 'input', id: 'sp-key', type: 'password', placeholder: 'paste key', autocomplete: 'off' })
+      ),
+      h('p', { class: 'hint hint--compact key-hint', hidden: true }),
+      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
+        h('label', { class: 'label', for: 'sp-account' }, 'OAuth account'),
+        h('select', { ref: oauthAccount, class: 'input', id: 'sp-account' })
+      ),
+      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
+        h('div', { class: 'auth__help-inline' },
+          h('p', { class: 'hint hint--compact' }, 'Sign in to this provider below; the OAuth-account list refreshes automatically.'),
+          h('div', { class: 'row row--actions' },
+            h('button', { class: 'btn', type: 'button', onClick: startSignIn }, 'Sign in'),
+            h('span', { ref: signInStatus, class: 'status', 'aria-live': 'polite' })
+          )
+        )
+      ),
+      h('div', { class: 'row row--actions' },
+        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, id ? 'Save' : 'Add provider'),
+        h('button', { ref: deleteBtn, class: 'btn btn--danger', type: 'button', onClick: deleteProvider, hidden: !id }, 'Delete'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+      )
+    )
+  );
+}
+
+// ============================================================================
+// SettingsProjectView — load and edit a project file, see resolved view
+// ============================================================================
+//
+// The previous editor was a raw <textarea> glued to JSON.parse. This
+// view keeps the raw editor (project files are JSON and the schema
+// is small) but reframes it: the directory lives in its own
+// dedicated input, the raw editor only appears after a successful
+// load, and the resolved view is always one tap away.
+
+function SettingsProjectView() {
+  const projectDir = useRef(null);
+  const loadBtn = useRef(null);
+  const statusEl = useRef(null);
+  const resolvedStatus = useRef(null);
+  const editor = useRef(null);
+  const saveBtn = useRef(null);
+  const revertBtn = useRef(null);
+  const resolvedOut = useRef(null);
+  const resolvedDir = useRef(null);
+
+  let currentProject = {};
+  let currentResolved = {};
+
+  async function load() {
+    const dir = (projectDir.current && projectDir.current.value || '').trim();
+    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
+    if (loadBtn.current) loadBtn.current.disabled = true;
+    setStatus(statusEl, 'loading…', 'busy');
     const [projRes, resolvedRes] = await Promise.all([
       fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(dir)),
       fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir))
     ]);
-    if (loadProject.current) loadProject.current.disabled = false;
-    if (projRes.status !== 200) {
-      projectStatus.current.textContent = 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : '');
-      ok = false;
-    } else {
-      currentProject = projRes.body.project || {};
-      projectStatus.current.textContent = 'path: ' + projRes.body.path;
-      projectEditor.current.hidden = false;
-      projectEditor.current.value = JSON.stringify(currentProject, null, 2);
-      saveProject.current.disabled = false;
-      revertProject.current.disabled = false;
+    if (loadBtn.current) loadBtn.current.disabled = false;
+    if (projRes.status !== 200) { setStatus(statusEl, 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : ''), 'error'); return; }
+    currentProject = projRes.body.project || {};
+    if (editor.current) {
+      editor.current.hidden = false;
+      editor.current.value = JSON.stringify(currentProject, null, 2);
     }
-    if (resolvedRes.status !== 200) {
-      if (resolvedStatus.current) resolvedStatus.current.textContent = 'resolved: HTTP ' + resolvedRes.status;
-      ok = false;
-    } else {
+    if (saveBtn.current) saveBtn.current.disabled = false;
+    if (revertBtn.current) revertBtn.current.disabled = false;
+    setStatus(statusEl, 'path: ' + (projRes.body.path || ''), 'success');
+    if (resolvedRes.status === 200) {
       currentResolved = resolvedRes.body.resolved || {};
       if (resolvedDir.current) resolvedDir.current.textContent = dir;
       if (resolvedOut.current) {
         // Redact apiKey for display so the resolved view never
         // echoes a secret back into the DOM.
         const redacted = JSON.parse(JSON.stringify(currentResolved));
-        if (Array.isArray(redacted.models)) {
-          redacted.models = redacted.models.map((m) => {
-            if (!m || typeof m !== 'object') return m;
-            if (typeof m.apiKey === 'string') m.apiKey = m.apiKey ? '•••' : '';
-            return m;
+        if (Array.isArray(redacted.providers)) {
+          redacted.providers = redacted.providers.map((p) => {
+            if (!p || typeof p !== 'object') return p;
+            if (typeof p.apiKey === 'string') p.apiKey = p.apiKey ? '•••' : '';
+            return p;
           });
         }
         resolvedOut.current.hidden = false;
         resolvedOut.current.textContent = JSON.stringify(redacted, null, 2);
       }
-      if (resolvedStatus.current) resolvedStatus.current.textContent = 'ok.';
-    }
-    return ok;
-  }
-
-  async function saveProjectFile() {
-    const dir = (projectDir.current.value || '').trim();
-    if (!dir) { projectStatus.current.textContent = 'projectDir is required'; return; }
-    let parsed;
-    try { parsed = JSON.parse(projectEditor.current.value || '{}'); }
-    catch (e) {
-      projectStatus.current.textContent = 'invalid JSON: ' + e.message;
-      return;
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      projectStatus.current.textContent = 'project body must be a JSON object';
-      return;
-    }
-    saveProject.current.disabled = true;
-    projectStatus.current.textContent = 'saving…';
-    const r = await fetchJson('/api/settings/project', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ projectDir: dir }, parsed)) });
-    saveProject.current.disabled = false;
-    if (r.status === 200) {
-      projectStatus.current.textContent = 'saved.';
-      currentProject = r.body.project || {};
-      projectEditor.current.value = JSON.stringify(currentProject, null, 2);
-      // Refresh the resolved view so the user immediately sees the
-      // effect of the override.
-      await loadProjectAndResolved();
+      if (resolvedStatus.current) setStatus(resolvedStatus, 'ok', 'success');
     } else {
-      projectStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
+      if (resolvedStatus.current) setStatus(resolvedStatus, 'HTTP ' + resolvedRes.status, 'error');
     }
   }
 
-  function revertProjectFile() {
-    projectEditor.current.value = JSON.stringify(currentProject, null, 2);
-    projectStatus.current.textContent = 'reverted.';
+  async function save() {
+    const dir = (projectDir.current && projectDir.current.value || '').trim();
+    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
+    let parsed;
+    try { parsed = JSON.parse((editor.current && editor.current.value) || '{}'); }
+    catch (e) { setStatus(statusEl, 'invalid JSON: ' + e.message, 'error'); return; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      setStatus(statusEl, 'project body must be a JSON object', 'error');
+      return;
+    }
+    if (saveBtn.current) saveBtn.current.disabled = true;
+    setStatus(statusEl, 'saving…', 'busy');
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir: dir }, parsed))
+    });
+    if (saveBtn.current) saveBtn.current.disabled = false;
+    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
+    setStatus(statusEl, 'saved.', 'success');
+    currentProject = r.body.project || currentProject;
+    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    await load();
   }
 
-  return h('section', null,
-    h('h2', null, 'App'),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'promptSize' }, 'Default prompt size'),
-      h('select', { ref: promptSize, class: 'input', id: 'promptSize' },
-        h('option', { value: 'very-small' }, 'very-small'),
-        h('option', { value: 'average' }, 'average'),
-        h('option', { value: 'extensive' }, 'extensive')
-      )
+  function revert() {
+    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    setStatus(statusEl, 'reverted.', 'success');
+  }
+
+  useEffect(() => { /* nothing to do until the user picks a directory */ }, []);
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'Project overrides')
     ),
-    h('div', { class: 'row row--actions' },
-      h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveApp }, 'Save'),
-      h('button', { ref: resetBtn, class: 'btn', type: 'button', onClick: resetApp }, 'Reset'),
-      h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
-    ),
-    h('h2', null, 'Providers'),
-    h('ul', { ref: providersList, class: 'models__list', 'aria-label': 'Configured providers' }),
-    h('details', { class: 'models__add', open: true },
-      h('summary', null, 'Add or update a provider'),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pProvider' }, 'Provider'),
-        h('select', { ref: pProvider, class: 'input', id: 'pProvider', onChange: onProviderChange },
-          h('option', { value: 'openai-compatible' }, 'openai-compatible'),
-          h('option', { value: 'anthropic' }, 'anthropic'),
-          h('option', { value: 'gemini' }, 'gemini'),
-          h('option', { value: 'ollama' }, 'ollama'),
-          h('option', { value: 'github-copilot' }, 'github-copilot')
+    h('section', null,
+      h('p', { class: 'hint hint--compact' }, 'Project files live at ', h('code', null, '.mouaif.json'), ' inside the project folder. Models reference a provider configured at the app level.'),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-project-dir' }, 'Project directory'),
+        h('div', { class: 'row row--inline' },
+          h('input', { ref: projectDir, class: 'input', id: 'sp-project-dir', type: 'text', placeholder: 'C:/path/to/project' }),
+          h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: load }, 'Load')
         )
       ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pAuth' }, 'Authentication'),
-        h('select', { ref: pAuth, class: 'input', id: 'pAuth', onChange: onAuthOrProviderChange },
-          h('option', { value: 'apikey' }, 'apikey'),
-          h('option', { value: 'oauth' }, 'oauth')
-        )
+      h('div', { class: 'row' },
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
-      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
-        h('label', { class: 'label', for: 'pOauthAccount' }, 'OAuth account'),
-        h('select', { ref: pOauthAccount, class: 'input', id: 'pOauthAccount',
-          onChange: () => { if (pOauthAccount.current) pOauthAccount.current.setAttribute('data-prev', pOauthAccount.current.value); }
-        })
-      ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pBaseUrl' }, 'API base URL'), h('input', { ref: pBaseUrl, class: 'input', id: 'pBaseUrl', type: 'url', placeholder: 'https://api.openai.com/v1' })),
-      h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
-        h('label', { class: 'label', for: 'pApiKey' }, 'Provider API key'),
-        h('input', { ref: pApiKey, class: 'input', id: 'pApiKey', type: 'password', placeholder: 'Paste provider key' })
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
+        h('textarea', { ref: editor, class: 'input', id: 'sp-project-editor', rows: 10, hidden: true, spellcheck: false })
       ),
       h('div', { class: 'row row--actions' },
-        h('button', { ref: addProviderBtn, class: 'btn btn--primary', type: 'button', onClick: addProvider }, 'Save provider'),
-        h('span', { ref: providerStatus, class: 'status', 'aria-live': 'polite' })
-      )
-    ),
-    h(AuthPanel, null),
-    h('h2', null, 'Project overrides'),
-    h('p', { class: 'hint hint--compact' }, 'Project files define model IDs and choose one of the providers configured above.'),
-    h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'Directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
-    h('div', { class: 'row row--inline' },
-      h('button', { ref: loadProject, class: 'btn', id: 'loadProject', type: 'button', onClick: loadProjectAndResolved }, 'Load'),
-      h('span', { ref: projectStatus, class: 'status', 'aria-live': 'polite' })
-    ),
-    h('textarea', { ref: projectEditor, class: 'input', id: 'projectEditor', rows: 10, hidden: true, spellcheck: false }),
-    h('div', { class: 'row row--actions' },
-      h('button', { ref: saveProject, class: 'btn btn--primary', type: 'button', onClick: saveProjectFile, disabled: true }, 'Save'),
-      h('button', { ref: revertProject, class: 'btn', type: 'button', onClick: revertProjectFile, disabled: true }, 'Revert'),
-      h('span', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' })
-    ),
-    h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true })
+        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save, disabled: true }, 'Save'),
+        h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revert, disabled: true }, 'Revert')
+      ),
+      h('h3', null, 'Resolved (effective for this project)'),
+      h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. The chat layer reads this merged object. Provider keys are redacted.'),
+      h('p', { class: 'hint hint--compact' }, h('code', { ref: resolvedDir }, '')),
+      h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true }),
+      h('div', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' })
+    )
   );
 }
 
-// Wraps SettingsPanel with a back link + heading.
-function SettingsView() {
-  return h(SettingsPanel, null);
+// ============================================================================
+// SettingsDefaultsView — app-level defaults (prompt-size, future flags)
+// ============================================================================
+//
+// The app has a small set of cross-project defaults. Today the only
+// one is the default prompt-size profile; new flags land here in
+// later commits. Each chat stores its own prompt-size so this is
+// only the seed value for "new chat" flows.
+
+function SettingsDefaultsView() {
+  const promptSize = useRef(null);
+  const saveBtn = useRef(null);
+  const statusEl = useRef(null);
+
+  async function load() {
+    try {
+      const app = await loadApp({ force: true });
+      if (promptSize.current) promptSize.current.value = (app.app && app.app.promptSize) || 'average';
+    } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); }
+  }
+
+  async function save() {
+    if (saveBtn.current) saveBtn.current.disabled = true;
+    setStatus(statusEl, 'saving…', 'busy');
+    try {
+      await saveApp({ promptSize: promptSize.current.value });
+      setStatus(statusEl, 'saved.', 'success');
+    } catch (e) { setStatus(statusEl, 'save failed: ' + e.message, 'error'); }
+    if (saveBtn.current) saveBtn.current.disabled = false;
+  }
+
+  useEffect(() => { load(); }, []);
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'App defaults')
+    ),
+    h('section', null,
+      h('p', { class: 'hint hint--compact' }, 'Defaults applied to new chats. Each chat can override these.'),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sd-prompt-size' }, 'Default prompt size'),
+        h('select', { ref: promptSize, class: 'input', id: 'sd-prompt-size' },
+          h('option', { value: 'very-small' }, 'very-small'),
+          h('option', { value: 'average' }, 'average'),
+          h('option', { value: 'extensive' }, 'extensive')
+        )
+      ),
+      h('div', { class: 'row row--actions' },
+        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+      )
+    )
+  );
 }
+
+// ============================================================================
+// SettingsCopilotView — the GitHub Copilot OAuth client_id
+// ============================================================================
+
+function SettingsCopilotView() {
+  const clientId = useRef(null);
+  const saveBtn = useRef(null);
+  const resetBtn = useRef(null);
+  const statusEl = useRef(null);
+
+  async function load() {
+    try {
+      const app = await loadApp({ force: true });
+      if (clientId.current) {
+        clientId.current.value = (app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
+      }
+    } catch { /* leave blank */ }
+  }
+
+  async function save() {
+    if (saveBtn.current) saveBtn.current.disabled = true;
+    setStatus(statusEl, 'saving…', 'busy');
+    const value = (clientId.current && clientId.current.value || '').trim();
+    const body = value ? { githubCopilot: { clientId: value } } : { githubCopilot: { clientId: null } };
+    try {
+      await saveApp(body);
+      setStatus(statusEl, value ? 'saved.' : 'cleared (using default).', 'success');
+    } catch (e) { setStatus(statusEl, 'save failed: ' + e.message, 'error'); }
+    if (saveBtn.current) saveBtn.current.disabled = false;
+  }
+
+  async function resetDefault() {
+    if (resetBtn.current) resetBtn.current.disabled = true;
+    setStatus(statusEl, 'resetting…', 'busy');
+    try {
+      await saveApp({ githubCopilot: { clientId: null } });
+      if (clientId.current) clientId.current.value = '';
+      setStatus(statusEl, 'using default.', 'success');
+    } catch (e) { setStatus(statusEl, 'reset failed: ' + e.message, 'error'); }
+    if (resetBtn.current) resetBtn.current.disabled = false;
+  }
+
+  useEffect(() => { load(); }, []);
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'GitHub Copilot OAuth app')
+    ),
+    h('section', null,
+      h('p', { class: 'hint hint--compact' }, 'GitHub does not allow third-party apps to use the public Copilot client_id with a custom loopback URL. To sign in, create a personal OAuth app at ', h('code', null, 'github.com/settings/developers'), ' (Settings → Developer settings → OAuth Apps → New OAuth App) with callback URL ', h('code', null, 'http://127.0.0.1:5732/oauth/callback?provider=github-copilot'), ', then paste the client_id below. The default is shipped for convenience but will not work without registering the callback.'),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-copilot-id' }, 'Client ID'),
+        h('input', { ref: clientId, class: 'input', id: 'sp-copilot-id', type: 'text', placeholder: 'Iv1.xxxxxxxxxxxxxxxx' })
+      ),
+      h('div', { class: 'row row--actions' },
+        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),
+        h('button', { ref: resetBtn, class: 'btn', type: 'button', onClick: resetDefault }, 'Use default'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+      )
+    )
+  );
+}
+
+// ============================================================================
+// SettingsAboutView — storage location, defaults, destructive actions
+// ============================================================================
+
+function SettingsAboutView() {
+  const homeEl = useRef(null);
+  const defaultsEl = useRef(null);
+  const resetBtn = useRef(null);
+  const statusEl = useRef(null);
+
+  async function load() {
+    try {
+      const app = await loadApp({ force: true });
+      if (homeEl.current && app.home) homeEl.current.textContent = app.home;
+      if (defaultsEl.current && app.defaults) {
+        defaultsEl.current.textContent = JSON.stringify(app.defaults, null, 2);
+      }
+    } catch { /* leave blank */ }
+  }
+
+  async function reset() {
+    if (!confirm('Reset ALL app-level settings to defaults? Every provider, model, account, and project you registered at the app level will be cleared. Project files on disk are not touched.')) return;
+    if (resetBtn.current) resetBtn.current.disabled = true;
+    setStatus(statusEl, 'resetting…', 'busy');
+    try {
+      await resetAppKeys(['providers', 'models', 'authAccounts', 'projects', 'promptSize', 'flags']);
+      setStatus(statusEl, 'reset.', 'success');
+      await load();
+    } catch (e) { setStatus(statusEl, 'reset failed: ' + e.message, 'error'); }
+    if (resetBtn.current) resetBtn.current.disabled = false;
+  }
+
+  useEffect(() => { load(); }, []);
+
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'About')
+    ),
+    h('section', null,
+      h('h3', null, 'Storage'),
+      h('p', { class: 'hint hint--compact' }, 'App-level settings and the account index live in this SQLite database:'),
+      h('pre', { ref: homeEl, class: 'settings__out' }, '—'),
+      h('h3', null, 'Default values'),
+      h('p', { class: 'hint hint--compact' }, 'The merge floor for every project. Anything not set in app or project falls back to these.'),
+      h('pre', { ref: defaultsEl, class: 'settings__out' }, '—'),
+      h('h3', null, 'Destructive actions'),
+      h('p', { class: 'hint hint--compact' }, 'Reset all app-level keys. Project files on disk are not touched.'),
+      h('div', { class: 'row row--actions' },
+        h('button', { ref: resetBtn, class: 'btn btn--danger', type: 'button', onClick: reset }, 'Reset all app settings'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+      )
+    )
+  );
+}
+// ============================================================================
+// Old monolithic SettingsPanel / AuthPanel / CopilotAppSection / SettingsView
+// ============================================================================
+//
+// Replaced by SettingsHomeView + SettingsProvidersView +
+// SettingsProviderEditView + SettingsProjectView + SettingsCopilotView +
+// SettingsAboutView at the top of this file. The old code is intentionally
+// removed; the REST surface in src/index.js is unchanged (see
+// docs/features/settings-ui.md).
+
 
 // ---- Inspector ---------------------------------------------------------
 // Mobile-friendly, from-scratch DevTools-style UI. Built on top of

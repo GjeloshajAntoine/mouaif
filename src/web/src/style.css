@@ -451,6 +451,11 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .btn--danger:hover  { background: var(--danger-soft); border-color: var(--danger); }
 
+/* The default UA `[hidden] { display: none }` is shadowed by our
+   .btn's `display: inline-flex` declaration. Reassert it for the
+   components that set .hidden in JS — see SettingsProviderEditView. */
+.btn[hidden] { display: none; }
+
 .btn--ghost {
   color: var(--fg-soft);
   background: transparent;
@@ -540,6 +545,184 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
    current auth select value. The default state is the apikey row
    visible and the oauth row hidden, matching the default select. */
 .models__add .row.is-hidden { display: none; }
+/* Global fallback for the .is-hidden class — used by the new
+   provider-edit form to swap between apikey and oauth rows. */
+.row.is-hidden { display: none; }
+
+/* ---- Settings home (cards) -------------------------------------- */
+
+.settings-home {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.settings-home__lead {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  padding-top: 0;
+}
+.settings-home h3 {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 0 8px;
+  border: 0;
+  padding: 0;
+}
+.settings-home__hint {
+  font-size: 0.78rem;
+  color: var(--fg-soft);
+  line-height: 1.45;
+  margin: 4px 0 0;
+  max-width: 38ch;
+}
+
+/* A card is the Settings home's primary affordance. Tap = navigate
+   to the matching sub-view. The whole card is one tap target so
+   the user does not have to hit a small arrow. */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  min-height: var(--tap);
+  text-decoration: none;
+  color: var(--fg);
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-sm);
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.card:hover  { background: var(--surface-2); border-color: var(--border-strong); }
+.card:active { transform: scale(0.99); }
+.card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.005em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__summary {
+  color: var(--muted);
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__chev {
+  color: var(--muted-2);
+  font-size: 1.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: right;
+  /* The chevron is a typographic ›. A subtle transform gives it
+     a small nudge so it feels like an active affordance. */
+  transform: translateX(-2px);
+}
+
+/* ---- Settings: provider list + edit form ------------------------ */
+
+.providers__list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.providers__empty {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+.provider-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.provider-row__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: var(--tap);
+  text-decoration: none;
+  color: var(--fg);
+  transition: background 120ms ease;
+}
+.provider-row__main:hover  { background: var(--surface-2); }
+.provider-row__main:active { background: var(--surface-3); }
+.provider-row__main > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.provider-row__name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-row__meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  word-break: break-all;
+  margin-top: 2px;
+}
+.provider-row__chev {
+  color: var(--muted-2);
+  font-size: 1.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* The provider edit form reuses the standard .row / .label / .input
+   styles. The hint above the form is the .hint--compact block the
+   form passes in via the SETTINGS_PROVIDERS def. */
+.key-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-style: italic;
+}
+.key-hint[hidden] { display: none; }
+
+.auth__help-inline {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .settings__out {
   margin: 8px 0 0;
