@@ -1,0 +1,331 @@
+'use strict';
+
+// Inspector — server-side bridge to Chrome DevTools Protocol (CDP).
+//
+// Implements docs/decisions.md section 6: the mobile UI consumes CDP
+// events but the server is a thin relay. We do NOT embed the Chrome
+// panel in an iframe. The mobile UI is built from scratch on top of
+// the CDP wire format, which is plain JSON over WebSocket.
+//
+// Architecture:
+//
+//   Browser tab  --ws-->  /api/inspector/proxy?url=...  --ws-->  Chrome
+//
+//   The proxy is a per-connection WebSocket relay. The browser speaks
+//   CDP directly (it knows the protocol); the server only forwards
+//   frames. Each browser WS connection is paired with one upstream
+//   Chrome WS; closing either side closes the other.
+//
+//   This is the simplest correct implementation. It keeps the server
+//   free of CDP client state (no `chrome-remote-interface` style
+//   session bookkeeping), which is what we want for a transparent
+//   debug pipe.
+//
+// Public surface:
+//
+//   const inspector = require('./inspector.js');
+//
+//   inspector.fetchInfo(debuggerHost) -> { webSocketDebuggerUrl, ... }
+//   inspector.fetchTargets(debuggerHost) -> [ { id, type, url, title, ... }, ... ]
+//   inspector.handleProxy(req, socket, head, { debuggerHost })
+//       -- wired into http.Server's 'upgrade' event in src/index.js
+//
+//   inspector.ERROR_CODES  -- typed errors mapped to HTTP status
+//
+// Configuration:
+//
+//   The "debugger host" (i.e. the Chrome instance to talk to) is
+//   resolved per request from a `host` query string on the proxy URL,
+//   defaulting to MOUAIF_CHROME_URL or 'http://127.0.0.1:9222'.
+//   The user can paste any reachable Chrome /chrome endpoint from the
+//   Inspector tab; the value is remembered in the app settings store.
+//
+// The default port 9222 is what `chrome --remote-debugging-port=9222`
+// opens by default. On Android / iOS Chrome, the same flag works;
+// the user is responsible for port-forwarding (adb reverse) on
+// physical devices.
+
+const http = require('http');
+const https = require('https');
+const { URL } = require('url');
+const { WebSocketServer, WebSocket } = require('ws');
+const settings = require('./settings.js');
+
+const DEFAULT_CHROME_PORT = 9222;
+const DEFAULT_CHROME_HOST = '127.0.0.1';
+const APP_KEY_DEBUGGER_HOST = 'inspectorDebuggerUrl';
+
+// Default placeholder when nothing is configured. Surfaced to the UI as
+// "no debugger host configured yet" rather than silently trying localhost.
+function defaultDebuggerUrl() {
+  return process.env.MOUAIF_CHROME_URL || ('http://' + DEFAULT_CHROME_HOST + ':' + DEFAULT_CHROME_PORT);
+}
+
+function getDebuggerUrl() {
+  const app = settings.getApp();
+  const raw = app && typeof app[APP_KEY_DEBUGGER_HOST] === 'string' ? app[APP_KEY_DEBUGGER_HOST].trim() : '';
+  return raw || defaultDebuggerUrl();
+}
+
+function setDebuggerUrl(url) {
+  // Stored as-is. Empty string clears the override.
+  settings.setApp({ [APP_KEY_DEBUGGER_HOST]: typeof url === 'string' ? url : '' });
+}
+
+// ---- Chrome /json/version + /json/list ---------------------------------
+// Chrome exposes target metadata over plain HTTP. We use http / https
+// modules — fetch is fine too but we keep dependencies low and we want
+// to surface non-2xx as typed errors.
+
+function httpGetJson(targetUrl, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(targetUrl); }
+    catch (e) { const err = new Error('Invalid URL: ' + targetUrl); err.code = 'EBADURL'; reject(err); return; }
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const req = lib.get(parsed, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const err = new Error('Chrome returned HTTP ' + res.statusCode + ' for ' + parsed.pathname);
+          err.code = 'EUPSTREAM';
+          err.status = res.statusCode;
+          err.body = text.slice(0, 2000);
+          reject(err);
+          return;
+        }
+        let json;
+        try { json = JSON.parse(text); }
+        catch (e) {
+          const err = new Error('Chrome returned non-JSON for ' + parsed.pathname + ': ' + e.message);
+          err.code = 'EPARSE';
+          reject(err);
+          return;
+        }
+        resolve(json);
+      });
+    });
+    req.on('error', (e) => {
+      const err = new Error('Could not reach Chrome at ' + targetUrl + ': ' + e.message);
+      err.code = 'ECHROME_UNREACHABLE';
+      err.cause = e;
+      reject(err);
+    });
+    if (timeoutMs) {
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error('timeout after ' + timeoutMs + 'ms'));
+      });
+    }
+  });
+}
+
+// /json/version returns { webSocketDebuggerUrl, ... }
+async function fetchInspectorInfo(debuggerUrl) {
+  const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
+  return httpGetJson(base + '/json/version', 5000);
+}
+
+// /json/list returns the array of discoverable targets.
+async function fetchInspectorTargets(debuggerUrl) {
+  const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
+  const list = await httpGetJson(base + '/json/list', 5000);
+  if (!Array.isArray(list)) {
+    const err = new Error('Expected array from /json/list, got ' + typeof list);
+    err.code = 'EPARSE';
+    throw err;
+  }
+  return list;
+}
+
+function stripTrailingSlash(s) { return String(s || '').replace(/\/+$/, ''); }
+
+// ---- Proxy: WebSocket <-> WebSocket ------------------------------------
+//
+// The browser opens a WS to the mouaif server. We accept the upgrade,
+// immediately open a WS to the target Chrome /devtools/page/<id>, and
+// pipe messages both ways. The browser then speaks CDP directly.
+//
+// We support two proxy URL shapes:
+//
+//   ws://host/api/inspector/proxy?ws=ws%3A%2F%2F127.0.0.1%3A9222%2Fdevtools%2Fpage%2FAB12CD
+//       -- direct passthrough; the browser already knows the target.
+//
+//   ws://host/api/inspector/proxy?host=http%3A%2F%2F127.0.0.1%3A9222&targetId=AB12CD
+//       -- we look up the target's webSocketDebuggerUrl server-side and
+//          connect on the browser's behalf. Used by the "tap a target"
+//          UI flow so the mobile app never has to talk to /json/list
+//          over a second WebSocket.
+//
+// Both shapes are equivalent on the wire; the only difference is which
+// side does the /json/list call.
+
+async function handleProxy(req, socket, head, opts) {
+  const q = (req.url && req.url.indexOf('?') >= 0)
+    ? Object.fromEntries(new URL(req.url, 'http://placeholder').searchParams)
+    : {};
+
+  // Prefer the explicit ws URL if provided. Fall back to host+targetId.
+  let upstreamWsUrl = typeof q.ws === 'string' ? q.ws : '';
+  if (!upstreamWsUrl) {
+    const host = typeof q.host === 'string' && q.host ? q.host : (opts && opts.debuggerUrl) || getDebuggerUrl();
+    const targetId = typeof q.targetId === 'string' ? q.targetId : '';
+    if (!targetId) {
+      writeProxyError(socket, 400, 'EBADINPUT', 'either ?ws=<wsUrl> or ?targetId=<id> is required');
+      return;
+    }
+    try {
+      const list = await fetchInspectorTargets(host);
+      const t = list.find((x) => x && x.id === targetId);
+      if (!t || !t.webSocketDebuggerUrl) {
+        writeProxyError(socket, 404, 'ETARGET_NOT_FOUND', 'target not found: ' + targetId);
+        return;
+      }
+      upstreamWsUrl = t.webSocketDebuggerUrl;
+    } catch (e) {
+      const status = e.code === 'ECHROME_UNREACHABLE' ? 502 : (e.status || 500);
+      writeProxyError(socket, status, e.code || 'EUPSTREAM', e.message);
+      return;
+    }
+  }
+
+  let upstreamWs;
+  try {
+    upstreamWs = new WebSocket(upstreamWsUrl, { perMessageDeflate: false });
+  } catch (e) {
+    writeProxyError(socket, 502, 'EWS_OPEN_FAILED', e && e.message || 'WebSocket open failed');
+    return;
+  }
+
+  let browserWs;
+  try {
+    // The noServer WebSocketServer lets us complete the upgrade on the
+    // browser side ourselves. `opts.wss.handleUpgrade` performs the
+    // handshake and hands us a ready WebSocket in the callback.
+    if (!opts || !opts.wss) {
+      writeProxyError(socket, 500, 'EUPGRADE_NO_WSS', 'inspector: no WebSocketServer on the upgrade handler');
+      try { upstreamWs.terminate(); } catch { /* ignore */ }
+      return;
+    }
+    opts.wss.handleUpgrade(req, socket, head, (ws) => {
+      // Now that the browser side is upgraded, finish the upstream
+      // handshake and start piping.
+      wirePair(ws, upstreamWs);
+    });
+  } catch (e) {
+    try { upstreamWs.terminate(); } catch { /* ignore */ }
+    writeProxyError(socket, 500, 'EUPGRADE_FAILED', e && e.message || 'upgrade failed');
+    return;
+  }
+}
+
+function writeProxyError(socket, status, code, message) {
+  // The HTTP upgrade response is just headers; we can't send a JSON
+  // body over a failed upgrade. Send a 4xx-style status line and a
+  // tiny text body so the browser's WS open handler can show a useful
+  // error in its onerror.
+  let payload;
+  try {
+    payload = JSON.stringify({ code, error: message });
+  } catch { payload = '{"code":"' + code + '","error":"' + String(message).replace(/"/g, '\\"') + '"}'; }
+  const reason = code + ': ' + message;
+  try {
+    socket.write(
+      'HTTP/1.1 ' + status + ' ' + (http.STATUS_CODES[status] || 'Error') + '\r\n' +
+      'Content-Type: application/json\r\n' +
+      'Connection: close\r\n' +
+      'Content-Length: ' + Buffer.byteLength(payload) + '\r\n\r\n' +
+      payload
+    );
+    socket.end();
+  } catch {
+    try { socket.destroy(); } catch { /* ignore */ }
+  }
+}
+
+function wirePair(browserWs, upstreamWs) {
+  // Open the upstream socket if it isn't already.
+  let opened = upstreamWs.readyState === WebSocket.OPEN;
+  const pendingFromBrowser = [];
+
+  function flushPendingToUpstream() {
+    while (pendingFromBrowser.length && upstreamWs.readyState === WebSocket.OPEN) {
+      const data = pendingFromBrowser.shift();
+      try { upstreamWs.send(data); }
+      catch { /* socket closed */ }
+    }
+  }
+
+  if (!opened) {
+    upstreamWs.on('open', () => {
+      opened = true;
+      flushPendingToUpstream();
+    });
+  }
+
+  upstreamWs.on('message', (data, isBinary) => {
+    if (browserWs.readyState !== WebSocket.OPEN) return;
+    // `data` from ws@8 is a Buffer; send accepts Buffer / string / ArrayBuffer.
+    try { browserWs.send(data, { binary: isBinary }); }
+    catch { /* socket closed */ }
+  });
+
+  browserWs.on('message', (data, isBinary) => {
+    if (upstreamWs.readyState === WebSocket.OPEN) {
+      try { upstreamWs.send(data, { binary: isBinary }); }
+      catch { /* socket closed */ }
+    } else {
+      // Buffer frames until the upstream opens. This is uncommon — the
+      // browser typically waits for the proxy handshake before sending
+      // any commands — but it keeps the protocol honest.
+      if (isBinary) {
+        // We don't expect CDP clients to send binary; ignore safely.
+        return;
+      }
+      pendingFromBrowser.push(typeof data === 'string' ? data : data.toString('utf-8'));
+    }
+  });
+
+  function closeBoth(reason) {
+    try { browserWs.close(1000, reason || 'upstream closed'); } catch { /* ignore */ }
+    try { upstreamWs.close(1000, reason || 'browser closed'); } catch { /* ignore */ }
+  }
+  upstreamWs.on('close', (code, reason) => {
+    closeBoth(reason && reason.toString ? reason.toString() : 'upstream closed');
+  });
+  upstreamWs.on('error', () => {
+    closeBoth('upstream error');
+  });
+  browserWs.on('close', () => {
+    try { upstreamWs.close(1000, 'browser closed'); } catch { /* ignore */ }
+  });
+  browserWs.on('error', () => {
+    try { upstreamWs.close(1000, 'browser error'); } catch { /* ignore */ }
+  });
+}
+
+// Create a no-op WebSocketServer instance so the http server can
+// delegate upgrades to it. We could use `new WebSocketServer({ noServer: true })`
+// directly. We export the constructor through a lazy init so callers
+// don't pay for it if they don't need it.
+function makeNoServerWss() {
+  return new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
+}
+
+module.exports = {
+  // config
+  APP_KEY_DEBUGGER_HOST,
+  defaultDebuggerUrl,
+  getDebuggerUrl,
+  setDebuggerUrl,
+  // fetchers (used by REST routes and tests)
+  fetchInspectorInfo,
+  fetchInspectorTargets,
+  // WS proxy
+  handleProxy,
+  makeNoServerWss,
+  // constants
+  DEFAULT_CHROME_HOST,
+  DEFAULT_CHROME_PORT
+};

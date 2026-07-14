@@ -15,6 +15,7 @@
 import { render, h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { signal, computed, effect } from '@preact/signals';
+import { createVirtualList } from './virtual-list.js';
 import './style.css';
 
 const $ = (sel) => document.querySelector(sel);
@@ -38,6 +39,7 @@ function parseHash() {
   if (h === 'projects') return { name: 'projects' };
   if (h === 'settings') return { name: 'settings' };
   if (h === 'auth') return { name: 'auth' };
+  if (h === 'inspector') return { name: 'inspector' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);
     const [chatId, qs] = rest.split('?');
@@ -71,6 +73,7 @@ function App() {
   else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
   else if (view.name === 'settings') body = h(SettingsView, null);
   else if (view.name === 'auth') body = h(AuthView, null);
+  else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);
   return h('div', { class: 'app__shell' },
     h(Header, null),
@@ -101,6 +104,8 @@ function Header() {
 const TabIcon = {
   projects: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
     h('path', { d: 'M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z', fill: 'currentColor' })),
+  inspector: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
+    h('path', { d: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 3v2h16V7H4Zm0 4v2h7v-2H4Zm0 4v2h7v-2H4Zm9 0v2h7v-2h-7Z', fill: 'currentColor' })),
   settings: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
     h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })),
   auth: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
@@ -119,6 +124,7 @@ function BottomNav() {
   );
   return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
     tab('projects', 'projects', 'Projects'),
+    tab('inspector', 'inspector', 'Inspector'),
     tab('settings', 'settings', 'Settings'),
     tab('auth', 'auth', 'Auth')
   );
@@ -419,6 +425,488 @@ function AuthView() {
     h(AuthPanel, null)
   );
 }
+
+// ---- Inspector ---------------------------------------------------------
+// Mobile-friendly, from-scratch DevTools-style UI. Built on top of
+// Chrome DevTools Protocol (CDP) over WebSocket — see
+// docs/decisions.md section 6. The mouaif server is a thin relay
+// (src/inspector.js); the browser speaks CDP directly to Chrome via
+// the /api/inspector/proxy WebSocket.
+//
+// The view is a 3-state machine:
+//   1. setup   — set the Chrome debugger host URL
+//   2. targets — list discoverable targets (pages, service workers, ...)
+//   3. inspect — connected to a target, with a Console and Network panel
+//
+// The WebSocket lives on a ref, not in Preact state, so reconnects and
+// message bursts do not thrash the tree. The visible state (connected
+// / target / current panel) is held in a ref too, with a tiny render
+// trigger (`stateTick`) that bumps the version of the whole subtree.
+
+function InspectorView() {
+  const urlInput = useRef(null);
+  const saveBtn = useRef(null);
+  const statusEl = useRef(null);
+  const targetsList = useRef(null);
+
+  // Phase: 'setup' | 'targets' | 'inspect'. The ref is the source of
+  // truth; we re-render the whole subtree when it changes.
+  const phase = useRef('setup');
+  const debuggerUrl = useRef('');
+  const defaultUrl = useRef('');
+  const targets = useRef([]);
+  const currentTarget = useRef(null);
+  // Active sub-panel when connected: 'console' | 'network'.
+  const panel = useRef('console');
+  // Bump to trigger a manual re-render after phase changes.
+  const stateTick = useRef(0);
+  // CDP connection state. wsRef holds the WebSocket; cmdId holds the
+  // next command id. pending is id -> { resolve, reject }. listeners
+  // is a Map<eventName, Set<handler>>.
+  const wsRef = useRef(null);
+  const cmdId = useRef(1);
+  const pending = useRef(new Map());
+  const listeners = useRef(new Map());
+  // Captured event streams.
+  const consoleEntries = useRef([]);
+  const networkEntries = useRef([]);
+  const consoleVL = useRef(null);
+  const networkVL = useRef(null);
+
+  function rerender() { stateTick.current++; forceUpdate(); }
+
+  // CDP client: send a command; return a promise that resolves with
+  // the `result` field or rejects with `error`.
+  function cdpSend(method, params) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== 1) return Promise.reject(new Error('not connected'));
+    const id = cmdId.current++;
+    const msg = JSON.stringify({ id, method, params: params || {} });
+    return new Promise((resolve, reject) => {
+      pending.current.set(id, { resolve, reject });
+      try { ws.send(msg); }
+      catch (e) { pending.current.delete(id); reject(e); }
+    });
+  }
+
+  function cdpOn(eventName, handler) {
+    let set = listeners.current.get(eventName);
+    if (!set) { set = new Set(); listeners.current.set(eventName, set); }
+    set.add(handler);
+    return () => set.delete(handler);
+  }
+
+  function wsOnMessage(ev) {
+    let msg;
+    try { msg = JSON.parse(ev.data); }
+    catch { return; }
+    // Response to a command: { id, result?, error? }
+    if (typeof msg.id === 'number') {
+      const slot = pending.current.get(msg.id);
+      if (slot) {
+        pending.current.delete(msg.id);
+        if (msg.error) slot.reject(Object.assign(new Error(msg.error.message || 'CDP error'), { code: msg.error.code }));
+        else slot.resolve(msg.result || {});
+      }
+      return;
+    }
+    // Event: { method, params }
+    if (typeof msg.method === 'string') {
+      const set = listeners.current.get(msg.method);
+      if (set) for (const fn of set) { try { fn(msg.params || {}); } catch { /* ignore handler errors */ } }
+    }
+  }
+
+  function disconnect() {
+    const ws = wsRef.current;
+    if (ws) {
+      try { ws.close(1000, 'client disconnect'); } catch { /* ignore */ }
+    }
+    wsRef.current = null;
+    currentTarget.current = null;
+    consoleEntries.current = [];
+    networkEntries.current = [];
+    if (consoleVL.current) { try { consoleVL.current.setData([]); } catch { /* ignore */ } }
+    if (networkVL.current) { try { networkVL.current.setData([]); } catch { /* ignore */ } }
+  }
+
+  function connect(target) {
+    if (wsRef.current) disconnect();
+    currentTarget.current = target;
+    panel.current = 'console';
+    phase.current = 'inspect';
+    consoleEntries.current = [];
+    networkEntries.current = [];
+    // Build the proxy URL. The server resolves the target id to the
+    // upstream webSocketDebuggerUrl for us; this means the browser
+    // never has to talk to /json/list over a second WebSocket.
+    const host = encodeURIComponent(debuggerUrl.current);
+    const tid = encodeURIComponent(target.id);
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const proxyUrl = proto + '//' + window.location.host + '/api/inspector/proxy?host=' + host + '&targetId=' + tid;
+    let ws;
+    try { ws = new WebSocket(proxyUrl); }
+    catch (e) { if (statusEl.current) statusEl.current.textContent = 'WebSocket open failed: ' + (e.message || e); return; }
+    wsRef.current = ws;
+    ws.addEventListener('open', () => onWsOpen(target));
+    ws.addEventListener('message', wsOnMessage);
+    ws.addEventListener('close', (ev) => onWsClose(ev));
+    ws.addEventListener('error', () => { if (statusEl.current) statusEl.current.textContent = 'WebSocket error'; });
+    rerender();
+  }
+
+  function onWsOpen(target) {
+    if (statusEl.current) statusEl.current.textContent = 'connected to ' + (target.title || target.url || target.id);
+    // Enable the domains we render. Each `*Enable` call returns a
+    // resolved promise on success. We don't await — failures are
+    // surfaced in the status line via their .catch.
+    cdpSend('Runtime.enable').catch((e) => { if (statusEl.current) statusEl.current.textContent = 'Runtime.enable failed: ' + e.message; });
+    cdpSend('Network.enable').catch((e) => { if (statusEl.current) statusEl.current.textContent = 'Network.enable failed: ' + e.message; });
+    // Subscribe to console events.
+    cdpOn('Runtime.consoleAPICalled', onConsoleEvent);
+    cdpOn('Runtime.exceptionThrown', onExceptionEvent);
+    cdpOn('Network.requestWillBeSent', onRequestWillBeSent);
+    cdpOn('Network.responseReceived', onResponseReceived);
+    cdpOn('Network.loadingFinished', onLoadingFinished);
+    cdpOn('Network.loadingFailed', onLoadingFailed);
+  }
+
+  function onWsClose(ev) {
+    if (statusEl.current) {
+      const code = ev && typeof ev.code === 'number' ? ev.code : 0;
+      statusEl.current.textContent = 'disconnected (code ' + code + ')';
+    }
+    wsRef.current = null;
+    // Drop event listeners so re-connecting doesn't double-fire.
+    listeners.current.clear();
+  }
+
+  function onConsoleEvent(params) {
+    // params.type: 'log'|'debug'|'info'|'error'|'warning'|...
+    // params.args: [{ type, value, description, ... }]
+    const text = (params.args || []).map(argToString).join(' ');
+    const ts = Date.now();
+    consoleEntries.current.push({ id: 'c' + ts + '-' + consoleEntries.current.length, kind: 'console', level: params.type || 'log', text, ts });
+    pushConsole();
+  }
+  function onExceptionEvent(params) {
+    const ex = params.exceptionDetails || {};
+    const text = (ex.exception && (ex.exception.description || ex.exception.value)) || ex.text || 'exception';
+    const ts = Date.now();
+    consoleEntries.current.push({ id: 'c' + ts + '-' + consoleEntries.current.length, kind: 'exception', level: 'error', text, ts });
+    pushConsole();
+  }
+  function pushConsole() {
+    const vl = consoleVL.current;
+    if (vl) {
+      const data = consoleEntries.current.slice(-2000);
+      try { vl.setData(data); vl.scrollToIndex(data.length - 1); } catch { /* vl destroyed */ consoleVL.current = null; }
+    }
+  }
+  function argToString(arg) {
+    if (!arg) return '';
+    if (typeof arg.value !== 'undefined') return String(arg.value);
+    if (typeof arg.description !== 'undefined') return arg.description;
+    if (arg.type === 'function') return 'ƒ ' + (arg.description || '');
+    return arg.type || '';
+  }
+
+  // Network entries are keyed by requestId. We keep a small map of
+  // requestId -> entry; responseReceived / loadingFinished / loadingFailed
+  // mutate that single record so a row carries the final status + duration.
+  const reqMap = useRef(new Map());
+  function onRequestWillBeSent(params) {
+    const req = params.request || {};
+    const entry = {
+      id: 'n' + (params.requestId || '') + '-' + reqMap.current.size,
+      kind: 'request',
+      method: req.method || 'GET',
+      url: req.url || '',
+      status: 'pending',
+      type: (params.type || '').toLowerCase() || null,
+      initiator: params.initiator && params.initiator.url || null,
+      ts: Date.now(),
+      duration: null
+    };
+    reqMap.current.set(params.requestId, entry);
+    networkEntries.current.push(entry);
+    pushNetwork();
+  }
+  function onResponseReceived(params) {
+    const r = params.response || {};
+    const entry = reqMap.current.get(params.requestId);
+    if (!entry) return;
+    entry.status = r.status || 0;
+    entry.statusText = r.statusText || '';
+    entry.type = r.type || entry.type;
+    pushNetwork();
+  }
+  function onLoadingFinished(params) {
+    const entry = reqMap.current.get(params.requestId);
+    if (!entry) return;
+    entry.duration = (typeof params.timestamp === 'number' && entry._start != null) ? Math.round((params.timestamp - entry._start) * 1000) : null;
+    pushNetwork();
+  }
+  function onLoadingFailed(params) {
+    const entry = reqMap.current.get(params.requestId);
+    if (!entry) return;
+    entry.status = 'failed';
+    entry.statusText = params.errorText || 'failed';
+    pushNetwork();
+  }
+  function pushNetwork() {
+    const vl = networkVL.current;
+    if (vl) {
+      const data = networkEntries.current.slice(-2000);
+      try { vl.setData(data); } catch { /* vl destroyed */ networkVL.current = null; }
+    }
+  }
+
+  // ---- Setup phase ----------------------------------------------------
+  async function loadConfig() {
+    let r;
+    try { r = await fetchJson('/api/inspector/config'); }
+    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+    debuggerUrl.current = r.body.url || '';
+    defaultUrl.current = r.body.defaultUrl || '';
+    if (urlInput.current) urlInput.current.value = debuggerUrl.current;
+    if (statusEl.current) statusEl.current.textContent = debuggerUrl.current ? ('current: ' + debuggerUrl.current) : 'using default: ' + defaultUrl.current;
+    rerender();
+  }
+  async function saveConfig() {
+    if (!urlInput.current) return;
+    const next = (urlInput.current.value || '').trim();
+    if (!next) { if (statusEl.current) statusEl.current.textContent = 'url is required'; return; }
+    saveBtn.current.disabled = true;
+    if (statusEl.current) statusEl.current.textContent = 'saving…';
+    let r;
+    try { r = await fetchJson('/api/inspector/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: next }) }); }
+    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    if (saveBtn.current) saveBtn.current.disabled = false;
+    if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+    debuggerUrl.current = r.body.url || next;
+    if (statusEl.current) statusEl.current.textContent = 'saved.';
+  }
+  async function loadTargets() {
+    if (statusEl.current) statusEl.current.textContent = 'fetching targets…';
+    let r;
+    try { r = await fetchJson('/api/inspector/targets'); }
+    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    if (r.status !== 200) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = msg;
+      return;
+    }
+    targets.current = r.body.targets || [];
+    phase.current = 'targets';
+    if (statusEl.current) statusEl.current.textContent = targets.current.length + ' targets';
+    rerender();
+  }
+
+  // ---- Render --------------------------------------------------------
+  useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
+
+  // Re-render is driven by stateTick.current; reading the ref is
+  // enough to keep Preact happy when the value doesn't change.
+  // (Preact doesn't actually re-render on ref reads, so we mutate
+  //  route.value to force it from `forceUpdate()` below.)
+  stateTick.current;
+
+  // Phase 1: setup
+  if (phase.current === 'setup') {
+    return h(Fragment, null,
+      h('div', { class: 'view-head' },
+        h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
+        h('h2', { class: 'view-title' }, 'Inspector')
+      ),
+      h('section', null,
+        h('p', { class: 'hint' }, 'Connect to a Chrome instance started with ', h('code', null, '--remote-debugging-port=9222'), '. The address below is the HTTP base of that instance (used to discover page targets); the WebSocket itself is proxied through mouaif.'),
+        h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
+          h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
+        ),
+        h('div', { class: 'row row--actions' },
+          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover only'),
+          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        ),
+        h('p', { class: 'hint' }, 'Tip: on a phone, run ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' and point the URL at ', h('code', null, 'http://127.0.0.1:9222'), '. The address is stored in the app SQLite store.')
+      )
+    );
+  }
+
+  // Phase 2: target picker
+  if (phase.current === 'targets') {
+    function renderTargets() {
+      if (!targetsList.current) return;
+      targetsList.current.innerHTML = '';
+      if (!targets.current.length) {
+        const li = document.createElement('li');
+        li.className = 'inspector__empty';
+        li.textContent = 'no targets. Open a tab in Chrome and tap "Refresh targets".';
+        targetsList.current.appendChild(li);
+        return;
+      }
+      for (const t of targets.current) {
+        const li = document.createElement('li');
+        li.className = 'inspector__target';
+        const top = document.createElement('div');
+        top.className = 'inspector__target-top';
+        const title = document.createElement('div');
+        title.className = 'inspector__target-title';
+        title.textContent = t.title || t.url || t.id;
+        const type = document.createElement('span');
+        type.className = 'inspector__target-type';
+        type.textContent = t.type || 'page';
+        top.appendChild(title); top.appendChild(type);
+        const url = document.createElement('div');
+        url.className = 'inspector__target-url';
+        url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
+        const btn = document.createElement('button');
+        btn.className = 'inspector__target-btn btn btn--primary';
+        btn.type = 'button';
+        btn.textContent = 'Connect';
+        btn.addEventListener('click', () => connect(t));
+        li.appendChild(top); li.appendChild(url); li.appendChild(btn);
+        targetsList.current.appendChild(li);
+      }
+    }
+    // Defer to next tick so the ref is attached.
+    setTimeout(renderTargets, 0);
+    return h(Fragment, null,
+      h('div', { class: 'view-head' },
+        h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'setup'; rerender(); } }, '←'),
+        h('h2', { class: 'view-title' }, 'Pick a target')
+      ),
+      h('section', null,
+        h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets'),
+          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        ),
+        h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
+      )
+    );
+  }
+
+  // Phase 3: connected — render the Console + Network panels.
+  const t = currentTarget.current;
+  const activePanel = panel.current;
+  return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'targets'; rerender(); } }, '←'),
+      h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
+    ),
+    h('section', null,
+      h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ', h('code', null, t && t.url || '')),
+      h('div', { class: 'inspector__subtabs', role: 'tablist' },
+        h('button', { class: 'inspector__subtab' + (activePanel === 'console' ? ' is-active' : ''), type: 'button', role: 'tab', 'aria-selected': String(activePanel === 'console'), onClick: () => { panel.current = 'console'; rerender(); } }, 'Console'),
+        h('button', { class: 'inspector__subtab' + (activePanel === 'network' ? ' is-active' : ''), type: 'button', role: 'tab', 'aria-selected': String(activePanel === 'network'), onClick: () => { panel.current = 'network'; rerender(); } }, 'Network')
+      ),
+      h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }, 'connecting…'),
+      activePanel === 'console'
+        ? h(ConsolePanel, { vlRef: consoleVL, onReady: (vl) => { consoleVL.current = vl; pushConsole(); } })
+        : h(NetworkPanel, { vlRef: networkVL, onReady: (vl) => { networkVL.current = vl; pushNetwork(); } })
+    )
+  );
+}
+
+// Console / Network panels: a virtual list with a fixed item height.
+// The list is mounted once per panel-switch; we forward the instance
+// back up so the inspector can push new rows.
+function ConsolePanel(props) {
+  const scroller = useRef(null);
+  useEffect(() => {
+    if (!scroller.current) return;
+    const vl = createVirtualList({
+      scroller: scroller.current,
+      itemHeight: 44,
+      overscan: 6,
+      render: (item, node) => {
+        node.className = 'inspector__row inspector__row--console inspector__row--' + (item.level || 'log');
+        const time = document.createElement('span');
+        time.className = 'inspector__row-time';
+        time.textContent = fmtTime(item.ts);
+        const level = document.createElement('span');
+        level.className = 'inspector__row-level';
+        level.textContent = (item.level || 'log').toUpperCase();
+        const text = document.createElement('span');
+        text.className = 'inspector__row-text';
+        text.textContent = item.text || '';
+        node.replaceChildren(time, level, text);
+      },
+      data: []
+    });
+    props.onReady && props.onReady(vl);
+    return () => { try { vl.destroy(); } catch { /* ignore */ } };
+  }, []);
+  return h('div', { ref: scroller, class: 'inspector__scroller', 'aria-label': 'Console output' });
+}
+
+function NetworkPanel(props) {
+  const scroller = useRef(null);
+  useEffect(() => {
+    if (!scroller.current) return;
+    const vl = createVirtualList({
+      scroller: scroller.current,
+      itemHeight: 48,
+      overscan: 6,
+      render: (item, node) => {
+        node.className = 'inspector__row inspector__row--network';
+        const method = document.createElement('span');
+        method.className = 'inspector__row-method';
+        method.textContent = item.method || '';
+        const status = document.createElement('span');
+        status.className = 'inspector__row-status inspector__row-status--' + statusClass(item.status);
+        status.textContent = statusLabel(item.status);
+        const url = document.createElement('span');
+        url.className = 'inspector__row-text';
+        url.textContent = item.url || '';
+        node.replaceChildren(method, status, url);
+      },
+      data: []
+    });
+    props.onReady && props.onReady(vl);
+    return () => { try { vl.destroy(); } catch { /* ignore */ } };
+  }, []);
+  return h('div', { ref: scroller, class: 'inspector__scroller', 'aria-label': 'Network log' });
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return hh + ':' + mm + ':' + ss;
+}
+function statusLabel(s) {
+  if (s === 'pending') return '···';
+  if (s === 'failed') return 'FAIL';
+  return String(s);
+}
+function statusClass(s) {
+  if (s === 'pending') return 'pending';
+  if (s === 'failed') return 'failed';
+  const n = Number(s);
+  if (!isNaN(n) && n >= 400) return 'error';
+  if (!isNaN(n) && n >= 300) return 'redirect';
+  if (!isNaN(n) && n >= 200) return 'ok';
+  return 'other';
+}
+
+// Force a re-render of the whole InspectorView from a ref-only path.
+// We attach a state-bearing ref to a no-op <span> via the signal
+// pattern: Preact's `useState` would also work but we'd need a hook.
+// Easiest correct trick: use the route signal we already have. The
+// inspector doesn't depend on the route, but writing to it triggers a
+// full app re-render — heavier than necessary but only happens on
+// phase changes (rare).
+function forceUpdate() { route.value = Object.assign({}, route.value); }
+
+
 
 const projectsReload = signal(0);
 

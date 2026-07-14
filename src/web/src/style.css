@@ -896,3 +896,218 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
     animation-duration: 0.001ms !important;
   }
 }
+
+/* ---- Inspector ------------------------------------------------------ */
+
+/* The bottom tab bar switches from a 3-col to a 4-col grid. */
+.app__tabbar {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Sub-tab strip inside the connected inspector: Console | Network. */
+.inspector__subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: 10px;
+}
+.inspector__subtab {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: 8px;
+  flex: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.inspector__subtab:hover { color: var(--fg); background: var(--surface-2); }
+.inspector__subtab.is-active {
+  color: var(--on-accent);
+  background: var(--accent);
+  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 2px 8px rgba(127,177,255,.2);
+}
+
+.inspector__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector__status {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+}
+
+/* The scroller is a virtual list. The list manages its own inner
+   spacer; all we style here is the scroller itself. */
+.inspector__scroller {
+  position: relative;
+  width: 100%;
+  height: 56dvh;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Each virtual-list row. */
+.inspector__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Console row: timestamp, level chip, message. */
+.inspector__row--console {
+  align-items: center;
+}
+.inspector__row-time {
+  color: var(--muted-2);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  width: 56px;
+}
+.inspector__row-level {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.inspector__row--error .inspector__row-level,
+.inspector__row--exception .inspector__row-level { color: var(--danger); border-color: rgba(255,138,138,.3); background: var(--danger-soft); }
+.inspector__row--warning .inspector__row-level { color: var(--warning); border-color: rgba(240,196,106,.3); }
+.inspector__row--info .inspector__row-level { color: var(--accent); border-color: rgba(127,177,255,.3); }
+.inspector__row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-soft);
+}
+.inspector__row--error .inspector__row-text,
+.inspector__row--exception .inspector__row-text { color: var(--danger); }
+
+/* Network row: method, status chip, URL. */
+.inspector__row--network {
+  align-items: center;
+}
+.inspector__row-method {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: center;
+}
+.inspector__row-status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: center;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.inspector__row-status--ok       { color: var(--success); border-color: rgba(111,212,154,.3); }
+.inspector__row-status--redirect { color: var(--warning); border-color: rgba(240,196,106,.3); }
+.inspector__row-status--error,
+.inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
+.inspector__row-status--pending { color: var(--muted); }
+
+/* Target picker (phase 2). */
+.inspector__targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inspector__empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 24px 12px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+}
+.inspector__target {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--shadow-sm);
+}
+.inspector__target-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.inspector__target-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__target-type {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(127,177,255,.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.inspector__target-url {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  word-break: break-all;
+  line-height: 1.4;
+}
+.inspector__target-btn {
+  align-self: flex-start;
+  min-width: 92px;
+}

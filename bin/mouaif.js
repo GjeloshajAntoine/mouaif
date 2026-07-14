@@ -25,6 +25,8 @@ program
       console.log(`   REST:   GET  /data     — get data`);
       console.log(`   REST:   POST /data     — update data`);
       console.log(`   SSE:    GET  /events   — subscribe to events`);
+      console.log(`   Web:    /web/          — mobile UI`);
+      console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
       console.log('   Press Ctrl+C to stop');
     });
 

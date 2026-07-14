@@ -11,6 +11,7 @@ const oauthAnthropic = require('./oauth-anthropic.js');
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');
+const inspector = require('./inspector.js');
 
 // Register Anthropic's per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -145,9 +146,16 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleChats(req, res, parsed);
   }
 
+  // Inspector — REST surface for the CDP bridge. The WebSocket proxy
+  // at /api/inspector/proxy is handled in the server's 'upgrade'
+  // event (see createServer below), not here.
+  if (urlPath.startsWith('/api/inspector/')) {
+    return handleInspector(req, res, parsed);
+  }
+
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
   }
 
   // REST: GET /data
@@ -1005,11 +1013,128 @@ async function handleOAuthCallbackPost(req, res, parsed) {
   return sendJSON(res, result.status, { ok: false, error: result.error, code: result.code });
 }
 
+// ---- Inspector API ------------------------------------------------------
+// REST surface for the CDP bridge. The WebSocket proxy itself lives
+// in src/inspector.js and is wired into the http.Server's 'upgrade'
+// event in createServer() below.
+//
+// Endpoints:
+//
+//   GET  /api/inspector/config         -> { url, defaultUrl }
+//   PUT  /api/inspector/config         body: { url }   -> { url }
+//   GET  /api/inspector/version        -> Chrome /json/version payload
+//   GET  /api/inspector/targets        -> Chrome /json/list payload
+//
+// The WS proxy is at /api/inspector/proxy and is the only way the
+// mobile UI talks to the debugger — see docs/decisions.md section 6.
+
+function inspectorErrorStatus(err) {
+  switch (err && err.code) {
+    case 'EBADURL':
+    case 'EBADINPUT':
+      return 400;
+    case 'ECHROME_UNREACHABLE':
+      return 502;
+    case 'ETARGET_NOT_FOUND':
+      return 404;
+    case 'EUPSTREAM':
+      return 502;
+    case 'EPARSE':
+      return 502;
+    default:
+      return 500;
+  }
+}
+
+async function handleInspector(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  // GET /api/inspector/config  -> { url, defaultUrl }
+  if (urlPath === '/api/inspector/config' && method === 'GET') {
+    return sendJSON(res, 200, { url: inspector.getDebuggerUrl(), defaultUrl: inspector.defaultDebuggerUrl() });
+  }
+
+  // PUT /api/inspector/config  body: { url }  -> { url }
+  if (urlPath === '/api/inspector/config' && method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body.url !== 'string') {
+      return sendJSON(res, 400, { error: 'url is required' });
+    }
+    // Light validation: must be http(s)://... for the host lookup; we
+    // do not check the port (could be anything).
+    let parsedUrl;
+    try { parsedUrl = new URL(body.url); }
+    catch { return sendJSON(res, 400, { error: 'url is not a valid URL' }); }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return sendJSON(res, 400, { error: 'url must be http or https' });
+    }
+    inspector.setDebuggerUrl(body.url);
+    return sendJSON(res, 200, { url: inspector.getDebuggerUrl() });
+  }
+
+  // GET /api/inspector/version  -> Chrome /json/version
+  if (urlPath === '/api/inspector/version' && method === 'GET') {
+    try {
+      const info = await inspector.fetchInspectorInfo(inspector.getDebuggerUrl());
+      return sendJSON(res, 200, info);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
+  // GET /api/inspector/targets  -> Chrome /json/list
+  if (urlPath === '/api/inspector/targets' && method === 'GET') {
+    try {
+      const list = await inspector.fetchInspectorTargets(inspector.getDebuggerUrl());
+      return sendJSON(res, 200, { targets: list });
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
+}
+
 function createServer(port = DEFAULT_PORT) {
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port);
   });
+  // WebSocket upgrade routing. Only /api/inspector/proxy is upgraded;
+  // any other upgrade is rejected so the rest of the server stays
+  // untouched. The noServer WebSocketServer gives us manual
+  // handleUpgrade() so we can decide per-request.
+  const wss = inspector.makeNoServerWss();
+  server.on('upgrade', (req, socket, head) => {
+    const u = req.url || '';
+    if (u.startsWith('/api/inspector/proxy')) {
+      // The inspector module does the heavy lifting. We pass `server`
+      // so it can complete the upgrade on the browser side via
+      // server.handleUpgrade().
+      inspector.handleProxy(req, socket, head, { server, wss, debuggerUrl: inspector.getDebuggerUrl() })
+        .catch((e) => {
+          // Already-closed sockets are normal; the only way to surface
+          // a true error here is to write a 500-style HTTP response on
+          // the raw socket.
+          try {
+            socket.write('HTTP/1.1 500 Internal\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.end();
+          } catch { /* ignore */ }
+        });
+      return;
+    }
+    // Reject anything else.
+    socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    socket.end();
+  });
+  // Stash the wss so the inspector module can find it; not strictly
+  // required today but lets a future commit add server-initiated
+  // pushes (e.g. browser-driven "fetch the next page of history").
+  void wss;
   return server;
 }
 
