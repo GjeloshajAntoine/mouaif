@@ -88,6 +88,9 @@ The WebSocket proxy returns 400 for missing `targetId` / `ws`, 404 for unknown t
 - **Tab bar layout** — the bottom tab bar becomes a 4-column grid (`Projects / Inspector / Settings / Auth`). Inspector is a peer of the existing tabs, not a child of Settings; the from-scratch UI earns its own entry point. The bar still respects `env(safe-area-inset-bottom)`.
 - **Virtualization** — both panels use [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar.
 - **Ref-only state.** The CDP client (websocket, command id, pending responses, event listeners, console / network buffers) lives on refs, not Preact state. A CDP message burst updates a ref and pushes rows into the virtual list directly; Preact is only re-rendered on phase / panel / status changes.
+- **Reconnect safety.** Disconnecting rejects pending CDP commands and clears
+	listeners plus the request map. Close/error events from an older socket are
+	identity-checked so they cannot wipe the state of a replacement connection.
 - **Backwards compatibility.** Adding the 4th tab does not change the existing REST or SSE surface. The bundle grew by ~14 KB JS and ~3.5 KB CSS to ship the new view.
 - **Server log line.** The `mouaif serve` startup banner now mentions `Web: /web/ — mobile UI` and `CDP: /api/inspector/ + WS /api/inspector/proxy` so users can see at a glance what shipped.
 

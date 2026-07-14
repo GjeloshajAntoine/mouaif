@@ -642,10 +642,16 @@ function InspectorView() {
 
   function disconnect() {
     const ws = wsRef.current;
+    wsRef.current = null;
     if (ws) {
       try { ws.close(1000, 'client disconnect'); } catch { /* ignore */ }
     }
-    wsRef.current = null;
+    for (const slot of pending.current.values()) {
+      try { slot.reject(new Error('disconnected')); } catch { /* ignore */ }
+    }
+    pending.current.clear();
+    listeners.current.clear();
+    reqMap.current.clear();
     currentTarget.current = null;
     consoleEntries.current = [];
     networkEntries.current = [];
@@ -677,8 +683,10 @@ function InspectorView() {
     if (statusEl.current) statusEl.current.textContent = 'connecting…';
     ws.addEventListener('open', () => onWsOpen(target));
     ws.addEventListener('message', wsOnMessage);
-    ws.addEventListener('close', (ev) => onWsClose(ev));
-    ws.addEventListener('error', () => { if (statusEl.current) statusEl.current.textContent = 'WebSocket error'; });
+    ws.addEventListener('close', (ev) => onWsClose(ws, ev));
+    ws.addEventListener('error', () => {
+      if (wsRef.current === ws && statusEl.current) statusEl.current.textContent = 'WebSocket error';
+    });
     rerender();
   }
 
@@ -698,12 +706,19 @@ function InspectorView() {
     cdpOn('Network.loadingFailed', onLoadingFailed);
   }
 
-  function onWsClose(ev) {
+  function onWsClose(ws, ev) {
+    // A previous socket may finish closing after a reconnect. It must not
+    // clear the listeners or status belonging to the replacement socket.
+    if (wsRef.current !== ws) return;
     if (statusEl.current) {
       const code = ev && typeof ev.code === 'number' ? ev.code : 0;
       statusEl.current.textContent = 'disconnected (code ' + code + ')';
     }
     wsRef.current = null;
+    for (const slot of pending.current.values()) {
+      try { slot.reject(new Error('disconnected')); } catch { /* ignore */ }
+    }
+    pending.current.clear();
     // Drop event listeners so re-connecting doesn't double-fire.
     listeners.current.clear();
   }
@@ -753,6 +768,7 @@ function InspectorView() {
       type: (params.type || '').toLowerCase() || null,
       initiator: params.initiator && params.initiator.url || null,
       ts: Date.now(),
+      _start: typeof params.timestamp === 'number' ? params.timestamp : null,
       duration: null
     };
     reqMap.current.set(params.requestId, entry);
