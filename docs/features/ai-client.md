@@ -11,7 +11,13 @@
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
 | GET    | `/api/ai/models` | `?projectDir=<abs>` (optional) | `{ models: [{id,provider,label,auth}], providers: [...] }` |
+| POST   | `/api/ai/test` | `{ modelId, projectDir? }` | `{ ok: true }` or `{ ok: false, error, code? }` |
 | POST   | `/api/ai/chat`  | `{ modelId, messages, projectDir? }` | `text/event-stream` — see below |
+
+`POST /api/ai/test` makes a real provider request with a single `Hi`
+message and discards the generated content. It aborts after ten seconds and
+returns `ETIMEDOUT`; provider, credential, and network failures are returned as
+`ok: false` without exposing stored credentials.
 
 The stream emits events with the same names as the upstream:
 
@@ -38,7 +44,7 @@ The model record is read from the resolved settings (defaults → app → projec
   id:            'gpt-4o-mini',     // slug, also the upstream model id
   provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'github-copilot'
   label:         'GPT-4o mini',     // UI label
-  baseUrl:       'https://api.openai.com', // optional; per-provider defaults applied
+  baseUrl:       'https://api.openai.com/v1', // optional; per-provider defaults applied
   apiKey:        'sk-...',          // ignored when auth === 'oauth'
   auth:          'apikey',          // 'apikey' | 'oauth' (default: 'apikey')
   oauthAccount:  undefined,         // populated by the OAuth commits
@@ -55,7 +61,7 @@ const ai = require('mouaif/src/ai.js');
 
 const events = [];
 const result = await ai.streamChat({
-  model: { id: 'gpt-4o-mini', provider: 'openai-compatible', baseUrl: 'https://api.openai.com', apiKey: 'sk-...' },
+  model: { id: 'gpt-4o-mini', provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-...' },
   messages: [{ role: 'user', content: 'hi' }],
   onEvent: (name, data) => events.push({ name, data })
 });
@@ -68,6 +74,7 @@ const result = await ai.streamChat({
 - **Apikey only in this commit.** Models with `auth: 'oauth'` produce a typed `ENOAUTH` error. The OAuth commits add the flow; nothing in this commit stores tokens.
 - **Reserved provider: `github-copilot`.** Listed in `ENDPOINTS` and `providers`, gated by `reserved: true`, so any attempt to call it returns `ENOAUTH`. The provider's auth flow ships separately.
 - **Errors are typed.** The proxy maps upstream HTTP errors to `EUPSTREAM`, network failures to `ENETWORK`, aborts to `EABORTED`, unknown providers to `EUNKNOWN_PROVIDER`, missing keys to `ENOAPIKEY`, OAuth-marked models to `ENOAUTH`, and bad input to `EBADINPUT` / `EMODEL_NOT_FOUND`. The UI branches on `code`, not on `message`.
+- **Connectivity tests time out.** `/api/ai/test` converts its own ten-second abort into `ETIMEDOUT`; unrelated aborted chat requests remain `EABORTED`.
 - **No tool calls yet.** This commit transports text + usage. Tool-call events (`tool_call`, `tool_result`) are reserved names and will land in a later commit.
 - **`[DONE]` sentinel is suppressed.** OpenAI uses the literal `[DONE]` to end a stream; the parser drops it so it does not show up as `passthrough` in the UI.
 

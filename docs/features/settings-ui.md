@@ -27,7 +27,7 @@ Examples:
 # Add a model.
 curl -X POST http://localhost:5732/api/settings/app/models \
   -H 'Content-Type: application/json' \
-  -d '{"id":"gpt-4o-mini","provider":"openai-compatible","label":"GPT-4o mini","baseUrl":"https://api.openai.com","apiKey":"sk-..."}'
+  -d '{"id":"gpt-4o-mini","provider":"openai-compatible","label":"GPT-4o mini","baseUrl":"https://api.openai.com/v1","apiKey":"sk-..."}'
 
 # Rename a model.
 curl -X POST http://localhost:5732/api/settings/app/models \
@@ -51,7 +51,7 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. It has four subsections:
 
 - **App** — `Default prompt size` (select). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads. Trace has no app-wide default: each chat starts off and exposes its own opt-in toggle.
-- **Models** — a list of configured models with a Delete button each, and an "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth) — the two are toggled by the auth select. The provider list is the full set from decision §10: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider's **auth** namespace (the AI provider `openai-compatible` maps to the keyring namespace `openai`; the others are 1:1). With one signed-in account the select is pre-selected as `(auto — <account>)`; with multiple, the empty option is disabled and the form refuses to submit until an account is picked.
+- **Models** — a list of configured models with Test and Delete buttons, and an open "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth). Test calls `POST /api/ai/test`, which makes a real one-message provider request and times out after ten seconds. Provider selection fills only its known base URL (for example `https://api.openai.com/v1`); model IDs remain entirely user-defined and are never selected from or filled by a built-in model list. API-key authentication requires a key except for Ollama. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider's **auth** namespace (the AI provider `openai-compatible` maps to the keyring namespace `openai`; the others are 1:1). With one signed-in account the select is pre-selected as `(auto — <account>)`; with multiple, the empty option is disabled and the form refuses to submit until an account is picked.
 - **Project** — paste a project directory and click Load. The raw `<projectDir>/.mouaif.json` is loaded into a JSON editor (textarea); **Save project** PUTs the parsed JSON through `/api/settings/project`, and **Revert** restores the loaded text. The editor is intentionally a JSON textarea (not a structured form) so the user can override any future key without a UI change.
 - **Resolved (effective for project)** — read-only. The `defaults → app → project` merge result for the loaded project directory. The `apiKey` of any model is redacted to `•••` so a resolved view never echoes a secret back into the DOM. This is the view the chat layer actually reads (decision §2); what it shows is what the user gets at chat time.
 
@@ -60,6 +60,7 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and sa
 ## Behavior
 
 - **Models added through `POST /api/settings/app/models` appear in `GET /api/ai/models` on the next call.** No restart, no cache invalidation. The chat picker reads `settings.getResolved(projectDir).models` on every request.
+- **Model IDs are untrusted user input.** Status messages and model rows insert IDs as text nodes rather than HTML, so arbitrary user-defined slugs cannot inject markup into the settings page.
 - **`POST /api/settings/app/models` is upsert by `id`.** A new id adds; an existing id merges the body into the existing record (so a partial update — e.g. only the label — only needs the changed fields). `provider` is required on the first add, optional on subsequent re-adds.
 - **`POST /api/settings/app/reset` is destructive on purpose.** The body lists the keys to remove; the rest of the app object is preserved. This is a `REPLACE` of the app object with the listed keys omitted, not a deep merge. A bad key in the list returns 400.
 - **`DELETE /api/settings/app/models/:id` is idempotent at the API level** (404 if not found, 200 with the new models list otherwise). The UI confirms with the user before issuing the call.

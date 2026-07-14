@@ -512,6 +512,9 @@ async function streamChat(opts) {
 
   if (upstream && upstream.__networkError) {
     const e = upstream.__networkError;
+    if (e && e.name === 'AbortError') {
+      return { ok: false, error: { code: 'EABORTED', message: 'aborted' } };
+    }
     return { ok: false, error: { code: 'ENETWORK', message: e.message || 'network error' } };
   }
   if (!upstream.ok) {

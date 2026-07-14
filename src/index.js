@@ -173,7 +173,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
   }
 
   // REST: GET /data
@@ -845,6 +845,48 @@ async function handleAI(req, res, parsed) {
       id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
     }));
     return sendJSON(res, 200, { models, providers: Object.keys(ai.ENDPOINTS) });
+  }
+
+  // POST /api/ai/test  body: { modelId, projectDir? }  -> { ok, error? }
+  // Lightweight connectivity test: sends a single "hi" message and
+  // checks whether the upstream returns a typed error or a 200 SSE
+  // stream. Aborts after 10 s so the user never waits long.
+  if (urlPath === '/api/ai/test' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+
+    let model;
+    try { model = resolveModel(body.modelId, body.projectDir); }
+    catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code }); }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 10000);
+    try {
+      const result = await ai.streamChat({
+        model,
+        messages: [{ role: 'user', content: 'Hi' }],
+        signal: controller.signal,
+        onEvent: () => {} // discard events, we only care about ok/error
+      });
+      clearTimeout(timer);
+      if (result.ok) return sendJSON(res, 200, { ok: true });
+      if (timedOut && result.error && result.error.code === 'EABORTED') {
+        return sendJSON(res, 200, { ok: false, error: 'timed out after 10 s', code: 'ETIMEDOUT' });
+      }
+      return sendJSON(res, 200, { ok: false, error: (result.error && result.error.message) || 'upstream error' });
+    } catch (e) {
+      clearTimeout(timer);
+      const code = e.code || 'ETEST';
+      if (timedOut || code === 'EABORTED') {
+        return sendJSON(res, 200, { ok: false, error: 'timed out after 10 s', code: 'ETIMEDOUT' });
+      }
+      return sendJSON(res, 200, { ok: false, error: e.message, code });
+    }
   }
 
   // POST /api/ai/chat  body: { modelId, messages, projectDir? }  -> SSE stream

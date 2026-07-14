@@ -491,7 +491,9 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   gap: 4px;
 }
 .models__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.models__id { font-weight: 600; font-size: 0.88rem; }
+.models__id { font-weight: 600; font-size: 0.88rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.models__actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.78rem; }
 .models__meta { color: var(--muted); font-size: 0.74rem; line-height: 1.35; word-break: break-all; }
 .models__add,
 .picker__create {

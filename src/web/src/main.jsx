@@ -35,8 +35,8 @@ const route = signal(parseHash());
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '');
-  if (!h) return { name: 'projects' };
-  if (h === 'projects') return { name: 'projects' };
+  if (!h) return { name: 'chats' };
+  if (h === 'projects') return { name: 'chats' };
   if (h === 'settings') return { name: 'settings' };
   if (h === 'auth') return { name: 'auth' };
   if (h === 'inspector') return { name: 'inspector' };
@@ -51,7 +51,7 @@ function parseHash() {
     const params = new URLSearchParams(qs);
     return { name: 'picker', dir: params.get('dir') || '' };
   }
-  return { name: 'projects' };
+  return { name: 'chats' };
 }
 
 window.addEventListener('hashchange', () => { route.value = parseHash(); });
@@ -64,11 +64,9 @@ function nav(toHash) {
 
 function App() {
   const view = route.value;
-  // Drill-in screens (chat, picker) get their own per-screen back button
-  // and do not show the global tab bar. Everything else does.
-  const showTabBar = view.name !== 'chat' && view.name !== 'picker';
+  const showTabBar = view.name !== 'chat' && view.name !== 'picker' && view.name !== 'auth';
   let body = null;
-  if (view.name === 'projects') body = h(ProjectsView, null);
+  if (view.name === 'chats') body = h(ProjectsView, null);
   else if (view.name === 'picker') body = h(ProjectPickerView, { dir: view.dir });
   else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
   else if (view.name === 'settings') body = h(SettingsView, null);
@@ -97,24 +95,22 @@ function Header() {
 }
 
 // ---- Bottom tab bar ---------------------------------------------------
-// The four top-level destinations — Projects / Inspector / Settings / Auth
+// Three top-level destinations — Chats / Inspector / Settings
 // — are reached from a fixed bottom tab bar instead of the top header.
-// The bar is hidden on the chat and folder-picker drill-in screens, which
-// have their own per-screen back button.
+// The bar is hidden on the chat, folder-picker, and auth drill-in screens,
+// which have their own per-screen back button.
 //
 // Inline SVG icons keep the bundle small and crisp at any density. The
 // `currentColor` fill on the path means the existing color tokens
 // drive the icon color in any state.
 
 const TabIcon = {
-  projects: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
-    h('path', { d: 'M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z', fill: 'currentColor' })),
+  chats: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
+    h('path', { d: 'M2 5a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H9.5l-3.72 3.72A1 1 0 0 1 4 22.56V18H5a3 3 0 0 1-3-3V5Z', fill: 'currentColor' })),
   inspector: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
     h('path', { d: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 3v2h16V7H4Zm0 4v2h7v-2H4Zm0 4v2h7v-2H4Zm9 0v2h7v-2h-7Z', fill: 'currentColor' })),
   settings: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
-    h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })),
-  auth: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
-    h('path', { d: 'M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Zm3 4a1.75 1.75 0 0 1 1 3.16V19a1 1 0 1 1-2 0v-1.84A1.75 1.75 0 0 1 12 14Z', fill: 'currentColor' }))
+    h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' }))
 };
 
 function BottomNav() {
@@ -128,10 +124,9 @@ function BottomNav() {
     h('span', { class: 'app__tab-label' }, label)
   );
   return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
-    tab('projects', 'projects', 'Projects'),
+    tab('projects', 'chats', 'Chats'),
     tab('inspector', 'inspector', 'Inspector'),
-    tab('settings', 'settings', 'Settings'),
-    tab('auth', 'auth', 'Auth')
+    tab('settings', 'settings', 'Settings')
   );
 }
 
@@ -225,18 +220,17 @@ function AuthPanel() {
   }
 
   return h('section', null,
+    h('h2', null, 'Accounts'),
     h('pre', { ref: authOut, class: 'settings__out', 'aria-label': 'Auth status' }, 'loading…'),
-    h('h3', { class: 'auth__sub' }, 'Sign in with Anthropic'),
-    h('p', { class: 'hint hint--compact' }, 'Public OAuth flow, PKCE S256. Token is stored in the OS keychain under ', h('code', null, 'mouaif/anthropic'), '.'),
+    h('h2', null, 'Anthropic OAuth'),
     h('div', { class: 'row' },
-      h('button', { ref: signInAnthropic, class: 'btn btn--primary', type: 'button', onClick: startSignIn }, 'Sign in with Anthropic'),
+      h('button', { ref: signInAnthropic, class: 'btn btn--primary', type: 'button', onClick: startSignIn }, 'Sign in'),
       h('span', { ref: signInStatus, class: 'status', 'aria-live': 'polite' })
     ),
     h('div', { ref: signInHelp, class: 'auth__help', hidden: true },
-      h('p', null, 'After authorizing, the browser redirects to ', h('code', null, h('span', { ref: signInCallback })), '. If you used the no-browser path, paste the ', h('code', null, 'code'), ' from the redirected URL here:'),
       h('div', { class: 'row' },
-        h('input', { ref: codeInput, class: 'input', type: 'text', placeholder: 'code from ?code=...' }),
-        h('button', { ref: completeCode, class: 'btn btn--primary', type: 'button', onClick: completeWithCode }, 'Complete sign-in')
+        h('input', { ref: codeInput, class: 'input', type: 'text', placeholder: '?code=... from redirect URL' }),
+        h('button', { ref: completeCode, class: 'btn btn--primary', type: 'button', onClick: completeWithCode }, 'Complete')
       )
     )
   );
@@ -253,22 +247,42 @@ function SettingsPanel() {
   const mAuth = useRef(null), mOauthAccount = useRef(null);
   const addBtn = useRef(null), addModelStatus = useRef(null);
 
-  // Project + resolved view controls. The resolved view shows what
-  // values are *actually in effect* for a project after the
-  // defaults → app → project merge (decision §2). The raw project
-  // file is still editable; a "Save project" button PUTs the parsed
-  // JSON back through /api/settings/project.
+  // Project + resolved view controls.
   const resolvedDir = useRef(null), resolvedStatus = useRef(null), resolvedOut = useRef(null);
   const projectDir = useRef(null), loadProject = useRef(null), projectStatus = useRef(null);
   const projectEditor = useRef(null), saveProject = useRef(null), revertProject = useRef(null);
 
+  // Known default base URLs per provider. Used to auto-fill the
+  // baseUrl field when the user picks a provider, so they never
+  // have to type these known values.
+  const DEFAULT_BASE_URLS = {
+    'openai-compatible': 'https://api.openai.com/v1',
+    'anthropic': 'https://api.anthropic.com',
+    'gemini': 'https://generativelanguage.googleapis.com',
+    'ollama': 'http://127.0.0.1:11434',
+    'github-copilot': 'https://api.githubcopilot.com'
+  };
+
   let currentApp = {};
   let currentProject = {};
   let currentResolved = {};
-  // Most recent snapshot of /api/auth/accounts. Re-fetched when the
-  // user toggles auth to "oauth" so the oauthAccount <select> can
-  // show the signed-in emails for the chosen provider.
   let lastAccounts = {};
+
+  // When the provider <select> changes, auto-fill the baseUrl field
+  // with a known default (if the field is still empty or was the
+  // previous default).
+  function onProviderChange() {
+    const p = mProvider.current ? mProvider.current.value : 'openai-compatible';
+    const defaultUrl = DEFAULT_BASE_URLS[p] || '';
+    const current = mBaseUrl.current ? mBaseUrl.current.value.trim() : '';
+    // Only overwrite if empty or matches any known default URL, so
+    // user customisations are never silently clobbered.
+    const knownDefaults = Object.values(DEFAULT_BASE_URLS);
+    if (!current || knownDefaults.includes(current)) {
+      if (mBaseUrl.current) mBaseUrl.current.value = defaultUrl;
+    }
+    onAuthOrProviderChange();
+  }
 
   async function loadSettings() {
     const r = await fetchJson('/api/settings');
@@ -342,6 +356,26 @@ function SettingsPanel() {
     if (prev && accounts.includes(prev)) sel.value = prev;
   }
 
+  async function testModel(id) {
+    const btn = document.getElementById('test-' + id);
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.textContent = 'testing…';
+    btn.disabled = true;
+    try {
+      const r = await fetchJson('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: id })
+      });
+      if (r.status === 200) btn.textContent = r.body.ok ? '✓ OK' : '✗ ' + (r.body.error || 'unknown');
+      else btn.textContent = '✗ HTTP ' + r.status;
+    } catch (err) {
+      btn.textContent = '✗ network error';
+    }
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
+  }
+
   function renderModels(list) {
     modelsList.current.innerHTML = '';
     if (!list.length) {
@@ -356,9 +390,14 @@ function SettingsPanel() {
       const row = document.createElement('div'); row.className = 'models__row';
       const idSpan = document.createElement('span'); idSpan.className = 'models__id';
       idSpan.textContent = m.id + '  (' + m.provider + ')';
+      const actions = document.createElement('div'); actions.className = 'models__actions';
+      const test = document.createElement('button'); test.className = 'btn btn--ghost'; test.type = 'button'; test.textContent = 'Test';
+      test.id = 'test-' + m.id;
+      test.addEventListener('click', () => testModel(m.id));
       const del = document.createElement('button'); del.className = 'btn btn--danger'; del.type = 'button'; del.textContent = 'Delete';
       del.addEventListener('click', () => deleteModel(m.id));
-      row.appendChild(idSpan); row.appendChild(del);
+      actions.appendChild(test); actions.appendChild(del);
+      row.appendChild(idSpan); row.appendChild(actions);
       const meta = document.createElement('div'); meta.className = 'models__meta';
       const auth = m.auth || 'apikey';
       const bits = [m.label, m.baseUrl];
@@ -402,6 +441,13 @@ function SettingsPanel() {
     const auth = mAuth.current ? mAuth.current.value : 'apikey';
     const oauthAccount = mOauthAccount.current ? (mOauthAccount.current.value || '').trim() : '';
     if (!id) { addModelStatus.current.textContent = 'id is required'; return; }
+    // Require apiKey when auth is apikey and the provider needs one
+    // (Ollama is the only exception — it needs no credential).
+    if (auth === 'apikey' && provider !== 'ollama' && !apiKey) {
+      addModelStatus.current.textContent = 'API key is required for ' + provider + ' — paste your key in the field';
+      mApiKey.current.focus();
+      return;
+    }
     if (auth === 'oauth') {
       // Re-fetch so we don't accidentally publish a stale empty list
       // if the user signed in on the Auth tab without coming back here.
@@ -430,7 +476,17 @@ function SettingsPanel() {
     if (r.status === 200) {
       currentApp.models = r.body.models;
       renderModels(r.body.models);
-      addModelStatus.current.textContent = 'added ' + id + '.';
+      // Build the success message with DOM nodes: model IDs are
+      // user-defined and must never be interpreted as HTML.
+      addModelStatus.current.replaceChildren(
+        document.createTextNode('added ' + id + '. '),
+        Object.assign(document.createElement('a'), {
+          href: '#/projects',
+          className: 'link',
+          textContent: 'Open projects'
+        }),
+        document.createTextNode(' to start a chat →')
+      );
       mId.current.value = ''; mLabel.current.value = ''; mBaseUrl.current.value = ''; mApiKey.current.value = '';
       if (mOauthAccount.current) {
         mOauthAccount.current.value = '';
@@ -449,10 +505,11 @@ function SettingsPanel() {
   useEffect(() => {
     loadSettings();
     refreshAccounts().then(() => {
-      // Run the visibility toggler once so the form starts in a
-      // consistent state. Defer one frame so the details element's
-      // children are guaranteed to be in the DOM and refs attached.
-      requestAnimationFrame(() => onAuthOrProviderChange());
+      // Run the provider change handler once so the form starts in a
+      // consistent state with auto-filled fields. Defer one frame so
+      // the details element's children are guaranteed to be in the DOM
+      // and refs attached.
+      requestAnimationFrame(() => onProviderChange());
     });
     const t = setInterval(loadSettings, 30000);
     const ta = setInterval(refreshAccounts, 10000);
@@ -474,10 +531,7 @@ function SettingsPanel() {
       auth = 'oauth';
       if (mAuth.current) mAuth.current.value = 'oauth';
     }
-    // Toggle the apikey/oauth row visibility. The form renders with
-    // both rows in the DOM, so we just add/remove `.is-hidden` based
-    // on the current auth value. Uses dataset so we don't have to
-    // hardcode the row class name in the CSS rule.
+    // Toggle the apikey/oauth row visibility.
     const details = mAuth.current && mAuth.current.closest('details');
     if (details) {
       for (const row of details.querySelectorAll('.row--apikey, .row--oauth')) {
@@ -493,6 +547,13 @@ function SettingsPanel() {
           if (opt.value === 'apikey') opt.disabled = (provider === 'github-copilot');
         }
       }
+    }
+    // Also auto-fill the baseUrl.
+    const defaultUrl = DEFAULT_BASE_URLS[provider] || '';
+    const current = mBaseUrl.current ? mBaseUrl.current.value.trim() : '';
+    const knownDefaults = Object.values(DEFAULT_BASE_URLS);
+    if (!current || knownDefaults.includes(current)) {
+      if (mBaseUrl.current) mBaseUrl.current.value = defaultUrl;
     }
     refreshAccounts().then(() => renderOauthAccountOptions(provider));
   }
@@ -585,8 +646,7 @@ function SettingsPanel() {
   }
 
   return h('section', null,
-    h('h3', null, 'App'),
-    h('p', { class: 'hint hint--compact' }, 'App-level values are the default for every project. Project-level settings override them.'),
+    h('h2', null, 'App'),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'promptSize' }, 'Default prompt size'),
       h('select', { ref: promptSize, class: 'input', id: 'promptSize' },
@@ -596,31 +656,26 @@ function SettingsPanel() {
       )
     ),
     h('div', { class: 'row row--actions' },
-      h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveApp }, 'Save app settings'),
-      h('button', { ref: resetBtn, class: 'btn', type: 'button', onClick: resetApp }, 'Reset app'),
+      h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveApp }, 'Save'),
+      h('button', { ref: resetBtn, class: 'btn', type: 'button', onClick: resetApp }, 'Reset'),
       h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
     ),
-    h('h3', null, 'Models'),
-    h('p', { class: 'hint hint--compact' }, 'One entry per model. API keys live in the app SQLite store; OAuth tokens live in the OS keychain. ', h('code', null, 'github-copilot'), ' is reserved: only OAuth is accepted.'),
+    h('h2', null, 'Models'),
     h('ul', { ref: modelsList, class: 'models__list', 'aria-label': 'Configured models' }),
-    h('details', { class: 'models__add' },
+    h('details', { class: 'models__add', open: true },
       h('summary', null, 'Add a model'),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mId' }, 'id (slug)'), h('input', { ref: mId, class: 'input', id: 'mId', type: 'text', placeholder: 'gpt-4o-mini' })),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mProvider' }, 'provider'),
-        h('select', { ref: mProvider, class: 'input', id: 'mProvider',
-          onChange: onAuthOrProviderChange
-        },
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mId' }, 'Model ID'), h('input', { ref: mId, class: 'input', id: 'mId', type: 'text', placeholder: 'gpt-4o' })),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mProvider' }, 'Provider'),
+        h('select', { ref: mProvider, class: 'input', id: 'mProvider', onChange: onProviderChange },
           h('option', { value: 'openai-compatible' }, 'openai-compatible'),
           h('option', { value: 'anthropic' }, 'anthropic'),
           h('option', { value: 'gemini' }, 'gemini'),
           h('option', { value: 'ollama' }, 'ollama'),
-          h('option', { value: 'github-copilot' }, 'github-copilot (reserved — OAuth only)')
+          h('option', { value: 'github-copilot' }, 'github-copilot')
         )
       ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mAuth' }, 'auth'),
-        h('select', { ref: mAuth, class: 'input', id: 'mAuth',
-          onChange: onAuthOrProviderChange
-        },
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mAuth' }, 'Auth'),
+        h('select', { ref: mAuth, class: 'input', id: 'mAuth', onChange: onAuthOrProviderChange },
           h('option', { value: 'apikey' }, 'apikey'),
           h('option', { value: 'oauth' }, 'oauth')
         )
@@ -631,8 +686,8 @@ function SettingsPanel() {
           onChange: () => { if (mOauthAccount.current) mOauthAccount.current.setAttribute('data-prev', mOauthAccount.current.value); }
         })
       ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mLabel' }, 'label'), h('input', { ref: mLabel, class: 'input', id: 'mLabel', type: 'text', placeholder: 'GPT-4o mini' })),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mBaseUrl' }, 'base URL (optional)'), h('input', { ref: mBaseUrl, class: 'input', id: 'mBaseUrl', type: 'text', placeholder: 'https://api.openai.com' })),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mLabel' }, 'Label'), h('input', { ref: mLabel, class: 'input', id: 'mLabel', type: 'text', placeholder: 'GPT-4o' })),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mBaseUrl' }, 'Base URL'), h('input', { ref: mBaseUrl, class: 'input', id: 'mBaseUrl', type: 'text', placeholder: 'https://api.openai.com/v1' })),
       h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
         h('label', { class: 'label', for: 'mApiKey' }, 'API key'),
         h('input', { ref: mApiKey, class: 'input', id: 'mApiKey', type: 'password', placeholder: 'sk-...' })
@@ -642,23 +697,18 @@ function SettingsPanel() {
         h('span', { ref: addModelStatus, class: 'status', 'aria-live': 'polite' })
       )
     ),
-    h('h3', null, 'Project'),
-    h('p', { class: 'hint hint--compact' }, 'Project settings live in ', h('code', null, '<projectDir>/.mouaif.json'), ' and override app-level values for that project. Editing the file below saves a new version through the API.'),
-    h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'project directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
+    h('h2', null, 'Project overrides'),
+    h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'Directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
     h('div', { class: 'row row--inline' },
-      h('label', { class: 'label', for: 'loadProject' }, 'load'),
       h('button', { ref: loadProject, class: 'btn', id: 'loadProject', type: 'button', onClick: loadProjectAndResolved }, 'Load'),
       h('span', { ref: projectStatus, class: 'status', 'aria-live': 'polite' })
     ),
-    h('label', { class: 'label', for: 'projectEditor' }, 'project settings (JSON)'),
     h('textarea', { ref: projectEditor, class: 'input', id: 'projectEditor', rows: 10, hidden: true, spellcheck: false }),
     h('div', { class: 'row row--actions' },
-      h('button', { ref: saveProject, class: 'btn btn--primary', type: 'button', onClick: saveProjectFile, disabled: true }, 'Save project'),
+      h('button', { ref: saveProject, class: 'btn btn--primary', type: 'button', onClick: saveProjectFile, disabled: true }, 'Save'),
       h('button', { ref: revertProject, class: 'btn', type: 'button', onClick: revertProjectFile, disabled: true }, 'Revert'),
       h('span', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' })
     ),
-    h('h3', null, 'Resolved (effective for project)'),
-    h('p', { class: 'hint hint--compact' }, 'The merge of defaults → app → project for ', h('span', { ref: resolvedDir, class: 'code-inline' }, '(load a project above)'), '. What the chat layer actually sees (decision §2).'),
     h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true })
   );
 }
