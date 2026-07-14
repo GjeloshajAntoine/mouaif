@@ -166,10 +166,9 @@ html, body {
    the brand. */
 
 .app__header {
-  padding: calc(var(--safe-top) + 6px) var(--pad-x) 8px;
+  padding: calc(var(--safe-top) + 6px) var(--pad-x) 6px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
@@ -208,9 +207,9 @@ html, body {
   line-height: 1.1;
 }
 
-/* Empty slot on the right of the header. Matches the logo size so a
-   future header action sits flush with the brand. */
-.app__header-spacer { width: 24px; height: 24px; flex-shrink: 0; }
+/* (No right-side header spacer. The brand is the only header
+   content today. A future header action (search, profile) can
+   live in the same row without needing a placeholder.) */
 
 /* ---- Bottom tab bar ------------------------------------------------ */
 
@@ -341,6 +340,12 @@ section h3:first-of-type { margin-top: 8px; }
   font-size: 0.82rem;
   line-height: 1.45;
   margin: 0 0 10px;
+}
+.hint--compact {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  margin: 0 0 8px;
+  color: var(--muted);
 }
 .hint code {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -600,10 +605,10 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   box-shadow: var(--shadow-sm);
 }
 .project-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -824,8 +829,10 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   flex-direction: column;
   gap: 8px;
   /* The chat view fills the main region minus the safe-area top so
-     the transcript and composer have room to breathe. */
-  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 64px);
+     the transcript and composer have room to breathe. The head is
+     the only chrome row now (settings live in a popover), so the
+     offset is smaller than before. */
+  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 56px);
 }
 
 .chat-view__head {
@@ -834,6 +841,23 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   gap: 6px;
   padding: 2px 0 8px;
   border-bottom: 1px solid var(--border);
+}
+
+/* Model select lives in the head row, not in the composer. It
+   takes the remaining space and shrinks so the title and action
+   buttons still fit on a 360 px viewport. */
+.chat-view__model {
+  min-height: var(--tap);
+  height: var(--tap);
+  padding: 4px 26px 4px 8px;
+  font-size: 0.82rem;
+  max-width: 130px;
+  flex-shrink: 1;
+  min-width: 0;
+  /* Same `width: auto` reset as the composer textarea. The base
+     .input class sets width: 100%, which collapses the select in
+     a flex row. */
+  width: auto;
 }
 .chat-view__back {
   font: inherit;
@@ -887,24 +911,37 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-view__name:hover { color: var(--accent); }
 .chat-view__meta { color: var(--muted); font-size: 0.7rem; }
 
-/* Inline chat settings: horizontal scroll on small screens */
-.chat-view__settings {
+/* Inline chat settings: a popover anchored to the head's ⚙ button.
+   The strip that used to live below the head is gone — it ate a
+   whole row on a phone and pushed the transcript off-screen. The
+   popover holds the trace toggle + prompt-size selector and only
+   appears on demand. */
+.chat-view__settings-wrap { position: relative; }
+.chat-view__settings-pop[hidden] { display: none !important; }
+.chat-view__settings-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 10px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+  box-shadow: var(--shadow-lg);
+}
+.chat-view__settings-row {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  overflow-x: auto;
-  scrollbar-width: none;
+  margin: 0;
+  white-space: nowrap;
 }
-.chat-view__settings::-webkit-scrollbar { display: none; }
-.chat-view__settings .row { margin: 0; flex-direction: row; align-items: center; gap: 6px; flex-shrink: 0; }
-.chat-view__settings .row--inline { flex-shrink: 0; }
-.chat-view__settings .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; }
-.chat-view__settings .label { white-space: nowrap; }
+.chat-view__settings-row .label { white-space: nowrap; }
+.chat-view__settings-row .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; flex: 1; min-width: 0; }
 
 /* Transcript */
 .chat-view__transcript {
@@ -1020,12 +1057,18 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
 
-/* Composer */
+/* Composer: a single horizontal row — textarea + send button —
+   with the status line wrapping to the next line. The previous
+   design had a separate Model <select> on top and a label row on
+   top of the textarea; both are gone (the model lives in the head
+   row, the label is replaced by a placeholder). */
 .chat-view__composer {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -1033,12 +1076,48 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   position: sticky;
   bottom: calc(var(--safe-bottom) + 6px);
 }
-.chat-view__composer .row { margin-bottom: 0; }
-.chat-view__composer .row--inline { gap: 6px; }
-.chat-view__composer .input { background: var(--bg); }
-.chat-view__composer .row--actions { gap: 6px; }
-.chat-view__composer .btn--primary { min-width: 76px; }
-.chat-view__composer .status { margin-left: auto; }
+.chat-view__textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--bg);
+  resize: none;
+  font-family: inherit;
+  height: 40px;
+  min-height: 40px;
+  max-height: 140px;
+  line-height: 1.4;
+  padding: 9px 10px;
+  /* The base .input class sets width: 100%. That wins over the
+     flex sizing in a row container, collapsing the textarea to
+     its intrinsic width. Reset to auto so the flex shorthand
+     above drives the width. */
+  width: auto;
+  /* Auto-grow is handled by JS (textarea height) since `field-sizing:
+     content` is not yet stable. We zero out the inline height before
+     measuring scrollHeight so a long paste that already expanded the
+     box re-measures correctly. */
+  overflow-y: auto;
+}
+.chat-view__send {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  min-height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+}
+.chat-view__send svg { display: block; margin-left: -2px; }
+.chat-view__status {
+  margin: 0;
+  /* Sits on its own line under the input so a long streaming
+     status does not crowd the textarea. The row is built with
+     `flex-wrap`, so the status wraps to the next line because its
+     `flex-basis: 100%` is wider than the available width on the
+     current line. We must NOT use flex-grow: 1 here, otherwise it
+     would also steal space from the textarea on the same line. */
+  flex: 0 0 100%;
+  font-size: 0.74rem;
+}
 
 /* ---- Small screens / desktop fallback ---------------------------- */
 

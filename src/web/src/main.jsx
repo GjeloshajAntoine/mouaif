@@ -83,17 +83,16 @@ function App() {
 }
 
 function Header() {
-  // The header is the brand block on the left plus a transparent
-  // spacer on the right. The spacer is a layout placeholder so a
-  // future header action (e.g. a search icon) can sit there without
-  // pushing the brand around. Kept as small as possible — single
-  // line, no subtitle — to maximize the content area on a phone.
+  // The header is just the brand block: a 24 px logo tile and the
+  // title on a single line. No subtitle, no right-side action; a
+  // future header action (search, profile) can sit in the same row
+  // next to the brand. Kept as small as possible to maximize the
+  // content area on a phone.
   return h('header', { class: 'app__header' },
     h('div', { class: 'app__brand' },
       h('span', { class: 'app__logo', 'aria-hidden': 'true' }, 'm'),
       h('h1', { class: 'app__title' }, 'mouaif')
-    ),
-    h('span', { class: 'app__header-spacer', 'aria-hidden': 'true' })
+    )
   );
 }
 
@@ -226,10 +225,9 @@ function AuthPanel() {
   }
 
   return h('section', null,
-    h('p', { class: 'hint' }, 'OAuth tokens live in the OS keychain. The accounts list is read from ', h('code', null, '/api/auth/accounts'), '.'),
     h('pre', { ref: authOut, class: 'settings__out', 'aria-label': 'Auth status' }, 'loading…'),
     h('h3', { class: 'auth__sub' }, 'Sign in with Anthropic'),
-    h('p', { class: 'hint' }, 'Opens the public Anthropic OAuth flow. PKCE S256. The access token is stored in the OS keychain under ', h('code', null, 'mouaif/anthropic'), '.'),
+    h('p', { class: 'hint hint--compact' }, 'Public OAuth flow, PKCE S256. Token is stored in the OS keychain under ', h('code', null, 'mouaif/anthropic'), '.'),
     h('div', { class: 'row' },
       h('button', { ref: signInAnthropic, class: 'btn btn--primary', type: 'button', onClick: startSignIn }, 'Sign in with Anthropic'),
       h('span', { ref: signInStatus, class: 'status', 'aria-live': 'polite' })
@@ -455,7 +453,6 @@ function SettingsPanel() {
   }
 
   return h('section', null,
-    h('p', { class: 'hint' }, 'App-level settings are stored in ', h('code', null, '~/.mouaif/store.sqlite'), '. They are the default; project settings override per project.'),
     h('h3', null, 'App'),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'promptSize' }, 'Default prompt size'),
@@ -471,7 +468,7 @@ function SettingsPanel() {
       h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
     ),
     h('h3', null, 'Models'),
-    h('p', { class: 'hint' }, 'Add an entry per model you want to chat with. API keys are stored as plain text in the app SQLite store. For OAuth models, sign in on the Auth tab first — the access token lives in the OS keychain and is never sent to the browser.'),
+    h('p', { class: 'hint hint--compact' }, 'One entry per model. API keys live in the app SQLite store; OAuth tokens live in the OS keychain.'),
     h('ul', { ref: modelsList, class: 'models__list', 'aria-label': 'Configured models' }),
     h('details', { class: 'models__add' },
       h('summary', null, 'Add a model'),
@@ -510,7 +507,7 @@ function SettingsPanel() {
       )
     ),
     h('h3', null, 'Project'),
-    h('p', { class: 'hint' }, 'Project settings live in ', h('code', null, '<projectDir>/.mouaif.json'), ' and override app-level values for that project.'),
+    h('p', { class: 'hint hint--compact' }, 'Project settings live in ', h('code', null, '<projectDir>/.mouaif.json'), ' and override app-level values for that project.'),
     h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'project directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
     h('div', { class: 'row row--inline' },
       h('label', { class: 'label', for: 'loadProject' }, 'load'),
@@ -1248,8 +1245,6 @@ function ProjectsView() {
   useEffect(() => { loadProjects(); }, [projectsReload.value]);
 
   return h('section', null,
-    h('h2', null, 'Projects'),
-    h('p', { class: 'hint' }, 'Each card is a registered project. The chat list scrolls inside the card so the page itself stays put. New chats inherit the project\'s ', h('code', null, 'promptSize'), ' setting and always start with tracing off.'),
     h('div', { class: 'row row--actions' },
       h('button', { class: 'btn btn--primary', type: 'button', onClick: () => nav('projects/new') }, '+ Add project'),
       h('button', { ref: refreshProjects, class: 'btn', type: 'button', onClick: loadProjects }, 'Refresh'),
@@ -1445,7 +1440,7 @@ function ChatView(props) {
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir))
     ]);
-    if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; return; }
+    if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
     const c = rChat.body.chat;
     chat.value = c;
     messages.value = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
@@ -1456,23 +1451,29 @@ function ChatView(props) {
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     if (promptSizeSelect.current) promptSizeSelect.current.value = c.promptSize || 'average';
 
-    if (modelSelect.current) {
-      modelSelect.current.innerHTML = '';
-      for (const m of models.value) {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.id + (m.label ? ' — ' + m.label : '');
-        modelSelect.current.appendChild(opt);
-      }
-      if (!models.value.length) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '(no models — add one in Settings)';
-        modelSelect.current.appendChild(opt);
-      }
-    }
+    if (modelSelect.current) populateModelSelect(models.value);
 
     renderTranscript();
+  }
+
+  // Render the model <select> from a list. Used by load() on the
+  // happy path and on the chat-not-found path so the head never
+  // shows a blank dropdown.
+  function populateModelSelect(list) {
+    if (!modelSelect.current) return;
+    modelSelect.current.innerHTML = '';
+    for (const m of list) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.id + (m.label ? ' — ' + m.label : '');
+      modelSelect.current.appendChild(opt);
+    }
+    if (!list.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(no models — add one in Settings)';
+      modelSelect.current.appendChild(opt);
+    }
   }
 
   function renderTranscript() {
@@ -1597,6 +1598,7 @@ function ChatView(props) {
     sendBtn.current.disabled = true;
     setChatStatus('streaming…', 'busy');
     promptInput.current.value = '';
+    autoresize();
 
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
     messages.value = messages.value.concat([userMsg]);
@@ -1650,6 +1652,66 @@ function ChatView(props) {
     sendBtn.current.disabled = false;
   }
 
+  // Popover state for the ⚙ button in the head. Hidden by default;
+  // tapping the button toggles the inline panel that holds the
+  // trace toggle + prompt-size selector. Kept as a ref (not state)
+  // so Preact doesn't tear down the popover's event listeners on
+  // every change.
+  const settingsPopRef = useRef(null);
+  const settingsBtnRef = useRef(null);
+
+  // Auto-grow the composer textarea. We listen on input, reset the
+  // height to 0 so scrollHeight measures the new content, then set
+  // the height to the measured value (clamped via CSS to a 140 px
+  // max). Listening on input (not keydown) so paste / cut also work.
+  // Called once on mount so a long initial draft is sized correctly.
+  function autoresize() {
+    const el = promptInput.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(140, Math.max(40, el.scrollHeight));
+    el.style.height = next + 'px';
+  }
+
+  function toggleSettings() {
+    const pop = settingsPopRef.current;
+    const btn = settingsBtnRef.current;
+    if (!pop || !btn) return;
+    const open = pop.hidden;
+    pop.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  }
+
+  useEffect(() => {
+    // Close the settings popover on outside click / Escape. We attach
+    // once on mount and rely on the unmount to detach it; the
+    // popover's `hidden` attribute is the source of truth.
+    function close() { if (settingsPopRef.current && !settingsPopRef.current.hidden) { settingsPopRef.current.hidden = true; if (settingsBtnRef.current) settingsBtnRef.current.setAttribute('aria-expanded', 'false'); } }
+    function onDocClick(e) { const pop = settingsPopRef.current; const btn = settingsBtnRef.current; if (!pop || pop.hidden) return; if (pop.contains(e.target) || (btn && btn.contains(e.target))) return; close(); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
+    // Composer textarea auto-grow. We listen on input so paste,
+    // cut, and IME end also reset the height.
+    if (promptInput.current) { promptInput.current.addEventListener('input', autoresize); autoresize(); }
+    return () => {
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onKey);
+      if (promptInput.current) promptInput.current.removeEventListener('input', autoresize);
+    };
+  }, []);
+
+  // Enter sends, Shift+Enter inserts a newline. The composer is
+  // a single-line textarea by default (it grows to multiple lines
+  // as the user types), so Enter-to-send matches the user's
+  // expectation for a chat app.
+  function onComposerKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      send();
+    }
+  }
+
   useEffect(() => { load(); }, [chatId, projectDir]);
 
   return h('section', { class: 'chat-view' },
@@ -1659,37 +1721,40 @@ function ChatView(props) {
         h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
       ),
+      h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model' }),
+      h('div', { class: 'chat-view__settings-wrap' },
+        h('button', { ref: settingsBtnRef, class: 'chat-view__iconbtn', type: 'button', onClick: toggleSettings, 'aria-label': 'Chat settings', 'aria-expanded': 'false', title: 'Settings' },
+          h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+            h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })
+          )
+        ),
+        h('div', { ref: settingsPopRef, class: 'chat-view__settings-pop', hidden: true, role: 'dialog', 'aria-label': 'Chat settings' },
+          h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPromptSize' },
+            h('span', { class: 'label' }, 'Prompt size'),
+            h('select', { ref: promptSizeSelect, class: 'input', id: 'chatPromptSize', onChange: onPromptSizeChange },
+              h('option', { value: 'very-small' }, 'very-small'),
+              h('option', { value: 'average' }, 'average'),
+              h('option', { value: 'extensive' }, 'extensive')
+            )
+          ),
+          h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatTrace' },
+            h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),
+            h('span', { class: 'label' }, 'Trace to file')
+          )
+        )
+      ),
       h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
       h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×')
     ),
-    h('div', { class: 'chat-view__settings' },
-      h('div', { class: 'row row--inline' },
-        h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),
-        h('label', { class: 'label', for: 'chatTrace' }, 'Trace to file')
-      ),
-      h('div', { class: 'row row--inline' },
-        h('label', { class: 'label', for: 'chatPromptSize' }, 'Prompt size'),
-        h('select', { ref: promptSizeSelect, class: 'input', id: 'chatPromptSize', onChange: onPromptSizeChange },
-          h('option', { value: 'very-small' }, 'very-small'),
-          h('option', { value: 'average' }, 'average'),
-          h('option', { value: 'extensive' }, 'extensive')
-        )
-      )
-    ),
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'chatModel' }, 'Model'),
-        h('select', { ref: modelSelect, class: 'input', id: 'chatModel' })
+      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatPrompt', rows: 1, placeholder: 'Type a message', onKeydown: onComposerKey }),
+      h('button', { ref: sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
+        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+          h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
+        )
       ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'chatPrompt' }, 'Message'),
-        h('textarea', { ref: promptInput, class: 'input', id: 'chatPrompt', rows: 3, placeholder: 'Type a message' })
-      ),
-      h('div', { class: 'row row--actions' },
-        h('button', { ref: sendBtn, class: 'btn btn--primary', type: 'button', onClick: send }, 'Send'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
-      )
+      h('span', { ref: statusEl, class: 'status chat-view__status', 'aria-live': 'polite' })
     )
   );
 }

@@ -24,7 +24,7 @@ The build target is 360–430 px wide; the app is a 480 px-max-width column cent
 
 The shell is a full-viewport flex column (`min-height: 100dvh`). Three regions stack top → bottom, and the whole UI is tuned to be as small as possible on a phone:
 
-1. **Header** — single-line brand block: a 24 × 24 px blue logo tile with the letter "m" and the title "mouaif". No subtitle, no second row; the right side carries a 24 × 24 px transparent spacer so a future header action (search, profile) can sit there without shifting the brand.
+1. **Header** — single-line brand block: a 24 × 24 px blue logo tile with the letter "m" and the title "mouaif". No subtitle, no second row, no right-side spacer. A future header action (search, profile) can sit in the same row next to the brand.
 2. **Main** — the scrollable content. Reserves `padding-bottom: var(--tabbar-h) + var(--safe-bottom)` so the last row never sits under the tab bar. Drill-in screens (chat, picker) use `.app__main--flush` and own the safe area themselves.
 3. **Bottom tab bar** — sticky child of the shell, 52 px tall (incl. safe area). Hidden on drill-in screens.
 
@@ -85,14 +85,20 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 
 ## Per-chat controls
 
-The chat head has a small toolbar of icon buttons (44 × 44 px, mobile-first):
+The chat head is a single compact row: back / title+meta / model / settings / rename / delete. The model picker lives in the head, not in the composer — it shrinks (`max-width: 130px`) and is always reachable. The Trace + Prompt-size controls live in a small popover anchored to the ⚙ button; tapping the button toggles the popover, tapping outside or pressing Escape closes it. Keeping these in a popover (instead of a second row under the head) reclaims a full row of vertical space for the transcript on a 360 px viewport.
 
+- **Model** — `<select>` in the head. `GET /api/ai/models?projectDir=…` populates it on load. The current value is read on send.
+- **⚙ Settings** — opens the settings popover. Inside:
+  - **Prompt size** — select with `very-small | average | extensive`. `PATCH` with `{ promptSize }`. The same value is read on the server when the chat is opened, so the next message uses the new profile.
+  - **Trace to file** — checkbox. `PATCH` with `{ trace: bool }`. The meta line under the title (`<promptSize> · trace on/off`) updates on success. The trace writer in [src/trace.js](../../src/trace.js) is already gated on `chat.trace`, so flipping this on mid-conversation starts writing `<projectDir>/.mouaif/traces/<chatId>.ndjson` from the next event.
 - **✎ Rename** — `prompt()` for a new title, `PATCH /api/chats/:id` with `{ title }`. The visible title updates immediately on success; the chat list in the project card refreshes on next render.
 - **× Delete** — `confirm()` then `DELETE /api/chats/:id?projectDir=…`. Bumps `projectsReload` so the project card refetches, and navigates back to `#/projects`. The on-disk transcript is removed and the project's `.mouaif.json` loses the chat entry. The trace file is deliberately kept because it is an independent, user-owned export per [docs/decisions.md §5](../decisions.md).
-- **Trace to file** — checkbox below the head. `PATCH` with `{ trace: bool }`. The meta line under the title (`<promptSize> · trace on/off`) updates on success. The trace writer in [src/trace.js](../../src/trace.js) is already gated on `chat.trace`, so flipping this on mid-conversation starts writing `<projectDir>/.mouaif/traces/<chatId>.ndjson` from the next event.
-- **Prompt size** — select with `very-small | average | extensive`. `PATCH` with `{ promptSize }`. The same value is read on the server when the chat is opened, so the next message uses the new profile.
 
-All four controls share a single `updateChat(patch)` helper. On success it overwrites the local `chat` signal with the server's response, which is the single source of truth for the head's title, meta line, and the trace / promptSize controls. On failure the status line shows the HTTP code and nothing on the page changes.
+All four `PATCH`-style controls share a single `updateChat(patch)` helper. On success it overwrites the local `chat` signal with the server's response, which is the single source of truth for the head's title, meta line, and the popover's trace / promptSize controls. On failure the status line shows the HTTP code and nothing on the page changes.
+
+## Composer
+
+The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 44 px square send button + a status line below. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `0` on every `input` event, then set to `Math.min(140, Math.max(40, scrollHeight))` so it grows with the content (capped at 140 px so a very long paste doesn't push the transcript off-screen). After a send the textarea is cleared and re-measured, so the composer collapses back to its 40 px single-line height.
 
 ## Implementation notes
 
