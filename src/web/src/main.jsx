@@ -246,11 +246,16 @@ function SettingsPanel() {
 
   const modelsList = useRef(null);
   const mId = useRef(null), mProvider = useRef(null), mLabel = useRef(null), mBaseUrl = useRef(null), mApiKey = useRef(null);
+  const mAuth = useRef(null), mOauthAccount = useRef(null);
   const addBtn = useRef(null), addModelStatus = useRef(null);
 
   const projectDir = useRef(null), loadProject = useRef(null), projectStatus = useRef(null), projectOut = useRef(null);
 
   let currentApp = {};
+  // Most recent snapshot of /api/auth/accounts. Re-fetched when the
+  // user toggles auth to "oauth" so the oauthAccount <select> can
+  // show the signed-in emails for the chosen provider.
+  let lastAccounts = {};
 
   async function loadSettings() {
     const r = await fetchJson('/api/settings');
@@ -260,6 +265,45 @@ function SettingsPanel() {
     if (traceByDefault.current) traceByDefault.current.checked = !!currentApp.traceByDefault;
     renderModels(currentApp.models || []);
     if (appStatus.current) appStatus.current.textContent = '';
+  }
+
+  async function refreshAccounts() {
+    const r = await fetchJson('/api/auth/accounts');
+    if (r.status === 200) lastAccounts = (r.body && r.body.accounts) || {};
+    return lastAccounts;
+  }
+
+  function providerKeyringNamespace(provider) {
+    // For now, the keyring namespace for OAuth equals the AI client
+    // provider (anthropic → anthropic). If a future provider diverges
+    // (e.g. openai-compatible keyring, github-copilot keyring), this
+    // is the one place to teach the UI about it.
+    return provider;
+  }
+
+  function renderOauthAccountOptions(provider) {
+    const sel = mOauthAccount.current;
+    if (!sel) return;
+    const ns = providerKeyringNamespace(provider);
+    const accounts = (lastAccounts[ns] || []).slice();
+    sel.innerHTML = '';
+    // "(auto)" is the default and matches auth.resolveAccount's
+    // single-account fallback. With multiple signed-in accounts, the
+    // user must pick one explicitly.
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = accounts.length === 0
+      ? '(auto — no accounts signed in)'
+      : (accounts.length === 1
+          ? '(auto — ' + accounts[0] + ')'
+          : '(auto — pick one when multiple are signed in)');
+    sel.appendChild(opt0);
+    for (const a of accounts) {
+      const opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a;
+      sel.appendChild(opt);
+    }
   }
 
   function renderModels(list) {
@@ -280,7 +324,15 @@ function SettingsPanel() {
       del.addEventListener('click', () => deleteModel(m.id));
       row.appendChild(idSpan); row.appendChild(del);
       const meta = document.createElement('div'); meta.className = 'models__meta';
-      meta.textContent = [m.label, m.baseUrl, m.apiKey ? 'key: •••' : null, m.auth && m.auth !== 'apikey' ? 'auth: ' + m.auth : null].filter(Boolean).join('  ·  ');
+      const auth = m.auth || 'apikey';
+      const bits = [m.label, m.baseUrl];
+      if (auth === 'oauth') {
+        bits.push('auth: oauth');
+        if (m.oauthAccount) bits.push('account: ' + m.oauthAccount);
+      } else if (m.apiKey) {
+        bits.push('key: •••');
+      }
+      meta.textContent = bits.filter(Boolean).join('  ·  ');
       li.appendChild(row); li.appendChild(meta);
       modelsList.current.appendChild(li);
     }
@@ -311,12 +363,25 @@ function SettingsPanel() {
     const label = (mLabel.current.value || '').trim() || id;
     const baseUrl = (mBaseUrl.current.value || '').trim();
     const apiKey = (mApiKey.current.value || '').trim();
+    const auth = mAuth.current ? mAuth.current.value : 'apikey';
+    const oauthAccount = mOauthAccount.current ? (mOauthAccount.current.value || '').trim() : '';
     if (!id) { addModelStatus.current.textContent = 'id is required'; return; }
+    if (auth === 'oauth') {
+      // Re-fetch so we don't accidentally publish a stale empty list
+      // if the user signed in on the Auth tab without coming back here.
+      await refreshAccounts();
+      const list = lastAccounts[providerKeyringNamespace(provider)] || [];
+      if (list.length === 0) {
+        addModelStatus.current.textContent = 'no signed-in account for "' + provider + '" — sign in on the Auth tab first';
+        return;
+      }
+    }
     addBtn.current.disabled = true;
     addModelStatus.current.textContent = 'adding…';
-    const body = { id, provider, label };
+    const body = { id, provider, label, auth };
     if (baseUrl) body.baseUrl = baseUrl;
-    if (apiKey) body.apiKey = apiKey;
+    if (auth === 'apikey' && apiKey) body.apiKey = apiKey;
+    if (auth === 'oauth' && oauthAccount) body.oauthAccount = oauthAccount;
     const r = await fetchJson('/api/settings/app/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     addBtn.current.disabled = false;
     if (r.status === 200) {
@@ -324,6 +389,7 @@ function SettingsPanel() {
       renderModels(r.body.models);
       addModelStatus.current.textContent = 'added ' + id + '.';
       mId.current.value = ''; mLabel.current.value = ''; mBaseUrl.current.value = ''; mApiKey.current.value = '';
+      if (mOauthAccount.current) mOauthAccount.current.value = '';
     } else addModelStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
   }
 
@@ -348,7 +414,40 @@ function SettingsPanel() {
     } else { projectStatus.current.textContent = 'HTTP ' + r.status; projectOut.current.hidden = true; }
   }
 
-  useEffect(() => { loadSettings(); const t = setInterval(loadSettings, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    loadSettings();
+    refreshAccounts().then(() => {
+      // Run the visibility toggler once so the form starts in a
+      // consistent state. Defer one frame so the details element's
+      // children are guaranteed to be in the DOM and refs attached.
+      requestAnimationFrame(() => onAuthOrProviderChange());
+    });
+    const t = setInterval(loadSettings, 30000);
+    const ta = setInterval(refreshAccounts, 10000);
+    return () => { clearInterval(t); clearInterval(ta); };
+  }, []);
+
+  // When the user toggles auth <-> oauth, or picks a different
+  // provider, refresh the oauthAccount <select> so it lists the
+  // signed-in emails for that provider (if any). For apikey auth,
+  // we still rebuild the select so the "(auto — none signed in)"
+  // hint stays accurate, but the field is hidden via CSS below.
+  function onAuthOrProviderChange() {
+    const auth = mAuth.current ? mAuth.current.value : 'apikey';
+    // Toggle the apikey/oauth row visibility. The form renders with
+    // both rows in the DOM, so we just add/remove `.is-hidden` based
+    // on the current auth value. Uses dataset so we don't have to
+    // hardcode the row class name in the CSS rule.
+    const details = mAuth.current && mAuth.current.closest('details');
+    if (details) {
+      for (const row of details.querySelectorAll('.row--apikey, .row--oauth')) {
+        const showWhen = row.getAttribute('data-show-when');
+        if (!showWhen) continue;
+        row.classList.toggle('is-hidden', showWhen !== auth);
+      }
+    }
+    refreshAccounts().then(() => renderOauthAccountOptions(mProvider.current.value));
+  }
 
   return h('section', null,
     h('p', { class: 'hint' }, 'App-level settings are stored in ', h('code', null, '~/.mouaif/store.sqlite'), '. They are the default; project settings override per project.'),
@@ -371,22 +470,39 @@ function SettingsPanel() {
       h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
     ),
     h('h3', null, 'Models'),
-    h('p', { class: 'hint' }, 'Add an entry per model you want to chat with. API keys are stored as plain text in the app SQLite store.'),
+    h('p', { class: 'hint' }, 'Add an entry per model you want to chat with. API keys are stored as plain text in the app SQLite store. For OAuth models, sign in on the Auth tab first — the access token lives in the OS keychain and is never sent to the browser.'),
     h('ul', { ref: modelsList, class: 'models__list', 'aria-label': 'Configured models' }),
     h('details', { class: 'models__add' },
       h('summary', null, 'Add a model'),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mId' }, 'id (slug)'), h('input', { ref: mId, class: 'input', id: 'mId', type: 'text', placeholder: 'gpt-4o-mini' })),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mProvider' }, 'provider'),
-        h('select', { ref: mProvider, class: 'input', id: 'mProvider' },
+        h('select', { ref: mProvider, class: 'input', id: 'mProvider',
+          onChange: onAuthOrProviderChange
+        },
           h('option', { value: 'openai-compatible' }, 'openai-compatible'),
           h('option', { value: 'anthropic' }, 'anthropic'),
           h('option', { value: 'gemini' }, 'gemini'),
           h('option', { value: 'ollama' }, 'ollama')
         )
       ),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mAuth' }, 'auth'),
+        h('select', { ref: mAuth, class: 'input', id: 'mAuth',
+          onChange: onAuthOrProviderChange
+        },
+          h('option', { value: 'apikey' }, 'apikey'),
+          h('option', { value: 'oauth' }, 'oauth')
+        )
+      ),
+      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
+        h('label', { class: 'label', for: 'mOauthAccount' }, 'OAuth account'),
+        h('select', { ref: mOauthAccount, class: 'input', id: 'mOauthAccount' })
+      ),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mLabel' }, 'label'), h('input', { ref: mLabel, class: 'input', id: 'mLabel', type: 'text', placeholder: 'GPT-4o mini' })),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mBaseUrl' }, 'base URL (optional)'), h('input', { ref: mBaseUrl, class: 'input', id: 'mBaseUrl', type: 'text', placeholder: 'https://api.openai.com' })),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mApiKey' }, 'API key'), h('input', { ref: mApiKey, class: 'input', id: 'mApiKey', type: 'password', placeholder: 'sk-...' })),
+      h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
+        h('label', { class: 'label', for: 'mApiKey' }, 'API key'),
+        h('input', { ref: mApiKey, class: 'input', id: 'mApiKey', type: 'password', placeholder: 'sk-...' })
+      ),
       h('div', { class: 'row row--actions' },
         h('button', { ref: addBtn, class: 'btn btn--primary', type: 'button', onClick: addModel }, 'Add'),
         h('span', { ref: addModelStatus, class: 'status', 'aria-live': 'polite' })

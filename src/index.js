@@ -288,6 +288,23 @@ async function handleSettings(req, res, parsed) {
     if (!body || typeof body !== 'object' || !body.id || typeof body.id !== 'string') {
       return sendJSON(res, 400, { error: 'id is required' });
     }
+    // Light validation: auth enum, oauthAccount shape, and a sanity
+    // check that OAuth models don't carry a stale apiKey. We don't
+    // enforce provider↔auth combos here (e.g. anthropic + oauth is
+    // valid, openai-compatible + apikey is valid); that's the AI
+    // client's job at request time.
+    if (body.auth !== undefined && body.auth !== 'apikey' && body.auth !== 'oauth') {
+      return sendJSON(res, 400, { error: 'auth must be "apikey" or "oauth"' });
+    }
+    if (body.oauthAccount !== undefined && (typeof body.oauthAccount !== 'string' || body.oauthAccount.length > 256)) {
+      return sendJSON(res, 400, { error: 'oauthAccount must be a string' });
+    }
+    if (body.auth === 'oauth' && body.apiKey) {
+      // OAuth models must not carry a leftover apiKey from a previous
+      // apikey-mode entry. Drop it on merge rather than 400 — the user
+      // may have toggled auth modes and forgotten to clear the key.
+      delete body.apiKey;
+    }
     const app = settings.getApp();
     const models = Array.isArray(app.models) ? app.models.slice() : [];
     const idx = models.findIndex(m => m && m.id === body.id);
@@ -295,6 +312,9 @@ async function handleSettings(req, res, parsed) {
       return sendJSON(res, 400, { error: 'provider is required when adding a new model' });
     }
     const merged = Object.assign({}, idx >= 0 ? models[idx] : {}, body);
+    // Same dedup for the merged result (an existing apikey record
+    // toggled to oauth would still carry apiKey from the prior entry).
+    if (merged.auth === 'oauth') delete merged.apiKey;
     if (idx >= 0) models[idx] = merged; else models.push(merged);
     try {
       const next = settings.setApp({ models });

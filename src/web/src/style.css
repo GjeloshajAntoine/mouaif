@@ -453,6 +453,14 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .models__add[open] summary,
 .picker__create[open] summary { margin-bottom: 6px; }
 
+/* The "Add a model" form has two fields that must be visible only for
+   one of the auth modes (apiKey for apikey, oauthAccount for oauth).
+   A tiny script (see end of style.css, in the inline loader block
+   below) toggles `.is-hidden` on the row that does not match the
+   current auth select value. The default state is the apikey row
+   visible and the oauth row hidden, matching the default select. */
+.models__add .row.is-hidden { display: none; }
+
 .settings__out {
   margin: 8px 0 0;
   padding: 12px;
