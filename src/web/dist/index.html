@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  mouaif web entry. Served by `mouaif serve` at /web/.
+
+  Build:
+    npm run build:web      # writes src/web/dist/
+
+  Dev (with HMR):
+    npm run dev:web        # vite dev server on :5173 (optional)
+
+  The script and style references are relative so Vite can resolve and
+  hash them at build time. The base URL in vite.config.js adds the
+  /web/ prefix when the bundle is served.
+
+  This page is the mobile UI for mouaif. It is a Preact + Vite app
+  served from /web/dist/ by the Node server. See docs/decisions.md
+  sections 7 and 8.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111418" />
+  <title>mouaif</title>
+  <script type="module" crossorigin src="/web/assets/index.js"></script>
+  <link rel="stylesheet" crossorigin href="/web/assets/index-DkTi9lTA.css">
+</head>
+<body>
+  <main id="app"></main>
+</body>
+</html>

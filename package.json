@@ -14,7 +14,9 @@
   "scripts": {
     "start": "node bin/mouaif.js",
     "dev": "node --watch bin/mouaif.js",
-    "prepublishOnly": "node -c bin/mouaif.js && node -c src/index.js"
+    "dev:web": "vite --config src/web/vite.config.js",
+    "build:web": "vite build --config src/web/vite.config.js",
+    "prepublishOnly": "node -c bin/mouaif.js && node -c src/index.js && node -c src/messages.js && node -c src/trace.js && node -c src/oauth-anthropic.js && node -c src/chats.js && node -c src/projects.js && node -c src/settings.js && node -c src/ai.js && node -c src/auth.js"
   },
   "keywords": [
     "cli",
@@ -26,10 +28,16 @@
   "license": "MIT",
   "dependencies": {
     "@napi-rs/keyring": "^1.3.0",
+    "@preact/signals": "^1.3.4",
     "better-sqlite3": "^11.10.0",
-    "commander": "^12.0.0"
+    "commander": "^12.0.0",
+    "preact": "^10.29.7"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
+    "vite": "^5.4.21"
   }
 }

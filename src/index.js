@@ -9,6 +9,8 @@ const ai = require('./ai.js');
 const auth = require('./auth.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
 const chats = require('./chats.js');
+const messages = require('./messages.js');
+const trace = require('./trace.js');
 
 // Register Anthropic's per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -17,6 +19,10 @@ oauthAnthropic.register();
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
+// Vite builds the mobile UI into src/web/dist/. The /web/ route serves
+// that directory when it exists; otherwise it falls back to the
+// pre-build src/web/ source for the dev cycle (no Vite build run yet).
+const WEB_DIST = path.join(WEB_DIR, 'dist');
 
 // Store connected SSE clients
 const sseClients = new Set();
@@ -82,11 +88,12 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleSSE(req, res);
   }
 
-  // Static /web/ (mobile UI bundle). Files live in src/web/. Alias
-  // /web/virtual-list.js -> src/virtual-list.js so the same source powers
-  // both the Node require() and the browser module.
+  // Static /web/ (mobile UI bundle). Prefers the Vite build at
+  // src/web/dist/; falls back to src/web/ when the build hasn't run yet
+  // (e.g. during development before `npm run build:web`). This lets the
+  // repo keep working in either state without breaking.
   if (urlPath === '/web' || urlPath === '/web/') {
-    return serveWebFile(res, 'index.html');
+    return serveWebFile(res, 'index.html', { preferDist: true });
   }
   if (urlPath.startsWith('/web/')) {
     return serveWebRequest(res, urlPath.slice('/web/'.length));
@@ -140,7 +147,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)'] });
   }
 
   // REST: GET /data
@@ -501,7 +508,150 @@ async function handleChats(req, res, parsed) {
     }
   }
 
+  // ---- Per-chat messages -------------------------------------------
+  // GET /api/chats/:id/messages?projectDir= -> { messages }
+  const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
+  if (getMsgsMatch && method === 'GET') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { messages: messages.listMessages(dir, id) });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/messages  body: { projectDir, role, content }
+  // Append a message directly. The /messages/stream endpoint below
+  // does the same internally for user / assistant messages; this
+  // route is for manual edits and tests.
+  if (getMsgsMatch && method === 'POST') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const msg = messages.appendMessage(dir, id, { role: body.role, content: body.content, ts: body.ts });
+      return sendJSON(res, 201, { message: msg });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // DELETE /api/chats/:id/messages?projectDir= -> { ok, removed }
+  if (getMsgsMatch && method === 'DELETE') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const removed = messages.clearMessages(dir, id);
+      return sendJSON(res, 200, { ok: true, removed });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/messages/stream  body: { projectDir, modelId, content }
+  // Appends the user message, calls ai.streamChat, streams the
+  // response back as SSE, appends the assistant message on done, and
+  // writes both events to the trace file (if the chat's trace flag
+  // is on). One round-trip per user turn.
+  const streamMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages\/stream$/);
+  if (streamMatch && method === 'POST') {
+    return handleChatStream(req, res, streamMatch[1]);
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+}
+
+// Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
+// the route table above stays compact.
+async function handleChatStream(req, res, chatId) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+  const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
+  const content = body && typeof body.content === 'string' ? body.content : '';
+  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+  if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
+  if (!content) return sendJSON(res, 400, { error: 'content is required' });
+
+  let chat;
+  try { chat = chats.getChat(projectDir, chatId); }
+  catch (e) {
+    const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+    return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+  }
+  if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
+
+  // Resolve the model record from the project settings.
+  const resolved = settings.getResolved(projectDir);
+  const modelList = Array.isArray(resolved.models) ? resolved.models : [];
+  const model = modelList.find(m => m && m.id === modelId);
+  if (!model) return sendJSON(res, 400, { error: 'Model not found', modelId });
+
+  // Append the user message and bump lastOpenedAt BEFORE streaming.
+  let userMsg;
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content }); }
+  catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  try { chats.touchChat(projectDir, chatId); } catch { /* non-fatal */ }
+
+  // Open SSE.
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+  res.write(': connected\n\n');
+
+  // Open the trace file. No-op writer if trace is off or the file
+  // system is read-only.
+  const traceStream = chat.trace ? trace.open(projectDir, chatId) : null;
+  function emit(name, data) {
+    try {
+      res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
+    } catch { /* socket closed */ }
+    if (traceStream) trace.write(traceStream, name, data);
+  }
+
+  // Build the message list to send upstream: existing transcript + the
+  // user message we just appended.
+  const history = messages.listMessages(projectDir, chatId);
+  const upstreamMessages = history.map(m => ({ role: m.role, content: m.content }));
+
+  let assistantContent = '';
+  let assistantMsg = null;
+
+  const result = await ai.streamChat({
+    model,
+    messages: upstreamMessages,
+    onEvent: (name, data) => {
+      if (name === 'message' && typeof data.delta === 'string') {
+        assistantContent += data.delta;
+      } else if (name === 'done') {
+        // Persist the assistant message at the end of the stream.
+        if (assistantContent) {
+          try {
+            assistantMsg = messages.appendMessage(projectDir, chatId, { role: 'assistant', content: assistantContent });
+          } catch { /* non-fatal */ }
+        }
+      }
+      emit(name, data);
+    }
+  });
+
+  if (!result.ok && !assistantContent) {
+    emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
+  }
+  if (traceStream) trace.close(traceStream);
+  res.end();
 }
 
 async function handleProjects(req, res, parsed) {
@@ -879,10 +1029,22 @@ const WEB_MIME = {
 };
 
 function serveWebFile(res, absOrRel, opts) {
-  const abs = path.isAbsolute(absOrRel)
-    ? absOrRel
-    : path.join(WEB_DIR, absOrRel);
-  if (!abs.startsWith(WEB_DIR) && !(opts && opts.allowOutside)) {
+  const opt = opts || {};
+  let abs;
+  if (path.isAbsolute(absOrRel)) {
+    abs = absOrRel;
+  } else if (opt.preferDist) {
+    // Look in src/web/dist/<relPath> first, fall back to src/web/<relPath>.
+    const inDist = path.join(WEB_DIST, absOrRel);
+    if (fs.existsSync(inDist)) abs = inDist;
+    else abs = path.join(WEB_DIR, absOrRel);
+  } else {
+    abs = path.join(WEB_DIR, absOrRel);
+  }
+  // Allow serving from outside WEB_DIR only when the caller explicitly
+  // opted in (used to be for the old virtual-list.js alias; no longer
+  // needed now that Vite bundles it).
+  if (!abs.startsWith(WEB_DIR) && !opt.allowOutside) {
     return sendJSON(res, 400, { error: 'Bad path' });
   }
   fs.readFile(abs, (err, data) => {
@@ -893,10 +1055,6 @@ function serveWebFile(res, absOrRel, opts) {
 }
 
 function serveWebRequest(res, relPath) {
-  if (!relPath) return serveWebFile(res, 'index.html');
-  // /web/virtual-list.js -> src/virtual-list.js (single source of truth).
-  if (relPath === 'virtual-list.js') {
-    return serveWebFile(res, path.join(__dirname, 'virtual-list.js'), { allowOutside: true });
-  }
-  return serveWebFile(res, relPath);
+  if (!relPath) return serveWebFile(res, 'index.html', { preferDist: true });
+  return serveWebFile(res, relPath, { preferDist: true });
 }

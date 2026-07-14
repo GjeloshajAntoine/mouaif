@@ -12,6 +12,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 - [Project card](features/project-card.md) — per-project card in the mobile UI: chat list (scrolling inside the card), New chat, options menu (rename / unregister), per-project rename endpoint. Chats persisted in `<projectDir>/.mouaif.json`.
+- [Chat UI](features/chat-ui.md) — Preact + Vite mobile shell with the chat view (per-chat transcript, composer, model picker, SSE streaming), the projects list, the settings panel, and the auth panel. Per-chat messages and per-chat trace-to-file land in the same commit.
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 5 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.

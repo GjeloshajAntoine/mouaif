@@ -69,7 +69,7 @@ computeRange({ itemHeight: 44, overscan: 4, scrollTop: 1000, viewportHeight: 600
 - Demo: [src/web/index.html](../../src/web/index.html), [src/web/main.js](../../src/web/main.js), [src/web/style.css](../../src/web/style.css). Open `http://localhost:5732/web/` after `mouaif serve` to see it.
 - The demo renders 10 000 rows at 44 px; the stats footer shows the live range and a frame counter, so you can verify low-CPU behavior with the devtools performance panel.
 - Server aliases `/web/virtual-list.js` to `src/virtual-list.js` so the Node `require()` and the browser `import` resolve to the same file. The rest of `/web/*` maps to `src/web/*`.
-- Preact + Vite (decisions §7) lands in a later commit when the tabbed mobile shell needs it. The primitive is already framework-agnostic; the upcoming swap is a build-time concern.
+- As of the chat UI commit, Preact + Vite is the build target for the mobile UI (see [docs/features/chat-ui.md](./chat-ui.md) and decisions §7). The virtual-list primitive is framework-agnostic and is still served as a plain `.js` module from `src/web/src/virtual-list.js`, imported as a relative module by the Preact entry.
 
 ## Related
 

@@ -1,9 +1,20 @@
 <!doctype html>
 <!--
   mouaif web entry. Served by `mouaif serve` at /web/.
-  This page is the demo for the virtual list primitive. It also doubles as
-  the placeholder shell for the future Preact + Vite mobile UI; see
-  docs/decisions.md sections 7 and 8.
+
+  Build:
+    npm run build:web      # writes src/web/dist/
+
+  Dev (with HMR):
+    npm run dev:web        # vite dev server on :5173 (optional)
+
+  The script and style references are relative so Vite can resolve and
+  hash them at build time. The base URL in vite.config.js adds the
+  /web/ prefix when the bundle is served.
+
+  This page is the mobile UI for mouaif. It is a Preact + Vite app
+  served from /web/dist/ by the Node server. See docs/decisions.md
+  sections 7 and 8.
 -->
 <html lang="en">
 <head>
@@ -11,130 +22,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#111418" />
   <title>mouaif</title>
-  <link rel="stylesheet" href="/web/style.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="app__header">
-      <h1 class="app__title">mouaif</h1>
-      <p class="app__sub">Virtual list demo</p>
-    </header>
-
-    <section class="demo">
-      <p class="demo__hint">
-        10 000 rows, 44 px each, overscan 4. Scroll fast — only ~12 DOM nodes exist.
-      </p>
-      <div id="scroller" class="demo__scroller" tabindex="0" aria-label="List of 10000 items"></div>
-      <p id="stats" class="demo__stats" aria-live="polite"></p>
-    </section>
-
-    <section class="chat">
-      <h2 class="chat__title">AI test</h2>
-      <p class="chat__hint">Send a single message through <code>/api/ai/chat</code>. Pick a model in app settings first.</p>
-      <div class="chat__row">
-        <label for="modelId" class="chat__label">Model id</label>
-        <input id="modelId" class="chat__input" type="text" placeholder="e.g. gpt-4o-mini" />
-      </div>
-      <div class="chat__row">
-        <label for="prompt" class="chat__label">Prompt</label>
-        <textarea id="prompt" class="chat__input" rows="2" placeholder="Say something"></textarea>
-      </div>
-      <div class="chat__row chat__row--actions">
-        <button id="send" class="chat__send" type="button">Send</button>
-        <span id="chatStatus" class="chat__status" aria-live="polite"></span>
-      </div>
-      <pre id="chatOut" class="chat__out" aria-label="Assistant reply"></pre>
-    </section>
-
-    <section class="settings">
-      <h2 class="settings__title">Settings</h2>
-      <p class="settings__hint">App-level settings are stored in <code>~/.mouaif/store.sqlite</code>. They are the default; project settings override per project.</p>
-
-      <h3 class="settings__sub">App</h3>
-      <div class="settings__row">
-        <label for="promptSize" class="settings__label">Default prompt size</label>
-        <select id="promptSize" class="settings__input">
-          <option value="very-small">very-small</option>
-          <option value="average">average</option>
-          <option value="extensive">extensive</option>
-        </select>
-      </div>
-      <div class="settings__row settings__row--inline">
-        <label for="traceByDefault" class="settings__label">Trace to file by default</label>
-        <input id="traceByDefault" type="checkbox" class="settings__checkbox" />
-      </div>
-      <div class="settings__row settings__row--actions">
-        <button id="saveApp" class="settings__button settings__button--primary" type="button">Save app settings</button>
-        <button id="resetApp" class="settings__button" type="button">Reset app</button>
-        <span id="appStatus" class="settings__status" aria-live="polite"></span>
-      </div>
-
-      <h3 class="settings__sub">Models</h3>
-      <p class="settings__hint">Add an entry per model you want to chat with. API keys are stored as plain text in the app SQLite store.</p>
-      <ul id="modelsList" class="models__list" aria-label="Configured models"></ul>
-      <details class="models__add">
-        <summary>Add a model</summary>
-        <div class="settings__row"><label for="mId" class="settings__label">id (slug)</label><input id="mId" class="settings__input" type="text" placeholder="gpt-4o-mini" /></div>
-        <div class="settings__row"><label for="mProvider" class="settings__label">provider</label>
-          <select id="mProvider" class="settings__input">
-            <option value="openai-compatible">openai-compatible</option>
-            <option value="anthropic">anthropic</option>
-            <option value="gemini">gemini</option>
-            <option value="ollama">ollama</option>
-          </select>
-        </div>
-        <div class="settings__row"><label for="mLabel" class="settings__label">label</label><input id="mLabel" class="settings__input" type="text" placeholder="GPT-4o mini" /></div>
-        <div class="settings__row"><label for="mBaseUrl" class="settings__label">base URL (optional)</label><input id="mBaseUrl" class="settings__input" type="text" placeholder="https://api.openai.com" /></div>
-        <div class="settings__row"><label for="mApiKey" class="settings__label">API key</label><input id="mApiKey" class="settings__input" type="password" placeholder="sk-..." /></div>
-        <div class="settings__row settings__row--actions">
-          <button id="addModel" class="settings__button settings__button--primary" type="button">Add</button>
-          <span id="addModelStatus" class="settings__status" aria-live="polite"></span>
-        </div>
-      </details>
-
-      <h3 class="settings__sub">Project</h3>
-      <p class="settings__hint">Project settings live in <code>&lt;projectDir&gt;/.mouaif.json</code> and override app-level values for that project.</p>
-      <div class="settings__row"><label for="projectDir" class="settings__label">project directory</label><input id="projectDir" class="settings__input" type="text" placeholder="C:/path/to/project" /></div>
-      <div class="settings__row settings__row--inline">
-        <label for="loadProject" class="settings__label">load</label>
-        <button id="loadProject" class="settings__button" type="button">Load</button>
-        <span id="projectStatus" class="settings__status" aria-live="polite"></span>
-      </div>
-      <pre id="projectOut" class="settings__out" hidden></pre>
-    </section>
-
-    <section class="projects">
-      <h2 class="projects__title">Projects</h2>
-      <p class="projects__hint">Each card is a registered project. The chat list scrolls inside the card so the page itself stays put. New chats inherit the project's <code>promptSize</code> and <code>traceByDefault</code> settings.</p>
-      <div class="projects__toolbar">
-        <button id="refreshProjects" class="settings__button" type="button">Refresh</button>
-        <span id="projectsStatus" class="settings__status" aria-live="polite"></span>
-      </div>
-      <ul id="projectsList" class="projects__list" aria-label="Registered projects"></ul>
-    </section>
-
-    <section class="auth">
-      <h2 class="auth__title">Auth</h2>
-      <p class="auth__hint">OAuth tokens live in the OS keychain. The accounts list is read from <code>/api/auth/accounts</code>.</p>
-      <pre id="authOut" class="auth__out" aria-label="Auth status">loading...</pre>
-
-      <h3 class="auth__sub">Sign in with Anthropic</h3>
-      <p class="auth__hint">Opens the public Anthropic OAuth flow. PKCE S256. The access token is stored in the OS keychain under <code>mouaif/anthropic</code>.</p>
-      <div class="auth__row">
-        <button id="signInAnthropic" class="auth__button" type="button">Sign in with Anthropic</button>
-        <span id="signInStatus" class="auth__status" aria-live="polite"></span>
-      </div>
-      <div id="signInHelp" class="auth__help" hidden>
-        <p>After authorizing, the browser redirects to <code id="signInCallback"></code>. If you used the no-browser path, paste the <code>code</code> from the redirected URL here:</p>
-        <div class="auth__row">
-          <input id="codeInput" class="auth__input" type="text" placeholder="code from ?code=..." />
-          <button id="completeCode" class="auth__button" type="button">Complete sign-in</button>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <!-- Mobile-first, no build step yet. Preact + Vite land in a later commit. -->
-  <script type="module" src="/web/main.js"></script>
+  <main id="app"></main>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
