@@ -2,14 +2,23 @@
 
 ## Overview
 
-The mobile UI at `/web/` is now a **Preact + Vite** app, served from `src/web/dist/`. The Node server ([src/index.js](../../src/index.js)) serves the Vite build at `/web/` and falls back to the source tree at `src/web/` when the build hasn't run yet, so the dev cycle works either way.
+The mobile UI at `/web/` is a **Preact + Vite** app, served from `src/web/dist/`. The Node server ([src/index.js](../../src/index.js)) serves the Vite build at `/web/` and falls back to the source tree at `src/web/` when the build hasn't run yet, so the dev cycle works either way.
 
-This commit landed two features in one (your explicit override of the "one feature = one commit" rule):
+The chat UI consumes the **per-chat message store** ([src/messages.js](../../src/messages.js)) and the **per-chat trace writer** ([src/trace.js](../../src/trace.js)).
 
-1. **The chat UI itself** — a hash-routed two-view SPA: `#/projects` (the per-project chat list) and `#/chat/<id>?projectDir=…` (the chat view with transcript + composer). Plus `#/settings` and `#/auth` for the existing model editor and OAuth panel, reachable from the top nav.
-2. **The Preact + Vite framework** — adds `preact`, `@preact/signals`, `vite`, `@preact/preset-vite` as deps. `npm run build:web` writes `src/web/dist/` (a 34 KB JS + 8 KB CSS bundle, gzipped 12 + 2 KB).
+## Visual design
 
-The chat UI consumes the **per-chat message store** ([src/messages.js](../../src/messages.js)) and the **per-chat trace writer** ([src/trace.js](../../src/trace.js)), both of which this commit also adds.
+A polished, dark, mobile-first design system lives in [src/web/src/style.css](../../src/web/src/style.css). It is intentionally a single stylesheet — small surface area, easy to scan.
+
+- **Surfaces**: three levels of dark elevation (`--bg`, `--surface`, `--surface-2`, `--surface-3`) with subtle radial accent on the page background. Cards sit on `--surface` and use a soft 1 px border plus `--shadow-sm` for lift.
+- **Color tokens**: `--accent` (signature blue) with `--accent-press`, `--accent-soft` (tinted surface), `--on-accent` (text on accent). Semantic colors: `--success`, `--warning`, `--danger` + `--danger-soft`.
+- **Typography**: a single system-font stack at 16 px / 1.5 line-height. Section headings are small-caps uppercase (`.08em` letter-spacing) in `--muted` for navigation and `--accent` for subsections. H1 uses a white-to-blue gradient for the brand mark.
+- **Spacing & radii**: a 4 px scale (`--gap`, `--pad-x`, `--pad-y`) and an 8 px radius scale (`--r-sm`, `--r-md`, `--r-lg`, `--r-pill`). All touch targets are 44 × 44 px (`--tap`).
+- **Components**: primary buttons (`.btn--primary`) get a subtle inset highlight + glow; cards (`.project-card`, `.chat-view__composer`) get rounded corners and a soft shadow; popovers (`.project-card__menu-pop`) get a stronger shadow and the third surface level; chat bubbles use asymmetric corner radii to point at the speaker.
+- **Motion**: 120 ms transitions on hover, focus, and press. `prefers-reduced-motion` short-circuits them to 1 ms.
+- **Focus**: keyboard-only focus ring via `:focus-visible`; touch devices never see it.
+
+The build target is 360–430 px wide; the app is a 480 px-max-width column centered in the viewport, so desktop is "the mobile UI with extra room" (per [docs/decisions.md §4](../decisions.md) and [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2).
 
 ## Usage
 

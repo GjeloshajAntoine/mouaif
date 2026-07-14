@@ -72,8 +72,10 @@ function App() {
 
 function Header(props) {
   return h('header', { class: 'app__header' },
-    h('h1', { class: 'app__title' }, 'mouaif'),
-    h('p', { class: 'app__sub' }, 'mobile UI'),
+    h('div', { class: 'app__brand' },
+      h('h1', { class: 'app__title' }, 'mouaif'),
+      h('p', { class: 'app__sub' }, 'mobile UI')
+    ),
     props.links
       ? h('nav', { class: 'app__nav' }, props.links)
       : null
@@ -964,20 +966,20 @@ function ChatView(props) {
 
   useEffect(() => { load(); }, [chatId, projectDir]);
 
-  return h('section', null,
+  return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
-      h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects') }, '←'),
-      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
-      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×'),
+      h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects'), 'aria-label': 'Back to projects' }, '←'),
       h('div', { class: 'chat-view__title-stack' },
         h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
-      )
+      ),
+      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
+      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×')
     ),
     h('div', { class: 'chat-view__settings' },
       h('div', { class: 'row row--inline' },
-        h('label', { class: 'label', for: 'chatTrace' }, 'Trace to file'),
-        h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange })
+        h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),
+        h('label', { class: 'label', for: 'chatTrace' }, 'Trace to file')
       ),
       h('div', { class: 'row row--inline' },
         h('label', { class: 'label', for: 'chatPromptSize' }, 'Prompt size'),
