@@ -16,7 +16,7 @@ Implements [docs/decisions.md §12](../decisions.md) (per-provider OAuth). The f
 | GET    | `/oauth/callback?provider=anthropic&state=...&code=...` | (browser redirect) | HTML page |
 | POST   | `/oauth/callback` | `{ provider, state, code }` | `{ ok: true, provider, account }` or `{ ok: false, error, code }` (no-browser fallback) |
 
-The UI flow is `POST /api/auth/sign-in/anthropic` → open `authorizeUrl` in a new tab → on success the browser comes back to `GET /oauth/callback`, which finishes the flow and writes the token to the keychain. The UI polls `GET /api/auth/accounts` until the new email appears.
+The UI flow is two explicit taps so popup blockers cannot intercept it: **Sign in** calls `POST /api/auth/sign-in/anthropic` and reveals a real **Continue with Anthropic** link; tapping that link opens `authorizeUrl` in a new tab. On success the browser comes back to `GET /oauth/callback`, which finishes the flow and writes the token to the keychain. The UI polls `GET /api/auth/accounts` until the new email appears.
 
 The no-browser fallback (`POST /oauth/callback`) is for SSH, containers, and any environment where the user can't open the loopback URL in a browser that can reach the mouaif server. The user pastes the `code` (or the full redirect URL) into the UI, which POSTs it to the same exchange the browser path uses.
 
@@ -76,7 +76,7 @@ const out = await fn({ pending, code: 'AUTHCODE99' });
 - Server wiring: [src/index.js](../../src/index.js). The `POST /api/auth/sign-in/anthropic` handler is in `handleAuth`. The loopback callback is `handleOAuthCallback` (GET, browser) and `handleOAuthCallbackPost` (POST, no-browser fallback); both share `finishOAuth()`.
 - The AI client is updated to send `Authorization: Bearer ...` and the OAuth beta for `auth: 'oauth'` Anthropic models ([src/ai.js](../../src/ai.js) → `ENDPOINTS.anthropic.authHeader`).
 - `MOUAIF_ANTHROPIC_API_BASE` env var overrides the default `https://api.anthropic.com` for tests. **Do not set this in production** — it would point your sign-in at an untrusted server.
-- Mobile UI: [src/web/index.html](../../src/web/index.html) has a "Sign in with Anthropic" button that opens the authorize URL in a new tab and polls for the new account. A no-browser fallback below it accepts the `code` (or the full redirect URL) and POSTs it to the callback.
+- Mobile UI: **Settings → Providers → Provider accounts** has a **Sign in** setup button followed by a **Continue with Anthropic** authorization link. This avoids asynchronous `window.open()` calls, which browsers commonly block. A no-browser fallback accepts the `code` (or full redirect URL) and POSTs it to the callback.
 
 ## Related
 

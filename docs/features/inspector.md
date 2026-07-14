@@ -85,7 +85,7 @@ The WebSocket proxy returns 400 for missing `targetId` / `ws`, 404 for unknown t
 
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **No new CSS framework.** The Inspector styles live at the bottom of [src/web/src/style.css](../../src/web/src/style.css) under `/* ---- Inspector ---- */`. They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2.
-- **Tab bar layout** — the bottom tab bar becomes a 4-column grid (`Projects / Inspector / Settings / Auth`). Inspector is a peer of the existing tabs, not a child of Settings; the from-scratch UI earns its own entry point. The bar still respects `env(safe-area-inset-bottom)`.
+- **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
 - **Virtualization** — both panels use [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar.
 - **Ref-only state.** The CDP client (websocket, command id, pending responses, event listeners, console / network buffers) lives on refs, not Preact state. A CDP message burst updates a ref and pushes rows into the virtual list directly; Preact is only re-rendered on phase / panel / status changes.
 - **Reconnect safety.** Disconnecting rejects pending CDP commands and clears

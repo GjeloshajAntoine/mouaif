@@ -107,7 +107,7 @@ The OAuth flow itself is started by the UI: it generates a `state`, calls `auth.
 - Server wiring: [src/index.js](../../src/index.js) → `handleAuth()` and `handleOAuthCallback()`. The callback renders a tiny inline-styled HTML page so the user can close the tab.
 - AI client bridge: [src/ai.js](../../src/ai.js) → `requireApiKey` resolves the OAuth access token via `auth.tokenForModel` and stashes it on the model object as `__accessToken`. The request builders read it through `credential(model)`.
 - Settings default: `authAccounts: {}` was added to [src/settings.js](../../src/settings.js) so the non-secret index is always present and valid.
-- Mobile UI: `/web/` shows a live read-only view of `/api/auth/accounts` that refreshes every 5 seconds. The sign-in button lands in each per-provider commit.
+- Mobile UI: **Settings → Providers** shows a live read-only view of `/api/auth/accounts` and the relevant provider sign-in actions. Authentication is not a separate destination; it is part of configuring a provider connection.
 
 ## Related
 

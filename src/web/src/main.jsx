@@ -38,7 +38,9 @@ function parseHash() {
   if (!h) return { name: 'chats' };
   if (h === 'projects') return { name: 'chats' };
   if (h === 'settings') return { name: 'settings' };
-  if (h === 'auth') return { name: 'auth' };
+  // Auth belongs to provider configuration. Keep old links working by
+  // redirecting the retired standalone route to Settings.
+  if (h === 'auth') return { name: 'settings' };
   if (h === 'inspector') return { name: 'inspector' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);
@@ -64,13 +66,12 @@ function nav(toHash) {
 
 function App() {
   const view = route.value;
-  const showTabBar = view.name !== 'chat' && view.name !== 'picker' && view.name !== 'auth';
+  const showTabBar = view.name !== 'chat' && view.name !== 'picker';
   let body = null;
   if (view.name === 'chats') body = h(ProjectsView, null);
   else if (view.name === 'picker') body = h(ProjectPickerView, { dir: view.dir });
   else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
   else if (view.name === 'settings') body = h(SettingsView, null);
-  else if (view.name === 'auth') body = h(AuthView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);
   return h('div', { class: 'app__shell' },
@@ -168,9 +169,9 @@ function AuthPanel() {
   const signInAnthropic = useRef(null);
   const signInStatus = useRef(null);
   const signInHelp = useRef(null);
-  const signInCallback = useRef(null);
   const codeInput = useRef(null);
   const completeCode = useRef(null);
+  const authorizeLink = useRef(null);
   const pendingState = useRef(null);
   const pendingRedirect = useRef(null);
 
@@ -179,13 +180,21 @@ function AuthPanel() {
     signInStatus.current.textContent = 'starting sign-in…';
     try {
       const r = await fetchJson('/api/auth/sign-in/anthropic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      if (r.status !== 200) { signInStatus.current.textContent = 'HTTP ' + r.status; signInAnthropic.current.disabled = false; return; }
+      if (r.status !== 200) {
+        signInStatus.current.textContent = 'HTTP ' + r.status;
+        signInAnthropic.current.disabled = false;
+        return;
+      }
       pendingState.current = r.body.state;
       pendingRedirect.current = r.body.authorizeUrl;
-      window.open(pendingRedirect.current, '_blank', 'noopener');
-      signInCallback.current.textContent = r.body.redirectUri || (window.location.origin + '/oauth/callback?provider=anthropic');
       signInHelp.current.hidden = false;
-      signInStatus.current.textContent = 'waiting for browser…';
+      if (authorizeLink.current) authorizeLink.current.href = pendingRedirect.current;
+      // A URL obtained asynchronously cannot be opened reliably as a popup:
+      // browsers no longer associate it with the original click. Present a
+      // real link instead; tapping it is a fresh user gesture and works on
+      // mobile, desktop, and strict popup-blocker configurations.
+      signInStatus.current.textContent = 'ready — tap Continue with Anthropic';
+      signInAnthropic.current.disabled = false;
       const beforeResp = await fetchJson('/api/auth/accounts');
       const beforeAccounts = (beforeResp.body && beforeResp.body.accounts) || {};
       const before = new Set(beforeAccounts.anthropic || []);
@@ -199,8 +208,10 @@ function AuthPanel() {
         } catch {}
       }
       signInStatus.current.textContent = 'timed out. Paste the code from the redirect URL below if your browser could not reach this host.';
-      signInAnthropic.current.disabled = false;
-    } catch (err) { if (signInStatus.current) signInStatus.current.textContent = 'network error'; if (signInAnthropic.current) signInAnthropic.current.disabled = false; }
+    } catch (err) {
+      if (signInStatus.current) signInStatus.current.textContent = 'network error';
+      if (signInAnthropic.current) signInAnthropic.current.disabled = false;
+    }
   }
 
   async function completeWithCode() {
@@ -220,14 +231,16 @@ function AuthPanel() {
   }
 
   return h('section', null,
-    h('h2', null, 'Accounts'),
+    h('h2', null, 'Provider accounts'),
     h('pre', { ref: authOut, class: 'settings__out', 'aria-label': 'Auth status' }, 'loading…'),
-    h('h2', null, 'Anthropic OAuth'),
+    h('h3', null, 'Connect Anthropic'),
     h('div', { class: 'row' },
       h('button', { ref: signInAnthropic, class: 'btn btn--primary', type: 'button', onClick: startSignIn }, 'Sign in'),
       h('span', { ref: signInStatus, class: 'status', 'aria-live': 'polite' })
     ),
     h('div', { ref: signInHelp, class: 'auth__help', hidden: true },
+      h('a', { ref: authorizeLink, class: 'btn btn--primary', target: '_blank', rel: 'noopener' }, 'Continue with Anthropic'),
+      h('p', { class: 'hint hint--compact' }, 'After authorizing, return here. If the callback cannot reach this device, paste the full redirect URL or its code below.'),
       h('div', { class: 'row' },
         h('input', { ref: codeInput, class: 'input', type: 'text', placeholder: '?code=... from redirect URL' }),
         h('button', { ref: completeCode, class: 'btn btn--primary', type: 'button', onClick: completeWithCode }, 'Complete')
@@ -432,11 +445,11 @@ function SettingsPanel() {
     }
     if (auth === 'oauth') {
       // Re-fetch so we don't accidentally publish a stale empty list
-      // if the user signed in on the Auth tab without coming back here.
+      // if the user signed in in the provider accounts section.
       await refreshAccounts();
       const list = lastAccounts[providerKeyringNamespace(id)] || [];
       if (list.length === 0) {
-        providerStatus.current.textContent = 'no signed-in account for "' + id + '" — sign in on the Auth tab first';
+        providerStatus.current.textContent = 'no signed-in account for "' + id + '" — connect the provider below first';
         return;
       }
       // Spec (decision §11): with multiple signed-in accounts, the
@@ -667,6 +680,7 @@ function SettingsPanel() {
         h('span', { ref: providerStatus, class: 'status', 'aria-live': 'polite' })
       )
     ),
+    h(AuthPanel, null),
     h('h2', null, 'Project overrides'),
     h('p', { class: 'hint hint--compact' }, 'Project files define model IDs and choose one of the providers configured above.'),
     h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'Directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
@@ -687,13 +701,6 @@ function SettingsPanel() {
 // Wraps SettingsPanel with a back link + heading.
 function SettingsView() {
   return h(SettingsPanel, null);
-}
-
-// Tab destination: renders the Auth panel inline (no back link, no
-// separate heading — the section elements inside AuthPanel provide their
-// own).
-function AuthView() {
-  return h(AuthPanel, null);
 }
 
 // ---- Inspector ---------------------------------------------------------

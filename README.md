@@ -60,7 +60,7 @@ The chat stream is the hot path: a single round-trip per user turn. The server a
 
 ## Mobile UI
 
-The Preact + Vite bundle is mobile-first: 360–430 px primary viewport, 44 × 44 px touch targets, system font stack, safe-area aware, no hover-only affordances. The hash router exposes four views: `#/projects` (project list + chat cards), `#/projects/new` (folder picker), `#/chat/<id>?projectDir=…` (transcript + composer), `#/settings` (app + providers + project), `#/auth` (Anthropic sign-in).
+The Preact + Vite bundle is mobile-first: 360–430 px primary viewport, 44 × 44 px touch targets, system font stack, safe-area aware, no hover-only affordances. The top-level views are Projects, Inspector, and Settings. Settings contains provider connections, authentication, and project overrides; the old `#/auth` route redirects there.
 
 ## Documentation
 
