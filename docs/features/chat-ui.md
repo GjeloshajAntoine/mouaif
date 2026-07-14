@@ -20,6 +20,18 @@ A polished, dark, mobile-first design system lives in [src/web/src/style.css](..
 
 The build target is 360–430 px wide; the app is a 480 px-max-width column centered in the viewport, so desktop is "the mobile UI with extra room" (per [docs/decisions.md §4](../decisions.md) and [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2).
 
+## App shell
+
+The shell is a full-viewport flex column (`min-height: 100dvh`). Three regions stack top → bottom:
+
+1. **Header** — brand mark only. The top-level nav no longer lives here.
+2. **Main** — the scrollable content. Reserves `padding-bottom: var(--tabbar-h) + var(--safe-bottom)` so the last row never sits under the tab bar. Drill-in screens (chat, picker) use `.app__main--flush` and own the safe area themselves.
+3. **Bottom tab bar** — sticky child of the shell. Hidden on drill-in screens.
+
+## Bottom tab bar
+
+The three top-level destinations — **Projects / Settings / Auth** — are reached from a sticky bottom tab bar (`.app__tabbar`) instead of the top header. Each tab is a small inline-SVG icon above a small-caps label. The active tab gets the accent color and a soft accent-soft pill behind the icon. The bar respects `env(safe-area-inset-bottom)`, has a top border + gradient background that fades into the content, and sits at `z-index: 30` so popovers and other overlays can stack above it. Hidden on the chat view and the project picker, which are drill-in screens with their own per-screen back button.
+
 ## Usage
 
 ### Build
@@ -66,7 +78,7 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 
 - **One SSE round-trip per user turn.** `POST /api/chats/:id/messages/stream` accepts the user message, resolves the model from the project settings, calls `ai.streamChat`, and streams the response back. The browser reads the SSE the same way the old `AI test` panel did. The user message is appended before streaming; the assistant message is appended on `done`.
 - **Trace follows the chat's `trace` flag.** The chat record in [src/chats.js](../../src/chats.js) already has the field per [docs/decisions.md §5](../decisions.md). When it's on, every event sent to the browser is also written to the trace file. The writer is a no-op when the project is on a read-only filesystem (the directory creation is best-effort) or when the chat has `trace: false`.
-- **The hash router is simple.** No history API, no client-side router — the Node server doesn't rewrite unknown paths to `index.html`, so deep links would 404 anyway. Three views: `projects`, `chat/<id>?projectDir=…`, `settings`, `auth`. The `AppNav` component highlights the active route.
+- **The hash router is simple.** No history API, no client-side router — the Node server doesn't rewrite unknown paths to `index.html`, so deep links would 404 anyway. Four top-level views: `projects`, `settings`, `auth` (reached from the bottom tab bar), and `chat/<id>?projectDir=…` (a drill-in screen with its own back button). The `BottomNav` component highlights the active tab.
 - **Models are still per-project.** The chat view reads `/api/ai/models?projectDir=…` so the model picker is filtered to models visible in the chat's project.
 - **Auto-scroll.** The transcript auto-scrolls to the bottom on new content. Manual scrolling is not preserved across sends — out of scope.
 - **No optimistic re-render on errors.** A 4xx/5xx on the stream endpoint shows in the status line; the live assistant message is replaced with `[error: HTTP <code>]`.

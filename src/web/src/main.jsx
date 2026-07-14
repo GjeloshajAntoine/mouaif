@@ -62,42 +62,65 @@ function nav(toHash) {
 
 function App() {
   const view = route.value;
-  if (view.name === 'projects') return h('div', null, Header({ links: h(AppNav, null) }), h(ProjectsView, null));
-  if (view.name === 'picker') return h('div', null, Header({ links: h(AppNav, null) }), h(ProjectPickerView, { dir: view.dir }));
-  if (view.name === 'chat') return h('div', null, Header({ links: h(AppNav, null) }), h(ChatView, { chatId: view.chatId, projectDir: view.projectDir }));
-  if (view.name === 'settings') return h('div', null, Header({ links: h(AppNav, null) }), h(SettingsView, null));
-  if (view.name === 'auth') return h('div', null, Header({ links: h(AppNav, null) }), h(AuthView, null));
-  return h('div', null, Header({ links: h(AppNav, null) }), h(ProjectsView, null));
+  // Drill-in screens (chat, picker) get their own per-screen back button
+  // and do not show the global tab bar. Everything else does.
+  const showTabBar = view.name !== 'chat' && view.name !== 'picker';
+  let body = null;
+  if (view.name === 'projects') body = h(ProjectsView, null);
+  else if (view.name === 'picker') body = h(ProjectPickerView, { dir: view.dir });
+  else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
+  else if (view.name === 'settings') body = h(SettingsView, null);
+  else if (view.name === 'auth') body = h(AuthView, null);
+  else body = h(ProjectsView, null);
+  return h('div', { class: 'app__shell' },
+    h(Header, null),
+    h('main', { class: 'app__main' + (showTabBar ? '' : ' app__main--flush') }, body),
+    showTabBar ? h(BottomNav, null) : null
+  );
 }
 
-function Header(props) {
+function Header() {
   return h('header', { class: 'app__header' },
     h('div', { class: 'app__brand' },
       h('h1', { class: 'app__title' }, 'mouaif'),
       h('p', { class: 'app__sub' }, 'mobile UI')
-    ),
-    props.links
-      ? h('nav', { class: 'app__nav' }, props.links)
-      : null
+    )
   );
 }
 
-// ---- App nav ---------------------------------------------------------
-// The header exposes a "Settings" + "Auth" link so the user can reach
-// the model editor and the sign-in flow without leaving the page.
-// Active route is highlighted via the [aria-current] attribute.
+// ---- Bottom tab bar ---------------------------------------------------
+// The three top-level destinations — Projects / Settings / Auth — are
+// reached from a fixed bottom tab bar instead of the top header. The
+// bar is hidden on the chat and folder-picker drill-in screens, which
+// have their own per-screen back button.
+//
+// Inline SVG icons keep the bundle small and crisp at any density. The
+// `currentColor` fill on the path means the existing color tokens
+// drive the icon color in any state.
 
-function AppNav() {
+const TabIcon = {
+  projects: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
+    h('path', { d: 'M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z', fill: 'currentColor' })),
+  settings: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
+    h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })),
+  auth: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
+    h('path', { d: 'M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Zm3 4a1.75 1.75 0 0 1 1 3.16V19a1 1 0 1 1-2 0v-1.84A1.75 1.75 0 0 1 12 14Z', fill: 'currentColor' }))
+};
+
+function BottomNav() {
   const view = route.value;
-  const link = (to, name, label) => h('a', {
+  const tab = (to, name, label) => h('a', {
     href: '#/' + to,
-    class: 'app__nav-link' + (view.name === name ? ' is-active' : ''),
+    class: 'app__tab' + (view.name === name ? ' is-active' : ''),
     'aria-current': view.name === name ? 'page' : null
-  }, label);
-  return h('nav', { class: 'app__nav' },
-    link('projects', 'projects', 'Projects'),
-    link('settings', 'settings', 'Settings'),
-    link('auth', 'auth', 'Auth')
+  },
+    h('span', { class: 'app__tab-icon' }, TabIcon[name]),
+    h('span', { class: 'app__tab-label' }, label)
+  );
+  return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
+    tab('projects', 'projects', 'Projects'),
+    tab('settings', 'settings', 'Settings'),
+    tab('auth', 'auth', 'Auth')
   );
 }
 

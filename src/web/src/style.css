@@ -47,6 +47,7 @@
   --pad-y: 12px;
   --gap: 12px;
   --tap: 44px;
+  --tabbar-h: 64px;   /* bottom tab bar height (incl. safe area) */
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
@@ -83,19 +84,37 @@ html, body {
 /* App shell */
 #app { display: block; }
 
-.app {
+/* The app shell is a full-viewport flex column. The bottom tab bar is a
+   sticky child of the shell; .app__main is the scrollable content
+   region that reserves space at the bottom for it (via padding-bottom
+   on the non-flush variant). On drill-in screens (.app__main--flush)
+   the tab bar is hidden, so the content can use the full height. */
+.app__shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
+}
+
+.app__main {
+  flex: 1;
   padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) + 16px);
+  /* Leave room for the sticky bottom tab bar. */
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+}
+.app__main--flush {
+  /* Drill-in screens (chat, picker) own the safe area themselves. */
+  padding-bottom: calc(var(--pad-y) + 16px);
 }
 
 /* ---- App header ----------------------------------------------------- */
 
 .app__header {
-  padding: 4px 4px 16px;
+  padding: calc(var(--safe-top) + 4px) 4px 16px;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -127,39 +146,67 @@ html, body {
   text-transform: lowercase;
 }
 
-.app__nav {
-  display: flex;
-  gap: 6px;
-  margin: 0;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  box-shadow: var(--shadow-sm);
+/* ---- Bottom tab bar ------------------------------------------------ */
+
+.app__tabbar {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px calc(6px + var(--safe-bottom));
+  background: linear-gradient(180deg, rgba(20,25,33,0) 0%, var(--surface) 28%, var(--surface) 100%);
+  border-top: 1px solid var(--border);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  z-index: 30;
+  /* Height is content-driven, but we set a min so the main padding
+     matches even on tall-label devices. */
+  min-height: var(--tabbar-h);
 }
 
-.app__nav-link {
+.app__tab {
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--fg-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--tap);
+  padding: 6px 4px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: var(--r-pill);
-  padding: 0 14px;
-  min-height: 36px;
-  text-decoration: none;
+  transition: color 120ms ease, background 120ms ease, transform 80ms ease;
+}
+.app__tab:hover        { color: var(--fg-soft); }
+.app__tab:active       { transform: scale(0.97); }
+.app__tab.is-active    { color: var(--accent); }
+.app__tab.is-active .app__tab-icon {
+  /* Active dot behind the icon, the same blue. */
+  background: var(--accent-soft);
+}
+
+.app__tab-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 28px;
+  border-radius: var(--r-pill);
   transition: background 120ms ease, color 120ms ease;
+  color: inherit;
 }
-.app__nav-link:hover { background: var(--surface-2); color: var(--fg); }
-.app__nav-link.is-active {
-  background: var(--accent);
-  color: var(--on-accent);
+.app__tab-icon svg { display: block; }
+
+.app__tab-label {
+  font-size: 0.72rem;
   font-weight: 600;
-  box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 2px 8px rgba(127,177,255,.25);
+  letter-spacing: 0.01em;
+  line-height: 1.1;
 }
 
 /* ---- View header (back + title) ----------------------------------- */
@@ -662,7 +709,9 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
+  /* The chat view fills the main region minus the safe-area top so
+     the transcript and composer have room to breathe. */
+  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 80px);
 }
 
 .chat-view__head {
