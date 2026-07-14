@@ -51,7 +51,7 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 The mobile UI exposes a **Settings** section at the top of `/web/`. It has three subsections:
 
 - **App** — `Default prompt size` (select) and `Trace to file by default` (checkbox). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads.
-- **Models** — a list of configured models with a Delete button each, and an "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, and `API key`.
+- **Models** — a list of configured models with a Delete button each, and an "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth) — the two are toggled by the auth select. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider; the default `(auto)` is the single-account fallback in `auth.resolveAccount` and falls through to the stored token. With multiple signed-in accounts, the user must pick one explicitly.
 - **Project** — paste a project directory, click Load, and the raw `<projectDir>/.mouaif.json` is shown. No edit UI yet (that's part of the project card commit per the build order).
 
 The UI is mobile-first: stacked rows, 44 px touch targets, system colors, safe-area aware. No build step — the page is served from `src/web/` as plain HTML+CSS+ES modules.
@@ -63,6 +63,7 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, safe-a
 - **`POST /api/settings/app/reset` is destructive on purpose.** The body lists the keys to remove; the rest of the app object is preserved. This is a `REPLACE` of the app object with the listed keys omitted, not a deep merge. A bad key in the list returns 400.
 - **`DELETE /api/settings/app/models/:id` is idempotent at the API level** (404 if not found, 200 with the new models list otherwise). The UI confirms with the user before issuing the call.
 - **API keys are stored in plaintext in the SQLite store.** The keyring is for OAuth tokens only (decision §11). The doc is honest about this; the project-level encryption-when-resting decision is open and out of scope for this commit.
+- **OAuth model records carry `auth: 'oauth'` and an optional `oauthAccount`.** The server's `POST /api/settings/app/models` accepts both. Light validation on the server: `auth` must be `'apikey'` or `'oauth'`; `oauthAccount` is a string; an OAuth model that arrives with a leftover `apiKey` has it stripped on merge (so a user toggling a model from apikey to oauth does not leak a stale key). The AI client (`src/ai.js → requireApiKey`) reads `oauthAccount` from the model to pick the right keyring entry.
 
 ## Implementation notes
 

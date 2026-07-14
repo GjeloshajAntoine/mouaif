@@ -79,3 +79,11 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - Each commit reuses the loopback callback skeleton from decision 11; only the authorization endpoint, token endpoint, client id, and scopes differ.
 - OpenAI's public API is on the token (API key) path and is already covered by the AI client core commit (decision 10, `openai-compatible` provider). It does not appear in this OAuth list.
 
+## 13. Proactive OAuth refresh
+
+- The AI client (`src/ai.js → requireApiKey`) inspects the stored access token's `expiresAt` before every chat. If the token is within `OAUTH_REFRESH_LEAD_MS` (60s) of expiry (or already past) and a `refresh_token` is on file, the client invokes the provider's registered refresher and persists the new blob back to the keychain. The outbound request uses the new access token, so a long chat never hits a 401 mid-stream.
+- Refreshers are registered with `auth.registerRefresher(provider, fn)`, the same shape as the existing `auth.registerExchange(provider, fn)`. The fn signature is `({ provider, account, refreshToken, scope, baseUrl }) -> { accessToken, refreshToken?, expiresAt?, scope?, account? }`. Persistence of the new blob is the refresh path's responsibility; the AI client just consumes the result.
+- Failure mode: a refresh that throws is caught and swallowed; the chat falls through to the stored access token. The upstream's clean 401 is the recovery signal. We don't surface refresh failures to the chat UI as a hard error because (a) the token may still be valid for a few seconds, and (b) a flaky refresh should not block every chat past the lead window.
+- Anthropic wires this via `oauthAnthropic.refresh` (registered in `oauthAnthropic.register()`). Other providers register their own. The 60s lead matches the SDK's typical advisory-refresh threshold.
+- The model record's `auth: 'oauth'` is the gate. `auth: 'apikey'` models skip this path entirely.
+
