@@ -188,7 +188,7 @@ function AuthPanel() {
       pendingState = r.body.state;
       pendingRedirect = r.body.authorizeUrl;
       window.open(pendingRedirect, '_blank', 'noopener');
-      signInCallback.current.textContent = window.location.origin + '/oauth/callback';
+      signInCallback.current.textContent = r.body.redirectUri || (window.location.origin + '/oauth/callback?provider=anthropic');
       signInHelp.current.hidden = false;
       signInStatus.current.textContent = 'waiting for browser…';
       const beforeResp = await fetchJson('/api/auth/accounts');

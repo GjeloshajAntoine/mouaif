@@ -950,7 +950,12 @@ async function handleAuth(req, res, parsed) {
 
     const state = oauthAnthropic.newState();
     const verifier = oauthAnthropic.newVerifier();
-    const redirectUri = body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback');
+    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    // The callback handler is shared by providers and therefore requires the
+    // provider name. OAuth providers return our redirect URI verbatim, so
+    // bind the provider into it before recording the pending exchange.
+    if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'anthropic');
+    const redirectUri = callbackUrl.toString();
     const scope = body.scope || oauthAnthropic.DEFAULT_SCOPE;
 
     auth.recordPending('anthropic', {
@@ -970,6 +975,7 @@ async function handleAuth(req, res, parsed) {
 
     return sendJSON(res, 200, {
       authorizeUrl,
+      redirectUri,
       state,
       expiresAt: Date.now() + 5 * 60 * 1000,
       // Echoed for debugging; the production base is https://api.anthropic.com

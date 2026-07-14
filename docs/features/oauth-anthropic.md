@@ -64,6 +64,11 @@ const out = await fn({ pending, code: 'AUTHCODE99' });
 
 ## Implementation notes
 
+- The loopback redirect URI includes `?provider=anthropic`. The callback is
+  shared by providers, so this query parameter binds the returned code and
+  state to the Anthropic exchange handler. The sign-in response also returns
+  the exact `redirectUri` shown by the no-browser fallback UI.
+
 - Source: [src/oauth-anthropic.js](../../src/oauth-anthropic.js). Public surface: `register`, `exchange` (registered with `auth.registerExchange`), `refresh` (registered with `auth.registerRefresher`), `buildAuthorizeUrl`, `exchangeAuthorizationCode`, `exchangeRefreshToken`, plus `newState`, `newVerifier`, `challengeFor` for tests. Introspection: `CLIENT_ID`, `DEFAULT_CONSOLE_URL`, `DEFAULT_API_BASE`, `DEFAULT_SCOPE`, `BETA_HEADER`.
 - Server wiring: [src/index.js](../../src/index.js). The `POST /api/auth/sign-in/anthropic` handler is in `handleAuth`. The loopback callback is `handleOAuthCallback` (GET, browser) and `handleOAuthCallbackPost` (POST, no-browser fallback); both share `finishOAuth()`.
 - The AI client is updated to send `Authorization: Bearer ...` and the OAuth beta for `auth: 'oauth'` Anthropic models ([src/ai.js](../../src/ai.js) → `ENDPOINTS.anthropic.authHeader`).
