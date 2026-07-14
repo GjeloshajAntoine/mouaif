@@ -744,12 +744,18 @@ function ChatView(props) {
   const back = useRef(null);
   const chatName = useRef(null);
   const chatMeta = useRef(null);
+  const traceToggle = useRef(null);
+  const promptSizeSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
   const promptInput = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
 
+  // Latest chat record from the server; populated by load() and by
+  // updateChat(). Lets the trace toggle and prompt-size selector
+  // render their current state from one source of truth.
+  let chat = signal(null);
   let messages = signal([]);
   let models = signal([]);
 
@@ -762,11 +768,14 @@ function ChatView(props) {
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; return; }
     const c = rChat.body.chat;
+    chat.value = c;
     messages.value = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     models.value = rModels.status === 200 ? (rModels.body.models || []) : [];
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     if (chatMeta.current) chatMeta.current.textContent = (c.promptSize || 'average') + ' · ' + (c.trace ? 'trace on' : 'trace off');
+    if (traceToggle.current) traceToggle.current.checked = !!c.trace;
+    if (promptSizeSelect.current) promptSizeSelect.current.value = c.promptSize || 'average';
 
     if (modelSelect.current) {
       modelSelect.current.innerHTML = '';
@@ -841,6 +850,55 @@ function ChatView(props) {
     }
   }
 
+  // Per-chat settings: PATCH /api/chats/:id with the new field. Each
+  // updater writes to the local `chat` signal and refreshes the
+  // visible meta line so the user sees the change stick.
+  async function updateChat(patch) {
+    if (!projectDir || !chatId) return;
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir }, patch || {}))
+    });
+    if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+    chat.value = r.body.chat;
+    if (chatMeta.current && chat.value) chatMeta.current.textContent = (chat.value.promptSize || 'average') + ' · ' + (chat.value.trace ? 'trace on' : 'trace off');
+  }
+
+  function renameChat() {
+    if (!chat.value) return;
+    const next = prompt('Rename chat', chat.value.title || chatId);
+    if (next == null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === chat.value.title) return;
+    updateChat({ title: trimmed }).then(() => {
+      if (chat.value && chatName.current) chatName.current.textContent = chat.value.title || chatId;
+    });
+  }
+
+  function onTraceChange() {
+    if (!traceToggle.current) return;
+    updateChat({ trace: !!traceToggle.current.checked });
+  }
+
+  function onPromptSizeChange() {
+    if (!promptSizeSelect.current) return;
+    const v = promptSizeSelect.current.value;
+    if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
+    updateChat({ promptSize: v });
+  }
+
+  function deleteThisChat() {
+    if (!chat.value) return;
+    if (!confirm('Delete this chat? Messages and trace file (if any) will be removed.')) return;
+    fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' })
+      .then((r) => {
+        if (r.status === 200) { projectsReload.value++; nav('projects'); }
+        else if (statusEl.current) statusEl.current.textContent = 'delete failed: HTTP ' + r.status;
+      })
+      .catch((err) => { if (statusEl.current) statusEl.current.textContent = 'network error'; });
+  }
+
   async function send() {
     if (!projectDir || !chatId) return;
     const modelId = modelSelect.current ? modelSelect.current.value : '';
@@ -909,8 +967,26 @@ function ChatView(props) {
   return h('section', null,
     h('div', { class: 'chat-view__head' },
       h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects') }, '←'),
-      h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
-      h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
+      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
+      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×'),
+      h('div', { class: 'chat-view__title-stack' },
+        h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
+        h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
+      )
+    ),
+    h('div', { class: 'chat-view__settings' },
+      h('div', { class: 'row row--inline' },
+        h('label', { class: 'label', for: 'chatTrace' }, 'Trace to file'),
+        h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange })
+      ),
+      h('div', { class: 'row row--inline' },
+        h('label', { class: 'label', for: 'chatPromptSize' }, 'Prompt size'),
+        h('select', { ref: promptSizeSelect, class: 'input', id: 'chatPromptSize', onChange: onPromptSizeChange },
+          h('option', { value: 'very-small' }, 'very-small'),
+          h('option', { value: 'average' }, 'average'),
+          h('option', { value: 'extensive' }, 'extensive')
+        )
+      )
     ),
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },
