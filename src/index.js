@@ -572,6 +572,11 @@ async function handleChats(req, res, parsed) {
     try {
       const removed = chats.deleteChat(dir, id);
       if (!removed) return sendJSON(res, 404, { error: 'Chat not found', id });
+      // Chat storage and trace export are independent. Deleting a chat
+      // removes its transcript, but deliberately keeps the user-owned trace
+      // file so it can remain committed with the project (decision §5).
+      try { fs.rmSync(messages.messagesFilePath(dir, id), { force: true }); }
+      catch { /* best-effort cleanup after the chat record is gone */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });

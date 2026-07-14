@@ -1567,7 +1567,7 @@ function ChatView(props) {
 
   function deleteThisChat() {
     if (!chat.value) return;
-    if (!confirm('Delete this chat? Messages and trace file (if any) will be removed.')) return;
+    if (!confirm('Delete this chat? Its messages will be removed; any exported trace file will be kept.')) return;
     fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' })
       .then((r) => {
         if (r.status === 200) { projectsReload.value++; nav('projects'); }
