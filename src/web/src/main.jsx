@@ -124,7 +124,7 @@ function AuthPanel() {
         lines.push((list.length ? list.join(', ') : '(none)') + '  — ' + p);
       }
       authOut.current.textContent = lines.length ? lines.join('\n') : 'no providers';
-    } catch (e) { authOut.current.textContent = 'network error'; }
+    } catch (err) { if (authOut.current) authOut.current.textContent = 'network error'; }
   };
   useEffect(() => { refreshAuth(); const t = setInterval(refreshAuth, 5000); return () => clearInterval(t); }, []);
 
@@ -162,7 +162,7 @@ function AuthPanel() {
       }
       signInStatus.current.textContent = 'timed out. Paste the code from the redirect URL below if your browser could not reach this host.';
       signInAnthropic.current.disabled = false;
-    } catch (e) { signInStatus.current.textContent = 'network error'; signInAnthropic.current.disabled = false; }
+    } catch (err) { if (signInStatus.current) signInStatus.current.textContent = 'network error'; if (signInAnthropic.current) signInAnthropic.current.disabled = false; }
   }
 
   async function completeWithCode() {
@@ -177,7 +177,7 @@ function AuthPanel() {
       const r = await fetchJson('/oauth/callback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'anthropic', state: pendingState, code }) });
       if (r.status === 200 && r.body.ok) signInStatus.current.textContent = 'signed in as ' + r.body.account;
       else signInStatus.current.textContent = 'failed: ' + (r.body.error || ('HTTP ' + r.status));
-    } catch (e) { signInStatus.current.textContent = 'network error'; }
+    } catch (err) { if (signInStatus.current) signInStatus.current.textContent = 'network error'; }
     completeCode.current.disabled = false;
   }
 
@@ -400,7 +400,7 @@ function ProjectsView() {
     projectsStatus.current.textContent = 'loading…';
     let r;
     try { r = await fetchJson('/api/projects/registered'); }
-    catch (e) { projectsStatus.current.textContent = 'network error'; return; }
+    catch (err) { if (projectsStatus.current) projectsStatus.current.textContent = 'network error'; return; }
     if (r.status !== 200) { projectsStatus.current.textContent = 'HTTP ' + r.status; return; }
     const list = r.body.projects || [];
     projectsList.current.innerHTML = '';
@@ -493,7 +493,7 @@ function ProjectsView() {
     const ul = cardLi.querySelector('.project-card__chats');
     let r;
     try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path)); }
-    catch (e) { renderChatList(ul, [], project); return; }
+    catch (err) { renderChatList(ul, [], project); return; }
     if (r.status !== 200) { renderChatList(ul, [], project); return; }
     renderChatList(ul, r.body.chats || [], project);
   }
@@ -710,10 +710,10 @@ function ChatView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectDir, modelId, content })
       });
-    } catch (e) {
-      statusEl.current.textContent = 'network error';
+    } catch (err) {
+      if (statusEl.current) statusEl.current.textContent = 'network error';
       finalizeLiveMessage({ content: '[network error]' });
-      sendBtn.current.disabled = false;
+      if (sendBtn.current) sendBtn.current.disabled = false;
       return;
     }
     if (!resp.ok) {
