@@ -169,14 +169,43 @@ function listAccounts() {
 
 // ---- Model integration -------------------------------------------------
 
+// Map an AI client provider (the value stored on the model record's
+// `provider` field) to the auth provider that the keychain is keyed
+// under. The model record keeps the AI client provider verbatim per
+// decision §10; the mapping lives here, in the auth module, because
+// that is the subsystem that owns the keyring namespace.
+//
+// Today's pairs are 1:1 except for the OpenAI-compatible family, which
+// uses the openai keyring namespace so any signed-in OpenAI account
+// can serve an openai-compatible model. New AI clients that should
+// re-use an existing auth flow register here.
+const AI_TO_AUTH_PROVIDER = Object.freeze({
+  'openai-compatible': 'openai',
+  'anthropic':         'anthropic',
+  'gemini':            'google',
+  'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
+  'github-copilot':    'github-copilot'
+});
+
+function authProviderFor(model) {
+  if (!model || !model.provider) return null;
+  if (Object.prototype.hasOwnProperty.call(AI_TO_AUTH_PROVIDER, model.provider)) {
+    return AI_TO_AUTH_PROVIDER[model.provider];
+  }
+  // Unknown AI provider: best-effort fall through. The AI client will
+  // surface this as EUNKNOWN_PROVIDER before we ever read a token.
+  return model.provider;
+}
+
 function resolveAccount(model) {
   if (!model || model.auth !== 'oauth') return null;
   if (model.oauthAccount) return model.oauthAccount;
   // Fallback: if the model has no explicit account but the user has a
-  // single account on that provider, use it. Multi-account users must
-  // set oauthAccount explicitly.
+  // single account on the auth provider, use it. Multi-account users
+  // must set oauthAccount explicitly.
   const idx = readIndex();
-  const list = idx[model.provider] || [];
+  const authProv = authProviderFor(model);
+  const list = idx[authProv] || [];
   if (list.length === 1) return list[0];
   return null;
 }
@@ -184,7 +213,9 @@ function resolveAccount(model) {
 function tokenForModel(model) {
   const account = resolveAccount(model);
   if (!account) return null;
-  return getToken(model.provider, account);
+  const authProv = authProviderFor(model);
+  if (!authProv) return null;
+  return getToken(authProv, account);
 }
 
 // ---- Pending OAuth state ----------------------------------------------
@@ -259,7 +290,10 @@ module.exports = {
   registerExchange,
   getExchange,
   registerRefresher,
-  getRefresher
+  getRefresher,
+  // model integration
+  authProviderFor,
+  AI_TO_AUTH_PROVIDER
 };
 
 // ---- Provider exchange registration -----------------------------------

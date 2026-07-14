@@ -253,9 +253,18 @@ function SettingsPanel() {
   const mAuth = useRef(null), mOauthAccount = useRef(null);
   const addBtn = useRef(null), addModelStatus = useRef(null);
 
-  const projectDir = useRef(null), loadProject = useRef(null), projectStatus = useRef(null), projectOut = useRef(null);
+  // Project + resolved view controls. The resolved view shows what
+  // values are *actually in effect* for a project after the
+  // defaults → app → project merge (decision §2). The raw project
+  // file is still editable; a "Save project" button PUTs the parsed
+  // JSON back through /api/settings/project.
+  const resolvedDir = useRef(null), resolvedStatus = useRef(null), resolvedOut = useRef(null);
+  const projectDir = useRef(null), loadProject = useRef(null), projectStatus = useRef(null);
+  const projectEditor = useRef(null), saveProject = useRef(null), revertProject = useRef(null);
 
   let currentApp = {};
+  let currentProject = {};
+  let currentResolved = {};
   // Most recent snapshot of /api/auth/accounts. Re-fetched when the
   // user toggles auth to "oauth" so the oauthAccount <select> can
   // show the signed-in emails for the chosen provider.
@@ -276,11 +285,14 @@ function SettingsPanel() {
     return lastAccounts;
   }
 
+  // Map an AI client provider to the keyring namespace. The keyring
+  // is keyed by the auth provider (openai, anthropic, google,
+  // github-copilot), not by the AI client provider name. Today the
+  // two are identical for the providers in the dropdown, but we go
+  // through this helper so the mapping is in one place when it
+  // eventually diverges.
   function providerKeyringNamespace(provider) {
-    // For now, the keyring namespace for OAuth equals the AI client
-    // provider (anthropic → anthropic). If a future provider diverges
-    // (e.g. openai-compatible keyring, github-copilot keyring), this
-    // is the one place to teach the UI about it.
+    if (provider === 'openai-compatible') return 'openai';
     return provider;
   }
 
@@ -290,23 +302,44 @@ function SettingsPanel() {
     const ns = providerKeyringNamespace(provider);
     const accounts = (lastAccounts[ns] || []).slice();
     sel.innerHTML = '';
-    // "(auto)" is the default and matches auth.resolveAccount's
-    // single-account fallback. With multiple signed-in accounts, the
-    // user must pick one explicitly.
-    const opt0 = document.createElement('option');
-    opt0.value = '';
-    opt0.textContent = accounts.length === 0
-      ? '(auto — no accounts signed in)'
-      : (accounts.length === 1
-          ? '(auto — ' + accounts[0] + ')'
-          : '(auto — pick one when multiple are signed in)');
-    sel.appendChild(opt0);
+    // Spec: with multiple signed-in accounts, the user must pick
+    // one explicitly (decision §11). We enforce that here by
+    // disabling the empty "(auto)" option when count > 1; the
+    // submit path below also rejects an empty value in that case.
+    if (accounts.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(no accounts signed in for "' + provider + '")';
+      opt.disabled = true;
+      opt.selected = true;
+      sel.appendChild(opt);
+      sel.value = '';
+      return;
+    }
+    if (accounts.length === 1) {
+      // Auto is fine for a single signed-in account; pre-select it
+      // so the field is never in an unsaved state by default.
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = '(auto — ' + accounts[0] + ')';
+      sel.appendChild(opt0);
+    } else {
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = '(pick an account)';
+      opt0.disabled = true;
+      opt0.selected = true;
+      sel.appendChild(opt0);
+    }
     for (const a of accounts) {
       const opt = document.createElement('option');
       opt.value = a;
       opt.textContent = a;
       sel.appendChild(opt);
     }
+    // Re-apply the previously picked account if it's still valid.
+    const prev = sel.getAttribute('data-prev');
+    if (prev && accounts.includes(prev)) sel.value = prev;
   }
 
   function renderModels(list) {
@@ -378,6 +411,13 @@ function SettingsPanel() {
         addModelStatus.current.textContent = 'no signed-in account for "' + provider + '" — sign in on the Auth tab first';
         return;
       }
+      // Spec (decision §11): with multiple signed-in accounts, the
+      // user must pick one explicitly. The empty value is reserved
+      // for the single-account auto fallback.
+      if (list.length > 1 && !oauthAccount) {
+        addModelStatus.current.textContent = 'pick which signed-in account this model uses';
+        return;
+      }
     }
     addBtn.current.disabled = true;
     addModelStatus.current.textContent = 'adding…';
@@ -392,7 +432,10 @@ function SettingsPanel() {
       renderModels(r.body.models);
       addModelStatus.current.textContent = 'added ' + id + '.';
       mId.current.value = ''; mLabel.current.value = ''; mBaseUrl.current.value = ''; mApiKey.current.value = '';
-      if (mOauthAccount.current) mOauthAccount.current.value = '';
+      if (mOauthAccount.current) {
+        mOauthAccount.current.value = '';
+        mOauthAccount.current.removeAttribute('data-prev');
+      }
     } else addModelStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
   }
 
@@ -401,20 +444,6 @@ function SettingsPanel() {
     const r = await fetchJson('/api/settings/app/models/' + encodeURIComponent(id), { method: 'DELETE' });
     if (r.status === 200) { currentApp.models = r.body.models; renderModels(r.body.models); }
     else alert('delete failed: HTTP ' + r.status);
-  }
-
-  async function loadProjectFile() {
-    const dir = (projectDir.current.value || '').trim();
-    if (!dir) { projectStatus.current.textContent = 'projectDir is required'; return; }
-    loadProject.current.disabled = true;
-    projectStatus.current.textContent = 'loading…';
-    const r = await fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(dir));
-    loadProject.current.disabled = false;
-    if (r.status === 200) {
-      projectStatus.current.textContent = 'path: ' + r.body.path;
-      projectOut.current.hidden = false;
-      projectOut.current.textContent = JSON.stringify(r.body.project, null, 2);
-    } else { projectStatus.current.textContent = 'HTTP ' + r.status; projectOut.current.hidden = true; }
   }
 
   useEffect(() => {
@@ -435,8 +464,16 @@ function SettingsPanel() {
   // signed-in emails for that provider (if any). For apikey auth,
   // we still rebuild the select so the "(auto — none signed in)"
   // hint stays accurate, but the field is hidden via CSS below.
+  // github-copilot is reserved (decision §10): apikey auth is not
+  // meaningful for it, so the auth select snaps to "oauth" and the
+  // apikey option is disabled when the user picks it.
   function onAuthOrProviderChange() {
-    const auth = mAuth.current ? mAuth.current.value : 'apikey';
+    const provider = mProvider.current ? mProvider.current.value : 'openai-compatible';
+    let auth = mAuth.current ? mAuth.current.value : 'apikey';
+    if (provider === 'github-copilot' && auth === 'apikey') {
+      auth = 'oauth';
+      if (mAuth.current) mAuth.current.value = 'oauth';
+    }
     // Toggle the apikey/oauth row visibility. The form renders with
     // both rows in the DOM, so we just add/remove `.is-hidden` based
     // on the current auth value. Uses dataset so we don't have to
@@ -448,12 +485,108 @@ function SettingsPanel() {
         if (!showWhen) continue;
         row.classList.toggle('is-hidden', showWhen !== auth);
       }
+      // Disable the apikey option for reserved providers so the
+      // form cannot be tricked into a state the server would later
+      // reject with ENOAUTH.
+      if (mAuth.current) {
+        for (const opt of mAuth.current.querySelectorAll('option')) {
+          if (opt.value === 'apikey') opt.disabled = (provider === 'github-copilot');
+        }
+      }
     }
-    refreshAccounts().then(() => renderOauthAccountOptions(mProvider.current.value));
+    refreshAccounts().then(() => renderOauthAccountOptions(provider));
+  }
+
+  // Resolved view: GET /api/settings/resolved?projectDir=...
+  // Renders the merge result so the user can see what is actually
+  // in effect for a project (decision §2). Re-uses the project
+  // directory input; Load populates both the resolved view and the
+  // editable project JSON.
+  async function loadProjectAndResolved() {
+    const dir = (projectDir.current.value || '').trim();
+    if (!dir) { projectStatus.current.textContent = 'projectDir is required'; return; }
+    loadProject.current.disabled = true;
+    projectStatus.current.textContent = 'loading…';
+    let ok = true;
+    // Project raw + resolved in parallel.
+    const [projRes, resolvedRes] = await Promise.all([
+      fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(dir)),
+      fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir))
+    ]);
+    if (loadProject.current) loadProject.current.disabled = false;
+    if (projRes.status !== 200) {
+      projectStatus.current.textContent = 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : '');
+      ok = false;
+    } else {
+      currentProject = projRes.body.project || {};
+      projectStatus.current.textContent = 'path: ' + projRes.body.path;
+      projectEditor.current.hidden = false;
+      projectEditor.current.value = JSON.stringify(currentProject, null, 2);
+      saveProject.current.disabled = false;
+      revertProject.current.disabled = false;
+    }
+    if (resolvedRes.status !== 200) {
+      if (resolvedStatus.current) resolvedStatus.current.textContent = 'resolved: HTTP ' + resolvedRes.status;
+      ok = false;
+    } else {
+      currentResolved = resolvedRes.body.resolved || {};
+      if (resolvedDir.current) resolvedDir.current.textContent = dir;
+      if (resolvedOut.current) {
+        // Redact apiKey for display so the resolved view never
+        // echoes a secret back into the DOM.
+        const redacted = JSON.parse(JSON.stringify(currentResolved));
+        if (Array.isArray(redacted.models)) {
+          redacted.models = redacted.models.map((m) => {
+            if (!m || typeof m !== 'object') return m;
+            if (typeof m.apiKey === 'string') m.apiKey = m.apiKey ? '•••' : '';
+            return m;
+          });
+        }
+        resolvedOut.current.hidden = false;
+        resolvedOut.current.textContent = JSON.stringify(redacted, null, 2);
+      }
+      if (resolvedStatus.current) resolvedStatus.current.textContent = 'ok.';
+    }
+    return ok;
+  }
+
+  async function saveProjectFile() {
+    const dir = (projectDir.current.value || '').trim();
+    if (!dir) { projectStatus.current.textContent = 'projectDir is required'; return; }
+    let parsed;
+    try { parsed = JSON.parse(projectEditor.current.value || '{}'); }
+    catch (e) {
+      projectStatus.current.textContent = 'invalid JSON: ' + e.message;
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      projectStatus.current.textContent = 'project body must be a JSON object';
+      return;
+    }
+    saveProject.current.disabled = true;
+    projectStatus.current.textContent = 'saving…';
+    const r = await fetchJson('/api/settings/project', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ projectDir: dir }, parsed)) });
+    saveProject.current.disabled = false;
+    if (r.status === 200) {
+      projectStatus.current.textContent = 'saved.';
+      currentProject = r.body.project || {};
+      projectEditor.current.value = JSON.stringify(currentProject, null, 2);
+      // Refresh the resolved view so the user immediately sees the
+      // effect of the override.
+      await loadProjectAndResolved();
+    } else {
+      projectStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
+    }
+  }
+
+  function revertProjectFile() {
+    projectEditor.current.value = JSON.stringify(currentProject, null, 2);
+    projectStatus.current.textContent = 'reverted.';
   }
 
   return h('section', null,
     h('h3', null, 'App'),
+    h('p', { class: 'hint hint--compact' }, 'App-level values are the default for every project. Project-level settings override them.'),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'promptSize' }, 'Default prompt size'),
       h('select', { ref: promptSize, class: 'input', id: 'promptSize' },
@@ -468,7 +601,7 @@ function SettingsPanel() {
       h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
     ),
     h('h3', null, 'Models'),
-    h('p', { class: 'hint hint--compact' }, 'One entry per model. API keys live in the app SQLite store; OAuth tokens live in the OS keychain.'),
+    h('p', { class: 'hint hint--compact' }, 'One entry per model. API keys live in the app SQLite store; OAuth tokens live in the OS keychain. ', h('code', null, 'github-copilot'), ' is reserved: only OAuth is accepted.'),
     h('ul', { ref: modelsList, class: 'models__list', 'aria-label': 'Configured models' }),
     h('details', { class: 'models__add' },
       h('summary', null, 'Add a model'),
@@ -480,7 +613,8 @@ function SettingsPanel() {
           h('option', { value: 'openai-compatible' }, 'openai-compatible'),
           h('option', { value: 'anthropic' }, 'anthropic'),
           h('option', { value: 'gemini' }, 'gemini'),
-          h('option', { value: 'ollama' }, 'ollama')
+          h('option', { value: 'ollama' }, 'ollama'),
+          h('option', { value: 'github-copilot' }, 'github-copilot (reserved — OAuth only)')
         )
       ),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mAuth' }, 'auth'),
@@ -493,7 +627,9 @@ function SettingsPanel() {
       ),
       h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
         h('label', { class: 'label', for: 'mOauthAccount' }, 'OAuth account'),
-        h('select', { ref: mOauthAccount, class: 'input', id: 'mOauthAccount' })
+        h('select', { ref: mOauthAccount, class: 'input', id: 'mOauthAccount',
+          onChange: () => { if (mOauthAccount.current) mOauthAccount.current.setAttribute('data-prev', mOauthAccount.current.value); }
+        })
       ),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mLabel' }, 'label'), h('input', { ref: mLabel, class: 'input', id: 'mLabel', type: 'text', placeholder: 'GPT-4o mini' })),
       h('div', { class: 'row' }, h('label', { class: 'label', for: 'mBaseUrl' }, 'base URL (optional)'), h('input', { ref: mBaseUrl, class: 'input', id: 'mBaseUrl', type: 'text', placeholder: 'https://api.openai.com' })),
@@ -507,14 +643,23 @@ function SettingsPanel() {
       )
     ),
     h('h3', null, 'Project'),
-    h('p', { class: 'hint hint--compact' }, 'Project settings live in ', h('code', null, '<projectDir>/.mouaif.json'), ' and override app-level values for that project.'),
+    h('p', { class: 'hint hint--compact' }, 'Project settings live in ', h('code', null, '<projectDir>/.mouaif.json'), ' and override app-level values for that project. Editing the file below saves a new version through the API.'),
     h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'project directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
     h('div', { class: 'row row--inline' },
       h('label', { class: 'label', for: 'loadProject' }, 'load'),
-      h('button', { ref: loadProject, class: 'btn', id: 'loadProject', type: 'button', onClick: loadProjectFile }, 'Load'),
+      h('button', { ref: loadProject, class: 'btn', id: 'loadProject', type: 'button', onClick: loadProjectAndResolved }, 'Load'),
       h('span', { ref: projectStatus, class: 'status', 'aria-live': 'polite' })
     ),
-    h('pre', { ref: projectOut, class: 'settings__out', hidden: true })
+    h('label', { class: 'label', for: 'projectEditor' }, 'project settings (JSON)'),
+    h('textarea', { ref: projectEditor, class: 'input', id: 'projectEditor', rows: 10, hidden: true, spellcheck: false }),
+    h('div', { class: 'row row--actions' },
+      h('button', { ref: saveProject, class: 'btn btn--primary', type: 'button', onClick: saveProjectFile, disabled: true }, 'Save project'),
+      h('button', { ref: revertProject, class: 'btn', type: 'button', onClick: revertProjectFile, disabled: true }, 'Revert'),
+      h('span', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' })
+    ),
+    h('h3', null, 'Resolved (effective for project)'),
+    h('p', { class: 'hint hint--compact' }, 'The merge of defaults → app → project for ', h('span', { ref: resolvedDir, class: 'code-inline' }, '(load a project above)'), '. What the chat layer actually sees (decision §2).'),
+    h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true })
   );
 }
 

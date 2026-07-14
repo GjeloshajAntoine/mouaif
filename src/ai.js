@@ -107,11 +107,18 @@ async function requireApiKey(model, def) {
     // OAuth path: the access token comes from the OS keychain via
     // src/auth.js. The keychain is keyed by auth provider (openai,
     // anthropic, google, github-copilot), not by AI client provider
-    // (openai-compatible, etc). The model record carries the auth
-    // provider name in `authProvider`; if absent, we fall back to
-    // `model.provider`.
+    // (openai-compatible, etc). The mapping from the model record's
+    // `provider` to the auth provider lives in src/auth.js
+    // (AI_TO_AUTH_PROVIDER); the same function (authProviderFor) is
+    // what the auth subsystem uses to look up accounts, so adding a
+    // new AI client only requires one edit.
     const authMod = require('./auth.js');
-    const authProvider = model.authProvider || model.provider;
+    const authProvider = authMod.authProviderFor(model);
+    if (!authProvider) {
+      const e = new Error('Cannot resolve auth provider for "' + model.provider + '"');
+      e.code = 'EUNKNOWN_PROVIDER';
+      throw e;
+    }
     const lookModel = Object.assign({}, model, { provider: authProvider });
     const token = authMod.tokenForModel(lookModel);
     if (!token) {

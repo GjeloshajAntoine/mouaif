@@ -76,6 +76,7 @@ const result = await ai.streamChat({
 - Source: [src/ai.js](../../src/ai.js). Public surface: `streamChat`, `chat`, `ENDPOINTS`, plus the `BUILDERS` and `PARSERS` maps for extensibility.
 - Server wiring: [src/index.js](../../src/index.js) → `handleAI()`. Model resolution is `settings.getResolved(projectDir).models` (decision §2).
 - `AbortController`: the request's `close` event aborts the upstream fetch, so closing the tab or navigating away cancels the model call.
+- AI provider → keyring namespace mapping lives in [src/auth.js](../../src/auth.js) (`AI_TO_AUTH_PROVIDER` / `authProviderFor`). Today the only non-identity pair is `openai-compatible` → `openai`; the AI client and the settings UI both go through this mapping so an OpenAI-signed-in account can serve an `openai-compatible` model without copying credentials.
 - UI integration: the chat composer posts to `/api/chats/:id/messages/stream`, which delegates to this AI client and renders the normalized SSE stream. The former standalone AI-test panel has been removed.
 
 ## Related

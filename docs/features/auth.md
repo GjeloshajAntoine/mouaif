@@ -34,8 +34,10 @@ auth.listAccounts();
 A model with `auth: 'oauth'` is resolved to a token via `auth.tokenForModel(model)`. The AI client (`src/ai.js`) calls this on every chat. The lookup falls back through:
 
 1. `model.oauthAccount` — explicit per-model account.
-2. If the user has exactly one signed-in account on `model.authProvider` (or `model.provider` if absent), that account is used.
+2. If the user has exactly one signed-in account on the auth provider that the model maps to (see below), that account is used.
 3. Otherwise, the chat returns a typed `ENOAUTH` error and the UI prompts the user to sign in.
+
+The model record stores the **AI client** provider verbatim (e.g. `openai-compatible`); the keyring is keyed by the **auth** provider (e.g. `openai`). The mapping is a single frozen object in [src/auth.js](../../src/auth.js): `AI_TO_AUTH_PROVIDER`. Today the only non-identity pair is `openai-compatible → openai`; the others are 1:1. Both the AI client and the settings UI's OAuth account picker go through `auth.authProviderFor(model)` so adding a new AI client (or changing the mapping) is one edit.
 
 ```js
 // The AI client uses the OAuth access token exactly the same way it uses
@@ -45,8 +47,7 @@ const ai = require('mouaif/src/ai.js');
 await ai.streamChat({
   model: {
     id: 'gpt-4o-mini',
-    provider: 'openai-compatible',   // AI client namespace (request shape)
-    authProvider: 'openai',          // keyring namespace
+    provider: 'openai-compatible',   // AI client provider (request shape)
     baseUrl: 'https://api.openai.com',
     auth: 'oauth',
     oauthAccount: 'me@example.com'   // optional; auto-resolved if exactly one is signed in

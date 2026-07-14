@@ -555,6 +555,28 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   color: var(--fg-soft);
 }
 
+.code-inline {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  word-break: break-all;
+  color: var(--fg);
+}
+
+/* The project-settings editor is a textarea styled like a code block:
+   monospaced, full width, fixed minimum height. Reuses the .input
+   border + focus ring and overrides only what's code-specific. */
+textarea#projectEditor {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  min-height: 200px;
+  resize: vertical;
+}
+
 /* ---- Projects ---------------------------------------------------- */
 
 .projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
