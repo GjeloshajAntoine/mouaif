@@ -4,7 +4,7 @@
 
 The Project card is the per-project surface in the mobile UI: each registered project gets a card with its name, its chat list, a "New chat" button, and an options menu (rename / unregister). The chat list scrolls **inside the card** so the page itself doesn't scroll. The card is the building block the agent-instructions rule describes as "the chat list scrolls inside the card, not the page" and "Project card have new chat and per-project options."
 
-Chats are persisted per-project in `<projectDir>/.mouaif.json` under a `chats` array, alongside the rest of the project-level settings. That means a project's chats can be committed to source control with the project. The chat record itself is a thin entry — `{ id, title, createdAt, lastOpenedAt, trace, promptSize }` — and the chat message history is **not** stored yet; that lands with a separate chat data store commit.
+Chats are persisted per-project in `<projectDir>/.mouaif.json` under a `chats` array, alongside the rest of the project-level settings. That means a project's chats can be committed to source control with the project. The chat record itself is a thin entry — `{ id, title, createdAt, lastOpenedAt, trace, promptSize }`; transcripts live separately in `<projectDir>/.mouaif.messages.<chatId>.json`.
 
 New chats inherit `promptSize` from project-level settings via `settings.getResolved(projectDir)` (decisions §2: defaults → app → project). Tracing always starts off unless the creation request explicitly opts in.
 
@@ -99,4 +99,4 @@ The cards are rendered in the order returned by `/api/projects/registered`. The 
 
 - Storage: [docs/features/app-and-project-settings.md](./app-and-project-settings.md).
 - Folder picker: [docs/features/folder-picker.md](./folder-picker.md).
-- The next commit per the build order is **trace-to-file**, which consumes the per-chat `id` and `trace` fields to write `<projectDir>/.mouaif/traces/<chatId>.ndjson`.
+- Chat transcripts and trace-to-file behavior are documented in [Chat UI](./chat-ui.md).

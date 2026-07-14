@@ -48,13 +48,13 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 
 ### Mobile UI
 
-The mobile UI exposes a **Settings** section at the top of `/web/`. It has three subsections:
+The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. It has three subsections:
 
 - **App** — `Default prompt size` (select). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads. Trace has no app-wide default: each chat starts off and exposes its own opt-in toggle.
 - **Models** — a list of configured models with a Delete button each, and an "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth) — the two are toggled by the auth select. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider; the default `(auto)` is the single-account fallback in `auth.resolveAccount` and falls through to the stored token. With multiple signed-in accounts, the user must pick one explicitly.
 - **Project** — paste a project directory, click Load, and the raw `<projectDir>/.mouaif.json` is shown. No edit UI yet (that's part of the project card commit per the build order).
 
-The UI is mobile-first: stacked rows, 44 px touch targets, system colors, safe-area aware. No build step — the page is served from `src/web/` as plain HTML+CSS+ES modules.
+The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
 
 ## Behavior
 
@@ -75,7 +75,7 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, safe-a
 
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. New endpoints are `GET /api/settings/project`, `POST /api/settings/app/models`, `DELETE /api/settings/app/models/:id`, `POST /api/settings/app/reset`. The `GET /` self-description lists all of them.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
-- Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/style.css](../../src/web/style.css), [src/web/main.js](../../src/web/main.js). Polls `GET /api/settings` every 30 s so the page is truthful even if another client changes settings.
+- Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/main.jsx](../../src/web/src/main.jsx). Polls `GET /api/settings` every 30 s so the page is truthful even if another client changes settings.
 
 ## Related
 
