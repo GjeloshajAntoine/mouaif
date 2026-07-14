@@ -43,14 +43,14 @@
   /* Layout */
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --pad-x: 16px;
-  --pad-y: 12px;
-  --gap: 12px;
-  --tap: 44px;
-  --tabbar-h: 64px;   /* bottom tab bar height (incl. safe area) */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --pad-x: 12px;
+  --pad-y: 8px;
+  --gap: 8px;
+  --tap: 40px;
+  --tabbar-h: 52px;   /* bottom tab bar height (incl. safe area) */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
   --r-pill: 999px;
 }
 
@@ -108,86 +108,71 @@ html, body {
 
 .app__main {
   flex: 1;
-  padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) + 16px);
+  padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) + 12px);
   /* Leave room for the sticky bottom tab bar. */
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px);
 }
 .app__main--flush {
   /* Drill-in screens (chat, picker) own the safe area themselves. */
-  padding-bottom: calc(var(--pad-y) + 16px);
+  padding-bottom: calc(var(--pad-y) + 12px);
 }
 
 /* ---- App header ----------------------------------------------------- */
 
 /* ---- App header ----------------------------------------------------- */
 
-/* The brand block on the left of the header. Previously a bare line
-   of text on the page background; now anchored by a small logo tile
-   and a stacked title so the brand reads as a unit. */
+/* The brand block on the left of the header. Kept as small as
+   possible: a 24 px logo tile, the title on a single line, and no
+   subtitle. The right side carries a transparent spacer so a future
+   header action (search, profile) can sit there without shifting
+   the brand. */
 
 .app__header {
-  padding: calc(var(--safe-top) + 10px) var(--pad-x) 14px;
+  padding: calc(var(--safe-top) + 6px) var(--pad-x) 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .app__brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .app__logo {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   background: linear-gradient(135deg, #7fb1ff 0%, #5b8bff 100%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--on-accent);
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   letter-spacing: -0.02em;
-  box-shadow: 0 4px 14px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
-}
-
-.app__title-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-width: 0;
-  line-height: 1.1;
+  box-shadow: 0 2px 8px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
 .app__title {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   background: linear-gradient(180deg, #fff, #c8d4e3);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  line-height: 1.1;
 }
 
-.app__sub {
-  margin: 1px 0 0;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-}
-
-/* Empty slot on the right of the header. Keeps the brand left-aligned
-   in a layout that could later host a header action (search, profile,
-   etc.) without a visual shift. */
-.app__header-spacer { width: 32px; height: 32px; flex-shrink: 0; }
+/* Empty slot on the right of the header. Matches the logo size so a
+   future header action sits flush with the brand. */
+.app__header-spacer { width: 24px; height: 24px; flex-shrink: 0; }
 
 /* ---- Bottom tab bar ------------------------------------------------ */
 
@@ -197,20 +182,16 @@ html, body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
-  gap: 4px;
-  padding: 8px 6px calc(8px + var(--safe-bottom));
-  /* Slightly stronger fade so the tab bar reads as a real surface
-     sitting above the content, not a translucent strip. */
+  gap: 2px;
+  padding: 4px 4px calc(4px + var(--safe-bottom));
   background:
     linear-gradient(180deg, rgba(12,15,20,0) 0%, rgba(20,25,33,.86) 22%, var(--surface) 50%, var(--surface) 100%);
   border-top: 1px solid var(--border-strong);
   backdrop-filter: saturate(160%) blur(12px);
   -webkit-backdrop-filter: saturate(160%) blur(12px);
   z-index: 30;
-  /* Height is content-driven, but we set a min so the main padding
-     matches even on tall-label devices. */
   min-height: var(--tabbar-h);
-  box-shadow: 0 -1px 0 rgba(255,255,255,.02), 0 -8px 24px rgba(0,0,0,.35);
+  box-shadow: 0 -1px 0 rgba(255,255,255,.02), 0 -6px 18px rgba(0,0,0,.30);
 }
 
 .app__tab {
@@ -219,10 +200,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   min-height: var(--tap);
-  padding: 6px 4px;
-  border-radius: 10px;
+  padding: 2px 4px;
+  border-radius: 8px;
   text-decoration: none;
   color: var(--muted);
   background: transparent;
@@ -233,9 +214,6 @@ html, body {
 .app__tab:active       { transform: scale(0.97); }
 .app__tab.is-active    { color: var(--accent); }
 .app__tab.is-active .app__tab-icon {
-  /* Active pill behind the icon: a soft accent-soft fill + a 1px
-     inset hairline so the active tab is unambiguous at a glance,
-     even in peripheral vision. */
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px rgba(127,177,255,.18);
 }
@@ -244,8 +222,8 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 28px;
+  width: 36px;
+  height: 22px;
   border-radius: var(--r-pill);
   transition: background 120ms ease, color 120ms ease;
   color: inherit;
@@ -253,7 +231,7 @@ html, body {
 .app__tab-icon svg { display: block; }
 
 .app__tab-label {
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1.1;
@@ -264,8 +242,8 @@ html, body {
 .view-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 0 16px;
+  gap: 8px;
+  padding: 2px 0 8px;
 }
 
 .view-back {
@@ -281,14 +259,14 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
   transition: background 120ms ease, color 120ms ease;
 }
 .view-back:hover { background: var(--surface-2); color: var(--fg); }
 
 .view-title {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0;
@@ -297,41 +275,41 @@ html, body {
 /* ---- Sections & headings ------------------------------------------ */
 
 section {
-  margin-top: 20px;
-  padding-top: 18px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 section:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
 section h2 {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 10px;
+  margin: 0 0 6px;
 }
 section h3 {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent);
-  margin: 20px 0 10px;
+  margin: 12px 0 6px;
 }
-section h3:first-of-type { margin-top: 12px; }
+section h3:first-of-type { margin-top: 8px; }
 
 .hint {
   color: var(--fg-soft);
-  font-size: 0.88rem;
-  line-height: 1.5;
-  margin: 0 0 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0 0 10px;
 }
 .hint code {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.82em;
+  font-size: 0.78em;
   background: var(--surface-3);
   border: 1px solid var(--border);
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 4px;
   word-break: break-all;
   color: var(--fg);
@@ -342,14 +320,14 @@ section h3:first-of-type { margin-top: 12px; }
 .row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 4px;
+  margin-bottom: 8px;
 }
-.row--inline  { flex-direction: row; align-items: center; gap: 12px; }
-.row--actions { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row--inline  { flex-direction: row; align-items: center; gap: 8px; }
+.row--actions { flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .label {
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.01em;
@@ -361,7 +339,7 @@ section h3:first-of-type { margin-top: 12px; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 10px 12px;
+  padding: 8px 10px;
   min-height: var(--tap);
   width: 100%;
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
@@ -399,8 +377,9 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 0 16px;
+  padding: 0 12px;
   min-height: var(--tap);
+  font-size: 0.88rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -438,7 +417,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 
 .status {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   min-height: 1em;
   /* Slightly larger letter-spacing keeps transient status messages
      readable at a glance on a phone, even when they wrap. */
@@ -458,34 +437,34 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 
 /* ---- Settings: models editor ------------------------------------- */
 
-.models__list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.models__list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .models__list li {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .models__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.models__id { font-weight: 600; font-size: 0.95rem; }
-.models__meta { color: var(--muted); font-size: 0.8rem; line-height: 1.4; word-break: break-all; }
+.models__id { font-weight: 600; font-size: 0.88rem; }
+.models__meta { color: var(--muted); font-size: 0.74rem; line-height: 1.35; word-break: break-all; }
 .models__add,
 .picker__create {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 4px 14px;
-  margin-top: 4px;
+  padding: 2px 10px;
+  margin-top: 2px;
 }
 .models__add summary,
 .picker__create summary {
   cursor: pointer;
   color: var(--fg-soft);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 500;
-  min-height: 44px;
+  min-height: var(--tap);
   display: flex;
   align-items: center;
   list-style: none;
@@ -535,24 +514,24 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 
 /* ---- Projects ---------------------------------------------------- */
 
-.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .projects__empty {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   text-align: center;
-  padding: 32px 16px 28px;
+  padding: 20px 12px 18px;
   background: var(--surface);
   border: 1px dashed var(--border);
   border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 .projects__empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent);
   display: inline-flex;
@@ -563,10 +542,10 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .projects__empty-title {
   color: var(--fg);
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   margin: 0;
 }
-.projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.45; }
+.projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
 
 /* Project card */
 .project-card {
@@ -653,22 +632,22 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
-  max-height: 260px;
+  max-height: 220px;
   overflow-y: auto;
   margin: 0;
   padding: 0 2px 0 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   scrollbar-width: thin;
 }
 .project-card__chats li {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 7px 10px;
   border-radius: var(--r-md);
   background: var(--surface-2);
   cursor: pointer;
@@ -677,8 +656,8 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .project-card__chats li:hover  { background: var(--surface-3); }
 .project-card__chats li:active { transform: scale(0.99); }
-.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
-.project-card__chat-meta { color: var(--muted); font-size: 0.75rem; flex-shrink: 0; }
+.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+.project-card__chat-meta { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
 .project-card__chat-delete {
   font: inherit;
   color: var(--muted);
@@ -686,7 +665,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   border: 0;
   min-height: var(--tap);
   min-width: var(--tap);
-  font-size: 1.15rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   border-radius: 8px;
@@ -695,8 +674,8 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
 .project-card__chats-empty {
   color: var(--muted);
-  font-size: 0.85rem;
-  padding: 12px;
+  font-size: 0.78rem;
+  padding: 8px;
   background: var(--surface-2);
   border: 1px dashed var(--border);
   border-radius: var(--r-md);
@@ -708,12 +687,13 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   background: var(--accent);
   border: 0;
   border-radius: var(--r-md);
-  padding: 0 18px;
+  padding: 0 14px;
   min-height: var(--tap);
   font-weight: 600;
+  font-size: 0.88rem;
   align-self: flex-start;
   cursor: pointer;
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 4px 12px rgba(127,177,255,.2);
+  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 3px 10px rgba(127,177,255,.2);
   transition: background 120ms ease, transform 80ms ease;
 }
 .project-card__new:hover  { background: var(--accent-press); }
@@ -794,17 +774,17 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-view {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   /* The chat view fills the main region minus the safe-area top so
      the transcript and composer have room to breathe. */
-  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 80px);
+  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 64px);
 }
 
 .chat-view__head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0 12px;
+  gap: 6px;
+  padding: 2px 0 8px;
   border-bottom: 1px solid var(--border);
 }
 .chat-view__back {
@@ -816,7 +796,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   padding: 0;
   min-height: var(--tap);
   min-width: var(--tap);
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -834,7 +814,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   padding: 0;
   min-height: var(--tap);
   min-width: var(--tap);
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -849,7 +829,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .chat-view__name {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -857,15 +837,15 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   cursor: pointer;
 }
 .chat-view__name:hover { color: var(--accent); }
-.chat-view__meta { color: var(--muted); font-size: 0.76rem; }
+.chat-view__meta { color: var(--muted); font-size: 0.7rem; }
 
 /* Inline chat settings: horizontal scroll on small screens */
 .chat-view__settings {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
@@ -873,33 +853,33 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   scrollbar-width: none;
 }
 .chat-view__settings::-webkit-scrollbar { display: none; }
-.chat-view__settings .row { margin: 0; flex-direction: row; align-items: center; gap: 8px; flex-shrink: 0; }
+.chat-view__settings .row { margin: 0; flex-direction: row; align-items: center; gap: 6px; flex-shrink: 0; }
 .chat-view__settings .row--inline { flex-shrink: 0; }
-.chat-view__settings .input { min-height: 36px; padding: 6px 28px 6px 10px; font-size: 0.88rem; }
+.chat-view__settings .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; }
 .chat-view__settings .label { white-space: nowrap; }
 
 /* Transcript */
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 4px 0 8px;
+  gap: 6px;
+  padding: 2px 0 4px;
   flex: 1;
-  min-height: 220px;
-  max-height: 56dvh;
+  min-height: 180px;
+  max-height: 58dvh;
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.chat-msg { display: flex; gap: 8px; align-items: flex-end; }
+.chat-msg { display: flex; gap: 6px; align-items: flex-end; }
 .chat-msg--user { flex-direction: row-reverse; }
 .chat-msg__role {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 6px 4px 0;
-  min-width: 56px;
+  padding: 4px 2px 0;
+  min-width: 48px;
   text-align: right;
   flex-shrink: 0;
 }
@@ -908,21 +888,21 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-msg__body {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 18px 18px 18px 6px;
-  padding: 10px 14px;
+  border-radius: 16px 16px 16px 4px;
+  padding: 7px 11px;
   max-width: 82%;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 0.96rem;
-  line-height: 1.5;
+  font-size: 0.9rem;
+  line-height: 1.4;
   box-shadow: var(--shadow-sm);
 }
 .chat-msg--user .chat-msg__body {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  border-radius: 18px 18px 6px 18px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 4px 12px rgba(127,177,255,.18);
+  border-radius: 16px 16px 4px 16px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 3px 10px rgba(127,177,255,.18);
 }
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
@@ -933,8 +913,8 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-msg__ts { display: none; }
 .chat-view__empty {
   color: var(--muted);
-  font-size: 0.95rem;
-  padding: 36px 16px 32px;
+  font-size: 0.85rem;
+  padding: 22px 12px 20px;
   text-align: center;
   background: var(--surface);
   border: 1px dashed var(--border);
@@ -942,12 +922,12 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 .chat-view__empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent);
   display: inline-flex;
@@ -958,42 +938,40 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-view__empty-title {
   color: var(--fg);
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   margin: 0;
 }
-.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.45; }
+.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
 
 /* Composer */
 .chat-view__composer {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-md);
   position: sticky;
-  bottom: calc(var(--safe-bottom) + 8px);
+  bottom: calc(var(--safe-bottom) + 6px);
 }
 .chat-view__composer .row { margin-bottom: 0; }
-.chat-view__composer .row--inline { gap: 10px; }
+.chat-view__composer .row--inline { gap: 6px; }
 .chat-view__composer .input { background: var(--bg); }
-.chat-view__composer .row--actions { gap: 10px; }
-.chat-view__composer .btn--primary { min-width: 92px; }
+.chat-view__composer .row--actions { gap: 6px; }
+.chat-view__composer .btn--primary { min-width: 76px; }
 .chat-view__composer .status { margin-left: auto; }
 
 /* ---- Small screens / desktop fallback ---------------------------- */
 
 @media (max-width: 360px) {
-  :root { --pad-x: 14px; }
-  .app__title { font-size: 1.35rem; }
+  :root { --pad-x: 10px; }
   .chat-msg__body { max-width: 78%; }
 }
 
 @media (min-width: 600px) {
-  .app { padding-bottom: 32px; }
-  .chat-view__transcript { max-height: 60dvh; }
+  .chat-view__transcript { max-height: 62dvh; }
 }
 
 /* Reduce motion */
@@ -1061,7 +1039,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .inspector__scroller {
   position: relative;
   width: 100%;
-  height: 56dvh;
+  height: 58dvh;
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--border);

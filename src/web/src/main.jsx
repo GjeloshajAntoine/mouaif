@@ -86,14 +86,12 @@ function Header() {
   // The header is the brand block on the left plus a transparent
   // spacer on the right. The spacer is a layout placeholder so a
   // future header action (e.g. a search icon) can sit there without
-  // pushing the brand around.
+  // pushing the brand around. Kept as small as possible — single
+  // line, no subtitle — to maximize the content area on a phone.
   return h('header', { class: 'app__header' },
     h('div', { class: 'app__brand' },
       h('span', { class: 'app__logo', 'aria-hidden': 'true' }, 'm'),
-      h('div', { class: 'app__title-stack' },
-        h('h1', { class: 'app__title' }, 'mouaif'),
-        h('p', { class: 'app__sub' }, 'mobile ui')
-      )
+      h('h1', { class: 'app__title' }, 'mouaif')
     ),
     h('span', { class: 'app__header-spacer', 'aria-hidden': 'true' })
   );

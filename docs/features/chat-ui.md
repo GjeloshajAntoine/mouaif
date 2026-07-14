@@ -12,8 +12,8 @@ A polished, dark, mobile-first design system lives in [src/web/src/style.css](..
 
 - **Surfaces**: three levels of dark elevation (`--bg`, `--surface`, `--surface-2`, `--surface-3`) with a soft accent-tinted radial glow at the top of the page and a fainter one at the bottom, so the app never reads as a black void. Cards sit on `--surface` and use a soft 1 px border plus `--shadow-sm` for lift.
 - **Color tokens**: `--accent` (signature blue) with `--accent-press`, `--accent-soft` (tinted surface), `--on-accent` (text on accent). Semantic colors: `--success`, `--warning`, `--danger` + `--danger-soft`. The status line drives its color from a `data-state` attribute on the `.status` element (`busy` → accent, `error` → danger, `success` → success, default → muted) so the same line reads correctly in every context.
-- **Typography**: a single system-font stack at 16 px / 1.5 line-height. Section headings are small-caps uppercase (`.08em` letter-spacing) in `--muted` for navigation and `--accent` for subsections. The H1 title uses a white-to-blue gradient for the brand mark.
-- **Spacing & radii**: a 4 px scale (`--gap`, `--pad-x`, `--pad-y`) and an 8 px radius scale (`--r-sm`, `--r-md`, `--r-lg`, `--r-pill`). All touch targets are 44 × 44 px (`--tap`).
+- **Typography**: a single system-font stack at 16 px / 1.4–1.5 line-height. Section headings are small-caps uppercase (`.08em` letter-spacing) in `--muted` for navigation and `--accent` for subsections. The H1 title uses a white-to-blue gradient for the brand mark.
+- **Spacing & radii**: an 8 px scale (`--pad-x: 12`, `--pad-y: 8`, `--gap: 8`) and a 6/10/14 px radius scale (`--r-sm`, `--r-md`, `--r-lg`). Touch targets are 40 × 40 px (`--tap`) — the smallest reliable tap target on a phone, used throughout the bottom tab bar, project card menu, and icon buttons.
 - **Components**: primary buttons (`.btn--primary`) get a subtle inset highlight + glow; cards (`.project-card`, `.chat-view__composer`) get rounded corners and a soft shadow; popovers (`.project-card__menu-pop`) get a stronger shadow and the third surface level; chat bubbles use asymmetric corner radii to point at the speaker. Empty states (`.projects__empty`, `.chat-view__empty`) have a centered icon tile in `--accent-soft`, a bold title, and a short body line so the page is never just a bare "nothing here" message.
 - **Motion**: 120 ms transitions on hover, focus, and press. `prefers-reduced-motion` short-circuits them to 1 ms.
 - **Focus**: keyboard-only focus ring via `:focus-visible`; touch devices never see it.
@@ -22,15 +22,15 @@ The build target is 360–430 px wide; the app is a 480 px-max-width column cent
 
 ## App shell
 
-The shell is a full-viewport flex column (`min-height: 100dvh`). Three regions stack top → bottom:
+The shell is a full-viewport flex column (`min-height: 100dvh`). Three regions stack top → bottom, and the whole UI is tuned to be as small as possible on a phone:
 
-1. **Header** — brand block: a small blue logo tile with the letter "m" and a stacked title (`.app__title` + `.app__sub`). The right side carries a transparent spacer so a future header action can sit there without pushing the brand.
+1. **Header** — single-line brand block: a 24 × 24 px blue logo tile with the letter "m" and the title "mouaif". No subtitle, no second row; the right side carries a 24 × 24 px transparent spacer so a future header action (search, profile) can sit there without shifting the brand.
 2. **Main** — the scrollable content. Reserves `padding-bottom: var(--tabbar-h) + var(--safe-bottom)` so the last row never sits under the tab bar. Drill-in screens (chat, picker) use `.app__main--flush` and own the safe area themselves.
-3. **Bottom tab bar** — sticky child of the shell. Hidden on drill-in screens.
+3. **Bottom tab bar** — sticky child of the shell, 52 px tall (incl. safe area). Hidden on drill-in screens.
 
 ## Bottom tab bar
 
-The three top-level destinations — **Projects / Settings / Auth** — are reached from a sticky bottom tab bar (`.app__tabbar`) instead of the top header. Each tab is a small inline-SVG icon above a small-caps label. The active tab gets the accent color and a soft accent-soft pill behind the icon. The bar respects `env(safe-area-inset-bottom)`, has a top border + gradient background that fades into the content, and sits at `z-index: 30` so popovers and other overlays can stack above it. Hidden on the chat view and the project picker, which are drill-in screens with their own per-screen back button.
+The four top-level destinations — **Projects / Inspector / Settings / Auth** — are reached from a sticky bottom tab bar (`.app__tabbar`) instead of the top header. Each tab is a small inline-SVG icon above a small-caps label. The active tab gets the accent color and a soft accent-soft pill behind the icon. The bar respects `env(safe-area-inset-bottom)`, has a top border + gradient background that fades into the content, and sits at `z-index: 30` so popovers and other overlays can stack above it. Hidden on the chat view and the project picker, which are drill-in screens with their own per-screen back button.
 
 ## Usage
 
