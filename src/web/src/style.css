@@ -104,6 +104,19 @@ textarea.input { resize: vertical; font-family: inherit; }
 .projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .projects__empty { color: var(--muted); font-size: 0.85rem; font-style: italic; padding: 12px 4px; }
 
+/* Project picker (filesystem browser). */
+.picker__path { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.8rem; background: var(--row); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; word-break: break-all; }
+.picker__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.picker__empty { color: var(--muted); font-size: 0.85rem; font-style: italic; padding: 12px 4px; }
+.picker__row { display: flex; align-items: center; gap: 8px; background: var(--row); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.picker__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
+.picker__leaf { color: var(--muted); font-size: 0.75rem; padding: 0 8px; }
+.picker__open, .picker__select { font: inherit; color: var(--fg); background: var(--row-alt); border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; min-height: 44px; min-width: 64px; font-size: 0.85rem; }
+.picker__select { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.picker__create { background: var(--row); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+.picker__create summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; min-height: 36px; display: flex; align-items: center; }
+.picker__create[open] summary { margin-bottom: 8px; }
+
 .project-card { background: var(--row); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .project-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .project-card__name { font-weight: 600; font-size: 1rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
