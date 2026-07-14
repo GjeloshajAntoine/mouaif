@@ -46,7 +46,7 @@
   --pad-x: 12px;
   --pad-y: 8px;
   --gap: 8px;
-  --tap: 40px;
+  --tap: 44px;
   --tabbar-h: 52px;   /* bottom tab bar height (incl. safe area) */
   --r-sm: 6px;
   --r-md: 10px;
@@ -156,8 +156,6 @@ html, body {
   0%, 100% { opacity: .25; }
   50%      { opacity: 1;   }
 }
-
-/* ---- App header ----------------------------------------------------- */
 
 /* ---- App header ----------------------------------------------------- */
 
@@ -637,8 +635,8 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 0;
-  min-height: 36px;
-  min-width: 36px;
+  min-height: var(--tap);
+  min-width: var(--tap);
   font-weight: 700;
   font-size: 1.05rem;
   line-height: 1;
@@ -804,7 +802,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 12px;
-  min-height: 36px;
+  min-height: var(--tap);
   min-width: 60px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
@@ -1098,7 +1096,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   background: transparent;
   border: 0;
   padding: 8px 12px;
-  min-height: 36px;
+  min-height: var(--tap);
   border-radius: 8px;
   flex: 1;
   cursor: pointer;
