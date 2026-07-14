@@ -214,12 +214,48 @@ function register() {
   if (_registered) return;
   // Guard against re-registration in test harnesses; auth.registerExchange
   // itself overwrites, so this is just a guard for *our* bookkeeping.
-  if (auth.getExchange('anthropic')) {
-    _registered = true;
-    return;
-  }
-  auth.registerExchange('anthropic', exchange);
+  if (!auth.getExchange('anthropic')) auth.registerExchange('anthropic', exchange);
+  if (!auth.getRefresher('anthropic')) auth.registerRefresher('anthropic', refresh);
   _registered = true;
+}
+
+// Proactive refresher registered with auth.registerRefresher. Called
+// by src/ai.js when a stored access token is within 60s of expiry.
+// Posts the refresh_token grant per spec (JSON body, with the
+// anthropic-beta header — see exchangeRefreshToken above for the
+// rationale). Returns the same shape as a fresh login so the AI
+// client can drop it straight into the keychain blob:
+//
+//   { accessToken, refreshToken?, expiresAt?, scope?, account? }
+//
+// `account` is forwarded as-is from the caller; `expiresAt` is
+// computed from `expires_in`. The token exchange must hit the same
+// deployment as the Console that issued the code (per `ant auth
+// status` / cmd_auth.go), so we prefer the model's `baseUrl` (lets
+// test mocks and Anthropic-compatible proxies route the refresh) and
+// fall back to the production default.
+async function refresh({ provider, account, refreshToken, scope, baseUrl }) {
+  if (provider !== 'anthropic') {
+    const e = new Error('Anthropic refresher called for provider "' + provider + '"');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  if (!refreshToken) {
+    const e = new Error('refreshToken is required');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  const out = await exchangeRefreshToken({
+    baseUrl: baseUrl || DEFAULT_API_BASE,
+    refreshToken
+  });
+  return {
+    accessToken: out.accessToken,
+    refreshToken: out.refreshToken || refreshToken,
+    expiresAt: typeof out.expiresIn === 'number' ? Date.now() + out.expiresIn * 1000 : null,
+    scope: out.scope || scope || null,
+    account: (out.account && (out.account.email_address || out.account.emailAddress)) || account || null
+  };
 }
 
 module.exports = {
@@ -238,6 +274,7 @@ module.exports = {
   exchangeRefreshToken,
   // registration
   register,
-  exchange
+  exchange,
+  refresh
 };
 

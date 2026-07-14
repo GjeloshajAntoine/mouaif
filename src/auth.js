@@ -255,9 +255,11 @@ module.exports = {
   recordPending,
   consumePending,
   clearPending,
-  // provider exchange registration (used by per-provider OAuth commits)
+  // provider exchange + refresher registration (used by per-provider OAuth commits)
   registerExchange,
-  getExchange
+  getExchange,
+  registerRefresher,
+  getRefresher
 };
 
 // ---- Provider exchange registration -----------------------------------
@@ -269,6 +271,7 @@ module.exports = {
 // with a clear message — that is the expected state in this commit.
 
 const _exchanges = Object.create(null);
+const _refreshers = Object.create(null);
 
 function registerExchange(provider, fn) {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
@@ -286,4 +289,31 @@ function registerExchange(provider, fn) {
 
 function getExchange(provider) {
   return _exchanges[provider] || null;
+}
+
+// registerRefresher / getRefresher — same shape as the exchange
+// registry, but for proactive refresh. A refresher takes
+// ({ provider, account, refreshToken, scope, baseUrl }) and returns
+// the same shape as a fresh login:
+//   { accessToken, refreshToken?, expiresAt?, scope?, account? }
+// The AI client (src/ai.js) calls this just before an OAuth request
+// if the stored access_token expires within the next minute, so a
+// long chat doesn't hit a 401 mid-stream. Persisting the new blob
+// is the refresh path's responsibility; see oauth-anthropic.js.
+function registerRefresher(provider, fn) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    const e = new Error('Unknown provider: ' + provider);
+    e.code = 'EPROVIDER';
+    throw e;
+  }
+  if (typeof fn !== 'function') {
+    const e = new Error('Refresher must be a function');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  _refreshers[provider] = fn;
+}
+
+function getRefresher(provider) {
+  return _refreshers[provider] || null;
 }

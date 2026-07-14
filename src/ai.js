@@ -98,7 +98,11 @@ function endpointFor(model) {
 // The def is the ENDPOINTS[model.provider] record, passed in by the
 // caller so we can branch on the provider's auth shape (e.g. Ollama's
 // authHeader: () => ({}) doesn't take a credential at all).
-function requireApiKey(model, def) {
+//
+// Async because the OAuth path may need to proactively refresh an
+// expiring access token (and persist the new blob) before the chat
+// hits the wire. The API-key path is sync-fast and does not await.
+async function requireApiKey(model, def) {
   if (model.auth === 'oauth') {
     // OAuth path: the access token comes from the OS keychain via
     // src/auth.js. The keychain is keyed by auth provider (openai,
@@ -131,6 +135,52 @@ function requireApiKey(model, def) {
       e.code = 'EOAUTH_BLOB';
       throw e;
     }
+    // Proactive refresh. If the stored access_token expires within
+    // OAUTH_REFRESH_LEAD_MS (or is already past), and the provider
+    // has a registered refresher + we have a refresh_token, swap
+    // it for a fresh one and persist the new blob to the keychain.
+    // Skipped silently when no refresher is registered yet, or when
+    // the user signed in via a flow that did not issue a
+    // refresh_token. A failure here is non-fatal: we fall through
+    // with the existing token; the upstream will return a clean
+    // 401 if the token is actually stale, which the user can
+    // recover from by re-signing in.
+    const now = Date.now();
+    const nearExpiry = typeof parsed.expiresAt === 'number'
+      ? (parsed.expiresAt - now) <= OAUTH_REFRESH_LEAD_MS
+      : false;
+    if (nearExpiry && parsed.refreshToken) {
+      const refresher = authMod.getRefresher(authProvider);
+      if (refresher) {
+        const baseUrl = (model.baseUrl
+          || (ENDPOINTS[authProvider] && ENDPOINTS[authProvider].baseUrl)
+          || null);
+        const account = lookModel.oauthAccount || parsed.account || null;
+        try {
+          const next = await refresher({
+            provider: authProvider,
+            account,
+            refreshToken: parsed.refreshToken,
+            scope: parsed.scope || null,
+            baseUrl
+          });
+          if (next && next.accessToken) {
+            parsed = Object.assign({}, parsed, {
+              accessToken: next.accessToken,
+              refreshToken: next.refreshToken || parsed.refreshToken,
+              expiresAt: typeof next.expiresAt === 'number' ? next.expiresAt : parsed.expiresAt,
+              scope: next.scope || parsed.scope
+            });
+            // Persist the new blob. Best-effort: a keyring failure
+            // here does not poison the in-memory token we are about
+            // to use, and the next chat will re-refresh as needed.
+            try {
+              await authMod.setToken(authProvider, account || 'default', JSON.stringify(parsed));
+            } catch { /* swallow; in-memory token is still valid for this chat */ }
+          }
+        } catch { /* swallow; fall through to the stored token */ }
+      }
+    }
     model.__accessToken = parsed.accessToken;
     return true;
   }
@@ -145,6 +195,13 @@ function requireApiKey(model, def) {
   }
   return true;
 }
+
+// Refresh lead window. If a stored access token expires within this
+// many ms, we proactively swap it for a fresh one before the chat
+// hits the wire. 60s matches the SDK's typical advisory-refresh
+// threshold and is short enough that a flaky refresh never holds a
+// chat hostage for long.
+const OAUTH_REFRESH_LEAD_MS = 60 * 1000;
 
 // ---- Request builders --------------------------------------------------
 
@@ -424,7 +481,9 @@ async function streamChat(opts) {
   let def, build, parse;
   try {
     def = endpointFor(model);
-    requireApiKey(model, def);
+    // requireApiKey is async on the OAuth path (proactive refresh);
+    // sync-fast on the API-key path. We always `await` it here.
+    await requireApiKey(model, def);
     build = BUILDERS[model.provider];
     parse = PARSERS[model.provider];
   } catch (e) {
