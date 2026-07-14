@@ -14,11 +14,9 @@
 
 import { render, h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { signal, computed, effect } from '@preact/signals';
+import { signal } from '@preact/signals';
 import { createVirtualList } from './virtual-list.js';
 import './style.css';
-
-const $ = (sel) => document.querySelector(sel);
 
 // ---- API client --------------------------------------------------------
 
@@ -1381,11 +1379,8 @@ function InspectorView() {
   // ---- Render --------------------------------------------------------
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
 
-  // Re-render is driven by stateTick.current; reading the ref is
-  // enough to keep Preact happy when the value doesn't change.
-  // (Preact doesn't actually re-render on ref reads, so we mutate
-  //  route.value to force it from `forceUpdate()` below.)
-  stateTick.current;
+  // Re-render is driven by stateTick.current via forceUpdate() below.
+  // forceUpdate() bumps route.value to trigger a full app re-render.
 
   // Phase 1: setup
   if (phase.current === 'setup') {
@@ -1963,11 +1958,13 @@ function ChatView(props) {
   }
 
   // Latest chat record from the server; populated by load() and by
-  // updateChat(). Lets the trace toggle and prompt-size selector
-  // render their current state from one source of truth.
-  let chat = signal(null);
-  let messages = signal([]);
-  let models = signal([]);
+  // updateChat(). Stored in refs (not signals) because the data is
+  // only read in imperative DOM helpers, never in the JSX tree.
+  // Using `let signal()` inside the component body would lose state
+  // on re-render — refs persist across renders.
+  const chatRef = useRef(null);
+  const messagesRef = useRef([]);
+  const modelsRef = useRef([]);
 
   async function load() {
     if (!projectDir || !chatId) return;
@@ -1978,16 +1975,16 @@ function ChatView(props) {
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
     const c = rChat.body.chat;
-    chat.value = c;
-    messages.value = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
-    models.value = rModels.status === 200 ? (rModels.body.models || []) : [];
+    chatRef.current = c;
+    messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+    modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     if (chatMeta.current) chatMeta.current.textContent = (c.promptSize || 'average') + ' · ' + (c.trace ? 'trace on' : 'trace off');
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     if (promptSizeSelect.current) promptSizeSelect.current.value = c.promptSize || 'average';
 
-    if (modelSelect.current) populateModelSelect(models.value);
+    if (modelSelect.current) populateModelSelect(modelsRef.current);
 
     renderTranscript();
   }
@@ -2015,7 +2012,7 @@ function ChatView(props) {
   function renderTranscript() {
     if (!transcript.current) return;
     transcript.current.innerHTML = '';
-    if (!messages.value.length) {
+    if (!messagesRef.current.length) {
       const empty = document.createElement('div');
       empty.className = 'chat-view__empty';
       const icon = document.createElement('span');
@@ -2031,7 +2028,7 @@ function ChatView(props) {
       transcript.current.appendChild(empty);
       return;
     }
-    for (const m of messages.value) appendMessageToTranscript(m, false);
+    for (const m of messagesRef.current) appendMessageToTranscript(m, false);
     transcript.current.scrollTop = transcript.current.scrollHeight;
   }
 
@@ -2086,18 +2083,18 @@ function ChatView(props) {
       body: JSON.stringify(Object.assign({ projectDir }, patch || {}))
     });
     if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
-    chat.value = r.body.chat;
-    if (chatMeta.current && chat.value) chatMeta.current.textContent = (chat.value.promptSize || 'average') + ' · ' + (chat.value.trace ? 'trace on' : 'trace off');
+    chatRef.current = r.body.chat;
+    if (chatMeta.current && chatRef.current) chatMeta.current.textContent = (chatRef.current.promptSize || 'average') + ' · ' + (chatRef.current.trace ? 'trace on' : 'trace off');
   }
 
   function renameChat() {
-    if (!chat.value) return;
-    const next = prompt('Rename chat', chat.value.title || chatId);
+    if (!chatRef.current) return;
+    const next = prompt('Rename chat', chatRef.current.title || chatId);
     if (next == null) return;
     const trimmed = next.trim();
-    if (!trimmed || trimmed === chat.value.title) return;
+    if (!trimmed || trimmed === chatRef.current.title) return;
     updateChat({ title: trimmed }).then(() => {
-      if (chat.value && chatName.current) chatName.current.textContent = chat.value.title || chatId;
+      if (chatRef.current && chatName.current) chatName.current.textContent = chatRef.current.title || chatId;
     });
   }
 
@@ -2114,7 +2111,7 @@ function ChatView(props) {
   }
 
   function deleteThisChat() {
-    if (!chat.value) return;
+    if (!chatRef.current) return;
     if (!confirm('Delete this chat? Its messages will be removed; any exported trace file will be kept.')) return;
     fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' })
       .then((r) => {
@@ -2137,7 +2134,7 @@ function ChatView(props) {
     autoresize();
 
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
-    messages.value = messages.value.concat([userMsg]);
+    messagesRef.current = messagesRef.current.concat([userMsg]);
     appendMessageToTranscript(userMsg, false);
     const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString() };
     appendMessageToTranscript(liveMsg, true);
@@ -2181,7 +2178,7 @@ function ChatView(props) {
       }
     }
     finalizeLiveMessage({ content: assembled });
-    messages.value = messages.value.concat([{ role: 'assistant', content: assembled, ts: new Date().toISOString() }]);
+    messagesRef.current = messagesRef.current.concat([{ role: 'assistant', content: assembled, ts: new Date().toISOString() }]);
     if (statusEl.current.textContent === 'streaming…') {
       setChatStatus(usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
@@ -2248,7 +2245,7 @@ function ChatView(props) {
     }
   }
 
-  useEffect(() => { load(); }, [chatId, projectDir]);
+  useEffect(() => { load().catch((err) => { if (statusEl.current) statusEl.current.textContent = 'load failed'; }); }, [chatId, projectDir]);
 
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },

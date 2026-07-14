@@ -60,6 +60,8 @@ export function createVirtualList(options) {
   let data = Array.isArray(opts.data) ? opts.data.slice() : [];
   let scheduled = false;
   let lastRange = null;
+  let rafId = null;
+  let destroyed = false;
 
   // Inner spacer holds the absolutely-positioned rows. The native scrollbar
   // uses the spacer's height, so the user sees the correct scroll metrics
@@ -90,6 +92,7 @@ export function createVirtualList(options) {
   }
 
   function render() {
+    if (destroyed) return;
     scheduled = false;
     const scrollTop = opts.scroller.scrollTop;
     const viewportHeight = opts.scroller.clientHeight;
@@ -133,17 +136,15 @@ export function createVirtualList(options) {
   function schedule() {
     if (scheduled) return;
     scheduled = true;
-    // rAF batches scroll events into one frame. The first scroll fires
-    // a real layout read (scrollTop + clientHeight), then writes are
-    // batched. There is no interleave, so no forced reflow.
-    (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(render);
+    var fn = window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); };
+    rafId = fn(render);
   }
 
   function onScroll() { schedule(); }
   function onResize() { schedule(); }
 
   opts.scroller.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onResize);
+  window.addEventListener('resize', onResize, { passive: true });
 
   // Mount the spacer inside the scroller. The scroller is the only element
   // that needs `position: relative` and `overflow: auto` in the caller's CSS.
@@ -173,8 +174,14 @@ export function createVirtualList(options) {
   }
 
   function destroy() {
+    if (rafId !== null) {
+      if (window.cancelAnimationFrame) window.cancelAnimationFrame(rafId);
+      else clearTimeout(rafId);
+      rafId = null;
+    }
+    destroyed = true;
     opts.scroller.removeEventListener('scroll', onScroll);
-    window.removeEventListener('resize', onResize);
+    window.removeEventListener('resize', onResize, { passive: true });
     while (pool.length) {
       const node = pool.pop();
       if (node.parentNode) node.parentNode.removeChild(node);

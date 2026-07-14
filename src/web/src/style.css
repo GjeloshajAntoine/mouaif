@@ -81,6 +81,7 @@ html, body {
   color: var(--fg);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
@@ -224,8 +225,8 @@ html, body {
   background:
     linear-gradient(180deg, rgba(12,15,20,0) 0%, rgba(20,25,33,.86) 22%, var(--surface) 50%, var(--surface) 100%);
   border-top: 1px solid var(--border-strong);
-  backdrop-filter: saturate(160%) blur(12px);
   -webkit-backdrop-filter: saturate(160%) blur(12px);
+  backdrop-filter: saturate(160%) blur(12px);
   z-index: 30;
   min-height: var(--tabbar-h);
   box-shadow: 0 -1px 0 rgba(255,255,255,.02), 0 -6px 18px rgba(0,0,0,.30);
@@ -392,8 +393,8 @@ section h3:first-of-type { margin-top: 8px; }
 .input::placeholder { color: var(--muted-2); }
 
 select.input {
-  appearance: none;
   -webkit-appearance: none;
+  appearance: none;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--muted) 50%),
     linear-gradient(135deg, var(--muted) 50%, transparent 50%);
@@ -872,10 +873,7 @@ textarea#projectEditor {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 20;
-  box-shadow: var(--shadow-lg);
-}
-.project-card__menu-pop button {
+  z-index: 35;
   font: inherit;
   font-size: 0.92rem;
   color: var(--fg);
@@ -901,6 +899,13 @@ textarea#projectEditor {
   flex-direction: column;
   gap: 3px;
   scrollbar-width: thin;
+}
+.project-card__chats::-webkit-scrollbar {
+  width: 6px;
+}
+.project-card__chats::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
 }
 .project-card__chats li {
   display: flex;
@@ -1137,10 +1142,7 @@ textarea#projectEditor {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 20;
-  box-shadow: var(--shadow-lg);
-}
-.chat-view__settings-row {
+  z-index: 35;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1161,6 +1163,13 @@ textarea#projectEditor {
   max-height: 58dvh;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+.chat-view__transcript::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-view__transcript::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
 }
 .chat-msg {
   display: flex;
@@ -1358,11 +1367,6 @@ textarea#projectEditor {
 
 /* ---- Inspector ------------------------------------------------------ */
 
-/* The bottom tab bar switches from a 3-col to a 4-col grid. */
-.app__tabbar {
-  grid-template-columns: repeat(4, 1fr);
-}
-
 /* Sub-tab strip inside the connected inspector: Console | Network. */
 .inspector__subtabs {
   display: flex;
@@ -1419,7 +1423,13 @@ textarea#projectEditor {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
+}
+.inspector__scroller::-webkit-scrollbar {
+  width: 6px;
+}
+.inspector__scroller::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
 }
 
 /* Each virtual-list row. */
