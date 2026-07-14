@@ -23,7 +23,8 @@ Endpoints:
 
 ## Behavior
 
-- CORS is permissive (`*`) for all routes; `OPTIONS` is handled.
+- CORS is permissive (`*`) for all routes; `OPTIONS` is handled and the
+	advertised methods include `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - SSE clients receive a `connected` event on attach and a heartbeat comment every 30 s.
 - Mutating `POST /data` triggers an SSE `data-update` event for every connected client.
 
