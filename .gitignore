@@ -1,5 +1,7 @@
 node_modules/
 npm-debug.log*
+mouaif.out
+mouaif.err
 .env
 *.pem
 .DS_Store
