@@ -1,0 +1,17 @@
+node_modules/
+npm-debug.log*
+.env
+*.pem
+.DS_Store
+Thumbs.db
+*.local/
+
+# Per-project mouaif data. These files are user state for the mouaif app
+# itself (chat list, message transcripts, trace streams) and should
+# never be committed by the mouaif project — they're created at runtime
+# by `mouaif serve` whenever a user registers a project under the mouaif
+# source tree. If the user is intentionally versioning their chat
+# history inside the mouaif repo, they can `git add -f` the file.
+.mouaif.json
+.mouaif.messages.*.json
+.mouaif/
