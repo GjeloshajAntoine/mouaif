@@ -24,10 +24,9 @@
 //     promptSize:   'average'             // per-chat prompt-size profile
 //   }
 //
-// New chats default `trace` to the project-level `traceByDefault`
-// setting (decision §5) and `promptSize` to the project-level
-// `promptSize` setting. If those keys are not set, the chat falls back
-// to the app-level defaults.
+// New chats always start with tracing off unless the creation request
+// explicitly opts in (decision §5). `promptSize` inherits from resolved
+// project settings, falling back to the app-level default.
 
 const fs = require('fs');
 const path = require('path');
@@ -70,7 +69,6 @@ function newChatId() {
 
 function defaultsForProject(project) {
   return {
-    trace: !!(project && project.traceByDefault),
     promptSize: (project && project.promptSize) || 'average'
   };
 }
@@ -111,9 +109,9 @@ function getChat(projectDir, chatId) {
 // Create a new chat in the project. Returns the new chat record.
 // Reads the project file, appends to project.chats (creating the file
 // and the chats key if needed), and writes the file back. The new chat's
-// `trace` and `promptSize` are seeded from the project-level settings
-// via settings.getResolved(projectDir) (decisions §2: defaults -> app
-// -> project).
+// `promptSize` is seeded from project-level settings via
+// settings.getResolved(projectDir) (decisions §2: defaults -> app ->
+// project). Trace is off unless opts.trace explicitly enables it.
 function createChat(projectDir, opts) {
   ensureDir(projectDir);
   const project = readProject(projectDir);
@@ -124,7 +122,7 @@ function createChat(projectDir, opts) {
     title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.title.trim() : 'New chat',
     createdAt: new Date().toISOString(),
     lastOpenedAt: null,
-    trace: opts && typeof opts.trace === 'boolean' ? opts.trace : defaults.trace,
+    trace: opts && opts.trace === true,
     promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize
   });
   if (!project.chats) project.chats = [];

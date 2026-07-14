@@ -47,8 +47,6 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
-  // Default trace-to-file state for new chats. Per-chat toggle overrides.
-  traceByDefault: false,
   // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).
   flags: {}
 });

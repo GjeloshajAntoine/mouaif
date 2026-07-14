@@ -15,7 +15,7 @@ const settings = require('mouaif/src/settings.js');
 
 // Whole resolved view for a project (defaults -> app -> project).
 settings.getResolved('/path/to/project');
-// -> { models: [...], promptSize: 'average', traceByDefault: false, flags: {}, ...appOverrides, ...projectOverrides }
+// -> { models: [...], promptSize: 'average', flags: {}, ...appOverrides, ...projectOverrides }
 
 // Just the app store (no merge).
 settings.getApp();
@@ -67,7 +67,7 @@ curl -X PUT http://localhost:5732/api/settings/project \
 
 ## Behavior
 
-- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ models: [], promptSize: 'average', traceByDefault: false, flags: {} }`. The floor for every resolution.
+- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ models: [], promptSize: 'average', flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat.
 - **App store**: a single row in `app_kv` (key `settings`) inside `~/.mouaif/store.sqlite`. WAL journal mode. Created on first access.
 - **Project file**: `<projectDir>/.mouaif.json`. Created on first write, 2-space indented JSON, LF line endings. Missing file is treated as `{}` (not an error).
 - **Resolution order**: `defaults → app → project`. Deep-merge for plain objects. Arrays and primitives are replaced, not concatenated — project wins on any conflict.
@@ -84,4 +84,4 @@ curl -X PUT http://localhost:5732/api/settings/project \
 ## Related
 
 - Decisions: [docs/decisions.md §1–§2](../decisions.md).
-- Future features that extend `DEFAULTS`: models (per decision §3), prompt-size profile (extends the `promptSize` key), trace-to-file (extends `traceByDefault`), custom prompts, inspector flags.
+- Future features may extend `DEFAULTS` with custom prompts or inspector flags. Trace-to-file remains a per-chat opt-in and does not add an app-wide default.

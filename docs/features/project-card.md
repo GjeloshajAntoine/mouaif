@@ -6,7 +6,7 @@ The Project card is the per-project surface in the mobile UI: each registered pr
 
 Chats are persisted per-project in `<projectDir>/.mouaif.json` under a `chats` array, alongside the rest of the project-level settings. That means a project's chats can be committed to source control with the project. The chat record itself is a thin entry — `{ id, title, createdAt, lastOpenedAt, trace, promptSize }` — and the chat message history is **not** stored yet; that lands with a separate chat data store commit.
 
-New chats inherit `promptSize` and `traceByDefault` from the project-level settings via `settings.getResolved(projectDir)` (decisions §2: defaults → app → project).
+New chats inherit `promptSize` from project-level settings via `settings.getResolved(projectDir)` (decisions §2: defaults → app → project). Tracing always starts off unless the creation request explicitly opts in.
 
 ## Usage
 
@@ -53,7 +53,6 @@ A project's chats are stored in `<projectDir>/.mouaif.json` alongside any other 
 ```json
 {
   "promptSize": "extensive",
-  "traceByDefault": false,
   "chats": [
     {
       "id": "2e5d3d07",
@@ -82,7 +81,7 @@ The cards are rendered in the order returned by `/api/projects/registered`. The 
 
 ## Behavior
 
-- **Chats inherit project settings.** A new chat's `promptSize` defaults to the resolved project's `promptSize` (or `average` if unset), and its `trace` defaults to the resolved project's `traceByDefault` (or `false` if unset). The caller can override either on `POST /api/chats`.
+- **Chats inherit prompt size only.** A new chat's `promptSize` defaults to the resolved project's `promptSize` (or `average` if unset). Its `trace` flag defaults to `false`; the caller may explicitly pass `trace: true` on `POST /api/chats`.
 - **Chat ids are 8 hex characters** (`crypto.randomBytes(4).toString('hex')`). The probability of collision within a single project is small enough to ignore for a per-project chat list; a future commit can switch to a longer id if it becomes a real concern.
 - **Unregister does not delete the folder.** It removes the project from the app-level `projects` array; the on-disk `<projectDir>/.mouaif.json` and any chats in it are preserved. Re-registering the same folder brings the project back, but the chats are a separate data source (the project file) and the chat list is recomputed from the file.
 - **The chat list scrolls inside the card, not the page.** `max-height: 240px; overflow-y: auto` on the inner `<ul>`. Long chat lists do not push the page; the page stays put.

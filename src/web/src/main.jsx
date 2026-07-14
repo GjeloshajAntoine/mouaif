@@ -246,7 +246,6 @@ function AuthPanel() {
 
 function SettingsPanel() {
   const promptSize = useRef(null);
-  const traceByDefault = useRef(null);
   const saveBtn = useRef(null);
   const resetBtn = useRef(null);
   const appStatus = useRef(null);
@@ -269,7 +268,6 @@ function SettingsPanel() {
     if (r.status !== 200) { if (appStatus.current) appStatus.current.textContent = 'HTTP ' + r.status; return; }
     currentApp = r.body.app || {};
     if (promptSize.current) promptSize.current.value = currentApp.promptSize || 'average';
-    if (traceByDefault.current) traceByDefault.current.checked = !!currentApp.traceByDefault;
     renderModels(currentApp.models || []);
     if (appStatus.current) appStatus.current.textContent = '';
   }
@@ -348,7 +346,7 @@ function SettingsPanel() {
   async function saveApp() {
     saveBtn.current.disabled = true;
     appStatus.current.textContent = 'saving…';
-    const r = await fetchJson('/api/settings/app', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promptSize: promptSize.current.value, traceByDefault: !!traceByDefault.current.checked }) });
+    const r = await fetchJson('/api/settings/app', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promptSize: promptSize.current.value }) });
     saveBtn.current.disabled = false;
     if (r.status === 200) { currentApp = r.body.app || currentApp; appStatus.current.textContent = 'saved.'; }
     else appStatus.current.textContent = 'HTTP ' + r.status;
@@ -358,7 +356,7 @@ function SettingsPanel() {
     if (!confirm('Reset all app-level settings to defaults? Models and other keys will be cleared.')) return;
     resetBtn.current.disabled = true;
     appStatus.current.textContent = 'resetting…';
-    const r = await fetchJson('/api/settings/app/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: ['models', 'promptSize', 'traceByDefault', 'authAccounts', 'projects', 'flags'] }) });
+    const r = await fetchJson('/api/settings/app/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: ['models', 'promptSize', 'authAccounts', 'projects', 'flags'] }) });
     resetBtn.current.disabled = false;
     if (r.status === 200) { currentApp = r.body.app || {}; await loadSettings(); appStatus.current.textContent = 'reset.'; }
     else appStatus.current.textContent = 'HTTP ' + r.status;
@@ -466,10 +464,6 @@ function SettingsPanel() {
         h('option', { value: 'average' }, 'average'),
         h('option', { value: 'extensive' }, 'extensive')
       )
-    ),
-    h('div', { class: 'row row--inline' },
-      h('label', { class: 'label', for: 'traceByDefault' }, 'Trace to file by default'),
-      h('input', { ref: traceByDefault, class: 'checkbox', id: 'traceByDefault', type: 'checkbox' })
     ),
     h('div', { class: 'row row--actions' },
       h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveApp }, 'Save app settings'),
@@ -1255,7 +1249,7 @@ function ProjectsView() {
 
   return h('section', null,
     h('h2', null, 'Projects'),
-    h('p', { class: 'hint' }, 'Each card is a registered project. The chat list scrolls inside the card so the page itself stays put. New chats inherit the project\'s ', h('code', null, 'promptSize'), ' and ', h('code', null, 'traceByDefault'), ' settings.'),
+    h('p', { class: 'hint' }, 'Each card is a registered project. The chat list scrolls inside the card so the page itself stays put. New chats inherit the project\'s ', h('code', null, 'promptSize'), ' setting and always start with tracing off.'),
     h('div', { class: 'row row--actions' },
       h('button', { class: 'btn btn--primary', type: 'button', onClick: () => nav('projects/new') }, '+ Add project'),
       h('button', { ref: refreshProjects, class: 'btn', type: 'button', onClick: loadProjects }, 'Refresh'),

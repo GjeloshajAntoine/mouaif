@@ -40,7 +40,7 @@ curl -X DELETE http://localhost:5732/api/settings/app/models/gpt-4o-mini
 # Reset all app-level keys to defaults.
 curl -X POST http://localhost:5732/api/settings/app/reset \
   -H 'Content-Type: application/json' \
-  -d '{"keys":["models","promptSize","traceByDefault","authAccounts","projects","flags"]}'
+  -d '{"keys":["models","promptSize","authAccounts","projects","flags"]}'
 
 # Read project-level settings (raw, no merge).
 curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
@@ -50,7 +50,7 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 
 The mobile UI exposes a **Settings** section at the top of `/web/`. It has three subsections:
 
-- **App** — `Default prompt size` (select) and `Trace to file by default` (checkbox). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads.
+- **App** — `Default prompt size` (select). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads. Trace has no app-wide default: each chat starts off and exposes its own opt-in toggle.
 - **Models** — a list of configured models with a Delete button each, and an "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth) — the two are toggled by the auth select. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider; the default `(auto)` is the single-account fallback in `auth.resolveAccount` and falls through to the stored token. With multiple signed-in accounts, the user must pick one explicitly.
 - **Project** — paste a project directory, click Load, and the raw `<projectDir>/.mouaif.json` is shown. No edit UI yet (that's part of the project card commit per the build order).
 
