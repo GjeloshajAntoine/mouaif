@@ -97,9 +97,9 @@ function Header() {
 }
 
 // ---- Bottom tab bar ---------------------------------------------------
-// The three top-level destinations — Projects / Settings / Auth — are
-// reached from a fixed bottom tab bar instead of the top header. The
-// bar is hidden on the chat and folder-picker drill-in screens, which
+// The four top-level destinations — Projects / Inspector / Settings / Auth
+// — are reached from a fixed bottom tab bar instead of the top header.
+// The bar is hidden on the chat and folder-picker drill-in screens, which
 // have their own per-screen back button.
 //
 // Inline SVG icons keep the bundle small and crisp at any density. The
@@ -665,24 +665,14 @@ function SettingsPanel() {
 
 // Wraps SettingsPanel with a back link + heading.
 function SettingsView() {
-  return h(Fragment, null,
-    h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
-      h('h2', { class: 'view-title' }, 'Settings')
-    ),
-    h(SettingsPanel, null)
-  );
+  return h(SettingsPanel, null);
 }
 
-// Wraps AuthPanel with a back link + heading.
+// Tab destination: renders the Auth panel inline (no back link, no
+// separate heading — the section elements inside AuthPanel provide their
+// own).
 function AuthView() {
-  return h(Fragment, null,
-    h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
-      h('h2', { class: 'view-title' }, 'Auth')
-    ),
-    h(AuthPanel, null)
-  );
+  return h(AuthPanel, null);
 }
 
 // ---- Inspector ---------------------------------------------------------
@@ -995,10 +985,6 @@ function InspectorView() {
   // Phase 1: setup
   if (phase.current === 'setup') {
     return h(Fragment, null,
-      h('div', { class: 'view-head' },
-        h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
-        h('h2', { class: 'view-title' }, 'Inspector')
-      ),
       h('section', null,
         h('p', { class: 'hint' }, 'Connect to a Chrome instance started with ', h('code', null, '--remote-debugging-port=9222'), '. The address below is the HTTP base of that instance (used to discover page targets); the WebSocket itself is proxied through mouaif.'),
         h('div', { class: 'row' },
