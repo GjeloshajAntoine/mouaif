@@ -84,8 +84,22 @@ curl -X DELETE http://localhost:5732/api/projects/registered/<id>
 - Server wiring: [src/index.js](../../src/index.js) → `handleProjects()`. Errors are mapped to typed HTTP statuses via `projectsErrorStatus()`.
 - Error codes the UI can branch on: `EBADPATH` (400), `EOUTSIDE_HOME` (403), `ENOENT` (404), `ENOTDIR` (400), `EACCES` (403), `EEXIST` (409), `EREAD` (500).
 
+## Mobile UI
+
+The hash route `#/projects/new?dir=<abs>` is the on-screen filesystem browser. The projects list has a **+ Add project** primary button that navigates to it (with `dir` empty, so the API defaults to the user home). From there:
+
+- The current path is shown at the top in monospace, in a small card.
+- **Up** walks one level (hidden when at the home root).
+- **Select this folder** registers the current directory and bounces back to `#/projects`, where the new card appears (the `projectsReload` signal in the projects view is bumped to trigger the refetch).
+- Each row shows the folder name on the left. If the folder has immediate subdirs, an **Open** button drills into it (the URL becomes `#/projects/new?dir=<encoded>`). If it's a leaf, the Open button is replaced with a muted `empty` label so the row stays informative without offering a useless action.
+- A **Select** button on every row registers that folder (no need to drill in just to register).
+- A `Create new folder` disclosure at the bottom captures a name, mints the directory under the current parent, and drills into the new folder on success so the user can see it and (optionally) register it. A failed create surfaces the typed error in the status line (e.g. `EEXIST Directory already exists`).
+
+Touch targets are 44 × 44 px; long lists scroll inside the picker card. The picker is fully DOM-direct (no JSX subtree per row) to keep the small-list cost down and the first paint fast.
+
 ## Related
 
 - Decision: [docs/decisions.md §4](../decisions.md).
 - Stored alongside the rest of app-level settings per [docs/features/app-and-project-settings.md](./app-and-project-settings.md).
-- The next feature that consumes registered projects is the **project card** ([decisions §9](../decisions.md)).
+- The feature that consumes registered projects on the projects list is the **project card** ([docs/features/project-card.md](./project-card.md)).
+- The picker UI itself is implemented in [src/web/src/main.jsx](../../src/web/src/main.jsx) (the `ProjectPickerView` component and the `projects/new?dir=…` route).

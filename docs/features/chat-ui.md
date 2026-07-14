@@ -62,6 +62,17 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 - **Auto-scroll.** The transcript auto-scrolls to the bottom on new content. Manual scrolling is not preserved across sends — out of scope.
 - **No optimistic re-render on errors.** A 4xx/5xx on the stream endpoint shows in the status line; the live assistant message is replaced with `[error: HTTP <code>]`.
 
+## Per-chat controls
+
+The chat head has a small toolbar of icon buttons (44 × 44 px, mobile-first):
+
+- **✎ Rename** — `prompt()` for a new title, `PATCH /api/chats/:id` with `{ title }`. The visible title updates immediately on success; the chat list in the project card refreshes on next render.
+- **× Delete** — `confirm()` then `DELETE /api/chats/:id?projectDir=…`. Bumps `projectsReload` so the project card refetches, and navigates back to `#/projects`. The on-disk transcript and trace file are removed; the project's `.mouaif.json` loses the chat entry.
+- **Trace to file** — checkbox below the head. `PATCH` with `{ trace: bool }`. The meta line under the title (`<promptSize> · trace on/off`) updates on success. The trace writer in [src/trace.js](../../src/trace.js) is already gated on `chat.trace`, so flipping this on mid-conversation starts writing `<projectDir>/.mouaif/traces/<chatId>.ndjson` from the next event.
+- **Prompt size** — select with `very-small | average | extensive`. `PATCH` with `{ promptSize }`. The same value is read on the server when the chat is opened, so the next message uses the new profile.
+
+All four controls share a single `updateChat(patch)` helper. On success it overwrites the local `chat` signal with the server's response, which is the single source of truth for the head's title, meta line, and the trace / promptSize controls. On failure the status line shows the HTTP code and nothing on the page changes.
+
 ## Implementation notes
 
 - Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Total bundle is ~35 KB JS + ~9 KB CSS, ~14 KB + ~2 KB gzipped.
