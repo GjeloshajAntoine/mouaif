@@ -36,6 +36,24 @@ function sendJSON(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// Settings responses are consumed by the browser, so secrets must never be
+// serialized back after they have been stored. The UI only needs to know
+// whether a key exists in order to render its masked "key: •••" hint.
+function modelForClient(model) {
+  if (!model || typeof model !== 'object') return model;
+  const safe = { ...model };
+  safe.hasApiKey = typeof safe.apiKey === 'string' && safe.apiKey.length > 0;
+  delete safe.apiKey;
+  return safe;
+}
+
+function settingsForClient(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const safe = { ...value };
+  if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
+  return safe;
+}
+
 function handleSSE(req, res) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -211,8 +229,8 @@ async function handleSettings(req, res, parsed) {
   if (urlPath === '/api/settings' && method === 'GET') {
     return sendJSON(res, 200, {
       home: settings.MOUAIF_HOME,
-      defaults: settings.DEFAULTS,
-      app: settings.getApp()
+      defaults: settingsForClient(settings.DEFAULTS),
+      app: settingsForClient(settings.getApp())
     });
   }
 
@@ -221,7 +239,7 @@ async function handleSettings(req, res, parsed) {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
-      return sendJSON(res, 200, { resolved: settings.getResolved(dir) });
+      return sendJSON(res, 200, { resolved: settingsForClient(settings.getResolved(dir)) });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -236,7 +254,7 @@ async function handleSettings(req, res, parsed) {
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, {
-        project: settings.getProject(dir),
+        project: settingsForClient(settings.getProject(dir)),
         path: settings.getProjectPath(dir)
       });
     } catch (e) {
@@ -251,8 +269,25 @@ async function handleSettings(req, res, parsed) {
     try { patch = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     try {
+      // A redacted settings snapshot contains `hasApiKey`, which is a
+      // response-only marker. Never persist it if a client round-trips the
+      // snapshot through this generic patch endpoint. Existing secrets are
+      // preserved unless the client explicitly submits a new `apiKey`.
+      if (Array.isArray(patch.models)) {
+        const existing = Array.isArray(settings.getApp().models) ? settings.getApp().models : [];
+        patch.models = patch.models.map((model) => {
+          if (!model || typeof model !== 'object') return model;
+          const clean = { ...model };
+          delete clean.hasApiKey;
+          if (!Object.prototype.hasOwnProperty.call(clean, 'apiKey')) {
+            const prior = existing.find(x => x && x.id === clean.id);
+            if (prior && typeof prior.apiKey === 'string') clean.apiKey = prior.apiKey;
+          }
+          return clean;
+        });
+      }
       const next = settings.setApp(patch);
-      return sendJSON(res, 200, { app: next });
+      return sendJSON(res, 200, { app: settingsForClient(next) });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
@@ -269,7 +304,7 @@ async function handleSettings(req, res, parsed) {
     }
     try {
       const next = settings.setProject(projectDir, patch);
-      return sendJSON(res, 200, { project: next, path: settings.getProjectPath(projectDir) });
+      return sendJSON(res, 200, { project: settingsForClient(next), path: settings.getProjectPath(projectDir) });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
@@ -318,7 +353,10 @@ async function handleSettings(req, res, parsed) {
     if (idx >= 0) models[idx] = merged; else models.push(merged);
     try {
       const next = settings.setApp({ models });
-      return sendJSON(res, 200, { model: merged, models: next.models });
+      return sendJSON(res, 200, {
+        model: modelForClient(merged),
+        models: next.models.map(modelForClient)
+      });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
@@ -335,7 +373,11 @@ async function handleSettings(req, res, parsed) {
     const [removed] = models.splice(idx, 1);
     try {
       settings.setApp({ models });
-      return sendJSON(res, 200, { ok: true, removed, models });
+      return sendJSON(res, 200, {
+        ok: true,
+        removed: modelForClient(removed),
+        models: models.map(modelForClient)
+      });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
@@ -375,7 +417,7 @@ async function handleSettings(req, res, parsed) {
       // and write the trimmed version through a new method.
       // -> we add setAppReplace for this.
       const result = settings.setAppReplace(next);
-      return sendJSON(res, 200, { app: result, reset: keys });
+      return sendJSON(res, 200, { app: settingsForClient(result), reset: keys });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }

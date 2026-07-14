@@ -335,7 +335,7 @@ function SettingsPanel() {
       if (auth === 'oauth') {
         bits.push('auth: oauth');
         if (m.oauthAccount) bits.push('account: ' + m.oauthAccount);
-      } else if (m.apiKey) {
+      } else if (m.hasApiKey) {
         bits.push('key: •••');
       }
       meta.textContent = bits.filter(Boolean).join('  ·  ');

@@ -67,6 +67,12 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, safe-a
 
 ## Implementation notes
 
+- **Secret redaction** — API keys are accepted on model writes but are never
+  serialized back to the browser. Settings responses replace the key with
+  `hasApiKey: true`; the UI uses that boolean to render `key: •••`. This
+  applies to app, project, resolved, model-create, model-delete, and reset
+  responses.
+
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. New endpoints are `GET /api/settings/project`, `POST /api/settings/app/models`, `DELETE /api/settings/app/models/:id`, `POST /api/settings/app/reset`. The `GET /` self-description lists all of them.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
 - Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/style.css](../../src/web/style.css), [src/web/main.js](../../src/web/main.js). Polls `GET /api/settings` every 30 s so the page is truthful even if another client changes settings.
