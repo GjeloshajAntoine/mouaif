@@ -83,11 +83,19 @@ function App() {
 }
 
 function Header() {
+  // The header is the brand block on the left plus a transparent
+  // spacer on the right. The spacer is a layout placeholder so a
+  // future header action (e.g. a search icon) can sit there without
+  // pushing the brand around.
   return h('header', { class: 'app__header' },
     h('div', { class: 'app__brand' },
-      h('h1', { class: 'app__title' }, 'mouaif'),
-      h('p', { class: 'app__sub' }, 'mobile UI')
-    )
+      h('span', { class: 'app__logo', 'aria-hidden': 'true' }, 'm'),
+      h('div', { class: 'app__title-stack' },
+        h('h1', { class: 'app__title' }, 'mouaif'),
+        h('p', { class: 'app__sub' }, 'mobile ui')
+      )
+    ),
+    h('span', { class: 'app__header-spacer', 'aria-hidden': 'true' })
   );
 }
 
@@ -1035,23 +1043,42 @@ function ProjectsView() {
   const projectsList = useRef(null);
   const projectsStatus = useRef(null);
 
+  // Status line helper: sets text + a data-state so the CSS can color
+  // it semantically (busy = blue, error = red, success = green, idle
+  // = muted). One call site keeps the conventions in one place.
+  function setStatus(text, state) {
+    if (!projectsStatus.current) return;
+    projectsStatus.current.textContent = text;
+    if (state) projectsStatus.current.dataset.state = state;
+    else delete projectsStatus.current.dataset.state;
+  }
+
   async function loadProjects() {
-    projectsStatus.current.textContent = 'loading…';
+    setStatus('loading…', 'busy');
     let r;
     try { r = await fetchJson('/api/projects/registered'); }
-    catch (err) { if (projectsStatus.current) projectsStatus.current.textContent = 'network error'; return; }
-    if (r.status !== 200) { projectsStatus.current.textContent = 'HTTP ' + r.status; return; }
+    catch (err) { setStatus('network error', 'error'); return; }
+    if (r.status !== 200) { setStatus('HTTP ' + r.status, 'error'); return; }
     const list = r.body.projects || [];
     projectsList.current.innerHTML = '';
     if (!list.length) {
       const empty = document.createElement('li');
       empty.className = 'projects__empty';
-      empty.textContent = 'No projects registered. Tap "Add project" to pick a folder.';
+      const icon = document.createElement('span');
+      icon.className = 'projects__empty-icon';
+      icon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z"/></svg>';
+      const title = document.createElement('p');
+      title.className = 'projects__empty-title';
+      title.textContent = 'No projects yet';
+      const text = document.createElement('p');
+      text.className = 'projects__empty-text';
+      text.textContent = 'Tap "Add project" to register a folder on disk. Each project keeps its own chats, prompt profile, and trace setting.';
+      empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       projectsList.current.appendChild(empty);
-      projectsStatus.current.textContent = list.length + ' projects';
+      setStatus(list.length + ' projects');
       return;
     }
-    projectsStatus.current.textContent = list.length + ' projects';
+    setStatus(list.length + ' projects', 'success');
     for (const project of list) {
       const li = document.createElement('li');
       li.className = 'project-card';
@@ -1385,6 +1412,16 @@ function ChatView(props) {
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
 
+  // Status line helper: sets text + a data-state so the CSS can color
+  // it semantically. Centralized so the streaming / error / done
+  // transitions are all written the same way.
+  function setChatStatus(text, state) {
+    if (!statusEl.current) return;
+    statusEl.current.textContent = text;
+    if (state) statusEl.current.dataset.state = state;
+    else delete statusEl.current.dataset.state;
+  }
+
   // Latest chat record from the server; populated by load() and by
   // updateChat(). Lets the trace toggle and prompt-size selector
   // render their current state from one source of truth.
@@ -1435,7 +1472,16 @@ function ChatView(props) {
     if (!messages.value.length) {
       const empty = document.createElement('div');
       empty.className = 'chat-view__empty';
-      empty.textContent = 'no messages yet — type below to start';
+      const icon = document.createElement('span');
+      icon.className = 'chat-view__empty-icon';
+      icon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M4 4h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-9.586a1.5 1.5 0 0 0-1.06.44l-2.122 2.12A.5.5 0 0 1 6.4 20.146V18H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 5a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H7Z"/></svg>';
+      const title = document.createElement('p');
+      title.className = 'chat-view__empty-title';
+      title.textContent = 'Start the conversation';
+      const text = document.createElement('p');
+      text.className = 'chat-view__empty-text';
+      text.textContent = 'Type a message below. The model streams its reply in real time; everything you send is saved to this chat’s transcript on disk.';
+      empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       transcript.current.appendChild(empty);
       return;
     }
@@ -1540,7 +1586,7 @@ function ChatView(props) {
     if (!modelId) { statusEl.current.textContent = 'pick a model'; return; }
 
     sendBtn.current.disabled = true;
-    statusEl.current.textContent = 'streaming…';
+    setChatStatus('streaming…', 'busy');
     promptInput.current.value = '';
 
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
@@ -1557,14 +1603,14 @@ function ChatView(props) {
         body: JSON.stringify({ projectDir, modelId, content })
       });
     } catch (err) {
-      if (statusEl.current) statusEl.current.textContent = 'network error';
+      setChatStatus('network error', 'error');
       finalizeLiveMessage({ content: '[network error]' });
       if (sendBtn.current) sendBtn.current.disabled = false;
       return;
     }
     if (!resp.ok) {
       const text = await resp.text();
-      statusEl.current.textContent = 'HTTP ' + resp.status;
+      setChatStatus('HTTP ' + resp.status, 'error');
       finalizeLiveMessage({ content: '[error: HTTP ' + resp.status + ']' });
       sendBtn.current.disabled = false;
       return;
@@ -1590,7 +1636,7 @@ function ChatView(props) {
     finalizeLiveMessage({ content: assembled });
     messages.value = messages.value.concat([{ role: 'assistant', content: assembled, ts: new Date().toISOString() }]);
     if (statusEl.current.textContent === 'streaming…') {
-      statusEl.current.textContent = usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done';
+      setChatStatus(usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
     sendBtn.current.disabled = false;
   }

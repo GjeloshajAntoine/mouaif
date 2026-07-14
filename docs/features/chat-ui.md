@@ -10,11 +10,11 @@ The chat UI consumes the **per-chat message store** ([src/messages.js](../../src
 
 A polished, dark, mobile-first design system lives in [src/web/src/style.css](../../src/web/src/style.css). It is intentionally a single stylesheet — small surface area, easy to scan.
 
-- **Surfaces**: three levels of dark elevation (`--bg`, `--surface`, `--surface-2`, `--surface-3`) with subtle radial accent on the page background. Cards sit on `--surface` and use a soft 1 px border plus `--shadow-sm` for lift.
-- **Color tokens**: `--accent` (signature blue) with `--accent-press`, `--accent-soft` (tinted surface), `--on-accent` (text on accent). Semantic colors: `--success`, `--warning`, `--danger` + `--danger-soft`.
-- **Typography**: a single system-font stack at 16 px / 1.5 line-height. Section headings are small-caps uppercase (`.08em` letter-spacing) in `--muted` for navigation and `--accent` for subsections. H1 uses a white-to-blue gradient for the brand mark.
+- **Surfaces**: three levels of dark elevation (`--bg`, `--surface`, `--surface-2`, `--surface-3`) with a soft accent-tinted radial glow at the top of the page and a fainter one at the bottom, so the app never reads as a black void. Cards sit on `--surface` and use a soft 1 px border plus `--shadow-sm` for lift.
+- **Color tokens**: `--accent` (signature blue) with `--accent-press`, `--accent-soft` (tinted surface), `--on-accent` (text on accent). Semantic colors: `--success`, `--warning`, `--danger` + `--danger-soft`. The status line drives its color from a `data-state` attribute on the `.status` element (`busy` → accent, `error` → danger, `success` → success, default → muted) so the same line reads correctly in every context.
+- **Typography**: a single system-font stack at 16 px / 1.5 line-height. Section headings are small-caps uppercase (`.08em` letter-spacing) in `--muted` for navigation and `--accent` for subsections. The H1 title uses a white-to-blue gradient for the brand mark.
 - **Spacing & radii**: a 4 px scale (`--gap`, `--pad-x`, `--pad-y`) and an 8 px radius scale (`--r-sm`, `--r-md`, `--r-lg`, `--r-pill`). All touch targets are 44 × 44 px (`--tap`).
-- **Components**: primary buttons (`.btn--primary`) get a subtle inset highlight + glow; cards (`.project-card`, `.chat-view__composer`) get rounded corners and a soft shadow; popovers (`.project-card__menu-pop`) get a stronger shadow and the third surface level; chat bubbles use asymmetric corner radii to point at the speaker.
+- **Components**: primary buttons (`.btn--primary`) get a subtle inset highlight + glow; cards (`.project-card`, `.chat-view__composer`) get rounded corners and a soft shadow; popovers (`.project-card__menu-pop`) get a stronger shadow and the third surface level; chat bubbles use asymmetric corner radii to point at the speaker. Empty states (`.projects__empty`, `.chat-view__empty`) have a centered icon tile in `--accent-soft`, a bold title, and a short body line so the page is never just a bare "nothing here" message.
 - **Motion**: 120 ms transitions on hover, focus, and press. `prefers-reduced-motion` short-circuits them to 1 ms.
 - **Focus**: keyboard-only focus ring via `:focus-visible`; touch devices never see it.
 
@@ -24,7 +24,7 @@ The build target is 360–430 px wide; the app is a 480 px-max-width column cent
 
 The shell is a full-viewport flex column (`min-height: 100dvh`). Three regions stack top → bottom:
 
-1. **Header** — brand mark only. The top-level nav no longer lives here.
+1. **Header** — brand block: a small blue logo tile with the letter "m" and a stacked title (`.app__title` + `.app__sub`). The right side carries a transparent spacer so a future header action can sit there without pushing the brand.
 2. **Main** — the scrollable content. Reserves `padding-bottom: var(--tabbar-h) + var(--safe-bottom)` so the last row never sits under the tab bar. Drill-in screens (chat, picker) use `.app__main--flush` and own the safe area themselves.
 3. **Bottom tab bar** — sticky child of the shell. Hidden on drill-in screens.
 

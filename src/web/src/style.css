@@ -59,9 +59,15 @@
 html, body {
   margin: 0;
   padding: 0;
+  /* Subtle accent-tinted glow at the top so the page does not feel
+     like a black void; a soft vignette at the bottom anchors the
+     tab bar visually. The two gradients are warm-cold balanced so
+     the page reads as a single surface, not two stacked bands. */
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(127,177,255,.06), transparent 60%),
+    radial-gradient(1100px 520px at 50% -8%, rgba(127,177,255,.10), transparent 65%),
+    radial-gradient(900px  420px at 50% 110%, rgba(127,177,255,.05), transparent 60%),
     var(--bg);
+  background-attachment: fixed;
   color: var(--fg);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
@@ -95,6 +101,9 @@ html, body {
   min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
+  /* The shell sits inside the viewport; nothing else to add here,
+     but the rule documents why the column is centered. */
+  position: relative;
 }
 
 .app__main {
@@ -110,25 +119,54 @@ html, body {
 
 /* ---- App header ----------------------------------------------------- */
 
+/* ---- App header ----------------------------------------------------- */
+
+/* The brand block on the left of the header. Previously a bare line
+   of text on the page background; now anchored by a small logo tile
+   and a stacked title so the brand reads as a unit. */
+
 .app__header {
-  padding: calc(var(--safe-top) + 4px) 4px 16px;
+  padding: calc(var(--safe-top) + 10px) var(--pad-x) 14px;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .app__brand {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
+}
+
+.app__logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #7fb1ff 0%, #5b8bff 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+  box-shadow: 0 4px 14px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.app__title-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.1;
 }
 
 .app__title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   background: linear-gradient(180deg, #fff, #c8d4e3);
@@ -138,13 +176,18 @@ html, body {
 }
 
 .app__sub {
-  margin: 0;
+  margin: 1px 0 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: lowercase;
 }
+
+/* Empty slot on the right of the header. Keeps the brand left-aligned
+   in a layout that could later host a header action (search, profile,
+   etc.) without a visual shift. */
+.app__header-spacer { width: 32px; height: 32px; flex-shrink: 0; }
 
 /* ---- Bottom tab bar ------------------------------------------------ */
 
@@ -155,15 +198,19 @@ html, body {
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   gap: 4px;
-  padding: 6px 6px calc(6px + var(--safe-bottom));
-  background: linear-gradient(180deg, rgba(20,25,33,0) 0%, var(--surface) 28%, var(--surface) 100%);
-  border-top: 1px solid var(--border);
-  backdrop-filter: saturate(140%) blur(8px);
-  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  padding: 8px 6px calc(8px + var(--safe-bottom));
+  /* Slightly stronger fade so the tab bar reads as a real surface
+     sitting above the content, not a translucent strip. */
+  background:
+    linear-gradient(180deg, rgba(12,15,20,0) 0%, rgba(20,25,33,.86) 22%, var(--surface) 50%, var(--surface) 100%);
+  border-top: 1px solid var(--border-strong);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
   z-index: 30;
   /* Height is content-driven, but we set a min so the main padding
      matches even on tall-label devices. */
   min-height: var(--tabbar-h);
+  box-shadow: 0 -1px 0 rgba(255,255,255,.02), 0 -8px 24px rgba(0,0,0,.35);
 }
 
 .app__tab {
@@ -186,8 +233,11 @@ html, body {
 .app__tab:active       { transform: scale(0.97); }
 .app__tab.is-active    { color: var(--accent); }
 .app__tab.is-active .app__tab-icon {
-  /* Active dot behind the icon, the same blue. */
+  /* Active pill behind the icon: a soft accent-soft fill + a 1px
+     inset hairline so the active tab is unambiguous at a glance,
+     even in peripheral vision. */
   background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px rgba(127,177,255,.18);
 }
 
 .app__tab-icon {
@@ -390,7 +440,13 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   color: var(--muted);
   font-size: 0.85rem;
   min-height: 1em;
+  /* Slightly larger letter-spacing keeps transient status messages
+     readable at a glance on a phone, even when they wrap. */
+  letter-spacing: 0.01em;
 }
+.status[data-state="error"]   { color: var(--danger);  }
+.status[data-state="success"] { color: var(--success); }
+.status[data-state="busy"]    { color: var(--accent);  }
 
 /* ---- Auth panel --------------------------------------------------- */
 
@@ -484,11 +540,33 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   color: var(--muted);
   font-size: 0.9rem;
   text-align: center;
-  padding: 28px 12px;
+  padding: 32px 16px 28px;
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
+.projects__empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.projects__empty-icon svg { display: block; }
+.projects__empty-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0;
+}
+.projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.45; }
 
 /* Project card */
 .project-card {
@@ -856,13 +934,34 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .chat-view__empty {
   color: var(--muted);
   font-size: 0.95rem;
-  padding: 36px 12px;
+  padding: 36px 16px 32px;
   text-align: center;
-  font-style: italic;
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
+.chat-view__empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-view__empty-icon svg { display: block; }
+.chat-view__empty-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0;
+}
+.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.45; }
 
 /* Composer */
 .chat-view__composer {
