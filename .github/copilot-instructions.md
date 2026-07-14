@@ -53,7 +53,7 @@ These rules apply to every change made in this workspace. Follow them without be
 These features exist or are planned. Keep this list in sync with the codebase as features land.
 
 - **Virtual list with low memory and low CPU** — windowed rendering, recycled nodes, no forced reflow on scroll.
-- **No pre-made model list** — models are user-defined (slug id), persisted in the app settings store, configured per project. See [docs/decisions.md](../docs/decisions.md) §3.
+- **Providers global, models per project** — provider connections and credentials live in the app SQLite store; model IDs are user-defined in project settings and reference a provider. No pre-made model list. See [docs/decisions.md](../docs/decisions.md) §3.
 - **Custom prompts** — user-authored system/role prompts, stored per project.
 - **Three prompt-size profiles**:
   - `very-small`: tool names with short descriptions, no full schemas.

@@ -39,17 +39,22 @@ function sendJSON(res, status, data) {
 // Settings responses are consumed by the browser, so secrets must never be
 // serialized back after they have been stored. The UI only needs to know
 // whether a key exists in order to render its masked "key: •••" hint.
-function modelForClient(model) {
-  if (!model || typeof model !== 'object') return model;
-  const safe = { ...model };
+function connectionForClient(connection) {
+  if (!connection || typeof connection !== 'object') return connection;
+  const safe = { ...connection };
   safe.hasApiKey = typeof safe.apiKey === 'string' && safe.apiKey.length > 0;
   delete safe.apiKey;
   return safe;
 }
 
+function modelForClient(model) {
+  return connectionForClient(model);
+}
+
 function settingsForClient(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const safe = { ...value };
+  if (Array.isArray(safe.providers)) safe.providers = safe.providers.map(connectionForClient);
   if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
   return safe;
 }
@@ -173,7 +178,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/models', 'DELETE /api/settings/app/models/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
   }
 
   // REST: GET /data
@@ -273,11 +278,12 @@ async function handleSettings(req, res, parsed) {
       // response-only marker. Never persist it if a client round-trips the
       // snapshot through this generic patch endpoint. Existing secrets are
       // preserved unless the client explicitly submits a new `apiKey`.
-      if (Array.isArray(patch.models)) {
-        const existing = Array.isArray(settings.getApp().models) ? settings.getApp().models : [];
-        patch.models = patch.models.map((model) => {
-          if (!model || typeof model !== 'object') return model;
-          const clean = { ...model };
+      for (const key of ['providers', 'models']) {
+        if (!Array.isArray(patch[key])) continue;
+        const existing = Array.isArray(settings.getApp()[key]) ? settings.getApp()[key] : [];
+        patch[key] = patch[key].map((entry) => {
+          if (!entry || typeof entry !== 'object') return entry;
+          const clean = { ...entry };
           delete clean.hasApiKey;
           if (!Object.prototype.hasOwnProperty.call(clean, 'apiKey')) {
             const prior = existing.find(x => x && x.id === clean.id);
@@ -310,6 +316,69 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
+  // POST /api/settings/app/providers  body: { id, baseUrl?, apiKey?, auth?, oauthAccount? }
+  // Provider connections are app-level. Project model records reference
+  // them by `provider`, keeping credentials out of project files.
+  if (urlPath === '/api/settings/app/providers' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body !== 'object' || typeof body.id !== 'string' || !body.id.trim()) {
+      return sendJSON(res, 400, { error: 'id is required' });
+    }
+    if (!Object.prototype.hasOwnProperty.call(ai.ENDPOINTS, body.id)) {
+      return sendJSON(res, 400, { error: 'Unknown provider', id: body.id });
+    }
+    if (body.auth !== undefined && body.auth !== 'apikey' && body.auth !== 'oauth') {
+      return sendJSON(res, 400, { error: 'auth must be "apikey" or "oauth"' });
+    }
+    if (body.oauthAccount !== undefined && (typeof body.oauthAccount !== 'string' || body.oauthAccount.length > 256)) {
+      return sendJSON(res, 400, { error: 'oauthAccount must be a string' });
+    }
+    const app = settings.getApp();
+    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
+    const idx = providers.findIndex(p => p && p.id === body.id);
+    const merged = Object.assign({}, idx >= 0 ? providers[idx] : {}, body, { id: body.id.trim() });
+    delete merged.hasApiKey;
+    if (!Object.prototype.hasOwnProperty.call(body, 'apiKey') && idx >= 0 && providers[idx].apiKey) {
+      merged.apiKey = providers[idx].apiKey;
+    }
+    if (merged.auth === 'oauth') delete merged.apiKey;
+    if (idx >= 0) providers[idx] = merged; else providers.push(merged);
+    try {
+      const next = settings.setApp({ providers });
+      return sendJSON(res, 200, {
+        provider: connectionForClient(merged),
+        providers: next.providers.map(connectionForClient)
+      });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // DELETE /api/settings/app/providers/:id
+  const delProviderMatch = urlPath.match(/^\/api\/settings\/app\/providers\/([A-Za-z0-9._-]+)$/);
+  if (delProviderMatch && method === 'DELETE') {
+    const id = delProviderMatch[1];
+    const app = settings.getApp();
+    const providers = Array.isArray(app.providers) ? app.providers.slice() : [];
+    const idx = providers.findIndex(p => p && p.id === id);
+    if (idx < 0) return sendJSON(res, 404, { error: 'Provider not found', id });
+    const [removed] = providers.splice(idx, 1);
+    try {
+      settings.setApp({ providers });
+      return sendJSON(res, 200, {
+        ok: true,
+        removed: connectionForClient(removed),
+        providers: providers.map(connectionForClient)
+      });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // Legacy compatibility: app-level model CRUD is retained for older
+  // clients. New clients configure providers globally and models per project.
   // POST /api/settings/app/models  body: { ...model }
   // Adds a model to the app-level models array, or merges into an
   // existing entry with the same id. `id` is required; `provider` is
@@ -665,11 +734,11 @@ async function handleChatStream(req, res, chatId) {
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
-  // Resolve the model record from the project settings.
-  const resolved = settings.getResolved(projectDir);
-  const modelList = Array.isArray(resolved.models) ? resolved.models : [];
-  const model = modelList.find(m => m && m.id === modelId);
-  if (!model) return sendJSON(res, 400, { error: 'Model not found', modelId });
+  // Resolve the project model and hydrate it with its app-level provider
+  // connection (credentials, base URL, and auth account).
+  let model;
+  try { model = resolveModel(modelId, projectDir); }
+  catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId }); }
 
   // Append the user message and bump lastOpenedAt BEFORE streaming.
   let userMsg;
@@ -828,9 +897,15 @@ function resolveModel(modelId, projectDir) {
     e.code = 'EMODEL_NOT_FOUND';
     throw e;
   }
-  // Backfill auth default for models created before this commit.
-  if (!m.auth) m.auth = 'apikey';
-  return m;
+  // New shape: project models contain identity/selection data while the
+  // app-level provider connection owns credentials and transport settings.
+  // Model fields win to keep legacy self-contained model records working.
+  const app = settings.getApp();
+  const providers = Array.isArray(app.providers) ? app.providers : [];
+  const connection = providers.find(p => p && p.id === m.provider);
+  const hydrated = Object.assign({}, connection || {}, m, { provider: m.provider });
+  if (!hydrated.auth) hydrated.auth = 'apikey';
+  return hydrated;
 }
 
 async function handleAI(req, res, parsed) {

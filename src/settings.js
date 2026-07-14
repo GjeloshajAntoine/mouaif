@@ -35,8 +35,12 @@ const APP_KEY = 'settings';
 // features (models, prompts, prompt-size profile, trace default, ...) extend
 // this object.
 const DEFAULTS = Object.freeze({
-  // User-defined models. Shape: { id, provider, label, baseUrl, apiKey, contextWindow }.
-  // Empty by default. The user adds entries via /api/models.
+  // App-level provider connections. Shape:
+  //   { id, baseUrl, apiKey, auth, oauthAccount }
+  // Models reference one of these provider ids from project settings.
+  providers: [],
+  // User-defined project models. Shape: { id, provider, label, contextWindow }.
+  // Kept in defaults so projects without a models key resolve to an empty list.
   models: [],
   // Registered projects. Shape: { id, path, name, createdAt }. Filled in by
   // src/projects.js when the user picks a folder. Empty by default.

@@ -22,7 +22,7 @@ npm run build:web         # build the mobile UI into src/web/dist/
 mouaif serve              # http://127.0.0.1:5732
 ```
 
-Open `http://127.0.0.1:5732/web/` on your phone (or any browser, mobile-first). Tap **+ Add project** to pick a folder, then in **Settings** add a model. The model appears in the chat view's model picker; send a message and the response streams back over SSE.
+Open `http://127.0.0.1:5732/web/` on your phone (or any browser, mobile-first). Tap **+ Add project** to pick a folder, configure a provider in **Settings**, then define that project's model IDs in its `.mouaif.json`. The models appear in the chat picker; send a message and the response streams back over SSE.
 
 ## CLI commands
 
@@ -40,7 +40,7 @@ A live self-description lives at `GET /` and lists every route. Highlights:
 
 | Surface | Routes |
 |---|---|
-| Settings | `GET /api/settings`, `GET /api/settings/resolved?projectDir=…`, `GET /api/settings/project?projectDir=…`, `PUT /api/settings/app`, `PUT /api/settings/project`, `POST /api/settings/app/models`, `DELETE /api/settings/app/models/:id`, `POST /api/settings/app/reset` |
+| Settings | `GET /api/settings`, `GET /api/settings/resolved?projectDir=…`, `GET /api/settings/project?projectDir=…`, `PUT /api/settings/app`, `PUT /api/settings/project`, `POST /api/settings/app/providers`, `DELETE /api/settings/app/providers/:id`, `POST /api/settings/app/reset` |
 | Projects | `GET /api/projects?dir=…`, `POST /api/projects` (actions: `list`, `create`, `register`), `GET /api/projects/registered`, `DELETE /api/projects/registered/:id`, `PATCH /api/projects/registered/:id` |
 | Chats | `GET /api/chats?projectDir=…`, `POST /api/chats`, `GET/PATCH/DELETE /api/chats/:id`, `POST /api/chats/:id/touch`, `GET/POST/DELETE /api/chats/:id/messages`, `POST /api/chats/:id/messages/stream` (SSE) |
 | AI | `GET /api/ai/models?projectDir=…`, `POST /api/ai/chat` (SSE) |
@@ -60,7 +60,7 @@ The chat stream is the hot path: a single round-trip per user turn. The server a
 
 ## Mobile UI
 
-The Preact + Vite bundle is mobile-first: 360–430 px primary viewport, 44 × 44 px touch targets, system font stack, safe-area aware, no hover-only affordances. The hash router exposes four views: `#/projects` (project list + chat cards), `#/projects/new` (folder picker), `#/chat/<id>?projectDir=…` (transcript + composer), `#/settings` (app + models + project), `#/auth` (Anthropic sign-in).
+The Preact + Vite bundle is mobile-first: 360–430 px primary viewport, 44 × 44 px touch targets, system font stack, safe-area aware, no hover-only affordances. The hash router exposes four views: `#/projects` (project list + chat cards), `#/projects/new` (folder picker), `#/chat/<id>?projectDir=…` (transcript + composer), `#/settings` (app + providers + project), `#/auth` (Anthropic sign-in).
 
 ## Documentation
 

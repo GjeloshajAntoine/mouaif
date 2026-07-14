@@ -15,7 +15,7 @@ const settings = require('mouaif/src/settings.js');
 
 // Whole resolved view for a project (defaults -> app -> project).
 settings.getResolved('/path/to/project');
-// -> { models: [...], promptSize: 'average', flags: {}, ...appOverrides, ...projectOverrides }
+// -> { providers: [...], models: [...], promptSize: 'average', flags: {}, ... }
 
 // Just the app store (no merge).
 settings.getApp();
@@ -67,7 +67,8 @@ curl -X PUT http://localhost:5732/api/settings/project \
 
 ## Behavior
 
-- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ models: [], promptSize: 'average', flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat.
+- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ providers: [], models: [], promptSize: 'average', flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat.
+- **Provider scope**: provider connections and credentials are app-level only. Project files define model IDs and reference a provider by id; they do not contain provider credentials.
 - **App store**: a single row in `app_kv` (key `settings`) inside `~/.mouaif/store.sqlite`. WAL journal mode. Created on first access.
 - **Project file**: `<projectDir>/.mouaif.json`. Created on first write, 2-space indented JSON, LF line endings. Missing file is treated as `{}` (not an error).
 - **Resolution order**: `defaults → app → project`. Deep-merge for plain objects. Arrays and primitives are replaced, not concatenated — project wins on any conflict.

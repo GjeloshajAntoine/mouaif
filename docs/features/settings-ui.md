@@ -2,9 +2,9 @@
 
 ## Overview
 
-Two surfaces in this commit. The REST surface is the new endpoints the mobile UI calls; the mobile UI is the panel at `/web/` that lets a user edit app-level settings and the models list without `curl`.
+Two surfaces in this commit. The REST surface is the endpoints the mobile UI calls; the mobile UI is the panel at `/web/` that lets a user edit app-level settings, provider connections, and raw project settings without `curl`.
 
-The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§2](../decisions.md). Nothing in the storage layer changed; this commit only adds the missing GET for project-level settings, the models-CRUD endpoints, the reset endpoint, and the UI on top of all of that.
+The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§3](../decisions.md). The current UI manages app-level provider connections and edits project models through the project's raw settings file.
 
 ## Usage
 
@@ -17,25 +17,20 @@ The endpoints build on [docs/features/app-and-project-settings.md](./app-and-pro
 | GET    | `/api/settings/resolved?projectDir=<abs path>` | — | `{ resolved }` (defaults + app + project, project wins) |
 | PUT    | `/api/settings/app` | `{ ...patch }` | `{ app }` (shallow-merged) |
 | PUT    | `/api/settings/project` | `{ projectDir, ...patch }` | `{ project, path }` |
-| POST   | `/api/settings/app/models` | `{ id, provider, label?, baseUrl?, apiKey?, auth?, oauthAccount?, contextWindow? }` | `{ model, models }` |
-| DELETE | `/api/settings/app/models/:id` | — | `{ ok, removed, models }` (404 if unknown) |
+| POST   | `/api/settings/app/providers` | `{ id, baseUrl?, apiKey?, auth?, oauthAccount? }` | `{ provider, providers }` |
+| DELETE | `/api/settings/app/providers/:id` | — | `{ ok, removed, providers }` (404 if unknown) |
 | POST   | `/api/settings/app/reset` | `{ keys: [...] }` | `{ app, reset }` (replaces the app object with the listed keys removed) |
 
 Examples:
 
 ````bash
-# Add a model.
-curl -X POST http://localhost:5732/api/settings/app/models \
+# Add or update an app-level provider connection.
+curl -X POST http://localhost:5732/api/settings/app/providers \
   -H 'Content-Type: application/json' \
-  -d '{"id":"gpt-4o-mini","provider":"openai-compatible","label":"GPT-4o mini","baseUrl":"https://api.openai.com/v1","apiKey":"sk-..."}'
+  -d '{"id":"openai-compatible","baseUrl":"https://api.openai.com/v1","apiKey":"sk-...","auth":"apikey"}'
 
-# Rename a model.
-curl -X POST http://localhost:5732/api/settings/app/models \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"gpt-4o-mini","label":"GPT-4o (renamed)"}'
-
-# Delete a model.
-curl -X DELETE http://localhost:5732/api/settings/app/models/gpt-4o-mini
+# Delete a provider connection.
+curl -X DELETE http://localhost:5732/api/settings/app/providers/openai-compatible
 
 # Reset all app-level keys to defaults.
 curl -X POST http://localhost:5732/api/settings/app/reset \
@@ -51,21 +46,20 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. It has four subsections:
 
 - **App** — `Default prompt size` (select). Save writes to `PUT /api/settings/app`. Reset clears every app-level key and reloads. Trace has no app-wide default: each chat starts off and exposes its own opt-in toggle.
-- **Models** — a list of configured models with Test and Delete buttons, and an open "Add a model" disclosure that captures `id`, `provider`, `label`, `base URL`, `auth` (apikey/oauth), and **either** an `API key` field (for apikey) **or** an `OAuth account` picker (for oauth). Test calls `POST /api/ai/test`, which makes a real one-message provider request and times out after ten seconds. Provider selection fills only its known base URL (for example `https://api.openai.com/v1`); model IDs remain entirely user-defined and are never selected from or filled by a built-in model list. API-key authentication requires a key except for Ollama. The OAuth picker lists the signed-in accounts from `/api/auth/accounts` for the chosen provider's **auth** namespace (the AI provider `openai-compatible` maps to the keyring namespace `openai`; the others are 1:1). With one signed-in account the select is pre-selected as `(auto — <account>)`; with multiple, the empty option is disabled and the form refuses to submit until an account is picked.
-- **Project** — paste a project directory and click Load. The raw `<projectDir>/.mouaif.json` is loaded into a JSON editor (textarea); **Save project** PUTs the parsed JSON through `/api/settings/project`, and **Revert** restores the loaded text. The editor is intentionally a JSON textarea (not a structured form) so the user can override any future key without a UI change.
+- **Providers** — app-level provider connections with provider id, API base URL, authentication method, and either an API key or OAuth account. Saving the same provider updates its connection. API-key authentication requires a key except for Ollama. No model ID or model label appears here because this section configures providers, not models.
+- **Project overrides** — paste a project directory and click Load. The raw `<projectDir>/.mouaif.json` is loaded into a JSON editor (textarea); this is where project model records are defined, for example `{ "models": [{ "id": "gpt-4o", "provider": "openai-compatible" }] }`. **Save** PUTs the parsed JSON through `/api/settings/project`, and **Revert** restores the loaded text.
 - **Resolved (effective for project)** — read-only. The `defaults → app → project` merge result for the loaded project directory. The `apiKey` of any model is redacted to `•••` so a resolved view never echoes a secret back into the DOM. This is the view the chat layer actually reads (decision §2); what it shows is what the user gets at chat time.
 
 The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
 
 ## Behavior
 
-- **Models added through `POST /api/settings/app/models` appear in `GET /api/ai/models` on the next call.** No restart, no cache invalidation. The chat picker reads `settings.getResolved(projectDir).models` on every request.
-- **Model IDs are untrusted user input.** Status messages and model rows insert IDs as text nodes rather than HTML, so arbitrary user-defined slugs cannot inject markup into the settings page.
-- **`POST /api/settings/app/models` is upsert by `id`.** A new id adds; an existing id merges the body into the existing record (so a partial update — e.g. only the label — only needs the changed fields). `provider` is required on the first add, optional on subsequent re-adds.
+- **Provider connections are upserted by id.** Saving `openai-compatible` again updates that provider's global connection without creating a duplicate.
+- **Models remain project-defined.** `GET /api/ai/models?projectDir=...` reads the project's resolved `models` array. When a chat starts, the server combines the selected model with the matching app-level provider connection.
 - **`POST /api/settings/app/reset` is destructive on purpose.** The body lists the keys to remove; the rest of the app object is preserved. This is a `REPLACE` of the app object with the listed keys omitted, not a deep merge. A bad key in the list returns 400.
-- **`DELETE /api/settings/app/models/:id` is idempotent at the API level** (404 if not found, 200 with the new models list otherwise). The UI confirms with the user before issuing the call.
+- **`DELETE /api/settings/app/providers/:id` returns 404 when unknown.** The UI confirms with the user before deleting a provider connection.
 - **API keys are stored in plaintext in the SQLite store.** The keyring is for OAuth tokens only (decision §11). The doc is honest about this; the project-level encryption-when-resting decision is open and out of scope for this commit.
-- **OAuth model records carry `auth: 'oauth'` and an optional `oauthAccount`.** The server's `POST /api/settings/app/models` accepts both. Light validation on the server: `auth` must be `'apikey'` or `'oauth'`; `oauthAccount` is a string; an OAuth model that arrives with a leftover `apiKey` has it stripped on merge (so a user toggling a model from apikey to oauth does not leak a stale key). The AI client resolves the keyring entry through `src/auth.js → authProviderFor(model)`, which maps the AI provider to the keyring namespace (e.g. `openai-compatible` → `openai`). The mapping is a single frozen object in `src/auth.js`; both this client and the UI's OAuth account picker read it.
+- **OAuth provider connections carry `auth: 'oauth'` and an optional `oauthAccount`.** An OAuth connection has any stale API key removed. The AI client resolves the keyring entry through `src/auth.js → authProviderFor(model)` after hydrating the project model with its provider connection.
 - **`github-copilot` is reserved.** The UI lists it in the provider dropdown (per decision §10) but forces the auth select to `oauth` and disables the `apikey` option, so a user cannot submit a model the server would later reject with `ENOAUTH`. The reserved list is the same one in `src/ai.js → ENDPOINTS` (decision §10, "the last is reserved; its auth flow ships in a later commit").
 
 ## Implementation notes
@@ -76,7 +70,7 @@ The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and sa
   applies to app, project, resolved, model-create, model-delete, and reset
   responses.
 
-- Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. New endpoints are `GET /api/settings/project`, `POST /api/settings/app/models`, `DELETE /api/settings/app/models/:id`, `POST /api/settings/app/reset`. The `GET /` self-description lists all of them.
+- Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
 - Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/main.jsx](../../src/web/src/main.jsx). Polls `GET /api/settings` every 30 s so the page is truthful even if another client changes settings.
 

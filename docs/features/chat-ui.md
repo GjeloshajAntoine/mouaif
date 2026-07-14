@@ -79,7 +79,7 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 - **One SSE round-trip per user turn.** `POST /api/chats/:id/messages/stream` accepts the user message, resolves the model from the project settings, calls `ai.streamChat`, and streams the response back. The browser reads the SSE the same way the old `AI test` panel did. The user message is appended before streaming; the assistant message is appended on `done`.
 - **Trace follows the chat's `trace` flag.** The chat record in [src/chats.js](../../src/chats.js) already has the field per [docs/decisions.md §5](../decisions.md). When it's on, every event sent to the browser is also written to the trace file. The writer is a no-op when the project is on a read-only filesystem (the directory creation is best-effort) or when the chat has `trace: false`.
 - **The hash router is simple.** No history API, no client-side router — the Node server doesn't rewrite unknown paths to `index.html`, so deep links would 404 anyway. Four top-level views: `projects`, `settings`, `auth` (reached from the bottom tab bar), and `chat/<id>?projectDir=…` (a drill-in screen with its own back button). The `BottomNav` component highlights the active tab.
-- **Models are still per-project.** The chat view reads `/api/ai/models?projectDir=…` so the model picker is filtered to models visible in the chat's project.
+- **Models are per-project; providers are app-level.** The chat view reads `/api/ai/models?projectDir=…` for project model IDs. The server resolves credentials from the matching global provider connection only when sending a request.
 - **Auto-scroll.** The transcript auto-scrolls to the bottom on new content. Manual scrolling is not preserved across sends — out of scope.
 - **No optimistic re-render on errors.** A 4xx/5xx on the stream endpoint shows in the status line; the live assistant message is replaced with `[error: HTTP <code>]`.
 
@@ -106,7 +106,7 @@ The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/web/` route prefers `src/web/dist/`, falls back to `src/web/` for dev.
 - Messages: [src/messages.js](../../src/messages.js) — per-chat file `<projectDir>/.mouaif.messages.<chatId>.json`. Robust read (drops malformed entries), throws `MOUAIF_PROJECT_PARSE_ERROR` (422) only if the file itself is corrupt.
 - Trace: [src/trace.js](../../src/trace.js) — per-chat NDJSON writer, no-op when `chat.trace` is false or the directory can't be created.
-- Bottom nav: Projects / Inspector / Settings / Auth. Settings contains the model editor; Auth contains Anthropic sign-in; Inspector contains the CDP Console and Network panels.
+- Bottom nav: Projects / Inspector / Settings / Auth. Settings contains provider connections and the raw project-settings editor; Auth contains Anthropic sign-in; Inspector contains the CDP Console and Network panels.
 - Dropped (intentionally): the previous `AI test` panel and the `Virtual list demo`. They were dev-time affordances; the chat view replaces the AI test, while the Inspector now consumes the virtual-list primitive.
 
 ## Related

@@ -8,7 +8,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 
 - [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
 - [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
-- [Settings UI](features/settings-ui.md) — REST endpoints for models CRUD and key reset, plus the mobile Settings section in `/web/`.
+- [Settings UI](features/settings-ui.md) — REST endpoints for global provider connections and project settings, plus the mobile Settings section in `/web/`.
 - [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 - [Project card](features/project-card.md) — per-project card in the mobile UI: chat list (scrolling inside the card), New chat, options menu (rename / unregister), per-project rename endpoint. Chats persisted in `<projectDir>/.mouaif.json`.

@@ -13,10 +13,12 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
 - Resolution order: defaults → app → project. Project wins on conflict.
 - Documented in `docs/features/app-and-project-settings.md`.
 
-## 3. Models — slug key, no pre-made list
+## 3. Providers and models — separate scopes, no pre-made model list
 
-- A model is `{ id: slug, provider, label, baseUrl, apiKey, contextWindow, ... }`.
-- Persisted in the app settings store. No built-in list, ever.
+- A provider connection is `{ id, baseUrl, apiKey, auth, oauthAccount? }` and is persisted in the app SQLite store. It owns transport and credentials.
+- A model is `{ id: slug, provider, label?, contextWindow?, ... }` and is defined in project settings. `provider` references an app-level provider connection.
+- Provider credentials are never written to project files. At request time, the server hydrates the selected project model with its matching app-level provider connection.
+- There is no built-in model list. Model IDs remain entirely user-defined per project.
 
 ## 4. Projects — full filesystem browse
 
@@ -62,7 +64,7 @@ The "trace to file" feature is a **user export**, not a background stream and no
 
 - The mobile UI never holds an API key. All provider calls go through `POST /api/ai/chat` on the mouaif server, which streams the response back over SSE.
 - Provider set, this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are key-only in this commit; `github-copilot` is documented but its auth lands with the OAuth commits.
-- Model record is extended to `{ id, provider, label, baseUrl, apiKey, auth: 'apikey' | 'oauth', oauthAccount?: string, contextWindow }`. Additive — existing models without `auth` are treated as `'apikey'`.
+- The request-time model is the merge of the project model `{ id, provider, label?, contextWindow? }` and its app-level provider connection `{ baseUrl, apiKey, auth, oauthAccount? }`. Legacy self-contained model records remain readable during migration.
 - Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
 - 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.
 

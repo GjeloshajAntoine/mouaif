@@ -2,7 +2,7 @@
 
 ## Overview
 
-`mouaif` is the only thing that holds provider API keys. The mobile UI POSTs to `/api/ai/chat` and reads the response as a Server-Sent Events stream; the server picks the model from the app + project settings, calls the upstream provider, and forwards each event to the browser. Five providers are wired in this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, and `github-copilot` (the last one is reserved; its auth flow ships in a later commit). Implements [docs/decisions.md §10](../decisions.md).
+`mouaif` is the only thing that holds provider API keys. Provider connections are app-level; model IDs are project-level and reference a provider. The mobile UI POSTs to `/api/ai/chat`, the server combines the selected project model with its provider connection, calls upstream, and forwards events as SSE.
 
 ## Usage
 
@@ -37,22 +37,30 @@ curl -N -X POST http://localhost:5732/api/ai/chat \
 
 ### Model record
 
-The model record is read from the resolved settings (defaults → app → project). The shape extends decision §3 with `auth`:
+The project owns model identity:
 
 ```js
 {
   id:            'gpt-4o-mini',     // slug, also the upstream model id
   provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'github-copilot'
-  label:         'GPT-4o mini',     // UI label
-  baseUrl:       'https://api.openai.com/v1', // optional; per-provider defaults applied
-  apiKey:        'sk-...',          // ignored when auth === 'oauth'
-  auth:          'apikey',          // 'apikey' | 'oauth' (default: 'apikey')
-  oauthAccount:  undefined,         // populated by the OAuth commits
+  label:         'GPT-4o mini',     // optional UI label
   contextWindow: 128000             // informational; not yet enforced
 }
 ```
 
-Adding a model from the mobile UI is `PUT /api/settings/app` with `{ models: [ ... ] }`. The chat proxy picks a model by `id`.
+The app store owns the provider connection:
+
+```js
+{
+  id:            'openai-compatible',
+  baseUrl:       'https://api.openai.com/v1',
+  apiKey:        'sk-...',
+  auth:          'apikey',
+  oauthAccount:  undefined
+}
+```
+
+The chat proxy picks a project model by `id`, then hydrates it with the provider connection referenced by `provider`.
 
 ### Programmatic (Node)
 

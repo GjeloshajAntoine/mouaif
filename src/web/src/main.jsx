@@ -242,10 +242,10 @@ function SettingsPanel() {
   const resetBtn = useRef(null);
   const appStatus = useRef(null);
 
-  const modelsList = useRef(null);
-  const mId = useRef(null), mProvider = useRef(null), mLabel = useRef(null), mBaseUrl = useRef(null), mApiKey = useRef(null);
-  const mAuth = useRef(null), mOauthAccount = useRef(null);
-  const addBtn = useRef(null), addModelStatus = useRef(null);
+  const providersList = useRef(null);
+  const pProvider = useRef(null), pBaseUrl = useRef(null), pApiKey = useRef(null);
+  const pAuth = useRef(null), pOauthAccount = useRef(null);
+  const addProviderBtn = useRef(null), providerStatus = useRef(null);
 
   // Project + resolved view controls.
   const resolvedDir = useRef(null), resolvedStatus = useRef(null), resolvedOut = useRef(null);
@@ -272,14 +272,21 @@ function SettingsPanel() {
   // with a known default (if the field is still empty or was the
   // previous default).
   function onProviderChange() {
-    const p = mProvider.current ? mProvider.current.value : 'openai-compatible';
+    const p = pProvider.current ? pProvider.current.value : 'openai-compatible';
+    const configured = (currentApp.providers || []).find(provider => provider && provider.id === p);
     const defaultUrl = DEFAULT_BASE_URLS[p] || '';
-    const current = mBaseUrl.current ? mBaseUrl.current.value.trim() : '';
+    const current = pBaseUrl.current ? pBaseUrl.current.value.trim() : '';
     // Only overwrite if empty or matches any known default URL, so
     // user customisations are never silently clobbered.
     const knownDefaults = Object.values(DEFAULT_BASE_URLS);
     if (!current || knownDefaults.includes(current)) {
-      if (mBaseUrl.current) mBaseUrl.current.value = defaultUrl;
+      if (pBaseUrl.current) pBaseUrl.current.value = (configured && configured.baseUrl) || defaultUrl;
+    }
+    if (pAuth.current) pAuth.current.value = (configured && configured.auth) || 'apikey';
+    if (pOauthAccount.current) {
+      const account = (configured && configured.oauthAccount) || '';
+      if (account) pOauthAccount.current.setAttribute('data-prev', account);
+      else pOauthAccount.current.removeAttribute('data-prev');
     }
     onAuthOrProviderChange();
   }
@@ -289,7 +296,7 @@ function SettingsPanel() {
     if (r.status !== 200) { if (appStatus.current) appStatus.current.textContent = 'HTTP ' + r.status; return; }
     currentApp = r.body.app || {};
     if (promptSize.current) promptSize.current.value = currentApp.promptSize || 'average';
-    renderModels(currentApp.models || []);
+    renderProviders(currentApp.providers || []);
     if (appStatus.current) appStatus.current.textContent = '';
   }
 
@@ -311,7 +318,7 @@ function SettingsPanel() {
   }
 
   function renderOauthAccountOptions(provider) {
-    const sel = mOauthAccount.current;
+    const sel = pOauthAccount.current;
     if (!sel) return;
     const ns = providerKeyringNamespace(provider);
     const accounts = (lastAccounts[ns] || []).slice();
@@ -356,60 +363,37 @@ function SettingsPanel() {
     if (prev && accounts.includes(prev)) sel.value = prev;
   }
 
-  async function testModel(id) {
-    const btn = document.getElementById('test-' + id);
-    if (!btn) return;
-    const original = btn.textContent;
-    btn.textContent = 'testing…';
-    btn.disabled = true;
-    try {
-      const r = await fetchJson('/api/ai/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId: id })
-      });
-      if (r.status === 200) btn.textContent = r.body.ok ? '✓ OK' : '✗ ' + (r.body.error || 'unknown');
-      else btn.textContent = '✗ HTTP ' + r.status;
-    } catch (err) {
-      btn.textContent = '✗ network error';
-    }
-    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
-  }
-
-  function renderModels(list) {
-    modelsList.current.innerHTML = '';
+  function renderProviders(list) {
+    providersList.current.innerHTML = '';
     if (!list.length) {
       const empty = document.createElement('li');
-      empty.textContent = 'No models configured. Add one below.';
+      empty.textContent = 'No providers configured. Add one below.';
       empty.style.color = 'var(--muted)';
-      modelsList.current.appendChild(empty);
+      providersList.current.appendChild(empty);
       return;
     }
-    for (const m of list) {
+    for (const provider of list) {
       const li = document.createElement('li');
       const row = document.createElement('div'); row.className = 'models__row';
       const idSpan = document.createElement('span'); idSpan.className = 'models__id';
-      idSpan.textContent = m.id + '  (' + m.provider + ')';
+      idSpan.textContent = provider.id;
       const actions = document.createElement('div'); actions.className = 'models__actions';
-      const test = document.createElement('button'); test.className = 'btn btn--ghost'; test.type = 'button'; test.textContent = 'Test';
-      test.id = 'test-' + m.id;
-      test.addEventListener('click', () => testModel(m.id));
       const del = document.createElement('button'); del.className = 'btn btn--danger'; del.type = 'button'; del.textContent = 'Delete';
-      del.addEventListener('click', () => deleteModel(m.id));
-      actions.appendChild(test); actions.appendChild(del);
+      del.addEventListener('click', () => deleteProvider(provider.id));
+      actions.appendChild(del);
       row.appendChild(idSpan); row.appendChild(actions);
       const meta = document.createElement('div'); meta.className = 'models__meta';
-      const auth = m.auth || 'apikey';
-      const bits = [m.label, m.baseUrl];
+      const auth = provider.auth || 'apikey';
+      const bits = [provider.baseUrl];
       if (auth === 'oauth') {
         bits.push('auth: oauth');
-        if (m.oauthAccount) bits.push('account: ' + m.oauthAccount);
-      } else if (m.hasApiKey) {
+        if (provider.oauthAccount) bits.push('account: ' + provider.oauthAccount);
+      } else if (provider.hasApiKey) {
         bits.push('key: •••');
       }
       meta.textContent = bits.filter(Boolean).join('  ·  ');
       li.appendChild(row); li.appendChild(meta);
-      modelsList.current.appendChild(li);
+      providersList.current.appendChild(li);
     }
   }
 
@@ -423,88 +407,76 @@ function SettingsPanel() {
   }
 
   async function resetApp() {
-    if (!confirm('Reset all app-level settings to defaults? Models and other keys will be cleared.')) return;
+    if (!confirm('Reset all app-level settings to defaults? Providers and other keys will be cleared.')) return;
     resetBtn.current.disabled = true;
     appStatus.current.textContent = 'resetting…';
-    const r = await fetchJson('/api/settings/app/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: ['models', 'promptSize', 'authAccounts', 'projects', 'flags'] }) });
+    const r = await fetchJson('/api/settings/app/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: ['providers', 'models', 'promptSize', 'authAccounts', 'projects', 'flags'] }) });
     resetBtn.current.disabled = false;
     if (r.status === 200) { currentApp = r.body.app || {}; await loadSettings(); appStatus.current.textContent = 'reset.'; }
     else appStatus.current.textContent = 'HTTP ' + r.status;
   }
 
-  async function addModel() {
-    const id = (mId.current.value || '').trim();
-    const provider = mProvider.current.value;
-    const label = (mLabel.current.value || '').trim() || id;
-    const baseUrl = (mBaseUrl.current.value || '').trim();
-    const apiKey = (mApiKey.current.value || '').trim();
-    const auth = mAuth.current ? mAuth.current.value : 'apikey';
-    const oauthAccount = mOauthAccount.current ? (mOauthAccount.current.value || '').trim() : '';
-    if (!id) { addModelStatus.current.textContent = 'id is required'; return; }
+  async function addProvider() {
+    const id = pProvider.current.value;
+    const configured = (currentApp.providers || []).find(provider => provider && provider.id === id);
+    const baseUrl = (pBaseUrl.current.value || '').trim();
+    const apiKey = (pApiKey.current.value || '').trim();
+    const auth = pAuth.current ? pAuth.current.value : 'apikey';
+    const oauthAccount = pOauthAccount.current ? (pOauthAccount.current.value || '').trim() : '';
     // Require apiKey when auth is apikey and the provider needs one
     // (Ollama is the only exception — it needs no credential).
-    if (auth === 'apikey' && provider !== 'ollama' && !apiKey) {
-      addModelStatus.current.textContent = 'API key is required for ' + provider + ' — paste your key in the field';
-      mApiKey.current.focus();
+    if (auth === 'apikey' && id !== 'ollama' && !apiKey && !(configured && configured.hasApiKey)) {
+      providerStatus.current.textContent = 'API key is required for ' + id + ' — paste your key in the field';
+      pApiKey.current.focus();
       return;
     }
     if (auth === 'oauth') {
       // Re-fetch so we don't accidentally publish a stale empty list
       // if the user signed in on the Auth tab without coming back here.
       await refreshAccounts();
-      const list = lastAccounts[providerKeyringNamespace(provider)] || [];
+      const list = lastAccounts[providerKeyringNamespace(id)] || [];
       if (list.length === 0) {
-        addModelStatus.current.textContent = 'no signed-in account for "' + provider + '" — sign in on the Auth tab first';
+        providerStatus.current.textContent = 'no signed-in account for "' + id + '" — sign in on the Auth tab first';
         return;
       }
       // Spec (decision §11): with multiple signed-in accounts, the
       // user must pick one explicitly. The empty value is reserved
       // for the single-account auto fallback.
       if (list.length > 1 && !oauthAccount) {
-        addModelStatus.current.textContent = 'pick which signed-in account this model uses';
+        providerStatus.current.textContent = 'pick which signed-in account this provider uses';
         return;
       }
     }
-    addBtn.current.disabled = true;
-    addModelStatus.current.textContent = 'adding…';
-    const body = { id, provider, label, auth };
+    addProviderBtn.current.disabled = true;
+    providerStatus.current.textContent = 'saving…';
+    const body = { id, auth };
     if (baseUrl) body.baseUrl = baseUrl;
     if (auth === 'apikey' && apiKey) body.apiKey = apiKey;
     if (auth === 'oauth' && oauthAccount) body.oauthAccount = oauthAccount;
-    const r = await fetchJson('/api/settings/app/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    addBtn.current.disabled = false;
+    const r = await fetchJson('/api/settings/app/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    addProviderBtn.current.disabled = false;
     if (r.status === 200) {
-      currentApp.models = r.body.models;
-      renderModels(r.body.models);
-      // Build the success message with DOM nodes: model IDs are
-      // user-defined and must never be interpreted as HTML.
-      addModelStatus.current.replaceChildren(
-        document.createTextNode('added ' + id + '. '),
-        Object.assign(document.createElement('a'), {
-          href: '#/projects',
-          className: 'link',
-          textContent: 'Open projects'
-        }),
-        document.createTextNode(' to start a chat →')
-      );
-      mId.current.value = ''; mLabel.current.value = ''; mBaseUrl.current.value = ''; mApiKey.current.value = '';
-      if (mOauthAccount.current) {
-        mOauthAccount.current.value = '';
-        mOauthAccount.current.removeAttribute('data-prev');
+      currentApp.providers = r.body.providers;
+      renderProviders(r.body.providers);
+      providerStatus.current.textContent = 'saved ' + id + '.';
+      pApiKey.current.value = '';
+      if (pOauthAccount.current) {
+        const saved = r.body.provider && r.body.provider.oauthAccount;
+        pOauthAccount.current.setAttribute('data-prev', saved || '');
+        renderOauthAccountOptions(id);
       }
-    } else addModelStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
+    } else providerStatus.current.textContent = 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '');
   }
 
-  async function deleteModel(id) {
-    if (!confirm('Delete model ' + id + '?')) return;
-    const r = await fetchJson('/api/settings/app/models/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (r.status === 200) { currentApp.models = r.body.models; renderModels(r.body.models); }
+  async function deleteProvider(id) {
+    if (!confirm('Delete provider ' + id + '?')) return;
+    const r = await fetchJson('/api/settings/app/providers/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (r.status === 200) { currentApp.providers = r.body.providers; renderProviders(r.body.providers); }
     else alert('delete failed: HTTP ' + r.status);
   }
 
   useEffect(() => {
-    loadSettings();
-    refreshAccounts().then(() => {
+    Promise.all([loadSettings(), refreshAccounts()]).then(() => {
       // Run the provider change handler once so the form starts in a
       // consistent state with auto-filled fields. Defer one frame so
       // the details element's children are guaranteed to be in the DOM
@@ -525,14 +497,14 @@ function SettingsPanel() {
   // meaningful for it, so the auth select snaps to "oauth" and the
   // apikey option is disabled when the user picks it.
   function onAuthOrProviderChange() {
-    const provider = mProvider.current ? mProvider.current.value : 'openai-compatible';
-    let auth = mAuth.current ? mAuth.current.value : 'apikey';
+    const provider = pProvider.current ? pProvider.current.value : 'openai-compatible';
+    let auth = pAuth.current ? pAuth.current.value : 'apikey';
     if (provider === 'github-copilot' && auth === 'apikey') {
       auth = 'oauth';
-      if (mAuth.current) mAuth.current.value = 'oauth';
+      if (pAuth.current) pAuth.current.value = 'oauth';
     }
     // Toggle the apikey/oauth row visibility.
-    const details = mAuth.current && mAuth.current.closest('details');
+    const details = pAuth.current && pAuth.current.closest('details');
     if (details) {
       for (const row of details.querySelectorAll('.row--apikey, .row--oauth')) {
         const showWhen = row.getAttribute('data-show-when');
@@ -542,18 +514,18 @@ function SettingsPanel() {
       // Disable the apikey option for reserved providers so the
       // form cannot be tricked into a state the server would later
       // reject with ENOAUTH.
-      if (mAuth.current) {
-        for (const opt of mAuth.current.querySelectorAll('option')) {
+      if (pAuth.current) {
+        for (const opt of pAuth.current.querySelectorAll('option')) {
           if (opt.value === 'apikey') opt.disabled = (provider === 'github-copilot');
         }
       }
     }
     // Also auto-fill the baseUrl.
     const defaultUrl = DEFAULT_BASE_URLS[provider] || '';
-    const current = mBaseUrl.current ? mBaseUrl.current.value.trim() : '';
+    const current = pBaseUrl.current ? pBaseUrl.current.value.trim() : '';
     const knownDefaults = Object.values(DEFAULT_BASE_URLS);
     if (!current || knownDefaults.includes(current)) {
-      if (mBaseUrl.current) mBaseUrl.current.value = defaultUrl;
+      if (pBaseUrl.current) pBaseUrl.current.value = defaultUrl;
     }
     refreshAccounts().then(() => renderOauthAccountOptions(provider));
   }
@@ -660,13 +632,12 @@ function SettingsPanel() {
       h('button', { ref: resetBtn, class: 'btn', type: 'button', onClick: resetApp }, 'Reset'),
       h('span', { ref: appStatus, class: 'status', 'aria-live': 'polite' })
     ),
-    h('h2', null, 'Models'),
-    h('ul', { ref: modelsList, class: 'models__list', 'aria-label': 'Configured models' }),
+    h('h2', null, 'Providers'),
+    h('ul', { ref: providersList, class: 'models__list', 'aria-label': 'Configured providers' }),
     h('details', { class: 'models__add', open: true },
-      h('summary', null, 'Add a model'),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mId' }, 'Model ID'), h('input', { ref: mId, class: 'input', id: 'mId', type: 'text', placeholder: 'gpt-4o' })),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mProvider' }, 'Provider'),
-        h('select', { ref: mProvider, class: 'input', id: 'mProvider', onChange: onProviderChange },
+      h('summary', null, 'Add or update a provider'),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pProvider' }, 'Provider'),
+        h('select', { ref: pProvider, class: 'input', id: 'pProvider', onChange: onProviderChange },
           h('option', { value: 'openai-compatible' }, 'openai-compatible'),
           h('option', { value: 'anthropic' }, 'anthropic'),
           h('option', { value: 'gemini' }, 'gemini'),
@@ -674,30 +645,30 @@ function SettingsPanel() {
           h('option', { value: 'github-copilot' }, 'github-copilot')
         )
       ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mAuth' }, 'Auth'),
-        h('select', { ref: mAuth, class: 'input', id: 'mAuth', onChange: onAuthOrProviderChange },
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pAuth' }, 'Authentication'),
+        h('select', { ref: pAuth, class: 'input', id: 'pAuth', onChange: onAuthOrProviderChange },
           h('option', { value: 'apikey' }, 'apikey'),
           h('option', { value: 'oauth' }, 'oauth')
         )
       ),
       h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
-        h('label', { class: 'label', for: 'mOauthAccount' }, 'OAuth account'),
-        h('select', { ref: mOauthAccount, class: 'input', id: 'mOauthAccount',
-          onChange: () => { if (mOauthAccount.current) mOauthAccount.current.setAttribute('data-prev', mOauthAccount.current.value); }
+        h('label', { class: 'label', for: 'pOauthAccount' }, 'OAuth account'),
+        h('select', { ref: pOauthAccount, class: 'input', id: 'pOauthAccount',
+          onChange: () => { if (pOauthAccount.current) pOauthAccount.current.setAttribute('data-prev', pOauthAccount.current.value); }
         })
       ),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mLabel' }, 'Label'), h('input', { ref: mLabel, class: 'input', id: 'mLabel', type: 'text', placeholder: 'GPT-4o' })),
-      h('div', { class: 'row' }, h('label', { class: 'label', for: 'mBaseUrl' }, 'Base URL'), h('input', { ref: mBaseUrl, class: 'input', id: 'mBaseUrl', type: 'text', placeholder: 'https://api.openai.com/v1' })),
+      h('div', { class: 'row' }, h('label', { class: 'label', for: 'pBaseUrl' }, 'API base URL'), h('input', { ref: pBaseUrl, class: 'input', id: 'pBaseUrl', type: 'url', placeholder: 'https://api.openai.com/v1' })),
       h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
-        h('label', { class: 'label', for: 'mApiKey' }, 'API key'),
-        h('input', { ref: mApiKey, class: 'input', id: 'mApiKey', type: 'password', placeholder: 'sk-...' })
+        h('label', { class: 'label', for: 'pApiKey' }, 'Provider API key'),
+        h('input', { ref: pApiKey, class: 'input', id: 'pApiKey', type: 'password', placeholder: 'Paste provider key' })
       ),
       h('div', { class: 'row row--actions' },
-        h('button', { ref: addBtn, class: 'btn btn--primary', type: 'button', onClick: addModel }, 'Add'),
-        h('span', { ref: addModelStatus, class: 'status', 'aria-live': 'polite' })
+        h('button', { ref: addProviderBtn, class: 'btn btn--primary', type: 'button', onClick: addProvider }, 'Save provider'),
+        h('span', { ref: providerStatus, class: 'status', 'aria-live': 'polite' })
       )
     ),
     h('h2', null, 'Project overrides'),
+    h('p', { class: 'hint hint--compact' }, 'Project files define model IDs and choose one of the providers configured above.'),
     h('div', { class: 'row' }, h('label', { class: 'label', for: 'projectDir' }, 'Directory'), h('input', { ref: projectDir, class: 'input', id: 'projectDir', type: 'text', placeholder: 'C:/path/to/project' })),
     h('div', { class: 'row row--inline' },
       h('button', { ref: loadProject, class: 'btn', id: 'loadProject', type: 'button', onClick: loadProjectAndResolved }, 'Load'),
@@ -1652,7 +1623,7 @@ function ChatView(props) {
     if (!list.length) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = '(no models — add one in Settings)';
+      opt.textContent = '(no models — define models in project settings)';
       modelSelect.current.appendChild(opt);
     }
   }
