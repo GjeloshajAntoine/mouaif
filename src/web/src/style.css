@@ -52,6 +52,16 @@
   --r-md: 10px;
   --r-lg: 14px;
   --r-pill: 999px;
+
+  /* Motion: short, transform-only. The reduced-motion media query
+     at the bottom of this file zeroes these out, so every animation
+     and transition defined in terms of these tokens disappears for
+     users who opt out. */
+  --dur-fast:   120ms;
+  --dur:        180ms;
+  --dur-slow:   240ms;
+  --ease:       cubic-bezier(.2, .7, .2, 1);
+  --ease-out:   cubic-bezier(.16, .84, .44, 1);
 }
 
 * { box-sizing: border-box; }
@@ -111,10 +121,40 @@ html, body {
   padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) + 12px);
   /* Leave room for the sticky bottom tab bar. */
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px);
+  /* The view inside the main region fades + lifts in on every
+     route change. The animation is on the <section> child, not
+     on .app__main itself, so re-layout during the transition
+     doesn't trigger reflow. */
 }
 .app__main--flush {
   /* Drill-in screens (chat, picker) own the safe area themselves. */
   padding-bottom: calc(var(--pad-y) + 12px);
+}
+
+/* ---- Motion: view enter + bubble enter + live cursor -------------- */
+
+/* The .app__main > section is the root of every top-level view. A
+   short fade + lift on mount gives a sense of place; the stagger
+   on .chat-msg children makes a streaming reply feel conversational
+   rather than dumpy. All animations are transform/opacity-only to
+   stay on the compositor thread. */
+.app__main > section {
+  animation: mouaif-view-in var(--dur) var(--ease-out) both;
+}
+
+@keyframes mouaif-view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes mouaif-bubble-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+@keyframes mouaif-cursor {
+  0%, 100% { opacity: .25; }
+  50%      { opacity: 1;   }
 }
 
 /* ---- App header ----------------------------------------------------- */
@@ -208,10 +248,10 @@ html, body {
   color: var(--muted);
   background: transparent;
   border: 0;
-  transition: color 120ms ease, background 120ms ease, transform 80ms ease;
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease, transform var(--dur-fast) var(--ease);
 }
 .app__tab:hover        { color: var(--fg-soft); }
-.app__tab:active       { transform: scale(0.97); }
+.app__tab:active       { transform: scale(.94); }
 .app__tab.is-active    { color: var(--accent); }
 .app__tab.is-active .app__tab-icon {
   background: var(--accent-soft);
@@ -515,6 +555,16 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 /* ---- Projects ---------------------------------------------------- */
 
 .projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Each project card pops in with a tiny stagger so loading the list
+   feels like a list arriving, not a single block appearing. The
+   stagger caps at the 4th card so a long list doesn't drag. */
+.projects__list > li {
+  animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
+}
+.projects__list > li:nth-child(1) { animation-delay: 0ms; }
+.projects__list > li:nth-child(2) { animation-delay: 40ms; }
+.projects__list > li:nth-child(3) { animation-delay: 80ms; }
+.projects__list > li:nth-child(n+4) { animation-delay: 110ms; }
 .projects__empty {
   color: var(--muted);
   font-size: 0.85rem;
@@ -651,11 +701,11 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   border-radius: var(--r-md);
   background: var(--surface-2);
   cursor: pointer;
-  transition: background 120ms ease, transform 80ms ease;
+  transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease);
   min-height: var(--tap);
 }
 .project-card__chats li:hover  { background: var(--surface-3); }
-.project-card__chats li:active { transform: scale(0.99); }
+.project-card__chats li:active { transform: scale(.985); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
 .project-card__chat-meta { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
 .project-card__chat-delete {
@@ -870,7 +920,23 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.chat-msg { display: flex; gap: 6px; align-items: flex-end; }
+.chat-msg {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  /* Each new message slides in. Stagger up to 8 messages so a
+     rapid stream doesn't feel laggy (the rest pop in at 0ms). */
+  animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
+}
+.chat-msg:nth-child(n+9) { animation-delay: 0ms; }
+.chat-msg:nth-child(8)   { animation-delay: 35ms; }
+.chat-msg:nth-child(7)   { animation-delay: 70ms; }
+.chat-msg:nth-child(6)   { animation-delay: 105ms; }
+.chat-msg:nth-child(5)   { animation-delay: 140ms; }
+.chat-msg:nth-child(4)   { animation-delay: 160ms; }
+.chat-msg:nth-child(3)   { animation-delay: 175ms; }
+.chat-msg:nth-child(2)   { animation-delay: 185ms; }
+.chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { flex-direction: row-reverse; }
 .chat-msg__role {
   font-size: 0.62rem;
@@ -911,6 +977,19 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   font-style: italic;
 }
 .chat-msg__ts { display: none; }
+
+/* The live assistant message (data-live="1" on the row) gets a
+   blinking caret at the end while the stream is open. The caret
+   is a pseudo-element on the body, not a real text node, so the
+   append-to-textContent path doesn't disturb it. */
+.chat-msg[data-live="1"] .chat-msg__body::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: mouaif-cursor 900ms steps(2, end) infinite;
+  vertical-align: -1px;
+}
 .chat-view__empty {
   color: var(--muted);
   font-size: 0.85rem;
@@ -976,10 +1055,21 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce) {
+  /* Zero out every transition and animation defined in this file
+     for users who have reduced-motion enabled. The base
+     :root --dur / --ease tokens are *not* overridden here, so any
+     rule that hard-codes its own duration (none today, but easy
+     to add) still respects the override. */
   *, *::before, *::after {
     transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
   }
+  /* Cancel the bubble stagger entirely; messages appear together. */
+  .chat-msg:nth-child(n) { animation-delay: 0ms !important; }
+  /* The caret on a live assistant message is pure decoration; hide
+     it for reduced-motion users rather than freeze the blink. */
+  .chat-msg[data-live="1"] .chat-msg__body::after { content: none; }
 }
 
 /* ---- Inspector ------------------------------------------------------ */
