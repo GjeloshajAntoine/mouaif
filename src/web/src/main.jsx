@@ -528,6 +528,9 @@ function InspectorView() {
     networkEntries.current = [];
     if (consoleVL.current) { try { consoleVL.current.setData([]); } catch { /* ignore */ } }
     if (networkVL.current) { try { networkVL.current.setData([]); } catch { /* ignore */ } }
+    // Clear the status line so a stale message from a previous
+    // connect/disconnect cycle does not bleed into the next phase.
+    if (statusEl.current) statusEl.current.textContent = '';
   }
 
   function connect(target) {
@@ -548,6 +551,7 @@ function InspectorView() {
     try { ws = new WebSocket(proxyUrl); }
     catch (e) { if (statusEl.current) statusEl.current.textContent = 'WebSocket open failed: ' + (e.message || e); return; }
     wsRef.current = ws;
+    if (statusEl.current) statusEl.current.textContent = 'connecting…';
     ws.addEventListener('open', () => onWsOpen(target));
     ws.addEventListener('message', wsOnMessage);
     ws.addEventListener('close', (ev) => onWsClose(ev));
@@ -728,9 +732,9 @@ function InspectorView() {
         ),
         h('div', { class: 'row row--actions' },
           h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover only'),
-          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover only')
         ),
+        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
         h('p', { class: 'hint' }, 'Tip: on a phone, run ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' and point the URL at ', h('code', null, 'http://127.0.0.1:9222'), '. The address is stored in the app SQLite store.')
       )
     );
@@ -782,9 +786,9 @@ function InspectorView() {
       h('section', null,
         h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
         h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets'),
-          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
         ),
+        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
         h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
       )
     );
@@ -804,7 +808,7 @@ function InspectorView() {
         h('button', { class: 'inspector__subtab' + (activePanel === 'console' ? ' is-active' : ''), type: 'button', role: 'tab', 'aria-selected': String(activePanel === 'console'), onClick: () => { panel.current = 'console'; rerender(); } }, 'Console'),
         h('button', { class: 'inspector__subtab' + (activePanel === 'network' ? ' is-active' : ''), type: 'button', role: 'tab', 'aria-selected': String(activePanel === 'network'), onClick: () => { panel.current = 'network'; rerender(); } }, 'Network')
       ),
-      h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }, 'connecting…'),
+      h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
       activePanel === 'console'
         ? h(ConsolePanel, { vlRef: consoleVL, onReady: (vl) => { consoleVL.current = vl; pushConsole(); } })
         : h(NetworkPanel, { vlRef: networkVL, onReady: (vl) => { networkVL.current = vl; pushNetwork(); } })
