@@ -58,6 +58,13 @@ export function SettingsHomeView() {
       )
     ),
     h('div', { class: 'group' },
+      h('div', { class: 'group__title' }, 'Project features'),
+      h('ul', { class: 'group__list' },
+        cardLi('settings/mcp', 'MCP servers', null, 'per-project'),
+        cardLi('settings/prompts', 'Custom prompts', null, 'per-project')
+      )
+    ),
+    h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'App'),
       h('ul', { class: 'group__list' },
         cardLi('settings/defaults', 'Defaults', promptSize, 'prompt size'),

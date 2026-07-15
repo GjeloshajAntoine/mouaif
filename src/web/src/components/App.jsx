@@ -8,6 +8,7 @@ import { SettingsDefaultsView } from './SettingsDefaults.jsx';
 import { SettingsCopilotView } from './SettingsCopilot.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
+import { SettingsMcpView, SettingsMcpEditView } from './SettingsMcp.jsx';
 import { InspectorView } from './Inspector.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
@@ -63,6 +64,7 @@ export function App() {
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
     && view.name !== 'settingsDefaults' && view.name !== 'settingsCopilot'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
+    && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit'
     && view.name !== 'settingsAbout';
   let body = null;
   if (view.name === 'chats') body = h(ProjectsView, null);
@@ -77,6 +79,8 @@ export function App() {
   else if (view.name === 'settingsCopilot') body = h(SettingsCopilotView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
+  else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
+  else if (view.name === 'settingsMcpEdit') body = h(SettingsMcpEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);

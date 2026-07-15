@@ -145,6 +145,120 @@ export function ChatView(props) {
     }
   }
 
+  // Render a tool_call event as a compact card above the live message
+  // (or appended if there is no live row). The card shows the tool
+  // name, a one-line argument summary, and a "running" pill. The
+  // matching tool_result will replace this card.
+  function appendToolCallCard(toolCall) {
+    if (!transcript.current) return;
+    const empty = transcript.current.querySelector('.chat-view__empty');
+    if (empty) empty.remove();
+    const id = toolCall.id || ('call_' + Math.random().toString(36).slice(2, 10));
+    const card = document.createElement('div');
+    card.className = 'tool-card tool-card--call';
+    card.dataset.toolId = id;
+    const role = document.createElement('div');
+    role.className = 'tool-card__role';
+    role.textContent = 'tool call';
+    const name = document.createElement('div');
+    name.className = 'tool-card__name';
+    name.textContent = toolCall.name || 'tool';
+    const args = document.createElement('pre');
+    args.className = 'tool-card__args';
+    args.textContent = formatToolArgs(toolCall.args);
+    const pill = document.createElement('span');
+    pill.className = 'tool-card__pill tool-card__pill--busy';
+    pill.textContent = 'running…';
+    card.appendChild(role); card.appendChild(name); card.appendChild(args); card.appendChild(pill);
+    transcript.current.appendChild(card);
+    transcript.current.scrollTop = transcript.current.scrollHeight;
+  }
+
+  // Render a tool_result event. If a matching tool_call card is on
+  // screen, update it; otherwise append a fresh card so the user can
+  // see the result regardless of order. The card collapses the result
+  // body on tap; long outputs are truncated to the first ~12 lines.
+  function appendToolResultCard(toolResult) {
+    if (!transcript.current) return;
+    const id = toolResult.id;
+    let card = id ? transcript.current.querySelector('[data-tool-id="' + cssEscape(id) + '"]') : null;
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'tool-card tool-card--result';
+      card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
+      const role = document.createElement('div');
+      role.className = 'tool-card__role';
+      role.textContent = 'tool result';
+      const name = document.createElement('div');
+      name.className = 'tool-card__name';
+      name.textContent = toolResult.name || 'tool';
+      const body = document.createElement('pre');
+      body.className = 'tool-card__body';
+      card.appendChild(role); card.appendChild(name); card.appendChild(body);
+      card.addEventListener('click', () => card.classList.toggle('is-expanded'));
+      transcript.current.appendChild(card);
+    } else {
+      // The call card now becomes a result card (clickable to expand).
+      card.classList.add('tool-card--result');
+      card.classList.remove('tool-card--call');
+      const existingPill = card.querySelector('.tool-card__pill');
+      if (existingPill) existingPill.remove();
+      const role = card.querySelector('.tool-card__role');
+      if (role) role.textContent = 'tool result';
+      const args = card.querySelector('.tool-card__args');
+      if (args) {
+        // Repurpose the args pre as the body; rename the class so the
+        // collapse-on-tap CSS hits it. A new pre is cleaner, but
+        // reusing keeps the same DOM stable.
+        args.classList.remove('tool-card__args');
+        args.classList.add('tool-card__body');
+        card.addEventListener('click', () => card.classList.toggle('is-expanded'));
+      } else {
+        const body = document.createElement('pre');
+        body.className = 'tool-card__body';
+        card.appendChild(body);
+        card.addEventListener('click', () => card.classList.toggle('is-expanded'));
+      }
+    }
+    const body = card.querySelector('.tool-card__body');
+    if (body) body.textContent = formatToolResult(toolResult);
+    const pill = document.createElement('span');
+    pill.className = 'tool-card__pill ' + (toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
+    pill.textContent = toolResult.ok ? 'ok' : 'error';
+    card.appendChild(pill);
+    transcript.current.scrollTop = transcript.current.scrollHeight;
+  }
+
+  function formatToolArgs(args) {
+    if (args == null) return '';
+    if (typeof args === 'string') return args;
+    try { return JSON.stringify(args, null, 2); }
+    catch { return String(args); }
+  }
+
+  function formatToolResult(toolResult) {
+    const r = toolResult && toolResult.result;
+    if (!r) return '';
+    if (Array.isArray(r.content)) {
+      const parts = r.content.map((c) => {
+        if (c && typeof c.text === 'string') return c.text;
+        if (c && c.type === 'image') return '[image]';
+        if (c && c.type === 'resource') return JSON.stringify(c.resource || c);
+        return JSON.stringify(c);
+      });
+      return parts.join('\n');
+    }
+    if (r.error) return JSON.stringify(r.error, null, 2);
+    try { return JSON.stringify(r, null, 2); } catch { return String(r); }
+  }
+
+  // CSS.escape polyfill for older mobile browsers; we only need to
+  // escape the chars that can appear in a tool call id (alnum, _, -).
+  function cssEscape(s) {
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s);
+    return String(s).replace(/[^A-Za-z0-9_-]/g, (c) => '\\' + c);
+  }
+
   function finalizeLiveMessage(message) {
     if (!transcript.current) return;
     const liveRow = transcript.current.querySelector('[data-live="1"]');
@@ -260,6 +374,8 @@ export function ChatView(props) {
         let data; try { data = JSON.parse(ev.data); } catch { continue; }
         if (ev.eventName === 'message' && typeof data.delta === 'string') { assembled += data.delta; appendDeltaToLive(data.delta); }
         else if (ev.eventName === 'done') { usage = data.usage || null; }
+        else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
+        else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
         else if (ev.eventName === 'error') { statusEl.current.textContent = 'error: ' + (data.code || '') + ' ' + (data.message || ''); }
       }
     }

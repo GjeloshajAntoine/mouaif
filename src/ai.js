@@ -423,6 +423,16 @@ function* parseOpenAISSE(eventName, data) {
   if (choice && choice.delta && typeof choice.delta.content === 'string') {
     yield { name: 'message', data: { delta: choice.delta.content } };
   }
+  // OpenAI tool calls stream as a `delta.tool_calls` array. The id
+  // appears on the first delta for a given index; subsequent deltas
+  // fill in `function.name` and the streamed `function.arguments`
+  // string. We accumulate by index and emit a `tool_call` event when
+  // we see a `finish_reason === 'tool_calls'`.
+  if (choice && Array.isArray(choice.delta && choice.delta.tool_calls)) {
+    for (const tc of choice.delta.tool_calls) {
+      yield { name: 'tool_call_delta', data: tc };
+    }
+  }
   if (choice && choice.finish_reason) {
     yield { name: 'finish', data: { reason: choice.finish_reason } };
   }
@@ -608,6 +618,40 @@ async function streamChat(opts) {
   }
 
   const req = build(model, messages, true);
+  // Merge MCP-discovered tool specs into the outgoing request when
+  // the caller supplied a project context (decision §18). The
+  // mcp.listComposedToolSpecs() call is a no-op when no servers are
+  // running for the project, so the openai-compatible / anthropic /
+  // gemini / ollama / github-copilot happy path is unchanged.
+  let mcpSpec = null;
+  try {
+    if (opts && opts.projectDir) {
+      const mcpMod = require('./mcp.js');
+      const specs = mcpMod.listComposedToolSpecs(opts.projectDir);
+      if (specs && specs.length) {
+        // The MCP tool spec is the standard OpenAI shape with the
+        // mcp__<serverSlug>__<toolName> name convention so the
+        // upstream's tool_call event carries a parseable name.
+        mcpSpec = specs.map(s => ({
+          type: 'function',
+          function: {
+            name: s.name,
+            description: s.description,
+            parameters: s.parameters
+          }
+        }));
+        // Attach serverSlug + toolName for the dispatcher to pick up
+        // without re-parsing. We hang it off the message shape the
+        // builder/parser will see. Builders are free to ignore it;
+        // only OpenAI-compatible providers carry a `tools` field on
+        // the body today.
+        const builderBody = req.body;
+        if (builderBody && typeof builderBody === 'object') {
+          builderBody.tools = mcpSpec;
+        }
+      }
+    }
+  } catch { /* mcp module not loaded or project dir invalid; fall through without tools */ }
   const upstream = await fetch(req.url, {
     method: 'POST',
     headers: req.headers,
@@ -640,6 +684,11 @@ async function streamChat(opts) {
   // Stream -> normalize -> onEvent.
   const usage = { promptTokens: 0, completionTokens: 0 };
   let sawError = null;
+  // OpenAI tool-call accumulator. Deltas arrive split across frames;
+  // we assemble by `index` and flush when the upstream signals
+  // `finish_reason === 'tool_calls'`. The accumulator lives only
+  // for the duration of one stream — there is no reuse across calls.
+  const toolAcc = new Map(); // index -> { id, name, arguments }
   const stream = upstream.body;
   const isNDJSON = def.streamFormat === 'ndjson';
   try {
@@ -665,6 +714,63 @@ async function streamChat(opts) {
     return { ok: false, error: { code: 'EUPSTREAM', message: e.message || 'stream error' } };
   }
 
+  // Tool-call dispatch (decision §18). After the upstream finishes
+  // emitting, if any tool_calls were assembled, dispatch them through
+  // the in-process MCP module. Each call yields a `tool_result` event
+  // the chat UI can render. The dispatch path is sync-fast for
+  // in-process tool execution; an MCP call is async and awaited.
+  // The upstream does not see this round-trip — tool results are
+  // surfaced to the chat as `tool_result` events, not fed back into
+  // the same stream. A future revision can wire a multi-turn loop;
+  // for this commit, a single pass is enough to keep the wire simple.
+  if (toolAcc.size > 0 && opts && opts.projectDir) {
+    let mcpMod;
+    try { mcpMod = require('./mcp.js'); }
+    catch (e) {
+      onEvent('error', { code: 'EMODULE', message: 'MCP module unavailable: ' + (e.message || e) });
+    }
+    if (mcpMod) {
+      for (const tc of toolAcc.values()) {
+        const composed = tc.name;
+        const parsed = mcpMod.parseServerSlugAndToolName(composed);
+        if (!parsed) {
+          onEvent('tool_result', {
+            id: tc.id || null,
+            name: composed,
+            ok: false,
+            result: { error: { code: 'EMCP_NOTFOUND', message: 'Not an MCP tool name: ' + composed } }
+          });
+          continue;
+        }
+        let args = {};
+        if (tc.arguments) {
+          try { args = JSON.parse(tc.arguments); }
+          catch (e) {
+            onEvent('tool_result', {
+              id: tc.id || null,
+              name: composed,
+              ok: false,
+              result: { error: { code: 'EBADINPUT', message: 'tool arguments not valid JSON: ' + e.message } }
+            });
+            continue;
+          }
+        }
+        let out;
+        try {
+          out = await mcpMod.callTool(opts.projectDir, parsed.serverSlug, parsed.toolName, args);
+        } catch (e) {
+          out = { ok: false, content: [{ type: 'text', text: 'MCP error: ' + (e.message || e) }], isError: true };
+        }
+        onEvent('tool_result', {
+          id: tc.id || null,
+          name: composed,
+          ok: out.ok,
+          result: { content: out.content, isError: !!out.isError }
+        });
+      }
+    }
+  }
+
   if (sawError) return { ok: false, error: sawError, usage };
   return { ok: true, usage };
 
@@ -683,7 +789,39 @@ async function streamChat(opts) {
       usage.completionTokens = ev.data.completionTokens || usage.completionTokens;
       onEvent('usage_output', ev.data);
     } else if (ev.name === 'finish') {
+      // When the upstream signals `finish_reason === 'tool_calls'`
+      // (OpenAI / GitHub Copilot), emit a `tool_call` event per
+      // accumulated entry. The dispatcher in the stream post-pass
+      // takes over from there. Other finish reasons are passed
+      // through as `finish` so the UI can show them.
+      if (ev.data && ev.data.reason === 'tool_calls' && toolAcc.size > 0) {
+        for (const tc of toolAcc.values()) {
+          let args = tc.arguments;
+          if (typeof args === 'string' && args.length) {
+            try { args = JSON.parse(args); } catch { args = { __raw: args }; }
+          }
+          onEvent('tool_call', {
+            id: tc.id || null,
+            name: tc.name,
+            args: args || {}
+          });
+        }
+      }
       onEvent('finish', ev.data);
+    } else if (ev.name === 'tool_call_delta') {
+      // OpenAI streams tool calls as a list of deltas. Accumulate
+      // by `index`. The first delta carries the `id`; subsequent
+      // deltas fill in `function.name` (sometimes) and
+      // `function.arguments` (a JSON string we concatenate).
+      const d = ev.data;
+      const idx = (typeof d.index === 'number') ? d.index : 0;
+      let cur = toolAcc.get(idx);
+      if (!cur) { cur = { id: null, name: '', arguments: '' }; toolAcc.set(idx, cur); }
+      if (d.id) cur.id = d.id;
+      if (d.function) {
+        if (typeof d.function.name === 'string' && d.function.name) cur.name = d.function.name;
+        if (typeof d.function.arguments === 'string') cur.arguments += d.function.arguments;
+      }
     } else if (ev.name === 'error') {
       sawError = { code: ev.data.code || 'EUPSTREAM', message: ev.data.message || 'upstream error' };
       onEvent('error', ev.data);

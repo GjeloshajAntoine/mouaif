@@ -14,12 +14,16 @@ const messages = require('./messages.js');
 const trace = require('./trace.js');
 const inspector = require('./inspector.js');
 const prompts = require('./prompts.js');
+const mcp = require('./mcp.js');
 
 // Register each per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
 // because auth.registerExchange overwrites cleanly.
 oauthAnthropic.register();
 oauthCopilot.register();
+// Install the MCP server shutdown handler so SIGINT / SIGTERM /
+// `process.exit` tear down every running server child.
+mcp.installShutdown();
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -177,6 +181,12 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handlePrompts(req, res, parsed);
   }
 
+  // MCP (Model Context Protocol) — per-project server registry +
+  // lifecycle + tool dispatch. Routes are mounted in handleMcp below.
+  if (urlPath === '/api/mcp' || urlPath.startsWith('/api/mcp/')) {
+    return handleMcp(req, res, parsed);
+  }
+
   // Inspector — REST surface for the CDP bridge. The WebSocket proxy
   // at /api/inspector/proxy is handled in the server's 'upgrade'
   // event (see createServer below), not here.
@@ -186,7 +196,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })'] });
   }
 
   // REST: GET /data
@@ -1403,6 +1413,181 @@ async function handlePrompts(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'prompts' });
+}
+
+// ---- MCP API ------------------------------------------------------------
+// Per-project MCP server registry + lifecycle + tool dispatch
+// (docs/decisions.md §18). The server entries live in
+// <projectDir>/.mouaif.json under mcp.servers; runtime state is
+// in-memory. The AI client dispatches through the in-process mcp
+// module, so these endpoints are for the Settings UI and for tests.
+//
+// All routes need a `projectDir` (query string for GET/DELETE, JSON
+// body for POST/PATCH). The path is the canonical CRUD surface, the
+// per-server action endpoints, and a generic /api/mcp/call that the
+// AI client also uses for direct dispatch in tests.
+
+function mcpErrorStatus(err) {
+  switch (err && err.code) {
+    case 'EBADINPUT':          return 400;
+    case 'EMCP_NOTFOUND':      return 404;
+    case 'EMCP_DISABLED':      return 409;
+    case 'EOUTSIDE_PROJECT':   return 403;
+    case 'EMCP_START':         return 502;
+    case 'EMCP_RPC':           return 502;
+    case 'EMCP_NOSESSION':     return 409;
+    case 'EMCP_TIMEOUT':       return 504;
+    case 'EMCP_TRANSPORT':     return 502;
+    case 'EMODULE':            return 500;
+    case 'MOUAIF_PROJECT_PARSE_ERROR': return 422;
+    default:                   return 500;
+  }
+}
+
+function readMcpProjectDir(q, body) {
+  const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+  const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+  return fromQuery || fromBody || '';
+}
+
+async function handleMcp(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  // GET /api/mcp/servers?projectDir=...  -> { servers: [...] }
+  if (urlPath === '/api/mcp/servers' && method === 'GET') {
+    const dir = readMcpProjectDir(q);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      return sendJSON(res, 200, { servers: mcp.listServers(dir) });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/mcp/servers  body: { projectDir, name, command, args?, env?, cwd?, enabled? }
+  if (urlPath === '/api/mcp/servers' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readMcpProjectDir(q, body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const server = mcp.addServer(dir, body);
+      return sendJSON(res, 201, { server });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PATCH /api/mcp/servers/:id  body: { projectDir, ...patch }
+  let m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)$/);
+  if (m && method === 'PATCH') {
+    const id = decodeURIComponent(m[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readMcpProjectDir(q, body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const server = mcp.updateServer(dir, id, body || {});
+      if (!server) return sendJSON(res, 404, { error: 'Server not found', id });
+      return sendJSON(res, 200, { server });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // DELETE /api/mcp/servers/:id?projectDir=...
+  if (m && method === 'DELETE') {
+    const id = decodeURIComponent(m[1]);
+    const dir = readMcpProjectDir(q);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const ok = mcp.removeServer(dir, id);
+      if (!ok) return sendJSON(res, 404, { error: 'Server not found', id });
+      return sendJSON(res, 200, { ok: true, removed: id });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/mcp/servers/:id/start  body: { projectDir }
+  m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/start$/);
+  if (m && method === 'POST') {
+    const id = decodeURIComponent(m[1]);
+    let body = {};
+    try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
+    const dir = readMcpProjectDir(q, body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const server = await mcp.startServer(dir, id);
+      return sendJSON(res, 200, { server });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/mcp/servers/:id/stop  body: { projectDir }
+  m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/stop$/);
+  if (m && method === 'POST') {
+    const id = decodeURIComponent(m[1]);
+    let body = {};
+    try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
+    const dir = readMcpProjectDir(q, body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const ok = await mcp.stopServer(dir, id);
+      return sendJSON(res, 200, { ok, removed: ok });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/mcp/servers/:id/tools?projectDir=...  -> forces a re-discovery
+  m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/tools$/);
+  if (m && method === 'GET') {
+    const id = decodeURIComponent(m[1]);
+    const dir = readMcpProjectDir(q);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const tools = await mcp.listDiscoveredTools(dir, id);
+      return sendJSON(res, 200, { tools });
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/mcp/call  body: { projectDir, serverId, toolName, args }
+  // Generic dispatch endpoint used by the AI client and by tests. The
+  // AI client itself does not round-trip through HTTP; it calls
+  // mcp.callTool() in-process. This endpoint is here for parity and
+  // for a future UI action like "test this tool".
+  if (urlPath === '/api/mcp/call' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readMcpProjectDir(q, body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!body || typeof body.serverId !== 'string' || !body.serverId) {
+      return sendJSON(res, 400, { error: 'serverId is required' });
+    }
+    if (typeof body.toolName !== 'string' || !body.toolName) {
+      return sendJSON(res, 400, { error: 'toolName is required' });
+    }
+    // Look up the server entry by id, then dispatch by its slug.
+    try {
+      const entry = mcp.getServer(dir, body.serverId);
+      if (!entry) return sendJSON(res, 404, { error: 'Server not found', id: body.serverId });
+      const out = await mcp.callTool(dir, entry.slug, body.toolName, body.args || {});
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'mcp' });
 }
 
 async function handleInspector(req, res, parsed) {

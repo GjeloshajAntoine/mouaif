@@ -1,0 +1,131 @@
+# MCP — Model Context Protocol servers
+
+<!--
+  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
+  same commit that adds this file.
+-->
+
+## Overview
+
+`mouaif` ships an **MCP client** that talks to any [Model Context Protocol](https://modelcontextprotocol.io/) server the user configures. MCP servers are the third-party tool ecosystem — Filesystem, Git, Postgres, Playwright, custom internal tools — they speak a single JSON-RPC-over-stdio protocol and advertise their tools. Once a server is configured for a project, the AI client surfaces its `tools/list` as part of the model's tool set, intercepts `tool_call` events, dispatches them to the running MCP server, and feeds the result back as a `tool` message.
+
+The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to a single module ([src/mcp.js](../../src/mcp.js)) so adding the next transport (HTTP, WebSocket) is a localized change.
+
+## Usage
+
+### Adding a server
+
+1. Open a chat in the project you want to configure (or visit **Settings → Project overrides** and load a project directory).
+2. From **Settings → Project features → MCP servers**, the project is already in scope — no path to type.
+3. Tap **+** to add a server. Fill in:
+   - **Name** — a short label (e.g. `filesystem`).
+   - **Command** — the executable to spawn (e.g. `node`).
+   - **Arguments** — whitespace-separated arg list (e.g. `path/to/server.js --port 8080`).
+   - **Environment** — one `KEY=value` per line. Denylisted keys (`LD_PRELOAD`, `NODE_OPTIONS`, ...) are stripped from the parent env first, then your overrides are applied on top.
+   - **Working directory** — optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`.
+   - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
+4. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
+
+The server entry is committed to `<projectDir>/.mouaif.json` under `mcp.servers`. The runtime state (child process, discovered tool list) is in-memory only — it restarts on `mouaif` restart. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
+
+### In a chat
+
+When the model decides to call an MCP tool, the server intercepts the `tool_call` event, dispatches it to the matching server, and forwards the result back as a `tool_result` SSE event. The chat UI renders the call and the result as inline cards in the transcript:
+
+- **Tool call card** — the composed tool name (`mcp__<serverSlug>__<toolName>`), a one-line argument summary, and a `running…` pill.
+- **Tool result card** — the same name, the result body, and an `ok` / `error` pill. Long outputs are collapsed to the first ~7 lines; tap the card to expand.
+
+The model sees the result as a structured `tool` message and can recover, retry, or summarize — same shape as any other tool the model invokes.
+
+### Authorization
+
+Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call**, however, is routed through the project's `mcp.authorize` mode (default `ask`):
+
+| Mode | Behavior |
+|---|---|
+| `off` | The tool is disabled. Calls return `ETOOL_DISABLED`. |
+| `ask` | Every call must be approved by the user in the UI before the runner executes. |
+| `allowlist` | Calls whose first string arg matches an allowlist regex run without prompting. The rest fall through to `ask`. |
+| `allow` | Every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`. |
+
+The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses; the tool name is `<serverSlug>/<toolName>` and the allowlist matches against the first string arg (typically the resource path the user is asking the model to act on).
+
+### Lifecycle
+
+| Action | Trigger | Effect |
+|---|---|---|
+| **Start** | Tap Start on a row, or open a chat that references a stopped server | Spawn the child, run the MCP `initialize` handshake, run `tools/list`, cache the result. Status moves to `ready`. |
+| **Stop** | Tap Stop, edit the server, delete it, or `mouaif` shuts down | Close the child, clear the cache. Status moves to `stopped`. |
+| **Refresh tools** | Tap Refresh on a ready server | Re-run `tools/list` without restarting the child. Useful when the server's tool set changes at runtime. |
+| **Restart** | Tap Start on a ready server | Stop, then re-start. The cache is cleared; a fresh `tools/list` runs. |
+| **Errored** | Child crashes, JSON-RPC fails, or `initialize` times out | The session marks itself errored; the next call returns `EMCP_NOSESSION`. The Settings UI shows the typed error inline. |
+
+A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of the chat and re-arms on next chat open (the user can tap Start to re-spawn).
+
+### REST
+
+| Method | Path | Body / Query | Response |
+|--------|------|--------------|----------|
+| `GET`    | `/api/mcp/servers?projectDir=<abs>` | — | `{ servers: [{ id, name, slug, command, args, env, cwd, enabled, status, tools? }] }` |
+| `POST`   | `/api/mcp/servers` | `{ projectDir, name, command, args?, env?, cwd?, enabled? }` | `{ server }` (201) |
+| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir, name?, command?, args?, env?, cwd?, enabled? }` | `{ server }` (stops running session) |
+| `DELETE` | `/api/mcp/servers/:id?projectDir=<abs>` | — | `{ ok, removed }` (stops running session) |
+| `POST`   | `/api/mcp/servers/:id/start` | `{ projectDir }` | `{ server }` (status reflects the new state) |
+| `POST`   | `/api/mcp/servers/:id/stop` | `{ projectDir }` | `{ ok }` |
+| `GET`    | `/api/mcp/servers/:id/tools?projectDir=<abs>` | — | `{ tools: [{ name, description, inputSchema }] }` (forces a re-discovery) |
+| `POST`   | `/api/mcp/call` | `{ projectDir, serverId, toolName, args }` | `{ ok, content: [...], isError? }` |
+
+The AI client dispatches through the in-process `mcp` module; it does not round-trip through HTTP. The REST endpoints are for the Settings UI and for tests.
+
+### Programmatic (Node)
+
+```js
+const mcp = require('mouaif/src/mcp.js');
+
+// Add a server.
+const server = mcp.addServer(projectDir, {
+  name: 'filesystem',
+  command: 'node',
+  args: ['./servers/filesystem.js', projectDir]
+});
+
+// Start it (async: spawns, handshakes, discovers).
+const ready = await mcp.startServer(projectDir, server.id);
+console.log(ready.tools); // [{ name, description, inputSchema }, ...]
+
+// Call a tool.
+const out = await mcp.callTool(projectDir, ready.slug, 'read_file', { path: 'README.md' });
+console.log(out.content); // [{ type: 'text', text: '...' }]
+
+// Tear down.
+await mcp.stopServer(projectDir, server.id);
+```
+
+## Behavior
+
+- **Server entries are project-scoped.** They live in `<projectDir>/.mouaif.json` under `mcp.servers`, so they can be committed to the repo and reviewed by collaborators.
+- **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
+- **Discovery is cached on the session.** A successful `tools/list` lands on the server record; the AI client reuses it for every chat turn until the session stops or the user taps Refresh. There is no cross-process cache — `mouaif` restarts and a cold start pay one discovery per server.
+- **Tool calls ride the same SSE stream as the rest of the chat.** `tool_call` and `tool_result` are first-class events (decision §10). The chat UI renders them inline; the trace file (decision §5) writes them as `tool_call` / `tool_result` lines.
+- **Errors are typed.** Transport failures become `EMCP_TRANSPORT`; JSON-RPC errors become `EMCP_RPC`; timeouts become `EMCP_TIMEOUT`; missing slugs become `EMCP_NOSESSION`; missing tools become `EMCP_NOTFOUND`; disabled servers become `EMCP_DISABLED`. The chat UI can branch on `code` without parsing the message.
+- **Server args are not shell-parsed.** The `args` field is a whitespace-separated token list. Quoted multi-word args are not yet supported; a future revision can add a real `shlex`-style splitter.
+- **Env denylist is enforced.** `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`, `NODE_DEBUG`, and a few related vars are stripped from the inherited env before the per-server env map is applied. The denylist does not strip keys the user explicitly set in the per-server env — the user can opt in to those if they want.
+- **Server cwd must be inside the project.** Anything outside the project root is rejected with `EOUTSIDE_PROJECT`. The same rule decision §16 uses for `shell`.
+- **No new SSE events for the AI client itself.** Tool dispatch reuses the existing `tool_call` / `tool_result` events; the AI client's parse path accumulates OpenAI-compatible `tool_call` deltas by index and flushes them when the upstream signals `finish_reason: tool_calls`.
+- **Server child is tracked in-memory only.** A `process.exit` reaps the child; a crash surfaces as `errored` status with the typed code in the inline error.
+
+## Implementation notes
+
+- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`.
+- Server wiring: [src/ai.js](../../src/ai.js) → `streamChat()`. After the upstream finishes streaming, accumulated `tool_call` deltas are dispatched through `mcp.callTool()`. Tool results are surfaced as `tool_result` SSE events, not fed back into the same stream.
+- HTTP wiring: [src/index.js](../../src/index.js) → `handleMcp()`. The Settings UI hits the REST surface; the AI client never goes through HTTP.
+- SDK isolation: the `@modelcontextprotocol/sdk` is loaded lazily in `getSdk()`. A failure to load the SDK (e.g. a fresh checkout with no `node_modules`) surfaces as `EMODULE` on every server action — the rest of the server boots cleanly without MCP.
+- Frontend: [src/web/src/components/SettingsMcp.jsx](../../src/web/src/components/SettingsMcp.jsx) (list + editor views) and the home card on [src/web/src/components/SettingsHome.jsx](../../src/web/src/components/SettingsHome.jsx). Tool cards in the chat live in [src/web/src/components/Chat.jsx](../../src/web/src/components/Chat.jsx) → `appendToolCallCard` / `appendToolResultCard`.
+- Lifecycle hookup: `mcp.installShutdown()` registers `process.once('exit' | 'SIGINT' | 'SIGTERM', ...)` to stop every running server child cleanly. Called from [src/index.js](../../src/index.js) at require time.
+
+## Related
+
+- [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE events, the parse path that accumulates OpenAI-compatible deltas.
+- [docs/features/tool-authorization.md](./tool-authorization.md) — the gate every tool call passes through.
+- [docs/features/trace.md](./trace.md) (decision §5) — `tool_call` and `tool_result` lines on the NDJSON trace.
+- Decision: [docs/decisions.md §18](../decisions.md) (this feature) and §10 (AI client wire format), §16 (the shell tool that established the tool model).

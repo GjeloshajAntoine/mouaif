@@ -34,6 +34,20 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
   }
+  // settings/mcp is project-scoped. The active project is the source
+  // of truth; the route hash can override it via ?projectDir=... for
+  // deep links and tests.
+  if (h === 'settings/mcp' || h.startsWith('settings/mcp?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsMcp', projectDir: params.get('projectDir') || '' };
+  }
+  if (h.startsWith('settings/mcp/')) {
+    const rest = h.slice('settings/mcp/'.length);
+    const [id, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsMcpEdit', id, projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/about') return { name: 'settingsAbout' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);
