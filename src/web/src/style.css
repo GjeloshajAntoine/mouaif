@@ -730,6 +730,63 @@ select.input {
    provider-edit form to swap between apikey and oauth rows. */
 .row.is-hidden { display: none; }
 
+/* ---- SSO / reserved-provider UI --------------------------------- */
+
+/* Reserved (SSO-only) providers like GitHub Copilot have a fixed
+   auth method and a fixed base URL. The provider-edit form hides
+   the regular auth <select> and the API base URL row, and shows a
+   static "OAuth (required)" badge in their place. */
+.row__static {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  min-height: var(--tap);
+}
+.row__static .label {
+  /* The static badge reuses the same .label class as a regular form
+     field's label, so the spacing matches. */
+  margin: 0;
+}
+.row__static-value {
+  color: var(--fg);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.row__static-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.row__static.is-hidden { display: none; }
+
+/* The provider-edit form surfaces the def.hint as a small grey
+   paragraph for normal providers, and as a colored "notice" for
+   reserved providers — the OAuth requirement is the most important
+   thing the user needs to read before they can sign in. */
+.notice {
+  margin: 0 10px 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-soft);
+}
+.notice--auth {
+  background: rgba(127, 177, 255, 0.08);
+  border-color: rgba(127, 177, 255, 0.35);
+  color: var(--fg);
+  border-left-width: 3px;
+  border-left-color: var(--accent);
+}
+
 /* ---- Settings home (cards) -------------------------------------- */
 
 /* The Settings home is a vertical list of .group blocks. Each group

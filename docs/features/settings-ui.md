@@ -56,7 +56,7 @@ The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/
 | `#/settings/copilot` | `SettingsCopilotView` | The GitHub Copilot OAuth `client_id` used by the loopback flow. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |
 
-The provider form has all fields on one screen: provider id (locked after creation), API base URL, authentication mode, an API key (when the auth is `apikey`) or an OAuth-account <select> with an inline sign-in helper (when the auth is `oauth`). The reserved `github-copilot` provider forces `auth: oauth` and disables the `apikey` option, so a user cannot submit a model the server would later reject with `ENOAUTH`.
+The provider form has all fields on one screen: provider id (locked after creation), API base URL, authentication mode, an API key (when the auth is `apikey`) or an OAuth-account <select> with an inline sign-in helper (when the auth is `oauth`). The reserved `github-copilot` provider hides the API base URL row (the base URL is hard-coded) and replaces the auth `<select>` with a static "OAuth (required)" badge. The provider's `hint` is also promoted to a colored notice so the OAuth requirement is unmistakable on a phone. The same reserved-rail hides the `apikey` row and forces `auth: oauth` at save time, so a user cannot submit a model the server would later reject with `ENOAUTH`.
 
 The project view loads both the raw project file and the resolved view in parallel. Saving the project refreshes the resolved view in the same tap.
 

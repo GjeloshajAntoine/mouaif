@@ -1,6 +1,6 @@
 // mouaif web — SettingsProvidersView + SettingsProviderEditView
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, loadApp, appProviders, loadAccounts, SETTINGS_PROVIDERS, providerDef, authNsForProvider, setStatus } from '../api.js';
 import { nav } from '../router.js';
 
@@ -92,6 +92,7 @@ export function SettingsProviderEditView(props) {
   const idSel = useRef(null);
   const baseUrl = useRef(null);
   const authSel = useRef(null);
+  const authLocked = useRef(null);
   const apiKey = useRef(null);
   const oauthAccount = useRef(null);
   const saveBtn = useRef(null);
@@ -99,19 +100,36 @@ export function SettingsProviderEditView(props) {
   const statusEl = useRef(null);
   const signInStatus = useRef(null);
 
-  let current = null;
+  // The form's "current provider" lives in two places: the URL prop
+  // (`id`, used as the initial value + to know if we're editing or
+  // creating) and the <select> element (`idSel.current.value`,
+  // which the user can change to switch the form between providers
+  // mid-edit). The notice and the auth-locked state need to react
+  // to *both* — a local state mirrors the <select> so the JSX
+  // re-renders when the user picks a different provider. The
+  // `current` record is also state so the auth select can render
+  // with the saved `auth` on the first paint.
+  const [currentId, setCurrentId] = useState(id || 'openai-compatible');
+  const [current, setCurrent] = useState(null);
+  const currentDef0 = () => providerDef(currentId);
+
   let accounts = {};
+
+  function currentDef() {
+    return providerDef(idSel.current ? idSel.current.value : '');
+  }
 
   async function load() {
     try {
       await loadApp({ force: true });
       accounts = await loadAccounts({ force: true });
     } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); return; }
-    current = id ? appProviders().find(p => p && p.id === id) : null;
-    if (id && !current) { setStatus(statusEl, 'Provider not found', 'error'); return; }
+    const found = id ? appProviders().find(p => p && p.id === id) : null;
+    if (id && !found) { setStatus(statusEl, 'Provider not found', 'error'); return; }
+    setCurrent(found || null);
 
     if (idSel.current) {
-      idSel.current.value = id || 'openai-compatible';
+      idSel.current.value = currentId;
       if (id) idSel.current.disabled = true;
     }
     syncAuth();
@@ -119,27 +137,61 @@ export function SettingsProviderEditView(props) {
     syncBaseUrl();
     if (apiKey.current) apiKey.current.value = '';
     if (deleteBtn.current) deleteBtn.current.hidden = !id;
-    if (baseUrl.current) baseUrl.current.value = (current && current.baseUrl) || '';
+    if (baseUrl.current) baseUrl.current.value = (found && found.baseUrl) || '';
     renderKeyHint();
     setStatus(statusEl, '');
   }
 
   function syncAuth() {
     if (!authSel.current) return;
-    const def = providerDef(idSel.current.value);
+    const def = currentDef();
     const reserved = !!(def && def.reserved);
-    let wantAuth = authSel.current.value;
+    // Pick the auth mode: reserved forces OAuth; otherwise prefer
+    // the existing provider record's saved auth, falling back to
+    // "apikey". Falling back to whatever the <select> happens to
+    // hold (the pre-fix behavior) leaks the previous selection
+    // when the user switches from GitHub Copilot to a non-reserved
+    // provider — the OAuth field stays sticky and the API key row
+    // is never shown.
+    let wantAuth;
     if (reserved) wantAuth = 'oauth';
+    else if (current && current.id === (idSel.current ? idSel.current.value : '') && current.auth) wantAuth = current.auth;
+    else wantAuth = 'apikey';
     if (authSel.current.value !== wantAuth) authSel.current.value = wantAuth;
     for (const opt of authSel.current.querySelectorAll('option')) {
       if (opt.value === 'apikey') opt.disabled = reserved;
     }
+    // Reserved (SSO-only) providers have no choice: hide the auth
+    // <select> entirely and show a static "OAuth (required)" badge
+    // instead. The select is also disabled while we're at it so its
+    // single option can't even be re-opened.
+    authSel.current.disabled = reserved;
+    // The auth <select> is wrapped in a plain .row, so we hide that
+    // whole row when the provider is reserved. The static
+    // "OAuth (required)" badge (and its row wrapper) take its place.
+    const authSelRow = authSel.current.closest('.row');
+    if (authSelRow) authSelRow.classList.toggle('is-hidden', reserved);
+    if (authLocked.current) {
+      authLocked.current.classList.toggle('is-hidden', !reserved);
+      const label = authLocked.current.querySelector('.row__static-value');
+      if (label) label.textContent = 'OAuth (required)';
+    }
+    // The static badge's own .row wrapper is also toggled so it
+    // doesn't leave an empty flex column in the layout when hidden.
+    const authLockedRow = authLocked.current && authLocked.current.closest('.row');
+    if (authLockedRow) authLockedRow.classList.toggle('is-hidden', !reserved);
     const section = authSel.current.closest('section');
     if (section) {
-      for (const row of section.querySelectorAll('.row--apikey, .row--oauth')) {
+      for (const row of section.querySelectorAll('.row--apikey, .row--oauth, .row--base')) {
         const showWhen = row.getAttribute('data-show-when');
         if (!showWhen) continue;
-        row.classList.toggle('is-hidden', showWhen !== wantAuth);
+        // .row--base has data-show-when="!reserved" — hide it for
+        // reserved providers because their base URL is hard-coded.
+        if (showWhen === '!reserved') {
+          row.classList.toggle('is-hidden', reserved);
+        } else {
+          row.classList.toggle('is-hidden', showWhen !== wantAuth);
+        }
       }
     }
   }
@@ -290,10 +342,26 @@ export function SettingsProviderEditView(props) {
     nav('settings/providers');
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [id]);
+  // When the route changes to a different provider (the hash flips
+  // from /settings/providers/<a> to /settings/providers/<b>), the
+  // component instance is reused. Reset the local state to the new
+  // id so the next paint reflects the right provider before the
+  // useEffect above finishes its async load.
+  useEffect(() => {
+    setCurrentId(id || 'openai-compatible');
+    setCurrent(null);
+  }, [id]);
 
-  const def = id ? providerDef(id) : null;
+  const def = currentDef0();
   const titleText = id ? ((def && def.label) || id) : 'Add provider';
+  const initialReserved = !!(def && def.reserved);
+  // Derive the auth mode from the same rule syncAuth() uses, so
+  // the <select> renders with the right value on the first paint
+  // (before the useEffect-driven DOM mutations can run).
+  const initialAuth = initialReserved
+    ? 'oauth'
+    : (current && current.auth) || 'apikey';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -301,22 +369,31 @@ export function SettingsProviderEditView(props) {
       h('h2', { class: 'view-title' }, titleText)
     ),
     h('section', null,
-      def && def.hint ? h('p', { class: 'hint hint--compact' }, def.hint) : null,
+      def && def.hint
+        ? h('p', { class: initialReserved ? 'notice notice--auth' : 'hint hint--compact' }, def.hint)
+        : null,
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sp-id' }, 'Provider'),
-        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, onChange: () => { syncAuth(); syncOauthAccountOptions(); syncBaseUrl(); renderKeyHint(); } },
-          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id }, p.label))
+        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, value: currentId, onChange: (e) => { setCurrentId(e.target.value); syncAuth(); syncOauthAccountOptions(); syncBaseUrl(); renderKeyHint(); } },
+          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id, selected: p.id === currentId }, p.label))
         )
       ),
-      h('div', { class: 'row' },
+      h('div', { class: 'row row--base', 'data-show-when': '!reserved' },
         h('label', { class: 'label', for: 'sp-base' }, 'API base URL'),
         h('input', { ref: baseUrl, class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1' })
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
-        h('select', { ref: authSel, class: 'input', id: 'sp-auth', onChange: () => { syncAuth(); renderKeyHint(); syncOauthAccountOptions(); } },
-          h('option', { value: 'apikey' }, 'API key'),
-          h('option', { value: 'oauth' }, 'OAuth')
+        h('select', { ref: authSel, class: 'input', id: 'sp-auth', disabled: initialReserved, value: initialAuth, onChange: () => { syncAuth(); renderKeyHint(); syncOauthAccountOptions(); } },
+          h('option', { value: 'apikey', selected: initialAuth === 'apikey' }, 'API key'),
+          h('option', { value: 'oauth', selected: initialAuth === 'oauth' }, 'OAuth')
+        )
+      ),
+      h('div', { class: 'row row__static-wrap' },
+        h('div', { ref: authLocked, class: 'row__static is-hidden' },
+          h('span', { class: 'label' }, 'Authentication'),
+          h('span', { class: 'row__static-value' }, 'OAuth (required)'),
+          h('span', { class: 'row__static-note' }, 'This provider only supports OAuth sign-in.')
         )
       ),
       h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
