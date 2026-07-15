@@ -8,15 +8,17 @@ const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
+const oauthCopilot = require('./oauth-github-copilot.js');
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');
 const inspector = require('./inspector.js');
 
-// Register Anthropic's per-provider exchange function with the auth
+// Register each per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
 // because auth.registerExchange overwrites cleanly.
 oauthAnthropic.register();
+oauthCopilot.register();
 
 const DEFAULT_PORT = 5732;
 const WEB_DIR = path.join(__dirname, 'web');
@@ -178,7 +180,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
   }
 
   // REST: GET /data
@@ -1106,6 +1108,53 @@ async function handleAuth(req, res, parsed) {
     });
   }
 
+  // POST /api/auth/sign-in/github-copilot  -> { authorizeUrl, state, expiresAt }
+  // GitHub Copilot uses the standard GitHub OAuth web flow with PKCE
+  // (decision §12: each provider picks its own auth shape). The user
+  // signs in at github.com/login/oauth/authorize, gets redirected
+  // back to /oauth/callback, the server exchanges the code for a
+  // long-lived GitHub OAuth access token, and the per-request
+  // Copilot API token is derived on demand by src/ai.js.
+  if (urlPath === '/api/auth/sign-in/github-copilot' && method === 'POST') {
+    if (!auth.getExchange('github-copilot')) {
+      return sendJSON(res, 501, { error: 'GitHub Copilot OAuth is not registered in this build' });
+    }
+    let body = {};
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+
+    const state = oauthCopilot.newState();
+    const verifier = oauthCopilot.newVerifier();
+    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'github-copilot');
+    const redirectUri = callbackUrl.toString();
+    const scope = body.scope || oauthCopilot.DEFAULT_SCOPE;
+
+    auth.recordPending('github-copilot', {
+      state,
+      codeVerifier: verifier,
+      redirectUri,
+      scopes: scope,
+      accountHint: body.accountHint || ''
+    });
+
+    const authorizeUrl = oauthCopilot.buildAuthorizeUrl({
+      redirectUri,
+      state,
+      verifier,
+      scope
+    });
+
+    return sendJSON(res, 200, {
+      authorizeUrl,
+      redirectUri,
+      state,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      // Echoed for debugging; the production base is the default.
+      apiBase: oauthCopilot.COPILOT_API_BASE
+    });
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'auth' });
 }
 
@@ -1328,7 +1377,7 @@ function createServer(port = DEFAULT_PORT) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, chats };
+module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats };
 
 // ---- Static /web/ serving -----------------------------------------------
 

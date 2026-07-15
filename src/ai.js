@@ -67,14 +67,27 @@ const ENDPOINTS = {
     streamFormat: 'ndjson'
   },
   'github-copilot': {
-    // Documented here so the model picker can list it. The OAuth flow
-    // is in a later commit; calls in this commit will fail with ENOAUTH
-    // because Copilot requires a device-code / OAuth token, not an
-    // apiKey. The shape is reserved so the model record stays stable.
+    // The base URL points at the public Copilot API. Calls require a
+    // short-lived Copilot token that is derived per-request from the
+    // GitHub OAuth token stored in the keychain. The exchange is
+    // performed by oauth-github-copilot.js and the resolved token
+    // lands on model.__accessToken (replacing the GitHub token that
+    // requireApiKey wrote there). The auth header is identical to
+    // the openai-compatible path: a plain Bearer credential.
     baseUrl: 'https://api.githubcopilot.com',
     chatPath: '/chat/completions',
-    authHeader: (apiKey) => ({ 'Authorization': 'Bearer ' + apiKey }),
-    reserved: true
+    authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    // Copilot requires a handful of editor-identifying headers. The
+    // values mirror the public Copilot CLI; they identify this
+    // client as a third-party tool without sending PII. Tests can
+    // override these by setting model.headers at the call site.
+    staticHeaders: {
+      'Editor-Version': 'vscode/1.95.0',
+      'Editor-Plugin-Version': 'copilot/1.0.0',
+      'Editor-Schema-Version': 'v1',
+      'User-Agent': 'mouaif/1.0',
+      'Copilot-Integration-Id': 'mouaif'
+    }
   }
 };
 
@@ -83,11 +96,6 @@ function endpointFor(model) {
   if (!def) {
     const e = new Error('Unknown provider: ' + model.provider);
     e.code = 'EUNKNOWN_PROVIDER';
-    throw e;
-  }
-  if (def.reserved) {
-    const e = new Error('Provider "' + model.provider + '" is reserved; its auth flow is not yet implemented.');
-    e.code = 'ENOAUTH';
     throw e;
   }
   return def;
@@ -189,6 +197,24 @@ async function requireApiKey(model, def) {
       }
     }
     model.__accessToken = parsed.accessToken;
+    // Per-request Copilot token exchange. The keychain holds a
+    // long-lived GitHub OAuth token; api.githubcopilot.com expects
+    // a short-lived Copilot API token in the Authorization header.
+    // The exchange is performed on every chat; the resulting token
+    // is request-scoped (we never persist it) and a revocation
+    // takes effect within minutes rather than at next sign-in.
+    // Failure to exchange (no subscription, revoked token, network)
+    // is surfaced as a typed error so the UI can prompt the user.
+    if (model.provider === 'github-copilot') {
+      let copilot;
+      try {
+        copilot = await exchangeCopilotTokenIfNeeded(model, parsed);
+      } catch (e) {
+        // Re-throw with the typed code preserved.
+        throw e;
+      }
+      if (copilot) model.__accessToken = copilot;
+    }
     return true;
   }
   if (!model.apiKey || typeof model.apiKey !== 'string') {
@@ -210,6 +236,79 @@ async function requireApiKey(model, def) {
 // chat hostage for long.
 const OAUTH_REFRESH_LEAD_MS = 60 * 1000;
 
+// Copilot token cache. The exchange is per-request but the result
+// is request-scoped — there's no value in caching it across chats
+// because it expires in ~30 min and a fresh derivation costs one
+// HTTPS round-trip. We keep a small in-process LRU so a chat that
+// streams multiple turns does not re-exchange on every turn; each
+// entry tracks the GitHub token + the resolved Copilot token + its
+// expiry. The cache key includes the GitHub token, so a sign-out /
+// sign-in of a different account starts fresh.
+const _copilotCache = new Map(); // key: githubToken -> { copilotToken, expiresAt, ts }
+const COPILOT_CACHE_TTL_MS = 5 * 60 * 1000; // drop cache entries after 5 min idle
+
+function copilotCacheGet(githubToken) {
+  const entry = _copilotCache.get(githubToken);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > COPILOT_CACHE_TTL_MS) { _copilotCache.delete(githubToken); return null; }
+  if (typeof entry.expiresAt === 'number' && entry.expiresAt - Date.now() <= OAUTH_REFRESH_LEAD_MS) {
+    _copilotCache.delete(githubToken);
+    return null;
+  }
+  // Touch on read so a streaming chat does not evict its own entry.
+  entry.ts = Date.now();
+  return entry;
+}
+function copilotCachePut(githubToken, copilotToken, expiresAt) {
+  // Cap the map at 16 entries — should never hit this in practice
+  // (one per signed-in account per process), but defensive against
+  // memory growth in a long-lived server.
+  if (_copilotCache.size >= 16) {
+    const first = _copilotCache.keys().next().value;
+    if (first !== undefined) _copilotCache.delete(first);
+  }
+  _copilotCache.set(githubToken, { copilotToken, expiresAt, ts: Date.now() });
+}
+function copilotCacheClear() { _copilotCache.clear(); }
+
+// exchangeCopilotTokenIfNeeded(model, parsedBlob) — derives a
+// short-lived Copilot API token from the GitHub OAuth token stored
+// in the keychain. Returns the token string, or throws a typed
+// error. Caches per-GitHub-token to avoid re-deriving within a
+// streaming chat.
+async function exchangeCopilotTokenIfNeeded(model, parsedBlob) {
+  const githubToken = (parsedBlob && parsedBlob.accessToken) || model.__accessToken;
+  if (!githubToken) {
+    const e = new Error('GitHub Copilot: no GitHub access token on the stored blob');
+    e.code = 'EOAUTH_BLOB';
+    throw e;
+  }
+  const cached = copilotCacheGet(githubToken);
+  if (cached) return cached.copilotToken;
+  let oauthCopilot;
+  try {
+    oauthCopilot = require('./oauth-github-copilot.js');
+  } catch {
+    const e = new Error('GitHub Copilot OAuth module is not available in this build');
+    e.code = 'EMODULE';
+    throw e;
+  }
+  let out;
+  try {
+    out = await oauthCopilot.exchangeCopilotToken({ githubToken });
+  } catch (e) {
+    // Re-throw with the typed code preserved (ENOCOPILOT, EUPSTREAM, EPARSE, ETOKEN).
+    throw e;
+  }
+  if (!out || !out.token) {
+    const e = new Error('GitHub Copilot: token exchange returned no token');
+    e.code = 'ETOKEN';
+    throw e;
+  }
+  copilotCachePut(githubToken, out.token, out.expiresAt);
+  return out.token;
+}
+
 // ---- Request builders --------------------------------------------------
 
 // Returns the effective bearer-style credential: the OAuth access token
@@ -219,9 +318,17 @@ function credential(model) {
 }
 
 function buildOpenAIRequest(model, messages, stream) {
+  const def = ENDPOINTS[model.provider] || ENDPOINTS['openai-compatible'];
+  const headers = { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) };
+  // Per-provider static headers. github-copilot requires editor
+  // identification headers; the order (auth first, static second)
+  // means a caller-supplied model.headers can still override the
+  // defaults — useful for tests and for a future per-model override.
+  if (def && def.staticHeaders) Object.assign(headers, def.staticHeaders);
+  if (model && model.headers && typeof model.headers === 'object') Object.assign(headers, model.headers);
   return {
     url: joinUrl(model.baseUrl, ENDPOINTS['openai-compatible'].chatPath),
-    headers: { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) },
+    headers,
     body: {
       model: model.id,
       messages,
@@ -609,5 +716,7 @@ module.exports = {
   readSSE,
   readNDJSON,
   BUILDERS,
-  PARSERS
+  PARSERS,
+  // exposed for tests + the OAuth module's refresher path
+  copilotCacheClear
 };
