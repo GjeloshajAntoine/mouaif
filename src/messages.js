@@ -45,11 +45,23 @@ function normalizeMessage(m) {
   if (!m || typeof m !== 'object') return null;
   if (!VALID_ROLES.has(m.role)) return null;
   if (typeof m.content !== 'string') return null;
-  return {
+  const out = {
     role: m.role,
     content: m.content,
     ts: typeof m.ts === 'string' ? m.ts : new Date().toISOString()
   };
+  // The assistant message is the only one that carries usage + cost
+  // (decision §14). We persist them on the message itself so a chat
+  // reopened later shows the same numbers that were on screen when
+  // the message was produced. The cost block is optional and may be
+  // absent on older transcripts.
+  if (m.role === 'assistant') {
+    if (m.usage && typeof m.usage === 'object') out.usage = m.usage;
+    if (m.cost && typeof m.cost === 'object') out.cost = m.cost;
+    if (typeof m.streamingMs === 'number') out.streamingMs = m.streamingMs;
+    if (typeof m.modelId === 'string') out.modelId = m.modelId;
+  }
+  return out;
 }
 
 function readRaw(projectDir, chatId) {
@@ -98,6 +110,15 @@ function appendMessage(projectDir, chatId, msg) {
   const stored = listMessages(projectDir, chatId);
   const ts = typeof msg.ts === 'string' ? msg.ts : new Date().toISOString();
   const normalized = { role: msg.role, content: msg.content, ts };
+  // Same enrichment as normalizeMessage. The setter path and the
+  // loader path share the same shape so a chat that is appended to
+  // and then re-loaded never loses its cost / usage fields.
+  if (msg.role === 'assistant') {
+    if (msg.usage && typeof msg.usage === 'object') normalized.usage = msg.usage;
+    if (msg.cost && typeof msg.cost === 'object') normalized.cost = msg.cost;
+    if (typeof msg.streamingMs === 'number') normalized.streamingMs = msg.streamingMs;
+    if (typeof msg.modelId === 'string') normalized.modelId = msg.modelId;
+  }
   stored.push(normalized);
   writeRaw(projectDir, chatId, { messages: stored });
   return normalized;

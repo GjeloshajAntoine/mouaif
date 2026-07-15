@@ -1458,6 +1458,43 @@ textarea#projectEditor {
 }
 .chat-msg__ts { display: none; }
 
+/* Per-turn meta line (decision §14). A flat row of compact
+   "•"-separated tokens under the assistant bubble: model id,
+   prompt / completion tokens, cost, and live tok/s. Sits inside
+   the same column as the role label and bubble, so it inherits
+   the user/assistant alignment from .chat-msg.
+
+   On a 360 px viewport, a typical line is
+     gpt-4o-mini • 243 in • 118 out • $0.00011 • 37 tok/s
+   which fits in a single line at 0.74rem / 0.74 line-height.
+   The font is mono-ish so the number columns line up. The line
+   is muted (--muted) so it never competes with the bubble text.
+
+   `.chat-msg__meta-sep` is the bullet. Slightly softer than the
+   labels themselves so the eye groups tokens rather than reading
+   each as a separate row. */
+.chat-msg__meta {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--muted);
+  padding: 2px 13px 4px;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-msg__meta::-webkit-scrollbar { display: none; }
+.chat-msg__meta[hidden] { display: none; }
+.chat-msg__meta-sep {
+  color: var(--muted-2);
+  margin: 0 6px;
+  user-select: none;
+}
+
 /* The live assistant message (data-live="1" on the row) gets a
    blinking caret at the end while the stream is open. The caret
    is a pseudo-element on the body, not a real text node, so the
@@ -1910,3 +1947,47 @@ textarea#projectEditor {
 .tool-card__pill--busy { background: var(--accent-soft); color: var(--accent); }
 .tool-card__pill--ok   { background: rgba(111, 212, 154, 0.15); color: var(--success); }
 .tool-card__pill--err  { background: var(--danger-soft); color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-msg[data-live="1"] .chat-msg__body::after { animation: none; }
+}
+
+/* Model pricing page (decision �14). A small JSON editor with a
+   "known model ids" hint list below it. The editor is full-width
+   on mobile and uses the same .input class as every other JSON
+   editor in the app, so the typography and padding are already
+   consistent. */
+.pricing__editor {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  min-height: 200px;
+  resize: vertical;
+}
+.pricing__known { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.pricing__group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px 12px;
+}
+.pricing__group-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.pricing__ids { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pricing__ids li {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 0;
+}
+.pricing__ids code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--fg);
+  word-break: break-all;
+  flex: 1 1 auto;
+}
+.pricing__copy { flex: 0 0 auto; }

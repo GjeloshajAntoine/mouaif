@@ -44,6 +44,7 @@ The mobile UI talks to the server, not the store directly.
 | GET    | `/api/settings/resolved`          | `?projectDir=<absolute path>`                 | `{ resolved }`                    |
 | PUT    | `/api/settings/app`               | JSON object (shallow-merged into app store)   | `{ app }`                         |
 | PUT    | `/api/settings/project`           | `{ "projectDir": "<abs path>", ...patch }`    | `{ project, path }`               |
+| GET    | `/api/usage/builtin`              | —                                             | `{ ids, table }` — built-in model-pricing table for the Settings → Model pricing page |
 
 Examples:
 
@@ -67,7 +68,7 @@ curl -X PUT http://localhost:5732/api/settings/project \
 
 ## Behavior
 
-- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ providers: [], models: [], promptSize: 'average', flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat.
+- **Defaults** (`src/settings.js` → `DEFAULTS`): `{ providers: [], models: [], promptSize: 'average', flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat. The app store also carries `modelPricing` (per-model USD pricing for the cost line in [Usage metrics](./usage-metrics.md)); the default is `{}` and a small built-in table in [src/usage.js](../../src/usage.js) covers the model ids the providers ship today.
 - **Provider scope**: provider connections and credentials are app-level only. Project files define model IDs and reference a provider by id; they do not contain provider credentials.
 - **App store**: a single row in `app_kv` (key `settings`) inside `~/.mouaif/store.sqlite`. WAL journal mode. Created on first access.
 - **Project file**: `<projectDir>/.mouaif.json`. Created on first write, 2-space indented JSON, LF line endings. Missing file is treated as `{}` (not an error).
@@ -81,6 +82,7 @@ curl -X PUT http://localhost:5732/api/settings/project \
 - New file: [src/settings.js](../../src/settings.js). Public surface: `getApp`, `setApp`, `getProject`, `setProject`, `getResolved`, `getProjectPath`, `DEFAULTS`, `MOUAIF_HOME`, `close`.
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. The existing `GET /`, `GET /data`, `POST /data`, `GET /events` surface is unchanged.
 - `MOUAIF_HOME` is overridable via the `MOUAIF_HOME` env var for tests and power users. Default: `~/.mouaif/`.
+- Model pricing table: a `modelPricing` key on the app store, shaped as `{ "<modelId>": { inputPer1K, outputPer1K } }`. Edited through Settings → Model pricing; consumed by [src/usage.js](../../src/usage.js) and surfaced in the chat UI as the per-turn cost line. See [docs/features/usage-metrics.md](./usage-metrics.md).
 
 ## Related
 

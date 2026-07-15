@@ -68,6 +68,7 @@ export function SettingsHomeView() {
       h('div', { class: 'group__title' }, 'App'),
       h('ul', { class: 'group__list' },
         cardLi('settings/defaults', 'Defaults', promptSize, 'prompt size'),
+        cardLi('settings/pricing', 'Model pricing', null, 'cost per 1K tokens'),
         cardLi('settings/copilot', 'GitHub Copilot', copilot),
         h('li', null, h('a', { href: '#/settings/about', class: 'card', 'aria-label': 'About' },
           h('div', { class: 'card__main' },

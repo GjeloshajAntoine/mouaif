@@ -15,6 +15,7 @@ const trace = require('./trace.js');
 const inspector = require('./inspector.js');
 const prompts = require('./prompts.js');
 const mcp = require('./mcp.js');
+const usage = require('./usage.js');
 
 // Register each per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -156,6 +157,23 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   // Auth API (account list, sign-out, status polling, sign-in)
   if (urlPath.startsWith('/api/auth/')) {
     return handleAuth(req, res, parsed);
+  }
+
+  // Usage / pricing (model id list, built-in pricing table).
+  // The chat UI never holds pricing data; the cost is computed
+  // server-side per the stream and shipped on the `done` event.
+  // The only read endpoint the chat UI uses here is /builtin, for
+  // the SettingsPricing view's "known model ids" hint.
+  if (urlPath === '/api/usage/builtin' && method === 'GET') {
+    const table = usage.BUILTIN_PRICING || {};
+    return sendJSON(res, 200, {
+      ids: Object.keys(table).sort(),
+      // Echo the table itself so the Settings view (or any future
+      // "I want to see what default prices are" UI) doesn't have to
+      // duplicate the data. Pricing values are public — no secrets
+      // are exposed here.
+      table
+    });
   }
 
   // OAuth loopback callback (provider redirects here after login)
@@ -800,6 +818,19 @@ async function handleChatStream(req, res, chatId) {
 
   let assistantContent = '';
   let assistantMsg = null;
+  // Track the streaming window so the cost line (which is computed
+  // server-side from the upstream's authoritative usage block) also
+  // carries the streamingMs the chat UI needs for its tok/s counter.
+  // (The chat UI independently tracks its own counter for live
+  // updates; the server-side number is the fallback when the client
+  // missed frames — e.g. when the tab was backgrounded.)
+  const streamStartedAt = Date.now();
+  // Per-turn enrichment (cost + usage) is computed once on `done`
+  // and reused for both the SSE emit and the persisted assistant
+  // message. The chat UI's own live counter and the cost line
+  // diverge slightly while the stream is in flight (the live counter
+  // is per-delta; the cost line is final); that's intentional.
+  let lastEnrichment = null;
 
   const result = await ai.streamChat({
     model,
@@ -808,12 +839,46 @@ async function handleChatStream(req, res, chatId) {
       if (name === 'message' && typeof data.delta === 'string') {
         assistantContent += data.delta;
       } else if (name === 'done') {
-        // Persist the assistant message at the end of the stream.
+        // Compute the enrichment once. `cost.known` is true when at
+        // least one of the four pricing layers (model, app, builtin)
+        // had a non-empty entry for this model id. We always emit
+        // the enriched event so the UI can render `--` cleanly; the
+        // `known: false` flag tells it not to show a dollar sign.
+        let enriched = data;
+        try {
+          const app = settings.getApp();
+          const cost = usage.computeCost({ model, usage: data && data.usage, app });
+          const streamingMs = Date.now() - streamStartedAt;
+          enriched = Object.assign({}, data, {
+            cost: {
+              known: cost.known,
+              input: cost.input,
+              output: cost.output,
+              total: cost.total,
+              currency: cost.currency
+            },
+            streamingMs,
+            modelId: model.id
+          });
+        } catch { /* keep data as-is on any pricing resolution error */ }
+        lastEnrichment = enriched;
+        // Persist the assistant message with the same enrichment so
+        // a chat that is later reopened renders the same numbers
+        // (decision §14 — the usage block rides the message).
         if (assistantContent) {
           try {
-            assistantMsg = messages.appendMessage(projectDir, chatId, { role: 'assistant', content: assistantContent });
+            assistantMsg = messages.appendMessage(projectDir, chatId, {
+              role: 'assistant',
+              content: assistantContent,
+              usage: data && data.usage,
+              cost: enriched.cost,
+              streamingMs: enriched.streamingMs,
+              modelId: enriched.modelId
+            });
           } catch { /* non-fatal */ }
         }
+        emit('done', enriched);
+        return;
       }
       emit(name, data);
     }
@@ -948,6 +1013,34 @@ async function handleAI(req, res, parsed) {
       id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
     }));
     return sendJSON(res, 200, { models, providers: Object.keys(ai.ENDPOINTS) });
+  }
+
+  // GET /api/ai/models-all  -> { ids: [..] }
+  // Union of every model id the user has configured across every
+  // registered project + the app-level models list. Used by the
+  // SettingsPricing view to surface "the ids you might want to
+  // price" without forcing the user to remember project paths.
+  if (urlPath === '/api/ai/models-all' && method === 'GET') {
+    const ids = new Set();
+    // App-level models (legacy / inline pricing tests)
+    const app = settings.getApp();
+    if (Array.isArray(app.models)) {
+      for (const m of app.models) if (m && m.id) ids.add(m.id);
+    }
+    // Project-level models. Each registered project has its own
+    // .mouaif.json; the registry is the source of truth for which
+    // projects still exist on disk.
+    const registered = projects.listProjects();
+    for (const p of registered) {
+      if (!p || !p.path) continue;
+      try {
+        const projSettings = settings.getProject(p.path);
+        if (Array.isArray(projSettings.models)) {
+          for (const m of projSettings.models) if (m && m.id) ids.add(m.id);
+        }
+      } catch { /* unreadable project file — skip */ }
+    }
+    return sendJSON(res, 200, { ids: Array.from(ids).sort() });
   }
 
   // POST /api/ai/test  body: { modelId, projectDir? }  -> { ok, error? }

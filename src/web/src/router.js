@@ -19,6 +19,7 @@ function parseHash() {
   if (h === 'settings/project') return { name: 'settingsProject' };
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/copilot') return { name: 'settingsCopilot' };
+  if (h === 'settings/pricing') return { name: 'settingsPricing' };
   // settings/prompts is project-scoped. The active project (set when
   // the user opened a chat or visited Settings → Project) is the
   // source of truth. The route hash can override it for testing

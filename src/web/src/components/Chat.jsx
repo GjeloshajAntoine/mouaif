@@ -3,6 +3,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, parseSSEFrame, projectsReload } from '../api.js';
 import { nav } from '../router.js';
+import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
 
 export function ChatView(props) {
   const chatId = props.chatId;
@@ -133,7 +134,72 @@ export function ChatView(props) {
     row.appendChild(role); row.appendChild(body); row.appendChild(ts);
     transcript.current.appendChild(row);
     if (m.role === 'assistant' && isLive) row._body = body;
+    // Per-turn meta line (decision §14). Lives directly under the
+    // assistant bubble and shows the model id, token counts, cost,
+    // and live token rate. For non-assistant messages or for
+    // assistant messages without a usage block, the line is hidden
+    // — the typical case is a fresh chat before any AI turn, or a
+    // transcript from before this commit shipped.
+    if (m.role === 'assistant') {
+      const meta = document.createElement('div');
+      meta.className = 'chat-msg__meta';
+      if (isLive) {
+        // Live turns are empty while the user is typing; hide the
+        // meta line so the row doesn't reserve a phantom line of
+        // height before the first delta arrives.
+        meta.hidden = true;
+      } else if (m.usage || m.cost || m.modelId) {
+        renderUsageMeta(meta, m);
+      } else {
+        meta.hidden = true;
+      }
+      row.appendChild(meta);
+    }
     transcript.current.scrollTop = transcript.current.scrollHeight;
+  }
+
+  // Render the per-turn meta line. Pure DOM, no framework — the chat
+  // view intentionally avoids Preact here so the SSE hot path stays
+  // as cheap as a textContent assignment. The line is a flat row of
+  // "•"-separated tokens sized for a 360 px viewport.
+  function renderUsageMeta(el, info) {
+    el.innerHTML = '';
+    el.hidden = false;
+    const modelId = info.modelId || '';
+    const usage = info.usage || {};
+    const cost = info.cost || null;
+    const tokens = [];
+    if (modelId) tokens.push(modelId);
+    if (typeof usage.promptTokens === 'number') {
+      tokens.push(formatTokens(usage.promptTokens) + ' in');
+    }
+    if (typeof usage.completionTokens === 'number') {
+      tokens.push(formatTokens(usage.completionTokens) + ' out');
+    }
+    if (cost && cost.known) {
+      tokens.push(formatCost(cost.total));
+    } else if (cost && cost.known === false) {
+      tokens.push('--');
+    }
+    // tok/s: prefer the live counter when present (it's
+    // continuously updated from the SSE message stream), fall back
+    // to the final rate from the done event.
+    let rate = info.liveRate;
+    if (rate == null && info.streamingMs && typeof usage.completionTokens === 'number') {
+      rate = info.streamingMs > 0 ? (usage.completionTokens / info.streamingMs) * 1000 : 0;
+    }
+    if (rate != null) tokens.push(formatTokPerSecond(rate));
+    for (let i = 0; i < tokens.length; i++) {
+      if (i > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'chat-msg__meta-sep';
+        sep.textContent = '•';
+        el.appendChild(sep);
+      }
+      const span = document.createElement('span');
+      span.textContent = tokens[i];
+      el.appendChild(span);
+    }
   }
 
   function appendDeltaToLive(delta) {
@@ -336,8 +402,15 @@ export function ChatView(props) {
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
     messagesRef.current = messagesRef.current.concat([userMsg]);
     appendMessageToTranscript(userMsg, false);
-    const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString() };
+    const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString(), modelId };
     appendMessageToTranscript(liveMsg, true);
+
+    // Live per-turn counter. The chat UI runs this on every delta;
+    // the server's authoritative completionTokens (sent on `done`)
+    // replaces the heuristic on the final tick. The counter is
+    // scoped to a single turn — reset() is called after `done` so
+    // the next user message starts from 0.
+    const counter = createCounter();
 
     let resp;
     try {
@@ -363,6 +436,21 @@ export function ChatView(props) {
     const decoder = new TextDecoder('utf-8');
     let buf = '', assembled = '';
     let usage = null;
+    let cost = null;
+    let streamingMs = null;
+    // Throttle the live tok/s repaint: redrawing on every delta
+    // produces a strobe effect on a phone. We repaint at most every
+    // 120 ms while deltas are flowing, and once on `done`.
+    let lastRepaintAt = 0;
+    function repaintLiveRate() {
+      if (!transcript.current) return;
+      const live = transcript.current.querySelector('[data-live="1"]');
+      if (!live) return;
+      const meta = live.querySelector('.chat-msg__meta');
+      if (!meta) return;
+      const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
+      renderUsageMeta(meta, info);
+    }
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -372,15 +460,57 @@ export function ChatView(props) {
         const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
         const ev = parseSSEFrame(frame); if (!ev) continue;
         let data; try { data = JSON.parse(ev.data); } catch { continue; }
-        if (ev.eventName === 'message' && typeof data.delta === 'string') { assembled += data.delta; appendDeltaToLive(data.delta); }
-        else if (ev.eventName === 'done') { usage = data.usage || null; }
+        if (ev.eventName === 'message' && typeof data.delta === 'string') {
+          assembled += data.delta;
+          counter.add(data.delta);
+          appendDeltaToLive(data.delta);
+          const now = performance.now ? performance.now() : Date.now();
+          if (now - lastRepaintAt > 120) {
+            lastRepaintAt = now;
+            repaintLiveRate();
+          }
+        }
+        else if (ev.eventName === 'done') {
+          usage = data.usage || null;
+          // Server-side cost enrichment (decision §14). The server
+          // already walked the pricing resolution order; the client
+          // just renders.
+          cost = data.cost || null;
+          streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+        }
         else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
         else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
         else if (ev.eventName === 'error') { statusEl.current.textContent = 'error: ' + (data.code || '') + ' ' + (data.message || ''); }
       }
     }
     finalizeLiveMessage({ content: assembled });
-    messagesRef.current = messagesRef.current.concat([{ role: 'assistant', content: assembled, ts: new Date().toISOString() }]);
+    // Final meta line: the live counter has the authoritative
+    // completionTokens (from `usage.completionTokens`); the cost is
+    // already on the `done` event. The stored message keeps both so
+    // a chat that is reopened later shows the same numbers (decision
+    // §14 — usage is persisted on the assistant message).
+    const finalRate = counter.rate(usage && usage.completionTokens);
+    const persisted = {
+      role: 'assistant',
+      content: assembled,
+      ts: new Date().toISOString(),
+      modelId,
+      usage: usage || undefined,
+      cost: cost || undefined,
+      streamingMs: streamingMs || undefined,
+      liveRate: finalRate
+    };
+    messagesRef.current = messagesRef.current.concat([persisted]);
+    // Replace the live row's meta with the final, authoritative
+    // version (counter is reset on next turn).
+    if (transcript.current) {
+      const live = transcript.current.querySelector('[data-live="1"]');
+      if (live) {
+        const meta = live.querySelector('.chat-msg__meta');
+        if (meta) renderUsageMeta(meta, persisted);
+      }
+    }
+    counter.reset();
     if (statusEl.current.textContent === 'streaming…') {
       setChatStatus(usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
