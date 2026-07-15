@@ -111,12 +111,29 @@ export function SettingsProviderEditView(props) {
   // with the saved `auth` on the first paint.
   const [currentId, setCurrentId] = useState(id || 'openai-compatible');
   const [current, setCurrent] = useState(null);
+  // Auth mode is reactive state, NOT a DOM value we mutate imperatively.
+  // The old code toggled `.is-hidden` on the OAuth/API-key rows from
+  // syncAuth() by hand; but this is a Preact component, so any re-render
+  // (e.g. changing the provider <select>) re-ran the JSX and blew those
+  // mutations away — the auth <select> snapped back to `apikey` and the
+  // OAuth rows (incl. the "Sign in" button) stayed collapsed. Driving
+  // visibility from state means the render is the single source of truth.
+  const reservedFor = (pid) => { const d = providerDef(pid); return !!(d && d.reserved); };
+  const [authMode, setAuthMode] = useState(reservedFor(id || 'openai-compatible') ? 'oauth' : 'apikey');
+  // Base URL is a controlled field too. It used to be written imperatively
+  // by syncBaseUrl() reading currentId/current from a stale render closure,
+  // which left it lagging one provider behind when the user switched the
+  // provider <select>. Keeping it in state means each provider change sets
+  // it in the same tick the id changes.
+  const initialBaseUrl = (() => { const d = providerDef(id || 'openai-compatible'); return (d && d.defaultBaseUrl) || ''; })();
+  const [baseUrlVal, setBaseUrlVal] = useState(initialBaseUrl);
+
   const currentDef0 = () => providerDef(currentId);
 
   let accounts = {};
 
   function currentDef() {
-    return providerDef(idSel.current ? idSel.current.value : '');
+    return providerDef(currentId);
   }
 
   async function load() {
@@ -128,77 +145,31 @@ export function SettingsProviderEditView(props) {
     if (id && !found) { setStatus(statusEl, 'Provider not found', 'error'); return; }
     setCurrent(found || null);
 
-    if (idSel.current) {
-      idSel.current.value = currentId;
-      if (id) idSel.current.disabled = true;
-    }
-    syncAuth();
+    // Resolve the auth mode from data (reserved → oauth, else the saved
+    // record's auth, else apikey) and push it into reactive state so the
+    // <select> and the row visibility both follow.
+    setAuthMode(resolveAuthMode(currentId, found));
+    setBaseUrlVal(nextBaseUrl(currentId, found, (found && found.baseUrl) || ''));
+
     syncOauthAccountOptions();
-    syncBaseUrl();
     if (apiKey.current) apiKey.current.value = '';
     if (deleteBtn.current) deleteBtn.current.hidden = !id;
-    if (baseUrl.current) baseUrl.current.value = (found && found.baseUrl) || '';
     renderKeyHint();
     setStatus(statusEl, '');
   }
 
-  function syncAuth() {
-    if (!authSel.current) return;
-    const def = currentDef();
-    const reserved = !!(def && def.reserved);
-    // Pick the auth mode: reserved forces OAuth; otherwise prefer
-    // the existing provider record's saved auth, falling back to
-    // "apikey". Falling back to whatever the <select> happens to
-    // hold (the pre-fix behavior) leaks the previous selection
-    // when the user switches from GitHub Copilot to a non-reserved
-    // provider — the OAuth field stays sticky and the API key row
-    // is never shown.
-    let wantAuth;
-    if (reserved) wantAuth = 'oauth';
-    else if (current && current.id === (idSel.current ? idSel.current.value : '') && current.auth) wantAuth = current.auth;
-    else wantAuth = 'apikey';
-    if (authSel.current.value !== wantAuth) authSel.current.value = wantAuth;
-    for (const opt of authSel.current.querySelectorAll('option')) {
-      if (opt.value === 'apikey') opt.disabled = reserved;
-    }
-    // Reserved (SSO-only) providers have no choice: hide the auth
-    // <select> entirely and show a static "OAuth (required)" badge
-    // instead. The select is also disabled while we're at it so its
-    // single option can't even be re-opened.
-    authSel.current.disabled = reserved;
-    // The auth <select> is wrapped in a plain .row, so we hide that
-    // whole row when the provider is reserved. The static
-    // "OAuth (required)" badge (and its row wrapper) take its place.
-    const authSelRow = authSel.current.closest('.row');
-    if (authSelRow) authSelRow.classList.toggle('is-hidden', reserved);
-    if (authLocked.current) {
-      authLocked.current.classList.toggle('is-hidden', !reserved);
-      const label = authLocked.current.querySelector('.row__static-value');
-      if (label) label.textContent = 'OAuth (required)';
-    }
-    // The static badge's own .row wrapper is also toggled so it
-    // doesn't leave an empty flex column in the layout when hidden.
-    const authLockedRow = authLocked.current && authLocked.current.closest('.row');
-    if (authLockedRow) authLockedRow.classList.toggle('is-hidden', !reserved);
-    const section = authSel.current.closest('section');
-    if (section) {
-      for (const row of section.querySelectorAll('.row--apikey, .row--oauth, .row--base')) {
-        const showWhen = row.getAttribute('data-show-when');
-        if (!showWhen) continue;
-        // .row--base has data-show-when="!reserved" — hide it for
-        // reserved providers because their base URL is hard-coded.
-        if (showWhen === '!reserved') {
-          row.classList.toggle('is-hidden', reserved);
-        } else {
-          row.classList.toggle('is-hidden', showWhen !== wantAuth);
-        }
-      }
-    }
+  // The single rule for what auth a provider should show: reserved
+  // providers are OAuth-only; an existing record keeps its saved auth;
+  // everything else defaults to API key.
+  function resolveAuthMode(pid, record) {
+    if (reservedFor(pid)) return 'oauth';
+    if (record && record.id === pid && record.auth) return record.auth;
+    return 'apikey';
   }
 
-  function syncOauthAccountOptions() {
+  function syncOauthAccountOptions(pid = currentId) {
     if (!oauthAccount.current) return;
-    const ns = authNsForProvider(idSel.current.value);
+    const ns = authNsForProvider(pid);
     const list = (accounts[ns] || []).slice();
     oauthAccount.current.innerHTML = '';
     if (list.length === 0) {
@@ -228,22 +199,24 @@ export function SettingsProviderEditView(props) {
     if (cur && list.includes(cur)) oauthAccount.current.value = cur;
   }
 
-  function syncBaseUrl() {
-    if (!baseUrl.current) return;
-    const def = providerDef(idSel.current.value);
-    const configured = (current && current.id === idSel.current.value) ? current : null;
+  // Compute the base URL a provider should show. If the user has typed a
+  // custom URL (one that isn't any provider's default) we keep it; otherwise
+  // we snap to the target provider's configured/default URL. Returns the
+  // value to store in state.
+  function nextBaseUrl(pid, record, currentVal) {
+    const def = providerDef(pid);
+    const configured = (record && record.id === pid) ? record : null;
     const target = (configured && configured.baseUrl) || (def && def.defaultBaseUrl) || '';
-    const cur = baseUrl.current.value.trim();
+    const cur = (currentVal || '').trim();
     const known = SETTINGS_PROVIDERS.map(p => p.defaultBaseUrl).filter(Boolean);
-    if (!cur || known.includes(cur)) baseUrl.current.value = target;
+    return (!cur || known.includes(cur)) ? target : cur;
   }
 
   function renderKeyHint() {
     const section = authSel.current && authSel.current.closest('section');
     const hint = section && section.querySelector('.key-hint');
     if (!hint) return;
-    const wantAuth = authSel.current && authSel.current.value;
-    if (wantAuth === 'apikey' && current && current.hasApiKey) {
+    if (authMode === 'apikey' && current && current.hasApiKey) {
       hint.textContent = 'a key is already saved for this provider; leave the field empty to keep it';
       hint.hidden = false;
     } else {
@@ -253,7 +226,7 @@ export function SettingsProviderEditView(props) {
   }
 
   async function startSignIn() {
-    const provider = idSel.current.value;
+    const provider = currentId;
     const def = providerDef(provider);
     if (!def) { setStatus(signInStatus, 'unknown provider', 'error'); return; }
     setStatus(signInStatus, 'starting sign-in…', 'busy');
@@ -292,10 +265,10 @@ export function SettingsProviderEditView(props) {
   async function save() {
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
-    const providerId = idSel.current.value;
+    const providerId = currentId;
     const def = providerDef(providerId);
-    const auth = (def && def.reserved) ? 'oauth' : authSel.current.value;
-    const base = (baseUrl.current.value || '').trim();
+    const auth = (def && def.reserved) ? 'oauth' : authMode;
+    const base = (baseUrlVal || '').trim();
     const key = (apiKey.current.value || '').trim();
     const account = (oauthAccount.current.value || '').trim();
 
@@ -355,13 +328,30 @@ export function SettingsProviderEditView(props) {
 
   const def = currentDef0();
   const titleText = id ? ((def && def.label) || id) : 'Add provider';
-  const initialReserved = !!(def && def.reserved);
-  // Derive the auth mode from the same rule syncAuth() uses, so
-  // the <select> renders with the right value on the first paint
-  // (before the useEffect-driven DOM mutations can run).
-  const initialAuth = initialReserved
-    ? 'oauth'
-    : (current && current.auth) || 'apikey';
+  const reserved = !!(def && def.reserved);
+  // Reserved providers are OAuth-only, so the effective auth is forced to
+  // 'oauth' for rendering regardless of the authMode state (which the user
+  // cannot change while reserved). Row visibility is derived here, in the
+  // render, so it can never drift from the <select> the way the old
+  // imperative .is-hidden toggling did.
+  const effAuth = reserved ? 'oauth' : authMode;
+  const hide = (cond) => 'row' + (cond ? ' is-hidden' : '');
+
+  // When the provider <select> changes, move currentId AND recompute the
+  // auth mode for the new provider in one shot, so switching from a
+  // reserved (OAuth-only) provider back to a normal one restores the API
+  // key row instead of staying stuck on OAuth.
+  function onProviderChange(e) {
+    const pid = e.target.value;
+    setCurrentId(pid);
+    setAuthMode(resolveAuthMode(pid, current));
+    // Pass pid explicitly: setCurrentId() is async, so reading currentId
+    // here would use the previous provider and lag the fields one change
+    // behind (the bug that left the base URL / OAuth rows out of sync).
+    setBaseUrlVal((cur) => nextBaseUrl(pid, current, cur));
+    syncOauthAccountOptions(pid);
+    renderKeyHint();
+  }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -370,42 +360,48 @@ export function SettingsProviderEditView(props) {
     ),
     h('section', null,
       def && def.hint
-        ? h('p', { class: initialReserved ? 'notice notice--auth' : 'hint hint--compact' }, def.hint)
+        ? h('p', { class: reserved ? 'notice notice--auth' : 'hint hint--compact' }, def.hint)
         : null,
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sp-id' }, 'Provider'),
-        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, value: currentId, onChange: (e) => { setCurrentId(e.target.value); syncAuth(); syncOauthAccountOptions(); syncBaseUrl(); renderKeyHint(); } },
-          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id, selected: p.id === currentId }, p.label))
+        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, value: currentId, onChange: onProviderChange },
+          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id }, p.label))
         )
       ),
-      h('div', { class: 'row row--base', 'data-show-when': '!reserved' },
+      // API base URL — hidden for reserved providers (their base URL is
+      // hard-coded server-side).
+      h('div', { class: hide(reserved) + ' row--base' },
         h('label', { class: 'label', for: 'sp-base' }, 'API base URL'),
-        h('input', { ref: baseUrl, class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1' })
+        h('input', { ref: baseUrl, class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1',
+          value: baseUrlVal, onInput: (e) => setBaseUrlVal(e.target.value) })
       ),
-      h('div', { class: 'row' },
+      // Auth <select> — hidden and replaced by a static badge for reserved
+      // (OAuth-only) providers.
+      h('div', { class: hide(reserved) },
         h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
-        h('select', { ref: authSel, class: 'input', id: 'sp-auth', disabled: initialReserved, value: initialAuth, onChange: () => { syncAuth(); renderKeyHint(); syncOauthAccountOptions(); } },
-          h('option', { value: 'apikey', selected: initialAuth === 'apikey' }, 'API key'),
-          h('option', { value: 'oauth', selected: initialAuth === 'oauth' }, 'OAuth')
+        h('select', { ref: authSel, class: 'input', id: 'sp-auth', value: effAuth,
+          onChange: (e) => { setAuthMode(e.target.value); renderKeyHint(); syncOauthAccountOptions(); } },
+          h('option', { value: 'apikey' }, 'API key'),
+          h('option', { value: 'oauth' }, 'OAuth')
         )
       ),
-      h('div', { class: 'row row__static-wrap' },
-        h('div', { ref: authLocked, class: 'row__static is-hidden' },
+      h('div', { class: hide(!reserved) + ' row__static-wrap' },
+        h('div', { ref: authLocked, class: 'row__static' },
           h('span', { class: 'label' }, 'Authentication'),
           h('span', { class: 'row__static-value' }, 'OAuth (required)'),
           h('span', { class: 'row__static-note' }, 'This provider only supports OAuth sign-in.')
         )
       ),
-      h('div', { class: 'row row--apikey', 'data-show-when': 'apikey' },
+      h('div', { class: hide(effAuth !== 'apikey') + ' row--apikey' },
         h('label', { class: 'label', for: 'sp-key' }, 'Provider API key'),
         h('input', { ref: apiKey, class: 'input', id: 'sp-key', type: 'password', placeholder: 'paste key', autocomplete: 'off' })
       ),
       h('p', { class: 'hint hint--compact key-hint', hidden: true }),
-      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
+      h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('label', { class: 'label', for: 'sp-account' }, 'OAuth account'),
         h('select', { ref: oauthAccount, class: 'input', id: 'sp-account' })
       ),
-      h('div', { class: 'row row--oauth', 'data-show-when': 'oauth' },
+      h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('div', { class: 'auth__help-inline' },
           h('p', { class: 'hint hint--compact' }, 'Sign in to this provider below; the OAuth-account list refreshes automatically.'),
           h('div', { class: 'row row--actions' },
