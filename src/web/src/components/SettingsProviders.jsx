@@ -381,8 +381,8 @@ export function SettingsProviderEditView(props) {
         : null,
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sp-id' }, 'Provider'),
-        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, value: currentId, onChange: onProviderChange },
-          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id }, p.label))
+        h('select', { ref: idSel, class: 'input', id: 'sp-id', disabled: !!id, onChange: onProviderChange },
+          SETTINGS_PROVIDERS.map(p => h('option', { value: p.id, key: p.id, selected: p.id === currentId }, p.label))
         )
       ),
       // API base URL — hidden for reserved providers (their base URL is
@@ -398,10 +398,10 @@ export function SettingsProviderEditView(props) {
       // rendered for OAuth-capable providers.
       h('div', { class: hide(singleAuth) },
         h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
-        h('select', { ref: authSel, class: 'input', id: 'sp-auth', value: effAuth,
+        h('select', { ref: authSel, class: 'input', id: 'sp-auth',
           onChange: (e) => { setAuthMode(e.target.value); renderKeyHint(); syncOauthAccountOptions(); } },
-          h('option', { value: 'apikey' }, 'API key'),
-          canOAuth ? h('option', { value: 'oauth' }, 'OAuth') : null
+          h('option', { value: 'apikey', selected: effAuth === 'apikey' }, 'API key'),
+          canOAuth ? h('option', { value: 'oauth', selected: effAuth === 'oauth' }, 'OAuth') : null
         )
       ),
       h('div', { class: hide(!reserved) + ' row__static-wrap' },
