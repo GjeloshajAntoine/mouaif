@@ -1,6 +1,6 @@
 // mouaif web — App shell, Header, BottomTab
 import { h, Fragment } from 'preact';
-import { route } from '../api.js';
+import { route, activeProject, setActiveProject } from '../api.js';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
 import { SettingsProjectView } from './SettingsProject.jsx';
@@ -51,6 +51,13 @@ function Header() {
 
 export function App() {
   const view = route.value;
+  // Track the active project so SettingsPrompts (and any other
+  // project-scoped view reached from Settings) can resolve the
+  // project directory without asking the user to type it. The chat
+  // route is the authoritative source; the picker route is a
+  // tentative "the user is browsing this folder" signal.
+  const chatDir = (view.name === 'chat' && view.projectDir) || '';
+  if (chatDir && chatDir !== activeProject.value.dir) setActiveProject(chatDir, '');
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
@@ -68,8 +75,8 @@ export function App() {
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, null);
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsCopilot') body = h(SettingsCopilotView, null);
-  else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, null);
-  else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id });
+  else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
+  else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);

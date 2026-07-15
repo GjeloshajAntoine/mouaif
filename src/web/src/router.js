@@ -19,7 +19,15 @@ function parseHash() {
   if (h === 'settings/project') return { name: 'settingsProject' };
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/copilot') return { name: 'settingsCopilot' };
-  if (h === 'settings/prompts') return { name: 'settingsPrompts' };
+  // settings/prompts is project-scoped. The active project (set when
+  // the user opened a chat or visited Settings → Project) is the
+  // source of truth. The route hash can override it for testing
+  // (e.g. settings/prompts?projectDir=...).
+  if (h === 'settings/prompts' || h.startsWith('settings/prompts?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '' };
+  }
   if (h.startsWith('settings/prompts/')) {
     const rest = h.slice('settings/prompts/'.length);
     const [id, qs] = rest.split('?');

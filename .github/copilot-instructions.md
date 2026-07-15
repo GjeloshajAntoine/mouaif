@@ -66,7 +66,8 @@ These features exist or are planned. Keep this list in sync with the codebase as
   - Tabs: **Chats**, **Inspector** (rebuilt from scratch on top of Chrome DevTools data — not a thin wrapper), **Settings**.
   - The inspector must be a from-scratch mobile-friendly UI, not the default Chrome panel embedded in an iframe.
   - Data source: Chrome DevTools Protocol (CDP) over WebSocket. See [docs/decisions.md](../docs/decisions.md) §6.
-  - Scaffold: **Preact + Vite**, served by `mouaif serve` at `/web/`. See [docs/decisio anywhere on the filesystem) plus a "create new folder" action. See [docs/decisions.md](../docs/decisions.md) §4
+  - Scaffold: **Preact + Vite**, served by `mouaif serve` at `/web/`. See [docs/decisions.md](../docs/decisions.md) §7.
+- **Project folder picker** — creating a project opens a folder list of existing dirs (anywhere on the filesystem) plus a "create new folder" action. See [docs/decisions.md](../docs/decisions.md) §4.
 - **Project card actions** — "New chat" and a per-project options menu on each project card.
 - **New-project folder picker** — creating a project opens a folder list (existing dirs) plus a "create new folder" action.
 

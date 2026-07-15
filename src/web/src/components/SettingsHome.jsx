@@ -1,7 +1,7 @@
 // mouaif web — Settings home view
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { loadApp, loadAccounts, appProviders, setStatus } from '../api.js';
+import { loadApp, loadAccounts, appProviders } from '../api.js';
 
 export function SettingsHomeView() {
   const providerCount = useRef(null);
@@ -9,7 +9,6 @@ export function SettingsHomeView() {
   const accountsCount = useRef(null);
   const promptSize = useRef(null);
   const copilot = useRef(null);
-  const promptsCount = useRef(null);
 
   async function load() {
     try {
@@ -36,9 +35,6 @@ export function SettingsHomeView() {
         const c = (app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
         copilot.current.textContent = c ? 'custom client_id' : 'using default';
       }
-      if (promptsCount.current) {
-        promptsCount.current.textContent = 'per-project system prompts';
-      }
     } catch (e) { /* leave blank */ }
   }
 
@@ -60,7 +56,6 @@ export function SettingsHomeView() {
     card('settings/project', 'Project overrides', projectCount),
     h('h3', null, 'App defaults'),
     card('settings/defaults', 'App defaults', promptSize),
-    card('settings/prompts', 'Custom prompts', promptsCount),
     card('settings/copilot', 'GitHub Copilot OAuth app', copilot),
     h('a', { href: '#/settings/about', class: 'card', 'aria-label': 'About' },
       h('div', { class: 'card__main' },

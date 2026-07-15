@@ -117,3 +117,19 @@ export function parseSSEFrame(frame) {
 
 export const projectsReload = signal(0);
 export const route = signal({ name: 'chats' });
+
+// Active project — the project the user is currently looking at on a
+// project-scoped screen. Set when entering a chat, the project picker,
+// Settings → Project, or any view that needs to know the project.
+// Read by SettingsPrompts and similar project-scoped views. Persisted
+// across route changes so navigating to Settings and back keeps the
+// context.
+export const activeProject = signal({ dir: '', name: '' });
+
+export function setActiveProject(dir, name) {
+  activeProject.value = { dir: dir || '', name: name || '' };
+}
+
+export function clearActiveProject() {
+  activeProject.value = { dir: '', name: '' };
+}

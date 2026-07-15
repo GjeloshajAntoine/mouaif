@@ -1,7 +1,7 @@
 // mouaif web — SettingsProjectView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus } from '../api.js';
+import { fetchJson, setStatus, setActiveProject } from '../api.js';
 
 export function SettingsProjectView() {
   const projectDir = useRef(null);
@@ -13,8 +13,11 @@ export function SettingsProjectView() {
   const revertBtn = useRef(null);
   const resolvedOut = useRef(null);
   const resolvedDir = useRef(null);
+  const promptsCard = useRef(null);
+  const promptsSummary = useRef(null);
 
   let currentProject = {};
+  const loadedDir = useRef('');
 
   async function load() {
     const dir = (projectDir.current && projectDir.current.value || '').trim();
@@ -28,6 +31,25 @@ export function SettingsProjectView() {
     if (loadBtn.current) loadBtn.current.disabled = false;
     if (projRes.status !== 200) { setStatus(statusEl, 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : ''), 'error'); return; }
     currentProject = projRes.body.project || {};
+    loadedDir.current = dir;
+    // Make the loaded project the active one for downstream views
+    // (Custom prompts, etc.) so the user does not have to re-pick it.
+    setActiveProject(dir, '');
+    if (promptsCard.current) {
+      promptsCard.current.href = '#/settings/prompts?projectDir=' + encodeURIComponent(dir);
+    }
+    // Refresh the prompts count for the card summary.
+    try {
+      const pr = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(dir));
+      if (promptsSummary.current) {
+        if (pr.status === 200) {
+          const n = (pr.body.prompts || []).length;
+          promptsSummary.current.textContent = n ? (n + (n === 1 ? ' prompt' : ' prompts')) : 'no prompts yet';
+        } else {
+          promptsSummary.current.textContent = '—';
+        }
+      }
+    } catch { if (promptsSummary.current) promptsSummary.current.textContent = '—'; }
     if (editor.current) {
       editor.current.hidden = false;
       editor.current.value = JSON.stringify(currentProject, null, 2);
@@ -117,7 +139,21 @@ export function SettingsProjectView() {
       h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. The chat layer reads this merged object. Provider keys are redacted.'),
       h('p', { class: 'hint hint--compact' }, h('code', { ref: resolvedDir }, '')),
       h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true }),
-      h('div', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' })
+      h('div', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' }),
+      h('h3', null, 'Project features'),
+      h('a', {
+        ref: promptsCard,
+        class: 'card',
+        'aria-label': 'Custom prompts',
+        'data-disabled': '1',
+        href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
+      },
+        h('div', { class: 'card__main' },
+          h('div', { class: 'card__title' }, 'Custom prompts'),
+          h('div', { ref: promptsSummary, class: 'card__summary' }, '—')
+        ),
+        h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      )
     )
   );
 }

@@ -1,27 +1,37 @@
 // mouaif web — SettingsPromptsView + SettingsPromptEditView
+//
+// Both views are project-scoped. The active project is resolved in
+// this order:
+//   1. The `projectDir` prop passed in from the router (used by
+//      deep links and tests).
+//   2. The `activeProject` signal (set when the user opened a chat).
+// If neither resolves, the view shows a "pick a project" empty
+// state and never calls the API.
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus } from '../api.js';
+import { fetchJson, setStatus, activeProject } from '../api.js';
 import { nav } from '../router.js';
 
-export function SettingsPromptsView() {
-  const projectDir = useRef(null);
-  const loadBtn = useRef(null);
+function resolveProjectDir(view) {
+  if (view && view.projectDir) return view.projectDir;
+  return (activeProject.value && activeProject.value.dir) || '';
+}
+
+export function SettingsPromptsView(props) {
+  const projectDir = resolveProjectDir(props);
   const listEl = useRef(null);
   const statusEl = useRef(null);
 
-  let currentDir = '';
-
   async function load() {
-    const dir = (projectDir.current && projectDir.current.value || '').trim();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
-    currentDir = dir;
-    if (loadBtn.current) loadBtn.current.disabled = true;
+    if (!projectDir) {
+      if (listEl.current) listEl.current.innerHTML = '';
+      setStatus(statusEl, 'open a chat to pick a project first', 'error');
+      return;
+    }
     setStatus(statusEl, 'loading…', 'busy');
     let r;
-    try { r = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(dir)); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); if (loadBtn.current) loadBtn.current.disabled = false; return; }
-    if (loadBtn.current) loadBtn.current.disabled = false;
+    try { r = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)); }
+    catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
     const list = r.body.prompts || [];
     renderList(list);
@@ -43,13 +53,13 @@ export function SettingsPromptsView() {
       li.className = 'prompt-row';
       const main = document.createElement('a');
       main.className = 'prompt-row__main';
-      main.href = '#/settings/prompts/' + encodeURIComponent(p.id) + '?projectDir=' + encodeURIComponent(currentDir);
+      main.href = '#/settings/prompts/' + encodeURIComponent(p.id) + '?projectDir=' + encodeURIComponent(projectDir);
       const name = document.createElement('div');
       name.className = 'prompt-row__title';
       name.textContent = p.title || p.id;
       const meta = document.createElement('div');
       meta.className = 'prompt-row__meta';
-      meta.textContent = '(' + p.role + ')  ' + (p.content.length > 60 ? p.content.slice(0, 60) + '…' : p.content);
+      meta.textContent = p.content.length > 60 ? p.content.slice(0, 60) + '…' : p.content;
       main.appendChild(name);
       main.appendChild(meta);
       const chev = document.createElement('div');
@@ -61,82 +71,83 @@ export function SettingsPromptsView() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectDir]);
+
+  if (!projectDir) {
+    return h(Fragment, null,
+      h('div', { class: 'view-head' },
+        h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+        h('h2', { class: 'view-title' }, 'Custom prompts')
+      ),
+      h('section', null,
+        h('p', { class: 'hint' }, 'No project selected. Open a chat to pick a project, or use the picker to add a new one.'),
+        h('div', { class: 'row row--actions' },
+          h('a', { href: '#/projects/new', class: 'btn btn--primary' }, 'Open project picker')
+        )
+      )
+    );
+  }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('a', { href: '#/settings/project', class: 'view-back', 'aria-label': 'Back to project' }, '←'),
       h('h2', { class: 'view-title' }, 'Custom prompts')
     ),
     h('section', null,
-      h('p', { class: 'hint hint--compact' }, 'Per-project system/role prompts. Saved in the project\'s .mouaif.json alongside other settings.'),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-prompts-dir' }, 'Project directory'),
-        h('input', { ref: projectDir, class: 'input', id: 'sp-prompts-dir', type: 'text', placeholder: 'C:\\path\\to\\project' })
-      ),
-      h('div', { class: 'row row--actions' },
-        h('button', { ref: loadBtn, class: 'btn btn--primary', type: 'button', onClick: load }, 'Load'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
-      ),
+      h('p', { class: 'hint hint--compact' }, 'Per-project system prompts. Saved in the project\'s .mouaif.json alongside other settings.'),
+      h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
       h('ul', { ref: listEl, class: 'prompts__list', 'aria-label': 'Custom prompts' }),
       h('div', { class: 'row row--actions' },
-        h('a', { href: '#/settings/prompts/new?projectDir=' + encodeURIComponent(currentDir), class: 'btn btn--primary' }, '+ Add prompt')
+        h('a', {
+          href: '#/settings/prompts/new?projectDir=' + encodeURIComponent(projectDir),
+          class: 'btn btn--primary'
+        }, '+ Add prompt'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       )
     )
   );
 }
 
 export function SettingsPromptEditView(props) {
-  const promptId = props.id || '';
-  const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.hash.split('?')[1] || '') : new URLSearchParams();
-  const dirFromHash = qs.get('projectDir') || '';
-  const [currentDir, setCurrentDir] = h(Fragment, null); // signal via ref
-
-  const projectDirRef = useRef(null);
+  const promptId = (props && props.id) || '';
+  const projectDir = resolveProjectDir(props);
   const titleRef = useRef(null);
   const contentRef = useRef(null);
-  const roleRef = useRef(null);
   const saveBtn = useRef(null);
   const deleteBtn = useRef(null);
   const statusEl = useRef(null);
 
-  let loadedDir = '';
-
   async function load() {
-    if (!promptId) {
-      // New prompt: seed project dir from URL param
-      if (projectDirRef.current) projectDirRef.current.value = dirFromHash;
+    if (!projectDir) {
+      setStatus(statusEl, 'no project selected', 'error');
       return;
     }
-    const dir = (projectDirRef.current && projectDirRef.current.value || '').trim();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
-    loadedDir = dir;
+    if (!promptId) {
+      // New prompt — nothing to load; refs are pre-cleared.
+      if (titleRef.current) titleRef.current.value = '';
+      if (contentRef.current) contentRef.current.value = '';
+      setStatus(statusEl, '', '');
+      return;
+    }
     setStatus(statusEl, 'loading…', 'busy');
     let r;
-    try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(dir)); }
+    try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(projectDir)); }
     catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
     const p = r.body.prompt;
     if (titleRef.current) titleRef.current.value = p.title || '';
     if (contentRef.current) contentRef.current.value = p.content || '';
-    if (roleRef.current) roleRef.current.value = p.role || 'system';
     setStatus(statusEl, 'loaded', 'success');
   }
 
-  function getDir() {
-    return (projectDirRef.current && projectDirRef.current.value || '').trim();
-  }
-
   async function save() {
-    const dir = getDir();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
+    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
     const title = (titleRef.current && titleRef.current.value || '').trim();
     const content = (contentRef.current && contentRef.current.value || '').trim();
-    const role = roleRef.current ? roleRef.current.value : 'system';
     if (!content) { setStatus(statusEl, 'prompt content is required', 'error'); return; }
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
-    const body = { projectDir: dir, title, content, role };
+    const body = { projectDir, title, content };
     const url = promptId ? '/api/prompts/' + encodeURIComponent(promptId) : '/api/prompts';
     const method = promptId ? 'PATCH' : 'POST';
     let r;
@@ -146,48 +157,50 @@ export function SettingsPromptEditView(props) {
     if (r.status !== 200 && r.status !== 201) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
     setStatus(statusEl, 'saved.', 'success');
     if (!promptId && r.status === 201) {
-      // Redirect to edit the new prompt
-      nav('settings/prompts/' + encodeURIComponent(r.body.prompt.id) + '?projectDir=' + encodeURIComponent(dir));
+      nav('settings/prompts/' + encodeURIComponent(r.body.prompt.id) + '?projectDir=' + encodeURIComponent(projectDir));
     }
   }
 
   async function deletePrompt() {
     if (!promptId) return;
-    if (!confirm('Delete this prompt? Models in this project will no longer see it.')) return;
-    const dir = getDir();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
+    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
+    if (!confirm('Delete this prompt? Chats that referenced it will fall back to no custom prompt.')) return;
     if (deleteBtn.current) deleteBtn.current.disabled = true;
     setStatus(statusEl, 'deleting…', 'busy');
     let r;
-    try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(dir), { method: 'DELETE' }); }
+    try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
     catch (err) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
-    nav('settings/prompts');
+    nav('settings/prompts?projectDir=' + encodeURIComponent(projectDir));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectDir, promptId]);
+
+  if (!projectDir) {
+    return h(Fragment, null,
+      h('div', { class: 'view-head' },
+        h('a', { href: '#/settings/project', class: 'view-back', 'aria-label': 'Back' }, '←'),
+        h('h2', { class: 'view-title' }, promptId ? 'Edit prompt' : 'Add prompt')
+      ),
+      h('section', null,
+        h('p', { class: 'hint' }, 'No project selected. Open a chat to pick a project, or use the picker to add a new one.'),
+        h('div', { class: 'row row--actions' },
+          h('a', { href: '#/projects/new', class: 'btn btn--primary' }, 'Open project picker')
+        )
+      )
+    );
+  }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/prompts', class: 'view-back', 'aria-label': 'Back to prompts' }, '←'),
+      h('a', { href: '#/settings/prompts?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to prompts' }, '←'),
       h('h2', { class: 'view-title' }, promptId ? 'Edit prompt' : 'Add prompt')
     ),
     h('section', null,
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'spe-dir' }, 'Project directory'),
-        h('input', { ref: projectDirRef, class: 'input', id: 'spe-dir', type: 'text', placeholder: 'C:\\path\\to\\project' })
-      ),
+      h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-title' }, 'Title'),
         h('input', { ref: titleRef, class: 'input', id: 'spe-title', type: 'text', placeholder: 'My custom prompt' })
-      ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'spe-role' }, 'Role'),
-        h('select', { ref: roleRef, class: 'input', id: 'spe-role' },
-          h('option', { value: 'system' }, 'system'),
-          h('option', { value: 'user' }, 'user'),
-          h('option', { value: 'assistant' }, 'assistant')
-        )
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
