@@ -69,11 +69,16 @@ export async function loadAccounts({ force = false } = {}) {
 // ---- Settings constants -----------------------------------------------
 
 export const SETTINGS_PROVIDERS = [
+  // `oauth: true` means the server has an OAuth sign-in flow registered for
+  // this provider (see src/index.js → oauth*.register()). ONLY those may show
+  // the OAuth auth option; the others are API-key only, and offering OAuth for
+  // them just leads to a 404 from POST /api/auth/sign-in/<id>. `reserved`
+  // implies OAuth-only (no API-key alternative).
   { id: 'openai-compatible', label: 'OpenAI compatible',  defaultBaseUrl: 'https://api.openai.com/v1',                hint: 'OpenAI, Together, Groq, LM Studio, Ollama (via /v1), any OpenAI-shaped API.' },
-  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Claude Messages API. Use the OAuth flow below for Claude Pro/Max; otherwise paste an API key.' },
+  { id: 'anthropic',         label: 'Anthropic',          defaultBaseUrl: 'https://api.anthropic.com',                hint: 'Claude Messages API. Use the OAuth flow below for Claude Pro/Max; otherwise paste an API key.', oauth: true },
   { id: 'gemini',            label: 'Google Gemini',      defaultBaseUrl: 'https://generativelanguage.googleapis.com', hint: 'Google AI Studio / Gemini API. API key authentication.' },
   { id: 'ollama',            label: 'Ollama',             defaultBaseUrl: 'http://127.0.0.1:11434',                   hint: 'Local Ollama server. No API key required.' },
-  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Requires OAuth. A Copilot subscription on the signed-in account is required to chat.', reserved: true }
+  { id: 'github-copilot',    label: 'GitHub Copilot',     defaultBaseUrl: 'https://api.githubcopilot.com',            hint: 'Requires OAuth. A Copilot subscription on the signed-in account is required to chat.', reserved: true, oauth: true }
 ];
 
 export function providerDef(id) {

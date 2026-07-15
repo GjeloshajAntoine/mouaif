@@ -158,12 +158,19 @@ export function SettingsProviderEditView(props) {
     setStatus(statusEl, '');
   }
 
+  // Does the server actually have an OAuth flow for this provider?
+  // Only these may offer the OAuth option; the rest are API-key only and
+  // would 404 on POST /api/auth/sign-in/<id>.
+  const oauthCapable = (pid) => { const d = providerDef(pid); return !!(d && (d.oauth || d.reserved)); };
+
   // The single rule for what auth a provider should show: reserved
-  // providers are OAuth-only; an existing record keeps its saved auth;
-  // everything else defaults to API key.
+  // providers are OAuth-only; an existing record keeps its saved auth (but
+  // only if the provider still supports it); everything else defaults to
+  // API key.
   function resolveAuthMode(pid, record) {
     if (reservedFor(pid)) return 'oauth';
-    if (record && record.id === pid && record.auth) return record.auth;
+    if (record && record.id === pid && record.auth === 'oauth' && oauthCapable(pid)) return 'oauth';
+    if (record && record.id === pid && record.auth === 'apikey') return 'apikey';
     return 'apikey';
   }
 
@@ -229,6 +236,10 @@ export function SettingsProviderEditView(props) {
     const provider = currentId;
     const def = providerDef(provider);
     if (!def) { setStatus(signInStatus, 'unknown provider', 'error'); return; }
+    if (!oauthCapable(provider)) {
+      setStatus(signInStatus, def.label + ' does not support OAuth sign-in; use an API key.', 'error');
+      return;
+    }
     setStatus(signInStatus, 'starting sign-in…', 'busy');
     let r;
     try {
@@ -329,12 +340,18 @@ export function SettingsProviderEditView(props) {
   const def = currentDef0();
   const titleText = id ? ((def && def.label) || id) : 'Add provider';
   const reserved = !!(def && def.reserved);
+  const canOAuth = oauthCapable(currentId);
   // Reserved providers are OAuth-only, so the effective auth is forced to
-  // 'oauth' for rendering regardless of the authMode state (which the user
-  // cannot change while reserved). Row visibility is derived here, in the
-  // render, so it can never drift from the <select> the way the old
-  // imperative .is-hidden toggling did.
-  const effAuth = reserved ? 'oauth' : authMode;
+  // 'oauth'. Providers with no OAuth flow are forced to 'apikey' so the UI
+  // can never send the user into a sign-in that 404s. Otherwise the user's
+  // authMode choice wins. Row visibility is derived here, in the render, so
+  // it can never drift from the <select> the way the old imperative
+  // .is-hidden toggling did.
+  const effAuth = reserved ? 'oauth' : (canOAuth ? authMode : 'apikey');
+  // Hide the auth <select> when there is only one possible mode: reserved
+  // (OAuth-only, replaced by the static badge) OR API-key-only (no OAuth
+  // flow — no point showing a one-option picker).
+  const singleAuth = reserved || !canOAuth;
   const hide = (cond) => 'row' + (cond ? ' is-hidden' : '');
 
   // When the provider <select> changes, move currentId AND recompute the
@@ -375,14 +392,16 @@ export function SettingsProviderEditView(props) {
         h('input', { ref: baseUrl, class: 'input', id: 'sp-base', type: 'url', placeholder: 'https://api.openai.com/v1',
           value: baseUrlVal, onInput: (e) => setBaseUrlVal(e.target.value) })
       ),
-      // Auth <select> — hidden and replaced by a static badge for reserved
-      // (OAuth-only) providers.
-      h('div', { class: hide(reserved) },
+      // Auth <select> — hidden when there is only one possible mode:
+      // reserved (OAuth-only, replaced by the badge below) or a provider
+      // with no OAuth flow (API-key only). The OAuth <option> is only
+      // rendered for OAuth-capable providers.
+      h('div', { class: hide(singleAuth) },
         h('label', { class: 'label', for: 'sp-auth' }, 'Authentication'),
         h('select', { ref: authSel, class: 'input', id: 'sp-auth', value: effAuth,
           onChange: (e) => { setAuthMode(e.target.value); renderKeyHint(); syncOauthAccountOptions(); } },
           h('option', { value: 'apikey' }, 'API key'),
-          h('option', { value: 'oauth' }, 'OAuth')
+          canOAuth ? h('option', { value: 'oauth' }, 'OAuth') : null
         )
       ),
       h('div', { class: hide(!reserved) + ' row__static-wrap' },
