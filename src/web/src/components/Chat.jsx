@@ -278,7 +278,11 @@ export function ChatView(props) {
     const el = promptInput.current;
     if (!el) return;
     el.style.height = 'auto';
-    const next = Math.min(140, Math.max(40, el.scrollHeight));
+    /* 44px floor matches the CSS min-height on .chat-view__textarea
+       and the --tap touch target, so the single-line composer row
+       lines up with the send button. 140px ceiling is the max
+       multi-line height before the textarea scrolls. */
+    const next = Math.min(140, Math.max(44, el.scrollHeight));
     el.style.height = next + 'px';
   }
 

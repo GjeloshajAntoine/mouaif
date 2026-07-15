@@ -515,7 +515,18 @@ select.input {
   background-repeat: no-repeat;
   padding-right: 36px;
 }
-textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-height: 1.5; }
+/* Base sizing for "plain" textareas (settings forms, prompt editor,
+   etc.). The chat composer's textarea opts out of this — it has its
+   own compact single-line + auto-grow sizing in .chat-view__textarea.
+   The :where() wrapper keeps this rule at zero specificity so the
+   chat composer's override always wins regardless of declaration
+   order. */
+:where(textarea.input):not(.chat-view__textarea) {
+  resize: vertical;
+  font-family: inherit;
+  min-height: 88px;
+  line-height: 1.5;
+}
 
 .checkbox {
   width: 20px;
@@ -1463,6 +1474,12 @@ textarea#projectEditor {
   bottom: calc(var(--safe-bottom) + 4px);
   margin: 0 12px;
 }
+/* Composer textarea: single-line when empty, grows up to 140px
+   as the user types. The base `textarea.input` rule has its own
+   88px min-height (for settings forms) so the :where() :not()
+   selector above excludes this class — the chat composer owns
+   its own sizing. 44px matches the --tap touch target so the
+   row lines up with the send button. */
 .chat-view__textarea {
   flex: 1 1 0;
   min-width: 0;
@@ -1471,11 +1488,11 @@ textarea#projectEditor {
   box-shadow: none;
   resize: none;
   font-family: inherit;
-  height: 36px;
-  min-height: 36px;
-  max-height: 120px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 140px;
   line-height: 1.4;
-  padding: 8px 4px;
+  padding: 10px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
@@ -1484,13 +1501,16 @@ textarea#projectEditor {
 }
 .chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
 .chat-view__send {
-  width: 36px;
-  height: 36px;
+  /* 44px square: matches the --tap touch target used everywhere
+     else in the app, and matches the textarea's min-height so the
+     row stays a single line when the composer is at rest. */
+  width: 44px;
+  height: 44px;
   padding: 0;
-  min-height: 36px;
+  min-height: 44px;
   flex-shrink: 0;
   border-radius: 50%;
-  margin: 2px 2px 2px 0;
+  margin: 0;
 }
 .chat-view__send svg { display: block; margin-left: -2px; }
 .chat-view__status {
