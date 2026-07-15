@@ -60,9 +60,29 @@ function modelForClient(model) {
   return connectionForClient(model);
 }
 
+// The app-level store accumulates server-only bookkeeping that the browser
+// has no business seeing: in-flight OAuth flows (`authPending`, which carry a
+// PKCE `codeVerifier` and CSRF `state` — real secrets), the CDP debugger URL,
+// and anything a future feature stashes there. Rather than blocklist each new
+// leak, we allowlist the exact keys the web UI consumes. Everything else is
+// dropped before it ever hits the wire.
+const CLIENT_SETTINGS_KEYS = Object.freeze([
+  'providers',      // app-level provider connections (apiKey redacted below)
+  'models',         // user-defined models
+  'projects',       // registered project cards
+  'promptSize',     // default prompt-size profile
+  'githubCopilot',  // { clientId } for the custom OAuth app
+  'modelPricing',   // per-model cost table
+  'authAccounts',   // non-secret OAuth account index
+  'flags'           // server-side feature toggles (non-secret)
+]);
+
 function settingsForClient(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const safe = { ...value };
+  const safe = {};
+  for (const key of CLIENT_SETTINGS_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) safe[key] = value[key];
+  }
   if (Array.isArray(safe.providers)) safe.providers = safe.providers.map(connectionForClient);
   if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
   return safe;
