@@ -1,208 +1,218 @@
 // mouaif web — SettingsProjectView
+//
+// Per-project settings, mobile-first. The project is known on arrival
+// (from its card or the Settings → Active project link via ?projectDir),
+// so there is no directory picker here. The primary UI is structured
+// controls (prompt size, shell tool, custom prompts); the raw
+// .mouaif.json editor and the resolved (effective) object live in a
+// collapsed "Advanced" section for power users who want to hand-edit the
+// file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 
 export function SettingsProjectView({ projectDir: initialDir } = {}) {
-  const projectDir = useRef(null);
-  const loadBtn = useRef(null);
   const statusEl = useRef(null);
-  const resolvedStatus = useRef(null);
+  const pathEl = useRef(null);
+  // Structured controls
+  const promptSizeSel = useRef(null);
+  const promptSizeStatus = useRef(null);
+  const shellToggle = useRef(null);
+  const shellStatus = useRef(null);
+  const promptsCard = useRef(null);
+  const promptsSummary = useRef(null);
+  // Advanced (raw JSON + resolved)
   const editor = useRef(null);
   const saveBtn = useRef(null);
   const revertBtn = useRef(null);
+  const editorStatus = useRef(null);
   const resolvedOut = useRef(null);
-  const resolvedDir = useRef(null);
-  const promptsCard = useRef(null);
-  const promptsSummary = useRef(null);
-  const shellToggle = useRef(null);
-  const shellStatus = useRef(null);
 
   let currentProject = {};
   const loadedDir = useRef('');
 
-  async function load() {
-    const dir = (projectDir.current && projectDir.current.value || '').trim();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
-    if (loadBtn.current) loadBtn.current.disabled = true;
+  function dir() { return loadedDir.current; }
+
+  async function load(seedDir) {
+    const d = (seedDir || '').trim();
+    if (!d) { setStatus(statusEl, 'no project selected', 'error'); return; }
+    loadedDir.current = d;
     setStatus(statusEl, 'loading…', 'busy');
     const [projRes, resolvedRes] = await Promise.all([
-      fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(dir)),
-      fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir))
+      fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(d)),
+      fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(d))
     ]);
-    if (loadBtn.current) loadBtn.current.disabled = false;
-    if (projRes.status !== 200) { setStatus(statusEl, 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : ''), 'error'); return; }
-    currentProject = projRes.body.project || {};
-    loadedDir.current = dir;
-    // Make the loaded project the active one for downstream views
-    // (Custom prompts, etc.) so the user does not have to re-pick it.
-    setActiveProject(dir, '');
-    if (promptsCard.current) {
-      promptsCard.current.href = '#/settings/prompts?projectDir=' + encodeURIComponent(dir);
+    if (projRes.status !== 200) {
+      setStatus(statusEl, 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : ''), 'error');
+      return;
     }
-    // Refresh the prompts count for the card summary.
+    currentProject = projRes.body.project || {};
+    // Make the loaded project the active one for downstream views.
+    setActiveProject(d, '');
+    if (pathEl.current) pathEl.current.textContent = projRes.body.path || d;
+    if (promptsCard.current) promptsCard.current.href = '#/settings/prompts?projectDir=' + encodeURIComponent(d);
+
+    // Prompt size (project override; '' means "inherit app default").
+    if (promptSizeSel.current) {
+      promptSizeSel.current.value = (currentProject.promptSize && String(currentProject.promptSize)) || '';
+      promptSizeSel.current.disabled = false;
+    }
+    if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
+
+    // Shell tool toggle.
+    if (shellToggle.current) {
+      shellToggle.current.checked = !!(currentProject.tools && currentProject.tools.shell && currentProject.tools.shell.enabled);
+      shellToggle.current.disabled = false;
+    }
+    if (shellStatus.current) shellStatus.current.textContent = '';
+
+    // Prompts count for the card summary.
     try {
-      const pr = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(dir));
+      const pr = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(d));
       if (promptsSummary.current) {
         if (pr.status === 200) {
           const n = (pr.body.prompts || []).length;
           promptsSummary.current.textContent = n ? (n + (n === 1 ? ' prompt' : ' prompts')) : 'no prompts yet';
-        } else {
-          promptsSummary.current.textContent = '—';
-        }
+        } else { promptsSummary.current.textContent = '—'; }
       }
     } catch { if (promptsSummary.current) promptsSummary.current.textContent = '—'; }
-    if (editor.current) {
-      editor.current.hidden = false;
-      editor.current.value = JSON.stringify(currentProject, null, 2);
-    }
-    // Sync the shell-tool toggle from the raw project file.
-    if (shellToggle.current) {
-      const on = !!(currentProject.tools && currentProject.tools.shell && currentProject.tools.shell.enabled);
-      shellToggle.current.checked = on;
-      shellToggle.current.disabled = false;
-    }
-    if (shellStatus.current) shellStatus.current.textContent = '';
+
+    // Advanced: raw project file + resolved object.
+    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (revertBtn.current) revertBtn.current.disabled = false;
-    setStatus(statusEl, 'path: ' + (projRes.body.path || ''), 'success');
-    if (resolvedRes.status === 200) {
-      const currentResolved = resolvedRes.body.resolved || {};
-      if (resolvedDir.current) resolvedDir.current.textContent = dir;
-      if (resolvedOut.current) {
-        const redacted = JSON.parse(JSON.stringify(currentResolved));
-        if (Array.isArray(redacted.providers)) {
-          redacted.providers = redacted.providers.map((p) => {
-            if (!p || typeof p !== 'object') return p;
-            if (typeof p.apiKey === 'string') p.apiKey = p.apiKey ? '•••' : '';
-            return p;
-          });
-        }
-        resolvedOut.current.hidden = false;
-        resolvedOut.current.textContent = JSON.stringify(redacted, null, 2);
+    if (resolvedRes.status === 200 && resolvedOut.current) {
+      const redacted = JSON.parse(JSON.stringify(resolvedRes.body.resolved || {}));
+      if (Array.isArray(redacted.providers)) {
+        redacted.providers = redacted.providers.map((p) => {
+          if (!p || typeof p !== 'object') return p;
+          if (typeof p.apiKey === 'string') p.apiKey = p.apiKey ? '•••' : '';
+          return p;
+        });
       }
-      if (resolvedStatus.current) setStatus(resolvedStatus, 'ok', 'success');
-    } else {
-      if (resolvedStatus.current) setStatus(resolvedStatus, 'HTTP ' + resolvedRes.status, 'error');
+      resolvedOut.current.textContent = JSON.stringify(redacted, null, 2);
     }
+    setStatus(statusEl, 'loaded', 'success');
   }
 
-  async function save() {
-    const dir = (projectDir.current && projectDir.current.value || '').trim();
-    if (!dir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
+  // PATCH one key into the project file, keeping currentProject + the
+  // advanced editor in sync. Returns true on success.
+  async function patchProject(patch, statusRef, okMsg) {
+    const d = dir();
+    if (!d) { if (statusRef && statusRef.current) statusRef.current.textContent = 'no project'; return false; }
+    if (statusRef && statusRef.current) statusRef.current.textContent = 'saving…';
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir: d }, patch))
+    });
+    if (r.status !== 200) {
+      if (statusRef && statusRef.current) statusRef.current.textContent = 'HTTP ' + r.status;
+      return false;
+    }
+    currentProject = r.body.project || Object.assign({}, currentProject, patch);
+    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    if (statusRef && statusRef.current) statusRef.current.textContent = okMsg || 'saved';
+    return true;
+  }
+
+  async function onPromptSize(e) {
+    const v = e && e.target ? e.target.value : '';
+    // Empty string clears the project override (inherit app default).
+    await patchProject({ promptSize: v || undefined }, promptSizeStatus, v ? ('set to ' + v) : 'inheriting app default');
+  }
+
+  async function onShellToggle(e) {
+    const want = !!(e && e.target && e.target.checked);
+    if (shellToggle.current) shellToggle.current.disabled = true;
+    const next = { tools: Object.assign({}, currentProject.tools) };
+    next.tools.shell = Object.assign({}, next.tools && next.tools.shell, { enabled: want });
+    const ok = await patchProject(next, shellStatus, want ? 'shell tool enabled' : 'shell tool disabled');
+    if (shellToggle.current) shellToggle.current.disabled = false;
+    if (!ok && shellToggle.current) shellToggle.current.checked = !want;
+  }
+
+  // Advanced: save the raw JSON editor verbatim.
+  async function saveRaw() {
+    const d = dir();
+    if (!d) { if (editorStatus.current) editorStatus.current.textContent = 'no project'; return; }
     let parsed;
     try { parsed = JSON.parse((editor.current && editor.current.value) || '{}'); }
-    catch (e) { setStatus(statusEl, 'invalid JSON: ' + e.message, 'error'); return; }
+    catch (e) { if (editorStatus.current) editorStatus.current.textContent = 'invalid JSON: ' + e.message; return; }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      setStatus(statusEl, 'project body must be a JSON object', 'error');
+      if (editorStatus.current) editorStatus.current.textContent = 'must be a JSON object';
       return;
     }
     if (saveBtn.current) saveBtn.current.disabled = true;
-    setStatus(statusEl, 'saving…', 'busy');
     const r = await fetchJson('/api/settings/project', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir: dir }, parsed))
+      body: JSON.stringify(Object.assign({ projectDir: d }, parsed))
     });
     if (saveBtn.current) saveBtn.current.disabled = false;
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
-    setStatus(statusEl, 'saved.', 'success');
-    currentProject = r.body.project || currentProject;
-    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
-    await load();
+    if (r.status !== 200) { if (editorStatus.current) editorStatus.current.textContent = 'HTTP ' + r.status; return; }
+    if (editorStatus.current) editorStatus.current.textContent = 'saved';
+    // Re-sync the structured controls from the saved file.
+    await load(d);
   }
 
-  function revert() {
+  function revertRaw() {
     if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
-    setStatus(statusEl, 'reverted.', 'success');
+    if (editorStatus.current) editorStatus.current.textContent = 'reverted';
   }
 
-  // Toggle the native shell tool for this project. Persists
-  // tools.shell.enabled on the project file. The model can run
-  // commands in the project dir only when this is on.
-  async function toggleShell(e) {
-    const dir = loadedDir.current || (projectDir.current && projectDir.current.value || '').trim();
-    if (!dir) { if (shellStatus.current) shellStatus.current.textContent = 'load a project first'; return; }
-    const want = !!(e && e.target && e.target.checked);
-    if (shellToggle.current) shellToggle.current.disabled = true;
-    if (shellStatus.current) shellStatus.current.textContent = 'saving…';
-    const next = Object.assign({}, currentProject);
-    next.tools = Object.assign({}, next.tools);
-    next.tools.shell = Object.assign({}, next.tools.shell, { enabled: want });
-    const r = await fetchJson('/api/settings/project', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir: dir }, next))
-    });
-    if (shellToggle.current) shellToggle.current.disabled = false;
-    if (r.status !== 200) {
-      if (shellToggle.current) shellToggle.current.checked = !want;
-      if (shellStatus.current) shellStatus.current.textContent = 'HTTP ' + r.status;
-      return;
-    }
-    currentProject = r.body.project || next;
-    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
-    if (shellStatus.current) shellStatus.current.textContent = want ? 'shell tool enabled' : 'shell tool disabled';
-  }
-
-  // Seed the directory field from the route (?projectDir=...) or the active
-  // project, then auto-load so arriving from the Settings home card lands on
-  // the project's data without a manual paste + tap.
+  // Seed the project silently from the route (?projectDir=...) or the
+  // active project, then auto-load. No manual directory entry.
   useEffect(() => {
     const seed = (initialDir && initialDir.trim())
       || (activeProject.value && activeProject.value.dir)
       || '';
-    if (seed && projectDir.current) {
-      projectDir.current.value = seed;
-      load().catch((e) => setStatus(statusEl, 'load failed: ' + e.message, 'error'));
-    }
+    if (seed) load(seed).catch((e) => setStatus(statusEl, 'load failed: ' + e.message, 'error'));
+    else setStatus(statusEl, 'open this from a project card', 'error');
   }, [initialDir]);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
-      h('h2', { class: 'view-title' }, 'Project overrides')
+      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
+      h('h2', { class: 'view-title' }, 'Project settings')
     ),
     h('section', null,
-      h('p', { class: 'hint hint--compact' }, 'Project files live at ', h('code', null, '.mouaif.json'), ' inside the project folder. Models reference a provider configured at the app level.'),
+      h('p', { class: 'hint hint--compact' },
+        h('code', { ref: pathEl }, '…'),
+        ' — settings live in ', h('code', null, '.mouaif.json'), ' and can be committed with the project.'
+      ),
+      h('div', { class: 'row' }, h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })),
+
+      // ---- Prompt size ------------------------------------------------
       h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-project-dir' }, 'Project directory'),
-        h('div', { class: 'row row--inline' },
-          h('input', { ref: projectDir, class: 'input', id: 'sp-project-dir', type: 'text', placeholder: 'C:/path/to/project' }),
-          h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: load }, 'Load')
-        )
+        h('label', { class: 'label', for: 'sp-prompt-size' }, 'Prompt size (this project)'),
+        h('select', { ref: promptSizeSel, class: 'input', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
+          h('option', { value: '' }, 'Inherit app default'),
+          h('option', { value: 'very-small' }, 'very-small'),
+          h('option', { value: 'average' }, 'average'),
+          h('option', { value: 'extensive' }, 'extensive')
+        ),
+        h('span', { ref: promptSizeStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, '')
       ),
-      h('div', { class: 'row' },
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
-      ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
-        h('textarea', { ref: editor, class: 'input', id: 'sp-project-editor', rows: 10, hidden: true, spellcheck: false })
-      ),
-      h('div', { class: 'row row--actions' },
-        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save, disabled: true }, 'Save'),
-        h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revert, disabled: true }, 'Revert')
-      ),
-      h('h3', null, 'Resolved (effective for this project)'),
-      h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. The chat layer reads this merged object. Provider keys are redacted.'),
-      h('p', { class: 'hint hint--compact' }, h('code', { ref: resolvedDir }, '')),
-      h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true }),
-      h('div', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' }),
-      h('h3', null, 'Project features'),
+
+      // ---- Tools ------------------------------------------------------
+      h('h3', null, 'Tools'),
       h('label', { class: 'card', 'aria-label': 'Enable shell tool' },
         h('div', { class: 'card__main' },
           h('div', { class: 'card__title' }, 'Shell tool'),
           h('div', { class: 'card__summary' }, 'Let the model run commands in this project folder.')
         ),
-        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: toggleShell })
+        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: onShellToggle })
       ),
       h('p', { ref: shellStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
       h('p', { class: 'hint hint--compact' }, '⚠︎ Commands run with your account, in the project directory. Enable only on projects you trust.'),
+
+      // ---- Prompts ----------------------------------------------------
+      h('h3', null, 'Prompts'),
       h('a', {
         ref: promptsCard,
         class: 'card',
         'aria-label': 'Custom prompts',
-        'data-disabled': '1',
         href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
       },
         h('div', { class: 'card__main' },
@@ -210,6 +220,22 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
           h('div', { ref: promptsSummary, class: 'card__summary' }, '—')
         ),
         h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      ),
+
+      // ---- Advanced (raw file + resolved) ----------------------------
+      h('details', { class: 'settings__advanced' },
+        h('summary', null, 'Advanced — raw file & resolved settings'),
+        h('p', { class: 'hint hint--compact' }, 'Edit ', h('code', null, '.mouaif.json'), ' directly. The structured controls above write the same file.'),
+        h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
+        h('textarea', { ref: editor, class: 'input', id: 'sp-project-editor', rows: 10, spellcheck: false }),
+        h('div', { class: 'row row--actions' },
+          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: true }, 'Save file'),
+          h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revertRaw, disabled: true }, 'Revert'),
+          h('span', { ref: editorStatus, class: 'status', 'aria-live': 'polite' })
+        ),
+        h('h3', null, 'Resolved (effective)'),
+        h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. The chat layer reads this. Provider keys are redacted.'),
+        h('pre', { ref: resolvedOut, class: 'settings__out' })
       )
     )
   );

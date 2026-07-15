@@ -709,6 +709,7 @@ select.input {
   padding: 0;
 }
 .models__add summary,
+.settings__advanced > summary,
 .picker__create > summary {
   cursor: pointer;
   color: var(--accent);
@@ -723,9 +724,12 @@ select.input {
   background: var(--surface);
   border-radius: 10px;
 }
+.settings__advanced { margin: 12px 0 0; }
 .models__add summary::-webkit-details-marker,
+.settings__advanced summary::-webkit-details-marker,
 .picker__create summary::-webkit-details-marker { display: none; }
 .models__add summary::before,
+.settings__advanced > summary::before,
 .picker__create > summary::before {
   content: "›";
   display: inline-block;
@@ -736,6 +740,7 @@ select.input {
   transition: transform 120ms ease;
 }
 .models__add[open] summary::before,
+.settings__advanced[open] > summary::before,
 .picker__create[open] > summary::before { transform: rotate(90deg); }
 .models__add[open] > .row:last-of-type,
 .picker__create[open] > .row:last-of-type { margin-bottom: 4px; }

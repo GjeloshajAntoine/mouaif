@@ -75,6 +75,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
+  'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
   'flags'           // server-side feature toggles (non-secret)
 ]);
 

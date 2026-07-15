@@ -13,7 +13,7 @@
 
 ### Enabling the tool
 
-In **Settings → Project → Project features**, a **Shell tool** switch enables `shell` for that project. It persists `tools.shell.enabled: true` on the project's `.mouaif.json`. With it on, the AI client's outgoing request advertises the tool to the model using the OpenAI-compatible tool-call shape:
+In **Settings → Project settings → Tools** (reachable from a project card's ⋯ menu → **Settings…**), a **Shell tool** switch enables `shell` for that project. It persists `tools.shell.enabled: true` on the project's `.mouaif.json`. With it on, the AI client's outgoing request advertises the tool to the model using the OpenAI-compatible tool-call shape:
 
 ```json
 {
