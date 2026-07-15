@@ -47,27 +47,26 @@ export function ProjectPickerView(props) {
       name.className = 'picker__name';
       name.textContent = e.name;
       li.appendChild(name);
-      if (e.hasChildren) {
-        const open = document.createElement('button');
-        open.className = 'picker__open';
-        open.type = 'button';
-        open.textContent = 'Open';
-        open.setAttribute('aria-label', 'Open ' + e.name);
-        open.addEventListener('click', () => nav('projects/new?dir=' + encodeURIComponent(e.path)));
-        li.appendChild(open);
-      } else {
-        const leaf = document.createElement('span');
-        leaf.className = 'picker__leaf';
-        leaf.textContent = 'empty';
-        li.appendChild(leaf);
-      }
-      const select = document.createElement('button');
-      select.className = 'picker__select';
-      select.type = 'button';
-      select.textContent = 'Select';
-      select.setAttribute('aria-label', 'Select ' + e.name);
-      select.addEventListener('click', () => selectDir(e.path));
-      li.appendChild(select);
+      // The whole row is a tap target that navigates into the
+      // subfolder if it has children, or selects it as the project
+      // if it doesn't. No separate "Open" / "Select" buttons —
+      // the action is the row.
+      li.setAttribute('role', 'button');
+      li.setAttribute('tabindex', '0');
+      li.addEventListener('click', () => {
+        if (e.hasChildren) nav('projects/new?dir=' + encodeURIComponent(e.path));
+        else selectDir(e.path);
+      });
+      li.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          li.click();
+        }
+      });
+      const meta = document.createElement('span');
+      meta.className = 'picker__meta';
+      meta.textContent = e.hasChildren ? '›' : '✓';
+      li.appendChild(meta);
       listEl.current.appendChild(li);
     }
   }
@@ -114,23 +113,27 @@ export function ProjectPickerView(props) {
 
   useEffect(() => { load(props.dir || ''); }, [props.dir]);
 
+  // The picker is a single full-bleed list. Each row is the whole
+  // row tap target (open the folder). A trailing select button on
+  // each row lets the user pick it without navigating in. The
+  // current directory is shown as a single small breadcrumb above
+  // the list; the action row is a single "Select this folder"
+  // button for the current path.
   return h('section', null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
-      h('h2', { class: 'view-title' }, 'Pick a project folder')
+      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
+      h('h2', { class: 'view-title' }, 'Pick a folder')
     ),
-    h('p', { class: 'hint picker__path' }, currentDir.value || 'user home'),
-    h('div', { class: 'row row--actions' },
-      currentDir.value ? h('button', { class: 'btn', type: 'button', onClick: () => { const p = parentDir(); nav('projects/new?dir=' + encodeURIComponent(p || '')); } }, '↑ Up') : null,
-      h('button', { class: 'btn btn--primary', type: 'button', onClick: () => selectDir(currentDir.value) }, 'Select this folder'),
-      h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+    h('p', { class: 'picker__path' }, currentDir.value || 'user home'),
+    h('div', { class: 'page-bar' },
+      h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
+      h('button', { class: 'page-bar__add', type: 'button', onClick: () => selectDir(currentDir.value), 'aria-label': 'Select this folder' }, '✓')
     ),
     h('ul', { ref: listEl, class: 'picker__list', 'aria-label': 'Subfolders' }),
     h('details', { class: 'picker__create' },
       h('summary', null, 'Create new folder'),
       h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'newFolderName' }, 'name'),
-        h('input', { ref: newNameEl, class: 'input', id: 'newFolderName', type: 'text', placeholder: 'my-new-app' })
+        h('input', { ref: newNameEl, class: 'input', id: 'newFolderName', type: 'text', placeholder: 'folder name' })
       ),
       h('div', { class: 'row row--actions' },
         h('button', { ref: createBtn, class: 'btn btn--primary', type: 'button', onClick: createFolder }, 'Create')

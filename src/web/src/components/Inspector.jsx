@@ -342,18 +342,18 @@ export function InspectorView() {
   if (phase.current === 'setup') {
     return h(Fragment, null,
       h('section', null,
-        h('p', { class: 'hint' }, 'Connect to a Chrome instance started with ', h('code', null, '--remote-debugging-port=9222'), '. The address below is the HTTP base of that instance (used to discover page targets); the WebSocket itself is proxied through mouaif.'),
+        h('p', { class: 'hint' }, 'Start Chrome with ', h('code', null, '--remote-debugging-port=9222'), ' and paste its debugger URL below.'),
         h('div', { class: 'row' },
           h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
           h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
         ),
         h('div', { class: 'row row--actions' },
+          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
           h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover only')
-        ),
-        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
-        h('p', { class: 'hint' }, 'Tip: on a phone, run ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' and point the URL at ', h('code', null, 'http://127.0.0.1:9222'), '. The address is stored in the app SQLite store.')
-      )
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
+        )
+      ),
+      h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.')
     );
   }
 

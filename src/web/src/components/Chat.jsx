@@ -69,7 +69,8 @@ export function ChatView(props) {
     if (!list.length) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = '(no models — define models in project settings)';
+      opt.textContent = '(no models)';
+      opt.title = 'Define models in the project settings to start a chat.';
       modelSelect.current.appendChild(opt);
     }
   }

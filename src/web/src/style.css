@@ -112,16 +112,12 @@ html, body {
   min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
-  /* The shell sits inside the viewport; nothing else to add here,
-     but the rule documents why the column is centered. */
   position: relative;
 }
 
 .app__main {
   flex: 1;
-  padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) + 12px);
-  /* Leave room for the sticky bottom tab bar. */
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px);
+  padding: 4px 0 calc(var(--tabbar-h) + var(--safe-bottom) + 4px);
   /* The view inside the main region fades + lifts in on every
      route change. The animation is on the <section> child, not
      on .app__main itself, so re-layout during the transition
@@ -129,8 +125,82 @@ html, body {
 }
 .app__main--flush {
   /* Drill-in screens (chat, picker) own the safe area themselves. */
-  padding-bottom: calc(var(--pad-y) + 12px);
+  padding-bottom: calc(var(--pad-y) + 4px);
 }
+
+/* Groups: iOS-style inset lists. A <section class="group"> holds a
+   title (optional, .group__title) and a list of rows. The list has
+   no border, no shadow, and only a single rounded container — the
+   mobile-native shape (vs. "stacked cards" on a desktop UI). */
+.group {
+  margin: 14px 12px 0;
+  padding: 0;
+  border: 0;
+}
+.group:first-of-type { margin-top: 8px; }
+.group__title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 4px 6px;
+  padding: 0;
+}
+.group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.group__list > li + li { border-top: 1px solid var(--border); }
+.group__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 10px 14px;
+  text-decoration: none;
+  color: var(--fg);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 80ms ease;
+}
+.group__row:hover { background: var(--surface-2); }
+.group__row:active { background: var(--surface-3); }
+.group__row[disabled] { opacity: 0.5; cursor: not-allowed; }
+.group__row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group__row-detail {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+  text-align: right;
+}
+.group__row-chev {
+  color: var(--muted-2);
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 8px;
+}
+.group__row-danger .group__row-label { color: var(--danger); }
 
 /* ---- Motion: view enter + bubble enter + live cursor -------------- */
 
@@ -160,16 +230,17 @@ html, body {
 
 /* ---- App header ----------------------------------------------------- */
 
-/* The brand block on the left of the header. Kept as small as
-   possible: a 24 px logo tile, the title on a single line, and no
-   subtitle. The right side carries a transparent spacer so a future
-   header action (search, profile) can sit there without shifting
-   the brand. */
+/* Slim brand row: just the logo tile, centered or left-aligned.
+   The wordmark is gone — the tab bar carries the page title
+   and the empty space on the right of the header is reclaimed.
+   Padding is tight (4-6 px) so the header takes minimal vertical
+   real estate on a phone. */
 
 .app__header {
-  padding: calc(var(--safe-top) + 6px) var(--pad-x) 6px;
+  padding: calc(var(--safe-top) + 4px) 12px 4px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -181,8 +252,8 @@ html, body {
 }
 
 .app__logo {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   border-radius: 7px;
   background: linear-gradient(135deg, #7fb1ff 0%, #5b8bff 100%);
@@ -191,26 +262,66 @@ html, body {
   justify-content: center;
   color: var(--on-accent);
   font-weight: 800;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: -0.02em;
-  box-shadow: 0 2px 8px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
+  box-shadow: 0 2px 6px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
 .app__title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  background: linear-gradient(180deg, #fff, #c8d4e3);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  line-height: 1.1;
+  /* The header only carries the logo now; the wordmark is hidden
+     by default to keep the chrome minimal on a phone. Views that
+     need a title (Settings) render their own h1 inside .group__title
+     or a dedicated .view-title. The class is kept so a future
+     header action can re-enable it. */
+  display: none;
 }
 
 /* (No right-side header spacer. The brand is the only header
    content today. A future header action (search, profile) can
    live in the same row without needing a placeholder.) */
+
+/* Page bar: a slim, sticky-ish header row that holds a page title
+   on the left and a single primary action on the right. Used on
+   the Chats / Projects view to replace the old "Add project +
+   Refresh" button bar. The title is in the same scale as the
+   .view-title so it doesn't shout. */
+.page-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 8px;
+}
+.page-bar__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.page-bar__status {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.page-bar__add {
+  font: inherit;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 80ms ease, transform 80ms ease;
+}
+.page-bar__add:hover  { background: var(--accent-press); }
+.page-bar__add:active { transform: scale(0.95); }
 
 /* ---- Bottom tab bar ------------------------------------------------ */
 
@@ -220,16 +331,14 @@ html, body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
-  gap: 2px;
-  padding: 4px 4px calc(4px + var(--safe-bottom));
-  background:
-    linear-gradient(180deg, rgba(12,15,20,0) 0%, rgba(20,25,33,.86) 22%, var(--surface) 50%, var(--surface) 100%);
-  border-top: 1px solid var(--border-strong);
-  -webkit-backdrop-filter: saturate(160%) blur(12px);
-  backdrop-filter: saturate(160%) blur(12px);
+  gap: 0;
+  padding: 4px 6px calc(4px + var(--safe-bottom));
+  background: rgba(20,25,33,.85);
+  border-top: 1px solid rgba(255,255,255,.04);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  backdrop-filter: saturate(160%) blur(20px);
   z-index: 30;
   min-height: var(--tabbar-h);
-  box-shadow: 0 -1px 0 rgba(255,255,255,.02), 0 -6px 18px rgba(0,0,0,.30);
 }
 
 .app__tab {
@@ -238,40 +347,37 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  min-height: var(--tap);
-  padding: 2px 4px;
-  border-radius: 8px;
+  gap: 2px;
+  min-height: 44px;
+  padding: 4px 2px 2px;
+  border-radius: 10px;
   text-decoration: none;
   color: var(--muted);
   background: transparent;
   border: 0;
-  transition: color var(--dur-fast) ease, background var(--dur-fast) ease, transform var(--dur-fast) var(--ease);
+  transition: color 80ms ease, background 80ms ease;
 }
 .app__tab:hover        { color: var(--fg-soft); }
-.app__tab:active       { transform: scale(.94); }
+.app__tab:active       { transform: scale(.96); }
 .app__tab.is-active    { color: var(--accent); }
-.app__tab.is-active .app__tab-icon {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px rgba(127,177,255,.18);
-}
 
 .app__tab-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 22px;
-  border-radius: var(--r-pill);
-  transition: background 120ms ease, color 120ms ease;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: inherit;
+  transition: background 120ms ease;
 }
 .app__tab-icon svg { display: block; }
+.app__tab.is-active .app__tab-icon { background: var(--accent-soft); }
 
 .app__tab-label {
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0;
   line-height: 1.1;
 }
 
@@ -281,27 +387,28 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0 8px;
+  padding: 4px 12px 8px;
 }
 
 .view-back {
   font: inherit;
-  color: var(--fg-soft);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  color: var(--accent);
+  background: transparent;
+  border: 0;
   border-radius: var(--r-md);
-  padding: 0;
-  min-height: var(--tap);
-  min-width: var(--tap);
+  padding: 0 6px;
+  min-height: 36px;
+  min-width: 36px;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.1rem;
   line-height: 1;
-  transition: background 120ms ease, color 120ms ease;
+  transition: opacity 120ms ease;
 }
-.view-back:hover { background: var(--surface-2); color: var(--fg); }
+.view-back:hover { opacity: 0.7; }
+.view-back:active { opacity: 0.5; }
 
 .view-title {
   font-size: 1.05rem;
@@ -312,12 +419,12 @@ html, body {
 
 /* ---- Sections & headings ------------------------------------------ */
 
-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-section:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+/* The old "stacked sections" with a 1 px top border between every
+   block created a desktop feel on mobile. The new layout uses
+   .group (inset rounded containers) with a .group__title for the
+   small caption above each list. The bare <section> default is
+   zeroed out so bare <section> elements no longer draw a divider. */
+section { margin: 0; padding: 0; border: 0; }
 section h2 {
   font-size: 0.7rem;
   font-weight: 700;
@@ -326,33 +433,27 @@ section h2 {
   color: var(--muted);
   margin: 0 0 6px;
 }
-section h3 {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin: 12px 0 6px;
-}
-section h3:first-of-type { margin-top: 8px; }
+section + section,
+.group + .group,
+.group + section,
+section + .group { margin-top: 14px; }
 
 .hint {
   color: var(--fg-soft);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.45;
-  margin: 0 0 10px;
+  margin: 0 12px 10px;
 }
 .hint--compact {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   line-height: 1.4;
-  margin: 0 0 8px;
+  margin: 0 12px 6px;
   color: var(--muted);
 }
 .hint code {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.78em;
+  font-size: 0.85em;
   background: var(--surface-3);
-  border: 1px solid var(--border);
   padding: 1px 5px;
   border-radius: 4px;
   word-break: break-all;
@@ -365,31 +466,42 @@ section h3:first-of-type { margin-top: 8px; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 8px;
+  margin: 0 12px 8px;
 }
 .row--inline  { flex-direction: row; align-items: center; gap: 8px; }
-.row--actions { flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+.row--actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 12px 8px;
+}
+.row--actions .status { flex: 1; }
+.row--actions .btn--primary { margin-left: auto; }
 
 .label {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 500;
   color: var(--muted);
-  letter-spacing: 0.01em;
+  /* The label sits flush against its input, not as a separate
+     block. Most forms in this app use placeholders for short
+     labels and a single line above for descriptions. */
+  letter-spacing: 0;
 }
 
 .input {
   font: inherit;
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 8px 10px;
-  min-height: var(--tap);
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
   width: 100%;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  transition: background 80ms ease, box-shadow 80ms ease;
 }
-.input:hover  { border-color: var(--border-strong); }
-.input:focus  { border-color: var(--accent); background: var(--surface-2); box-shadow: 0 0 0 3px rgba(127,177,255,.18); }
+.input:hover  { background: var(--surface-2); }
+.input:focus  { background: var(--surface-2); box-shadow: 0 0 0 2px var(--accent); }
 .input::placeholder { color: var(--muted-2); }
 
 select.input {
@@ -406,10 +518,38 @@ select.input {
 textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-height: 1.5; }
 
 .checkbox {
-  width: 22px;
-  height: 22px;
-  accent-color: var(--accent);
+  width: 20px;
+  height: 20px;
+  /* Strip the UA default and paint our own checkbox so it works
+     on dark backgrounds. The checkmark is drawn as a CSS pseudo
+     on the label, not on the input itself (the input is hidden
+     but still focusable). */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  margin: 0;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, border-color 80ms ease;
+  flex-shrink: 0;
+}
+.checkbox:hover { border-color: var(--accent); }
+.checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox:checked::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  border-right: 2px solid var(--on-accent);
+  border-bottom: 2px solid var(--on-accent);
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 /* ---- Buttons ------------------------------------------------------ */
@@ -419,16 +559,16 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   font-weight: 500;
   color: var(--fg);
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 0 12px;
-  min-height: var(--tap);
-  font-size: 0.88rem;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 14px;
+  min-height: 36px;
+  font-size: 0.9rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease, color 120ms ease;
+  transition: background 80ms ease, transform 80ms ease, color 80ms ease;
   white-space: nowrap;
 }
 .btn:hover  { background: var(--surface-3); border-color: var(--border-strong); }
@@ -438,12 +578,10 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .btn--primary {
   color: var(--on-accent);
   background: var(--accent);
-  border-color: transparent;
   font-weight: 600;
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 4px 12px rgba(127,177,255,.25);
 }
 .btn--primary:hover  { background: var(--accent-press); }
-.btn--primary:active { background: var(--accent-press); }
+.btn--primary:active { background: var(--accent-press); transform: scale(0.98); }
 
 .btn--danger {
   color: var(--danger);
@@ -515,28 +653,31 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 .models__meta { color: var(--muted); font-size: 0.74rem; line-height: 1.35; word-break: break-all; }
 .models__add,
 .picker__create {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 2px 10px;
-  margin-top: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  margin: 12px 12px 0;
+  padding: 0;
 }
 .models__add summary,
-.picker__create summary {
+.picker__create > summary {
   cursor: pointer;
-  color: var(--fg-soft);
-  font-size: 0.88rem;
+  color: var(--accent);
+  background: transparent;
+  font-size: 0.9rem;
   font-weight: 500;
-  min-height: var(--tap);
+  min-height: 44px;
   display: flex;
   align-items: center;
   list-style: none;
-  padding: 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-radius: 12px;
 }
 .models__add summary::-webkit-details-marker,
 .picker__create summary::-webkit-details-marker { display: none; }
 .models__add summary::before,
-.picker__create summary::before {
+.picker__create > summary::before {
   content: "›";
   display: inline-block;
   width: 16px;
@@ -546,10 +687,12 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   transition: transform 120ms ease;
 }
 .models__add[open] summary::before,
-.picker__create[open] summary::before { transform: rotate(90deg); }
-.models__add[open] > .row:last-of-type { margin-bottom: 4px; }
-.models__add[open] summary,
-.picker__create[open] summary { margin-bottom: 6px; }
+.picker__create[open] > summary::before { transform: rotate(90deg); }
+.models__add[open] > .row:last-of-type,
+.picker__create[open] > .row:last-of-type { margin-bottom: 4px; }
+.picker__create[open] > summary { border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+.picker__create[open] > .row:first-of-type { padding-top: 12px; }
+.picker__create[open] { background: var(--surface); }
 
 /* The "Add a model" form has two fields that must be visible only for
    one of the auth modes (apiKey for apikey, oauthAccount for oauth).
@@ -564,67 +707,72 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 
 /* ---- Settings home (cards) -------------------------------------- */
 
-.settings-home {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
+/* The Settings home is a vertical list of .group blocks. Each group
+   holds 1-4 .card rows (the .card class below is one row in the
+   iOS-style list, not a desktop "stacked card"). The previous
+   "Settings / App defaults" h2/h3 captions and a verbose card
+   summary on every row are gone; the page label is rendered by
+   the view itself if needed, and only the most useful summaries
+   (provider count, project count) survive. */
+.settings-home { margin: 0; padding: 0; border: 0; }
 .settings-home__lead {
   font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 10px;
-  padding-top: 0;
+  margin: 8px 16px 6px;
+  padding: 0;
 }
 .settings-home h3 {
   font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 16px 0 8px;
+  margin: 16px 16px 6px;
   border: 0;
   padding: 0;
 }
 .settings-home__hint {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--fg-soft);
-  line-height: 1.45;
-  margin: 4px 0 0;
+  line-height: 1.4;
+  margin: 0 16px 8px;
   max-width: 38ch;
 }
 
-/* A card is the Settings home's primary affordance. Tap = navigate
-   to the matching sub-view. The whole card is one tap target so
-   the user does not have to hit a small arrow. */
+/* A card is one row in the .group__list. The whole row is the tap
+   target; the chevron is decorative. The <li> parent handles the
+   top divider, so the card itself has no border or margin. */
 .card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 12px 14px;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 14px;
   min-height: var(--tap);
   text-decoration: none;
   color: var(--fg);
-  margin-bottom: 8px;
-  box-shadow: var(--shadow-sm);
-  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+  margin: 0;
+  box-shadow: none;
+  transition: background 80ms ease;
+  width: 100%;
 }
-.card:hover  { background: var(--surface-2); border-color: var(--border-strong); }
-.card:active { transform: scale(0.99); }
+.card:hover  { background: var(--surface-2); }
+.card:active { background: var(--surface-3); }
 .card__main {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
 }
 .card__title {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.95rem;
   letter-spacing: -0.005em;
   min-width: 0;
@@ -634,60 +782,60 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .card__summary {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
+  margin-left: auto;
 }
 .card__chev {
   color: var(--muted-2);
-  font-size: 1.2rem;
+  font-size: 0.95rem;
   line-height: 1;
   flex-shrink: 0;
-  width: 16px;
+  width: 8px;
   text-align: right;
-  /* The chevron is a typographic ›. A subtle transform gives it
-     a small nudge so it feels like an active affordance. */
-  transform: translateX(-2px);
 }
 
 /* ---- Settings: provider list + edit form ------------------------ */
 
 .providers__list {
   list-style: none;
-  margin: 0 0 10px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .providers__empty {
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
+  border-radius: 12px;
   padding: 18px 14px;
   color: var(--muted);
   font-size: 0.88rem;
   text-align: center;
+  margin: 0 12px;
 }
 .provider-row {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: 12px;
   overflow: hidden;
 }
 .provider-row__main {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  padding: 11px 14px;
   min-height: var(--tap);
   text-decoration: none;
   color: var(--fg);
-  transition: background 120ms ease;
+  transition: background 80ms ease;
+  border-top: 1px solid var(--border);
 }
+.provider-row:first-child .provider-row__main { border-top: 0; }
 .provider-row__main:hover  { background: var(--surface-2); }
 .provider-row__main:active { background: var(--surface-3); }
 .provider-row__main > div:first-child {
@@ -695,7 +843,7 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
   min-width: 0;
 }
 .provider-row__name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.95rem;
   min-width: 0;
   overflow: hidden;
@@ -711,9 +859,10 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .provider-row__chev {
   color: var(--muted-2);
-  font-size: 1.2rem;
+  font-size: 0.95rem;
   line-height: 1;
   flex-shrink: 0;
+  width: 8px;
 }
 
 /* The provider edit form reuses the standard .row / .label / .input
@@ -777,34 +926,36 @@ textarea#projectEditor {
 
 /* ---- Projects ---------------------------------------------------- */
 
-.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-/* Each project card pops in with a tiny stagger so loading the list
-   feels like a list arriving, not a single block appearing. The
-   stagger caps at the 4th card so a long list doesn't drag. */
+/* Each project is a single .group: a rounded inset container with
+   the project name on its own row, the path underneath in muted
+   text, then a sub-list of chats. The new-chat button is the last
+   row. This replaces the old "stacked card" layout that felt boxy
+   on a phone. */
+.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .projects__list > li {
   animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
 }
 .projects__list > li:nth-child(1) { animation-delay: 0ms; }
-.projects__list > li:nth-child(2) { animation-delay: 40ms; }
-.projects__list > li:nth-child(3) { animation-delay: 80ms; }
-.projects__list > li:nth-child(n+4) { animation-delay: 110ms; }
+.projects__list > li:nth-child(2) { animation-delay: 30ms; }
+.projects__list > li:nth-child(3) { animation-delay: 60ms; }
+.projects__list > li:nth-child(n+4) { animation-delay: 90ms; }
 .projects__empty {
   color: var(--muted);
   font-size: 0.85rem;
   text-align: center;
-  padding: 20px 12px 18px;
+  padding: 22px 14px 18px;
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
 }
 .projects__empty-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   background: var(--accent-soft);
   color: var(--accent);
   display: inline-flex;
@@ -820,36 +971,39 @@ textarea#projectEditor {
 }
 .projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
 
-/* Project card */
+/* Project card = the .group container; everything inside uses the
+   .group__row shape. */
 .project-card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 12px;
+  border-radius: 12px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  box-shadow: var(--shadow-sm);
 }
-.project-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.project-card__head { display: flex; align-items: center; gap: 4px; }
 .project-card__name {
   font-weight: 600;
-  font-size: 1.02rem;
+  font-size: 1rem;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  padding: 10px 14px;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
 }
 .project-card__name:hover { color: var(--accent); }
 .project-card__path {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   word-break: break-all;
-  margin-top: -4px;
+  padding: 6px 14px 10px;
   line-height: 1.4;
+  border-top: 1px solid var(--border);
 }
 
 .project-card__menu { position: relative; }
@@ -873,27 +1027,51 @@ textarea#projectEditor {
 }
 .project-card__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
 .project-card__menu-btn[aria-expanded="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--fg); }
+.project-card__menu { position: relative; flex-shrink: 0; }
+.project-card__menu-btn {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 1px;
+  border-radius: 8px;
+}
+.project-card__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
 .project-card__menu-pop {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  min-width: 200px;
+  min-width: 180px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
+  border-radius: 10px;
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   z-index: 35;
+  box-shadow: var(--shadow-md);
+}
+.project-card__menu-pop button {
   font: inherit;
   font-size: 0.92rem;
   color: var(--fg);
   background: transparent;
   border: 0;
   text-align: left;
-  padding: 10px 12px;
-  min-height: var(--tap);
+  padding: 8px 12px;
+  min-height: 36px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -902,116 +1080,121 @@ textarea#projectEditor {
 .project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
-  max-height: 220px;
+  max-height: 200px;
   overflow-y: auto;
   margin: 0;
-  padding: 0 2px 0 0;
+  padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  border-top: 1px solid var(--border);
   scrollbar-width: thin;
 }
-.project-card__chats::-webkit-scrollbar {
-  width: 6px;
-}
-.project-card__chats::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
+.project-card__chats::-webkit-scrollbar { width: 6px; }
+.project-card__chats::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 .project-card__chats li {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
-  padding: 7px 10px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
+  padding: 9px 14px;
+  background: transparent;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease);
-  min-height: var(--tap);
+  transition: background 80ms ease;
+  min-height: 40px;
+  border-top: 1px solid var(--border);
 }
-.project-card__chats li:hover  { background: var(--surface-3); }
-.project-card__chats li:active { transform: scale(.985); }
-.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
-.project-card__chat-meta { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
+.project-card__chats li:first-child { border-top: 0; }
+.project-card__chats li:hover  { background: var(--surface-2); }
+.project-card__chats li:active { background: var(--surface-3); }
+.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
+.project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
 .project-card__chat-delete {
   font: inherit;
   color: var(--muted);
   background: transparent;
   border: 0;
-  min-height: var(--tap);
-  min-width: var(--tap);
-  font-size: 1rem;
+  min-height: 32px;
+  min-width: 32px;
+  font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: background 120ms ease, color 120ms ease;
 }
 .project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
 .project-card__chats-empty {
   color: var(--muted);
   font-size: 0.78rem;
-  padding: 8px;
-  background: var(--surface-2);
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md);
+  padding: 12px 14px;
   text-align: center;
+  border-top: 1px solid var(--border);
+  background: transparent;
 }
 .project-card__new {
   font: inherit;
-  color: var(--on-accent);
-  background: var(--accent);
+  color: var(--accent);
+  background: transparent;
   border: 0;
-  border-radius: var(--r-md);
-  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
   min-height: var(--tap);
   font-weight: 600;
-  font-size: 0.88rem;
-  align-self: flex-start;
+  font-size: 0.9rem;
   cursor: pointer;
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 3px 10px rgba(127,177,255,.2);
-  transition: background 120ms ease, transform 80ms ease;
+  text-align: center;
+  width: 100%;
+  transition: background 80ms ease;
 }
-.project-card__new:hover  { background: var(--accent-press); }
-.project-card__new:active { transform: scale(0.98); }
+.project-card__new:hover  { background: var(--surface-2); }
+.project-card__new:active { background: var(--surface-3); }
 .project-card__new:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ---- Picker ------------------------------------------------------- */
 
+/* The picker view: a header, a small breadcrumb of the current
+   directory, a page-bar with the "select this folder" action,
+   the folder list, and a collapsible "create new folder" form.
+   The folder list is a single .group-style rounded container
+   (the same shape as the Settings groups) — each row is a full
+   tap target. */
 .picker__path {
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-  font-size: 0.82rem;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 8px 12px;
   word-break: break-all;
   color: var(--fg-soft);
-  margin: 0 0 14px;
+  margin: 0 12px 8px;
 }
-.picker__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.picker__list {
+  list-style: none;
+  margin: 0 12px;
+  padding: 0;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.picker__list > li + li { border-top: 1px solid var(--border); }
 .picker__empty {
   color: var(--muted);
   font-size: 0.9rem;
   padding: 16px 12px;
   text-align: center;
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md);
 }
 .picker__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 8px 10px 8px 14px;
-  min-height: var(--tap);
-  transition: background 120ms ease, border-color 120ms ease;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 44px;
+  cursor: pointer;
+  transition: background 80ms ease;
+  outline: none;
 }
-.picker__row:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.picker__row:hover { background: var(--surface-2); }
+.picker__row:active { background: var(--surface-3); }
+.picker__row:focus-visible { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
 .picker__name {
   flex: 1;
   min-width: 0;
@@ -1020,38 +1203,20 @@ textarea#projectEditor {
   white-space: nowrap;
   font-size: 0.95rem;
 }
-.picker__leaf { color: var(--muted); font-size: 0.75rem; padding: 0 6px; }
-.picker__open,
-.picker__select {
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--fg);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
-  min-height: var(--tap);
-  min-width: 60px;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+.picker__meta {
+  color: var(--muted-2);
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: right;
 }
-.picker__open:hover { background: var(--surface-3); border-color: var(--border-strong); }
-.picker__select {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: transparent;
-  font-weight: 600;
-}
-.picker__select:hover  { background: var(--accent-press); }
-.picker__select:active { transform: scale(0.98); }
 
 /* ---- Chat view --------------------------------------------------- */
 
 .chat-view {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   /* The chat view fills the main region minus the safe-area top so
      the transcript and composer have room to breathe. The head is
      the only chrome row now (settings live in a popover), so the
@@ -1063,64 +1228,68 @@ textarea#projectEditor {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 0 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 4px 12px 8px;
 }
 
 /* Model select lives in the head row, not in the composer. It
    takes the remaining space and shrinks so the title and action
    buttons still fit on a 360 px viewport. */
 .chat-view__model {
-  min-height: var(--tap);
-  height: var(--tap);
-  padding: 4px 26px 4px 8px;
-  font-size: 0.82rem;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 22px 0 10px;
+  font-size: 0.8rem;
   max-width: 130px;
   flex-shrink: 1;
   min-width: 0;
-  /* Same `width: auto` reset as the composer textarea. The base
-     .input class sets width: 100%, which collapses the select in
-     a flex row. */
+  /* The base .input class sets width: 100%, which collapses the
+     select in a flex row. Reset to auto so flex drives width. */
   width: auto;
+  background: var(--surface-2);
+  border-radius: 8px;
+  color: var(--fg-soft);
+  text-overflow: ellipsis;
 }
 .chat-view__back {
   font: inherit;
   color: var(--fg-soft);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
   padding: 0;
-  min-height: var(--tap);
-  min-width: var(--tap);
-  font-size: 1rem;
+  min-height: 36px;
+  min-width: 36px;
+  font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background 80ms ease, color 80ms ease;
 }
 .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
+.chat-view__back:active { background: var(--surface-3); }
 
 .chat-view__iconbtn {
   font: inherit;
   color: var(--fg-soft);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
   padding: 0;
-  min-height: var(--tap);
-  min-width: var(--tap);
+  min-height: 36px;
+  min-width: 36px;
   font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__iconbtn:hover { background: var(--surface-2); color: var(--fg); border-color: var(--border-strong); }
-.chat-view__iconbtn--danger { color: var(--danger); border-color: rgba(255,138,138,.3); }
-.chat-view__iconbtn--danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+.chat-view__iconbtn:hover { background: var(--surface-2); color: var(--fg); }
+.chat-view__iconbtn--danger { color: var(--danger); }
+.chat-view__iconbtn--danger:hover { background: var(--danger-soft); }
 
 .chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .chat-view__name {
@@ -1146,30 +1315,28 @@ textarea#projectEditor {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  min-width: 200px;
+  min-width: 220px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  padding: 10px;
+  border-radius: 10px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   z-index: 35;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  white-space: nowrap;
+  box-shadow: var(--shadow-md);
 }
-.chat-view__settings-row .label { white-space: nowrap; }
-.chat-view__settings-row .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; flex: 1; min-width: 0; }
+.chat-view__settings-pop .chat-view__settings-row { padding: 6px 8px; border-radius: 8px; }
+.chat-view__settings-pop .chat-view__settings-row:hover { background: var(--surface-2); }
+.chat-view__settings-row .label { white-space: nowrap; color: var(--muted); font-size: 0.78rem; }
+.chat-view__settings-row .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; flex: 1; min-width: 0; background: var(--surface); border-radius: 6px; }
 
 /* Transcript */
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 2px 0 4px;
+  padding: 4px 12px;
   flex: 1;
   min-height: 180px;
   max-height: 58dvh;
@@ -1216,27 +1383,22 @@ textarea#projectEditor {
 .chat-msg--assistant .chat-msg__role { color: var(--accent); }
 .chat-msg__body {
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 16px 16px 16px 4px;
-  padding: 7px 11px;
+  border-radius: 18px 18px 18px 4px;
+  padding: 8px 12px;
   max-width: 82%;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   line-height: 1.4;
-  box-shadow: var(--shadow-sm);
 }
 .chat-msg--user .chat-msg__body {
   background: var(--accent);
   color: var(--on-accent);
-  border-color: transparent;
-  border-radius: 16px 16px 4px 16px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 3px 10px rgba(127,177,255,.18);
+  border-radius: 18px 18px 4px 18px;
 }
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
   color: var(--danger);
-  border-color: rgba(255,138,138,.4);
   font-style: italic;
 }
 .chat-msg__ts { display: none; }
@@ -1256,11 +1418,8 @@ textarea#projectEditor {
 .chat-view__empty {
   color: var(--muted);
   font-size: 0.85rem;
-  padding: 22px 12px 20px;
+  padding: 28px 20px 24px;
   text-align: center;
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1275,15 +1434,16 @@ textarea#projectEditor {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 4px;
 }
 .chat-view__empty-icon svg { display: block; }
 .chat-view__empty-title {
   color: var(--fg);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   margin: 0;
 }
-.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
+.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.82rem; }
 
 /* Composer: a single horizontal row — textarea + send button —
    with the status line wrapping to the next line. The previous
@@ -1296,43 +1456,41 @@ textarea#projectEditor {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 6px;
-  padding: 6px 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-md);
+  padding: 4px 4px 4px 8px;
+  background: var(--surface-2);
+  border-radius: 22px;
   position: sticky;
-  bottom: calc(var(--safe-bottom) + 6px);
+  bottom: calc(var(--safe-bottom) + 4px);
+  margin: 0 12px;
 }
 .chat-view__textarea {
   flex: 1 1 0;
   min-width: 0;
-  background: var(--bg);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   resize: none;
   font-family: inherit;
-  height: 40px;
-  min-height: 40px;
-  max-height: 140px;
+  height: 36px;
+  min-height: 36px;
+  max-height: 120px;
   line-height: 1.4;
-  padding: 9px 10px;
-  /* The base .input class sets width: 100%. That wins over the
-     flex sizing in a row container, collapsing the textarea to
-     its intrinsic width. Reset to auto so the flex shorthand
-     above drives the width. */
+  padding: 8px 4px;
   width: auto;
-  /* Auto-grow is handled by JS (textarea height) since `field-sizing:
-     content` is not yet stable. We zero out the inline height before
-     measuring scrollHeight so a long paste that already expanded the
-     box re-measures correctly. */
+  color: var(--fg);
+  border-radius: 0;
+  outline: none;
   overflow-y: auto;
 }
+.chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
 .chat-view__send {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   padding: 0;
-  min-height: 44px;
+  min-height: 36px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 50%;
+  margin: 2px 2px 2px 0;
 }
 .chat-view__send svg { display: block; margin-left: -2px; }
 .chat-view__status {
@@ -1375,6 +1533,17 @@ textarea#projectEditor {
   /* The caret on a live assistant message is pure decoration; hide
      it for reduced-motion users rather than freeze the blink. */
   .chat-msg[data-live="1"] .chat-msg__body::after { content: none; }
+}
+
+/* Reduce the inspector's verbose intro paragraph on a phone. The
+   original hint explained how to start Chrome with --remote-debugging-
+   port=9222 in two long sentences; on a 360 px viewport that took
+   6 lines. The current copy is one short sentence. */
+.inspector__lead {
+  margin: 4px 12px 8px;
+  color: var(--fg-soft);
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 /* ---- Inspector ------------------------------------------------------ */

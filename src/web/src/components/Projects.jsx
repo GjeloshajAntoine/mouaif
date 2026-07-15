@@ -5,7 +5,6 @@ import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 
 export function ProjectsView() {
-  const refreshProjects = useRef(null);
   const projectsList = useRef(null);
   const projectsStatus = useRef(null);
 
@@ -201,11 +200,15 @@ export function ProjectsView() {
 
   useEffect(() => { loadProjects(); }, [projectsReload.value]);
 
+  // The action bar is a slim row: a small page title on the left
+  // ("Chats") and a single + button on the right. Refresh is gone
+  // — the list re-loads when the route is re-entered, which is
+  // when the user actually needs fresh data.
   return h('section', null,
-    h('div', { class: 'row row--actions' },
-      h('button', { class: 'btn btn--primary', type: 'button', onClick: () => nav('projects/new') }, '+ Add project'),
-      h('button', { ref: refreshProjects, class: 'btn', type: 'button', onClick: loadProjects }, 'Refresh'),
-      h('span', { ref: projectsStatus, class: 'status', 'aria-live': 'polite' })
+    h('div', { class: 'page-bar' },
+      h('div', { class: 'page-bar__title' }, 'Chats'),
+      h('span', { ref: projectsStatus, class: 'status page-bar__status', 'aria-live': 'polite' }),
+      h('button', { class: 'page-bar__add', type: 'button', onClick: () => nav('projects/new'), 'aria-label': 'Add project' }, '+')
     ),
     h('ul', { ref: projectsList, class: 'projects__list', 'aria-label': 'Registered projects' })
   );

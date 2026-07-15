@@ -74,16 +74,14 @@ export function SettingsProvidersView() {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
-      h('h2', { class: 'view-title' }, 'Provider connections')
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '‹'),
+      h('h2', { class: 'view-title' }, 'Providers')
     ),
-    h('section', null,
-      h('p', { class: 'hint hint--compact' }, 'Credentials are stored once at the app level. Each project\'s models reference one of these providers.'),
-      h('ul', { ref: listEl, class: 'providers__list', 'aria-label': 'Configured providers' }),
-      h('div', { class: 'row row--actions' },
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
-        h('a', { href: '#/settings/providers/new', class: 'btn btn--primary' }, '+ Add provider')
-      )
+    h('p', { class: 'hint hint--compact' }, 'Credentials live in the app store. Each project\'s models reference one of these.'),
+    h('ul', { ref: listEl, class: 'providers__list', 'aria-label': 'Configured providers' }),
+    h('div', { class: 'page-bar' },
+      h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
+      h('a', { href: '#/settings/providers/new', class: 'page-bar__add', 'aria-label': 'Add provider' }, '+')
     )
   );
 }
