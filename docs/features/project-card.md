@@ -74,7 +74,7 @@ The mobile UI shows a "Projects" section between Settings and Auth. Each project
 
 - A header: project name (left), options menu (right) — a `⋯` button that opens a small popover with **Rename…** and **Unregister** (red, danger style).
 - The on-disk path, in muted monospace, below the name.
-- A chat list scroller (`max-height: 240px`, `overflow-y: auto`) so the page itself doesn't scroll. Each item is the chat title, a `promptSize · lastOpenedAt` line, and a `×` delete button.
+- A chat list scroller (`max-height: 200px`, `overflow-y: auto`) so the page itself doesn't scroll. Each item is the chat title, a `<friendly promptSize label> · <lastOpenedAt>` line, and a `×` delete button. The list is sorted by `lastOpenedAt` descending (ties and never-opened chats fall back to `createdAt`); the raw `promptSize` id is mapped to its friendly label (`Very small` / `Average` / `Extensive`) so the wording matches the chat view's meta line.
 - A "+ New chat" button at the bottom of the card.
 
 The cards are rendered in the order returned by `/api/projects/registered`. The panel has a Refresh button that re-fetches the list.
@@ -84,7 +84,8 @@ The cards are rendered in the order returned by `/api/projects/registered`. The 
 - **Chats inherit prompt size only.** A new chat's `promptSize` defaults to the resolved project's `promptSize` (or `average` if unset). Its `trace` flag defaults to `false`; the caller may explicitly pass `trace: true` on `POST /api/chats`.
 - **Chat ids are 8 hex characters** (`crypto.randomBytes(4).toString('hex')`). The probability of collision within a single project is small enough to ignore for a per-project chat list; a future commit can switch to a longer id if it becomes a real concern.
 - **Unregister does not delete the folder.** It removes the project from the app-level `projects` array; the on-disk `<projectDir>/.mouaif.json` and any chats in it are preserved. Re-registering the same folder brings the project back, but the chats are a separate data source (the project file) and the chat list is recomputed from the file.
-- **The chat list scrolls inside the card, not the page.** `max-height: 240px; overflow-y: auto` on the inner `<ul>`. Long chat lists do not push the page; the page stays put.
+- **The chat list scrolls inside the card, not the page.** `max-height: 200px; overflow-y: auto` on the inner `<ul>`. Long chat lists do not push the page; the page stays put.
+- **The chat list is sorted by recency.** Most-recently-opened chat first; ties and never-opened chats fall back to `createdAt`. The raw `promptSize` id is mapped to its friendly label (`Very small` / `Average` / `Extensive`) so the wording matches the chat view's meta line; an unknown id is shown as-is so a deleted profile still renders something.
 - **Project rename is a label only.** It updates the `name` field in the registered-projects array; the on-disk folder name is not touched. The display name in the card updates immediately on success; the project list refetches on the next Refresh.
 - **Chat delete is irreversible.** The server returns 200 with `{ ok: true, removed: <id> }`; the client removes the row from the list. A second DELETE on the same id returns 404.
 

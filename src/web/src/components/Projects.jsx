@@ -135,7 +135,17 @@ export function ProjectsView() {
       ul.appendChild(empty);
       return;
     }
-    for (const c of chats) {
+    // Most-recently-opened first; ties and never-opened chats fall
+    // back to createdAt. Without this the list is just "insertion
+    // order in .mouaif.json", which is unhelpful once a project has
+    // more than a couple of chats.
+    const sorted = chats.slice().sort((a, b) => {
+      const aT = a.lastOpenedAt || a.createdAt || '';
+      const bT = b.lastOpenedAt || b.createdAt || '';
+      if (aT === bT) return 0;
+      return aT < bT ? 1 : -1;
+    });
+    for (const c of sorted) {
       const li = document.createElement('li');
       const title = document.createElement('span');
       title.className = 'project-card__chat-title';
@@ -143,7 +153,15 @@ export function ProjectsView() {
       li.appendChild(title);
       const meta = document.createElement('span');
       meta.className = 'project-card__chat-meta';
-      meta.textContent = c.promptSize + ' · ' + fmtDate(c.lastOpenedAt || c.createdAt);
+      // The chat view shows the friendly profile label ('Average',
+      // 'Extensive', 'Very small') in its meta line; the chat list
+      // was showing the raw id ('average', 'extensive',
+      // 'very-small'). Map id -> label here so both surfaces use
+      // the same wording; fall back to the id for unknown values
+      // (e.g. a profile that was removed) so we never print
+      // "undefined".
+      const label = profileLabel(c.promptSize);
+      meta.textContent = label + ' · ' + fmtDate(c.lastOpenedAt || c.createdAt);
       li.appendChild(meta);
       const del = document.createElement('button');
       del.className = 'project-card__chat-delete';
@@ -162,6 +180,19 @@ export function ProjectsView() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString();
+  }
+
+  // Friendly label for a promptSize id, matching the labels the
+  // server returns from /api/prompt-profiles. Kept inline so the
+  // chat list doesn't have to wait for a second fetch before it
+  // can render; if the id isn't one of the three known profiles,
+  // return the id itself rather than an empty string (a deleted
+  // profile should still render as something).
+  function profileLabel(id) {
+    if (id === 'very-small') return 'Very small';
+    if (id === 'average')    return 'Average';
+    if (id === 'extensive')  return 'Extensive';
+    return id || '';
   }
 
   async function createProjectChat(project, btn, ul) {
