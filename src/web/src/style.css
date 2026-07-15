@@ -1133,6 +1133,13 @@ textarea#projectEditor {
 .project-card__chats li:active { background: var(--surface-3); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
 .project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+/* Trace-on indicator. The Projects.jsx renderer appends " · trace"
+   and sets data-trace="1" on the meta span so chats with the
+   per-chat trace-to-file override are glanceable on a phone
+   without opening them. Color is the warning amber so it stands
+   out from the muted neutral but doesn't compete with the
+   destructive red used by the delete button. */
+.project-card__chat-meta[data-trace="1"] { color: var(--warning); }
 .project-card__chat-delete {
   font: inherit;
   color: var(--muted);

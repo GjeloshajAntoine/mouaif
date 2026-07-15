@@ -80,7 +80,7 @@ export function ProjectsView() {
     newBtn.className = 'project-card__new';
     newBtn.type = 'button';
     newBtn.textContent = '+ New chat';
-    newBtn.addEventListener('click', () => createProjectChat(project, newBtn, chatsUl));
+    newBtn.addEventListener('click', () => createProjectChat(project, newBtn));
     frag.appendChild(newBtn);
 
     return frag;
@@ -104,7 +104,11 @@ export function ProjectsView() {
     function close() { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
     function toggle() { pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', String(!pop.hidden)); }
     btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-    document.addEventListener('click', () => close());
+    // Document-level close is wired once at the view level (see
+    // the useEffect below) so it doesn't stack one listener per
+    // project card on every reload. The pop's own toggle still
+    // stops propagation so the document click won't re-close it
+    // mid-toggle.
     function addItem(label, fn, danger) {
       const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
       if (danger) b.setAttribute('data-danger', '1');
@@ -131,7 +135,9 @@ export function ProjectsView() {
     if (!chats.length) {
       const empty = document.createElement('li');
       empty.className = 'project-card__chats-empty';
-      empty.textContent = 'no chats yet';
+      // Warmer copy than 'no chats yet': mentions the + New chat
+      // button so the user knows where the primary action is.
+      empty.textContent = 'No chats yet. Tap "+ New chat" below to start one.';
       ul.appendChild(empty);
       return;
     }
@@ -149,7 +155,11 @@ export function ProjectsView() {
       const li = document.createElement('li');
       const title = document.createElement('span');
       title.className = 'project-card__chat-title';
-      title.textContent = c.title || c.id;
+      // The server defaults title to 'New chat' on create, so a
+      // missing title usually means the user never renamed it.
+      // Show 'New chat' rather than the 8-char hex id so the row
+      // stays human-readable.
+      title.textContent = (c.title && c.title.trim()) ? c.title : 'New chat';
       li.appendChild(title);
       const meta = document.createElement('span');
       meta.className = 'project-card__chat-meta';
@@ -161,13 +171,23 @@ export function ProjectsView() {
       // (e.g. a profile that was removed) so we never print
       // "undefined".
       const label = profileLabel(c.promptSize);
-      meta.textContent = label + ' · ' + fmtDate(c.lastOpenedAt || c.createdAt);
+      const dateBits = fmtChatDate(c);
+      // dateBits.kind is 'opened' when lastOpenedAt is set,
+      // 'created' otherwise. Prefix with a single short word so
+      // the user can tell at a glance whether the date is "when
+      // I last opened it" or "when I created it and never went
+      // back". The trace indicator is appended on the right with
+      // a small dot so the on/off state is glanceable on a phone.
+      const dateStr = (dateBits.kind === 'created' ? 'new · ' : '') + dateBits.text;
+      const traceStr = c.trace ? ' · trace' : '';
+      meta.textContent = label + ' · ' + dateStr + traceStr;
+      if (c.trace) meta.dataset.trace = '1';
       li.appendChild(meta);
       const del = document.createElement('button');
       del.className = 'project-card__chat-delete';
       del.type = 'button';
       del.textContent = '×';
-      del.setAttribute('aria-label', 'Delete chat ' + (c.title || c.id));
+      del.setAttribute('aria-label', 'Delete chat ' + ((c.title && c.title.trim()) ? c.title : c.id));
       del.addEventListener('click', (e) => { e.stopPropagation(); deleteProjectChat(project, c, li, ul); });
       li.appendChild(del);
       li.addEventListener('click', () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)));
@@ -180,6 +200,29 @@ export function ProjectsView() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString();
+  }
+
+  // Smart date for the chat list: prefer the lastOpenedAt when
+  // set, fall back to createdAt. Two chats created on the same
+  // day would otherwise be indistinguishable on a long list, so
+  // we also return a kind ('opened' vs 'created') and a text
+  // string that combines a short date with the time. Today shows
+  // just the time; this year shows the short date; older chats
+  // show the date with the year. The kind lets the caller prefix
+  // a "new" marker when the chat was never opened.
+  function fmtChatDate(chat) {
+    const iso = chat && (chat.lastOpenedAt || chat.createdAt);
+    if (!iso) return { kind: 'created', text: '' };
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return { kind: 'created', text: '' };
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    let text;
+    if (sameDay) text = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    else if (sameYear) text = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    else text = d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+    return { kind: chat.lastOpenedAt ? 'opened' : 'created', text };
   }
 
   // Friendly label for a promptSize id, matching the labels the
@@ -195,13 +238,26 @@ export function ProjectsView() {
     return id || '';
   }
 
-  async function createProjectChat(project, btn, ul) {
+  async function createProjectChat(project, btn) {
     btn.disabled = true;
-    const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir: project.path }) });
+    let r;
+    try { r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir: project.path }) }); }
+    catch (err) { btn.disabled = false; alert('create chat failed: network error'); return; }
     btn.disabled = false;
     if (r.status !== 201) { alert('create chat failed: HTTP ' + r.status); return; }
-    const card = btn.closest('.project-card');
-    if (card) loadProjectChats(card, project);
+    // Navigate straight into the new chat. Re-loading the list
+    // in-place (the previous behavior) left the user staring at
+    // a +1 entry that they still had to tap; auto-navigation
+    // makes the primary action a single tap.
+    const chat = r.body && r.body.chat;
+    if (chat && chat.id) {
+      nav('chat/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(project.path));
+    } else {
+      // Fallback: server didn't return the new chat record; just
+      // refresh the list so the row appears.
+      const card = btn.closest('.project-card');
+      if (card) loadProjectChats(card, project);
+    }
   }
 
   async function deleteProjectChat(project, chat, li, ul) {
@@ -229,7 +285,42 @@ export function ProjectsView() {
     loadProjects();
   }
 
-  useEffect(() => { loadProjects(); }, [projectsReload.value]);
+  // Global click-to-close for every project-card options popover.
+  // The previous design attached a `document.addEventListener('click')`
+  // inside `renderProjectMenu`, which ran once per card and never
+  // removed the listener. After reloading the projects list N
+  // times, N listeners were stacked on `document`. Attaching once
+  // at the view level and cleaning up on unmount keeps the count
+  // flat regardless of how many times the list is refreshed.
+  useEffect(() => {
+    function onDocClick(ev) {
+      // The popover buttons themselves call stopPropagation() in
+      // their own click handler, so a click on a project's ⋯
+      // button never reaches this listener. Clicks anywhere else
+      // (including the popover's menu items, which also
+      // stopPropagation, but a stray click on the page body) close
+      // every open popover.
+      const open = document.querySelectorAll('.project-card__menu-pop:not([hidden])');
+      for (const pop of open) {
+        pop.hidden = true;
+        const btn = pop.parentElement && pop.parentElement.querySelector('.project-card__menu-btn');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      }
+    }
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
+
+  useEffect(() => {
+    loadProjects().catch((err) => {
+      // Unhandled rejection: the network-error path inside
+      // loadProjects already covers fetch failures, so this only
+      // fires for unexpected throws (e.g. setStatus on an
+      // unmounted ref). Don't swallow silently.
+      if (projectsStatus.current) setStatus('load failed', 'error');
+      else console.warn('loadProjects rejected:', err);
+    });
+  }, [projectsReload.value]);
 
   // The action bar is a slim row: a small page title on the left
   // ("Chats") and a single + button on the right. Refresh is gone
