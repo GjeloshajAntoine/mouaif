@@ -269,6 +269,25 @@ function clearPending(provider, state) {
   writePending(readPending().filter(p => !(p.provider === provider && p.state === state)));
 }
 
+// A pending record is only removed on success (consumePending) or explicit
+// cancel (clearPending). If the user closes the OAuth tab, the record leaks
+// forever and the app store grows unbounded. Drop anything older than
+// maxAgeMs (default 1h — far longer than any real OAuth round-trip). Returns
+// the number of records pruned. Records with a missing/unparseable createdAt
+// are treated as stale and pruned.
+const PENDING_MAX_AGE_MS = 60 * 60 * 1000;
+
+function prunePending(maxAgeMs = PENDING_MAX_AGE_MS) {
+  const now = Date.now();
+  const list = readPending();
+  const kept = list.filter((p) => {
+    const t = p && p.createdAt ? Date.parse(p.createdAt) : NaN;
+    return Number.isFinite(t) && (now - t) < maxAgeMs;
+  });
+  if (kept.length !== list.length) writePending(kept);
+  return list.length - kept.length;
+}
+
 module.exports = {
   // introspection
   SUPPORTED_PROVIDERS,
@@ -286,6 +305,7 @@ module.exports = {
   recordPending,
   consumePending,
   clearPending,
+  prunePending,
   // provider exchange + refresher registration (used by per-provider OAuth commits)
   registerExchange,
   getExchange,

@@ -1787,6 +1787,15 @@ async function handleInspector(req, res, parsed) {
 }
 
 function createServer(port = DEFAULT_PORT) {
+  // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
+  // are never consumed and would otherwise accumulate PKCE verifiers in the
+  // app store forever. Best-effort: a failure here must not stop the server.
+  try {
+    const pruned = auth.prunePending();
+    if (pruned > 0) console.log(`[mouaif] pruned ${pruned} stale OAuth flow${pruned === 1 ? '' : 's'}`);
+  } catch (e) {
+    console.warn('[mouaif] could not prune stale OAuth flows:', e.message);
+  }
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port);
