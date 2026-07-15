@@ -60,7 +60,7 @@ The provider form has all fields on one screen: provider id (locked after creati
 
 The project view loads both the raw project file and the resolved view in parallel. Saving the project refreshes the resolved view in the same tap.
 
-The UI is mobile-first: stacked rows, 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
+The UI is mobile-first: stacked rows, 32 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
 
 ## Behavior
 

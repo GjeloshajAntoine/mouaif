@@ -48,7 +48,7 @@ The view starts in `setup`. Each phase has a per-screen back button that walks t
 
 The Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), and the formatted message text. Arguments are coerced to strings via `argToString` (preferring `value`, then `description`, then the `type`).
 
-The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 44 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
+The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 32 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
 
 `Runtime.enable` is sent on connection. If the call rejects, the failure shows in the status line and the rest of the view keeps working (we don't tear down on a single failed command).
 

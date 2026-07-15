@@ -81,7 +81,7 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt;
 - The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
 - The chat lifecycle in `src/chats.js` clears `chat.toolGrants` on `createChat` and on `touchChat` (decision §4 lifecycle: reopening a chat starts a fresh session). A future revision may add a "remember for this project" toggle, but for this commit session-scoping is the rule.
 - The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under a new **Tools** card. The card shows the effective mode per tool with the source (`project`, `app`, `default`) on a small caption line, and links to the per-tool allowlist editor.
-- The Authorization card in the chat composer is a single tappable surface — Allow once, Allow for this session, Deny — all 44 × 44 px touch targets, no hover-only affordances, mobile-first.
+- The Authorization card in the chat composer is a single tappable surface — Allow once, Allow for this session, Deny — all 32 × 32 px touch targets, no hover-only affordances, mobile-first.
 
 ## Related
 

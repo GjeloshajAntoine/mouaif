@@ -43,14 +43,14 @@
   /* Layout */
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --pad-x: 12px;
-  --pad-y: 8px;
-  --gap: 8px;
-  --tap: 44px;
-  --tabbar-h: 52px;   /* bottom tab bar height (incl. safe area) */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --pad-x: 10px;
+  --pad-y: 6px;
+  --gap: 6px;
+  --tap: 32px;
+  --tabbar-h: 40px;   /* bottom tab bar height (incl. safe area) */
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
   --r-pill: 999px;
 
   /* Motion: short, transform-only. The reduced-motion media query
@@ -79,7 +79,7 @@ html, body {
     var(--bg);
   background-attachment: fixed;
   color: var(--fg);
-  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
@@ -147,18 +147,18 @@ html, body {
    no border, no shadow, and only a single rounded container — the
    mobile-native shape (vs. "stacked cards" on a desktop UI). */
 .group {
-  margin: 14px 12px 0;
+  margin: 10px 10px 0;
   padding: 0;
   border: 0;
 }
-.group:first-of-type { margin-top: 8px; }
+.group:first-of-type { margin-top: 6px; }
 .group__title {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 4px 6px;
+  margin: 0 4px 4px;
   padding: 0;
 }
 .group__list {
@@ -166,22 +166,22 @@ html, body {
   margin: 0;
   padding: 0;
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .group__list > li + li { border-top: 1px solid var(--border); }
 .group__row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-height: var(--tap);
-  padding: 10px 14px;
+  padding: 6px 12px;
   text-decoration: none;
   color: var(--fg);
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   cursor: pointer;
   width: 100%;
   text-align: left;
@@ -251,11 +251,11 @@ html, body {
    real estate on a phone. */
 
 .app__header {
-  padding: calc(var(--safe-top) + 4px) 12px 4px;
+  padding: calc(var(--safe-top) + 2px) 10px 2px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 6px;
 }
 
 .app__brand {
@@ -266,10 +266,10 @@ html, body {
 }
 
 .app__logo {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: linear-gradient(135deg, #7fb1ff 0%, #5b8bff 100%);
   display: inline-flex;
   align-items: center;
@@ -302,8 +302,8 @@ html, body {
 .page-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px 8px;
+  gap: 6px;
+  padding: 2px 10px 4px;
 }
 .page-bar__title {
   font-size: 1.05rem;
@@ -321,10 +321,10 @@ html, body {
   color: var(--on-accent);
   background: var(--accent);
   border: 0;
-  border-radius: 10px;
-  width: 36px;
-  height: 36px;
-  font-size: 1.25rem;
+  border-radius: 8px;
+  width: var(--tap);
+  height: var(--tap);
+  font-size: 1.15rem;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -346,7 +346,7 @@ html, body {
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   gap: 0;
-  padding: 4px 6px calc(4px + var(--safe-bottom));
+  padding: 2px 4px calc(2px + var(--safe-bottom));
   background: rgba(20,25,33,.85);
   border-top: 1px solid rgba(255,255,255,.04);
   -webkit-backdrop-filter: saturate(160%) blur(20px);
@@ -361,10 +361,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  min-height: 44px;
-  padding: 4px 2px 2px;
-  border-radius: 10px;
+  gap: 1px;
+  min-height: var(--tap);
+  padding: 2px 2px 1px;
+  border-radius: 8px;
   text-decoration: none;
   color: var(--muted);
   background: transparent;
@@ -379,9 +379,9 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   color: inherit;
   transition: background 120ms ease;
 }
@@ -389,7 +389,7 @@ html, body {
 .app__tab.is-active .app__tab-icon { background: var(--accent-soft); }
 
 .app__tab-label {
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   font-weight: 500;
   letter-spacing: 0;
   line-height: 1.1;
@@ -400,8 +400,8 @@ html, body {
 .view-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px 8px;
+  gap: 6px;
+  padding: 2px 10px 4px;
 }
 
 .view-back {
@@ -410,9 +410,9 @@ html, body {
   background: transparent;
   border: 0;
   border-radius: var(--r-md);
-  padding: 0 6px;
-  min-height: 36px;
-  min-width: 36px;
+  padding: 0 4px;
+  min-height: var(--tap);
+  min-width: var(--tap);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -450,18 +450,18 @@ section h2 {
 section + section,
 .group + .group,
 .group + section,
-section + .group { margin-top: 14px; }
+section + .group { margin-top: 10px; }
 
 .hint {
   color: var(--fg-soft);
-  font-size: 0.85rem;
-  line-height: 1.45;
-  margin: 0 12px 10px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin: 0 10px 8px;
 }
 .hint--compact {
-  font-size: 0.78rem;
-  line-height: 1.4;
-  margin: 0 12px 6px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin: 0 10px 4px;
   color: var(--muted);
 }
 .hint code {
@@ -479,22 +479,22 @@ section + .group { margin-top: 14px; }
 .row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0 12px 8px;
+  gap: 3px;
+  margin: 0 10px 6px;
 }
-.row--inline  { flex-direction: row; align-items: center; gap: 8px; }
+.row--inline  { flex-direction: row; align-items: center; gap: 6px; }
 .row--actions {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  padding: 4px 12px 8px;
+  padding: 2px 10px 4px;
 }
 .row--actions .status { flex: 1; }
 .row--actions .btn--primary { margin-left: auto; }
 
 .label {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 500;
   color: var(--muted);
   /* The label sits flush against its input, not as a separate
@@ -508,9 +508,9 @@ section + .group { margin-top: 14px; }
   color: var(--fg);
   background: var(--surface);
   border: 0;
-  border-radius: 10px;
-  padding: 10px 12px;
-  min-height: 44px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-height: var(--tap);
   width: 100%;
   transition: background 80ms ease, box-shadow 80ms ease;
 }
@@ -524,10 +524,10 @@ select.input {
   background-image:
     linear-gradient(45deg, transparent 50%, var(--muted) 50%),
     linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
   background-size: 6px 6px;
   background-repeat: no-repeat;
-  padding-right: 36px;
+  padding-right: 28px;
 }
 /* Base sizing for "plain" textareas (settings forms, prompt editor,
    etc.). The chat composer's textarea opts out of this — it has its
@@ -538,8 +538,8 @@ select.input {
 :where(textarea.input):not(.chat-view__textarea) {
   resize: vertical;
   font-family: inherit;
-  min-height: 88px;
-  line-height: 1.5;
+  min-height: 64px;
+  line-height: 1.45;
 }
 
 .checkbox {
@@ -585,10 +585,10 @@ select.input {
   color: var(--fg);
   background: var(--surface-2);
   border: 0;
-  border-radius: 10px;
-  padding: 0 14px;
-  min-height: 36px;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 0 12px;
+  min-height: var(--tap);
+  font-size: 0.86rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -629,7 +629,7 @@ select.input {
 
 .status {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   min-height: 1em;
   /* Slightly larger letter-spacing keeps transient status messages
      readable at a glance on a phone, even when they wrap. */
@@ -642,46 +642,46 @@ select.input {
 /* ---- Auth panel --------------------------------------------------- */
 
 .auth__sub { color: var(--accent); }
-.auth__help p { color: var(--fg-soft); font-size: 0.88rem; margin: 8px 0; line-height: 1.5; }
+.auth__help p { color: var(--fg-soft); font-size: 0.84rem; margin: 6px 0; line-height: 1.45; }
 .auth__help .row--actions .btn { min-width: 0; }
-.auth__help { margin-top: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.auth__help { margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
 .auth__help code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85em; background: var(--surface-3); padding: 1px 6px; border-radius: 4px; word-break: break-all; color: var(--fg); }
 
 /* ---- Settings: models editor ------------------------------------- */
 
-.models__list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.models__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .models__list li {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 8px 10px;
+  padding: 5px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
-.models__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.models__id { font-weight: 600; font-size: 0.88rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models__row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.models__id { font-weight: 600; font-size: 0.84rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- Settings: custom prompts ------------------------------------- */
 
-.prompts__list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.prompts__empty { text-align: center; color: var(--fg-soft); padding: 24px 12px; font-size: 0.85rem; line-height: 1.5; }
+.prompts__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.prompts__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.82rem; line-height: 1.45; }
 .prompt-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.prompt-row__main { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
+.prompt-row__main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
 .prompt-row__main:active { background: var(--surface-2); }
-.prompt-row__title { font-weight: 600; font-size: 0.88rem; }
-.prompt-row__meta { font-size: 0.8rem; color: var(--fg-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prompt-row__chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 1.2rem; color: var(--fg-soft); }
-.prompts__textarea { min-height: 100px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85rem; }
-.models__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.models__actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.78rem; }
-.models__meta { color: var(--muted); font-size: 0.74rem; line-height: 1.35; word-break: break-all; }
+.prompt-row__title { font-weight: 600; font-size: 0.84rem; }
+.prompt-row__meta { font-size: 0.76rem; color: var(--fg-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-row__chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
+.prompts__textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.82rem; }
+.models__actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.models__actions .btn { min-height: var(--tap); padding: 0 6px; font-size: 0.74rem; }
+.models__meta { color: var(--muted); font-size: 0.7rem; line-height: 1.3; word-break: break-all; }
 .models__add,
 .picker__create {
   background: transparent;
   border: 0;
-  border-radius: 12px;
-  margin: 12px 12px 0;
+  border-radius: 10px;
+  margin: 8px 10px 0;
   padding: 0;
 }
 .models__add summary,
@@ -689,15 +689,15 @@ select.input {
   cursor: pointer;
   color: var(--accent);
   background: transparent;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 500;
-  min-height: 44px;
+  min-height: var(--tap);
   display: flex;
   align-items: center;
   list-style: none;
-  padding: 10px 14px;
+  padding: 6px 12px;
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 .models__add summary::-webkit-details-marker,
 .picker__create summary::-webkit-details-marker { display: none; }
@@ -773,11 +773,11 @@ select.input {
 .card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 10px 14px;
+  padding: 6px 12px;
   min-height: var(--tap);
   text-decoration: none;
   color: var(--fg);
@@ -798,7 +798,7 @@ select.input {
 }
 .card__title {
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   letter-spacing: -0.005em;
   min-width: 0;
   overflow: hidden;
@@ -807,7 +807,7 @@ select.input {
 }
 .card__summary {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -832,28 +832,28 @@ select.input {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 .providers__empty {
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: 12px;
-  padding: 18px 14px;
+  border-radius: 10px;
+  padding: 14px 12px;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   text-align: center;
-  margin: 0 12px;
+  margin: 0 10px;
 }
 .provider-row {
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .provider-row__main {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: 8px;
+  padding: 6px 12px;
   min-height: var(--tap);
   text-decoration: none;
   color: var(--fg);
@@ -869,7 +869,7 @@ select.input {
 }
 .provider-row__name {
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -877,14 +877,14 @@ select.input {
 }
 .provider-row__meta {
   color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.4;
+  font-size: 0.72rem;
+  line-height: 1.35;
   word-break: break-all;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .provider-row__chev {
   color: var(--muted-2);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   line-height: 1;
   flex-shrink: 0;
   width: 8px;
@@ -912,17 +912,17 @@ select.input {
 }
 
 .settings__out {
-  margin: 8px 0 0;
-  padding: 12px;
+  margin: 6px 0 0;
+  padding: 10px;
   background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  max-height: 280px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  max-height: 220px;
   overflow: auto;
   color: var(--fg-soft);
 }
@@ -943,9 +943,9 @@ select.input {
    border + focus ring and overrides only what's code-specific. */
 textarea#projectEditor {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  min-height: 200px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  min-height: 160px;
   resize: vertical;
 }
 
@@ -956,7 +956,7 @@ textarea#projectEditor {
    text, then a sub-list of chats. The new-chat button is the last
    row. This replaces the old "stacked card" layout that felt boxy
    on a phone. */
-.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .projects__list > li {
   animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
 }
@@ -966,21 +966,21 @@ textarea#projectEditor {
 .projects__list > li:nth-child(n+4) { animation-delay: 90ms; }
 .projects__empty {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   text-align: center;
-  padding: 22px 14px 18px;
+  padding: 16px 12px 14px;
   background: var(--surface);
   border: 1px dashed var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .projects__empty-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent);
   display: inline-flex;
@@ -1000,22 +1000,22 @@ textarea#projectEditor {
    .group__row shape. */
 .project-card {
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.project-card__head { display: flex; align-items: center; gap: 4px; }
+.project-card__head { display: flex; align-items: center; gap: 2px; }
 .project-card__name {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.94rem;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  padding: 10px 14px;
+  padding: 6px 12px;
   min-height: var(--tap);
   display: flex;
   align-items: center;
@@ -1023,11 +1023,11 @@ textarea#projectEditor {
 .project-card__name:hover { color: var(--accent); }
 .project-card__path {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   word-break: break-all;
-  padding: 6px 14px 10px;
-  line-height: 1.4;
+  padding: 4px 12px 6px;
+  line-height: 1.35;
   border-top: 1px solid var(--border);
 }
 
@@ -1076,12 +1076,12 @@ textarea#projectEditor {
 .project-card__menu-pop {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   min-width: 180px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  padding: 6px;
+  border-radius: 8px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1096,14 +1096,14 @@ textarea#projectEditor {
 .project-card__menu-pop[hidden] { display: none !important; }
 .project-card__menu-pop button {
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   color: var(--fg);
   background: transparent;
   border: 0;
   text-align: left;
-  padding: 8px 12px;
-  min-height: 36px;
-  border-radius: 8px;
+  padding: 5px 10px;
+  min-height: var(--tap);
+  border-radius: 6px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -1111,7 +1111,7 @@ textarea#projectEditor {
 .project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
-  max-height: 201px;
+  max-height: 161px;
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -1135,18 +1135,18 @@ textarea#projectEditor {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 14px;
+  padding: 6px 12px;
   background: transparent;
   cursor: pointer;
   transition: background 80ms ease;
-  min-height: 40px;
+  min-height: var(--tap);
   border-top: 1px solid var(--border);
 }
 .project-card__chats li:first-child { border-top: 0; }
 .project-card__chats li:hover  { background: var(--surface-2); }
 .project-card__chats li:active { background: var(--surface-3); }
-.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
-.project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; }
+.project-card__chat-meta { color: var(--muted); font-size: 0.68rem; flex-shrink: 0; }
 /* Trace-on indicator. The Projects.jsx renderer appends " · trace"
    and sets data-trace="1" on the meta span so chats with the
    per-chat trace-to-file override are glanceable on a phone
@@ -1159,9 +1159,9 @@ textarea#projectEditor {
   color: var(--muted);
   background: transparent;
   border: 0;
-  min-height: 32px;
-  min-width: 32px;
-  font-size: 0.95rem;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 0.9rem;
   line-height: 1;
   cursor: pointer;
   border-radius: 6px;
@@ -1182,10 +1182,10 @@ textarea#projectEditor {
   background: transparent;
   border: 0;
   border-top: 1px solid var(--border);
-  padding: 10px 14px;
+  padding: 6px 12px;
   min-height: var(--tap);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   cursor: pointer;
   text-align: center;
   width: 100%;
@@ -1205,20 +1205,20 @@ textarea#projectEditor {
    tap target. */
 .picker__path {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   background: var(--surface-2);
-  border-radius: 10px;
-  padding: 8px 12px;
+  border-radius: 8px;
+  padding: 6px 10px;
   word-break: break-all;
   color: var(--fg-soft);
-  margin: 0 12px 8px;
+  margin: 0 10px 6px;
 }
 .picker__list {
   list-style: none;
-  margin: 0 12px;
+  margin: 0 10px;
   padding: 0;
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .picker__list > li + li { border-top: 1px solid var(--border); }
@@ -1231,9 +1231,9 @@ textarea#projectEditor {
 .picker__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  min-height: 44px;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: var(--tap);
   cursor: pointer;
   transition: background 80ms ease;
   outline: none;
@@ -1278,8 +1278,8 @@ textarea#projectEditor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px 8px;
+  gap: 2px;
+  padding: 2px 6px 4px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -1291,16 +1291,16 @@ textarea#projectEditor {
 .chat-view__model {
   order: 10;
   flex: 1 0 100%;
-  min-height: 34px;
-  height: 34px;
-  padding: 0 26px 0 12px;
-  font-size: 0.8rem;
+  min-height: var(--tap);
+  height: var(--tap);
+  padding: 0 22px 0 10px;
+  font-size: 0.78rem;
   max-width: none;
   width: 100%;
   min-width: 0;
-  margin-top: 2px;
+  margin-top: 1px;
   background: var(--surface-2);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--fg-soft);
   text-overflow: ellipsis;
 }
@@ -1309,11 +1309,11 @@ textarea#projectEditor {
   color: var(--fg-soft);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 0;
-  min-height: 36px;
-  min-width: 36px;
-  font-size: 1.1rem;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -1329,11 +1329,11 @@ textarea#projectEditor {
   color: var(--fg-soft);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 0;
-  min-height: 36px;
-  min-width: 36px;
-  font-size: 0.95rem;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 0.9rem;
   line-height: 1;
   cursor: pointer;
   display: inline-flex;
@@ -1345,10 +1345,10 @@ textarea#projectEditor {
 .chat-view__iconbtn--danger { color: var(--danger); }
 .chat-view__iconbtn--danger:hover { background: var(--danger-soft); }
 
-.chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .chat-view__name {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1356,7 +1356,7 @@ textarea#projectEditor {
   cursor: pointer;
 }
 .chat-view__name:hover { color: var(--accent); }
-.chat-view__meta { color: var(--muted); font-size: 0.7rem; }
+.chat-view__meta { color: var(--muted); font-size: 0.66rem; }
 
 /* Inline chat settings: a popover anchored to the head's ⚙ button.
    The strip that used to live below the head is gone — it ate a
@@ -1367,13 +1367,13 @@ textarea#projectEditor {
 .chat-view__settings-pop[hidden] { display: none !important; }
 .chat-view__settings-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   right: 0;
   min-width: 220px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  padding: 6px;
+  border-radius: 8px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1400,8 +1400,8 @@ textarea#projectEditor {
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 12px 12px;
+  gap: 8px;
+  padding: 6px 10px 8px;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1421,8 +1421,8 @@ textarea#projectEditor {
      visually anchored on either side on a narrow phone. */
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-width: 88%;
+  gap: 2px;
+  max-width: 92%;
   align-self: flex-start;
   /* Each new message slides in. Stagger up to 8 messages so a
      rapid stream doesn't feel laggy (the rest pop in at 0ms). */
@@ -1439,19 +1439,19 @@ textarea#projectEditor {
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { align-self: flex-end; align-items: flex-end; }
 .chat-msg__role {
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
-  /* Symmetric 6px padding is the base. The user/assistant
+  /* Symmetric 4px padding is the base. The user/assistant
      variants below override the side that touches the bubble so
      the role's text edge aligns with the bubble's text edge:
-     the bubble has 13px horizontal padding, so a 13px role
+     the bubble has 10px horizontal padding, so a 10px role
      padding on the bubble side (right for user, left for
      assistant) puts the role's text right against the bubble's
      text instead of the bubble's box. */
-  padding: 0 6px;
+  padding: 0 4px;
   flex-shrink: 0;
   /* Keep the role label tight to its own text. Without this, a
      flex-column child stretches to the column's full width, so a
@@ -1463,25 +1463,25 @@ textarea#projectEditor {
      column's right edge. */
   width: max-content;
 }
-.chat-msg--user .chat-msg__role { padding: 0 13px 0 6px; }
-.chat-msg--assistant .chat-msg__role { padding: 0 6px 0 13px; }
+.chat-msg--user .chat-msg__role { padding: 0 10px 0 4px; }
+.chat-msg--assistant .chat-msg__role { padding: 0 4px 0 10px; }
 .chat-msg--assistant .chat-msg__role { color: var(--accent); }
 .chat-msg__body {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 16px 16px 16px 5px;
-  padding: 9px 13px;
+  border-radius: 12px 12px 12px 4px;
+  padding: 6px 10px;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.88rem;
+  line-height: 1.4;
   box-shadow: var(--shadow-sm);
 }
 .chat-msg--user .chat-msg__body {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  border-radius: 16px 16px 5px 16px;
+  border-radius: 12px 12px 4px 12px;
 }
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
@@ -1506,10 +1506,10 @@ textarea#projectEditor {
    labels themselves so the eye groups tokens rather than reading
    each as a separate row. */
 .chat-msg__meta {
-  font-size: 0.74rem;
-  line-height: 1.4;
+  font-size: 0.7rem;
+  line-height: 1.35;
   color: var(--muted);
-  padding: 2px 13px 4px;
+  padding: 1px 10px 3px;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1579,20 +1579,20 @@ textarea#projectEditor {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 6px;
-  padding: 4px 4px 4px 8px;
+  gap: 4px;
+  padding: 2px 2px 2px 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: 18px;
   flex: 0 0 auto;
-  margin: 8px 12px calc(var(--safe-bottom) + 10px);
+  margin: 6px 10px calc(var(--safe-bottom) + 6px);
   box-shadow: var(--shadow-md);
 }
-/* Composer textarea: single-line when empty, grows up to 140px
+/* Composer textarea: single-line when empty, grows up to 120px
    as the user types. The base `textarea.input` rule has its own
-   88px min-height (for settings forms) so the :where() :not()
+   64px min-height (for settings forms) so the :where() :not()
    selector above excludes this class — the chat composer owns
-   its own sizing. 44px matches the --tap touch target so the
+   its own sizing. 32px matches the --tap touch target so the
    row lines up with the send button. */
 .chat-view__textarea {
   flex: 1 1 0;
@@ -1602,11 +1602,11 @@ textarea#projectEditor {
   box-shadow: none;
   resize: none;
   font-family: inherit;
-  height: 44px;
-  min-height: 44px;
-  max-height: 140px;
-  line-height: 1.4;
-  padding: 10px 4px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 120px;
+  line-height: 1.35;
+  padding: 6px 2px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
@@ -1615,18 +1615,18 @@ textarea#projectEditor {
 }
 .chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
 .chat-view__send {
-  /* 44px square: matches the --tap touch target used everywhere
+  /* 32px square: matches the --tap touch target used everywhere
      else in the app, and matches the textarea's min-height so the
      row stays a single line when the composer is at rest. */
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  min-height: 44px;
+  min-height: 32px;
   flex-shrink: 0;
   border-radius: 50%;
   margin: 0;
 }
-.chat-view__send svg { display: block; margin-left: -2px; }
+.chat-view__send svg { display: block; margin-left: -1px; }
 .chat-view__status {
   margin: 0;
   /* Sits on its own line under the input so a long streaming
@@ -1636,7 +1636,7 @@ textarea#projectEditor {
      current line. We must NOT use flex-grow: 1 here, otherwise it
      would also steal space from the textarea on the same line. */
   flex: 0 0 100%;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   /* Hide the status row when it has no text so the composer
      collapses to just the textarea + send button. Without this,
      the empty status line still reserves its line-height of
@@ -1653,7 +1653,7 @@ textarea#projectEditor {
 }
 
 @media (min-width: 600px) {
-  .chat-view__transcript { max-height: 62dvh; }
+  .chat-view__transcript { max-height: 50dvh; }
 }
 
 /* Reduce motion */
@@ -1691,24 +1691,24 @@ textarea#projectEditor {
 /* Sub-tab strip inside the connected inspector: Console | Network. */
 .inspector__subtabs {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 2px;
+  padding: 2px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .inspector__subtab {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--muted);
   background: transparent;
   border: 0;
-  padding: 8px 12px;
+  padding: 4px 10px;
   min-height: var(--tap);
-  border-radius: 8px;
+  border-radius: 6px;
   flex: 1;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -1738,7 +1738,7 @@ textarea#projectEditor {
 .inspector__scroller {
   position: relative;
   width: 100%;
-  height: 58dvh;
+  height: 48dvh;
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1757,11 +1757,11 @@ textarea#projectEditor {
 .inspector__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 10px;
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-size: 0.76rem;
+  line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
@@ -1773,9 +1773,9 @@ textarea#projectEditor {
 }
 .inspector__row-time {
   color: var(--muted-2);
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   flex-shrink: 0;
-  width: 56px;
+  width: 50px;
 }
 .inspector__row-level {
   font-size: 0.66rem;
@@ -1842,12 +1842,12 @@ textarea#projectEditor {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 .inspector__empty {
   color: var(--muted);
-  font-size: 0.9rem;
-  padding: 24px 12px;
+  font-size: 0.84rem;
+  padding: 18px 10px;
   text-align: center;
   background: var(--surface);
   border: 1px dashed var(--border);
@@ -1857,10 +1857,10 @@ textarea#projectEditor {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   box-shadow: var(--shadow-sm);
 }
 .inspector__target-top {
@@ -1904,23 +1904,23 @@ textarea#projectEditor {
 
 /* ---- Settings: MCP servers --------------------------------------- */
 
-.mcp__list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.mcp__empty { text-align: center; color: var(--fg-soft); padding: 24px 12px; font-size: 0.85rem; line-height: 1.5; }
+.mcp__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mcp__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.82rem; line-height: 1.45; }
 .mcp__row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.mcp__row-main { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
+.mcp__row-main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
 .mcp__row-main:active { background: var(--surface-2); }
-.mcp__row-name { font-weight: 600; font-size: 0.9rem; }
-.mcp__row-sub { font-size: 0.78rem; color: var(--fg-soft); }
-.mcp__row-err { font-size: 0.74rem; color: var(--danger); margin-top: 4px; word-break: break-all; }
-.mcp__row-chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 1.2rem; color: var(--fg-soft); }
-.mcp__row-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; border-top: 1px solid var(--border); background: var(--surface-2); }
-.mcp__row-actions .btn { min-height: 36px; padding: 0 10px; font-size: 0.78rem; }
-.mcp__tools-h { font-size: 0.85rem; margin: 12px 0 4px; color: var(--fg-soft); text-transform: uppercase; letter-spacing: 0.04em; }
-.mcp__tools-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.mcp__tools-empty { color: var(--muted); font-size: 0.85rem; padding: 8px 12px; }
-.mcp__tools-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; }
-.mcp__tools-name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--accent); word-break: break-all; }
-.mcp__tools-desc { font-size: 0.8rem; color: var(--fg-soft); margin-top: 2px; }
+.mcp__row-name { font-weight: 600; font-size: 0.86rem; }
+.mcp__row-sub { font-size: 0.74rem; color: var(--fg-soft); }
+.mcp__row-err { font-size: 0.7rem; color: var(--danger); margin-top: 3px; word-break: break-all; }
+.mcp__row-chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
+.mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.mcp__row-actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.74rem; }
+.mcp__tools-h { font-size: 0.8rem; margin: 8px 0 3px; color: var(--fg-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.mcp__tools-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.mcp__tools-empty { color: var(--muted); font-size: 0.82rem; padding: 6px 10px; }
+.mcp__tools-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 8px; }
+.mcp__tools-name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; color: var(--accent); word-break: break-all; }
+.mcp__tools-desc { font-size: 0.76rem; color: var(--fg-soft); margin-top: 1px; }
 
 /* ---- Chat: tool_call / tool_result cards ------------------------- */
 
@@ -1928,30 +1928,30 @@ textarea#projectEditor {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  padding: 8px 10px;
-  margin: 6px 0;
+  padding: 5px 8px;
+  margin: 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   position: relative;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   align-self: stretch;
   max-width: 100%;
 }
 .tool-card--call { border-color: var(--accent-soft); }
 .tool-card--result { cursor: pointer; }
 .tool-card--result:active { background: var(--surface-3); }
-.tool-card__role { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.tool-card__name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.82rem; color: var(--accent); word-break: break-all; }
+.tool-card__role { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.tool-card__name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.78rem; color: var(--accent); word-break: break-all; }
 .tool-card__args, .tool-card__body {
   margin: 0;
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--fg-soft);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 6px 8px;
+  padding: 4px 6px;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 7.2em;
@@ -1967,12 +1967,12 @@ textarea#projectEditor {
 }
 .tool-card__pill {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  font-size: 0.7rem;
+  top: 5px;
+  right: 7px;
+  font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
   font-weight: 600;
 }
@@ -1991,8 +1991,8 @@ textarea#projectEditor {
    consistent. */
 .pricing__editor {
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-  font-size: 0.85rem;
-  min-height: 200px;
+  font-size: 0.82rem;
+  min-height: 160px;
   resize: vertical;
 }
 .pricing__known { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }

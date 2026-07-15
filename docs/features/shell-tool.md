@@ -89,7 +89,7 @@ const out = await runShell({
 - Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs })`, `resolveSandbox()`, `truncate(buf)`.
 - The model-facing tool spec is registered in `src/ai.js` next to the existing `ENDPOINTS` table, so the same per-provider builder/parser path emits the call. The runner is invoked from a new `toolRunner` registry, also in `src/ai.js`; the chat handler in `src/index.js` calls the registry after the upstream returns a `tool_call` event and feeds the result back in as a `tool` message.
 - The `/shell` composer command is parsed in `src/web/src/components/Chat.jsx`; the `client.shell(cmd)` helper POSTs to `/api/tools/shell` and renders the result inline.
-- Mobile-first layout: the `tool_call` and `tool_result` blocks render as monospaced cards with a 14 px monospace font and a 44 px tap target for the expand/collapse chevron. Long stdout is collapsed to the last 12 lines by default with a "Show full output" action.
+- Mobile-first layout: the `tool_call` and `tool_result` blocks render as monospaced cards with a 13 px monospace font and a 32 px tap target for the expand/collapse chevron. Long stdout is collapsed to the last 12 lines by default with a "Show full output" action.
 - The `process.on('exit')` and `process.on('SIGINT')` handlers in the existing server do not need changes; child processes are tracked in a `Set` and reaped on parent exit so a server shutdown does not leak zombie children.
 
 ## Related
