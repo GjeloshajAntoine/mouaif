@@ -110,6 +110,11 @@ html, body {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
+  /* Bound the shell to the viewport height so a flex child (the
+     chat view in --flush mode) can scroll internally instead of
+     growing the whole page. min-height keeps short pages from
+     collapsing. */
+  height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
   position: relative;
@@ -117,6 +122,8 @@ html, body {
 
 .app__main {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 4px 0 calc(var(--tabbar-h) + var(--safe-bottom) + 4px);
   /* The view inside the main region fades + lifts in on every
      route change. The animation is on the <section> child, not
@@ -124,8 +131,15 @@ html, body {
      doesn't trigger reflow. */
 }
 .app__main--flush {
-  /* Drill-in screens (chat, picker) own the safe area themselves. */
-  padding-bottom: calc(var(--pad-y) + 4px);
+  /* Drill-in screens (chat, picker) own the safe area themselves.
+     A bounded flex column with a zero min-height lets a full-height
+     child (the chat view) flex and scroll its transcript internally
+     instead of overflowing the shell. */
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Groups: iOS-style inset lists. A <section class="group"> holds a
@@ -1227,35 +1241,43 @@ textarea#projectEditor {
 .chat-view {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* The chat view fills the main region minus the safe-area top so
-     the transcript and composer have room to breathe. The head is
-     the only chrome row now (settings live in a popover), so the
-     offset is smaller than before. */
-  min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 56px);
+  gap: 0;
+  /* The chat view fills the main region so the transcript (which
+     flexes) scrolls internally and the composer stays pinned to the
+     bottom without overlapping the last message. `flex: 1` + a zero
+     min-height lets the transcript child scroll instead of pushing
+     the composer off-screen. The head is the only chrome row now
+     (settings live in a popover). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-view__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px 8px;
+  gap: 4px;
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
 }
 
-/* Model select lives in the head row, not in the composer. It
-   takes the remaining space and shrinks so the title and action
-   buttons still fit on a 360 px viewport. */
+/* The model select wraps to its own full-width row below the
+   title/actions row (its flex-basis is 100%). On a narrow phone
+   the <select> no longer competes with the title for horizontal
+   space and the header can never overflow vertically. */
 .chat-view__model {
-  min-height: 32px;
-  height: 32px;
-  padding: 0 22px 0 10px;
+  order: 10;
+  flex: 1 0 100%;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 26px 0 12px;
   font-size: 0.8rem;
-  max-width: 130px;
-  flex-shrink: 1;
+  max-width: none;
+  width: 100%;
   min-width: 0;
-  /* The base .input class sets width: 100%, which collapses the
-     select in a flex row. Reset to auto so flex drives width. */
-  width: auto;
+  margin-top: 2px;
   background: var(--surface-2);
   border-radius: 8px;
   color: var(--fg-soft);
@@ -1346,11 +1368,10 @@ textarea#projectEditor {
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 12px;
-  flex: 1;
-  min-height: 180px;
-  max-height: 58dvh;
+  gap: 12px;
+  padding: 8px 12px 12px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -1362,9 +1383,15 @@ textarea#projectEditor {
   border-radius: 3px;
 }
 .chat-msg {
+  /* Column layout: the role label sits directly above its bubble,
+     so the label always tracks the bubble edge instead of floating
+     in a fixed side column. This keeps user/assistant messages
+     visually anchored on either side on a narrow phone. */
   display: flex;
-  gap: 6px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 88%;
+  align-self: flex-start;
   /* Each new message slides in. Stagger up to 8 messages so a
      rapid stream doesn't feel laggy (the rest pop in at 0ms). */
   animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
@@ -1378,34 +1405,33 @@ textarea#projectEditor {
 .chat-msg:nth-child(3)   { animation-delay: 175ms; }
 .chat-msg:nth-child(2)   { animation-delay: 185ms; }
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
-.chat-msg--user { flex-direction: row-reverse; }
+.chat-msg--user { align-self: flex-end; align-items: flex-end; }
 .chat-msg__role {
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 4px 2px 0;
-  min-width: 48px;
-  text-align: right;
+  padding: 0 6px;
   flex-shrink: 0;
 }
-.chat-msg--user .chat-msg__role { text-align: left; }
 .chat-msg--assistant .chat-msg__role { color: var(--accent); }
 .chat-msg__body {
   background: var(--surface-2);
-  border-radius: 18px 18px 18px 4px;
-  padding: 8px 12px;
-  max-width: 82%;
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 16px 5px;
+  padding: 9px 13px;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.92rem;
-  line-height: 1.4;
+  line-height: 1.45;
+  box-shadow: var(--shadow-sm);
 }
 .chat-msg--user .chat-msg__body {
   background: var(--accent);
   color: var(--on-accent);
-  border-radius: 18px 18px 4px 18px;
+  border-color: transparent;
+  border-radius: 16px 16px 5px 16px;
 }
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
@@ -1469,10 +1495,11 @@ textarea#projectEditor {
   gap: 6px;
   padding: 4px 4px 4px 8px;
   background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 22px;
-  position: sticky;
-  bottom: calc(var(--safe-bottom) + 4px);
-  margin: 0 12px;
+  flex: 0 0 auto;
+  margin: 8px 12px calc(var(--safe-bottom) + 10px);
+  box-shadow: var(--shadow-md);
 }
 /* Composer textarea: single-line when empty, grows up to 140px
    as the user types. The base `textarea.input` rule has its own

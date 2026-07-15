@@ -85,9 +85,9 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 
 ## Per-chat controls
 
-The chat head is a single compact row: back / title+meta / model / settings / rename / delete. The model picker lives in the head, not in the composer — it shrinks (`max-width: 130px`) and is always reachable. The Trace + Prompt-size controls live in a small popover anchored to the ⚙ button; tapping the button toggles the popover, tapping outside or pressing Escape closes it. Keeping these in a popover (instead of a second row under the head) reclaims a full row of vertical space for the transcript on a 360 px viewport.
+The chat head wraps over two rows on a phone. Row one is the compact chrome row: back / title+meta / settings / rename / delete. Row two is the model `<select>`, which wraps to its own full-width line (`flex: 1 0 100%`) so it never competes with the title for horizontal space and the header can never overflow vertically on a 360 px viewport. The Trace + Prompt-size + Prompt controls live in a small popover anchored to the ⚙ button; tapping the button toggles the popover, tapping outside or pressing Escape closes it. Keeping these in a popover (instead of a fixed row under the head) reclaims vertical space for the transcript.
 
-- **Model** — `<select>` in the head. `GET /api/ai/models?projectDir=…` populates it on load. The current value is read on send.
+- **Model** — full-width `<select>` on the head's second row. `GET /api/ai/models?projectDir=…` populates it on load. The current value is read on send.
 - **⚙ Settings** — opens the settings popover. Inside:
   - **Prompt size** — select with `very-small | average | extensive`. `PATCH` with `{ promptSize }`. The same value is read on the server when the chat is opened, so the next message uses the new profile.
   - **Trace to file** — checkbox. `PATCH` with `{ trace: bool }`. The meta line under the title (`<promptSize> · trace on/off`) updates on success. The trace writer in [src/trace.js](../../src/trace.js) is already gated on `chat.trace`, so flipping this on mid-conversation starts writing `<projectDir>/.mouaif/traces/<chatId>.ndjson` from the next event.
@@ -98,7 +98,9 @@ All four `PATCH`-style controls share a single `updateChat(patch)` helper. On su
 
 ## Composer
 
-The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 44 px square send button + a status line below. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `0` on every `input` event, then set to `Math.min(140, Math.max(40, scrollHeight))` so it grows with the content (capped at 140 px so a very long paste doesn't push the transcript off-screen). After a send the textarea is cleared and re-measured, so the composer collapses back to its 40 px single-line height.
+The chat view is a full-height flex column: the head and composer are fixed-height (`flex: 0 0 auto`) and the transcript in between flexes (`flex: 1 1 auto; min-height: 0`) and scrolls internally. This keeps the composer pinned to the bottom and stops the last message from being hidden behind it — the transcript scrolls, not the page. The shell (`.app__shell`) is bounded to `100dvh` and the drill-in main region (`.app__main--flush`) is a bounded flex column so the internal scroll works.
+
+The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 44 px square send button + a status line below. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `auto` on every `input` event, then set to `Math.min(140, Math.max(44, scrollHeight))` so it grows with the content (capped at 140 px so a very long paste doesn't push the transcript off-screen). After a send the textarea is cleared and re-measured, so the composer collapses back to its 44 px single-line height, which lines up with the send button.
 
 ## Implementation notes
 
