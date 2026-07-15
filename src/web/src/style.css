@@ -1363,6 +1363,17 @@ textarea#projectEditor {
 .chat-view__settings-pop .chat-view__settings-row:hover { background: var(--surface-2); }
 .chat-view__settings-row .label { white-space: nowrap; color: var(--muted); font-size: 0.78rem; }
 .chat-view__settings-row .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; flex: 1; min-width: 0; background: var(--surface); border-radius: 6px; }
+/* Hint line under the prompt-size picker. One line of muted text
+   describing the active profile. Empty by default; populated by
+   Chat.jsx â†’ updateProfileDescription. Sits flush with the row's
+   left padding so it visually belongs to the picker. */
+.chat-view__settings-hint {
+  margin: -2px 8px 4px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.chat-view__settings-hint:empty { display: none; }
 
 /* Transcript */
 .chat-view__transcript {
@@ -1952,7 +1963,7 @@ textarea#projectEditor {
   .chat-msg[data-live="1"] .chat-msg__body::after { animation: none; }
 }
 
-/* Model pricing page (decision §14). A small JSON editor with a
+/* Model pricing page (decision ï¿½14). A small JSON editor with a
    "known model ids" hint list below it. The editor is full-width
    on mobile and uses the same .input class as every other JSON
    editor in the app, so the typography and padding are already

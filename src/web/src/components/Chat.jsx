@@ -13,6 +13,7 @@ export function ChatView(props) {
   const chatMeta = useRef(null);
   const traceToggle = useRef(null);
   const promptSizeSelect = useRef(null);
+  const promptSizeDesc = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
@@ -31,14 +32,45 @@ export function ChatView(props) {
   const messagesRef = useRef([]);
   const modelsRef = useRef([]);
   const promptsRef = useRef([]);
+  // The prompt-size profile list is fetched from /api/prompt-profiles
+  // once per chat open. The picker's <option> list is generated from
+  // this array; the description under the picker reflects the active
+  // option's `description` and updates on every change. The array is
+  // also the source for the meta line (the chat record's `promptSize`
+  // is the raw id; we show the friendlier `label` in the meta).
+  const profilesRef = useRef([]);
+  const profileByIdRef = useRef({});
+
+  function activeProfileId() {
+    const c = chatRef.current;
+    if (c && ['very-small', 'average', 'extensive'].indexOf(c.promptSize) >= 0) return c.promptSize;
+    return 'average';
+  }
+
+  function updateProfileDescription(id) {
+    if (!promptSizeDesc.current) return;
+    const p = profileByIdRef.current && profileByIdRef.current[id];
+    promptSizeDesc.current.textContent = p && p.description ? p.description : '';
+  }
+
+  function updateMetaLine() {
+    if (!chatMeta.current) return;
+    const c = chatRef.current;
+    if (!c) return;
+    const id = activeProfileId();
+    const p = profileByIdRef.current && profileByIdRef.current[id];
+    const label = p && p.label ? p.label : id;
+    chatMeta.current.textContent = label + ' · ' + (c.trace ? 'trace on' : 'trace off');
+  }
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rMsgs, rPrompts] = await Promise.all([
+    const [rChat, rModels, rMsgs, rPrompts, rProfiles] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir))
+      fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/prompt-profiles')
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
     const c = rChat.body.chat;
@@ -46,11 +78,29 @@ export function ChatView(props) {
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
+    profilesRef.current = rProfiles.status === 200 ? (rProfiles.body.profiles || []) : [];
+    profileByIdRef.current = {};
+    for (const p of profilesRef.current) profileByIdRef.current[p.id] = p;
+
+    // Populate the prompt-size <select> from the server's profile
+    // list so the picker is always in sync with what handleChatStream
+    // will actually use at stream time. Hard-coding the options here
+    // would drift the first time a profile is renamed.
+    if (promptSizeSelect.current) {
+      promptSizeSelect.current.innerHTML = '';
+      for (const p of profilesRef.current) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.label || p.id;
+        promptSizeSelect.current.appendChild(opt);
+      }
+      promptSizeSelect.current.value = activeProfileId();
+    }
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
-    if (chatMeta.current) chatMeta.current.textContent = (c.promptSize || 'average') + ' · ' + (c.trace ? 'trace on' : 'trace off');
+    updateMetaLine();
+    updateProfileDescription(activeProfileId());
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
-    if (promptSizeSelect.current) promptSizeSelect.current.value = c.promptSize || 'average';
 
     if (modelSelect.current) populateModelSelect(modelsRef.current);
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
@@ -343,7 +393,7 @@ export function ChatView(props) {
     });
     if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
     chatRef.current = r.body.chat;
-    if (chatMeta.current && chatRef.current) chatMeta.current.textContent = (chatRef.current.promptSize || 'average') + ' · ' + (chatRef.current.trace ? 'trace on' : 'trace off');
+    updateMetaLine();
   }
 
   function renameChat() {
@@ -366,6 +416,7 @@ export function ChatView(props) {
     if (!promptSizeSelect.current) return;
     const v = promptSizeSelect.current.value;
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
+    updateProfileDescription(v);
     updateChat({ promptSize: v });
   }
 
@@ -373,7 +424,7 @@ export function ChatView(props) {
     if (!promptSelect.current) return;
     const v = promptSelect.current.value;
     updateChat({ promptId: v || null });
-    if (chatMeta.current && chatRef.current) chatMeta.current.textContent = (chatRef.current.promptSize || 'average') + ' · ' + (chatRef.current.trace ? 'trace on' : 'trace off');
+    updateMetaLine();
   }
 
   function deleteThisChat() {
@@ -587,6 +638,11 @@ export function ChatView(props) {
               h('option', { value: 'extensive' }, 'extensive')
             )
           ),
+          // Profile description — a one-line hint under the picker
+          // that says what the active profile actually does. Updates
+          // on every change. Server-driven so the text is always in
+          // sync with the profile's true content.
+          h('p', { ref: promptSizeDesc, class: 'chat-view__settings-hint', id: 'chatPromptSizeDesc' }, ''),
           h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPrompt' },
             h('span', { class: 'label' }, 'Prompt'),
             h('select', { ref: promptSelect, class: 'input', id: 'chatPrompt', onChange: onPromptChange })

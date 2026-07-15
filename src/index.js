@@ -14,6 +14,7 @@ const messages = require('./messages.js');
 const trace = require('./trace.js');
 const inspector = require('./inspector.js');
 const prompts = require('./prompts.js');
+const promptProfiles = require('./promptProfiles.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 
@@ -173,6 +174,18 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
       // duplicate the data. Pricing values are public — no secrets
       // are exposed here.
       table
+    });
+  }
+
+  // Prompt-size profiles. Static read-only endpoint that lists the
+  // three profiles (very-small | average | extensive) so the chat
+  // UI and the Settings view can render a picker without hard-coding
+  // the labels or descriptions. The actual profile text is consumed
+  // server-side at stream time; only the metadata is exposed here.
+  if (urlPath === '/api/prompt-profiles' && method === 'GET') {
+    return sendJSON(res, 200, {
+      profiles: promptProfiles.listProfiles(),
+      default: promptProfiles.DEFAULT_PROFILE
     });
   }
 
@@ -802,10 +815,27 @@ async function handleChatStream(req, res, chatId) {
   }
 
   // Build the message list to send upstream: existing transcript + the
-  // user message we just appended. If the chat has a custom prompt
-  // (promptId), prepend it as a message of the prompt's configured role.
+  // user message we just appended. The list is composed in this order
+  // (each block is optional, but the profile block is always present):
+  //   1. Prompt-size profile system message (decisions §4 prompt-size
+  //      profiles). Resolved from chat.promptSize -> resolved project
+  //      settings.promptSize -> 'average'. The profile carries the
+  //      model identity + the default guidance. A missing or unknown
+  //      value falls through to the default; this code never throws.
+  //   2. Custom prompt (chat.promptId), if the chat references a
+  //      project prompt. The custom prompt refines the profile — the
+  //      instructions on each prompt say "where they do not conflict
+  //      with the active profile".
+  //   3. The transcript (user + assistant turns), with the brand-new
+  //      user turn already appended by the appendMessage call above.
   const history = messages.listMessages(projectDir, chatId);
   const upstreamMessages = [];
+  try {
+    const profile = promptProfiles.resolveProfile({ chat, projectDir });
+    if (profile && profile.systemMessage) {
+      upstreamMessages.push({ role: 'system', content: profile.systemMessage });
+    }
+  } catch { /* non-fatal; stream proceeds without a profile system message */ }
   if (chat.promptId) {
     try {
       const prompt = prompts.getPrompt(projectDir, chat.promptId);
