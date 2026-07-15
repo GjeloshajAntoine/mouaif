@@ -1412,9 +1412,27 @@ textarea#projectEditor {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
+  /* Symmetric 6px padding is the base. The user/assistant
+     variants below override the side that touches the bubble so
+     the role's text edge aligns with the bubble's text edge:
+     the bubble has 13px horizontal padding, so a 13px role
+     padding on the bubble side (right for user, left for
+     assistant) puts the role's text right against the bubble's
+     text instead of the bubble's box. */
   padding: 0 6px;
   flex-shrink: 0;
+  /* Keep the role label tight to its own text. Without this, a
+     flex-column child stretches to the column's full width, so a
+     right-aligned "USER" label sits 300px to the left of its
+     bubble and looks visually disconnected on a phone. `width:
+     max-content` sizes the label to its text; the parent column
+     is still sized by the (wider) bubble, so right-alignment
+     pins the label to the bubble's right edge instead of the
+     column's right edge. */
+  width: max-content;
 }
+.chat-msg--user .chat-msg__role { padding: 0 13px 0 6px; }
+.chat-msg--assistant .chat-msg__role { padding: 0 6px 0 13px; }
 .chat-msg--assistant .chat-msg__role { color: var(--accent); }
 .chat-msg__body {
   background: var(--surface-2);
