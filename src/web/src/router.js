@@ -16,7 +16,11 @@ function parseHash() {
     const id = decodeURIComponent(h.slice('settings/providers/'.length));
     if (id && id !== 'new') return { name: 'settingsProviderEdit', id };
   }
-  if (h === 'settings/project') return { name: 'settingsProject' };
+  if (h === 'settings/project' || h.startsWith('settings/project?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsProject', projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/copilot') return { name: 'settingsCopilot' };
   if (h === 'settings/pricing') return { name: 'settingsPricing' };

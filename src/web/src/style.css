@@ -153,6 +153,10 @@ html, body {
 }
 .group:first-of-type { margin-top: 6px; }
 .group__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -160,6 +164,26 @@ html, body {
   color: var(--muted);
   margin: 0 4px 4px;
   padding: 0;
+}
+/* The trailing context note on a group title (e.g. the active project
+   name next to "Active project"). Not uppercase; truncates on a phone. */
+.group__title-note {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Placeholder shown in a group when there is nothing to link to yet
+   (e.g. no active project). Sits where the .group__list would be. */
+.settings-home__empty {
+  margin: 0 4px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 10px;
 }
 .group__list {
   list-style: none;

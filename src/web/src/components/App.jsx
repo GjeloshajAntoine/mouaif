@@ -76,7 +76,7 @@ export function App() {
   else if (view.name === 'settingsProviders') body = h(SettingsProvidersView, null);
   else if (view.name === 'settingsProviderNew') body = h(SettingsProviderEditView, { id: '' });
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
-  else if (view.name === 'settingsProject') body = h(SettingsProjectView, null);
+  else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsCopilot') body = h(SettingsCopilotView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });

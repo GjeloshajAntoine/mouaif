@@ -45,14 +45,22 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 
 The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. The screen is a stack of focused sub-views, each with its own back link; the bottom tab bar is hidden on the sub-views so the content owns the full viewport height.
 
+The home screen groups cards by scope so app-level and project-level settings never sit in the same list:
+
+- **Models & providers** — `Providers` (connections you sign into / add keys for).
+- **Active project** — only rendered when a project is active (set by opening a chat, the project picker, or loading a project here). The group title shows the active project's name/path so "project overrides" is concrete, not abstract. Cards: `Project overrides`, `MCP servers`, `Custom prompts`, each linking with `?projectDir=<active>` so the destination view auto-loads without a manual paste. When no project is active the group shows a one-line hint pointing the user at a chat / the picker instead of dead links.
+- **Application** — global, project-independent: `Chat defaults`, `Model pricing`, `GitHub Copilot OAuth`, `About & reset`.
+
+Each card's summary line reflects live state (e.g. `1 connected`, `3 models priced`, `custom OAuth app`) with a static fallback so the list never flashes a bare `—` before load resolves.
+
 | Hash route | View | Purpose |
 |------------|------|---------|
-| `#/settings` | `SettingsHomeView` | Card list: providers, project overrides, app defaults, GitHub Copilot OAuth app, about / reset. |
+| `#/settings` | `SettingsHomeView` | Scope-grouped card list (see above). |
 | `#/settings/providers` | `SettingsProvidersView` | List of configured providers + an `+ Add provider` entry. |
 | `#/settings/providers/new` | `SettingsProviderEditView` | New provider form. |
 | `#/settings/providers/<id>` | `SettingsProviderEditView` | Edit / delete an existing provider. |
 | `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt size` (select). Save writes to `PUT /api/settings/app`. |
-| `#/settings/project` | `SettingsProjectView` | Directory input + Load; the raw `<projectDir>/.mouaif.json` JSON editor + the resolved view for the same directory. |
+| `#/settings/project[?projectDir=<abs path>]` | `SettingsProjectView` | Raw `<projectDir>/.mouaif.json` JSON editor + resolved view. Seeds the directory from `?projectDir=` or the active project and auto-loads. |
 | `#/settings/copilot` | `SettingsCopilotView` | The GitHub Copilot OAuth `client_id` used by the loopback flow. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |
 
@@ -79,6 +87,21 @@ The UI is mobile-first: stacked rows, 32 px touch targets, system colors, and sa
   `hasApiKey: true`; the UI uses that boolean to render `key: •••`. This
   applies to app, project, resolved, provider-create, and provider-delete
   responses.
+
+- **Allowlisted client fields** — `settingsForClient()` does **not** spread the
+  whole app-level store. It copies only the keys the web UI actually reads
+  (`CLIENT_SETTINGS_KEYS`: `providers`, `models`, `projects`, `promptSize`,
+  `githubCopilot`, `modelPricing`, `authAccounts`, `flags`) and drops everything
+  else. Server-only bookkeeping — in-flight OAuth flows (`authPending`, which
+  carry a PKCE `codeVerifier` and CSRF `state`) and the CDP `inspectorDebuggerUrl`
+  — therefore never reaches the browser, and a future key stashed in the app
+  store cannot leak by accident.
+
+- **Abandoned OAuth flows are pruned** — an `authPending` record is only removed
+  on a successful exchange or an explicit cancel. If the user closes the sign-in
+  tab, the record (with its PKCE verifier) would leak forever. `auth.prunePending()`
+  drops records older than 1h and runs once at server start (`createServer()`),
+  best-effort.
 
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.

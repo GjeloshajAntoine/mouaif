@@ -1,9 +1,9 @@
 // mouaif web — SettingsProjectView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus, setActiveProject } from '../api.js';
+import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 
-export function SettingsProjectView() {
+export function SettingsProjectView({ projectDir: initialDir } = {}) {
   const projectDir = useRef(null);
   const loadBtn = useRef(null);
   const statusEl = useRef(null);
@@ -108,7 +108,18 @@ export function SettingsProjectView() {
     setStatus(statusEl, 'reverted.', 'success');
   }
 
-  useEffect(() => { /* nothing to do until the user picks a directory */ }, []);
+  // Seed the directory field from the route (?projectDir=...) or the active
+  // project, then auto-load so arriving from the Settings home card lands on
+  // the project's data without a manual paste + tap.
+  useEffect(() => {
+    const seed = (initialDir && initialDir.trim())
+      || (activeProject.value && activeProject.value.dir)
+      || '';
+    if (seed && projectDir.current) {
+      projectDir.current.value = seed;
+      load().catch((e) => setStatus(statusEl, 'load failed: ' + e.message, 'error'));
+    }
+  }, [initialDir]);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
