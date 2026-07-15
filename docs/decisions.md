@@ -89,3 +89,51 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - Anthropic wires this via `oauthAnthropic.refresh` (registered in `oauthAnthropic.register()`). Other providers register their own. The 60s lead matches the SDK's typical advisory-refresh threshold.
 - The model record's `auth: 'oauth'` is the gate. `auth: 'apikey'` models skip this path entirely.
 
+## 14. Usage metrics — per-message cost and live token speed in the chat
+
+- Every chat turn already carries a `usage` block (`{ promptTokens, completionTokens }`) on the `done` event from the AI client (decision §10). The chat UI uses that block to render a per-message **cost** (in USD) and a **live tokens/s** counter that ticks under the user turn as the assistant's deltas arrive.
+- Pricing is opt-in: a per-model `pricing` map (`{ inputPer1K, outputPer1K }` in USD) lives on the project model record. Missing values fall back to `app.modelPricing[<modelId>]`, then to a small built-in table for known model ids, then to `--`. The Settings UI lets the user edit the app-level table without touching JSON.
+- The counter is purely client-side: the chat UI hooks the existing `message` and `done` SSE callbacks. The token/s formula is `completionTokensDelivered / streamingMs`, with the window starting on the first delta of the turn and stopping on `done` (or on the last delta before `error` / `EABORTED`).
+- The full `usage` block is persisted on the assistant message (decision §10) and is written to the per-chat NDJSON trace as a `done` event (decision §5), so the cost and speed are reproducible from the trace alone.
+- Pricing is informational, not transactional. A wrong `pricing` entry produces a wrong number on the cost line; it does not affect what the upstream charges. Currency is USD only; the format layer respects the user's locale decimal separator.
+- New module: `src/usage.js`. No new runtime dependencies, no new SSE events, no new endpoints.
+
+## 15. File tagging — annotate project files and inject them into a chat
+
+- A user can attach **tags** to files inside a project. Tags live in `<projectDir>/.mouaif.json` under a new top-level `tags` key, shaped as `{ "<relPath>": { tags: [...], excerpt: {start,end} | null, includeInChat: true } }`. The map is committed with the project and editable by hand.
+- Path normalization is POSIX-relative to the project root. The injection loader resolves paths with `path.join(projectDir, rel)` and refuses anything that escapes the project root (`..` segments, absolute paths, symlinks that point outside) with `EOUTSIDE_PROJECT`.
+- When the user sends a chat, the server pre-appends every tagged file with `includeInChat: true` to the upstream `messages` array, before the custom prompt and the transcript. The synthetic message shape is:
+  ```js
+  { role: 'system',
+    content: '# File: <relPath>\n# Tags: <csv>\n# Excerpt: <a>-<b>\n\n<file body or excerpt>' }
+  ```
+  An explicit `@<relPath>` in the composer promotes the synthetic message to `role: 'user'`.
+- File size cap (`app.fileTagMaxBytes`, default 256 KB) hides the body of oversized files; the entry stays in the project file with `includeInChat: false` and a `note`. A smaller excerpt bypasses the cap.
+- Stale paths (moved, renamed, deleted) are kept in the project file with a `missing` badge and skipped at injection time. The UI offers a "Remove" action.
+- The scan endpoint is a one-pass directory walk honoring the same home-allowlist rules as the folder picker (decision §4). Binary files are filtered by extension; the default extension allowlist is text-friendly (`.js .jsx .ts .tsx .mjs .cjs .json .md .txt .py .rb .go .rs .java .kt .swift .c .h .cpp .hpp .css .html .yml .yaml .toml .sh`).
+- New module: `src/tags.js`. New REST surface: `GET/PUT /api/projects/<id>/tags`, `POST /api/projects/<id>/tags/scan`, `DELETE /api/projects/<id>/tags/files/*`. The injection happens in `src/index.js → handleChatStream` immediately before the existing `promptId` block.
+
+## 16. Shell tool — let the model run commands in the project
+
+- `mouaif` ships a built-in `shell` tool the model can invoke. The tool runs a command in `projectDir` via `node:child_process.spawn`, captures stdout / stderr / exit code / duration, and returns the result to the model. The model-facing tool spec uses the OpenAI-compatible function-call shape; the runner is invoked on the server and is the only path that actually executes.
+- Calls and results ride the chat as `tool_call` and `tool_result` SSE events (decision §10) and are persisted with the transcript and written to the per-chat NDJSON trace (decision §5) as `tool_call` / `tool_result` lines.
+- The command runs in `projectDir` with the user's login shell (`$SHELL` on POSIX, `cmd.exe` on Windows). The runner resolves the path and refuses anything outside the project root with `EOUTSIDE_PROJECT`. The child inherits the parent env minus a small denylist (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`).
+- Default per-call timeout: 30 s. Ceiling: 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, code: 'ETIMEDOUT' }`.
+- stdout / stderr are truncated to `app.shellOutputMaxBytes` (default 256 KB each). The original exit code is preserved.
+- The tool is **off by default per project**. A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`). The composer `/shell <cmd>` slash command uses the same runner.
+- The runner is built on `node:child_process`; no third-party shell wrappers, no new runtime dependencies. Child processes are tracked in a `Set` and reaped on parent exit so a server shutdown does not leak zombies.
+- New module: `src/tools/shell.js`. The model-facing tool spec is registered in `src/ai.js` next to `ENDPOINTS`; the runner is invoked from a new `toolRunner` registry, also in `src/ai.js`. New REST endpoint: `POST /api/tools/shell`.
+
+## 17. Tool authorization — gating what tools the model may run
+
+- Every tool call the model initiates — and every `/shell` slash command the user types — passes through an authorization gate before the runner executes. The gate is per-project, per-tool, per-session.
+- Four modes: `off` (ETOOL_DISABLED, runner never runs), `ask` (every call must be approved by the user), `allowlist` (calls whose `cmd` matches an allowlist regex run without prompting; the rest fall through to `ask`), `allow` (every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`).
+- The default for new tools is `ask`, so the model can only run a command after the user has explicitly approved it (or a matching allowlist rule).
+- The mode lives on the project record (decision §2) as `tools.<name>.mode` with `allowlist`, `defaultTimeoutMs`, and `maxTimeoutMs`. Missing values fall back to `app.tools.<name>`, then to `off`. A future revision may add a "remember for this project" toggle; for this commit session-scoping is the rule.
+- Allowlist matches are full-string regex (`^...$`); catastrophic backtracking is mitigated by a 1 ms match timeout enforced in the runner.
+- The chat pauses on `ask` and renders an **Authorization required** card with the command, working dir, timeout, and a "review trace" link when tracing is on. The user can tap **Allow once**, **Allow for this session** (records `chat.toolGrants[name] = { mode: 'allow', grantedAt }`), or **Deny**. The deny records the call id in `chat.toolGrants[name].deniedCallIds` so the same call id is not re-asked within the session.
+- Deny reasons are kept private: the `tool` message forwarded to the upstream is `{ ok: false, code: 'EDENIED', reason: 'user denied' }` with no command, project, or chat id.
+- Authorization is independent of the tool's enable switch. The runner's order is: enabled? → mode? → allowlist? → execute. Mode changes are not retroactive: flipping from `allow` to `ask` revokes the blanket grant and the next call is asked again; flipping to `off` rejects the next call with `ETOOL_DISABLED`.
+- Every decision is appended to the per-chat NDJSON trace (decision §5) as a `system event` line (`{ type: 'auth_decision', tool, callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
+- New module: `src/tools/authorization.js`. The runner calls `authorize(...)` as the first line of its hot path; a `{ prompt: true }` decision blocks the runner until the UI posts a `decision` event on the same SSE stream. New REST surface: `GET/PUT /api/tools/authorization`, `POST /api/tools/authorization/decision`.
+
