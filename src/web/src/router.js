@@ -22,7 +22,10 @@ function parseHash() {
     return { name: 'settingsProject', projectDir: params.get('projectDir') || '' };
   }
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
-  if (h === 'settings/copilot') return { name: 'settingsCopilot' };
+  // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
+  // screen. It now lives inside the Copilot provider form, so keep old links
+  // working by resolving straight to that provider's edit view.
+  if (h === 'settings/copilot') return { name: 'settingsProviderEdit', id: 'github-copilot' };
   if (h === 'settings/pricing') return { name: 'settingsPricing' };
   // settings/prompts is project-scoped. The active project (set when
   // the user opened a chat or visited Settings → Project) is the

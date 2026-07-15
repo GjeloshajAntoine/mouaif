@@ -7,7 +7,6 @@ export function SettingsHomeView() {
   const providerSummary = useRef(null);
   const promptSize = useRef(null);
   const pricingSummary = useRef(null);
-  const copilot = useRef(null);
   // Cards that only make sense against a project. Their href picks up the
   // active project (if any) so the user does not have to re-enter the path.
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
@@ -28,10 +27,6 @@ export function SettingsHomeView() {
         const table = (app.app && app.app.modelPricing) || {};
         const n = Object.keys(table).length;
         pricingSummary.current.textContent = n ? (n === 1 ? '1 model priced' : n + ' models priced') : 'defaults';
-      }
-      if (copilot.current) {
-        const c = (app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
-        copilot.current.textContent = c ? 'custom OAuth app' : 'default OAuth app';
       }
     } catch (e) { /* summaries fall back to their static defaults */ }
   }
@@ -88,7 +83,6 @@ export function SettingsHomeView() {
       h('ul', { class: 'group__list' },
         cardLi('settings/defaults', 'Chat defaults', { summaryRef: promptSize, summary: 'prompt size' }),
         cardLi('settings/pricing', 'Model pricing', { summaryRef: pricingSummary, summary: 'cost per 1K tokens' }),
-        cardLi('settings/copilot', 'GitHub Copilot OAuth', { summaryRef: copilot, summary: 'sign-in app' }),
         cardLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
     )

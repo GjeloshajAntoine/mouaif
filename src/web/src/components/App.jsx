@@ -5,7 +5,6 @@ import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
 import { SettingsProjectView } from './SettingsProject.jsx';
 import { SettingsDefaultsView } from './SettingsDefaults.jsx';
-import { SettingsCopilotView } from './SettingsCopilot.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
 import { SettingsMcpView, SettingsMcpEditView } from './SettingsMcp.jsx';
@@ -63,7 +62,7 @@ export function App() {
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
-    && view.name !== 'settingsDefaults' && view.name !== 'settingsCopilot'
+    && view.name !== 'settingsDefaults'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
     && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit'
     && view.name !== 'settingsPricing'
@@ -78,7 +77,6 @@ export function App() {
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
-  else if (view.name === 'settingsCopilot') body = h(SettingsCopilotView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });

@@ -1,7 +1,7 @@
 // mouaif web — SettingsProvidersView + SettingsProviderEditView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
-import { fetchJson, loadApp, appProviders, loadAccounts, SETTINGS_PROVIDERS, providerDef, authNsForProvider, setStatus } from '../api.js';
+import { fetchJson, loadApp, saveApp, appProviders, loadAccounts, SETTINGS_PROVIDERS, providerDef, authNsForProvider, setStatus } from '../api.js';
 import { nav } from '../router.js';
 
 export function SettingsProvidersView() {
@@ -99,6 +99,13 @@ export function SettingsProviderEditView(props) {
   const deleteBtn = useRef(null);
   const statusEl = useRef(null);
   const signInStatus = useRef(null);
+  // GitHub Copilot's OAuth flow needs a per-install OAuth-app client_id
+  // (the public default won't work with our loopback callback). It lives in
+  // app settings under githubCopilot.clientId, but conceptually it belongs
+  // to the Copilot provider's sign-in, so the field is rendered here — right
+  // above the Sign in button — instead of on a separate Settings screen.
+  const copilotClientId = useRef(null);
+  const copilotStatus = useRef(null);
 
   // The form's "current provider" lives in two places: the URL prop
   // (`id`, used as the initial value + to know if we're editing or
@@ -137,13 +144,18 @@ export function SettingsProviderEditView(props) {
   }
 
   async function load() {
+    let app;
     try {
-      await loadApp({ force: true });
+      app = await loadApp({ force: true });
       accounts = await loadAccounts({ force: true });
     } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); return; }
     const found = id ? appProviders().find(p => p && p.id === id) : null;
     if (id && !found) { setStatus(statusEl, 'Provider not found', 'error'); return; }
     setCurrent(found || null);
+    // Prefill the Copilot OAuth-app client_id (blank = using the default).
+    if (copilotClientId.current) {
+      copilotClientId.current.value = (app && app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
+    }
 
     // Resolve the auth mode from data (reserved → oauth, else the saved
     // record's auth, else apikey) and push it into reactive state so the
@@ -271,6 +283,19 @@ export function SettingsProviderEditView(props) {
       } catch { /* keep polling */ }
     }
     setStatus(signInStatus, 'timed out. Paste the redirect URL or its code below.', 'error');
+  }
+
+  // Persist the GitHub Copilot OAuth-app client_id to app settings. Empty
+  // clears it back to the shipped default. This is decoupled from the
+  // provider Save button so the user can set the client_id, then sign in,
+  // then save the provider record — the natural order.
+  async function saveCopilotClientId() {
+    const value = (copilotClientId.current && copilotClientId.current.value || '').trim();
+    setStatus(copilotStatus, 'saving…', 'busy');
+    try {
+      await saveApp({ githubCopilot: { clientId: value || null } });
+      setStatus(copilotStatus, value ? 'saved — you can sign in now.' : 'cleared (using default).', 'success');
+    } catch (e) { setStatus(copilotStatus, 'save failed: ' + e.message, 'error'); }
   }
 
   async function save() {
@@ -419,6 +444,18 @@ export function SettingsProviderEditView(props) {
       h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('label', { class: 'label', for: 'sp-account' }, 'OAuth account'),
         h('select', { ref: oauthAccount, class: 'input', id: 'sp-account' })
+      ),
+      // GitHub Copilot only: the OAuth-app client_id required to make the
+      // loopback sign-in work. Rendered here so everything Copilot-auth
+      // lives in one place (no separate Settings screen).
+      h('div', { class: hide(effAuth !== 'oauth' || currentId !== 'github-copilot') + ' row--oauth row--copilot' },
+        h('label', { class: 'label', for: 'sp-copilot-id' }, 'GitHub OAuth app client ID'),
+        h('p', { class: 'hint hint--compact' }, 'GitHub does not allow third-party apps to use the public Copilot client_id with a loopback callback. Create a personal OAuth app at ', h('code', null, 'github.com/settings/developers'), ' (Developer settings → OAuth Apps → New OAuth App) with callback ', h('code', null, 'http://127.0.0.1:5732/oauth/callback?provider=github-copilot'), ', then paste its client_id here and Save before signing in. Leave blank to use the shipped default.'),
+        h('input', { ref: copilotClientId, class: 'input', id: 'sp-copilot-id', type: 'text', placeholder: 'Iv1.xxxxxxxxxxxxxxxx', autocomplete: 'off' }),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn', type: 'button', onClick: saveCopilotClientId }, 'Save client ID'),
+          h('span', { ref: copilotStatus, class: 'status', 'aria-live': 'polite' })
+        )
       ),
       h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('div', { class: 'auth__help-inline' },
