@@ -1391,9 +1391,12 @@ async function handlePrompts(req, res, parsed) {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
-      const removed = prompts.deletePrompt(dir, id);
+      let clearedChats = 0;
+      const removed = prompts.deletePrompt(dir, id, {
+        onRemoved: (deletedId) => { clearedChats = chats.clearPromptId(dir, deletedId); }
+      });
       if (!removed) return sendJSON(res, 404, { error: 'Prompt not found', id });
-      return sendJSON(res, 200, { ok: true, removed: id });
+      return sendJSON(res, 200, { ok: true, removed: id, clearedChats });
     } catch (e) {
       return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }

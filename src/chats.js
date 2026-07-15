@@ -173,6 +173,32 @@ function touchChat(projectDir, chatId) {
   return updateChat(projectDir, chatId, { lastOpenedAt: new Date().toISOString() });
 }
 
+// Cascade-clear `promptId` on every chat in the project that references
+// the given prompt id. Called when a prompt is deleted, so a chat that
+// used to inject the prompt no longer carries a dangling reference.
+// Returns the number of chats updated. No-op if the project file has
+// no chats or no matching reference.
+function clearPromptId(projectDir, promptId) {
+  if (!projectDir || !promptId) return 0;
+  let project;
+  try { project = readProject(projectDir); }
+  catch (e) {
+    if (e.code === 'MOUAIF_PROJECT_PARSE_ERROR') throw e;
+    return 0;
+  }
+  if (!Array.isArray(project.chats) || !project.chats.length) return 0;
+  let changed = 0;
+  for (let i = 0; i < project.chats.length; i++) {
+    const c = project.chats[i];
+    if (c && c.promptId === promptId) {
+      project.chats[i] = Object.assign({}, c, { promptId: null });
+      changed++;
+    }
+  }
+  if (changed > 0) writeProject(projectDir, project);
+  return changed;
+}
+
 module.exports = {
   // introspection
   PROJECT_FILE,
@@ -183,5 +209,6 @@ module.exports = {
   createChat,
   updateChat,
   deleteChat,
-  touchChat
+  touchChat,
+  clearPromptId
 };

@@ -1,49 +1,46 @@
 # Custom prompts
 
-User-authored system/role prompts, stored per project. Each chat can reference one custom prompt which is automatically injected as a message of the configured role before the conversation transcript.
+User-authored **system** prompts, stored per project. Each chat can reference one custom prompt, which is automatically injected as the first message of every stream turn.
 
 ## Overview
 
-Custom prompts let you define reusable system, user, or assistant messages that are prepended to every chat turn. They are stored in the project's `.mouaif.json` file alongside other settings, so they can be committed to version control and shared with collaborators.
+Custom prompts let you define reusable system messages that are prepended to every chat turn. They are stored in the project's `.mouaif.json` file alongside other settings, so they can be committed to version control and shared with collaborators.
 
-This feature implements the "Custom prompts" requirement from the project instructions (`.github/copilot-instructions.md` §4).
+The role is fixed to `system`: a custom prompt is always the opening system message of the turn, never an injected `user` or `assistant` message. Prepending a fake user/assistant message before the transcript would bias the conversation; if you need that, write it into the actual transcript.
 
 ## Usage
 
 ### Managing prompts (Settings UI)
 
-1. Navigate to **Settings → Custom prompts**.
-2. Enter a **project directory** (the folder containing the project's `.mouaif.json`).
-3. Tap **Load** to see existing prompts.
-4. Tap **+ Add prompt** to create a new one.
-5. Fill in:
+1. Open a chat in the project you want to configure (or visit **Settings → Project overrides** and load a project directory).
+2. From **Settings → Project overrides → Custom prompts**, the project is already in scope — no path to type.
+3. Tap **+ Add prompt** to create a new one. Fill in:
    - **Title** — A short label.
-   - **Role** — `system`, `user`, or `assistant`. The prompt will be inserted as a message with this role.
-   - **Prompt content** — The text to inject.
-6. Tap **Create** to save.
+   - **Prompt content** — The text to inject as the system message.
+4. Tap **Create** to save.
 
-Existing prompts can be edited or deleted from the same screen.
+Existing prompts can be opened, edited, or deleted from the same screen. Deleting a prompt **cascade-clears `promptId`** on every chat in the project that referenced it, so subsequent turns no longer try to inject the missing prompt.
 
 ### Using a prompt in a chat
 
 1. Open a chat.
 2. Tap the **gear icon** (chat settings popover).
 3. In the **Prompt** dropdown, select the desired custom prompt (or `(none)` to disable).
-4. The selected prompt is saved to the chat record and will be injected on every stream turn.
+4. The selection is saved to the chat record and is injected on every stream turn.
 
 The prompt is not visible in the transcript — it is prepended server-side when building the upstream message array.
 
 ### API
 
-Prompts are managed via REST endpoints on the mouaif server:
+Prompts are managed via REST endpoints on the mouaif server. The `projectDir` parameter is required on every call.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/prompts?projectDir=<abs>` | List all prompts for a project |
 | `GET` | `/api/prompts/:id?projectDir=<abs>` | Get a single prompt |
-| `POST` | `/api/prompts` | Create a prompt (body: `{ projectDir, title?, content, role? }`) |
-| `PATCH` | `/api/prompts/:id` | Update a prompt (body: `{ projectDir, title?, content?, role? }`) |
-| `DELETE` | `/api/prompts/:id?projectDir=<abs>` | Delete a prompt |
+| `POST` | `/api/prompts` | Create a prompt. Body: `{ projectDir, title?, content }` |
+| `PATCH` | `/api/prompts/:id` | Update a prompt. Body: `{ projectDir, title?, content? }` |
+| `DELETE` | `/api/prompts/:id?projectDir=<abs>` | Delete a prompt. Returns `{ ok, removed, clearedChats }` |
 
 ### Schema
 
@@ -60,17 +57,19 @@ Each prompt is stored as an object in the `prompts` array of the project's `.mou
 }
 ```
 
+The `role` field is preserved on disk for forward-compat and hand-edits, but the editor and the validator only accept `system`. A non-system role in the file is silently coerced to `system` on read.
+
 ### Chat integration
 
-When the server processes `POST /api/chats/:id/messages/stream`, if the chat record has a `promptId` field referencing an existing prompt, the server prepends `{ role: prompt.role, content: prompt.content }` to the upstream message array before calling `ai.streamChat`. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
+When the server processes `POST /api/chats/:id/messages/stream`, if the chat record has a `promptId` referencing an existing prompt, the server prepends `{ role: 'system', content: prompt.content }` to the upstream message array before calling `ai.streamChat`. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
 
 ## Implementation notes
 
-- Backend: `src/prompts.js` — CRUD module. No new runtime dependencies.
-- Routes: `src/index.js` — `handlePrompts()` function, mounted at `/api/prompts/*`.
-- Chat integration: `src/chats.js` — `promptId` field added to the chat schema and `updateChat` allowlist.
-- Stream injection: `src/index.js` `handleChatStream()` — prepends the prompt message before the history.
-- Frontend: `src/web/src/components/SettingsPrompts.jsx` — list and edit views.
-- Chat UI: `src/web/src/components/Chat.jsx` — prompt selector in the settings popover.
-- Prompts are **not** versioned or shared between projects. Each project owns its own list.
-- Deleting a prompt does **not** clear `promptId` on existing chats — they will silently skip the missing prompt at stream time.
+- Backend: [src/prompts.js](../../src/prompts.js) — CRUD module. No new runtime dependencies.
+- Routes: [src/index.js](../../src/index.js) — `handlePrompts()` function, mounted at `/api/prompts/*`. The DELETE handler calls [src/chats.js](../../src/chats.js) `clearPromptId()` to cascade-clear references in chats.
+- Chat schema: [src/chats.js](../../src/chats.js) — `promptId` field on the chat, allowed in `updateChat`. `normalizeChat` coerces empty / non-string values to `null`.
+- Stream injection: [src/index.js](../../src/index.js) `handleChatStream()` — prepends the prompt message before the transcript.
+- Frontend: [src/web/src/components/SettingsPrompts.jsx](../../src/web/src/components/SettingsPrompts.jsx) — list and edit views, project-scoped via the `activeProject` signal.
+- Chat UI: [src/web/src/components/Chat.jsx](../../src/web/src/components/Chat.jsx) — prompt selector in the settings popover.
+- Prompts are per-project. Each project owns its own list. There is no app-level prompt library.
+- Deleting a prompt cascade-clears `promptId` on every chat in the project; the response includes a `clearedChats` count.
