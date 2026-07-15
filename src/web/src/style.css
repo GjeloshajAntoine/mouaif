@@ -1088,6 +1088,12 @@ textarea#projectEditor {
   z-index: 35;
   box-shadow: var(--shadow-md);
 }
+/* The `hidden` HTML attribute normally forces display:none, but
+   the explicit `display: flex` rule above wins on specificity.
+   Without this override the popover renders on load even though
+   Projects.jsx sets hidden=true — every project card showed its
+   menu open at startup. Same pattern as .chat-view__settings-pop. */
+.project-card__menu-pop[hidden] { display: none !important; }
 .project-card__menu-pop button {
   font: inherit;
   font-size: 0.92rem;
@@ -1105,7 +1111,7 @@ textarea#projectEditor {
 .project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
-  max-height: 200px;
+  max-height: 201px;
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -1115,6 +1121,14 @@ textarea#projectEditor {
   border-top: 1px solid var(--border);
   scrollbar-width: thin;
 }
+/* `overflow-y: auto` shows a 1px scrollbar as soon as the content's
+   scrollHeight >= clientHeight. With five 40px chats, the content
+   is exactly 200px and the browser reserves 1px for the scrollbar
+   (clientHeight=199), so a thin scrollbar renders on a perfectly
+   fitting list. The max-height is bumped by 1px (201) so the
+   200px of chats + 1px of headroom lets clientHeight equal
+   scrollHeight and the scrollbar disappears when nothing is
+   actually hidden. Six chats (240px) still scroll normally. */
 .project-card__chats::-webkit-scrollbar { width: 6px; }
 .project-card__chats::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 .project-card__chats li {
