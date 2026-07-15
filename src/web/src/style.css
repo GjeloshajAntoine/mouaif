@@ -1568,7 +1568,13 @@ textarea#projectEditor {
      would also steal space from the textarea on the same line. */
   flex: 0 0 100%;
   font-size: 0.74rem;
+  /* Hide the status row when it has no text so the composer
+     collapses to just the textarea + send button. Without this,
+     the empty status line still reserves its line-height of
+     vertical space below the textbox, creating a visible gap
+     between the input and the bottom of the composer pill. */
 }
+.chat-view__status:empty { display: none; }
 
 /* ---- Small screens / desktop fallback ---------------------------- */
 
