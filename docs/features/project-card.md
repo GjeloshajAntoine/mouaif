@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Project card is the per-project surface in the mobile UI: each registered project gets a card with its name, its chat list, a "New chat" button, and an options menu (rename / unregister). The chat list scrolls **inside the card** so the page itself doesn't scroll. The card is the building block the agent-instructions rule describes as "the chat list scrolls inside the card, not the page" and "Project card have new chat and per-project options."
+The Project card is the per-project surface in the mobile UI: each registered project gets a card with its name, its chat list, a "New chat" button, and an options menu (settings / rename / unregister). The chat list scrolls **inside the card** so the page itself doesn't scroll. The card is the building block the agent-instructions rule describes as "the chat list scrolls inside the card, not the page" and "Project card have new chat and per-project options."
 
 Chats are persisted per-project in `<projectDir>/.mouaif.json` under a `chats` array, alongside the rest of the project-level settings. That means a project's chats can be committed to source control with the project. The chat record itself is a thin entry — `{ id, title, createdAt, lastOpenedAt, trace, promptSize }`; transcripts live separately in `<projectDir>/.mouaif.messages.<chatId>.json`.
 
@@ -72,7 +72,7 @@ The `chats` key is created on the first `POST /api/chats` for the project. Readi
 
 The mobile UI shows a "Projects" section between Settings and Auth. Each project renders as a card with:
 
-- A header: project name (left), options menu (right) — a `⋯` button that opens a small popover with **Rename…** and **Unregister** (red, danger style).
+- A header: project name (left), options menu (right) — a `⋯` button that opens a small popover with **Settings…**, **Rename…**, and **Unregister** (red, danger style). **Settings…** navigates to the project-overrides view (`#/settings/project?projectDir=<abs>`) for that specific project, where the user can review and edit every project setting — the raw `.mouaif.json`, the resolved (effective) object, and the security-sensitive **Shell tool** toggle — straight from the card.
 - The on-disk path, in muted monospace, below the name.
 - A chat list scroller (`max-height: 160px`, `overflow-y: auto`) so the page itself doesn't scroll. Each item is the chat title (or `New chat` when the user hasn't renamed it), a `<friendly promptSize label> · <smart date> [· trace]` meta line, and a `×` delete button. The list is sorted by `lastOpenedAt` descending (ties and never-opened chats fall back to `createdAt`); the raw `promptSize` id is mapped to its friendly label (`Very small` / `Average` / `Extensive`) so the wording matches the chat view's meta line. The date is a smart short format: time only on the same day, `Mon D` for the same year, `Mon D, YYYY` for older chats; a `new · ` prefix is added when the chat was never opened. The `· trace` segment is appended (and the meta colored amber) when the chat's per-chat trace-to-file toggle is on.
 - A "+ New chat" button at the bottom of the card.

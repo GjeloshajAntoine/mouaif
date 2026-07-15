@@ -115,6 +115,11 @@ export function ProjectsView() {
       b.addEventListener('click', (e) => { e.stopPropagation(); close(); fn(); });
       pop.appendChild(b);
     }
+    // Settings… opens the project-overrides view for THIS project
+    // (the raw .mouaif.json editor + the resolved view + the Shell
+    // tool toggle), so the user can review and edit every setting —
+    // including the security-sensitive ones — from the card itself.
+    addItem('Settings…', () => nav('settings/project?projectDir=' + encodeURIComponent(project.path)));
     addItem('Rename…', () => renameProject(project));
     addItem('Unregister', () => unregisterProject(project), true);
     wrap.appendChild(pop);
