@@ -13,6 +13,7 @@ const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');
 const inspector = require('./inspector.js');
+const prompts = require('./prompts.js');
 
 // Register each per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -171,6 +172,11 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
     return handleChats(req, res, parsed);
   }
 
+  // Prompts (custom per-project prompts)
+  if (urlPath === '/api/prompts' || urlPath.startsWith('/api/prompts/')) {
+    return handlePrompts(req, res, parsed);
+  }
+
   // Inspector — REST surface for the CDP bridge. The WebSocket proxy
   // at /api/inspector/proxy is handled in the server's 'upgrade'
   // event (see createServer below), not here.
@@ -180,7 +186,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...'] });
   }
 
   // REST: GET /data
@@ -768,9 +774,19 @@ async function handleChatStream(req, res, chatId) {
   }
 
   // Build the message list to send upstream: existing transcript + the
-  // user message we just appended.
+  // user message we just appended. If the chat has a custom prompt
+  // (promptId), prepend it as a message of the prompt's configured role.
   const history = messages.listMessages(projectDir, chatId);
-  const upstreamMessages = history.map(m => ({ role: m.role, content: m.content }));
+  const upstreamMessages = [];
+  if (chat.promptId) {
+    try {
+      const prompt = prompts.getPrompt(projectDir, chat.promptId);
+      if (prompt && prompt.content) {
+        upstreamMessages.push({ role: prompt.role, content: prompt.content });
+      }
+    } catch { /* non-fatal; stream proceeds without the prompt */ }
+  }
+  for (const m of history) upstreamMessages.push({ role: m.role, content: m.content });
 
   let assistantContent = '';
   let assistantMsg = null;
@@ -1283,6 +1299,107 @@ function inspectorErrorStatus(err) {
     default:
       return 500;
   }
+}
+
+// ---- Prompts API ---------------------------------------------------------
+// Custom per-project prompts. Stored in the project file as project.prompts.
+// Routes:
+//   GET    /api/prompts?projectDir=<abs>          -> { prompts }
+//   GET    /api/prompts/:id?projectDir=<abs>      -> { prompt }
+//   POST   /api/prompts   body: { projectDir, title?, content, role? } -> { prompt }
+//   PATCH  /api/prompts/:id  body: { projectDir, title?, content?, role? } -> { prompt }
+//   DELETE /api/prompts/:id?projectDir=<abs>      -> { ok: true }
+
+async function handlePrompts(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  function projectDirFrom(body) {
+    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    return fromQuery || fromBody;
+  }
+
+  function promptError(e) {
+    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
+    if (e && e.code === 'EBADINPUT') return 400;
+    return 500;
+  }
+
+  // GET /api/prompts?projectDir=<abs>
+  if (urlPath === '/api/prompts' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { prompts: prompts.listPrompts(dir) });
+    } catch (e) {
+      return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/prompts/:id?projectDir=<abs>
+  const getMatch = urlPath.match(/^\/api\/prompts\/([^/]+)$/);
+  if (getMatch && method === 'GET') {
+    const id = decodeURIComponent(getMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const p = prompts.getPrompt(dir, id);
+      if (!p) return sendJSON(res, 404, { error: 'Prompt not found', id });
+      return sendJSON(res, 200, { prompt: p });
+    } catch (e) {
+      return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/prompts  body: { projectDir, title?, content, role? }
+  if (urlPath === '/api/prompts' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = projectDirFrom(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const p = prompts.createPrompt(dir, body || {});
+      return sendJSON(res, 201, { prompt: p });
+    } catch (e) {
+      return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PATCH /api/prompts/:id  body: { projectDir, title?, content?, role? }
+  if (getMatch && method === 'PATCH') {
+    const id = decodeURIComponent(getMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = projectDirFrom(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const p = prompts.updatePrompt(dir, id, body || {});
+      if (!p) return sendJSON(res, 404, { error: 'Prompt not found', id });
+      return sendJSON(res, 200, { prompt: p });
+    } catch (e) {
+      return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // DELETE /api/prompts/:id?projectDir=<abs>
+  if (getMatch && method === 'DELETE') {
+    const id = decodeURIComponent(getMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const removed = prompts.deletePrompt(dir, id);
+      if (!removed) return sendJSON(res, 404, { error: 'Prompt not found', id });
+      return sendJSON(res, 200, { ok: true, removed: id });
+    } catch (e) {
+      return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'prompts' });
 }
 
 async function handleInspector(req, res, parsed) {

@@ -21,7 +21,8 @@
 //     createdAt:    '2026-07-14T12:34Z',  // ISO 8601
 //     lastOpenedAt: undefined,            // set when the chat is opened
 //     trace:        false,                // per-chat trace-to-file override
-//     promptSize:   'average'             // per-chat prompt-size profile
+//     promptSize:   'average',            // per-chat prompt-size profile
+//     promptId:     null                  // optional; references a project prompt
 //   }
 //
 // New chats always start with tracing off unless the creation request
@@ -82,7 +83,8 @@ function normalizeChat(chat) {
     createdAt: chat.createdAt || new Date().toISOString(),
     lastOpenedAt: chat.lastOpenedAt || null,
     trace: chat.trace === true,
-    promptSize: ['very-small', 'average', 'extensive'].includes(chat.promptSize) ? chat.promptSize : 'average'
+    promptSize: ['very-small', 'average', 'extensive'].includes(chat.promptSize) ? chat.promptSize : 'average',
+    promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null
   };
 }
 
@@ -146,6 +148,9 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && typeof patch.trace === 'boolean') merged.trace = patch.trace;
   if (patch && ['very-small', 'average', 'extensive'].includes(patch.promptSize)) merged.promptSize = patch.promptSize;
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
+    merged.promptId = (patch.promptId === null || patch.promptId === '') ? null : String(patch.promptId);
+  }
   project.chats[idx] = merged;
   writeProject(projectDir, project);
   return merged;

@@ -19,6 +19,13 @@ function parseHash() {
   if (h === 'settings/project') return { name: 'settingsProject' };
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/copilot') return { name: 'settingsCopilot' };
+  if (h === 'settings/prompts') return { name: 'settingsPrompts' };
+  if (h.startsWith('settings/prompts/')) {
+    const rest = h.slice('settings/prompts/'.length);
+    const [id, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/about') return { name: 'settingsAbout' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);

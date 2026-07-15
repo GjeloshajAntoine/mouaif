@@ -12,6 +12,7 @@ export function ChatView(props) {
   const chatMeta = useRef(null);
   const traceToggle = useRef(null);
   const promptSizeSelect = useRef(null);
+  const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
   const promptInput = useRef(null);
@@ -28,19 +29,22 @@ export function ChatView(props) {
   const chatRef = useRef(null);
   const messagesRef = useRef([]);
   const modelsRef = useRef([]);
+  const promptsRef = useRef([]);
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rMsgs] = await Promise.all([
+    const [rChat, rModels, rMsgs, rPrompts] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir))
+      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir))
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
     const c = rChat.body.chat;
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
+    promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     if (chatMeta.current) chatMeta.current.textContent = (c.promptSize || 'average') + ' · ' + (c.trace ? 'trace on' : 'trace off');
@@ -48,6 +52,7 @@ export function ChatView(props) {
     if (promptSizeSelect.current) promptSizeSelect.current.value = c.promptSize || 'average';
 
     if (modelSelect.current) populateModelSelect(modelsRef.current);
+    if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
 
     renderTranscript();
   }
@@ -67,6 +72,22 @@ export function ChatView(props) {
       opt.textContent = '(no models — define models in project settings)';
       modelSelect.current.appendChild(opt);
     }
+  }
+
+  function populatePromptSelect(list, currentId) {
+    if (!promptSelect.current) return;
+    promptSelect.current.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '(none)';
+    promptSelect.current.appendChild(blank);
+    for (const p of list) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = (p.title || p.id) + ' (' + p.role + ')';
+      promptSelect.current.appendChild(opt);
+    }
+    promptSelect.current.value = (currentId && list.some(p => p.id === currentId)) ? currentId : '';
   }
 
   function renderTranscript() {
@@ -165,6 +186,13 @@ export function ChatView(props) {
     const v = promptSizeSelect.current.value;
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
     updateChat({ promptSize: v });
+  }
+
+  function onPromptChange() {
+    if (!promptSelect.current) return;
+    const v = promptSelect.current.value;
+    updateChat({ promptId: v || null });
+    if (chatMeta.current && chatRef.current) chatMeta.current.textContent = (chatRef.current.promptSize || 'average') + ' · ' + (chatRef.current.trace ? 'trace on' : 'trace off');
   }
 
   function deleteThisChat() {
@@ -307,6 +335,10 @@ export function ChatView(props) {
               h('option', { value: 'average' }, 'average'),
               h('option', { value: 'extensive' }, 'extensive')
             )
+          ),
+          h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPrompt' },
+            h('span', { class: 'label' }, 'Prompt'),
+            h('select', { ref: promptSelect, class: 'input', id: 'chatPrompt', onChange: onPromptChange })
           ),
           h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatTrace' },
             h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),

@@ -54,7 +54,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
 
 - **Virtual list with low memory and low CPU** — windowed rendering, recycled nodes, no forced reflow on scroll.
 - **Providers global, models per project** — provider connections and credentials live in the app SQLite store; model IDs are user-defined in project settings and reference a provider. No pre-made model list. See [docs/decisions.md](../docs/decisions.md) §3.
-- **Custom prompts** — user-authored system/role prompts, stored per project.
+- **Custom prompts** — user-authored system/role prompts, stored per project. See [docs/features/custom-prompts.md](../docs/features/custom-prompts.md).
 - **Three prompt-size profiles**:
   - `very-small`: tool names with short descriptions, no full schemas.
   - `average`: compact prompt + full tool list.

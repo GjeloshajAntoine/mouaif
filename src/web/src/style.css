@@ -498,6 +498,18 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 88px; line-
 }
 .models__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .models__id { font-weight: 600; font-size: 0.88rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Settings: custom prompts ------------------------------------- */
+
+.prompts__list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prompts__empty { text-align: center; color: var(--fg-soft); padding: 24px 12px; font-size: 0.85rem; line-height: 1.5; }
+.prompt-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.prompt-row__main { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
+.prompt-row__main:active { background: var(--surface-2); }
+.prompt-row__title { font-weight: 600; font-size: 0.88rem; }
+.prompt-row__meta { font-size: 0.8rem; color: var(--fg-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-row__chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 1.2rem; color: var(--fg-soft); }
+.prompts__textarea { min-height: 100px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85rem; }
 .models__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .models__actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.78rem; }
 .models__meta { color: var(--muted); font-size: 0.74rem; line-height: 1.35; word-break: break-all; }
