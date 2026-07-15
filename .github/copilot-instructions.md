@@ -60,6 +60,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
   - `average`: compact prompt + full tool list.
   - `extensive`: full prompt + best-practice guidance and examples.
 - **Trace-to-file option** — per-chat toggle (off by default) that writes that chat's events to `<projectDir>/.mouaif/traces/<chatId>.ndjson` in NDJSON, append-only, no rotation, so the user can commit the file with the project. Independent of chat storage; a one-shot "Export trace" action is also available. See [docs/decisions.md](../docs/decisions.md) §5.
+- **Agentic coding (shell tool + multi-turn loop)** — the model can call a native `shell` tool that runs commands in the project dir; results are fed back to the model in a real multi-turn loop (bounded by `maxToolTurns`, default 12), so the model can read a file, run a build, read the error, and iterate. Off by default per project; enabled via the **Shell tool** toggle in Settings → Project. Direct `/shell <cmd>` composer command and `POST /api/tools/shell` too. See [docs/features/shell-tool.md](../docs/features/shell-tool.md).
 - **App-level vs project-level settings** — settings can live globally (app SQLite store) or in a per-project `.mouaif.json`; project overrides app. See [docs/decisions.md](../docs/decisions.md) §1–§2.
 - **Project-grouped chat list** — chats are grouped under a project card; the chat list scrolls inside the card, not the page.
 - **Tabbed mobile UI with custom DevTools-style inspector**:

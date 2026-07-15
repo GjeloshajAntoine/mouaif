@@ -438,11 +438,45 @@ export function ChatView(props) {
       .catch((err) => { if (statusEl.current) statusEl.current.textContent = 'network error'; });
   }
 
+  // `/shell <cmd>` composer command: run the native shell tool directly
+  // (no model round-trip) and render the result inline as a tool_result
+  // card. Same code path the model-initiated call uses server-side.
+  async function runShellCommand(cmd) {
+    promptInput.current.value = '';
+    autoresize();
+    appendToolCallCard({ id: null, name: 'shell', args: { cmd } });
+    setChatStatus('running shell…', 'busy');
+    sendBtn.current.disabled = true;
+    let r;
+    try {
+      r = await fetchJson('/api/tools/shell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, cmd })
+      });
+    } catch (err) {
+      appendToolResultCard({ id: null, name: 'shell', ok: false, result: { error: String(err) } });
+      setChatStatus('shell error', 'error');
+      if (sendBtn.current) sendBtn.current.disabled = false;
+      return;
+    }
+    const body = r.body || {};
+    appendToolResultCard({ id: null, name: 'shell', ok: !!body.ok, result: body });
+    if (r.status === 403) setChatStatus('shell tool is disabled for this project', 'error');
+    else setChatStatus(body.ok ? ('shell exit ' + (body.exitCode ?? 0)) : ('shell failed: ' + (body.error || body.code || '')), body.ok ? 'success' : 'error');
+    if (sendBtn.current) sendBtn.current.disabled = false;
+  }
+
   async function send() {
     if (!projectDir || !chatId) return;
     const modelId = modelSelect.current ? modelSelect.current.value : '';
     const content = (promptInput.current.value || '').trim();
     if (!content) { statusEl.current.textContent = 'type something'; return; }
+    // /shell <cmd> — direct tool invocation, no model.
+    if (content.startsWith('/shell ')) {
+      const cmd = content.slice('/shell '.length).trim();
+      if (cmd) return runShellCommand(cmd);
+    }
     if (!modelId) { statusEl.current.textContent = 'pick a model'; return; }
 
     sendBtn.current.disabled = true;

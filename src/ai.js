@@ -617,41 +617,113 @@ async function streamChat(opts) {
     return { ok: false, error: { code: 'EUNKNOWN_PROVIDER', message: 'No builder/parser for ' + model.provider } };
   }
 
-  const req = build(model, messages, true);
-  // Merge MCP-discovered tool specs into the outgoing request when
-  // the caller supplied a project context (decision §18). The
-  // mcp.listComposedToolSpecs() call is a no-op when no servers are
-  // running for the project, so the openai-compatible / anthropic /
-  // gemini / ollama / github-copilot happy path is unchanged.
-  let mcpSpec = null;
+  // ---- Tool specs advertised to the model ----------------------------
+  // Two sources feed the `tools` field of the outgoing request:
+  //   1. The native `shell` tool (src/tools/shell.js), enabled per
+  //      project via opts.shellEnabled (default off — the caller
+  //      decides based on project settings).
+  //   2. MCP-discovered tools (decision §18), which use the
+  //      mcp__<serverSlug>__<toolName> name convention.
+  // Tool calling and the multi-turn loop below are wired only for the
+  // OpenAI-compatible tool shape (openai-compatible + github-copilot).
+  // Other providers stream normally and never see a `tools` field, so
+  // their happy path is unchanged.
+  const toolSpecs = [];
+  if (opts && opts.shellEnabled) {
+    try { toolSpecs.push(require('./tools/shell.js').SPEC); }
+    catch { /* shell tool module unavailable; skip */ }
+  }
   try {
     if (opts && opts.projectDir) {
       const mcpMod = require('./mcp.js');
       const specs = mcpMod.listComposedToolSpecs(opts.projectDir);
       if (specs && specs.length) {
-        // The MCP tool spec is the standard OpenAI shape with the
-        // mcp__<serverSlug>__<toolName> name convention so the
-        // upstream's tool_call event carries a parseable name.
-        mcpSpec = specs.map(s => ({
-          type: 'function',
-          function: {
-            name: s.name,
-            description: s.description,
-            parameters: s.parameters
-          }
-        }));
-        // Attach serverSlug + toolName for the dispatcher to pick up
-        // without re-parsing. We hang it off the message shape the
-        // builder/parser will see. Builders are free to ignore it;
-        // only OpenAI-compatible providers carry a `tools` field on
-        // the body today.
-        const builderBody = req.body;
-        if (builderBody && typeof builderBody === 'object') {
-          builderBody.tools = mcpSpec;
+        for (const s of specs) {
+          toolSpecs.push({
+            type: 'function',
+            function: { name: s.name, description: s.description, parameters: s.parameters }
+          });
         }
       }
     }
-  } catch { /* mcp module not loaded or project dir invalid; fall through without tools */ }
+  } catch { /* mcp module not loaded or project dir invalid; fall through without MCP tools */ }
+
+  // The multi-turn tool loop. `convo` is the working message array; it
+  // grows by one assistant (tool-call) message + N tool-result messages
+  // each iteration the model asks for tools. Bounded by MAX_TOOL_TURNS
+  // so a runaway model cannot spin forever.
+  const MAX_TOOL_TURNS = (opts && typeof opts.maxToolTurns === 'number') ? opts.maxToolTurns : 12;
+  const convo = messages.slice();
+  const usage = { promptTokens: 0, completionTokens: 0 };
+
+  for (let turn = 0; turn <= MAX_TOOL_TURNS; turn++) {
+    const isFinalAllowedTurn = turn === MAX_TOOL_TURNS;
+    const result = await runUpstreamTurn(convo, toolSpecs, isFinalAllowedTurn);
+    if (!result.ok) return { ok: false, error: result.error, usage };
+
+    const calls = result.toolCalls;
+    if (!calls || !calls.length) {
+      // No tool calls this turn -> the assistant is done. Emit the
+      // final `done` with the accumulated usage and return.
+      onEvent('done', { usage });
+      return { ok: true, usage };
+    }
+
+    // The model asked for tools. Append the assistant's tool-call
+    // message (OpenAI shape) so the follow-up request has the context.
+    convo.push({
+      role: 'assistant',
+      content: result.assistantText || null,
+      tool_calls: calls.map(c => ({
+        id: c.id || undefined,
+        type: 'function',
+        function: { name: c.name, arguments: c.arguments || '{}' }
+      }))
+    });
+
+    // Execute each call, emit tool_call + tool_result, and append the
+    // `tool` result message the upstream needs on the next turn.
+    for (const c of calls) {
+      let args = {};
+      if (c.arguments) {
+        try { args = JSON.parse(c.arguments); }
+        catch { args = { __raw: c.arguments }; }
+      }
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+
+      const exec = await dispatchTool(c.name, args, opts);
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
+
+      convo.push({
+        role: 'tool',
+        tool_call_id: c.id || undefined,
+        name: c.name,
+        content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
+      });
+    }
+    // Loop: request again with the tool results in context.
+  }
+
+  // We fell out of the loop at MAX_TOOL_TURNS with tool calls still
+  // pending. runUpstreamTurn on the final turn suppresses tool specs
+  // so the model is forced to answer, so this is defensive only.
+  onEvent('done', { usage });
+  return { ok: true, usage };
+
+  // ---- One upstream request (stream + accumulate) --------------------
+  // Performs a single request/response against the provider, streaming
+  // `message` deltas through onEvent as they arrive. Returns
+  //   { ok: true, assistantText, toolCalls: [{ id, name, arguments }] }
+  // or { ok: false, error }. `done` is NOT emitted here — the caller
+  // decides when the whole exchange is finished.
+  async function runUpstreamTurn(convoMessages, specs, suppressTools) {
+  const req = build(model, convoMessages, true);
+  if (specs && specs.length && !suppressTools) {
+    const builderBody = req.body;
+    if (builderBody && typeof builderBody === 'object') {
+      builderBody.tools = specs;
+    }
+  }
   const upstream = await fetch(req.url, {
     method: 'POST',
     headers: req.headers,
@@ -681,13 +753,14 @@ async function streamChat(opts) {
     };
   }
 
-  // Stream -> normalize -> onEvent.
-  const usage = { promptTokens: 0, completionTokens: 0 };
+  // Stream -> normalize -> onEvent. Assistant text and any tool-call
+  // deltas are accumulated locally; the caller (the tool loop) decides
+  // what to do with them. `done` is NOT emitted here.
   let sawError = null;
+  let assistantText = '';
   // OpenAI tool-call accumulator. Deltas arrive split across frames;
-  // we assemble by `index` and flush when the upstream signals
-  // `finish_reason === 'tool_calls'`. The accumulator lives only
-  // for the duration of one stream — there is no reuse across calls.
+  // we assemble by `index`. The accumulator lives only for the
+  // duration of one turn.
   const toolAcc = new Map(); // index -> { id, name, arguments }
   const stream = upstream.body;
   const isNDJSON = def.streamFormat === 'ndjson';
@@ -714,100 +787,38 @@ async function streamChat(opts) {
     return { ok: false, error: { code: 'EUPSTREAM', message: e.message || 'stream error' } };
   }
 
-  // Tool-call dispatch (decision §18). After the upstream finishes
-  // emitting, if any tool_calls were assembled, dispatch them through
-  // the in-process MCP module. Each call yields a `tool_result` event
-  // the chat UI can render. The dispatch path is sync-fast for
-  // in-process tool execution; an MCP call is async and awaited.
-  // The upstream does not see this round-trip — tool results are
-  // surfaced to the chat as `tool_result` events, not fed back into
-  // the same stream. A future revision can wire a multi-turn loop;
-  // for this commit, a single pass is enough to keep the wire simple.
-  if (toolAcc.size > 0 && opts && opts.projectDir) {
-    let mcpMod;
-    try { mcpMod = require('./mcp.js'); }
-    catch (e) {
-      onEvent('error', { code: 'EMODULE', message: 'MCP module unavailable: ' + (e.message || e) });
-    }
-    if (mcpMod) {
-      for (const tc of toolAcc.values()) {
-        const composed = tc.name;
-        const parsed = mcpMod.parseServerSlugAndToolName(composed);
-        if (!parsed) {
-          onEvent('tool_result', {
-            id: tc.id || null,
-            name: composed,
-            ok: false,
-            result: { error: { code: 'EMCP_NOTFOUND', message: 'Not an MCP tool name: ' + composed } }
-          });
-          continue;
-        }
-        let args = {};
-        if (tc.arguments) {
-          try { args = JSON.parse(tc.arguments); }
-          catch (e) {
-            onEvent('tool_result', {
-              id: tc.id || null,
-              name: composed,
-              ok: false,
-              result: { error: { code: 'EBADINPUT', message: 'tool arguments not valid JSON: ' + e.message } }
-            });
-            continue;
-          }
-        }
-        let out;
-        try {
-          out = await mcpMod.callTool(opts.projectDir, parsed.serverSlug, parsed.toolName, args);
-        } catch (e) {
-          out = { ok: false, content: [{ type: 'text', text: 'MCP error: ' + (e.message || e) }], isError: true };
-        }
-        onEvent('tool_result', {
-          id: tc.id || null,
-          name: composed,
-          ok: out.ok,
-          result: { content: out.content, isError: !!out.isError }
-        });
-      }
-    }
-  }
+  if (sawError) return { ok: false, error: sawError };
 
-  if (sawError) return { ok: false, error: sawError, usage };
-  return { ok: true, usage };
+  // Collapse the accumulator into an ordered list of tool calls.
+  const toolCalls = [];
+  for (const tc of toolAcc.values()) {
+    if (tc.name) toolCalls.push({ id: tc.id, name: tc.name, arguments: tc.arguments });
+  }
+  return { ok: true, assistantText, toolCalls };
 
   function apply(ev) {
-    if (ev.name === 'message') onEvent('message', ev.data);
+    if (ev.name === 'message') { if (ev.data && typeof ev.data.delta === 'string') assistantText += ev.data.delta; onEvent('message', ev.data); }
     else if (ev.name === 'done') {
+      // Accumulate usage into the shared counter. Do NOT emit `done`
+      // here — the outer tool loop owns the single final `done` after
+      // the whole exchange (all tool round-trips) has completed.
       if (ev.data && ev.data.usage) {
-        usage.promptTokens = ev.data.usage.promptTokens || usage.promptTokens;
-        usage.completionTokens = ev.data.usage.completionTokens || usage.completionTokens;
+        usage.promptTokens = (usage.promptTokens || 0) + (ev.data.usage.promptTokens || 0);
+        usage.completionTokens = (usage.completionTokens || 0) + (ev.data.usage.completionTokens || 0);
       }
-      onEvent('done', { usage });
     } else if (ev.name === 'usage_input') {
-      usage.promptTokens = ev.data.promptTokens || usage.promptTokens;
+      usage.promptTokens = (usage.promptTokens || 0) + (ev.data.promptTokens || 0);
       onEvent('usage_input', ev.data);
     } else if (ev.name === 'usage_output') {
-      usage.completionTokens = ev.data.completionTokens || usage.completionTokens;
+      usage.completionTokens = (usage.completionTokens || 0) + (ev.data.completionTokens || 0);
       onEvent('usage_output', ev.data);
     } else if (ev.name === 'finish') {
-      // When the upstream signals `finish_reason === 'tool_calls'`
-      // (OpenAI / GitHub Copilot), emit a `tool_call` event per
-      // accumulated entry. The dispatcher in the stream post-pass
-      // takes over from there. Other finish reasons are passed
-      // through as `finish` so the UI can show them.
-      if (ev.data && ev.data.reason === 'tool_calls' && toolAcc.size > 0) {
-        for (const tc of toolAcc.values()) {
-          let args = tc.arguments;
-          if (typeof args === 'string' && args.length) {
-            try { args = JSON.parse(args); } catch { args = { __raw: args }; }
-          }
-          onEvent('tool_call', {
-            id: tc.id || null,
-            name: tc.name,
-            args: args || {}
-          });
-        }
+      // The tool-call finish reason is handled by the outer loop
+      // (it emits tool_call / tool_result). Pass through only the
+      // non-tool finish reasons so the UI can show them.
+      if (!(ev.data && ev.data.reason === 'tool_calls')) {
+        onEvent('finish', ev.data);
       }
-      onEvent('finish', ev.data);
     } else if (ev.name === 'tool_call_delta') {
       // OpenAI streams tool calls as a list of deltas. Accumulate
       // by `index`. The first delta carries the `id`; subsequent
@@ -829,7 +840,60 @@ async function streamChat(opts) {
       onEvent('passthrough', ev.data);
     }
   }
-}
+  } // end runUpstreamTurn
+
+  // ---- Tool dispatcher -----------------------------------------------
+  // Routes one tool call to its runner and returns
+  //   { ok, content, result } where `content` is the string fed back
+  //   to the model as the `tool` message, and `result` is the richer
+  //   object surfaced to the chat UI in the tool_result SSE event.
+  async function dispatchTool(name, args, callOpts) {
+    // Native shell tool.
+    if (name === 'shell') {
+      if (!(callOpts && callOpts.shellEnabled)) {
+        const r = { error: { code: 'ETOOL_DISABLED', message: 'shell tool is disabled for this project' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      let out;
+      try {
+        const shell = require('./tools/shell.js');
+        out = await shell.runShell({
+          projectDir: callOpts.projectDir,
+          cmd: args && args.cmd,
+          timeoutMs: args && args.timeoutMs
+        });
+      } catch (e) {
+        out = { ok: false, error: e.message || String(e), code: 'ESHELL' };
+      }
+      return { ok: !!out.ok, content: JSON.stringify(out), result: out };
+    }
+
+    // MCP tools (mcp__<serverSlug>__<toolName>).
+    if (callOpts && callOpts.projectDir) {
+      let mcpMod;
+      try { mcpMod = require('./mcp.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'MCP module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      const parsed = mcpMod.parseServerSlugAndToolName(name);
+      if (parsed) {
+        let out;
+        try {
+          out = await mcpMod.callTool(callOpts.projectDir, parsed.serverSlug, parsed.toolName, args);
+        } catch (e) {
+          out = { ok: false, content: [{ type: 'text', text: 'MCP error: ' + (e.message || e) }], isError: true };
+        }
+        const result = { content: out.content, isError: !!out.isError };
+        return { ok: !!out.ok, content: JSON.stringify(result), result };
+      }
+    }
+
+    // Unknown tool.
+    const r = { error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + name } };
+    return { ok: false, content: JSON.stringify(r), result: r };
+  }
+} // end streamChat
 
 // Non-streaming variant for tests and one-shot calls.
 async function chat(model, messages, opts) {

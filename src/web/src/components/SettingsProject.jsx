@@ -15,6 +15,8 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
   const resolvedDir = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
+  const shellToggle = useRef(null);
+  const shellStatus = useRef(null);
 
   let currentProject = {};
   const loadedDir = useRef('');
@@ -54,6 +56,13 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       editor.current.hidden = false;
       editor.current.value = JSON.stringify(currentProject, null, 2);
     }
+    // Sync the shell-tool toggle from the raw project file.
+    if (shellToggle.current) {
+      const on = !!(currentProject.tools && currentProject.tools.shell && currentProject.tools.shell.enabled);
+      shellToggle.current.checked = on;
+      shellToggle.current.disabled = false;
+    }
+    if (shellStatus.current) shellStatus.current.textContent = '';
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (revertBtn.current) revertBtn.current.disabled = false;
     setStatus(statusEl, 'path: ' + (projRes.body.path || ''), 'success');
@@ -108,6 +117,34 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     setStatus(statusEl, 'reverted.', 'success');
   }
 
+  // Toggle the native shell tool for this project. Persists
+  // tools.shell.enabled on the project file. The model can run
+  // commands in the project dir only when this is on.
+  async function toggleShell(e) {
+    const dir = loadedDir.current || (projectDir.current && projectDir.current.value || '').trim();
+    if (!dir) { if (shellStatus.current) shellStatus.current.textContent = 'load a project first'; return; }
+    const want = !!(e && e.target && e.target.checked);
+    if (shellToggle.current) shellToggle.current.disabled = true;
+    if (shellStatus.current) shellStatus.current.textContent = 'saving…';
+    const next = Object.assign({}, currentProject);
+    next.tools = Object.assign({}, next.tools);
+    next.tools.shell = Object.assign({}, next.tools.shell, { enabled: want });
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir: dir }, next))
+    });
+    if (shellToggle.current) shellToggle.current.disabled = false;
+    if (r.status !== 200) {
+      if (shellToggle.current) shellToggle.current.checked = !want;
+      if (shellStatus.current) shellStatus.current.textContent = 'HTTP ' + r.status;
+      return;
+    }
+    currentProject = r.body.project || next;
+    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    if (shellStatus.current) shellStatus.current.textContent = want ? 'shell tool enabled' : 'shell tool disabled';
+  }
+
   // Seed the directory field from the route (?projectDir=...) or the active
   // project, then auto-load so arriving from the Settings home card lands on
   // the project's data without a manual paste + tap.
@@ -152,6 +189,15 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       h('pre', { ref: resolvedOut, class: 'settings__out', hidden: true }),
       h('div', { ref: resolvedStatus, class: 'status', 'aria-live': 'polite' }),
       h('h3', null, 'Project features'),
+      h('label', { class: 'card', 'aria-label': 'Enable shell tool' },
+        h('div', { class: 'card__main' },
+          h('div', { class: 'card__title' }, 'Shell tool'),
+          h('div', { class: 'card__summary' }, 'Let the model run commands in this project folder.')
+        ),
+        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: toggleShell })
+      ),
+      h('p', { ref: shellStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
+      h('p', { class: 'hint hint--compact' }, '⚠︎ Commands run with your account, in the project directory. Enable only on projects you trust.'),
       h('a', {
         ref: promptsCard,
         class: 'card',

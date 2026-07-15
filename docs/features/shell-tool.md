@@ -13,7 +13,7 @@
 
 ### Enabling the tool
 
-In **Settings → Project → Tools**, a switch enables `shell` for that project. With it on, the AI client's outgoing request advertises the tool to the model using the OpenAI-compatible tool-call shape:
+In **Settings → Project → Project features**, a **Shell tool** switch enables `shell` for that project. It persists `tools.shell.enabled: true` on the project's `.mouaif.json`. With it on, the AI client's outgoing request advertises the tool to the model using the OpenAI-compatible tool-call shape:
 
 ```json
 {
@@ -36,7 +36,7 @@ In **Settings → Project → Tools**, a switch enables `shell` for that project
 
 ### In a chat
 
-When the model decides to call the tool, the server intercepts the call (the model only sees the tool's description; the actual execution lives behind the mouaif server), runs the command in `projectDir`, and forwards the result back to the upstream as a `tool` message before continuing the stream. The chat UI shows the call and the result inline in the conversation.
+When the model decides to call the tool, the server intercepts the call (the model only sees the tool's description; the actual execution lives behind the mouaif server), runs the command in `projectDir`, and forwards the result back to the upstream as a `tool` message before continuing the stream. This is a real **multi-turn loop**: the model can call the tool, read the result, and call again (or answer), for up to `maxToolTurns` iterations (default 12) per user message. The chat UI shows every call and result inline in the conversation.
 
 The wire shape on the SSE stream:
 
@@ -79,6 +79,7 @@ const out = await runShell({
 - **Sandboxing.** The runner does not provide OS-level sandboxing (containers, seccomp, `bwrap`). It is the user's responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.
 - **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: timeoutMs + 5000 }`.
 - **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256 KB each, configurable via `app.shellOutputMaxBytes`). Truncation adds a final `\n...[truncated at 256000 bytes]` line; the original exit code is preserved.
+- **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). The loop is bounded by `maxToolTurns` (default 12); on the final allowed turn the tool specs are withheld so the model is forced to produce a text answer.
 - **No streaming on the wire.** The tool returns a single `tool_result` after the command exits. A future revision may stream stdout/stderr line-by-line; for this commit, a single result is enough to keep the upstream contract simple.
 - **Disabled by default.** A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`).
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.
@@ -86,9 +87,9 @@ const out = await runShell({
 
 ## Implementation notes
 
-- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs })`, `resolveSandbox()`, `truncate(buf)`.
-- The model-facing tool spec is registered in `src/ai.js` next to the existing `ENDPOINTS` table, so the same per-provider builder/parser path emits the call. The runner is invoked from a new `toolRunner` registry, also in `src/ai.js`; the chat handler in `src/index.js` calls the registry after the upstream returns a `tool_call` event and feeds the result back in as a `tool` message.
-- The `/shell` composer command is parsed in `src/web/src/components/Chat.jsx`; the `client.shell(cmd)` helper POSTs to `/api/tools/shell` and renders the result inline.
+- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs, maxBytes })`, `resolveSandbox(projectDir)`, `truncate(buf, maxBytes)`, and the model-facing `SPEC`.
+- The tool spec is added to the outgoing request inside `ai.streamChat()`: when `opts.shellEnabled` is set, `require('./tools/shell.js').SPEC` is pushed onto the `tools` array alongside any MCP-discovered specs. `streamChat` runs the multi-turn loop itself — an inner `runUpstreamTurn()` performs one request and returns the assembled tool calls; the outer loop dispatches them through `dispatchTool()` (native `shell` first, then MCP `mcp__<slug>__<tool>`), appends the assistant tool-call message + `tool` result messages to the working conversation, and re-requests. The single final `done` event carries the summed usage across all turns.
+- `src/index.js` `handleChatStream` resolves `settings.getResolved(projectDir).tools.shell.enabled` and passes `{ projectDir, shellEnabled }` to `streamChat`. It also mounts `POST /api/tools/shell` (`handleTools`), which gates on the same flag (HTTP 403 `ETOOL_DISABLED` when off).\n- The `/shell <cmd>` composer command is parsed in `src/web/src/components/Chat.jsx` (`runShellCommand`); it POSTs to `/api/tools/shell` and renders the result inline as a `tool_result` card, no model round-trip.\n- The Settings \u2192 Project view (`src/web/src/components/SettingsProject.jsx`) has a **Shell tool** checkbox that PUTs `tools.shell.enabled` on the project file.
 - Mobile-first layout: the `tool_call` and `tool_result` blocks render as monospaced cards with a 13 px monospace font and a 32 px tap target for the expand/collapse chevron. Long stdout is collapsed to the last 12 lines by default with a "Show full output" action.
 - The `process.on('exit')` and `process.on('SIGINT')` handlers in the existing server do not need changes; child processes are tracked in a `Set` and reaped on parent exit so a server shutdown does not leak zombie children.
 
