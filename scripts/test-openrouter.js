@@ -13,6 +13,7 @@
 const path = require('path');
 const ai = require(path.resolve(__dirname, '..', 'src', 'ai.js'));
 const auth = require(path.resolve(__dirname, '..', 'src', 'auth.js'));
+const oauthOpenRouter = require(path.resolve(__dirname, '..', 'src', 'oauth-openrouter.js'));
 
 // AI.js is a 'use strict' CommonJS module that doesn't export the
 // private tables. Touching the internal maps would couple the test
@@ -34,12 +35,18 @@ function headerKeys(headers) {
 
 // ---- Auth mapping ------------------------------------------------------
 
-check('authProviderFor(openrouter model) === "openai"',
-  auth.authProviderFor({ provider: 'openrouter' }) === 'openai',
-  'openrouter is apikey-only; the key lives in the openai keyring namespace');
+check('authProviderFor(openrouter model) === "openrouter"',
+  auth.authProviderFor({ provider: 'openrouter' }) === 'openrouter',
+  'openrouter has its own keyring namespace (was "openai" before the PKCE sign-in landed)');
 
 check('authProviderFor returns null for a model with no provider field',
   auth.authProviderFor({}) === null);
+
+check('"openrouter" is in SUPPORTED_PROVIDERS (keyring namespace for the PKCE flow)',
+  auth.SUPPORTED_PROVIDERS.indexOf('openrouter') !== -1);
+
+check('"openai" remains in SUPPORTED_PROVIDERS (openai-compatible + manual OpenRouter apikey both share it)',
+  auth.SUPPORTED_PROVIDERS.indexOf('openai') !== -1);
 
 // ---- Endpoint def + builder shape --------------------------------------
 
@@ -170,8 +177,157 @@ globalThis.fetch = async function stubFetch(url, init) {
     check('streamChat did not throw', false, e && e.message);
   } finally {
     globalThis.fetch = realFetch;
+  }
+
+  // ---- PKCE sign-in flow ----------------------------------------------
+  // After the live integration is done, exercise the PKCE helpers:
+  // URL shape, code exchange against a mocked fetch, and the
+  // `accountForKey` short-label helper used to populate the OAuth
+  // account picker.
+
+  // buildAuthorizeUrl: state is echoed, code_challenge is the
+  // base64url sha256 of the verifier, code_challenge_method is S256.
+  const pkce = (() => {
+    const state = oauthOpenRouter.newState();
+    const verifier = oauthOpenRouter.newVerifier();
+    const callbackUrl = 'http://127.0.0.1:5732/oauth/callback?provider=openrouter';
+    const url = oauthOpenRouter.buildAuthorizeUrl({ callbackUrl, state, verifier });
+    return { state, verifier, callbackUrl, url };
+  })();
+
+  const pkceParsed = new URL(pkce.url);
+  check('buildAuthorizeUrl points at openrouter.ai/auth',
+    pkceParsed.origin + pkceParsed.pathname === 'https://openrouter.ai/auth',
+    'got ' + (pkceParsed.origin + pkceParsed.pathname));
+  check('buildAuthorizeUrl carries the callback_url query param',
+    pkceParsed.searchParams.get('callback_url') === pkce.callbackUrl);
+  check('buildAuthorizeUrl uses code_challenge_method=S256',
+    pkceParsed.searchParams.get('code_challenge_method') === 'S256');
+  check('buildAuthorizeUrl forwards the state',
+    pkceParsed.searchParams.get('state') === pkce.state);
+  check('buildAuthorizeUrl code_challenge === base64url(sha256(verifier))',
+    pkceParsed.searchParams.get('code_challenge') === oauthOpenRouter.challengeFor(pkce.verifier),
+    'got ' + pkceParsed.searchParams.get('code_challenge'));
+  check('buildAuthorizeUrl does not include client_id (no per-app identity)',
+    pkceParsed.searchParams.get('client_id') === null);
+  check('buildAuthorizeUrl does not include scope (OpenRouter PKCE flow does not take one)',
+    pkceParsed.searchParams.get('scope') === null);
+
+  // accountForKey: short, recognisable, not the full secret. 16 chars
+  // keeps the picker readable on a 360px phone without leaking the key.
+  check('accountForKey returns first 16 chars of the key',
+    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789') === 'sk-or-v1-abcdef0',
+    'got ' + oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789'));
+  check('accountForKey returns "default" for empty / missing keys',
+    oauthOpenRouter.accountForKey('') === 'default' && oauthOpenRouter.accountForKey(null) === 'default');
+  check('accountForKey returns the whole key when shorter than 16 chars',
+    oauthOpenRouter.accountForKey('short') === 'short');
+
+  // exchangeAuthorizationCode against a mocked fetch: the request
+  // body must carry { code, code_verifier, code_challenge_method }, the
+  // response { key } is mapped to accessToken by the registered
+  // exchange, and the AI client then uses it as a plain Bearer.
+  const mockFetch = (url, init) => {
+    const captured = { url, body: init && init.body, headers: init && init.headers };
+    mockFetch.lastCall = captured;
+    return Promise.resolve({
+      status: 200,
+      ok: true,
+      text: async () => JSON.stringify({ key: 'sk-or-v1-mock-1234567890abcdef' }),
+      json: async () => ({ key: 'sk-or-v1-mock-1234567890abcdef' })
+    });
+  };
+  const realFetch2 = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  (async () => {
+    try {
+      const out = await oauthOpenRouter.exchangeAuthorizationCode({
+        code: 'mock-auth-code',
+        verifier: pkce.verifier,
+        fetchImpl: mockFetch
+      });
+      check('exchangeAuthorizationCode POSTs to /api/v1/auth/keys',
+        mockFetch.lastCall && mockFetch.lastCall.url === 'https://openrouter.ai/api/v1/auth/keys',
+        'got ' + (mockFetch.lastCall && mockFetch.lastCall.url));
+      const sent = JSON.parse(mockFetch.lastCall.body);
+      check('exchange body carries the code',
+        sent.code === 'mock-auth-code');
+      check('exchange body carries the code_verifier',
+        sent.code_verifier === pkce.verifier);
+      check('exchange body carries code_challenge_method=S256',
+        sent.code_challenge_method === 'S256');
+      check('exchangeAuthorizationCode returns { key } verbatim',
+        out && out.key === 'sk-or-v1-mock-1234567890abcdef');
+    } catch (e) {
+      check('exchangeAuthorizationCode did not throw', false, e && e.message);
+    }
+
+    // exchange() — the registered shape. It maps the OpenRouter key
+    // to { accessToken, refreshToken: null, expiresAt: null, account }
+    // and uses accountForKey to synthesise a short label.
+    try {
+      const out = await oauthOpenRouter.exchange({
+        pending: { codeVerifier: pkce.verifier, redirectUri: pkce.callbackUrl, state: pkce.state },
+        code: 'mock-auth-code'
+      });
+      check('exchange maps the OpenRouter key to accessToken',
+        out.accessToken === 'sk-or-v1-mock-1234567890abcdef');
+      check('exchange sets refreshToken to null (no refresh-token grant)',
+        out.refreshToken === null);
+      check('exchange sets expiresAt to null (no expiry)',
+        out.expiresAt === null);
+      check('exchange synthesises a short account label',
+        out.account === 'sk-or-v1-mock-12',
+        'got ' + out.account);
+      check('exchange scope is the literal "openrouter"',
+        out.scope === 'openrouter');
+    } catch (e) {
+      check('exchange did not throw', false, e && e.message);
+    }
+
+    // refresh() — no-op; returns a blob with empty accessToken so the
+    // auth subsystem's refresh path is a clean no-op for an
+    // irrevocable key.
+    try {
+      const r = await oauthOpenRouter.refresh({ provider: 'openrouter', account: 'x' });
+      check('refresh returns expiresAt: null', r && r.expiresAt === null);
+      check('refresh returns refreshToken: null', r && r.refreshToken === null);
+    } catch (e) {
+      check('refresh did not throw for openrouter', false, e && e.message);
+    }
+    try {
+      await oauthOpenRouter.refresh({ provider: 'anthropic', account: 'x' });
+      check('refresh rejects wrong provider with EBADINPUT', false);
+    } catch (e) {
+      check('refresh rejects wrong provider with EBADINPUT', e && e.code === 'EBADINPUT',
+        'got ' + (e && e.code));
+    }
+
+    // authProviderFor(model with provider:'openrouter') must equal
+    // 'openrouter' so the OAuth branch of requireApiKey() looks up the
+    // right keychain entry. This is the regression check for the old
+    // 'openai' mapping that put OpenRouter OAuth credentials in the
+    // openai keyring namespace (an OpenAI key is not a valid
+    // OpenRouter credential).
+    check('auth.authProviderFor(openrouter) === "openrouter"',
+      auth.authProviderFor({ provider: 'openrouter' }) === 'openrouter');
+
+    // The AI client treats the OAuth blob the same as a pasted apikey
+    // at request time. requireApiKey() takes the OAuth branch when
+    // model.auth === 'oauth' and reads model.__accessToken; the
+    // openrouter ENDPOINTS entry's authHeader(cred) emits
+    // `Authorization: Bearer <cred>` regardless of where the cred
+    // came from. The end-to-end check is the live integration above;
+    // here we just confirm the OpenRouter key survives
+    // JSON.parse(blob) → { accessToken }.
+    const blob = JSON.stringify({ accessToken: 'sk-or-v1-blob', refreshToken: null, expiresAt: null });
+    const parsed = JSON.parse(blob);
+    check('OAuth blob round-trip preserves the OpenRouter key as accessToken',
+      parsed.accessToken === 'sk-or-v1-blob');
+
+    globalThis.fetch = realFetch2;
     console.log('');
     console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
     if (failed > 0) process.exit(1);
-  }
+  })();
 })();

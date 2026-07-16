@@ -40,7 +40,7 @@ const settings = require('./settings.js');
 // will show entries with the full name; we do not strip the prefix.
 const SERVICE_PREFIX = 'mouaif';
 
-const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot'];
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot', 'openrouter'];
 
 function serviceName(provider) {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
@@ -185,11 +185,15 @@ const AI_TO_AUTH_PROVIDER = Object.freeze({
   'gemini':            'google',
   'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
   'github-copilot':    'github-copilot',
-  // OpenRouter uses an OpenAI-shaped key in the same 'openai' keyring
-  // namespace. The model record keeps the AI client provider verbatim
-  // ('openrouter') per decision §10, and this mapping is what lets the
-  // apikey path read the right keychain entry.
-  'openrouter':        'openai'
+  // OpenRouter has its own keyring namespace ('openrouter'). The
+  // PKCE sign-in flow (src/oauth-openrouter.js) stores the issued
+  // API key under that namespace; the apikey path uses
+  // model.apiKey directly and does not touch the keychain. Two
+  // signed-in OpenRouter accounts therefore live as separate rows
+  // in the OAuth account picker; an OpenAI key in the 'openai'
+  // namespace is NOT a valid OpenRouter credential — the two
+  // services have different billing.
+  'openrouter':        'openrouter'
 });
 
 function authProviderFor(model) {

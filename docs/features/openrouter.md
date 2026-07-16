@@ -4,7 +4,12 @@
 
 OpenRouter is a single API key that fronts many upstream models (Anthropic, OpenAI, Google, Meta, Mistral, and others) over one OpenAI-shaped endpoint. `mouaif` treats it as a first-class provider: same UI flow as any other provider, same SSE streaming, same usage accounting — but the user only has to manage one key to access models from many vendors.
 
-The provider is **API-key only**. OpenRouter does not expose an OAuth flow for third-party clients, so `mouaif` does not ship a sign-in screen for it; the user pastes the key issued at [openrouter.ai](https://openrouter.ai) into the provider form, same as the OpenAI-compatible path.
+The provider supports **two ways to authenticate**:
+
+1. **Paste an OpenRouter API key** (issued at [openrouter.ai](https://openrouter.ai/keys)). The key is stored in the app SQLite provider record and never returned to the browser after save.
+2. **Sign in with OpenRouter (PKCE).** The Settings → Providers form now offers a `Sign in with OpenRouter` button. The browser is sent to `https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256`, the user authorises the app, OpenRouter redirects back to the loopback, the server exchanges the `code` for a user-controlled OpenRouter API key at `https://openrouter.ai/api/v1/auth/keys`, and the key is stored in the OS keyring under the `openrouter` namespace. Subsequent chats use that key as a plain Bearer credential.
+
+The PKCE flow is the only sign-in option OpenRouter exposes to third-party clients; there is no client_id, no client_secret, no per-app dashboard, and no refresh-token grant. The flow's "OAuth" surface is therefore narrower than Anthropic's or GitHub Copilot's, but it still ships a sign-in button on the provider form so the user can authorise the app in one tap rather than round-tripping through the OpenRouter keys page.
 
 ## Usage
 
@@ -12,7 +17,9 @@ The provider is **API-key only**. OpenRouter does not expose an OAuth flow for t
 
 1. **Settings → Providers → + Add provider.**
 2. Pick **OpenRouter** from the provider dropdown. The default API base URL is `https://openrouter.ai/api/v1` (overridable for self-hosted/proxy setups).
-3. Paste your OpenRouter API key. The key is stored in the OS keychain (the same `openai` namespace the OpenAI-compatible provider uses) and never returned to the browser after save.
+3. Pick an authentication mode:
+   - **API key** — paste your OpenRouter key. The key lives in the app store (encrypted at rest by the host OS, see [`app-and-project-settings`](./app-and-project-settings.md)). The apikey path does not touch the keyring.
+   - **OAuth (PKCE)** — tap **Sign in with OpenRouter** in the provider form. The browser opens `https://openrouter.ai/auth`, the user signs in and grants the request, OpenRouter redirects back to the loopback, and the resulting OpenRouter API key is stored in the OS keyring under the `openrouter` namespace. The account picker shows a short label derived from the key (e.g. `sk-or-v1-mock-12`) so the user can tell two sign-ins apart without exposing the full secret.
 4. **Save provider.** You can now pick OpenRouter when creating a model on a project.
 
 ### Add a model
@@ -34,31 +41,41 @@ The provider is **API-key only**. OpenRouter does not expose an OAuth flow for t
 
 ### Chat
 
-No special path. The chat composer posts to `/api/chats/:id/messages/stream`, which hydrates the project's model with the OpenRouter provider connection, calls `https://openrouter.ai/api/v1/chat/completions`, and forwards events as SSE. The model picker shows the friendly label; the chat transcript and usage display are identical to every other provider.
+No special path. The chat composer posts to `/api/chats/:id/messages/stream`, which hydrates the project's model with the OpenRouter provider connection, calls `https://openrouter.ai/api/v1/chat/completions`, and forwards events as SSE. The model picker shows the friendly label; the chat transcript and usage display are identical to every other provider. The key path is transparent: a key obtained via PKCE is used exactly the same way a manually pasted key is.
 
 ## Behavior
 
 - **OpenAI-shaped wire protocol.** OpenRouter accepts and returns the standard OpenAI chat-completions format, so `mouaif` reuses the openai-compatible builder and parser. The body shape is `{ model, messages, stream, ... }`; the response is `text/event-stream` ending with the literal `[DONE]` sentinel.
 - **Attribution headers.** Every request carries `HTTP-Referer: https://mouaif.local` and `X-Title: mouaif` static headers, per [OpenRouter's docs](https://openrouter.ai/docs/api-reference/overview). These identify the app on the public leaderboard; they do not send PII. They can be overridden per-request by `model.headers` for testing.
-- **No OAuth.** Choosing OAuth in the provider form is not offered — there is no server-side flow registered, and offering it would 404. The form auto-hides the auth select for OpenRouter (singleAuth = true) and only shows the API-key field.
-- **Single credential store.** The OpenRouter key is stored under the `openai` keyring namespace. The mapping from AI client provider (`openrouter`) to keyring namespace (`openai`) lives in [src/auth.js](../../src/auth.js) `AI_TO_AUTH_PROVIDER`. This means an OpenAI API key already in the keychain does NOT double as an OpenRouter key — the two are different services with different billing.
+- **OAuth via PKCE.** The flow follows [OpenRouter's documented PKCE guide](https://openrouter.ai/docs/guides/overview/auth/oauth):
+  - Authorize: `https://openrouter.ai/auth?callback_url=<loopback>&code_challenge=<sha256(verifier)>&code_challenge_method=S256&state=<state>`.
+  - Token: `POST https://openrouter.ai/api/v1/auth/keys` with JSON body `{ code, code_verifier, code_challenge_method: 'S256' }`.
+  - Response: `{ key }` — a user-controlled OpenRouter API key.
+  The key is stored as the `accessToken` field of a standard OAuth blob, with `refreshToken: null` and `expiresAt: null` (OpenRouter keys do not expire unless revoked).
+- **No refresh-token grant.** OpenRouter's PKCE flow does not issue a refresh token. A leaked or revoked key is irrecoverable through the OAuth path; the user re-runs Sign in to receive a new key. The `auth.registerRefresher('openrouter', ...)` call in `src/oauth-openrouter.js` therefore registers a no-op refresher — `expiresAt` is always `null` so the AI client's proactive-refresh code path never fires.
+- **Account naming.** Each sign-in produces a separate row in the OAuth account picker. The label is the first 16 characters of the issued key (e.g. `sk-or-v1-mock-12`); that is unique enough to be useful in a phone-sized picker without leaking the full secret.
+- **Separate keyring namespace.** OpenRouter has its own keyring namespace (`openrouter`), added to `SUPPORTED_PROVIDERS` in [src/auth.js](../../src/auth.js). The AI client maps `provider: 'openrouter'` to the auth namespace `openrouter` in `AI_TO_AUTH_PROVIDER`; the prior `openai` mapping was removed. An OpenAI key in the `openai` keyring is NOT a valid OpenRouter credential — the two services have different billing — so the namespaces stay isolated.
+- **Loopback callback is shared.** The existing `/oauth/callback` handler in [src/index.js](../../src/index.js) already routes by `?provider=...`. The OpenRouter flow is invoked with `?provider=openrouter`; the registered exchange (`auth.getExchange('openrouter')`) maps the response `{ key }` to the standard OAuth blob and `auth.setToken` writes the keyring entry.
 - **Model id is the OpenRouter slug.** OpenRouter catalogs models with a `<vendor>/<name>` prefix; pass it through unchanged. The chat-completions body is built from `model.id` with no transformation.
 - **No per-model pricing yet.** OpenRouter's pricing is per-model and changes; the project's model record carries a `pricing` block you can set by hand, otherwise the chat uses the app-wide default pricing.
-- **Errors are typed.** The same `EUPSTREAM` / `EUNKNOWN_PROVIDER` / `ENOAPIKEY` mapping as every other provider applies. A bad model slug returns 400 from OpenRouter and the proxy surfaces the message as `EUPSTREAM`.
+- **Errors are typed.** The same `EUPSTREAM` / `EUNKNOWN_PROVIDER` / `ENOAPIKEY` / `ENOAUTH` mapping as every other provider applies. A bad model slug returns 400 from OpenRouter and the proxy surfaces the message as `EUPSTREAM`. A bad `code` on the exchange returns 400 from OpenRouter with `{ error: { message, code } }`; the server maps it to a typed `EOAUTH` with `oauthError` set to the message string.
 
 ## Implementation notes
 
 - **Source: [src/ai.js](../../src/ai.js).** The provider is registered as a single entry in `ENDPOINTS` (with `baseUrl`, `chatPath`, `authHeader`, and `staticHeaders`) and reuses the existing `buildOpenAIRequest` and `parseOpenAISSE`. No new builder or parser was needed.
-- **Auth mapping: [src/auth.js](../../src/auth.js) → `AI_TO_AUTH_PROVIDER`.** `'openrouter' → 'openai'`. The keyring entry is keyed `mouaif/openai/<account>`. The `account` slot is the OpenAI-style account string (the user can leave it blank to use the `default` slot).
-- **UI: [src/web/src/api.js](../../src/web/src/api.js) → `SETTINGS_PROVIDERS`.** One row in the list. No `oauth: true` and no `reserved: true`, so the SettingsProviders form auto-hides the OAuth select and Sign in button — the form just shows the base URL + API key fields.
-- **No new endpoint.** The existing `/api/ai/chat`, `/api/ai/test`, and `/api/ai/models` routes pick up the new provider for free; model resolution already filters by the project's model list, and providers are looked up by id.
+- **PKCE module: [src/oauth-openrouter.js](../../src/oauth-openrouter.js).** The per-provider sign-in flow. Public surface: `register()`, `buildAuthorizeUrl({ callbackUrl, state, verifier })`, `exchangeAuthorizationCode({ code, verifier })`, `accountForKey(key)`. `register()` is called once at server startup from [src/index.js](../../src/index.js); it wires `auth.registerExchange('openrouter', exchange)` and `auth.registerRefresher('openrouter', refresh)`. The refresher is a no-op (returns the existing blob with `expiresAt: null`) because OpenRouter keys cannot be refreshed.
+- **Auth mapping: [src/auth.js](../../src/auth.js) → `AI_TO_AUTH_PROVIDER`.** `'openrouter' → 'openrouter'`. The keyring entry is keyed `mouaif/openrouter/<account>`. The `account` slot is the first 16 chars of the OpenRouter key (e.g. `sk-or-v1-mock-12`) so the OAuth account picker can show one row per signed-in key without exposing the full secret.
+- **REST: `POST /api/auth/sign-in/openrouter`** in [src/index.js](../../src/index.js). Returns `{ authorizeUrl, redirectUri, state, expiresAt, apiBase }`. The `redirectUri` is the loopback callback (`http://127.0.0.1:5732/oauth/callback?provider=openrouter`) so the shared `finishOAuth` handler routes the redirect to the right exchange. Returns 501 when the build does not register the exchange (e.g. when `oauthOpenRouter.register()` was never called).
+- **UI: [src/web/src/api.js](../../src/web/src/api.js) → `SETTINGS_PROVIDERS`.** The OpenRouter row carries `oauth: true`, which makes the SettingsProviders form render the auth `<select>` (with both `API key` and `OAuth` options) and the Sign in button. Reserved providers (GitHub Copilot) skip the auth select entirely; OpenRouter now shows it because both modes are valid.
+- **No new AI client code.** The AI client treats the OAuth blob the same way the apikey path does: `requireApiKey` reads `model.__accessToken` after the OAuth path resolves the key from the keyring, and the OpenRouter `ENDPOINTS` entry's `authHeader(cred)` emits `Authorization: Bearer <cred>` for either origin. No new `if (provider === 'openrouter')` branches in [src/ai.js](../../src/ai.js).
 - **Latent bug fixed.** `buildOpenAIRequest` used to call `joinUrl(model.baseUrl, ...)` without a fallback, so an empty saved `baseUrl` would collapse the URL to the relative path `/chat/completions`. The builder now falls back to the per-provider `defaultBaseUrl` when the record's `baseUrl` is empty. The Settings UI snaps to `defaultBaseUrl` on save, but hand-edited `.mouaif.json` files or future providers that forget to set one are now safe.
-- **Tests: [scripts/test-openrouter.js](../../scripts/test-openrouter.js).** 21 assertions: `authProviderFor` mapping, request URL, Authorization header, HTTP-Referer + X-Title static headers, no Copilot Editor-Version leakage, body shape, and end-to-end `streamChat` round-trip with a mocked fetch (parses the SSE, emits a `message` event, emits a `done` event with usage).
-- **No new keyring namespace.** `SUPPORTED_PROVIDERS` in [src/auth.js](../../src/auth.js) is unchanged; OpenRouter borrows the existing `openai` namespace rather than introducing a parallel one. This keeps the OAuth account picker (which is the only thing that iterates `SUPPORTED_PROVIDERS`) stable.
+- **Tests: [scripts/test-openrouter.js](../../scripts/test-openrouter.js).** 48 assertions: `authProviderFor` mapping, request URL, Authorization header, HTTP-Referer + X-Title static headers, no Copilot Editor-Version leakage, body shape, end-to-end `streamChat` round-trip with a mocked fetch (parses the SSE, emits a `message` event, emits a `done` event with usage), `SUPPORTED_PROVIDERS` membership, `buildAuthorizeUrl` URL shape, `code_challenge = base64url(sha256(verifier))` invariant, `accountForKey` short-label helper, `exchangeAuthorizationCode` request body, and the registered `exchange` / `refresh` shape.
+- **New keyring namespace.** `SUPPORTED_PROVIDERS` in [src/auth.js](../../src/auth.js) gains `'openrouter'`. The OAuth account picker (which is the only place that iterates `SUPPORTED_PROVIDERS`) therefore lists OpenRouter as a separate column; the `authNsForProvider` helper in [src/web/src/api.js](../../src/web/src/api.js) returns `'openrouter'` for the OpenRouter model, so the picker queries the right keyring row.
 
 ## Related
 
 - [AI client](./ai-client.md) — the parent feature, including the wire-protocol details and the model record shape.
 - [App and project settings](./app-and-project-settings.md) — where provider connections live.
 - [Settings UI](./settings-ui.md) — the mobile Providers screen where OpenRouter is configured.
+- [Anthropic OAuth](./oauth-anthropic.md) — the per-provider OAuth flow for Anthropic, which the OpenRouter flow parallels in shape (PKCE → token exchange → keyring).
 - [decisions.md §10](../decisions.md) — the original AI client core spec.

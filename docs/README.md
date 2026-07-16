@@ -17,7 +17,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 6 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
-- [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API-key only; the key lives in the same keyring namespace as the OpenAI-compatible provider.
+- [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API key or PKCE sign-in (`https://openrouter.ai/auth`); the issued key is stored in the `openrouter` keyring namespace.
 - [Custom prompts](features/custom-prompts.md) — user-authored system/role prompts stored per project, with per-chat prompt selector.
 - [MCP](features/mcp.md) — Model Context Protocol servers as user tools. Per-project stdio server registry, tool discovery, in-chat tool_call/tool_result cards.
 - [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.

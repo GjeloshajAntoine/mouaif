@@ -9,6 +9,7 @@ const ai = require('./ai.js');
 const auth = require('./auth.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
 const oauthCopilot = require('./oauth-github-copilot.js');
+const oauthOpenRouter = require('./oauth-openrouter.js');
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');
@@ -25,6 +26,7 @@ const shellTool = require('./tools/shell.js');
 // because auth.registerExchange overwrites cleanly.
 oauthAnthropic.register();
 oauthCopilot.register();
+oauthOpenRouter.register();
 // Install the MCP server shutdown handler so SIGINT / SIGTERM /
 // `process.exit` tear down every running server child.
 mcp.installShutdown();
@@ -257,7 +259,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })'] });
   }
 
   // REST: GET /data
@@ -1579,6 +1581,55 @@ async function handleAuth(req, res, parsed) {
       expiresAt: Date.now() + 10 * 60 * 1000,
       // Echoed for debugging; the production base is the default.
       apiBase: oauthCopilot.COPILOT_API_BASE
+    });
+  }
+
+  // POST /api/auth/sign-in/openrouter  -> { authorizeUrl, state, expiresAt }
+  // OpenRouter's PKCE flow (docs/decisions.md §12). Unlike
+  // Anthropic / GitHub Copilot, the loopback URL the user is
+  // redirected back to is the same URL we pass in — OpenRouter
+  // echoes it via the `callback_url` query param rather than
+  // expecting a pre-registered redirect. The user signs in at
+  // openrouter.ai/auth and OpenRouter redirects back to our
+  // /oauth/callback with `?code=...&state=...`. The server
+  // exchanges the code for a user-controlled OpenRouter API key
+  // (src/oauth-openrouter.js) and stores it in the keyring under
+  // the `openrouter` namespace. Subsequent chats use the same
+  // Bearer header path as a manually pasted OpenRouter key.
+  if (urlPath === '/api/auth/sign-in/openrouter' && method === 'POST') {
+    if (!auth.getExchange('openrouter')) {
+      return sendJSON(res, 501, { error: 'OpenRouter OAuth is not registered in this build' });
+    }
+    let body = {};
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+
+    const state = oauthOpenRouter.newState();
+    const verifier = oauthOpenRouter.newVerifier();
+    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'openrouter');
+    const redirectUri = callbackUrl.toString();
+
+    auth.recordPending('openrouter', {
+      state,
+      codeVerifier: verifier,
+      redirectUri,
+      scopes: 'openrouter',
+      accountHint: body.accountHint || ''
+    });
+
+    const authorizeUrl = oauthOpenRouter.buildAuthorizeUrl({
+      callbackUrl: redirectUri,
+      state,
+      verifier
+    });
+
+    return sendJSON(res, 200, {
+      authorizeUrl,
+      redirectUri,
+      state,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      apiBase: oauthOpenRouter.KEYS_URL
     });
   }
 
