@@ -130,11 +130,23 @@ html, body {
      on .app__main itself, so re-layout during the transition
      doesn't trigger reflow. */
 }
+/* On drill-in screens (--flush: chat, picker, project settings, ...)
+   .app__main is a flex column with `overflow: hidden` so the chat
+   transcript can scroll internally without pushing the composer off
+   the screen. The chat view handles its own scroll (the section IS
+   the .chat-view and its transcript is the bounded child). For
+   other flush views (project settings, the folder picker, etc.) the
+   section was a plain block child with no height constraint, so any
+   view that grew taller than main was silently clipped at the
+   bottom with no way to reach the clipped content (e.g. opening
+   the Advanced section in project settings pushed the resolved-JSON
+   <pre> past the bottom of the screen and only the <pre>'s own
+   inner scroll was reachable). */
 .app__main--flush {
-  /* Drill-in screens (chat, picker) own the safe area themselves.
-     A bounded flex column with a zero min-height lets a full-height
-     child (the chat view) flex and scroll its transcript internally
-     instead of overflowing the shell. */
+  /* Bounded flex column so the chat view (the section child) can
+     own its internal transcript scroll + pinned composer. The
+     section below takes the same contract for non-chat views so
+     they can scroll internally instead of overflowing the shell. */
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -252,27 +264,42 @@ html, body {
 }
 
 /* On drill-in screens (--flush: chat, picker, project settings, ...)
-   .app__main is a flex column with `overflow: hidden` so the chat
-   transcript can scroll internally without pushing the composer off
-   the screen. The chat view handles its own scroll (the section IS
-   the .chat-view and its transcript is the bounded child). For
-   other flush views (project settings, the folder picker, etc.) the
-   section was a plain block child with no height constraint, so any
-   view that grew taller than main was silently clipped at the
-   bottom with no way to reach the clipped content (e.g. opening
-   the Advanced section in project settings pushed the resolved-JSON
-   <pre> past the bottom of the screen and only the <pre>'s own
-   inner scroll was reachable). Scoped to `:not(.chat-view)` so the
-   chat's own internal transcript scroll is never replaced. The
-   `min-height: 0` lets the section sit inside the flex column
-   without forcing it taller than main; `overflow-y: auto` lets the
-   user reach the overflowing content. */
+   .app__main is a bounded flex column (see the .app__main--flush
+   rule above). For the chat view, the section IS the chat-view
+   and the section's own internal transcript handles scrolling.
+   For every other flush view (project settings, the folder picker,
+   provider edit, ...) the section was a plain block child with no
+   height constraint, so any view that grew taller than main was
+   silently clipped at the bottom with no way to reach the clipped
+   content (e.g. opening the Advanced section in project settings
+   pushed the resolved-JSON <pre> past the bottom of the screen
+   and only the <pre>'s own inner scroll was reachable).
+
+   The fix is the standard "flex child becomes the scroll
+   container" pattern:
+     - `flex: 1 1 0` + `min-height: 0` + `height: 0` makes the
+       section's box exactly equal to main's content box (the
+       `height: 0` is the key: it forces the flex algorithm to use
+       the available space rather than the content's intrinsic
+       height, which is the common cause of touch-scroll being
+       lost on iOS Safari when the scroll container is sized by
+       content instead of by its parent).
+     - `overflow-y: auto` makes the section scroll internally.
+     - `padding-bottom: var(--safe-bottom)` reserves room for the
+       home indicator so the last row of content isn't flush
+       against the screen edge on phones.
+     - `overscroll-behavior: contain` stops the page from
+       rubber-banding at the top/bottom of the section.
+     - The chat view is excluded (`.chat-view` has its own
+       internal transcript scroll and its own min-height/flex
+       contract; we don't want to double-scope it). */
 .app__main--flush > section:not(.chat-view) {
+  flex: 1 1 0;
   min-height: 0;
+  height: 0;
   overflow-y: auto;
-  /* Reserve room at the bottom so the last row isn't flush against
-     the safe-area edge on phones with a home indicator. */
   padding-bottom: var(--safe-bottom);
+  overscroll-behavior: contain;
 }
 
 @keyframes mouaif-view-in {
