@@ -76,7 +76,6 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'projects',       // registered project cards
   'promptSize',     // default prompt-size profile
   'githubCopilot',  // { clientId } for the custom OAuth app
-  'openRouter',     // { appName } for the OpenRouter X-Title header
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
