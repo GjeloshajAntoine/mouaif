@@ -38,14 +38,6 @@ export function ChatView(props) {
   const messagesRef = useRef([]);
   const modelsRef = useRef([]);
   const promptsRef = useRef([]);
-  // The prompt-size profile list is fetched from /api/prompt-profiles
-  // once per chat open. The picker's <option> list is generated from
-  // this array; the description under the picker reflects the active
-  // option's `description` and updates on every change. The array is
-  // also the source for the meta line (the chat record's `promptSize`
-  // is the raw id; we show the friendlier `label` in the meta).
-  const profilesRef = useRef([]);
-  const profileByIdRef = useRef({});
   // The effective system context (resolved prompt-size profile + custom
   // prompt) as it will be sent upstream. Fetched from
   // /api/chats/:id/system-prompt and rendered as the first collapsible
@@ -81,12 +73,11 @@ export function ChatView(props) {
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rMsgs, rPrompts, rProfiles, rSys] = await Promise.all([
+    const [rChat, rModels, rMsgs, rPrompts, rSys] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/prompt-profiles'),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir))
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
@@ -95,10 +86,7 @@ export function ChatView(props) {
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
-    profilesRef.current = rProfiles.status === 200 ? (rProfiles.body.profiles || []) : [];
     systemPromptRef.current = rSys.status === 200 ? rSys.body : null;
-    profileByIdRef.current = {};
-    for (const p of profilesRef.current) profileByIdRef.current[p.id] = p;
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
@@ -188,32 +176,15 @@ export function ChatView(props) {
     }
   }
 
-  // Build (or rebuild) the creation-time setup card. The card lives in
-  // the transcript, above the system message, and contains the
-  // prompt-size switch + the tool-declaration preview. It is the
-  // first thing the user sees on a new chat; once any message exists
+  // Build (or rebuild) the creation-time setup control. The prompt-size
+  // choice is a single segmented S/M/L switch — no title, no
+  // description, no tool preview. The control lives in the transcript
+  // (the message area), above the system-prompt message, and is the
+  // first thing the user sees on a new chat. Once any message exists
   // it is removed entirely (see updateSetupVisibility).
   function buildSetupCard() {
-    const card = document.createElement('div');
-    card.className = 'chat-view__setup';
-    card.dataset.role = 'assistant';
-    const head = document.createElement('div');
-    head.className = 'chat-view__setup-head';
-    const role = document.createElement('div');
-    role.className = 'chat-msg__role';
-    role.textContent = 'setup';
-    const title = document.createElement('div');
-    title.className = 'chat-view__setup-title';
-    title.textContent = 'Pick a prompt size for this chat';
-    const sub = document.createElement('p');
-    sub.className = 'chat-view__setup-sub';
-    sub.textContent = 'This decides how much the model is told about the tools it can call. You can only change it before sending the first message; after that, the system prompt is fixed for the life of the chat.';
-    head.appendChild(role);
-    head.appendChild(title);
-    head.appendChild(sub);
-    card.appendChild(head);
     const sw = document.createElement('div');
-    sw.className = 'chat-view__switch';
+    sw.className = 'chat-view__setup';
     sw.setAttribute('role', 'group');
     sw.setAttribute('aria-label', 'Prompt size');
     for (const opt of [
@@ -231,11 +202,7 @@ export function ChatView(props) {
       b.addEventListener('click', () => setPromptSize(opt.id));
       sw.appendChild(b);
     }
-    card.appendChild(sw);
-    const prev = document.createElement('div');
-    prev.className = 'chat-view__toolprev';
-    card.appendChild(prev);
-    return card;
+    return sw;
   }
 
   function renderTranscript() {
@@ -259,7 +226,7 @@ export function ChatView(props) {
       title.textContent = 'Start the conversation';
       const text = document.createElement('p');
       text.className = 'chat-view__empty-text';
-      text.textContent = 'Pick a prompt size above, then type a message below. The model streams its reply in real time; everything you send is saved to this chat\'s transcript on disk.';
+      text.textContent = 'Type a message below. The model streams its reply in real time; everything you send is saved to this chat\'s transcript on disk.';
       empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       transcript.current.appendChild(empty);
       return;
@@ -515,13 +482,13 @@ export function ChatView(props) {
     updateChat({ trace: !!traceToggle.current.checked });
   }
 
-  // Shared setter for the in-transcript setup card. The prompt size
-  // is chosen once, while the chat is still empty; the control is not
-  // a permanent fixture (see updateSetupVisibility below).
+  // Shared setter for the in-transcript setup control. The prompt
+  // size is chosen once, while the chat is still empty; the control
+  // is not a permanent fixture (see updateSetupVisibility below).
   function setPromptSize(v) {
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
     updateSwitch(v);
-    updateChat({ promptSize: v }).then(() => { refreshSystemPrompt(); loadToolPreview(); });
+    updateChat({ promptSize: v }).then(() => { refreshSystemPrompt(); });
   }
 
   // The switch is a segmented control (very-small | average |
@@ -540,12 +507,12 @@ export function ChatView(props) {
     }
   }
 
-  // The setup card is a CREATION-TIME control: it is only mounted
+  // The setup control is a CREATION-TIME widget: it is only mounted
   // while the chat has no messages yet, so the user picks the prompt
-  // budget up front. As soon as the first message exists the card is
-  // removed and never comes back — the prompt size is fixed for the
-  // life of the chat. Removing the card (instead of hiding it) keeps
-  // the transcript clean: no empty card shape behind later messages.
+  // budget up front. As soon as the first message exists the control
+  // is removed and never comes back — the prompt size is fixed for
+  // the life of the chat. Removing it (instead of hiding it) keeps
+  // the transcript clean: no empty shape behind later messages.
   function updateSetupVisibility() {
     const empty = !messagesRef.current || messagesRef.current.length === 0;
     const host = setupCardRef.current;
@@ -553,69 +520,13 @@ export function ChatView(props) {
       if (!host && transcript.current) {
         // Re-entering a chat that was loaded with messages but then
         // deleted (extremely rare; just safety): nothing to do, the
-        // setup card is for fresh chats only.
+        // setup control is for fresh chats only.
         return;
       }
-      if (host) loadToolPreview();
       return;
     }
     if (host && host.parentNode) host.parentNode.removeChild(host);
     setupCardRef.current = null;
-  }
-
-  // Fetch the tool-declaration state for the active profile and render
-  // it inside the setup card. The preview is the concrete effect of
-  // the S/M/L choice: which tools ride, and whether their parameter
-  // schemas are sent (average/extensive) or stripped to name +
-  // one-line description (very-small).
-  async function loadToolPreview() {
-    const host = setupCardRef.current && setupCardRef.current.querySelector('.chat-view__toolprev');
-    if (!host || !projectDir || !chatId) return;
-    let r;
-    try {
-      r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/tool-preview?projectDir=' + encodeURIComponent(projectDir));
-    } catch { return; }
-    if (r.status !== 200 || !r.body) return;
-    const b = r.body;
-    host.innerHTML = '';
-    // Summary line: how many tools, and the schema policy.
-    const summary = document.createElement('div');
-    summary.className = 'chat-view__toolprev-summary';
-    const profile = profileByIdRef.current && profileByIdRef.current[b.profile];
-    const label = profile && profile.label ? profile.label : b.profile;
-    if (!b.count) {
-      summary.textContent = label + ': no tools advertised' + (b.shellEnabled ? '' : ' (shell off)');
-    } else {
-      summary.textContent = label + ': ' + b.count + (b.count === 1 ? ' tool' : ' tools') +
-        (b.reduced ? ' — names + short descriptions, no parameter schemas' : ' — full specs with parameter schemas');
-    }
-    host.appendChild(summary);
-    // One row per tool: name + the description actually sent + a chip
-    // showing whether the parameter schema rides.
-    if (b.count) {
-      const list = document.createElement('ul');
-      list.className = 'chat-view__toolprev-list';
-      for (const t of b.tools) {
-        const li = document.createElement('li');
-        li.className = 'chat-view__toolprev-row';
-        const name = document.createElement('span');
-        name.className = 'chat-view__toolprev-name';
-        name.textContent = t.name;
-        const chip = document.createElement('span');
-        chip.className = 'chat-view__toolprev-chip' + (t.hasSchema ? ' is-full' : ' is-reduced');
-        chip.textContent = t.hasSchema ? (t.params.length + ' param' + (t.params.length === 1 ? '' : 's')) : 'no schema';
-        li.appendChild(name);
-        li.appendChild(chip);
-        if (t.description) {
-          const desc = document.createElement('span');
-          desc.className = 'chat-view__toolprev-desc';
-          desc.textContent = t.description;
-          li.appendChild(desc);
-        }
-        list.appendChild(li);
-      }
-      host.appendChild(list);
-    }
   }
 
   function onPromptChange() {
@@ -684,8 +595,8 @@ export function ChatView(props) {
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
     messagesRef.current = messagesRef.current.concat([userMsg]);
     appendMessageToTranscript(userMsg, false);
-    // The first message ends the creation phase: hide the prompt-size
-    // switch + tool preview for good (the prompt size is now fixed).
+    // The first message ends the creation phase: remove the prompt-size
+    // setup control for good (the prompt size is now fixed).
     updateSetupVisibility();
     const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString(), modelId };
     appendMessageToTranscript(liveMsg, true);
