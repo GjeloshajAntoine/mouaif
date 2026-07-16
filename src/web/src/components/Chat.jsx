@@ -177,32 +177,33 @@ export function ChatView(props) {
   }
 
   // Build (or rebuild) the creation-time setup control. The prompt-size
-  // choice is a single segmented S/M/L switch — no title, no
-  // description, no tool preview. The control lives in the transcript
-  // (the message area), above the system-prompt message, and is the
-  // first thing the user sees on a new chat. Once any message exists
-  // it is removed entirely (see updateSetupVisibility).
+  // choice is a single <select> dropdown — no title, no description,
+  // no tool preview. The control lives in the transcript (the message
+  // area), above the system-prompt message, and is the first thing the
+  // user sees on a new chat. Once any message exists it is removed
+  // entirely (see updateSetupVisibility).
   function buildSetupCard() {
-    const sw = document.createElement('div');
-    sw.className = 'chat-view__setup';
-    sw.setAttribute('role', 'group');
-    sw.setAttribute('aria-label', 'Prompt size');
+    const sel = document.createElement('select');
+    sel.className = 'input chat-view__setup';
+    sel.id = 'chatPromptSize';
+    sel.setAttribute('aria-label', 'Prompt size');
     for (const opt of [
-      { id: 'very-small', label: 'S', title: 'Very small — tool names only, no parameter schemas, smallest prompt' },
-      { id: 'average', label: 'M', title: 'Average — full tools, recommended' },
-      { id: 'extensive', label: 'L', title: 'Extensive — full tools + best-practice guidance' }
+      { id: 'very-small', label: 'Very small — tool names only, no parameter schemas, smallest prompt' },
+      { id: 'average',    label: 'Average — full tools, recommended' },
+      { id: 'extensive',  label: 'Extensive — full tools + best-practice guidance' }
     ]) {
-      const b = document.createElement('button');
-      b.className = 'chat-view__switch-btn';
-      b.type = 'button';
-      b.dataset.size = opt.id;
-      b.setAttribute('aria-pressed', 'false');
-      b.title = opt.title;
-      b.textContent = opt.label;
-      b.addEventListener('click', () => setPromptSize(opt.id));
-      sw.appendChild(b);
+      const o = document.createElement('option');
+      o.value = opt.id;
+      o.textContent = opt.label;
+      sel.appendChild(o);
     }
-    return sw;
+    // Use `selected` on the <option> (not `value` on the <select>) so
+    // the initial paint matches the chat's resolved profile on every
+    // re-render. Preact reliably re-applies `selected` per render,
+    // while a `value` on <select> can be ignored on first mount when
+    // the matching <option> hasn't been attached yet.
+    sel.addEventListener('change', () => setPromptSize(sel.value));
+    return sel;
   }
 
   function renderTranscript() {
@@ -491,19 +492,19 @@ export function ChatView(props) {
     updateChat({ promptSize: v }).then(() => { refreshSystemPrompt(); });
   }
 
-  // The switch is a segmented control (very-small | average |
-  // extensive). Reflect the active profile by toggling aria-pressed +
-  // an is-active class on its buttons. The switch lives inside
-  // setupCardRef.current while the chat is empty; if the card has
-  // already been removed this is a no-op.
+  // Reflect the active profile in the in-transcript <select>. The
+  // select is updated by toggling `selected` on the matching <option>
+  // — not by setting `value` on the <select> (Preact can drop a
+  // <select value=…> on first mount when the option list isn't
+  // attached yet, see user memory). updateSwitch is a no-op if the
+  // setup card has already been removed.
   function updateSwitch(id) {
     const host = setupCardRef.current;
     if (!host) return;
-    const btns = host.querySelectorAll('.chat-view__switch-btn[data-size]');
-    for (const b of btns) {
-      const on = b.dataset.size === id;
-      b.classList.toggle('is-active', on);
-      b.setAttribute('aria-pressed', String(on));
+    const opts = host.querySelectorAll('option');
+    for (const o of opts) {
+      if (o.value === id) o.setAttribute('selected', '');
+      else o.removeAttribute('selected');
     }
   }
 

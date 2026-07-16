@@ -710,36 +710,21 @@ textarea#projectEditor {
 }
 
 /* Setup control — mounted into the TRANSCRIPT (not the head) on a
-   new chat. The prompt-size choice is a single segmented S / M / L
-   control — no title, no description, no preview. It is the first
-   child of .chat-view__transcript while the chat is empty, sits
-   above the system-prompt message, and is removed by JS when the
-   first message is sent. The head has no setup row anymore. */
+   new chat. The prompt-size choice is a single full-width <select>
+   (no title, no description, no preview). It is the first child of
+   .chat-view__transcript while the chat is empty, sits above the
+   system-prompt message, and is removed by JS when the first
+   message is sent. The head has no setup row anymore.
+
+   The <select> itself is a normal .input (chevron, padding, focus
+   ring all come from forms.css); this rule just gives it the
+   transcript-relative margin and the min-width: 0 it needs to
+   shrink-to-fit inside the flex column. */
 .chat-view__setup {
   align-self: stretch;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
+  min-width: 0;
   margin: 4px 0 6px;
-  background: var(--surface-2);
-  border-radius: 8px;
-}
-.chat-view__switch-btn {
-  flex: 1 1 0;
-  min-height: 26px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-.chat-view__switch-btn.is-active {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: var(--shadow-sm);
+  font-size: 0.84rem;
 }
 
 /* The model select wraps to its own full-width row below the
