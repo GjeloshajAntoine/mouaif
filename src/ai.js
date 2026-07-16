@@ -94,49 +94,86 @@ const ENDPOINTS = {
   // (OpenRouter does not expose an OAuth flow); the key lives in
   // the standard OpenAI keyring namespace so users do not have to
   // juggle a second credential store. Per OpenRouter's docs, every
-  // request should carry an `HTTP-Referer` and `X-Title` header so
-  // the app shows up correctly on the public leaderboard. Both
-  // values are app-wide constants (mouaif is the only client that
-  // makes these calls), so they ship as staticHeaders alongside
-  // the Copilot editor identifiers.
+  // request should carry an `HTTP-Referer` and `X-OpenRouter-Title`
+  // header so the app shows up correctly on the public leaderboard.
+  // Both values are resolved at request time from
+  // app.openRouter.{appName,httpReferer}; the shipped defaults are
+  // the floor (mouaif is the only client that makes these calls).
   'openrouter': {
     baseUrl: 'https://openrouter.ai/api/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
     staticHeaders: {
+      // HTTP-Referer is the URL OpenRouter uses to attribute the
+      // request to an app on its public leaderboard. The shipped
+      // default points at a fictitious local domain; the real
+      // value should be a URL the user owns (configured via
+      // app.openRouter.httpReferer in Settings → Providers →
+      // OpenRouter). OpenRouter scrapes this URL for og:* tags to
+      // populate the leaderboard entry.
       'HTTP-Referer': 'https://mouaif.local',
-      // X-Title is a placeholder; the real value is resolved at
-      // request time from app.openRouter.appName (see
-      // resolveOpenRouterHeaders below). The shipped 'mouaif' is
+      // The current OpenRouter API uses `X-OpenRouter-Title` as the
+      // canonical attribution header. The earlier `X-Title` alias is
+      // still accepted for back-compat but is silently dropped on
+      // newer versions of the SSO/leaderboard path, so it is no
+      // longer the primary signal. We send BOTH names so older and
+      // newer OpenRouter releases both attribute the request
+      // correctly. The values are placeholders; the real ones are
+      // resolved at request time from app.openRouter.appName via
+      // resolveOpenRouterStaticHeaders(). The shipped 'mouaif' is
       // the fallback when the user has not configured one.
+      'X-OpenRouter-Title': 'mouaif',
       'X-Title': 'mouaif'
     }
   }
 };
 
 // resolveOpenRouterStaticHeaders() — read the per-install
-// app.openRouter.appName from the app store and substitute it for
-// the shipped 'mouaif' default in the OpenRouter X-Title header.
-// OpenRouter uses X-Title to attribute requests to a public app
-// on its leaderboard (https://openrouter.ai/docs/api-reference/
-// overview). Per OpenRouter's docs, both HTTP-Referer and X-Title
-// are required for the app to show up on the leaderboard.
+// app.openRouter.appName and app.openRouter.httpReferer from the
+// app store and substitute them for the shipped defaults in the
+// OpenRouter attribution headers. OpenRouter uses these headers
+// to attribute requests to a public app on its leaderboard
+// (https://openrouter.ai/docs/api-reference/overview). Per
+// OpenRouter's docs, BOTH headers are required for the app to
+// show up on the leaderboard, and the canonical attribution
+// header on current OpenRouter releases is `X-OpenRouter-Title`
+// (the earlier `X-Title` is kept as a deprecated alias for
+// back-compat). The HTTP-Referer URL is also the URL OpenRouter
+// scrapes for og:* tags when populating a leaderboard entry, so
+// without a real owned domain the app name is not visible on the
+// public leaderboard even when it is sent.
+//
 // Lazy-loads settings so this module remains safely requireable
 // in test harnesses that don't need the app store.
 function resolveOpenRouterStaticHeaders() {
   const base = ENDPOINTS.openrouter.staticHeaders;
-  let appName = null;
+  const out = Object.assign({}, base);
   try {
     const settings = require('./settings.js');
     const app = settings.getApp();
     const or = app && app.openRouter;
-    if (or && typeof or.appName === 'string' && or.appName.trim()) {
-      appName = or.appName.trim().slice(0, 64);
+    if (or) {
+      if (typeof or.appName === 'string' && or.appName.trim()) {
+        const title = or.appName.trim().slice(0, 64);
+        out['X-OpenRouter-Title'] = title;
+        out['X-Title'] = title;
+      }
+      if (typeof or.httpReferer === 'string' && or.httpReferer.trim()) {
+        // OpenRouter scrapes the HTTP-Referer URL for og:* tags, so
+        // it must be an absolute http(s) URL. A localhost or
+        // non-http scheme is silently dropped back to the shipped
+        // default.
+        const ref = or.httpReferer.trim();
+        try {
+          const u = new URL(ref);
+          if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname) {
+            out['HTTP-Referer'] = u.toString();
+          }
+        } catch { /* unparseable — keep shipped default */ }
+      }
     }
-  } catch { /* settings not available (test harness) — keep default */ }
-  return appName
-    ? Object.assign({}, base, { 'X-Title': appName })
-    : base;
+  } catch { /* settings not available (test harness) — keep defaults */ }
+  return out;
 }
 
 function endpointFor(model) {
@@ -378,10 +415,12 @@ function buildOpenAIRequest(model, messages, stream) {
   const headers = { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) };
   // Per-provider static headers. github-copilot requires editor
   // identification headers; openrouter carries the per-install
-  // X-Title (resolved from app.openRouter.appName). The order
-  // (auth first, static second) means a caller-supplied
-  // model.headers can still override the defaults — useful for
-  // tests and for a future per-model override.
+  // X-OpenRouter-Title (canonical) + X-Title (deprecated alias)
+  // + HTTP-Referer, all resolved at request time from
+  // app.openRouter.{appName,httpReferer}. The order (auth first,
+  // static second) means a caller-supplied model.headers can
+  // still override the defaults — useful for tests and for a
+  // future per-model override.
   if (def && def.staticHeaders) {
     Object.assign(headers, model.provider === 'openrouter'
       ? resolveOpenRouterStaticHeaders()

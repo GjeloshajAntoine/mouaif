@@ -82,7 +82,10 @@ if (req) {
   check('HTTP-Referer static header is set',
     req.headers['HTTP-Referer'] === 'https://mouaif.local',
     'got ' + req.headers['HTTP-Referer']);
-  check('X-Title static header is set',
+  check('X-OpenRouter-Title static header is set (canonical)',
+    req.headers['X-OpenRouter-Title'] === 'mouaif',
+    'got ' + req.headers['X-OpenRouter-Title']);
+  check('X-Title static header is set (deprecated alias)',
     req.headers['X-Title'] === 'mouaif',
     'got ' + req.headers['X-Title']);
   check('Editor-Version header is NOT set (Copilot-only)',
@@ -102,7 +105,7 @@ if (req) {
   // buildOpenAIRequest is module-private. That's fine: the real test
   // is the streamChat() integration below. Mark the direct-call
   // checks as not-applicable.
-  for (let i = 0; i < 9; i++) passed++;
+  for (let i = 0; i < 10; i++) passed++;
   console.log('PASS  buildOpenAIRequest direct call skipped (module-private); integration check below');
 }
 
@@ -110,6 +113,14 @@ if (req) {
 // streamChat() makes a real fetch() to the OpenRouter URL. We replace
 // globalThis.fetch with a stub that returns a single chunk of OpenAI-
 // shaped SSE and inspect what streamChat sent through to the stub.
+//
+// Reset the app store's openRouter block before the integration so a
+// stale value left by a prior probe/test run does not pollute the
+// assertions below. The later streamProbe block saves and restores its
+// own state, so this reset only affects the integration test.
+const _settings0 = settings.getApp();
+const _realOpenRouter = _settings0.openRouter || null;
+settings.setApp({ openRouter: {} });
 const realFetch = globalThis.fetch;
 let lastFetchInit = null;
 let lastFetchUrl = null;
@@ -155,7 +166,9 @@ globalThis.fetch = async function stubFetch(url, init) {
       sentHeaders['Authorization'] === 'Bearer sk-or-v1-test');
     check('fetch sent HTTP-Referer (OpenRouter attribution)',
       sentHeaders['HTTP-Referer'] === 'https://mouaif.local');
-    check('fetch sent X-Title (OpenRouter attribution)',
+    check('fetch sent X-OpenRouter-Title (canonical OpenRouter attribution header)',
+      sentHeaders['X-OpenRouter-Title'] === 'mouaif');
+    check('fetch sent X-Title (deprecated alias)',
       sentHeaders['X-Title'] === 'mouaif');
     check('fetch did NOT send the Copilot Editor-Version header',
       sentHeaders['Editor-Version'] === undefined);
@@ -178,6 +191,11 @@ globalThis.fetch = async function stubFetch(url, init) {
     check('streamChat did not throw', false, e && e.message);
   } finally {
     globalThis.fetch = realFetch;
+    // Restore the openRouter block we clobbered at the start of
+    // the integration so the later streamProbe block sees a fresh
+    // slate (it also saves/restores its own state).
+    if (_realOpenRouter) settings.setApp({ openRouter: _realOpenRouter });
+    else settings.setApp({ openRouter: null });
   }
 
   // ---- PKCE sign-in flow ----------------------------------------------
@@ -363,29 +381,72 @@ globalThis.fetch = async function stubFetch(url, init) {
     });
 
     try {
-      // 1. The user-supplied app name overrides the shipped default.
+      // 1. The user-supplied app name overrides the shipped default
+      //    on BOTH the canonical X-OpenRouter-Title and the
+      //    deprecated X-Title alias (current OpenRouter releases
+      //    only honor the canonical name for the SSO/leaderboard
+      //    attribution, so the new commit had to start sending
+      //    both).
       settings.setApp({ openRouter: { appName: 'My Mouaif' } });
       const h1 = await streamProbe('with appName');
-      check('X-Title reflects app.openRouter.appName',
+      check('X-OpenRouter-Title reflects app.openRouter.appName',
+        h1 && h1['X-OpenRouter-Title'] === 'My Mouaif',
+        'got ' + (h1 && h1['X-OpenRouter-Title']));
+      check('X-Title (deprecated alias) reflects app.openRouter.appName',
         h1 && h1['X-Title'] === 'My Mouaif',
         'got ' + (h1 && h1['X-Title']));
-      check('HTTP-Referer stays at the shipped default',
+      check('HTTP-Referer stays at the shipped default when httpReferer is unset',
         h1 && h1['HTTP-Referer'] === 'https://mouaif.local',
         'got ' + (h1 && h1['HTTP-Referer']));
 
-      // 2. A blank / whitespace-only appName falls back to the default.
+      // 2. A blank / whitespace-only appName falls back to the default
+      //    on both header names.
       settings.setApp({ openRouter: { appName: '   ' } });
       const h2 = await streamProbe('blank appName');
+      check('blank appName falls back to the shipped X-OpenRouter-Title default',
+        h2 && h2['X-OpenRouter-Title'] === 'mouaif',
+        'got ' + (h2 && h2['X-OpenRouter-Title']));
       check('blank appName falls back to the shipped X-Title default',
         h2 && h2['X-Title'] === 'mouaif',
         'got ' + (h2 && h2['X-Title']));
 
-      // 3. A long appName is clamped to 64 chars.
+      // 3. A long appName is clamped to 64 chars on both names.
       settings.setApp({ openRouter: { appName: 'A'.repeat(200) } });
       const h3 = await streamProbe('long appName');
+      check('X-OpenRouter-Title is clamped to 64 chars',
+        h3 && h3['X-OpenRouter-Title'] && h3['X-OpenRouter-Title'].length === 64,
+        'got len ' + (h3 && h3['X-OpenRouter-Title'] && h3['X-OpenRouter-Title'].length));
       check('X-Title is clamped to 64 chars',
         h3 && h3['X-Title'] && h3['X-Title'].length === 64,
         'got len ' + (h3 && h3['X-Title'] && h3['X-Title'].length));
+
+      // 4. A user-supplied httpReferer replaces the shipped
+      //    default. The shipped default is a fictitious domain
+      //    nobody owns, so without this override the app name is
+      //    not visible on OpenRouter's public leaderboard even
+      //    when X-OpenRouter-Title is set.
+      settings.setApp({ openRouter: { appName: 'My Mouaif', httpReferer: 'https://example.com' } });
+      const h4 = await streamProbe('with httpReferer');
+      check('HTTP-Referer reflects app.openRouter.httpReferer',
+        h4 && h4['HTTP-Referer'] === 'https://example.com/',
+        'got ' + (h4 && h4['HTTP-Referer']));
+
+      // 5. A non-http(s) httpReferer is silently dropped back to the
+      //    shipped default — OpenRouter only accepts absolute http(s)
+      //    URLs (it fetches them to scrape og:* tags).
+      settings.setApp({ openRouter: { httpReferer: 'ftp://example.com' } });
+      const h5 = await streamProbe('non-http httpReferer');
+      check('non-http httpReferer falls back to the shipped default',
+        h5 && h5['HTTP-Referer'] === 'https://mouaif.local',
+        'got ' + (h5 && h5['HTTP-Referer']));
+
+      // 6. A syntactically invalid httpReferer falls back to the
+      //    shipped default rather than poisoning the request.
+      settings.setApp({ openRouter: { httpReferer: 'not-a-url' } });
+      const h6 = await streamProbe('invalid httpReferer');
+      check('invalid httpReferer falls back to the shipped default',
+        h6 && h6['HTTP-Referer'] === 'https://mouaif.local',
+        'got ' + (h6 && h6['HTTP-Referer']));
     } finally {
       // Restore the app store so we don't leak the test value
       // into other tests / the running process.

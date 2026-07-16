@@ -107,7 +107,8 @@ export function SettingsProviderEditView(props) {
   const copilotClientId = useRef(null);
   const copilotStatus = useRef(null);
   // OpenRouter uses an "app name" to identify the client to
-  // OpenRouter's leaderboard (sent as the X-Title header on every
+  // OpenRouter's leaderboard (sent as the X-OpenRouter-Title
+  // header — the current canonical attribution header — on every
   // chat-completions request, per OpenRouter's attribution docs).
   // The user sets it once per install; the value lives in
   // app.openRouter.appName and is read by the AI client at request
@@ -116,6 +117,17 @@ export function SettingsProviderEditView(props) {
   // pattern as the Copilot client_id field it sits next to.
   const openrouterAppName = useRef(null);
   const openrouterStatus = useRef(null);
+  // OpenRouter also needs an owned HTTP-Referer URL to actually
+  // publish the app on its public leaderboard (the X-OpenRouter-
+  // Title is just the name shown next to the URL; OpenRouter
+  // scrapes the URL for og:* tags to build the leaderboard entry).
+  // The shipped default (https://mouaif.local) is a fictitious
+  // domain nobody owns, so app-name attribution is invisible
+  // without the user setting this. Lives in
+  // app.openRouter.httpReferer, read by the AI client at request
+  // time. Blank = fall back to the shipped default.
+  const openrouterHttpReferer = useRef(null);
+  const openrouterRefererStatus = useRef(null);
 
   // The form's "current provider" lives in two places: the URL prop
   // (`id`, used as the initial value + to know if we're editing or
@@ -171,6 +183,13 @@ export function SettingsProviderEditView(props) {
     if (openrouterAppName.current) {
       const or = (app && app.app && app.app.openRouter) || {};
       openrouterAppName.current.value = (typeof or.appName === 'string' && or.appName) || '';
+    }
+    // Prefill the OpenRouter HTTP-Referer URL (blank = shipped
+    // 'https://mouaif.local' default, which is a fictitious domain
+    // nobody owns and so does not produce a leaderboard entry).
+    if (openrouterHttpReferer.current) {
+      const or2 = (app && app.app && app.app.openRouter) || {};
+      openrouterHttpReferer.current.value = (typeof or2.httpReferer === 'string' && or2.httpReferer) || '';
     }
 
     // Resolve the auth mode from data (reserved → oauth, else the saved
@@ -332,6 +351,28 @@ export function SettingsProviderEditView(props) {
     } catch (e) { setStatus(openrouterStatus, 'save failed: ' + e.message, 'error'); }
   }
 
+  // Persist the OpenRouter HTTP-Referer URL to app settings. Sent
+  // as the HTTP-Referer header on every OpenRouter chat-completions
+  // request. Per OpenRouter's attribution docs, OpenRouter scrapes
+  // this URL for og:* tags when building the public-leaderboard
+  // entry, so without an owned domain the app name is not visible
+  // publicly even when the X-OpenRouter-Title header is set.
+  // Empty clears it back to the shipped default. The value is
+  // validated client-side as an http(s) URL; the server does not
+  // silently drop invalid values (it validates too).
+  async function saveOpenRouterHttpReferer() {
+    const raw = (openrouterHttpReferer.current && openrouterHttpReferer.current.value || '').trim();
+    if (raw) {
+      try { const u = new URL(raw); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)'); }
+      catch { setStatus(openrouterRefererStatus, 'must be an absolute http(s) URL', 'error'); return; }
+    }
+    setStatus(openrouterRefererStatus, 'saving…', 'busy');
+    try {
+      await saveApp({ openRouter: { httpReferer: raw || null } });
+      setStatus(openrouterRefererStatus, raw ? 'saved — applies to the next chat send.' : 'cleared (using default).', 'success');
+    } catch (e) { setStatus(openrouterRefererStatus, 'save failed: ' + e.message, 'error'); }
+  }
+
   async function save() {
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
@@ -491,22 +532,41 @@ export function SettingsProviderEditView(props) {
           h('span', { ref: copilotStatus, class: 'status', 'aria-live': 'polite' })
         )
       ),
-      // OpenRouter only: the "app name" sent as the X-Title
-      // header on every chat-completions request, per OpenRouter's
-      // attribution docs. Identifies this app to OpenRouter's
-      // leaderboard. Persisted in app settings (app.openRouter.
-      // appName) and read by the AI client at request time. Blank
-      // = shipped 'mouaif' default. The field sits next to the
-      // Copilot client_id field (the same pattern: per-install
-      // setting that's part of the provider's sign-in story but
-      // lives at the app scope).
+      // OpenRouter only: the "app name" sent as the X-OpenRouter-
+      // Title header on every chat-completions request, per
+      // OpenRouter's attribution docs. Identifies this app to
+      // OpenRouter's leaderboard. Persisted in app settings
+      // (app.openRouter.appName) and read by the AI client at
+      // request time. Blank = shipped 'mouaif' default. The
+      // field sits next to the Copilot client_id field (the same
+      // pattern: per-install setting that's part of the provider's
+      // sign-in story but lives at the app scope).
       h('div', { class: hide(currentId !== 'openrouter') + ' row--openrouter' },
         h('label', { class: 'label', for: 'sp-or-appname' }, 'App name'),
-        h('p', { class: 'hint hint--compact' }, 'Shown to OpenRouter as the X-Title header on every chat-completions request (per OpenRouter\u2019s attribution docs). Identifies this app on the public leaderboard. Blank uses the shipped default.'),
+        h('p', { class: 'hint hint--compact' }, 'Shown to OpenRouter as the X-OpenRouter-Title header on every chat-completions request (per OpenRouter\u2019s attribution docs). Identifies this app on the public leaderboard. Blank uses the shipped default.'),
         h('input', { ref: openrouterAppName, class: 'input', id: 'sp-or-appname', type: 'text', placeholder: 'mouaif', maxlength: 64, autocomplete: 'off' }),
         h('div', { class: 'row row--actions' },
           h('button', { class: 'btn', type: 'button', onClick: saveOpenRouterAppName }, 'Save app name'),
           h('span', { ref: openrouterStatus, class: 'status', 'aria-live': 'polite' })
+        )
+      ),
+      // OpenRouter only: the HTTP-Referer URL sent on every
+      // chat-completions request. Per OpenRouter's attribution
+      // docs, this is the URL OpenRouter scrapes for og:* tags to
+      // build the public-leaderboard entry for the app. The shipped
+      // default (https://mouaif.local) is a fictitious domain
+      // nobody owns, so without the user setting a real URL here
+      // the app name is not visible on the public leaderboard even
+      // when the X-OpenRouter-Title header is set. Lives in
+      // app.openRouter.httpReferer; read by the AI client at
+      // request time. Blank = shipped default.
+      h('div', { class: hide(currentId !== 'openrouter') + ' row--openrouter' },
+        h('label', { class: 'label', for: 'sp-or-referer' }, 'HTTP-Referer URL'),
+        h('p', { class: 'hint hint--compact' }, 'OpenRouter scrapes this URL for og:* tags to build the public-leaderboard entry for this app. Must be an absolute http(s) URL you own; the shipped default (https://mouaif.local) is a fictitious domain and produces no leaderboard entry. Blank uses the shipped default.'),
+        h('input', { ref: openrouterHttpReferer, class: 'input', id: 'sp-or-referer', type: 'url', placeholder: 'https://mouaif.local', autocomplete: 'off' }),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn', type: 'button', onClick: saveOpenRouterHttpReferer }, 'Save URL'),
+          h('span', { ref: openrouterRefererStatus, class: 'status', 'aria-live': 'polite' })
         )
       ),
       h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
