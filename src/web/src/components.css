@@ -709,16 +709,55 @@ textarea#projectEditor {
   flex: 0 0 auto;
 }
 
-/* Prompt-size switch — segmented S / M / L control on its own
-   full-width row below the model select (order: 11). Always visible
-   so the user can change prompt size (and the tool declaration sent
-   upstream) in one tap, without opening the popover. */
+/* Setup card — mounted into the TRANSCRIPT (not the head) on a new
+   chat. Contains the prompt-size S/M/L switch and the tool-declaration
+   preview. It is the first child of .chat-view__transcript while the
+   chat is empty, sits above the system-prompt message, and is removed
+   by JS when the first message is sent. The head has no setup row
+   anymore — the prompt-size choice is part of the message area, not
+   a permanent fixture of the top bar. */
+.chat-view__setup {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 8px 10px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+.chat-view__setup-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-view__setup-head .chat-msg__role {
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0;
+}
+.chat-view__setup-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.3;
+}
+.chat-view__setup-sub {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--fg-soft);
+}
+
+/* Prompt-size switch — segmented S / M / L control. Lives inside
+   the setup card (no head `order` anymore). */
 .chat-view__switch {
-  order: 11;
-  flex: 1 0 100%;
   display: flex;
   gap: 2px;
-  margin-top: 2px;
   padding: 2px;
   background: var(--surface-2);
   border-radius: 8px;
@@ -742,13 +781,10 @@ textarea#projectEditor {
 }
 
 /* Tool-declaration preview — a compact readout of what the active
-   prompt-size profile sends upstream. Shown only while the chat is
-   empty (creation time), between the S/M/L switch and the transcript.
-   Full-width row (order: 12) so it wraps under the switch in the
-   flex-wrapped head. Hidden forever once the first message is sent. */
+   prompt-size profile sends upstream. Lives inside the setup card
+   below the switch; the JS removes the whole card once the first
+   message is sent. */
 .chat-view__toolprev {
-  order: 12;
-  flex: 1 0 100%;
   margin-top: 2px;
   padding: 4px 8px 6px;
   background: var(--surface-2);

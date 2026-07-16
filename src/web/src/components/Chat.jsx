@@ -12,8 +12,14 @@ export function ChatView(props) {
   const chatName = useRef(null);
   const chatMeta = useRef(null);
   const traceToggle = useRef(null);
-  const switchRef = useRef(null);
-  const toolPreviewRef = useRef(null);
+  // The creation-time setup card lives in the TRANSCRIPT (above the
+  // system message) instead of the head, so the prompt-size choice is
+  // part of the message area and not a permanent fixture of the top
+  // bar. The card is the only child of the transcript while the chat
+  // is empty; it is removed by updateSetupVisibility when the first
+  // message is sent. The ref tracks the element so setPromptSize
+  // updates the active-button highlight in place without rebuilding.
+  const setupCardRef = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
@@ -96,7 +102,6 @@ export function ChatView(props) {
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
-    updateSwitch(activeProfileId());
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
 
     if (modelSelect.current) populateModelSelect(modelsRef.current);
@@ -104,6 +109,10 @@ export function ChatView(props) {
 
     renderTranscript();
     updateSetupVisibility();
+    // Reflect the active profile in the setup card after it has
+    // been built (renderTranscript + updateSetupVisibility run first
+    // and decide whether the card is on screen at all).
+    updateSwitch(activeProfileId());
   }
 
   function populateModelSelect(list) {
@@ -147,14 +156,20 @@ export function ChatView(props) {
   // as a permanent on-screen option. Called by renderTranscript (full
   // rebuild) and refreshSystemPrompt (after a popover change) so it
   // never duplicates.
+  // The system-prompt message is inserted directly after the setup
+  // card (which is the first child of the transcript on a new chat)
+  // and as the first child once the setup card is gone. The lookup
+  // uses [data-sys-prompt] to avoid clobbering any future .chat-msg
+  // with role text "system".
   function renderSystemPromptMessage() {
     if (!transcript.current) return;
-    const existing = transcript.current.querySelector('.chat-msg--system');
+    const existing = transcript.current.querySelector('[data-sys-prompt="1"]');
     if (existing) existing.remove();
     const sys = systemPromptRef.current;
     if (!sys || !sys.text) return;
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--system';
+    row.dataset.sysPrompt = '1';
     const role = document.createElement('div');
     role.className = 'chat-msg__role';
     role.textContent = 'system';
@@ -163,15 +178,77 @@ export function ChatView(props) {
     body.textContent = sys.text;
     row.appendChild(role);
     row.appendChild(body);
-    // Always the first child of the transcript, above the first turn.
-    transcript.current.insertBefore(row, transcript.current.firstChild);
+    // Insert directly after the setup card if one is still mounted,
+    // so the system message always sits under it on a new chat.
+    const setup = setupCardRef.current;
+    if (setup && setup.parentNode === transcript.current) {
+      transcript.current.insertBefore(row, setup.nextSibling);
+    } else {
+      transcript.current.insertBefore(row, transcript.current.firstChild);
+    }
+  }
+
+  // Build (or rebuild) the creation-time setup card. The card lives in
+  // the transcript, above the system message, and contains the
+  // prompt-size switch + the tool-declaration preview. It is the
+  // first thing the user sees on a new chat; once any message exists
+  // it is removed entirely (see updateSetupVisibility).
+  function buildSetupCard() {
+    const card = document.createElement('div');
+    card.className = 'chat-view__setup';
+    card.dataset.role = 'assistant';
+    const head = document.createElement('div');
+    head.className = 'chat-view__setup-head';
+    const role = document.createElement('div');
+    role.className = 'chat-msg__role';
+    role.textContent = 'setup';
+    const title = document.createElement('div');
+    title.className = 'chat-view__setup-title';
+    title.textContent = 'Pick a prompt size for this chat';
+    const sub = document.createElement('p');
+    sub.className = 'chat-view__setup-sub';
+    sub.textContent = 'This decides how much the model is told about the tools it can call. You can only change it before sending the first message; after that, the system prompt is fixed for the life of the chat.';
+    head.appendChild(role);
+    head.appendChild(title);
+    head.appendChild(sub);
+    card.appendChild(head);
+    const sw = document.createElement('div');
+    sw.className = 'chat-view__switch';
+    sw.setAttribute('role', 'group');
+    sw.setAttribute('aria-label', 'Prompt size');
+    for (const opt of [
+      { id: 'very-small', label: 'S', title: 'Very small — tool names only, no parameter schemas, smallest prompt' },
+      { id: 'average', label: 'M', title: 'Average — full tools, recommended' },
+      { id: 'extensive', label: 'L', title: 'Extensive — full tools + best-practice guidance' }
+    ]) {
+      const b = document.createElement('button');
+      b.className = 'chat-view__switch-btn';
+      b.type = 'button';
+      b.dataset.size = opt.id;
+      b.setAttribute('aria-pressed', 'false');
+      b.title = opt.title;
+      b.textContent = opt.label;
+      b.addEventListener('click', () => setPromptSize(opt.id));
+      sw.appendChild(b);
+    }
+    card.appendChild(sw);
+    const prev = document.createElement('div');
+    prev.className = 'chat-view__toolprev';
+    card.appendChild(prev);
+    return card;
   }
 
   function renderTranscript() {
     if (!transcript.current) return;
     transcript.current.innerHTML = '';
-    renderSystemPromptMessage();
+    setupCardRef.current = null;
+    // On a brand-new chat, the transcript's first child is the setup
+    // card. The system-prompt message sits beneath it so the user
+    // sees the resolved prompt they just configured.
     if (!messagesRef.current.length) {
+      const card = buildSetupCard();
+      transcript.current.appendChild(card);
+      setupCardRef.current = card;
       const empty = document.createElement('div');
       empty.className = 'chat-view__empty';
       const icon = document.createElement('span');
@@ -182,7 +259,7 @@ export function ChatView(props) {
       title.textContent = 'Start the conversation';
       const text = document.createElement('p');
       text.className = 'chat-view__empty-text';
-      text.textContent = 'Type a message below. The model streams its reply in real time; everything you send is saved to this chat\'s transcript on disk.';
+      text.textContent = 'Pick a prompt size above, then type a message below. The model streams its reply in real time; everything you send is saved to this chat\'s transcript on disk.';
       empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       transcript.current.appendChild(empty);
       return;
@@ -438,21 +515,24 @@ export function ChatView(props) {
     updateChat({ trace: !!traceToggle.current.checked });
   }
 
-  // Shared setter for the head switch. The prompt size is chosen once,
-  // while the chat is still empty; the control is not a permanent
-  // fixture (see updateSetupVisibility below).
+  // Shared setter for the in-transcript setup card. The prompt size
+  // is chosen once, while the chat is still empty; the control is not
+  // a permanent fixture (see updateSetupVisibility below).
   function setPromptSize(v) {
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
     updateSwitch(v);
     updateChat({ promptSize: v }).then(() => { refreshSystemPrompt(); loadToolPreview(); });
   }
 
-  // The head switch is a segmented control (very-small | average |
+  // The switch is a segmented control (very-small | average |
   // extensive). Reflect the active profile by toggling aria-pressed +
-  // an is-active class on its buttons.
+  // an is-active class on its buttons. The switch lives inside
+  // setupCardRef.current while the chat is empty; if the card has
+  // already been removed this is a no-op.
   function updateSwitch(id) {
-    if (!switchRef.current) return;
-    const btns = switchRef.current.querySelectorAll('[data-size]');
+    const host = setupCardRef.current;
+    if (!host) return;
+    const btns = host.querySelectorAll('.chat-view__switch-btn[data-size]');
     for (const b of btns) {
       const on = b.dataset.size === id;
       b.classList.toggle('is-active', on);
@@ -460,26 +540,37 @@ export function ChatView(props) {
     }
   }
 
-  // The prompt-size switch and its tool-declaration preview are a
-  // CREATION-TIME control: they are only shown while the chat has no
-  // messages yet, so the user picks the prompt budget up front. As
-  // soon as the first message exists the controls hide and never come
-  // back — the prompt size is fixed for the life of the chat.
+  // The setup card is a CREATION-TIME control: it is only mounted
+  // while the chat has no messages yet, so the user picks the prompt
+  // budget up front. As soon as the first message exists the card is
+  // removed and never comes back — the prompt size is fixed for the
+  // life of the chat. Removing the card (instead of hiding it) keeps
+  // the transcript clean: no empty card shape behind later messages.
   function updateSetupVisibility() {
     const empty = !messagesRef.current || messagesRef.current.length === 0;
-    if (switchRef.current) switchRef.current.hidden = !empty;
-    if (toolPreviewRef.current) toolPreviewRef.current.hidden = !empty;
-    if (empty) loadToolPreview();
+    const host = setupCardRef.current;
+    if (empty) {
+      if (!host && transcript.current) {
+        // Re-entering a chat that was loaded with messages but then
+        // deleted (extremely rare; just safety): nothing to do, the
+        // setup card is for fresh chats only.
+        return;
+      }
+      if (host) loadToolPreview();
+      return;
+    }
+    if (host && host.parentNode) host.parentNode.removeChild(host);
+    setupCardRef.current = null;
   }
 
   // Fetch the tool-declaration state for the active profile and render
-  // it as a compact preview between the switch and the composer. This
-  // is the concrete effect of the S/M/L choice: which tools ride, and
-  // whether their parameter schemas are sent (average/extensive) or
-  // stripped to name + one-line description (very-small).
+  // it inside the setup card. The preview is the concrete effect of
+  // the S/M/L choice: which tools ride, and whether their parameter
+  // schemas are sent (average/extensive) or stripped to name +
+  // one-line description (very-small).
   async function loadToolPreview() {
-    if (!toolPreviewRef.current || !projectDir || !chatId) return;
-    const host = toolPreviewRef.current;
+    const host = setupCardRef.current && setupCardRef.current.querySelector('.chat-view__toolprev');
+    if (!host || !projectDir || !chatId) return;
     let r;
     try {
       r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/tool-preview?projectDir=' + encodeURIComponent(projectDir));
@@ -784,22 +875,11 @@ export function ChatView(props) {
         )
       ),
       h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
-      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×'),
-      // Prompt-size switch — a segmented control on its own full-width
-      // row, shown ONLY while the chat is empty (creation time). Taps
-      // set the chat's prompt size and refresh the System message + the
-      // tool declaration preview below. Hidden forever once the first
-      // message is sent (updateSetupVisibility).
-      h('div', { ref: switchRef, class: 'chat-view__switch', role: 'group', 'aria-label': 'Prompt size', hidden: true },
-        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'very-small', 'aria-pressed': 'false', onClick: () => setPromptSize('very-small'), title: 'Very small — tool names only, tiny prompt' }, 'S'),
-        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'average', 'aria-pressed': 'false', onClick: () => setPromptSize('average'), title: 'Average — full tools, recommended' }, 'M'),
-        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'extensive', 'aria-pressed': 'false', onClick: () => setPromptSize('extensive'), title: 'Extensive — full tools + guidance' }, 'L')
-      ),
-      // Tool-declaration preview — sits between the switch and the
-      // transcript, only while the chat is empty. Shows the concrete
-      // effect of the S/M/L choice on the tools advertised upstream.
-      h('div', { ref: toolPreviewRef, class: 'chat-view__toolprev', hidden: true })
+      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×')
     ),
+    // The setup card (prompt-size switch + tool-declaration preview)
+    // is mounted into this transcript at render time, only while the
+    // chat is empty. See buildSetupCard + updateSetupVisibility.
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },
       h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatPrompt', rows: 1, placeholder: 'Type a message', onKeydown: onComposerKey }),
