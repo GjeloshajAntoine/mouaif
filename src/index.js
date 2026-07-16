@@ -1609,12 +1609,19 @@ async function handleAuth(req, res, parsed) {
     const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
     if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'openrouter');
     const redirectUri = callbackUrl.toString();
+    // The "app name" the user supplied on the sign-in form becomes
+    // the OAuth account label so they can tell two sign-ins apart
+    // (e.g. "Work laptop", "Personal"). Clamped to 64 chars and
+    // forward-stored on the pending record so the exchange
+    // function can pick it up after the loopback redirect.
+    const appName = (typeof body.appName === 'string') ? body.appName.trim().slice(0, 64) : '';
 
     auth.recordPending('openrouter', {
       state,
       codeVerifier: verifier,
       redirectUri,
       scopes: 'openrouter',
+      appName,
       accountHint: body.accountHint || ''
     });
 

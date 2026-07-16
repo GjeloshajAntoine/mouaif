@@ -223,6 +223,20 @@ globalThis.fetch = async function stubFetch(url, init) {
   check('accountForKey returns the whole key when shorter than 16 chars',
     oauthOpenRouter.accountForKey('short') === 'short');
 
+  // accountForKey with an appName override: the user-supplied
+  // name wins over the key-prefix auto-label, so two sign-ins
+  // from the same OpenRouter account can be told apart in the
+  // account picker.
+  check('accountForKey honours the user-supplied appName',
+    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', 'Work laptop') === 'Work laptop');
+  check('accountForKey trims whitespace and clamps appName to 64 chars',
+    oauthOpenRouter.accountForKey('sk-or-v1-xxx', '   ' + 'A'.repeat(80) + '   ').length === 64);
+  check('accountForKey falls back to the key prefix when appName is blank',
+    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', '   ') === 'sk-or-v1-abcdef0');
+  check('accountForKey falls back to the key prefix when appName is null/undefined',
+    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', null) === 'sk-or-v1-abcdef0' &&
+    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', undefined) === 'sk-or-v1-abcdef0');
+
   // exchangeAuthorizationCode against a mocked fetch: the request
   // body must carry { code, code_verifier, code_challenge_method }, the
   // response { key } is mapped to accessToken by the registered
@@ -283,6 +297,21 @@ globalThis.fetch = async function stubFetch(url, init) {
         out.scope === 'openrouter');
     } catch (e) {
       check('exchange did not throw', false, e && e.message);
+    }
+
+    // exchange() with a user-supplied appName: the friendly label
+    // wins over the auto-generated key prefix so the OAuth account
+    // picker can show "Work laptop" instead of "sk-or-v1-mock-12".
+    try {
+      const out = await oauthOpenRouter.exchange({
+        pending: { codeVerifier: pkce.verifier, redirectUri: pkce.callbackUrl, state: pkce.state, appName: 'Work laptop' },
+        code: 'mock-auth-code'
+      });
+      check('exchange uses the user-supplied appName as the account label',
+        out.account === 'Work laptop',
+        'got ' + out.account);
+    } catch (e) {
+      check('exchange(appName) did not throw', false, e && e.message);
     }
 
     // refresh() — no-op; returns a blob with empty accessToken so the

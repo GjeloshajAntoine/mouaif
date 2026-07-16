@@ -106,6 +106,15 @@ export function SettingsProviderEditView(props) {
   // above the Sign in button — instead of on a separate Settings screen.
   const copilotClientId = useRef(null);
   const copilotStatus = useRef(null);
+  // OpenRouter PKCE has no per-app identity, but a user who signs
+  // in twice (e.g. on two laptops) needs a way to tell the two
+  // rows in the OAuth account picker apart. The "app name" they
+  // type here becomes the OAuth `account` slot via
+  // /api/auth/sign-in/openrouter. Blank = fall back to the auto-
+  // generated key prefix in src/oauth-openrouter.js. Per-session
+  // only (not saved to the provider record), so the user can use a
+  // different name on each new sign-in.
+  const openrouterAppName = useRef(null);
 
   // The form's "current provider" lives in two places: the URL prop
   // (`id`, used as the initial value + to know if we're editing or
@@ -253,12 +262,23 @@ export function SettingsProviderEditView(props) {
       return;
     }
     setStatus(signInStatus, 'starting sign-in…', 'busy');
+    // Per-provider extra body. OpenRouter PKCE accepts an
+    // `appName`; the server stores it on the pending record and
+    // the registered exchange uses it as the OAuth account label
+    // so two sign-ins from the same user can be told apart in the
+    // account picker. Other OAuth-capable providers (Anthropic,
+    // GitHub Copilot) ignore extra fields.
+    const body = {};
+    if (provider === 'openrouter' && openrouterAppName.current) {
+      const v = (openrouterAppName.current.value || '').trim();
+      if (v) body.appName = v;
+    }
     let r;
     try {
       r = await fetchJson('/api/auth/sign-in/' + encodeURIComponent(provider), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}'
+        body: JSON.stringify(body)
       });
     } catch (err) { setStatus(signInStatus, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(signInStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
@@ -456,6 +476,18 @@ export function SettingsProviderEditView(props) {
           h('button', { class: 'btn', type: 'button', onClick: saveCopilotClientId }, 'Save client ID'),
           h('span', { ref: copilotStatus, class: 'status', 'aria-live': 'polite' })
         )
+      ),
+      // OpenRouter only: the "app name" the user wants to attach
+      // to this sign-in. OpenRouter's PKCE flow has no per-app
+      // identity (no client_id), so the name is purely a label
+      // rendered in the OAuth account picker — useful when the
+      // same OpenRouter account is signed in on multiple devices.
+      // Blank = auto-generated from the first 16 chars of the
+      // issued key (see src/oauth-openrouter.js → accountForKey).
+      h('div', { class: hide(effAuth !== 'oauth' || currentId !== 'openrouter') + ' row--oauth row--openrouter' },
+        h('label', { class: 'label', for: 'sp-or-appname' }, 'App name'),
+        h('p', { class: 'hint hint--compact' }, 'A friendly label for this sign-in (e.g. "Work laptop", "Personal"). Shows up in the OAuth account picker so two sign-ins from the same OpenRouter account can be told apart. Blank = auto-generated from the key prefix.'),
+        h('input', { ref: openrouterAppName, class: 'input', id: 'sp-or-appname', type: 'text', placeholder: 'Work laptop', maxlength: 64, autocomplete: 'off' })
       ),
       h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('div', { class: 'auth__help-inline' },
