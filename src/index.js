@@ -746,6 +746,45 @@ async function handleChats(req, res, parsed) {
     }
   }
 
+  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, prompt, text }
+  // Returns the effective system context for a chat as it will be sent
+  // upstream: the resolved prompt-size profile system message and, if
+  // the chat references a custom prompt, that prompt's content. The
+  // chat UI renders this as the first (collapsible) message in the
+  // transcript so the user can see what the model is being told,
+  // without the prompt-size picker having to be a permanent fixture.
+  const sysPromptMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/system-prompt$/);
+  if (sysPromptMatch && method === 'GET') {
+    const id = decodeURIComponent(sysPromptMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
+      let profile = null;
+      try {
+        const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
+        if (p) profile = { id: p.id, label: p.label, description: p.description, systemMessage: p.systemMessage };
+      } catch { /* profile stays null; the stream would fall through too */ }
+      let prompt = null;
+      if (chat.promptId) {
+        try {
+          const cp = prompts.getPrompt(dir, chat.promptId);
+          if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
+        } catch { /* custom prompt stays null */ }
+      }
+      // The combined text mirrors the order handleChatStream uses:
+      // profile system message first, then the custom prompt.
+      const parts = [];
+      if (profile && profile.systemMessage) parts.push(profile.systemMessage);
+      if (prompt && prompt.content) parts.push(prompt.content);
+      return sendJSON(res, 200, { profile, prompt, text: parts.join('\n\n') });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // POST /api/chats/:id/messages  body: { projectDir, role, content }
   // Append a message directly. The /messages/stream endpoint below
   // does the same internally for user / assistant messages; this

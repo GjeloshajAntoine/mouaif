@@ -40,6 +40,21 @@ export function ChatView(props) {
   // is the raw id; we show the friendlier `label` in the meta).
   const profilesRef = useRef([]);
   const profileByIdRef = useRef({});
+  // The effective system context (resolved prompt-size profile + custom
+  // prompt) as it will be sent upstream. Fetched from
+  // /api/chats/:id/system-prompt and rendered as the first collapsible
+  // message in the transcript, so the user sees what the model is told
+  // without the prompt-size picker being a permanent fixture.
+  const systemPromptRef = useRef(null);
+
+  // Re-fetch the resolved system prompt (after a prompt-size or custom
+  // prompt change) and re-render the first message.
+  async function refreshSystemPrompt() {
+    if (!projectDir || !chatId) return;
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir));
+    systemPromptRef.current = r.status === 200 ? r.body : null;
+    renderSystemPromptMessage();
+  }
 
   function activeProfileId() {
     const c = chatRef.current;
@@ -53,24 +68,26 @@ export function ChatView(props) {
     promptSizeDesc.current.textContent = p && p.description ? p.description : '';
   }
 
+  // The meta line is intentionally minimal now. The prompt-size profile
+  // is no longer shown here (it lives in the settings popover and is
+  // surfaced in full as the first transcript message); only the trace
+  // state, which has no other on-screen indicator, is shown.
   function updateMetaLine() {
     if (!chatMeta.current) return;
     const c = chatRef.current;
     if (!c) return;
-    const id = activeProfileId();
-    const p = profileByIdRef.current && profileByIdRef.current[id];
-    const label = p && p.label ? p.label : id;
-    chatMeta.current.textContent = label + ' · ' + (c.trace ? 'trace on' : 'trace off');
+    chatMeta.current.textContent = c.trace ? 'trace on' : '';
   }
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rMsgs, rPrompts, rProfiles] = await Promise.all([
+    const [rChat, rModels, rMsgs, rPrompts, rProfiles, rSys] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/prompt-profiles')
+      fetchJson('/api/prompt-profiles'),
+      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir))
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
     const c = rChat.body.chat;
@@ -79,6 +96,7 @@ export function ChatView(props) {
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
     profilesRef.current = rProfiles.status === 200 ? (rProfiles.body.profiles || []) : [];
+    systemPromptRef.current = rSys.status === 200 ? rSys.body : null;
     profileByIdRef.current = {};
     for (const p of profilesRef.current) profileByIdRef.current[p.id] = p;
 
@@ -142,9 +160,56 @@ export function ChatView(props) {
     promptSelect.current.value = (currentId && list.some(p => p.id === currentId)) ? currentId : '';
   }
 
+  // Render (or refresh) the system-prompt card at the top of the
+  // transcript. It is a collapsible "system" message so the user can
+  // see the resolved prompt-size profile text and any custom prompt
+  // the model is actually being sent — but it stays out of the way
+  // (collapsed to a one-line summary) until tapped. Called by
+  // renderTranscript (full rebuild) and refreshSystemPrompt (after a
+  // popover change) so it never duplicates.
+  function renderSystemPromptMessage() {
+    if (!transcript.current) return;
+    const existing = transcript.current.querySelector('.chat-msg--system');
+    if (existing) existing.remove();
+    const sys = systemPromptRef.current;
+    if (!sys || !sys.text) return;
+    const card = document.createElement('div');
+    card.className = 'chat-msg chat-msg--system';
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'chat-msg__system-summary';
+    const profileLabel = sys.profile && sys.profile.label ? sys.profile.label : 'System';
+    const promptLabel = sys.prompt && sys.prompt.title ? (' + ' + sys.prompt.title) : '';
+    summary.innerHTML =
+      '<span class="chat-msg__system-icon" aria-hidden="true">⚙</span>' +
+      '<span class="chat-msg__system-label">System prompt · ' + escapeHtml(profileLabel) + escapeHtml(promptLabel) + '</span>' +
+      '<span class="chat-msg__system-chevron" aria-hidden="true">▸</span>';
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'chat-msg__system-body';
+    bodyWrap.hidden = true;
+    const pre = document.createElement('pre');
+    pre.className = 'chat-msg__system-text';
+    pre.textContent = sys.text;
+    bodyWrap.appendChild(pre);
+    summary.addEventListener('click', () => {
+      const open = bodyWrap.hidden;
+      bodyWrap.hidden = !open;
+      card.classList.toggle('is-expanded', open);
+    });
+    card.appendChild(summary);
+    card.appendChild(bodyWrap);
+    // Always the first child of the transcript.
+    transcript.current.insertBefore(card, transcript.current.firstChild);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   function renderTranscript() {
     if (!transcript.current) return;
     transcript.current.innerHTML = '';
+    renderSystemPromptMessage();
     if (!messagesRef.current.length) {
       const empty = document.createElement('div');
       empty.className = 'chat-view__empty';
@@ -417,14 +482,13 @@ export function ChatView(props) {
     const v = promptSizeSelect.current.value;
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
     updateProfileDescription(v);
-    updateChat({ promptSize: v });
+    updateChat({ promptSize: v }).then(() => refreshSystemPrompt());
   }
 
   function onPromptChange() {
     if (!promptSelect.current) return;
     const v = promptSelect.current.value;
-    updateChat({ promptId: v || null });
-    updateMetaLine();
+    updateChat({ promptId: v || null }).then(() => refreshSystemPrompt());
   }
 
   function deleteThisChat() {

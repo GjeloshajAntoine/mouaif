@@ -16,7 +16,7 @@ This feature implements the "Three prompt-size profiles" entry in `.github/copil
 
 ### Reading the active profile
 
-The chat meta line under the chat title shows the active profile (e.g. `Average · trace off`). The same info is rendered in **Settings → Chat defaults** and in the chat popover as a one-line description under the picker.
+The resolved system prompt (the active profile's text, plus any custom prompt) is rendered as a **collapsible "System prompt" card at the top of the transcript** — the first message of every chat. Tap it to expand and read exactly what the model is being sent. The prompt-size no longer clutters the chat meta line (which now shows only the trace state); the profile is a first-class, on-demand message instead of a permanent picker readout. The picker itself still lives in the chat ⚙ popover with a one-line description, and the app default is in **Settings → App defaults**.
 
 ### The three profiles
 
@@ -34,13 +34,16 @@ The default is `average`. The chat, the project, and the app can each override i
 - **Resolution order**: `chat.promptSize → resolved project.promptSize → app.promptSize → 'average'`. An invalid or missing value falls through to the next layer; nothing throws. The function is safe to call on a half-loaded chat record.
 - **Static text**: the three prompts are baked into the build (see [Implementation notes](#implementation-notes)). They are not per-provider, they do not include the discovered MCP tool list, and they do not change at request time. A future commit can swap to per-provider or per-tool prompts without changing the public surface.
 - **Custom prompts are layered on top, not instead of**. A chat with `promptId: 'review-mode'` sends `[profile, custom-prompt, …transcript]`. The custom prompt's own instructions say "where they do not conflict with the active profile", so the layering is intentional, not accidental.
-- **Read endpoint**: `GET /api/prompt-profiles` returns `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`. Used by the chat popover and (in a follow-up) the Settings UI to render a picker without hard-coding labels. The system messages are returned so a future "preview the active prompt" pane can show what the model is being told.
+- **Read endpoints**:
+  - `GET /api/prompt-profiles` returns `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`. Used by the chat popover to render the picker without hard-coding labels.
+  - `GET /api/chats/:id/system-prompt?projectDir=…` returns `{ profile, prompt, text }` — the **resolved** system context for that specific chat (the profile it will actually use plus its custom prompt, if any). `text` is the concatenation in upstream order. The chat UI uses this to render the first-message system-prompt card, so the card always reflects what `handleChatStream` will send.
 
 ## HTTP surface
 
 | Method | Path | Body / Query | Response |
 |---|---|---|---|
 | GET | `/api/prompt-profiles` | — | `{ default, profiles: [...] }` |
+| GET | `/api/chats/:id/system-prompt` | `?projectDir=` | `{ profile, prompt, text }` |
 
 The chat's profile is set with the existing `PATCH /api/chats/:id { promptSize }` and is read back on `GET /api/chats/:id`. The project's profile is set with `PUT /api/settings/project { projectDir, promptSize }`. The app's default is set with `PUT /api/settings/app { promptSize }`.
 
@@ -51,8 +54,9 @@ The chat's profile is set with the existing `PATCH /api/chats/:id { promptSize }
 - `handleChatStream` in [src/index.js](../../src/index.js) now prepends `promptProfiles.resolveProfile({ chat, projectDir }).systemMessage` as a `role: 'system'` message at index 0 of `upstreamMessages`, before the existing custom-prompt block. The block is wrapped in a `try/catch` so a profile-resolution failure cannot kill the stream.
 - Mobile UI changes (in [src/web/src/components/Chat.jsx](../../src/web/src/components/Chat.jsx)):
   - The chat popover's **Prompt size** dropdown is now populated from `GET /api/prompt-profiles` instead of being hard-coded. Hard-coding the three options would have drifted the first time a profile was renamed.
-  - A one-line description under the picker (`.chat-view__settings-hint` in [style.css](../../src/web/src/style.css)) shows the active profile's `description` and updates on every change.
-  - The chat meta line under the title shows the friendly `label` ("Average") instead of the raw id ("average"), so the meta line is human-readable.
+  - A one-line description under the picker (`.chat-view__settings-hint`) shows the active profile's `description` and updates on every change.
+  - The resolved system prompt is rendered as the first transcript message — a collapsible `.chat-msg--system` card fed by `GET /api/chats/:id/system-prompt`. It is refreshed in place whenever the prompt-size or custom prompt changes in the popover.
+  - The chat meta line under the title no longer shows the profile; it shows only `trace on` (or nothing), because the profile now has a dedicated on-screen home in the transcript.
 - `package.json → scripts.prepublishOnly` now also runs `node -c src/promptProfiles.js` so a syntax error in the new module blocks the publish.
 - New smoke test: [scripts/test-prompt-profiles.js](../../scripts/test-prompt-profiles.js). 50 assertions covering the module's public surface, the resolution order, and the `GET /api/prompt-profiles` endpoint. Run with `node scripts/test-prompt-profiles.js`.
 
