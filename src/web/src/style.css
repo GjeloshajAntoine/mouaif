@@ -251,6 +251,30 @@ html, body {
   animation: mouaif-view-in var(--dur) var(--ease-out) both;
 }
 
+/* On drill-in screens (--flush: chat, picker, project settings, ...)
+   .app__main is a flex column with `overflow: hidden` so the chat
+   transcript can scroll internally without pushing the composer off
+   the screen. The chat view handles its own scroll (the section IS
+   the .chat-view and its transcript is the bounded child). For
+   other flush views (project settings, the folder picker, etc.) the
+   section was a plain block child with no height constraint, so any
+   view that grew taller than main was silently clipped at the
+   bottom with no way to reach the clipped content (e.g. opening
+   the Advanced section in project settings pushed the resolved-JSON
+   <pre> past the bottom of the screen and only the <pre>'s own
+   inner scroll was reachable). Scoped to `:not(.chat-view)` so the
+   chat's own internal transcript scroll is never replaced. The
+   `min-height: 0` lets the section sit inside the flex column
+   without forcing it taller than main; `overflow-y: auto` lets the
+   user reach the overflowing content. */
+.app__main--flush > section:not(.chat-view) {
+  min-height: 0;
+  overflow-y: auto;
+  /* Reserve room at the bottom so the last row isn't flush against
+     the safe-area edge on phones with a home indicator. */
+  padding-bottom: var(--safe-bottom);
+}
+
 @keyframes mouaif-view-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0);   }
