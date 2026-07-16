@@ -54,6 +54,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
 
 - **Virtual list with low memory and low CPU** — windowed rendering, recycled nodes, no forced reflow on scroll.
 - **Providers global, models per project** — provider connections and credentials live in the app SQLite store; model IDs are user-defined in project settings and reference a provider. No pre-made model list. See [docs/decisions.md](../docs/decisions.md) §3.
+- **AI providers** — six ship today: OpenAI-compatible (any OpenAI-shaped endpoint), Anthropic (key or OAuth), Google Gemini (key), Ollama (no key), **OpenRouter** (key, OpenAI-shaped, OpenRouter model slugs as `id`), and GitHub Copilot (OAuth-only, reserved). Adding a new provider is a localized change: a `buildRequest` + `parseEvent` in [src/ai.js](../src/ai.js), a row in [src/web/src/api.js](../src/web/src/api.js) `SETTINGS_PROVIDERS`, and (if the auth shape differs) an entry in [src/auth.js](../src/auth.js) `AI_TO_AUTH_PROVIDER`. See [docs/features/ai-client.md](../docs/features/ai-client.md).
 - **Custom prompts** — user-authored system/role prompts, stored per project. See [docs/features/custom-prompts.md](../docs/features/custom-prompts.md).
 - **Three prompt-size profiles**:
   - `very-small`: tool names with short descriptions, no full schemas.

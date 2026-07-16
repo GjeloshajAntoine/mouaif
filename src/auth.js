@@ -184,7 +184,12 @@ const AI_TO_AUTH_PROVIDER = Object.freeze({
   'anthropic':         'anthropic',
   'gemini':            'google',
   'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
-  'github-copilot':    'github-copilot'
+  'github-copilot':    'github-copilot',
+  // OpenRouter uses an OpenAI-shaped key in the same 'openai' keyring
+  // namespace. The model record keeps the AI client provider verbatim
+  // ('openrouter') per decision §10, and this mapping is what lets the
+  // apikey path read the right keychain entry.
+  'openrouter':        'openai'
 });
 
 function authProviderFor(model) {

@@ -58,12 +58,12 @@ The "trace to file" feature is a **user export**, not a background stream and no
 ## 9. Build order — settings first
 
 - The next `feat:` commit implements app + project settings (decisions 1 + 2) and ships with `docs/features/app-and-project-settings.md`.
-- After that: virtual list primitive → models → folder picker → **AI client core (4 providers + Copilot, key-only, server proxy, SSE — covers OpenAI via the `openai-compatible` provider with an API token, plus Anthropic, Gemini, Ollama, and GitHub Copilot reserved) → auth (@napi-rs/keyring + per-model auth + loopback callback skeleton) → Anthropic OAuth → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector**.
+- After that: virtual list primitive → models → folder picker → **AI client core (4 providers + Copilot, key-only, server proxy, SSE — covers OpenAI via the `openai-compatible` provider with an API token, plus Anthropic, Gemini, Ollama, and GitHub Copilot reserved) → auth (@napi-rs/keyring + per-model auth + loopback callback skeleton) → Anthropic OAuth → trace → project card → custom prompts → grouped chat list → prompt-size profiles → tabbed mobile UI shell → custom DevTools-style inspector → OpenRouter provider (apikey-only, OpenAI-shaped, shares the `openai` keyring namespace with the openai-compatible family)**.
 
 ## 10. AI client — server-side proxy with SSE streaming
 
 - The mobile UI never holds an API key. All provider calls go through `POST /api/ai/chat` on the mouaif server, which streams the response back over SSE.
-- Provider set, this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are key-only in this commit; `github-copilot` is documented but its auth lands with the OAuth commits.
+- Provider set, this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are key-only in this commit; `github-copilot` is documented but its auth lands with the OAuth commits. `openrouter` is the sixth provider — OpenAI-shaped, apikey-only, reuses the openai-compatible builder and parser, and stores its key in the `openai` keyring namespace so users do not have to manage a separate credential store.
 - The request-time model is the merge of the project model `{ id, provider, label?, contextWindow? }` and its app-level provider connection `{ baseUrl, apiKey, auth, oauthAccount? }`. Legacy self-contained model records remain readable during migration.
 - Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
 - 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.

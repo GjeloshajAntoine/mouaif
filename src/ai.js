@@ -3,9 +3,9 @@
 // AI client core.
 //
 // Implements docs/decisions.md section 10: server-side proxy with SSE
-// streaming for five providers (openai-compatible, anthropic, gemini,
-// ollama, github-copilot). The mobile UI never holds an API key — it
-// POSTs to /api/ai/chat and reads the SSE stream back.
+// streaming for six providers (openai-compatible, anthropic, gemini,
+// ollama, github-copilot, openrouter). The mobile UI never holds an
+// API key — it POSTs to /api/ai/chat and reads the SSE stream back.
 //
 // Per-model auth (decision 11) is wired but only 'apikey' is honored in
 // this commit. 'oauth' is recognized and produces a typed ENOAUTH error;
@@ -87,6 +87,25 @@ const ENDPOINTS = {
       'Editor-Schema-Version': 'v1',
       'User-Agent': 'mouaif/1.0',
       'Copilot-Integration-Id': 'mouaif'
+    }
+  },
+  // OpenRouter: OpenAI-shaped chat completions at
+  // https://openrouter.ai/api/v1/chat/completions. API-key only
+  // (OpenRouter does not expose an OAuth flow); the key lives in
+  // the standard OpenAI keyring namespace so users do not have to
+  // juggle a second credential store. Per OpenRouter's docs, every
+  // request should carry an `HTTP-Referer` and `X-Title` header so
+  // the app shows up correctly on the public leaderboard. Both
+  // values are app-wide constants (mouaif is the only client that
+  // makes these calls), so they ship as staticHeaders alongside
+  // the Copilot editor identifiers.
+  'openrouter': {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    chatPath: '/chat/completions',
+    authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    staticHeaders: {
+      'HTTP-Referer': 'https://mouaif.local',
+      'X-Title': 'mouaif'
     }
   }
 };
@@ -319,6 +338,14 @@ function credential(model) {
 
 function buildOpenAIRequest(model, messages, stream) {
   const def = ENDPOINTS[model.provider] || ENDPOINTS['openai-compatible'];
+  // Fall back to the per-provider defaultBaseUrl when the saved
+  // record's baseUrl is empty. Without this, an openai-compatible or
+  // openrouter model with baseUrl: '' would collapse the URL to the
+  // relative path '/chat/completions' instead of the upstream
+  // endpoint. The Settings UI snaps baseUrl to defaultBaseUrl on
+  // save, but a hand-edited .mouaif.json or a future provider that
+  // forgets to set one would otherwise break.
+  const baseUrl = (model && model.baseUrl) || (def && def.baseUrl) || '';
   const headers = { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) };
   // Per-provider static headers. github-copilot requires editor
   // identification headers; the order (auth first, static second)
@@ -327,7 +354,7 @@ function buildOpenAIRequest(model, messages, stream) {
   if (def && def.staticHeaders) Object.assign(headers, def.staticHeaders);
   if (model && model.headers && typeof model.headers === 'object') Object.assign(headers, model.headers);
   return {
-    url: joinUrl(model.baseUrl, ENDPOINTS['openai-compatible'].chatPath),
+    url: joinUrl(baseUrl, ENDPOINTS['openai-compatible'].chatPath),
     headers,
     body: {
       model: model.id,
@@ -389,7 +416,8 @@ const BUILDERS = {
   'anthropic': buildAnthropicRequest,
   'gemini': buildGeminiRequest,
   'ollama': buildOllamaRequest,
-  'github-copilot': buildOpenAIRequest // same shape; ENOAUTH gate above
+  'github-copilot': buildOpenAIRequest, // same shape; ENOAUTH gate above
+  'openrouter':       buildOpenAIRequest  // same shape; apikey-only, reuses staticHeaders
 };
 
 // ---- Event parsers -----------------------------------------------------
@@ -404,6 +432,7 @@ const BUILDERS = {
 const PARSERS = {
   'openai-compatible': parseOpenAISSE,
   'github-copilot':   parseOpenAISSE,
+  'openrouter':       parseOpenAISSE,     // OpenAI-shaped SSE; [DONE] sentinel suppressed
   'anthropic':        parseAnthropicSSE,
   'gemini':           parseGeminiSSE,
   'ollama':           parseOllamaNDJSON

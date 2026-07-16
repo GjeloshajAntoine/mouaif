@@ -4,6 +4,15 @@
 
 `mouaif` is the only thing that holds provider API keys. Provider connections are app-level; model IDs are project-level and reference a provider. The mobile UI POSTs to `/api/ai/chat`, the server combines the selected project model with its provider connection, calls upstream, and forwards events as SSE.
 
+Six providers ship today:
+
+- **OpenAI compatible** — any OpenAI-shaped endpoint (OpenAI, Together, Groq, LM Studio, Ollama's `/v1`, etc.). API key.
+- **Anthropic** — Claude Messages API. API key, or OAuth for Claude Pro/Max accounts.
+- **Google Gemini** — Google AI Studio. API key.
+- **Ollama** — local server. No key.
+- **OpenRouter** — one API key, many models (Anthropic, OpenAI, Google, Meta, Mistral, etc.) over an OpenAI-shaped endpoint. API key.
+- **GitHub Copilot** — reserved; OAuth-only, requires an active Copilot subscription.
+
 ## Usage
 
 ### HTTP
@@ -42,11 +51,13 @@ The project owns model identity:
 ```js
 {
   id:            'gpt-4o-mini',     // slug, also the upstream model id
-  provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'github-copilot'
+  provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'openrouter' | 'github-copilot'
   label:         'GPT-4o mini',     // optional UI label
   contextWindow: 128000             // informational; not yet enforced
 }
 ```
+
+For OpenRouter, `id` is the model slug as listed on openrouter.ai, e.g. `'anthropic/claude-3.5-sonnet'`, `'google/gemini-2.0-flash'`, `'meta-llama/llama-3.1-405b-instruct'`. The full upstream id is sent verbatim in the `model` field of the chat-completions body.
 
 The app store owns the provider connection:
 
@@ -91,7 +102,8 @@ const result = await ai.streamChat({
 - Source: [src/ai.js](../../src/ai.js). Public surface: `streamChat`, `chat`, `ENDPOINTS`, plus the `BUILDERS` and `PARSERS` maps for extensibility.
 - Server wiring: [src/index.js](../../src/index.js) → `handleAI()`. Model resolution is `settings.getResolved(projectDir).models` (decision §2).
 - `AbortController`: the request's `close` event aborts the upstream fetch, so closing the tab or navigating away cancels the model call.
-- AI provider → keyring namespace mapping lives in [src/auth.js](../../src/auth.js) (`AI_TO_AUTH_PROVIDER` / `authProviderFor`). Today the only non-identity pair is `openai-compatible` → `openai`; the AI client and the settings UI both go through this mapping so an OpenAI-signed-in account can serve an `openai-compatible` model without copying credentials.
+- AI provider → keyring namespace mapping lives in [src/auth.js](../../src/auth.js) (`AI_TO_AUTH_PROVIDER` / `authProviderFor`). Today the non-identity pairs are `openai-compatible` → `openai` and `openrouter` → `openai`; both put their API key in the same `openai` keyring namespace so users do not have to juggle a second credential store. The AI client and the settings UI both go through this mapping.
+- OpenRouter: reuses the `openai-compatible` builder and the OpenAI SSE parser. Per OpenRouter's docs, every request carries `HTTP-Referer: https://mouaif.local` and `X-Title: mouaif` static headers so the app shows up correctly on the public leaderboard. The base URL defaults to `https://openrouter.ai/api/v1`. There is no OAuth flow; the user pastes an OpenRouter API key (issued at openrouter.ai) into the provider form. The model id is the OpenRouter slug (e.g. `anthropic/claude-3.5-sonnet`), sent verbatim.
 - UI integration: the chat composer posts to `/api/chats/:id/messages/stream`, which delegates to this AI client and renders the normalized SSE stream. The former standalone AI-test panel has been removed.
 
 ## Related
