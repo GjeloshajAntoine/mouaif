@@ -1604,7 +1604,12 @@ async function handleAuth(req, res, parsed) {
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
 
-    const state = oauthOpenRouter.newState();
+    const rawState = oauthOpenRouter.newState();
+    // Encode the provider in the state prefix so it survives the
+    // OAuth redirect. OpenRouter does not forward ?provider= from
+    // the callback_url, so we need the provider in a field the
+    // IdP echoes back faithfully. See finishOAuth()'s state parsing.
+    const state = 'openrouter:' + rawState;
     const verifier = oauthOpenRouter.newVerifier();
     const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
     if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'openrouter');
@@ -1654,6 +1659,18 @@ function htmlPage(title, body) {
 }
 
 async function finishOAuth({ provider, state, code, errorParam, format }) {
+  // If provider wasn't in the URL query, try to extract it from the
+  // state prefix. Some OAuth providers (OpenRouter) don't forward
+  // query params from the callback_url, so the ?provider=openrouter
+  // param is lost. By encoding the provider as a prefix in the state
+  // (e.g. "openrouter:<random>"), we recover it.
+  if (!provider && typeof state === 'string' && state.includes(':')) {
+    const colonIdx = state.indexOf(':');
+    const candidate = state.slice(0, colonIdx);
+    if (auth.SUPPORTED_PROVIDERS.includes(candidate)) {
+      provider = candidate;
+    }
+  }
   if (!provider || !auth.SUPPORTED_PROVIDERS.includes(provider)) {
     return { status: 400, error: 'Unknown or missing provider', code: 'EBADPROVIDER' };
   }
