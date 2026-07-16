@@ -127,6 +127,54 @@ function listProfiles() {
   return Object.keys(PROFILES).map(k => Object.assign({}, PROFILES[k]));
 }
 
+// reduceToolSpecs(specs, profileValue) — shrink the tool declaration
+// advertised to the model according to the active prompt-size profile.
+// This is the core of the "three prompt-size profiles" feature
+// (.github/copilot-instructions.md §4): the profile controls HOW MUCH
+// of each tool is sent upstream, not just the system prompt text.
+//
+//   very-small : tool name + a short (<=1 line, ~120 char) description,
+//                NO parameter schema. Smallest possible tool budget.
+//   average    : full tool list, name + full description + parameters
+//                (the compact-but-complete default).
+//   extensive  : same as average (full), kept separate so the extensive
+//                system prompt's best-practice guidance is what makes it
+//                "extensive"; the tools themselves are already complete.
+//
+// `specs` is an array of OpenAI-shape tool specs
+// ({ type:'function', function:{ name, description, parameters } }).
+// Returns a NEW array; the input is never mutated. Unknown profiles
+// fall through to the full list.
+function reduceToolSpecs(specs, profileValue) {
+  if (!Array.isArray(specs) || !specs.length) return [];
+  const profile = isValidProfile(profileValue) ? profileValue : DEFAULT_PROFILE;
+  if (profile !== 'very-small') {
+    // average + extensive: full specs, defensively copied.
+    return specs.map(s => Object.assign({}, s, { function: Object.assign({}, s.function) }));
+  }
+  // very-small: drop the parameter schema, clamp the description.
+  return specs.map(s => {
+    const fn = (s && s.function) || {};
+    let desc = typeof fn.description === 'string' ? fn.description : '';
+    // First line only, hard-capped so a verbose MCP description can't
+    // blow the budget the profile is meant to protect.
+    desc = desc.split('\n')[0].trim();
+    if (desc.length > 120) desc = desc.slice(0, 117) + '…';
+    return {
+      type: 'function',
+      function: {
+        name: fn.name,
+        description: desc,
+        // Advertise an empty object schema so the tool is still
+        // callable but carries no property definitions. Providers
+        // require `parameters` to be present; an empty schema is the
+        // minimal valid value.
+        parameters: { type: 'object', properties: {} }
+      }
+    };
+  });
+}
+
 // resolveProfile({ chat, projectDir }) — pick the profile that applies
 // to a chat right now. Resolution: chat.promptSize (if valid) -> the
 // project's resolved promptSize (defaults -> app -> project, per
@@ -156,5 +204,6 @@ module.exports = {
   profileSystemMessage,
   describeProfile,
   listProfiles,
-  resolveProfile
+  resolveProfile,
+  reduceToolSpecs
 };

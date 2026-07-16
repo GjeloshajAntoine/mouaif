@@ -32,7 +32,11 @@ The default is `average`. The chat, the project, and the app can each override i
 
 - **Where the profile lives in the message list**: `handleChatStream` builds the upstream `messages` array in this order — (1) the active profile's system message, (2) the chat's custom prompt (if any), (3) the transcript (user + assistant turns). The profile is **always** present, even when the chat has no custom prompt and no prior messages.
 - **Resolution order**: `chat.promptSize → resolved project.promptSize → app.promptSize → 'average'`. An invalid or missing value falls through to the next layer; nothing throws. The function is safe to call on a half-loaded chat record.
-- **Static text**: the three prompts are baked into the build (see [Implementation notes](#implementation-notes)). They are not per-provider, they do not include the discovered MCP tool list, and they do not change at request time. A future commit can swap to per-provider or per-tool prompts without changing the public surface.
+- **Tool-declaration reduction** (the core of this feature): the profile controls how much of each tool is advertised to the model, not just the system-prompt text.
+  - `very-small`: each tool is sent as its **name + a one-line description** (first line, clamped to ~120 chars) with an **empty parameter schema** (`{ type: 'object', properties: {} }`). Smallest possible tool budget.
+  - `average` / `extensive`: the **full** tool specs (name + full description + `parameters`).
+  This is done by `promptProfiles.reduceToolSpecs(specs, profileId)`, applied in `src/ai.js` after both tool sources (native `shell` + MCP) are collected, so every advertised tool is reduced uniformly. The reduction is driven by the resolved profile id that `handleChatStream` passes to `streamChat` as `opts.promptSize`.
+- **Static text**: the three system prompts are baked into the build. They are not per-provider. The tool list is injected separately and reduced per the rule above.
 - **Custom prompts are layered on top, not instead of**. A chat with `promptId: 'review-mode'` sends `[profile, custom-prompt, …transcript]`. The custom prompt's own instructions say "where they do not conflict with the active profile", so the layering is intentional, not accidental.
 - **Read endpoints**:
   - `GET /api/prompt-profiles` returns `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`. Used by the chat popover to render the picker without hard-coding labels.

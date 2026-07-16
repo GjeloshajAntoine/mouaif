@@ -899,10 +899,17 @@ async function handleChatStream(req, res, chatId) {
   //      user turn already appended by the appendMessage call above.
   const history = messages.listMessages(projectDir, chatId);
   const upstreamMessages = [];
+  // Resolve the prompt-size profile once. Its id drives BOTH the system
+  // message (below) and the tool-declaration reduction passed to
+  // streamChat (decisions §4: very-small trims tool schemas).
+  let resolvedProfileId = promptProfiles.DEFAULT_PROFILE;
   try {
     const profile = promptProfiles.resolveProfile({ chat, projectDir });
-    if (profile && profile.systemMessage) {
-      upstreamMessages.push({ role: 'system', content: profile.systemMessage });
+    if (profile) {
+      if (profile.id) resolvedProfileId = profile.id;
+      if (profile.systemMessage) {
+        upstreamMessages.push({ role: 'system', content: profile.systemMessage });
+      }
     }
   } catch { /* non-fatal; stream proceeds without a profile system message */ }
   // Tagged files (decisions §15). Injected after the profile but before
@@ -966,6 +973,7 @@ async function handleChatStream(req, res, chatId) {
     messages: upstreamMessages,
     projectDir,
     shellEnabled,
+    promptSize: resolvedProfileId,
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         assistantContent += data.delta;

@@ -14,6 +14,7 @@ export function ChatView(props) {
   const traceToggle = useRef(null);
   const promptSizeSelect = useRef(null);
   const promptSizeDesc = useRef(null);
+  const switchRef = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
@@ -118,6 +119,7 @@ export function ChatView(props) {
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
     updateProfileDescription(activeProfileId());
+    updateSwitch(activeProfileId());
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
 
     if (modelSelect.current) populateModelSelect(modelsRef.current);
@@ -160,50 +162,31 @@ export function ChatView(props) {
     promptSelect.current.value = (currentId && list.some(p => p.id === currentId)) ? currentId : '';
   }
 
-  // Render (or refresh) the system-prompt card at the top of the
-  // transcript. It is a collapsible "system" message so the user can
-  // see the resolved prompt-size profile text and any custom prompt
-  // the model is actually being sent — but it stays out of the way
-  // (collapsed to a one-line summary) until tapped. Called by
-  // renderTranscript (full rebuild) and refreshSystemPrompt (after a
-  // popover change) so it never duplicates.
+  // Render (or refresh) the system prompt as the FIRST message of the
+  // transcript — a normal chat bubble with the `system` role, styled
+  // like the user/assistant bubbles (not a permanent widget). The user
+  // asked for the resolved prompt to appear as the first message, not
+  // as a permanent on-screen option. Called by renderTranscript (full
+  // rebuild) and refreshSystemPrompt (after a popover change) so it
+  // never duplicates.
   function renderSystemPromptMessage() {
     if (!transcript.current) return;
     const existing = transcript.current.querySelector('.chat-msg--system');
     if (existing) existing.remove();
     const sys = systemPromptRef.current;
     if (!sys || !sys.text) return;
-    const card = document.createElement('div');
-    card.className = 'chat-msg chat-msg--system';
-    const summary = document.createElement('button');
-    summary.type = 'button';
-    summary.className = 'chat-msg__system-summary';
-    const profileLabel = sys.profile && sys.profile.label ? sys.profile.label : 'System';
-    const promptLabel = sys.prompt && sys.prompt.title ? (' + ' + sys.prompt.title) : '';
-    summary.innerHTML =
-      '<span class="chat-msg__system-icon" aria-hidden="true">⚙</span>' +
-      '<span class="chat-msg__system-label">System prompt · ' + escapeHtml(profileLabel) + escapeHtml(promptLabel) + '</span>' +
-      '<span class="chat-msg__system-chevron" aria-hidden="true">▸</span>';
-    const bodyWrap = document.createElement('div');
-    bodyWrap.className = 'chat-msg__system-body';
-    bodyWrap.hidden = true;
-    const pre = document.createElement('pre');
-    pre.className = 'chat-msg__system-text';
-    pre.textContent = sys.text;
-    bodyWrap.appendChild(pre);
-    summary.addEventListener('click', () => {
-      const open = bodyWrap.hidden;
-      bodyWrap.hidden = !open;
-      card.classList.toggle('is-expanded', open);
-    });
-    card.appendChild(summary);
-    card.appendChild(bodyWrap);
-    // Always the first child of the transcript.
-    transcript.current.insertBefore(card, transcript.current.firstChild);
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const row = document.createElement('div');
+    row.className = 'chat-msg chat-msg--system';
+    const role = document.createElement('div');
+    role.className = 'chat-msg__role';
+    role.textContent = 'system';
+    const body = document.createElement('div');
+    body.className = 'chat-msg__body';
+    body.textContent = sys.text;
+    row.appendChild(role);
+    row.appendChild(body);
+    // Always the first child of the transcript, above the first turn.
+    transcript.current.insertBefore(row, transcript.current.firstChild);
   }
 
   function renderTranscript() {
@@ -479,10 +462,29 @@ export function ChatView(props) {
 
   function onPromptSizeChange() {
     if (!promptSizeSelect.current) return;
-    const v = promptSizeSelect.current.value;
+    setPromptSize(promptSizeSelect.current.value);
+  }
+
+  // Shared setter for both the popover <select> and the head switch.
+  function setPromptSize(v) {
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
+    if (promptSizeSelect.current) promptSizeSelect.current.value = v;
     updateProfileDescription(v);
+    updateSwitch(v);
     updateChat({ promptSize: v }).then(() => refreshSystemPrompt());
+  }
+
+  // The head switch is a segmented control (very-small | average |
+  // extensive). Reflect the active profile by toggling aria-pressed +
+  // an is-active class on its buttons.
+  function updateSwitch(id) {
+    if (!switchRef.current) return;
+    const btns = switchRef.current.querySelectorAll('[data-size]');
+    for (const b of btns) {
+      const on = b.dataset.size === id;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
   }
 
   function onPromptChange() {
@@ -752,7 +754,15 @@ export function ChatView(props) {
         )
       ),
       h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
-      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×')
+      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×'),
+      // Prompt-size switch — a segmented control on its own full-width
+      // row. Visible at a glance; taps set the chat's prompt size and
+      // refresh the System message + the tool declaration sent upstream.
+      h('div', { ref: switchRef, class: 'chat-view__switch', role: 'group', 'aria-label': 'Prompt size' },
+        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'very-small', 'aria-pressed': 'false', onClick: () => setPromptSize('very-small'), title: 'Very small — tool names only, tiny prompt' }, 'S'),
+        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'average', 'aria-pressed': 'false', onClick: () => setPromptSize('average'), title: 'Average — full tools, recommended' }, 'M'),
+        h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'extensive', 'aria-pressed': 'false', onClick: () => setPromptSize('extensive'), title: 'Extensive — full tools + guidance' }, 'L')
+      )
     ),
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },

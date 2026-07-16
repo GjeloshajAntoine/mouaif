@@ -149,6 +149,44 @@ async function main() {
   check('resolveProfile never throws on garbage input', threw === null,
     'threw: ' + (threw && threw.message));
 
+  // 14b) reduceToolSpecs — the core §4 behavior: prompt size trims the
+  // tool declaration sent upstream.
+  const sampleSpecs = [{
+    type: 'function',
+    function: {
+      name: 'shell',
+      description: 'Run a shell command in the project directory.\nSecond line with more detail.',
+      parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] }
+    }
+  }];
+  const full = pp.reduceToolSpecs(sampleSpecs, 'average');
+  check('reduceToolSpecs average keeps full parameters',
+    full[0].function.parameters && full[0].function.parameters.properties.cmd,
+    'got: ' + JSON.stringify(full[0].function.parameters));
+  check('reduceToolSpecs does not mutate the input',
+    sampleSpecs[0].function.parameters.properties.cmd,
+    'input was mutated');
+  const ext = pp.reduceToolSpecs(sampleSpecs, 'extensive');
+  check('reduceToolSpecs extensive keeps full parameters',
+    ext[0].function.parameters && ext[0].function.parameters.properties.cmd,
+    'got: ' + JSON.stringify(ext[0].function.parameters));
+  const tiny = pp.reduceToolSpecs(sampleSpecs, 'very-small');
+  check('reduceToolSpecs very-small drops parameter schema',
+    tiny[0].function.parameters && Object.keys(tiny[0].function.parameters.properties).length === 0,
+    'got: ' + JSON.stringify(tiny[0].function.parameters));
+  check('reduceToolSpecs very-small keeps the tool name',
+    tiny[0].function.name === 'shell',
+    'got: ' + tiny[0].function.name);
+  check('reduceToolSpecs very-small clamps description to first line',
+    tiny[0].function.description === 'Run a shell command in the project directory.',
+    'got: ' + tiny[0].function.description);
+  check('reduceToolSpecs invalid profile falls through to full',
+    pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,
+    'unknown profile did not keep full specs');
+  check('reduceToolSpecs empty input returns empty array',
+    Array.isArray(pp.reduceToolSpecs([], 'average')) && pp.reduceToolSpecs([], 'average').length === 0,
+    'did not return empty array');
+
   // 15) /api/prompt-profiles endpoint.
   //     Spin up the server, hit the endpoint, tear it down.
   const { startServer } = (() => {

@@ -648,6 +648,17 @@ async function streamChat(opts) {
     }
   } catch { /* mcp module not loaded or project dir invalid; fall through without MCP tools */ }
 
+  // Shrink the tool declaration according to the active prompt-size
+  // profile (decisions §4). very-small advertises tool names + short
+  // descriptions with no parameter schema; average/extensive send the
+  // full specs. This is applied AFTER both sources (shell + MCP) are
+  // collected so every advertised tool is reduced uniformly.
+  let effectiveToolSpecs = toolSpecs;
+  try {
+    const pp = require('./promptProfiles.js');
+    effectiveToolSpecs = pp.reduceToolSpecs(toolSpecs, opts && opts.promptSize);
+  } catch { /* non-fatal; fall back to the full specs */ }
+
   // The multi-turn tool loop. `convo` is the working message array; it
   // grows by one assistant (tool-call) message + N tool-result messages
   // each iteration the model asks for tools. Bounded by MAX_TOOL_TURNS
@@ -658,7 +669,7 @@ async function streamChat(opts) {
 
   for (let turn = 0; turn <= MAX_TOOL_TURNS; turn++) {
     const isFinalAllowedTurn = turn === MAX_TOOL_TURNS;
-    const result = await runUpstreamTurn(convo, toolSpecs, isFinalAllowedTurn);
+    const result = await runUpstreamTurn(convo, effectiveToolSpecs, isFinalAllowedTurn);
     if (!result.ok) return { ok: false, error: result.error, usage };
 
     const calls = result.toolCalls;
