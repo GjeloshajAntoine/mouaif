@@ -92,6 +92,7 @@ const result = await ai.streamChat({
 - **SSE in, SSE out.** The proxy reads the upstream's SSE (or Ollama's NDJSON) and re-emits the same event names with normalized shapes. The browser does not need to know what provider is behind the URL.
 - **Apikey only in this commit.** Models with `auth: 'oauth'` produce a typed `ENOAUTH` error. The OAuth commits add the flow; nothing in this commit stores tokens.
 - **Reserved provider: `github-copilot`.** Listed in `ENDPOINTS` and `providers`, gated by `reserved: true`, so any attempt to call it returns `ENOAUTH`. The provider's auth flow ships separately.
+- **Live model catalog.** Each `ENDPOINTS` entry carries a `listModels(cred)` that returns a normalized `[{ id, label, contextWindow? }]`. The chat <select> is populated from this list (see [docs/decisions.md §20](../decisions.md) and [docs/features/chat-ui.md](./chat-ui.md#per-chat-controls)). Throws `ENO_LIST` for providers without an adapter, `EUPSTREAM` for upstream failures.
 - **Errors are typed.** The proxy maps upstream HTTP errors to `EUPSTREAM`, network failures to `ENETWORK`, aborts to `EABORTED`, unknown providers to `EUNKNOWN_PROVIDER`, missing keys to `ENOAPIKEY`, OAuth-marked models to `ENOAUTH`, and bad input to `EBADINPUT` / `EMODEL_NOT_FOUND`. The UI branches on `code`, not on `message`.
 - **Connectivity tests time out.** `/api/ai/test` converts its own ten-second abort into `ETIMEDOUT`; unrelated aborted chat requests remain `EABORTED`.
 - **No tool calls yet.** This commit transports text + usage. Tool-call events (`tool_call`, `tool_result`) are reserved names and will land in a later commit.
@@ -99,7 +100,7 @@ const result = await ai.streamChat({
 
 ## Implementation notes
 
-- Source: [src/ai.js](../../src/ai.js). Public surface: `streamChat`, `chat`, `ENDPOINTS`, plus the `BUILDERS` and `PARSERS` maps for extensibility.
+- Source: [src/ai.js](../../src/ai.js). Public surface: `streamChat`, `chat`, `ENDPOINTS`, `listModels`, plus the `BUILDERS` and `PARSERS` maps for extensibility.
 - Server wiring: [src/index.js](../../src/index.js) → `handleAI()`. Model resolution is `settings.getResolved(projectDir).models` (decision §2).
 - `AbortController`: the request's `close` event aborts the upstream fetch, so closing the tab or navigating away cancels the model call.
 - AI provider → keyring namespace mapping lives in [src/auth.js](../../src/auth.js) (`AI_TO_AUTH_PROVIDER` / `authProviderFor`). Today the non-identity pairs are `openai-compatible` → `openai` and `openrouter` → `openai`; both put their API key in the same `openai` keyring namespace so users do not have to juggle a second credential store. The AI client and the settings UI both go through this mapping.

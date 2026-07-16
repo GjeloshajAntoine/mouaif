@@ -32,12 +32,26 @@
 const ENDPOINTS = {
   'openai-compatible': {
     chatPath: '/chat/completions',
-    authHeader: (apiKey) => ({ 'Authorization': 'Bearer ' + apiKey })
+    authHeader: (apiKey) => ({ 'Authorization': 'Bearer ' + apiKey }),
+    // GET {baseUrl}/models — OpenAI-shaped. Optional key.
+    listModels: async (cred) => {
+      const def = ENDPOINTS['openai-compatible'];
+      const url = (def.baseUrl || 'https://api.openai.com/v1') + '/models';
+      const r = await fetch(url, { headers: cred ? def.authHeader(cred) : {} });
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body);
+    }
   },
   'anthropic': {
     baseUrl: 'https://api.anthropic.com',
     chatPath: '/v1/messages',
     anthropicVersion: '2023-06-01',
+    // Anthropic does not expose a public list-models endpoint; the
+    // /v1/models beta is OAuth-only and is not reachable with a
+    // standard API key. Ship a curated catalog that mirrors the
+    // models documented at https://docs.claude.com/en/docs/about-claude/models.
+    listModels: async () => parseCuratedModels(ANTHROPIC_MODEL_CATALOG),
     // Per the official `ant` CLI source and the platform.claude.com
     // docs: API-key auth uses the `x-api-key` header; OAuth user_oauth
     // tokens use `Authorization: Bearer ...` and require the
@@ -57,14 +71,33 @@ const ENDPOINTS = {
   'gemini': {
     // Gemini uses a per-model action path; see buildRequest.
     baseUrl: 'https://generativelanguage.googleapis.com',
-    authHeader: (apiKey) => ({ 'x-goog-api-key': apiKey })
+    authHeader: (apiKey) => ({ 'x-goog-api-key': apiKey }),
+    // GET /v1beta/models?key=<key> — Gemini-shaped (no Bearer header;
+    // key is a query param). No cred at all is allowed: the call
+    // returns the public list with `supportedGenerationMethods`.
+    listModels: async (cred) => {
+      const url = ENDPOINTS.gemini.baseUrl + '/v1beta/models?pageSize=200'
+        + (cred ? '&key=' + encodeURIComponent(cred) : '');
+      const r = await fetch(url);
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseGeminiModels(body);
+    }
   },
   'ollama': {
     baseUrl: 'http://127.0.0.1:11434',
     chatPath: '/api/chat',
     // No auth header. Ollama streams NDJSON, not SSE — we adapt below.
     authHeader: () => ({}),
-    streamFormat: 'ndjson'
+    streamFormat: 'ndjson',
+    // GET /api/tags — Ollama's local catalog (no auth).
+    listModels: async () => {
+      const url = ENDPOINTS.ollama.baseUrl + '/api/tags';
+      const r = await fetch(url);
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOllamaModels(body);
+    }
   },
   'github-copilot': {
     // The base URL points at the public Copilot API. Calls require a
@@ -77,6 +110,11 @@ const ENDPOINTS = {
     baseUrl: 'https://api.githubcopilot.com',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    // Copilot does not expose a public list-models endpoint. Return
+    // a small curated list of the model ids the Copilot API actually
+    // serves today. Kept in sync with the public Copilot docs; the
+    // `contextWindow` field is the upstream maximum.
+    listModels: async () => parseCuratedModels(COPILOT_MODEL_CATALOG),
     // Copilot requires a handful of editor-identifying headers. The
     // values mirror the public Copilot CLI; they identify this
     // client as a third-party tool without sending PII. Tests can
@@ -103,6 +141,15 @@ const ENDPOINTS = {
     baseUrl: 'https://openrouter.ai/api/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    // GET /api/v1/models — OpenAI-shaped. Optional key (some models
+    // are returned unauthenticated).
+    listModels: async (cred) => {
+      const url = ENDPOINTS.openrouter.baseUrl + '/models';
+      const r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {} });
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body);
+    },
     staticHeaders: {
       'HTTP-Referer': 'https://mouaif.local',
       // The current OpenRouter API uses `X-OpenRouter-Title` as the
@@ -129,6 +176,121 @@ const ENDPOINTS = {
 // `model.provider === 'openrouter'` without an ENDPOINTS mutation.
 function resolveOpenRouterStaticHeaders() {
   return ENDPOINTS.openrouter.staticHeaders;
+}
+
+// ---- Model-list adapters ----------------------------------------------
+//
+// The chat <select> is populated dynamically from the upstream
+// /models endpoint. Each ENDPOINTS entry above carries a listModels(cred)
+// that returns a normalized [{ id, label, contextWindow? }]. Curated
+// catalogs (Copilot) are listed inline so the picker still works when the
+// upstream has no public list endpoint.
+
+const COPILOT_MODEL_CATALOG = [
+  { id: 'gpt-4o',           label: 'GPT-4o',                      contextWindow: 128000 },
+  { id: 'gpt-4.1',          label: 'GPT-4.1',                     contextWindow: 1047576 },
+  { id: 'gpt-5',            label: 'GPT-5',                       contextWindow: 400000 },
+  { id: 'gpt-5-mini',       label: 'GPT-5 mini',                  contextWindow: 400000 },
+  { id: 'claude-sonnet-4',  label: 'Claude Sonnet 4',             contextWindow: 200000 },
+  { id: 'claude-sonnet-4.5',label: 'Claude Sonnet 4.5',           contextWindow: 200000 },
+  { id: 'claude-opus-4',    label: 'Claude Opus 4',               contextWindow: 200000 },
+  { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',              contextWindow: 1048576 }
+];
+
+const ANTHROPIC_MODEL_CATALOG = [
+  { id: 'claude-opus-4',    label: 'Claude Opus 4',               contextWindow: 200000 },
+  { id: 'claude-opus-4.1',  label: 'Claude Opus 4.1',             contextWindow: 200000 },
+  { id: 'claude-opus-4.5',  label: 'Claude Opus 4.5',             contextWindow: 200000 },
+  { id: 'claude-sonnet-4',  label: 'Claude Sonnet 4',             contextWindow: 200000 },
+  { id: 'claude-sonnet-4.5',label: 'Claude Sonnet 4.5',           contextWindow: 200000 },
+  { id: 'claude-sonnet-5',  label: 'Claude Sonnet 5',             contextWindow: 1000000 },
+  { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5',            contextWindow: 200000 },
+  { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet (legacy)', contextWindow: 200000 },
+  { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku (legacy)',  contextWindow: 200000 }
+];
+
+function httpError(resp) {
+  const e = new Error('upstream ' + resp.status + ' ' + resp.statusText);
+  e.code = 'EUPSTREAM';
+  e.status = resp.status;
+  return e;
+}
+
+function parseOpenAIShapedModels(body) {
+  const arr = Array.isArray(body && body.data) ? body.data : [];
+  const out = [];
+  for (const m of arr) {
+    if (!m || !m.id) continue;
+    out.push({
+      id: String(m.id),
+      label: m.id,
+      contextWindow: typeof m.context_window === 'number' ? m.context_window : undefined
+    });
+  }
+  return out;
+}
+
+function parseGeminiModels(body) {
+  // Gemini: { models: [{ name: 'models/<id>', displayName, inputTokenLimit, ... }] }
+  const arr = Array.isArray(body && body.models) ? body.models : [];
+  const out = [];
+  for (const m of arr) {
+    if (!m || !m.name) continue;
+    const id = String(m.name).replace(/^models\//, '');
+    // Only show models that can actually generate (text-to-text).
+    const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+    if (methods.length && !methods.includes('generateContent')) continue;
+    out.push({
+      id,
+      label: m.displayName || id,
+      contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
+    });
+  }
+  return out;
+}
+
+function parseOllamaModels(body) {
+  const arr = Array.isArray(body && body.models) ? body.models : [];
+  const out = [];
+  for (const m of arr) {
+    if (!m || !m.name) continue;
+    out.push({
+      id: String(m.name),
+      label: m.name,
+      contextWindow: undefined  // Ollama doesn't expose context in /api/tags.
+    });
+  }
+  return out;
+}
+
+function parseCuratedModels(catalog) {
+  return catalog.map((m) => ({
+    id: m.id,
+    label: m.label || m.id,
+    contextWindow: m.contextWindow
+  }));
+}
+
+// listModels(provider, cred) -> Promise<[{ id, label, contextWindow? }]>
+// Returns the live list for a provider; throws on upstream error so the
+// caller can surface a typed error to the chat UI.
+async function listModels(provider, cred) {
+  const def = ENDPOINTS[provider];
+  if (!def || typeof def.listModels !== 'function') {
+    const e = new Error('no listModels for provider: ' + provider);
+    e.code = 'ENO_LIST';
+    throw e;
+  }
+  const out = await def.listModels(cred);
+  // Stable, friendly order: by id ascending. Dedupe.
+  const seen = new Set();
+  const dedup = [];
+  for (const m of out.sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!m || !m.id || seen.has(m.id)) continue;
+    seen.add(m.id);
+    dedup.push(m);
+  }
+  return dedup;
 }
 
 function endpointFor(model) {
@@ -982,6 +1144,7 @@ module.exports = {
   streamChat,
   chat,
   ENDPOINTS,
+  listModels,
   // exposed for tests
   parseSSEFrame,
   readSSE,

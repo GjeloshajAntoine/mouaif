@@ -13,12 +13,20 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
 - Resolution order: defaults → app → project. Project wins on conflict.
 - Documented in `docs/features/app-and-project-settings.md`.
 
-## 3. Providers and models — separate scopes, no pre-made model list
+## 3. Providers and models — separate scopes; live list per provider
 
 - A provider connection is `{ id, baseUrl, apiKey, auth, oauthAccount? }` and is persisted in the app SQLite store. It owns transport and credentials.
 - A model is `{ id: slug, provider, label?, contextWindow?, ... }` and is defined in project settings. `provider` references an app-level provider connection.
 - Provider credentials are never written to project files. At request time, the server hydrates the selected project model with its matching app-level provider connection.
-- There is no built-in model list. Model IDs remain entirely user-defined per project.
+- **The chat <select> is populated from a live catalog** that each provider exposes:
+  - OpenAI-compatible → `GET {baseUrl}/models` (OpenAI-shaped)
+  - Anthropic → curated catalog (no public list endpoint with API-key auth)
+  - Gemini → `GET /v1beta/models` (filtered to `generateContent`); key optional
+  - Ollama → `GET /api/tags` (local, no auth)
+  - GitHub Copilot → curated catalog (no public list endpoint)
+  - OpenRouter → `GET /api/v1/models` (OpenAI-shaped); key optional
+- The project `models` array (when present) is merged with the live list, so user-defined slugs stay. The chat <select> shows the union, deduped by id.
+- Results are cached per `${provider}:${credHash}` for 1 hour on the server. The chat head has a refresh button that re-fetches the live list for the current provider.
 
 ## 4. Projects — full filesystem browse
 
@@ -158,3 +166,25 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - New REST surface: `GET /api/prompt-profiles` → `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`. Used by the chat popover so the picker is always in sync with what `handleChatStream` will use; the system messages are returned so a future "preview the active prompt" pane can show them.
 - New module: `src/promptProfiles.js`. New test: [scripts/test-prompt-profiles.js](../scripts/test-prompt-profiles.js). No new runtime dependencies. The existing `prepublishOnly` lint chain in `package.json` was extended to `node -c src/promptProfiles.js`.
 
+
+## 20. Live model catalog � per-provider /models, with a 1h cache
+
+The chat <select> (decision �3) is populated from a live upstream
+catalog rather than the project's hand-typed models array. Each
+provider entry in ENDPOINTS carries a listModels(cred) that
+returns a normalized [{ id, label, contextWindow? }]. The chat
+UI calls it on first load and from a refresh button next to the
+select; the response is cached on the server for 1 hour, keyed by
+provider:credHash so a key rotation invalidates the entry.
+
+- **Source per provider** (all in [src/ai.js](../src/ai.js)):
+  - openai-compatible ? GET {baseUrl}/models (OpenAI-shaped, optional key)
+  - nthropic ? curated catalog in ANTHROPIC_MODEL_CATALOG (no public list endpoint with API-key auth)
+  - gemini ? GET /v1beta/models?pageSize=200, filtered to entries with generateContent in supportedGenerationMethods
+  - ollama ? GET /api/tags, no auth
+  - github-copilot ? curated catalog in COPILOT_MODEL_CATALOG (no public list endpoint)
+  - openrouter ? GET /api/v1/models (OpenAI-shaped, optional key)
+- **Endpoint**: GET /api/ai/models/live?provider=<id> ? { models, fetchedAt, cached }. The provider id is mandatory; unknown providers get 400. An upstream 4xx/5xx surfaces as 502 with { error, code: 'EUPSTREAM' }. The call is bounded by an 8 s AbortController timeout.
+- **Merge rule**: the project's existing models array (from /api/ai/models) is unioned with the live list, deduped by id, sorted alphabetically. User-defined slugs always win on conflict so a hand-typed id is never shadowed by an upstream list.
+- **New module surface**: i.listModels(provider, cred) is exported from [src/ai.js](../src/ai.js) so the AI client itself can ask for a list (e.g. for a future "verify this id exists" guard in streamChat). Throws ENO_LIST for providers without a list adapter, EUPSTREAM for upstream failures.
+- **New tests**: [scripts/test-model-lists.js](../scripts/test-model-lists.js) (parsers, dedupe, credential handling, 13 fixtures per provider) and [scripts/test-model-lists-live.js](../scripts/test-model-lists-live.js) (HTTP smoke test against a running server: 400 on unknown provider, 200 + curated for Copilot, 502 EUPSTREAM for missing-key Gemini, cached:true on the second call). All offline; the live test only hits local 127.0.0.1:5732.

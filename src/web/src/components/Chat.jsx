@@ -5,6 +5,23 @@ import { fetchJson, parseSSEFrame, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
 
+// mergeModelLists(projectList, liveList) — dedupes by id, project
+// entries win on conflict (user-defined slugs preserve their label/
+// provider). Sort is alphabetical by id. Returned shape mirrors
+// /api/ai/models: { id, provider, label, auth }.
+function mergeModelLists(projectList, liveList) {
+  const out = new Map();
+  for (const m of (projectList || [])) {
+    if (m && m.id) out.set(m.id, m);
+  }
+  for (const m of (liveList || [])) {
+    if (!m || !m.id) continue;
+    if (!out.has(m.id)) out.set(m.id, m);
+  }
+  return Array.from(out.values()).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+
 export function ChatView(props) {
   const chatId = props.chatId;
   const projectDir = props.projectDir;
@@ -23,6 +40,7 @@ export function ChatView(props) {
   const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
+  const modelRefreshBtn = useRef(null);
   const promptInput = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
@@ -94,6 +112,12 @@ export function ChatView(props) {
 
     if (modelSelect.current) populateModelSelect(modelsRef.current);
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
+    // Auto-fetch the live catalog on first load so a brand-new chat
+    // opens with the provider's full list, not just the project
+    // hand-typed slugs. The button next to the <select> does the same
+    // thing on demand. Errors are silent — a stale list is still
+    // usable; the user can retry via the refresh button.
+    refreshModelList().catch(() => {});
 
     renderTranscript();
     updateSetupVisibility();
@@ -115,10 +139,76 @@ export function ChatView(props) {
     if (!list.length) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = '(no models)';
-      opt.title = 'Define models in the project settings to start a chat.';
+      opt.textContent = '(no models — tap ↻)';
+      opt.title = 'No models in this project. Tap ↻ to load the provider catalog.';
       modelSelect.current.appendChild(opt);
     }
+  }
+
+  // refreshModelList() — fetch the live catalog from the upstream
+  // /models endpoint for the chat's current provider, then merge the
+  // live ids into the <select>. Falls back to the first project
+  // model if nothing is selected yet, or the first app provider
+  // connection if the project has no models. The previous selected
+  // value is restored if the live list still includes it; otherwise
+  // the first live entry is selected.
+  async function refreshModelList() {
+    if (!projectDir) return;
+    if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = true;
+    setChatStatus('loading models…', 'busy');
+    // Pick a provider. Try (1) the currently selected modelId, (2)
+    // the first model in the project's list, (3) the first app-level
+    // configured provider.
+    const cur = modelSelect.current ? modelSelect.current.value : '';
+    const fromSelect = (modelsRef.current || []).find((m) => m && m.id === cur);
+    let provider = fromSelect && fromSelect.provider;
+    if (!provider && (modelsRef.current || []).length) {
+      provider = modelsRef.current[0].provider;
+    }
+    if (!provider) {
+      // Ask the server for the first available app provider.
+      try {
+        const r = await fetchJson('/api/settings');
+        const providers = (r.status === 200 && r.body && Array.isArray(r.body.providers))
+          ? r.body.providers
+          : (r.body && Array.isArray(r.body.app && r.body.app.providers) ? r.body.app.providers : []);
+        // The settings endpoint redacts keys; we just need the ids.
+        const ids = (Array.isArray(providers) ? providers : []).map((p) => p && p.id).filter(Boolean);
+        if (ids.length) provider = ids[0];
+      } catch { /* fall through */ }
+    }
+    if (!provider) {
+      setChatStatus('add a provider first', 'error');
+      if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
+      return;
+    }
+    try {
+      const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + '&_=' + Date.now());
+      if (r.status !== 200) {
+        setChatStatus('model list failed', 'error');
+        if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
+        return;
+      }
+      const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
+      // Merge with project-level ids so any user-defined slugs stay.
+      const merged = mergeModelLists(modelsRef.current, live.map((m) => ({
+        id: m.id, provider: provider, label: m.label
+      })));
+      modelsRef.current = merged;
+      populateModelSelect(merged);
+      // Restore previous selection if still present, else first live.
+      if (modelSelect.current) {
+        if (cur && merged.some((m) => m.id === cur)) {
+          modelSelect.current.value = cur;
+        } else if (merged.length) {
+          modelSelect.current.value = merged[0].id;
+        }
+      }
+      setChatStatus('models: ' + merged.length, 'success');
+    } catch (err) {
+      setChatStatus('model list error', 'error');
+    }
+    if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
   }
 
   function populatePromptSelect(list, currentId) {
@@ -768,7 +858,14 @@ export function ChatView(props) {
         h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
       ),
-      h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model' }),
+      h('div', { class: 'chat-view__model-row' },
+        h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model' }),
+        h('button', { ref: modelRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshModelList, 'aria-label': 'Refresh model list from provider', title: 'Refresh models from the provider' },
+          h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+            h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
+          )
+        )
+      ),
       h('div', { class: 'chat-view__settings-wrap' },
         h('button', { ref: settingsBtnRef, class: 'chat-view__iconbtn', type: 'button', onClick: toggleSettings, 'aria-label': 'Chat settings', 'aria-expanded': 'false', title: 'Settings' },
           h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },

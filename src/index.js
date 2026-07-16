@@ -1311,6 +1311,25 @@ function resolveModel(modelId, projectDir) {
   return hydrated;
 }
 
+// In-memory cache for /api/ai/models/live. Keyed by
+// `${provider}:${credHash}` so a key rotation invalidates the entry.
+// Cleared on process restart; the chat UI also has its own explicit
+// "refresh" button that bypasses the cache (via cache-buster).
+const MODEL_LIST_CACHE = new Map();
+const MODEL_LIST_TTL_MS = 60 * 60 * 1000;       // 1 hour
+const MODEL_LIST_TIMEOUT_MS = 8000;            // 8 s
+
+// hashShort(s) — cheap 32-bit FNV-1a. Used to bucket per-credential
+// cache entries without leaking the actual key.
+function hashShort(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
 async function handleAI(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -1323,6 +1342,48 @@ async function handleAI(req, res, parsed) {
       id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
     }));
     return sendJSON(res, 200, { models, providers: Object.keys(ai.ENDPOINTS) });
+  }
+
+  // GET /api/ai/models/live?provider=<id>  -> { models, fetchedAt, cached }
+  // Live model list fetched from the upstream /models endpoint
+  // (OpenAI-shaped), Gemini's /v1beta/models, Ollama's /api/tags, or
+  // the curated Copilot catalog. Results are cached per-provider in
+  // memory for an hour so opening many chats does not re-hit the
+  // upstream. The chat UI calls this from the refresh button next to
+  // the model <select>.
+  if (urlPath === '/api/ai/models/live' && method === 'GET') {
+    const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
+    if (!provider || !ai.ENDPOINTS[provider]) {
+      return sendJSON(res, 400, { error: 'unknown provider', provider });
+    }
+    // Look up the app-level provider connection. Missing connection
+    // is fine — OpenAI/OpenRouter/Gemini allow unauthenticated list
+    // calls (rate-limited but useful), Ollama/Copilot don't need one.
+    const app = settings.getApp();
+    const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
+    const cred = conn && conn.apiKey ? conn.apiKey : null;
+    // 1h cache keyed by `${provider}:${credHash}`.
+    const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
+    const cached = MODEL_LIST_CACHE.get(cacheKey);
+    const now = Date.now();
+    if (cached && (now - cached.fetchedAt) < MODEL_LIST_TTL_MS) {
+      return sendJSON(res, 200, { models: cached.models, fetchedAt: cached.fetchedAt, cached: true });
+    }
+    // Bound the call so a slow upstream cannot hang the server.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), MODEL_LIST_TIMEOUT_MS);
+    ai.listModels(provider, cred)
+      .then((models) => {
+        clearTimeout(timer);
+        MODEL_LIST_CACHE.set(cacheKey, { models, fetchedAt: Date.now() });
+        return sendJSON(res, 200, { models, fetchedAt: Date.now(), cached: false });
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        const status = err && err.code === 'ENO_LIST' ? 400 : 502;
+        return sendJSON(res, status, { error: String(err && err.message || err), code: err && err.code || 'ELIVE' });
+      });
+    return;  // response is sent in the .then/.catch above.
   }
 
   // GET /api/ai/models-all  -> { ids: [..] }
