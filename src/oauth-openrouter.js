@@ -186,22 +186,14 @@ async function readKeyResponse(res) {
 // ---- Account naming ----------------------------------------------------
 
 // The PKCE flow hands back a single string (the API key), not a
-// structured account object. The OAuth account picker needs a
-// recognisable label per signed-in key. The user may supply an
-// "app name" when starting the sign-in (e.g. "Work laptop",
-// "Personal"); that name is forwarded through the pending record
-// and becomes the `account` slot. When the user does not supply
-// one, we synthesise a short label from the key's prefix so the
-// picker can still tell two sign-ins apart without revealing the
-// full secret. The key starts with "sk-or-v1-" by convention; we
-// keep the first 16 chars which is unique enough to be useful but
-// not a leak. Empty / short keys fall through to "default" so the
-// picker always has a value.
-function accountForKey(key, appName) {
-  if (typeof appName === 'string') {
-    const trimmed = appName.trim();
-    if (trimmed) return trimmed.slice(0, 64);
-  }
+// structured account object. We synthesise a short, recognisable
+// label from the key's prefix so the OAuth account picker can show
+// one row per signed-in key without revealing the full secret. The
+// key starts with "sk-or-v1-" by convention; we keep the first 16
+// chars which is unique enough to be useful but not a leak. Empty
+// / short keys fall through to "default" so the picker always has
+// a value.
+function accountForKey(key) {
   if (typeof key !== 'string' || !key) return 'default';
   const trimmed = key.trim();
   if (!trimmed) return 'default';
@@ -239,12 +231,7 @@ async function exchange({ pending, code }) {
     refreshToken: null, // OpenRouter does not issue refresh tokens
     expiresAt: null,    // OpenRouter keys do not expire unless revoked
     scope: 'openrouter',
-    // The user-supplied "app name" (pending.appName, set by the
-    // Settings form) wins over the auto-generated key prefix. A
-    // user who signs in twice with the same OpenRouter account
-    // (e.g. on two laptops) can give each sign-in its own
-    // recognisable label without leaking the full key.
-    account: accountForKey(out.key, pending && pending.appName)
+    account: accountForKey(out.key)
   };
 }
 

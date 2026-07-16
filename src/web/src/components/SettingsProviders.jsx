@@ -106,15 +106,16 @@ export function SettingsProviderEditView(props) {
   // above the Sign in button — instead of on a separate Settings screen.
   const copilotClientId = useRef(null);
   const copilotStatus = useRef(null);
-  // OpenRouter PKCE has no per-app identity, but a user who signs
-  // in twice (e.g. on two laptops) needs a way to tell the two
-  // rows in the OAuth account picker apart. The "app name" they
-  // type here becomes the OAuth `account` slot via
-  // /api/auth/sign-in/openrouter. Blank = fall back to the auto-
-  // generated key prefix in src/oauth-openrouter.js. Per-session
-  // only (not saved to the provider record), so the user can use a
-  // different name on each new sign-in.
+  // OpenRouter uses an "app name" to identify the client to
+  // OpenRouter's leaderboard (sent as the X-Title header on every
+  // chat-completions request, per OpenRouter's attribution docs).
+  // The user sets it once per install; the value lives in
+  // app.openRouter.appName and is read by the AI client at request
+  // time. Blank = fall back to the shipped 'mouaif' default.
+  // Persisted via saveApp() behind its own Save button, same
+  // pattern as the Copilot client_id field it sits next to.
   const openrouterAppName = useRef(null);
+  const openrouterStatus = useRef(null);
 
   // The form's "current provider" lives in two places: the URL prop
   // (`id`, used as the initial value + to know if we're editing or
@@ -164,6 +165,12 @@ export function SettingsProviderEditView(props) {
     // Prefill the Copilot OAuth-app client_id (blank = using the default).
     if (copilotClientId.current) {
       copilotClientId.current.value = (app && app.app && app.app.githubCopilot && app.app.githubCopilot.clientId) || '';
+    }
+    // Prefill the OpenRouter app name (blank = shipped 'mouaif' default,
+    // resolved by the AI client at request time).
+    if (openrouterAppName.current) {
+      const or = (app && app.app && app.app.openRouter) || {};
+      openrouterAppName.current.value = (typeof or.appName === 'string' && or.appName) || '';
     }
 
     // Resolve the auth mode from data (reserved → oauth, else the saved
@@ -262,23 +269,12 @@ export function SettingsProviderEditView(props) {
       return;
     }
     setStatus(signInStatus, 'starting sign-in…', 'busy');
-    // Per-provider extra body. OpenRouter PKCE accepts an
-    // `appName`; the server stores it on the pending record and
-    // the registered exchange uses it as the OAuth account label
-    // so two sign-ins from the same user can be told apart in the
-    // account picker. Other OAuth-capable providers (Anthropic,
-    // GitHub Copilot) ignore extra fields.
-    const body = {};
-    if (provider === 'openrouter' && openrouterAppName.current) {
-      const v = (openrouterAppName.current.value || '').trim();
-      if (v) body.appName = v;
-    }
     let r;
     try {
       r = await fetchJson('/api/auth/sign-in/' + encodeURIComponent(provider), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: '{}'
       });
     } catch (err) { setStatus(signInStatus, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(signInStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
@@ -316,6 +312,24 @@ export function SettingsProviderEditView(props) {
       await saveApp({ githubCopilot: { clientId: value || null } });
       setStatus(copilotStatus, value ? 'saved — you can sign in now.' : 'cleared (using default).', 'success');
     } catch (e) { setStatus(copilotStatus, 'save failed: ' + e.message, 'error'); }
+  }
+
+  // Persist the OpenRouter app name to app settings. Sent as the
+  // X-Title header on every OpenRouter chat-completions request,
+  // per OpenRouter's attribution docs. Empty clears it back to
+  // the shipped 'mouaif' default. Decoupled from the provider
+  // Save so the natural order is: set the app name -> sign in ->
+  // save the provider record. The X-Title is read by the AI
+  // client at request time (see src/ai.js → ENDPOINTS.openrouter
+  // → staticHeaders), so changing the value here takes effect on
+  // the next chat send with no provider-record rewrite.
+  async function saveOpenRouterAppName() {
+    const value = (openrouterAppName.current && openrouterAppName.current.value || '').trim();
+    setStatus(openrouterStatus, 'saving…', 'busy');
+    try {
+      await saveApp({ openRouter: { appName: value || null } });
+      setStatus(openrouterStatus, value ? 'saved — applies to the next chat send.' : 'cleared (using default).', 'success');
+    } catch (e) { setStatus(openrouterStatus, 'save failed: ' + e.message, 'error'); }
   }
 
   async function save() {
@@ -477,17 +491,23 @@ export function SettingsProviderEditView(props) {
           h('span', { ref: copilotStatus, class: 'status', 'aria-live': 'polite' })
         )
       ),
-      // OpenRouter only: the "app name" the user wants to attach
-      // to this sign-in. OpenRouter's PKCE flow has no per-app
-      // identity (no client_id), so the name is purely a label
-      // rendered in the OAuth account picker — useful when the
-      // same OpenRouter account is signed in on multiple devices.
-      // Blank = auto-generated from the first 16 chars of the
-      // issued key (see src/oauth-openrouter.js → accountForKey).
-      h('div', { class: hide(effAuth !== 'oauth' || currentId !== 'openrouter') + ' row--oauth row--openrouter' },
+      // OpenRouter only: the "app name" sent as the X-Title
+      // header on every chat-completions request, per OpenRouter's
+      // attribution docs. Identifies this app to OpenRouter's
+      // leaderboard. Persisted in app settings (app.openRouter.
+      // appName) and read by the AI client at request time. Blank
+      // = shipped 'mouaif' default. The field sits next to the
+      // Copilot client_id field (the same pattern: per-install
+      // setting that's part of the provider's sign-in story but
+      // lives at the app scope).
+      h('div', { class: hide(currentId !== 'openrouter') + ' row--openrouter' },
         h('label', { class: 'label', for: 'sp-or-appname' }, 'App name'),
-        h('p', { class: 'hint hint--compact' }, 'A friendly label for this sign-in (e.g. "Work laptop", "Personal"). Shows up in the OAuth account picker so two sign-ins from the same OpenRouter account can be told apart. Blank = auto-generated from the key prefix.'),
-        h('input', { ref: openrouterAppName, class: 'input', id: 'sp-or-appname', type: 'text', placeholder: 'Work laptop', maxlength: 64, autocomplete: 'off' })
+        h('p', { class: 'hint hint--compact' }, 'Shown to OpenRouter as the X-Title header on every chat-completions request (per OpenRouter\u2019s attribution docs). Identifies this app on the public leaderboard. Blank uses the shipped default.'),
+        h('input', { ref: openrouterAppName, class: 'input', id: 'sp-or-appname', type: 'text', placeholder: 'mouaif', maxlength: 64, autocomplete: 'off' }),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn', type: 'button', onClick: saveOpenRouterAppName }, 'Save app name'),
+          h('span', { ref: openrouterStatus, class: 'status', 'aria-live': 'polite' })
+        )
       ),
       h('div', { class: hide(effAuth !== 'oauth') + ' row--oauth' },
         h('div', { class: 'auth__help-inline' },

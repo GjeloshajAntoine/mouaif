@@ -14,6 +14,7 @@ const path = require('path');
 const ai = require(path.resolve(__dirname, '..', 'src', 'ai.js'));
 const auth = require(path.resolve(__dirname, '..', 'src', 'auth.js'));
 const oauthOpenRouter = require(path.resolve(__dirname, '..', 'src', 'oauth-openrouter.js'));
+const settings = require(path.resolve(__dirname, '..', 'src', 'settings.js'));
 
 // AI.js is a 'use strict' CommonJS module that doesn't export the
 // private tables. Touching the internal maps would couple the test
@@ -223,20 +224,6 @@ globalThis.fetch = async function stubFetch(url, init) {
   check('accountForKey returns the whole key when shorter than 16 chars',
     oauthOpenRouter.accountForKey('short') === 'short');
 
-  // accountForKey with an appName override: the user-supplied
-  // name wins over the key-prefix auto-label, so two sign-ins
-  // from the same OpenRouter account can be told apart in the
-  // account picker.
-  check('accountForKey honours the user-supplied appName',
-    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', 'Work laptop') === 'Work laptop');
-  check('accountForKey trims whitespace and clamps appName to 64 chars',
-    oauthOpenRouter.accountForKey('sk-or-v1-xxx', '   ' + 'A'.repeat(80) + '   ').length === 64);
-  check('accountForKey falls back to the key prefix when appName is blank',
-    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', '   ') === 'sk-or-v1-abcdef0');
-  check('accountForKey falls back to the key prefix when appName is null/undefined',
-    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', null) === 'sk-or-v1-abcdef0' &&
-    oauthOpenRouter.accountForKey('sk-or-v1-abcdef0123456789abcdef0123456789', undefined) === 'sk-or-v1-abcdef0');
-
   // exchangeAuthorizationCode against a mocked fetch: the request
   // body must carry { code, code_verifier, code_challenge_method }, the
   // response { key } is mapped to accessToken by the registered
@@ -299,21 +286,6 @@ globalThis.fetch = async function stubFetch(url, init) {
       check('exchange did not throw', false, e && e.message);
     }
 
-    // exchange() with a user-supplied appName: the friendly label
-    // wins over the auto-generated key prefix so the OAuth account
-    // picker can show "Work laptop" instead of "sk-or-v1-mock-12".
-    try {
-      const out = await oauthOpenRouter.exchange({
-        pending: { codeVerifier: pkce.verifier, redirectUri: pkce.callbackUrl, state: pkce.state, appName: 'Work laptop' },
-        code: 'mock-auth-code'
-      });
-      check('exchange uses the user-supplied appName as the account label',
-        out.account === 'Work laptop',
-        'got ' + out.account);
-    } catch (e) {
-      check('exchange(appName) did not throw', false, e && e.message);
-    }
-
     // refresh() — no-op; returns a blob with empty accessToken so the
     // auth subsystem's refresh path is a clean no-op for an
     // irrevocable key.
@@ -353,6 +325,74 @@ globalThis.fetch = async function stubFetch(url, init) {
     const parsed = JSON.parse(blob);
     check('OAuth blob round-trip preserves the OpenRouter key as accessToken',
       parsed.accessToken === 'sk-or-v1-blob');
+
+    // X-Title override via app.openRouter.appName. The Settings
+    // UI saves the user-supplied app name to app.openRouter.appName;
+    // the AI client resolves it at request time and substitutes
+    // it for the shipped 'mouaif' default in the X-Title header.
+    // We set the value, drive a streamChat() round-trip with a
+    // mocked fetch, and confirm the request headers carry the new
+    // title. We also confirm the value is clamped to 64 chars and
+    // that a blank / missing value falls back to 'mouaif'.
+    const realApp = settings.getApp();
+    const realOr = (realApp && realApp.openRouter) || null;
+    const streamProbe = (label) => new Promise((resolve) => {
+      let lastHeaders = null;
+      const probeFetch = (url, init) => {
+        lastHeaders = (init && init.headers) || {};
+        return Promise.resolve({
+          status: 200,
+          ok: true,
+          body: new ReadableStream({
+            start(c) {
+              c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"x"}}]}\n\ndata: [DONE]\n\n'));
+              c.close();
+            }
+          }),
+          text: async () => '',
+          json: async () => ({})
+        });
+      };
+      globalThis.fetch = probeFetch;
+      ai.streamChat({
+        model: { ...model, provider: 'openrouter' },
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: undefined,
+        onEvent: () => {}
+      }).then(() => resolve(lastHeaders), () => resolve(lastHeaders));
+    });
+
+    try {
+      // 1. The user-supplied app name overrides the shipped default.
+      settings.setApp({ openRouter: { appName: 'My Mouaif' } });
+      const h1 = await streamProbe('with appName');
+      check('X-Title reflects app.openRouter.appName',
+        h1 && h1['X-Title'] === 'My Mouaif',
+        'got ' + (h1 && h1['X-Title']));
+      check('HTTP-Referer stays at the shipped default',
+        h1 && h1['HTTP-Referer'] === 'https://mouaif.local',
+        'got ' + (h1 && h1['HTTP-Referer']));
+
+      // 2. A blank / whitespace-only appName falls back to the default.
+      settings.setApp({ openRouter: { appName: '   ' } });
+      const h2 = await streamProbe('blank appName');
+      check('blank appName falls back to the shipped X-Title default',
+        h2 && h2['X-Title'] === 'mouaif',
+        'got ' + (h2 && h2['X-Title']));
+
+      // 3. A long appName is clamped to 64 chars.
+      settings.setApp({ openRouter: { appName: 'A'.repeat(200) } });
+      const h3 = await streamProbe('long appName');
+      check('X-Title is clamped to 64 chars',
+        h3 && h3['X-Title'] && h3['X-Title'].length === 64,
+        'got len ' + (h3 && h3['X-Title'] && h3['X-Title'].length));
+    } finally {
+      // Restore the app store so we don't leak the test value
+      // into other tests / the running process.
+      globalThis.fetch = realFetch2;
+      if (realOr) settings.setApp({ openRouter: realOr });
+      else settings.setApp({ openRouter: null });
+    }
 
     globalThis.fetch = realFetch2;
     console.log('');

@@ -76,6 +76,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'projects',       // registered project cards
   'promptSize',     // default prompt-size profile
   'githubCopilot',  // { clientId } for the custom OAuth app
+  'openRouter',     // { appName } for the OpenRouter X-Title header
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
@@ -1609,19 +1610,12 @@ async function handleAuth(req, res, parsed) {
     const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
     if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'openrouter');
     const redirectUri = callbackUrl.toString();
-    // The "app name" the user supplied on the sign-in form becomes
-    // the OAuth account label so they can tell two sign-ins apart
-    // (e.g. "Work laptop", "Personal"). Clamped to 64 chars and
-    // forward-stored on the pending record so the exchange
-    // function can pick it up after the loopback redirect.
-    const appName = (typeof body.appName === 'string') ? body.appName.trim().slice(0, 64) : '';
 
     auth.recordPending('openrouter', {
       state,
       codeVerifier: verifier,
       redirectUri,
       scopes: 'openrouter',
-      appName,
       accountHint: body.accountHint || ''
     });
 
