@@ -1,0 +1,447 @@
+/* App shell, header, bottom tab bar, view header, groups, keyframes.
+   Imported second by style.css. */
+
+/* ---- App shell ------------------------------------------------------- */
+
+.app__shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  /* Bound the shell to the viewport height so a flex child (the
+     chat view in --flush mode) can scroll internally instead of
+     growing the whole page. min-height keeps short pages from
+     collapsing. */
+  height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.app__main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 calc(var(--tabbar-h) + var(--safe-bottom) + 4px);
+  /* The view inside the main region fades + lifts in on every
+     route change. The animation is on the <section> child, not
+     on .app__main itself, so re-layout during the transition
+     doesn't trigger reflow. */
+}
+/* On drill-in screens (--flush: chat, picker, project settings, ...)
+   .app__main is a flex column with `overflow: hidden` so the chat
+   transcript can scroll internally without pushing the composer off
+   the screen. The chat view handles its own scroll (the section IS
+   the .chat-view and its transcript is the bounded child). For
+   other flush views (project settings, the folder picker, etc.) the
+   section was a plain block child with no height constraint, so any
+   view that grew taller than main was silently clipped at the
+   bottom with no way to reach the clipped content (e.g. opening
+   the Advanced section in project settings pushed the resolved-JSON
+   <pre> past the bottom of the screen and only the <pre>'s own
+   inner scroll was reachable). */
+.app__main--flush {
+  /* Bounded flex column so the chat view (the section child) can
+     own its internal transcript scroll + pinned composer. The
+     section below takes the same contract for non-chat views so
+     they can scroll internally instead of overflowing the shell. */
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Groups: iOS-style inset lists. A <section class="group"> holds a
+   title (optional, .group__title) and a list of rows. The list has
+   no border, no shadow, and only a single rounded container — the
+   mobile-native shape (vs. "stacked cards" on a desktop UI). */
+.group {
+  margin: 10px 10px 0;
+  padding: 0;
+  border: 0;
+}
+.group:first-of-type { margin-top: 6px; }
+.group__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 4px 4px;
+  padding: 0;
+}
+/* The trailing context note on a group title (e.g. the active project
+   name next to "Active project"). Not uppercase; truncates on a phone. */
+.group__title-note {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Placeholder shown in a group when there is nothing to link to yet
+   (e.g. no active project). Sits where the .group__list would be. */
+.settings-home__empty {
+  margin: 0 4px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 10px;
+}
+.group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.group__list > li + li { border-top: 1px solid var(--border); }
+.group__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 6px 12px;
+  text-decoration: none;
+  color: var(--fg);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 80ms ease;
+}
+.group__row:hover { background: var(--surface-2); }
+.group__row:active { background: var(--surface-3); }
+.group__row[disabled] { opacity: 0.5; cursor: not-allowed; }
+.group__row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group__row-detail {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+  text-align: right;
+}
+.group__row-chev {
+  color: var(--muted-2);
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 8px;
+}
+.group__row-danger .group__row-label { color: var(--danger); }
+
+/* ---- Motion: view enter + bubble enter + live cursor -------------- */
+
+/* The .app__main > section is the root of every top-level view. A
+   short fade + lift on mount gives a sense of place; the stagger
+   on .chat-msg children makes a streaming reply feel conversational
+   rather than dumpy. All animations are transform/opacity-only to
+   stay on the compositor thread. */
+.app__main > section {
+  animation: mouaif-view-in var(--dur) var(--ease-out) both;
+}
+
+/* On drill-in screens (--flush: chat, picker, project settings, ...)
+   .app__main is a bounded flex column (see the .app__main--flush
+   rule above). For the chat view, the section IS the chat-view
+   and the section's own internal transcript handles scrolling.
+   For every other flush view (project settings, the folder picker,
+   provider edit, ...) the section was a plain block child with no
+   height constraint, so any view that grew taller than main was
+   silently clipped at the bottom with no way to reach the clipped
+   content (e.g. opening the Advanced section in project settings
+   pushed the resolved-JSON <pre> past the bottom of the screen
+   and only the <pre>'s own inner scroll was reachable).
+
+   The fix is the standard "flex child becomes the scroll
+   container" pattern:
+     - `flex: 1 1 0` + `min-height: 0` + `height: 0` makes the
+       section's box exactly equal to main's content box (the
+       `height: 0` is the key: it forces the flex algorithm to use
+       the available space rather than the content's intrinsic
+       height, which is the common cause of touch-scroll being
+       lost on iOS Safari when the scroll container is sized by
+       content instead of by its parent).
+     - `overflow-y: auto` makes the section scroll internally.
+     - `padding-bottom: var(--safe-bottom)` reserves room for the
+       home indicator so the last row of content isn't flush
+       against the screen edge on phones.
+     - `overscroll-behavior: contain` stops the page from
+       rubber-banding at the top/bottom of the section.
+     - The chat view is excluded (`.chat-view` has its own
+       internal transcript scroll and its own min-height/flex
+       contract; we don't want to double-scope it). */
+.app__main--flush > section:not(.chat-view) {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--safe-bottom);
+  overscroll-behavior: contain;
+}
+
+@keyframes mouaif-view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes mouaif-bubble-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+@keyframes mouaif-cursor {
+  0%, 100% { opacity: .25; }
+  50%      { opacity: 1;   }
+}
+
+/* ---- App header ----------------------------------------------------- */
+
+/* Slim brand row: just the logo tile, centered or left-aligned.
+   The wordmark is gone — the tab bar carries the page title
+   and the empty space on the right of the header is reclaimed.
+   Padding is tight (4-6 px) so the header takes minimal vertical
+   real estate on a phone. */
+
+.app__header {
+  padding: calc(var(--safe-top) + 2px) 10px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.app__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.app__logo {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #7fb1ff 0%, #5b8bff 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: -0.02em;
+  box-shadow: 0 2px 6px rgba(127,177,255,.30), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.app__title {
+  /* The header only carries the logo now; the wordmark is hidden
+     by default to keep the chrome minimal on a phone. Views that
+     need a title (Settings) render their own h1 inside .group__title
+     or a dedicated .view-title. The class is kept so a future
+     header action can re-enable it. */
+  display: none;
+}
+
+/* (No right-side header spacer. The brand is the only header
+   content today. A future header action (search, profile) can
+   live in the same row without needing a placeholder.) */
+
+/* Page bar: a slim, sticky-ish header row that holds a page title
+   on the left and a single primary action on the right. Used on
+   the Chats / Projects view to replace the old "Add project +
+   Refresh" button bar. The title is in the same scale as the
+   .view-title so it doesn't shout. */
+.page-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px;
+}
+.page-bar__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.page-bar__status {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.page-bar__add {
+  font: inherit;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  width: var(--tap);
+  height: var(--tap);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 80ms ease, transform 80ms ease;
+}
+.page-bar__add:hover  { background: var(--accent-press); }
+.page-bar__add:active { transform: scale(0.95); }
+
+/* ---- Bottom tab bar ------------------------------------------------ */
+
+.app__tabbar {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 0;
+  padding: 2px 4px calc(2px + var(--safe-bottom));
+  background: rgba(20,25,33,.85);
+  border-top: 1px solid rgba(255,255,255,.04);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  backdrop-filter: saturate(160%) blur(20px);
+  z-index: 30;
+  min-height: var(--tabbar-h);
+}
+
+.app__tab {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: var(--tap);
+  padding: 2px 2px 1px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  transition: color 80ms ease, background 80ms ease;
+}
+.app__tab:hover        { color: var(--fg-soft); }
+.app__tab:active       { transform: scale(.96); }
+.app__tab.is-active    { color: var(--accent); }
+
+.app__tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: inherit;
+  transition: background 120ms ease;
+}
+.app__tab-icon svg { display: block; }
+.app__tab.is-active .app__tab-icon { background: var(--accent-soft); }
+
+.app__tab-label {
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+/* ---- View header (back + title) ----------------------------------- */
+
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px;
+}
+
+.view-back {
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 0 4px;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: opacity 120ms ease;
+}
+.view-back:hover { opacity: 0.7; }
+.view-back:active { opacity: 0.5; }
+
+.view-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* ---- Sections & headings ------------------------------------------ */
+
+/* The old "stacked sections" with a 1 px top border between every
+   block created a desktop feel on mobile. The new layout uses
+   .group (inset rounded containers) with a .group__title for the
+   small caption above each list. The bare <section> default is
+   zeroed out so bare <section> elements no longer draw a divider. */
+section { margin: 0; padding: 0; border: 0; }
+section h2 {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+section + section,
+.group + .group,
+.group + section,
+section + .group { margin-top: 10px; }
+
+.hint {
+  color: var(--fg-soft);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin: 0 10px 8px;
+}
+.hint--compact {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin: 0 10px 4px;
+  color: var(--muted);
+}
+.hint code {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  word-break: break-all;
+  color: var(--fg);
+}

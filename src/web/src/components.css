@@ -1,0 +1,1092 @@
+/* Components: auth, models, prompts, providers, settings home, cards,
+   projects, picker, chat view.
+   Imported fourth by style.css. */
+
+/* ---- Auth panel --------------------------------------------------- */
+
+.auth__sub { color: var(--accent); }
+.auth__help p { color: var(--fg-soft); font-size: 0.84rem; margin: 6px 0; line-height: 1.45; }
+.auth__help .row--actions .btn { min-width: 0; }
+.auth__help { margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.auth__help code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85em; background: var(--surface-3); padding: 1px 6px; border-radius: 4px; word-break: break-all; color: var(--fg); }
+
+/* ---- Settings: models editor ------------------------------------- */
+
+.models__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.models__list li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.models__row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.models__id { font-weight: 600; font-size: 0.84rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Settings: custom prompts ------------------------------------- */
+
+.prompts__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.prompts__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.82rem; line-height: 1.45; }
+.prompt-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.prompt-row__main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
+.prompt-row__main:active { background: var(--surface-2); }
+.prompt-row__title { font-weight: 600; font-size: 0.84rem; }
+.prompt-row__meta { font-size: 0.76rem; color: var(--fg-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-row__chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
+.prompts__textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.82rem; }
+.models__actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.models__actions .btn { min-height: var(--tap); padding: 0 6px; font-size: 0.74rem; }
+.models__meta { color: var(--muted); font-size: 0.7rem; line-height: 1.3; word-break: break-all; }
+.models__add,
+.picker__create {
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  margin: 8px 10px 0;
+  padding: 0;
+}
+.models__add summary,
+.settings__advanced > summary,
+.picker__create > summary {
+  cursor: pointer;
+  color: var(--accent);
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 500;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  list-style: none;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-radius: 10px;
+}
+.settings__advanced { margin: 12px 0 0; }
+.models__add summary::-webkit-details-marker,
+.settings__advanced summary::-webkit-details-marker,
+.picker__create summary::-webkit-details-marker { display: none; }
+.models__add summary::before,
+.settings__advanced > summary::before,
+.picker__create > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  color: var(--muted);
+  font-weight: 600;
+  transition: transform 120ms ease;
+}
+.models__add[open] summary::before,
+.settings__advanced[open] > summary::before,
+.picker__create[open] > summary::before { transform: rotate(90deg); }
+.models__add[open] > .row:last-of-type,
+.picker__create[open] > .row:last-of-type { margin-bottom: 4px; }
+.picker__create[open] > summary { border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+.picker__create[open] > .row:first-of-type { padding-top: 12px; }
+.picker__create[open] { background: var(--surface); }
+
+/* The "Add a model" form has two fields that must be visible only for
+   one of the auth modes (apiKey for apikey, oauthAccount for oauth).
+   A tiny script (see end of style.css, in the inline loader block
+   below) toggles `.is-hidden` on the row that does not match the
+   current auth select value. The default state is the apikey row
+   visible and the oauth row hidden, matching the default select. */
+.models__add .row.is-hidden { display: none; }
+/* Global fallback for the .is-hidden class — used by the new
+   provider-edit form to swap between apikey and oauth rows. */
+.row.is-hidden { display: none; }
+
+/* ---- SSO / reserved-provider UI --------------------------------- */
+
+/* Reserved (SSO-only) providers like GitHub Copilot have a fixed
+   auth method and a fixed base URL. The provider-edit form hides
+   the regular auth <select> and the API base URL row, and shows a
+   static "OAuth (required)" badge in their place. */
+.row__static {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  min-height: var(--tap);
+}
+.row__static .label {
+  /* The static badge reuses the same .label class as a regular form
+     field's label, so the spacing matches. */
+  margin: 0;
+}
+.row__static-value {
+  color: var(--fg);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.row__static-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.row__static.is-hidden { display: none; }
+
+/* The provider-edit form surfaces the def.hint as a small grey
+   paragraph for normal providers, and as a colored "notice" for
+   reserved providers — the OAuth requirement is the most important
+   thing the user needs to read before they can sign in. */
+.notice {
+  margin: 0 10px 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-soft);
+}
+.notice--auth {
+  background: rgba(127, 177, 255, 0.08);
+  border-color: rgba(127, 177, 255, 0.35);
+  color: var(--fg);
+  border-left-width: 3px;
+  border-left-color: var(--accent);
+}
+
+/* ---- Settings home (cards) -------------------------------------- */
+
+/* The Settings home is a vertical list of .group blocks. Each group
+   holds 1-4 .card rows (the .card class below is one row in the
+   iOS-style list, not a desktop "stacked card"). The previous
+   "Settings / App defaults" h2/h3 captions and a verbose card
+   summary on every row are gone; the page label is rendered by
+   the view itself if needed, and only the most useful summaries
+   (provider count, project count) survive. */
+.settings-home { margin: 0; padding: 0; border: 0; }
+.settings-home__lead {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 8px 16px 6px;
+  padding: 0;
+}
+.settings-home h3 {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 16px 6px;
+  border: 0;
+  padding: 0;
+}
+.settings-home__hint {
+  font-size: 0.8rem;
+  color: var(--fg-soft);
+  line-height: 1.4;
+  margin: 0 16px 8px;
+  max-width: 38ch;
+}
+
+/* A card is one row in the .group__list. The whole row is the tap
+   target; the chevron is decorative. The <li> parent handles the
+   top divider, so the card itself has no border or margin. */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 6px 12px;
+  min-height: var(--tap);
+  text-decoration: none;
+  color: var(--fg);
+  margin: 0;
+  box-shadow: none;
+  transition: background 80ms ease;
+  width: 100%;
+}
+.card:hover  { background: var(--surface-2); }
+.card:active { background: var(--surface-3); }
+.card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.card__title {
+  font-weight: 500;
+  font-size: 0.9rem;
+  letter-spacing: -0.005em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__summary {
+  color: var(--muted);
+  font-size: 0.8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  margin-left: auto;
+}
+.card__chev {
+  color: var(--muted-2);
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 8px;
+  text-align: right;
+}
+
+/* ---- Settings: provider list + edit form ------------------------ */
+
+.providers__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.providers__empty {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+  margin: 0 10px;
+}
+.provider-row {
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.provider-row__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: var(--tap);
+  text-decoration: none;
+  color: var(--fg);
+  transition: background 80ms ease;
+  border-top: 1px solid var(--border);
+}
+.provider-row:first-child .provider-row__main { border-top: 0; }
+.provider-row__main:hover  { background: var(--surface-2); }
+.provider-row__main:active { background: var(--surface-3); }
+.provider-row__main > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.provider-row__name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-row__meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  word-break: break-all;
+  margin-top: 1px;
+}
+.provider-row__chev {
+  color: var(--muted-2);
+  font-size: 0.9rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 8px;
+}
+
+/* The provider edit form reuses the standard .row / .label / .input
+   styles. The hint above the form is the .hint--compact block the
+   form passes in via the SETTINGS_PROVIDERS def. */
+.key-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-style: italic;
+}
+.key-hint[hidden] { display: none; }
+
+.auth__help-inline {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings__out {
+  margin: 6px 0 0;
+  padding: 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  max-height: 220px;
+  overflow: auto;
+  color: var(--fg-soft);
+}
+
+.code-inline {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  word-break: break-all;
+  color: var(--fg);
+}
+
+/* The project-settings editor is a textarea styled like a code block:
+   monospaced, full width, fixed minimum height. Reuses the .input
+   border + focus ring and overrides only what's code-specific. */
+textarea#projectEditor {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  min-height: 160px;
+  resize: vertical;
+}
+
+/* ---- Projects ---------------------------------------------------- */
+
+/* Each project is a single .group: a rounded inset container with
+   the project name on its own row, the path underneath in muted
+   text, then a sub-list of chats. The new-chat button is the last
+   row. This replaces the old "stacked card" layout that felt boxy
+   on a phone. */
+.projects__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.projects__list > li {
+  animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
+}
+.projects__list > li:nth-child(1) { animation-delay: 0ms; }
+.projects__list > li:nth-child(2) { animation-delay: 30ms; }
+.projects__list > li:nth-child(3) { animation-delay: 60ms; }
+.projects__list > li:nth-child(n+4) { animation-delay: 90ms; }
+.projects__empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 16px 12px 14px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.projects__empty-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.projects__empty-icon svg { display: block; }
+.projects__empty-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin: 0;
+}
+.projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
+
+/* Project card = the .group container; everything inside uses the
+   .group__row shape. */
+.project-card {
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.project-card__head { display: flex; align-items: center; gap: 2px; }
+.project-card__name {
+  font-weight: 600;
+  font-size: 0.94rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  padding: 6px 12px;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+}
+.project-card__name:hover { color: var(--accent); }
+.project-card__path {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  word-break: break-all;
+  padding: 4px 12px 6px;
+  line-height: 1.35;
+  border-top: 1px solid var(--border);
+}
+
+.project-card__menu { position: relative; }
+.project-card__menu-btn {
+  font: inherit;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 1px;
+}
+.project-card__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-btn[aria-expanded="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--fg); }
+.project-card__menu { position: relative; flex-shrink: 0; }
+.project-card__menu-btn {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 1px;
+  border-radius: 8px;
+}
+.project-card__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 35;
+  box-shadow: var(--shadow-md);
+}
+/* The `hidden` HTML attribute normally forces display:none, but
+   the explicit `display: flex` rule above wins on specificity.
+   Without this override the popover renders on load even though
+   Projects.jsx sets hidden=true — every project card showed its
+   menu open at startup. Same pattern as .chat-view__settings-pop. */
+.project-card__menu-pop[hidden] { display: none !important; }
+.project-card__menu-pop button {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 5px 10px;
+  min-height: var(--tap);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.project-card__menu-pop button:hover { background: var(--surface-2); }
+.project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
+
+.project-card__chats {
+  max-height: 161px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+/* `overflow-y: auto` shows a 1px scrollbar as soon as the content's
+   scrollHeight >= clientHeight. With five 40px chats, the content
+   is exactly 200px and the browser reserves 1px for the scrollbar
+   (clientHeight=199), so a thin scrollbar renders on a perfectly
+   fitting list. The max-height is bumped by 1px (201) so the
+   200px of chats + 1px of headroom lets clientHeight equal
+   scrollHeight and the scrollbar disappears when nothing is
+   actually hidden. Six chats (240px) still scroll normally. */
+.project-card__chats::-webkit-scrollbar { width: 6px; }
+.project-card__chats::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.project-card__chats li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 80ms ease;
+  min-height: var(--tap);
+  border-top: 1px solid var(--border);
+}
+.project-card__chats li:first-child { border-top: 0; }
+.project-card__chats li:hover  { background: var(--surface-2); }
+.project-card__chats li:active { background: var(--surface-3); }
+.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; }
+.project-card__chat-meta { color: var(--muted); font-size: 0.68rem; flex-shrink: 0; }
+/* Trace-on indicator. The Projects.jsx renderer appends " · trace"
+   and sets data-trace="1" on the meta span so chats with the
+   per-chat trace-to-file override are glanceable on a phone
+   without opening them. Color is the warning amber so it stands
+   out from the muted neutral but doesn't compete with the
+   destructive red used by the delete button. */
+.project-card__chat-meta[data-trace="1"] { color: var(--warning); }
+.project-card__chat-delete {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
+.project-card__chats-empty {
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 12px 14px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  background: transparent;
+}
+.project-card__new {
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 6px 12px;
+  min-height: var(--tap);
+  font-weight: 600;
+  font-size: 0.86rem;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  transition: background 80ms ease;
+}
+.project-card__new:hover  { background: var(--surface-2); }
+.project-card__new:active { background: var(--surface-3); }
+.project-card__new:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- Picker ------------------------------------------------------- */
+
+/* The picker view: a header, a small breadcrumb of the current
+   directory, a page-bar with the "select this folder" action,
+   the folder list, and a collapsible "create new folder" form.
+   The folder list is a single .group-style rounded container
+   (the same shape as the Settings groups) — each row is a full
+   tap target. */
+.picker__path {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  word-break: break-all;
+  color: var(--fg-soft);
+  margin: 0 10px 6px;
+}
+.picker__list {
+  list-style: none;
+  margin: 0 10px;
+  padding: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.picker__list > li + li { border-top: 1px solid var(--border); }
+.picker__empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 16px 12px;
+  text-align: center;
+}
+.picker__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: var(--tap);
+  cursor: pointer;
+  transition: background 80ms ease;
+  outline: none;
+}
+.picker__row:hover { background: var(--surface-2); }
+.picker__row:active { background: var(--surface-3); }
+.picker__row:focus-visible { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
+.picker__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+.picker__meta {
+  color: var(--muted-2);
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: right;
+}
+
+/* ---- Chat view --------------------------------------------------- */
+
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* The chat view fills the main region so the transcript (which
+     flexes) scrolls internally and the composer stays pinned to the
+     bottom without overlapping the last message. `flex: 1` + a zero
+     min-height lets the transcript child scroll instead of pushing
+     the composer off-screen. The head is the only chrome row now
+     (settings live in a popover). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-view__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 4px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+/* The model select wraps to its own full-width row below the
+   title/actions row (its flex-basis is 100%). On a narrow phone
+   the <select> no longer competes with the title for horizontal
+   space and the header can never overflow vertically. */
+.chat-view__model {
+  order: 10;
+  flex: 1 0 100%;
+  min-height: var(--tap);
+  height: var(--tap);
+  padding: 0 22px 0 10px;
+  font-size: 0.78rem;
+  max-width: none;
+  width: 100%;
+  min-width: 0;
+  margin-top: 1px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  color: var(--fg-soft);
+  text-overflow: ellipsis;
+}
+.chat-view__back {
+  font: inherit;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
+.chat-view__back:active { background: var(--surface-3); }
+
+.chat-view__iconbtn {
+  font: inherit;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__iconbtn:hover { background: var(--surface-2); color: var(--fg); }
+.chat-view__iconbtn--danger { color: var(--danger); }
+.chat-view__iconbtn--danger:hover { background: var(--danger-soft); }
+
+.chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.chat-view__name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chat-view__name:hover { color: var(--accent); }
+.chat-view__meta { color: var(--muted); font-size: 0.66rem; }
+
+/* Inline chat settings: a popover anchored to the head's ⚙ button.
+   The strip that used to live below the head is gone — it ate a
+   whole row on a phone and pushed the transcript off-screen. The
+   popover holds the trace toggle + prompt-size selector and only
+   appears on demand. */
+.chat-view__settings-wrap { position: relative; }
+.chat-view__settings-pop[hidden] { display: none !important; }
+.chat-view__settings-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 35;
+  box-shadow: var(--shadow-md);
+}
+.chat-view__settings-pop .chat-view__settings-row { padding: 6px 8px; border-radius: 8px; }
+.chat-view__settings-pop .chat-view__settings-row:hover { background: var(--surface-2); }
+.chat-view__settings-row .label { white-space: nowrap; color: var(--muted); font-size: 0.78rem; }
+.chat-view__settings-row .input { min-height: 32px; padding: 4px 24px 4px 8px; font-size: 0.82rem; flex: 1; min-width: 0; background: var(--surface); border-radius: 6px; }
+/* Hint line under the prompt-size picker. One line of muted text
+   describing the active profile. Empty by default; populated by
+   Chat.jsx → updateProfileDescription. Sits flush with the row's
+   left padding so it visually belongs to the picker. */
+.chat-view__settings-hint {
+  margin: -2px 8px 4px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.chat-view__settings-hint:empty { display: none; }
+
+/* Transcript */
+.chat-view__transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.chat-view__transcript::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-view__transcript::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.chat-msg {
+  /* Column layout: the role label sits directly above its bubble,
+     so the label always tracks the bubble edge instead of floating
+     in a fixed side column. This keeps user/assistant messages
+     visually anchored on either side on a narrow phone. */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 92%;
+  align-self: flex-start;
+  /* Each new message slides in. Stagger up to 8 messages so a
+     rapid stream doesn't feel laggy (the rest pop in at 0ms). */
+  animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
+}
+.chat-msg:nth-child(n+9) { animation-delay: 0ms; }
+.chat-msg:nth-child(8)   { animation-delay: 35ms; }
+.chat-msg:nth-child(7)   { animation-delay: 70ms; }
+.chat-msg:nth-child(6)   { animation-delay: 105ms; }
+.chat-msg:nth-child(5)   { animation-delay: 140ms; }
+.chat-msg:nth-child(4)   { animation-delay: 160ms; }
+.chat-msg:nth-child(3)   { animation-delay: 175ms; }
+.chat-msg:nth-child(2)   { animation-delay: 185ms; }
+.chat-msg:nth-child(1)   { animation-delay: 0ms; }
+.chat-msg--user { align-self: flex-end; align-items: flex-end; }
+.chat-msg__role {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  /* Symmetric 4px padding is the base. The user/assistant
+     variants below override the side that touches the bubble so
+     the role's text edge aligns with the bubble's text edge:
+     the bubble has 10px horizontal padding, so a 10px role
+     padding on the bubble side (right for user, left for
+     assistant) puts the role's text right against the bubble's
+     text instead of the bubble's box. */
+  padding: 0 4px;
+  flex-shrink: 0;
+  /* Keep the role label tight to its own text. Without this, a
+     flex-column child stretches to the column's full width, so a
+     right-aligned "USER" label sits 300px to the left of its
+     bubble and looks visually disconnected on a phone. `width:
+     max-content` sizes the label to its text; the parent column
+     is still sized by the (wider) bubble, so right-alignment
+     pins the label to the bubble's right edge instead of the
+     column's right edge. */
+  width: max-content;
+}
+.chat-msg--user .chat-msg__role { padding: 0 10px 0 4px; }
+.chat-msg--assistant .chat-msg__role { padding: 0 4px 0 10px; }
+.chat-msg--assistant .chat-msg__role { color: var(--accent); }
+.chat-msg__body {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 12px 4px;
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  box-shadow: var(--shadow-sm);
+}
+.chat-msg--user .chat-msg__body {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+  border-radius: 12px 12px 4px 12px;
+}
+.chat-msg__body[data-error="1"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-style: italic;
+}
+.chat-msg__ts { display: none; }
+
+/* Per-turn meta line (decision §14). A flat row of compact
+   "•"-separated tokens under the assistant bubble: model id,
+   prompt / completion tokens, cost, and live tok/s. Sits inside
+   the same column as the role label and bubble, so it inherits
+   the user/assistant alignment from .chat-msg.
+
+   On a 360 px viewport, a typical line is
+     gpt-4o-mini • 243 in • 118 out • $0.00011 • 37 tok/s
+   which fits in a single line at 0.74rem / 0.74 line-height.
+   The font is mono-ish so the number columns line up. The line
+   is muted (--muted) so it never competes with the bubble text.
+
+   `.chat-msg__meta-sep` is the bullet. Slightly softer than the
+   labels themselves so the eye groups tokens rather than reading
+   each as a separate row. */
+.chat-msg__meta {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--muted);
+  padding: 1px 10px 3px;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-msg__meta::-webkit-scrollbar { display: none; }
+.chat-msg__meta[hidden] { display: none; }
+.chat-msg__meta-sep {
+  color: var(--muted-2);
+  margin: 0 6px;
+  user-select: none;
+}
+
+/* The live assistant message (data-live="1" on the row) gets a
+   blinking caret at the end while the stream is open. The caret
+   is a pseudo-element on the body, not a real text node, so the
+   append-to-textContent path doesn't disturb it. */
+.chat-msg[data-live="1"] .chat-msg__body::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: mouaif-cursor 900ms steps(2, end) infinite;
+  vertical-align: -1px;
+}
+.chat-view__empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 28px 20px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.chat-view__empty-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.chat-view__empty-icon svg { display: block; }
+.chat-view__empty-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0;
+}
+.chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.82rem; }
+
+/* Composer: a single horizontal row — textarea + send button — with
+   the status line wrapping to the next line. The previous design had
+   a separate Model <select> on top and a label row on top of the
+   textarea; both are gone (the model lives in the head row, the label
+   is replaced by a placeholder). */
+.chat-view__composer {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 2px 2px 2px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  flex: 0 0 auto;
+  margin: 6px 10px calc(var(--safe-bottom) + 6px);
+  box-shadow: var(--shadow-md);
+}
+/* Composer textarea: single-line when empty, grows up to 120px as the
+   user types. The base `textarea.input` rule has its own 64px min-height
+   (for settings forms) so the :where() :not() selector above excludes
+   this class — the chat composer owns its own sizing. 32px matches the
+   --tap touch target so the row lines up with the send button. */
+.chat-view__textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  resize: none;
+  font-family: inherit;
+  height: 32px;
+  min-height: 32px;
+  max-height: 120px;
+  line-height: 1.35;
+  padding: 6px 2px;
+  width: auto;
+  color: var(--fg);
+  border-radius: 0;
+  outline: none;
+  overflow-y: auto;
+}
+.chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
+.chat-view__send {
+  /* 32px square: matches the --tap touch target used everywhere
+     else in the app, and matches the textarea's min-height so the
+     row stays a single line when the composer is at rest. */
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  min-height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  margin: 0;
+}
+.chat-view__send svg { display: block; margin-left: -1px; }
+.chat-view__status {
+  margin: 0;
+  /* Sits on its own line under the input so a long streaming
+     status does not crowd the textarea. The row is built with
+     `flex-wrap`, so the status wraps to the next line because its
+     `flex-basis: 100%` is wider than the available width on the
+     current line. We must NOT use flex-grow: 1 here, otherwise it
+     would also steal space from the textarea on the same line. */
+  flex: 0 0 100%;
+  font-size: 0.7rem;
+  /* Hide the status row when it has no text so the composer
+     collapses to just the textarea + send button. Without this,
+     the empty status line still reserves its line-height of
+     vertical space below the textbox, creating a visible gap
+     between the input and the bottom of the composer pill. */
+}
+.chat-view__status:empty { display: none; }
+
+/* ---- Small screens / desktop fallback ---------------------------- */
+
+@media (max-width: 360px) {
+  :root { --pad-x: 10px; }
+  .chat-msg__body { max-width: 78%; }
+}
+
+@media (min-width: 600px) {
+  .chat-view__transcript { max-height: 50dvh; }
+}
+
+/* Reduce the inspector's verbose intro paragraph on a phone. The
+   original hint explained how to start Chrome with --remote-debugging-
+   port=9222 in two long sentences; on a 360 px viewport that took
+   6 lines. The current copy is one short sentence. */
+.inspector__lead {
+  margin: 4px 12px 8px;
+  color: var(--fg-soft);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
