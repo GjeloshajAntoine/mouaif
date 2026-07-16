@@ -12,9 +12,8 @@ export function ChatView(props) {
   const chatName = useRef(null);
   const chatMeta = useRef(null);
   const traceToggle = useRef(null);
-  const promptSizeSelect = useRef(null);
-  const promptSizeDesc = useRef(null);
   const switchRef = useRef(null);
+  const toolPreviewRef = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
   const modelSelect = useRef(null);
@@ -63,12 +62,6 @@ export function ChatView(props) {
     return 'average';
   }
 
-  function updateProfileDescription(id) {
-    if (!promptSizeDesc.current) return;
-    const p = profileByIdRef.current && profileByIdRef.current[id];
-    promptSizeDesc.current.textContent = p && p.description ? p.description : '';
-  }
-
   // The meta line is intentionally minimal now. The prompt-size profile
   // is no longer shown here (it lives in the settings popover and is
   // surfaced in full as the first transcript message); only the trace
@@ -101,24 +94,8 @@ export function ChatView(props) {
     profileByIdRef.current = {};
     for (const p of profilesRef.current) profileByIdRef.current[p.id] = p;
 
-    // Populate the prompt-size <select> from the server's profile
-    // list so the picker is always in sync with what handleChatStream
-    // will actually use at stream time. Hard-coding the options here
-    // would drift the first time a profile is renamed.
-    if (promptSizeSelect.current) {
-      promptSizeSelect.current.innerHTML = '';
-      for (const p of profilesRef.current) {
-        const opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = p.label || p.id;
-        promptSizeSelect.current.appendChild(opt);
-      }
-      promptSizeSelect.current.value = activeProfileId();
-    }
-
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
-    updateProfileDescription(activeProfileId());
     updateSwitch(activeProfileId());
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
 
@@ -126,6 +103,7 @@ export function ChatView(props) {
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
 
     renderTranscript();
+    updateSetupVisibility();
   }
 
   function populateModelSelect(list) {
@@ -460,18 +438,13 @@ export function ChatView(props) {
     updateChat({ trace: !!traceToggle.current.checked });
   }
 
-  function onPromptSizeChange() {
-    if (!promptSizeSelect.current) return;
-    setPromptSize(promptSizeSelect.current.value);
-  }
-
-  // Shared setter for both the popover <select> and the head switch.
+  // Shared setter for the head switch. The prompt size is chosen once,
+  // while the chat is still empty; the control is not a permanent
+  // fixture (see updateSetupVisibility below).
   function setPromptSize(v) {
     if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
-    if (promptSizeSelect.current) promptSizeSelect.current.value = v;
-    updateProfileDescription(v);
     updateSwitch(v);
-    updateChat({ promptSize: v }).then(() => refreshSystemPrompt());
+    updateChat({ promptSize: v }).then(() => { refreshSystemPrompt(); loadToolPreview(); });
   }
 
   // The head switch is a segmented control (very-small | average |
@@ -484,6 +457,73 @@ export function ChatView(props) {
       const on = b.dataset.size === id;
       b.classList.toggle('is-active', on);
       b.setAttribute('aria-pressed', String(on));
+    }
+  }
+
+  // The prompt-size switch and its tool-declaration preview are a
+  // CREATION-TIME control: they are only shown while the chat has no
+  // messages yet, so the user picks the prompt budget up front. As
+  // soon as the first message exists the controls hide and never come
+  // back — the prompt size is fixed for the life of the chat.
+  function updateSetupVisibility() {
+    const empty = !messagesRef.current || messagesRef.current.length === 0;
+    if (switchRef.current) switchRef.current.hidden = !empty;
+    if (toolPreviewRef.current) toolPreviewRef.current.hidden = !empty;
+    if (empty) loadToolPreview();
+  }
+
+  // Fetch the tool-declaration state for the active profile and render
+  // it as a compact preview between the switch and the composer. This
+  // is the concrete effect of the S/M/L choice: which tools ride, and
+  // whether their parameter schemas are sent (average/extensive) or
+  // stripped to name + one-line description (very-small).
+  async function loadToolPreview() {
+    if (!toolPreviewRef.current || !projectDir || !chatId) return;
+    const host = toolPreviewRef.current;
+    let r;
+    try {
+      r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/tool-preview?projectDir=' + encodeURIComponent(projectDir));
+    } catch { return; }
+    if (r.status !== 200 || !r.body) return;
+    const b = r.body;
+    host.innerHTML = '';
+    // Summary line: how many tools, and the schema policy.
+    const summary = document.createElement('div');
+    summary.className = 'chat-view__toolprev-summary';
+    const profile = profileByIdRef.current && profileByIdRef.current[b.profile];
+    const label = profile && profile.label ? profile.label : b.profile;
+    if (!b.count) {
+      summary.textContent = label + ': no tools advertised' + (b.shellEnabled ? '' : ' (shell off)');
+    } else {
+      summary.textContent = label + ': ' + b.count + (b.count === 1 ? ' tool' : ' tools') +
+        (b.reduced ? ' — names + short descriptions, no parameter schemas' : ' — full specs with parameter schemas');
+    }
+    host.appendChild(summary);
+    // One row per tool: name + the description actually sent + a chip
+    // showing whether the parameter schema rides.
+    if (b.count) {
+      const list = document.createElement('ul');
+      list.className = 'chat-view__toolprev-list';
+      for (const t of b.tools) {
+        const li = document.createElement('li');
+        li.className = 'chat-view__toolprev-row';
+        const name = document.createElement('span');
+        name.className = 'chat-view__toolprev-name';
+        name.textContent = t.name;
+        const chip = document.createElement('span');
+        chip.className = 'chat-view__toolprev-chip' + (t.hasSchema ? ' is-full' : ' is-reduced');
+        chip.textContent = t.hasSchema ? (t.params.length + ' param' + (t.params.length === 1 ? '' : 's')) : 'no schema';
+        li.appendChild(name);
+        li.appendChild(chip);
+        if (t.description) {
+          const desc = document.createElement('span');
+          desc.className = 'chat-view__toolprev-desc';
+          desc.textContent = t.description;
+          li.appendChild(desc);
+        }
+        list.appendChild(li);
+      }
+      host.appendChild(list);
     }
   }
 
@@ -553,6 +593,9 @@ export function ChatView(props) {
     const userMsg = { role: 'user', content, ts: new Date().toISOString() };
     messagesRef.current = messagesRef.current.concat([userMsg]);
     appendMessageToTranscript(userMsg, false);
+    // The first message ends the creation phase: hide the prompt-size
+    // switch + tool preview for good (the prompt size is now fixed).
+    updateSetupVisibility();
     const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString(), modelId };
     appendMessageToTranscript(liveMsg, true);
 
@@ -730,19 +773,6 @@ export function ChatView(props) {
           )
         ),
         h('div', { ref: settingsPopRef, class: 'chat-view__settings-pop', hidden: true, role: 'dialog', 'aria-label': 'Chat settings' },
-          h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPromptSize' },
-            h('span', { class: 'label' }, 'Prompt size'),
-            h('select', { ref: promptSizeSelect, class: 'input', id: 'chatPromptSize', onChange: onPromptSizeChange },
-              h('option', { value: 'very-small' }, 'very-small'),
-              h('option', { value: 'average' }, 'average'),
-              h('option', { value: 'extensive' }, 'extensive')
-            )
-          ),
-          // Profile description — a one-line hint under the picker
-          // that says what the active profile actually does. Updates
-          // on every change. Server-driven so the text is always in
-          // sync with the profile's true content.
-          h('p', { ref: promptSizeDesc, class: 'chat-view__settings-hint', id: 'chatPromptSizeDesc' }, ''),
           h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPrompt' },
             h('span', { class: 'label' }, 'Prompt'),
             h('select', { ref: promptSelect, class: 'input', id: 'chatPrompt', onChange: onPromptChange })
@@ -756,13 +786,19 @@ export function ChatView(props) {
       h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
       h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×'),
       // Prompt-size switch — a segmented control on its own full-width
-      // row. Visible at a glance; taps set the chat's prompt size and
-      // refresh the System message + the tool declaration sent upstream.
-      h('div', { ref: switchRef, class: 'chat-view__switch', role: 'group', 'aria-label': 'Prompt size' },
+      // row, shown ONLY while the chat is empty (creation time). Taps
+      // set the chat's prompt size and refresh the System message + the
+      // tool declaration preview below. Hidden forever once the first
+      // message is sent (updateSetupVisibility).
+      h('div', { ref: switchRef, class: 'chat-view__switch', role: 'group', 'aria-label': 'Prompt size', hidden: true },
         h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'very-small', 'aria-pressed': 'false', onClick: () => setPromptSize('very-small'), title: 'Very small — tool names only, tiny prompt' }, 'S'),
         h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'average', 'aria-pressed': 'false', onClick: () => setPromptSize('average'), title: 'Average — full tools, recommended' }, 'M'),
         h('button', { class: 'chat-view__switch-btn', type: 'button', 'data-size': 'extensive', 'aria-pressed': 'false', onClick: () => setPromptSize('extensive'), title: 'Extensive — full tools + guidance' }, 'L')
-      )
+      ),
+      // Tool-declaration preview — sits between the switch and the
+      // transcript, only while the chat is empty. Shows the concrete
+      // effect of the S/M/L choice on the tools advertised upstream.
+      h('div', { ref: toolPreviewRef, class: 'chat-view__toolprev', hidden: true })
     ),
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },

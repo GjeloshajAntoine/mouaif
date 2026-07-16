@@ -10,13 +10,13 @@ This feature implements the "Three prompt-size profiles" entry in `.github/copil
 
 ### Picking a profile
 
-- **In the chat** — open the chat, tap the ⚙ button, pick a value from the **Prompt size** dropdown. The change is `PATCH /api/chats/:id { promptSize: '…' }` and is applied to the next message.
+- **In the chat, at creation time only** — open a fresh (empty) chat. A segmented `S` / `M` / `L` switch sits under the model picker, with a **tool-declaration preview** beneath it showing exactly what the active profile sends upstream (how many tools, and whether each carries its full parameter schema or just a name + short description). Tapping a segment `PATCH`es `/api/chats/:id { promptSize: '…' }` and refreshes both the System card and the preview. **The switch and preview disappear as soon as the first message is sent** — the prompt size is fixed for the life of the chat. There is no prompt-size control in the ⚙ popover.
 - **For the whole project** — set `promptSize` under the project in `<projectDir>/.mouaif.json` (e.g. `{ "promptSize": "extensive" }`). New chats inherit it. Existing chats are unaffected unless they have their own override.
 - **App-wide default** — `PUT /api/settings/app { "promptSize": "very-small" }`, or change the **Default prompt size** dropdown in **Settings → Defaults**. Used when the project has no value.
 
 ### Reading the active profile
 
-The resolved system prompt (the active profile's text, plus any custom prompt) is rendered as a **collapsible "System prompt" card at the top of the transcript** — the first message of every chat. Tap it to expand and read exactly what the model is being sent. The prompt-size no longer clutters the chat meta line (which now shows only the trace state); the profile is a first-class, on-demand message instead of a permanent picker readout. The picker itself still lives in the chat ⚙ popover with a one-line description, and the app default is in **Settings → App defaults**.
+The resolved system prompt (the active profile's text, plus any custom prompt) is rendered as a **collapsible "System prompt" card at the top of the transcript** — the first message of every chat. Tap it to expand and read exactly what the model is being sent. While the chat is still empty, the in-head switch + tool preview also show the active profile and its concrete effect on the tool budget; both hide after the first message. The prompt-size is not echoed on the chat meta line (which shows only the trace state). The app default is in **Settings → App defaults**.
 
 ### The three profiles
 
@@ -39,8 +39,9 @@ The default is `average`. The chat, the project, and the app can each override i
 - **Static text**: the three system prompts are baked into the build. They are not per-provider. The tool list is injected separately and reduced per the rule above.
 - **Custom prompts are layered on top, not instead of**. A chat with `promptId: 'review-mode'` sends `[profile, custom-prompt, …transcript]`. The custom prompt's own instructions say "where they do not conflict with the active profile", so the layering is intentional, not accidental.
 - **Read endpoints**:
-  - `GET /api/prompt-profiles` returns `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`. Used by the chat popover to render the picker without hard-coding labels.
+  - `GET /api/prompt-profiles` returns `{ default, profiles: [{ id, label, description, summary, systemMessage }, …] }`.
   - `GET /api/chats/:id/system-prompt?projectDir=…` returns `{ profile, prompt, text }` — the **resolved** system context for that specific chat (the profile it will actually use plus its custom prompt, if any). `text` is the concatenation in upstream order. The chat UI uses this to render the first-message system-prompt card, so the card always reflects what `handleChatStream` will send.
+  - `GET /api/chats/:id/tool-preview?projectDir=…` returns `{ profile, reduced, shellEnabled, count, tools: [{ name, description, hasSchema, params }] }` — the **tool-declaration state** for the chat's resolved profile. The server collects the tools exactly as `ai.streamChat` does (native `shell`, gated by `tools.shell.enabled`, plus ready MCP servers), then applies the same `reduceToolSpecs` reduction the stream will apply, so the preview is always what the model actually gets. `reduced` is `true` for `very-small` (schemas stripped); each tool reports `hasSchema` and the `params` it advertises. The chat UI renders this as the creation-time preview under the S/M/L switch.
 
 ## HTTP surface
 
@@ -48,6 +49,7 @@ The default is `average`. The chat, the project, and the app can each override i
 |---|---|---|---|
 | GET | `/api/prompt-profiles` | — | `{ default, profiles: [...] }` |
 | GET | `/api/chats/:id/system-prompt` | `?projectDir=` | `{ profile, prompt, text }` |
+| GET | `/api/chats/:id/tool-preview` | `?projectDir=` | `{ profile, reduced, shellEnabled, count, tools }` |
 
 The chat's profile is set with the existing `PATCH /api/chats/:id { promptSize }` and is read back on `GET /api/chats/:id`. The project's profile is set with `PUT /api/settings/project { projectDir, promptSize }`. The app's default is set with `PUT /api/settings/app { promptSize }`.
 
@@ -57,10 +59,11 @@ The chat's profile is set with the existing `PATCH /api/chats/:id { promptSize }
 - New HTTP route in [src/index.js](../../src/index.js): `GET /api/prompt-profiles`. Handled in the main router, before `/api/chats`.
 - `handleChatStream` in [src/index.js](../../src/index.js) now prepends `promptProfiles.resolveProfile({ chat, projectDir }).systemMessage` as a `role: 'system'` message at index 0 of `upstreamMessages`, before the existing custom-prompt block. The block is wrapped in a `try/catch` so a profile-resolution failure cannot kill the stream.
 - Mobile UI changes (in [src/web/src/components/Chat.jsx](../../src/web/src/components/Chat.jsx)):
-  - The chat popover's **Prompt size** dropdown is now populated from `GET /api/prompt-profiles` instead of being hard-coded. Hard-coding the three options would have drifted the first time a profile was renamed.
-  - A one-line description under the picker (`.chat-view__settings-hint`) shows the active profile's `description` and updates on every change.
-  - The resolved system prompt is rendered as the first transcript message — a collapsible `.chat-msg--system` card fed by `GET /api/chats/:id/system-prompt`. It is refreshed in place whenever the prompt-size or custom prompt changes in the popover.
+  - The prompt-size control is a **creation-time-only** segmented `S` / `M` / `L` switch (`.chat-view__switch`) under the model picker, with a tool-declaration preview (`.chat-view__toolprev`) beneath it. `updateSetupVisibility()` shows both only while `messagesRef.current.length === 0` and hides them the moment the first message is sent — so the prompt size is chosen up front and is not a permanent fixture. There is no prompt-size select in the ⚙ popover.
+  - The preview is rendered by `loadToolPreview()` from `GET /api/chats/:id/tool-preview`: a summary line (`<label>: N tools — full specs | no schemas`) plus one row per tool (name, a `params`/`no schema` chip, and the exact description sent upstream). It re-fetches on every switch tap via the shared `setPromptSize()`.
+  - The resolved system prompt is rendered as the first transcript message — a collapsible `.chat-msg--system` card fed by `GET /api/chats/:id/system-prompt`. It is refreshed in place whenever the prompt size (switch) or custom prompt (popover) changes.
   - The chat meta line under the title no longer shows the profile; it shows only `trace on` (or nothing), because the profile now has a dedicated on-screen home in the transcript.
+- New HTTP route in [src/index.js](../../src/index.js): `GET /api/chats/:id/tool-preview`. It reuses the same tool-collection logic as `ai.streamChat` (native `shell` gated by `tools.shell.enabled`, plus `mcp.listComposedToolSpecs`) and applies `promptProfiles.reduceToolSpecs` with the chat's resolved profile, so the preview is byte-for-byte what the model is sent.
 - `package.json → scripts.prepublishOnly` now also runs `node -c src/promptProfiles.js` so a syntax error in the new module blocks the publish.
 - New smoke test: [scripts/test-prompt-profiles.js](../../scripts/test-prompt-profiles.js). 50 assertions covering the module's public surface, the resolution order, and the `GET /api/prompt-profiles` endpoint. Run with `node scripts/test-prompt-profiles.js`.
 

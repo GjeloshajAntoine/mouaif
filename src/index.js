@@ -785,6 +785,82 @@ async function handleChats(req, res, parsed) {
     }
   }
 
+  // GET /api/chats/:id/tool-preview?projectDir= -> { profile, tools }
+  // Returns the tool-declaration state for the chat's resolved
+  // prompt-size profile: which tools are advertised to the model and
+  // in what shape (full spec vs. the very-small name+description-only
+  // reduction). The chat UI shows this as a temporary preview while
+  // the chat is still empty, so the user sees the concrete effect of
+  // the S/M/L switch on the tool budget before the first message.
+  // The collection logic mirrors ai.streamChat (native shell + MCP),
+  // then promptProfiles.reduceToolSpecs applies the same reduction the
+  // stream will apply — so the preview is always what the model gets.
+  const toolPreviewMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/tool-preview$/);
+  if (toolPreviewMatch && method === 'GET') {
+    const id = decodeURIComponent(toolPreviewMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
+      // Resolve the profile id (chat -> project -> app -> 'average').
+      let profileId = promptProfiles.DEFAULT_PROFILE;
+      try {
+        const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
+        if (p && p.id) profileId = p.id;
+      } catch { /* fall through to default */ }
+      // Collect the tool specs exactly as streamChat does: native
+      // shell (gated by the project's resolved tools.shell.enabled)
+      // plus any ready MCP servers for the project.
+      let shellEnabled = false;
+      try {
+        const rs = settings.getResolved(dir || null);
+        shellEnabled = !!(rs && rs.tools && rs.tools.shell && rs.tools.shell.enabled);
+      } catch { /* tools stay off */ }
+      const toolSpecs = [];
+      if (shellEnabled) {
+        try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
+      }
+      try {
+        const specs = mcp.listComposedToolSpecs(dir);
+        if (specs && specs.length) {
+          for (const s of specs) {
+            toolSpecs.push({
+              type: 'function',
+              function: { name: s.name, description: s.description, parameters: s.parameters }
+            });
+          }
+        }
+      } catch { /* no MCP tools */ }
+      // Apply the same per-profile reduction the stream applies.
+      let effective = toolSpecs;
+      try { effective = promptProfiles.reduceToolSpecs(toolSpecs, profileId); } catch { /* full specs */ }
+      const reduced = profileId === 'very-small';
+      const tools = (effective || []).map((s) => {
+        const fn = (s && s.function) || {};
+        const params = fn.parameters && fn.parameters.properties ? Object.keys(fn.parameters.properties) : [];
+        return {
+          name: fn.name || '',
+          description: typeof fn.description === 'string' ? fn.description : '',
+          // hasSchema is false when the profile stripped the parameter
+          // definitions (very-small), true when the full schema rides.
+          hasSchema: params.length > 0,
+          params
+        };
+      });
+      return sendJSON(res, 200, {
+        profile: profileId,
+        reduced,
+        shellEnabled,
+        count: tools.length,
+        tools
+      });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // POST /api/chats/:id/messages  body: { projectDir, role, content }
   // Append a message directly. The /messages/stream endpoint below
   // does the same internally for user / assistant messages; this

@@ -741,6 +741,77 @@ textarea#projectEditor {
   box-shadow: var(--shadow-sm);
 }
 
+/* Tool-declaration preview — a compact readout of what the active
+   prompt-size profile sends upstream. Shown only while the chat is
+   empty (creation time), between the S/M/L switch and the transcript.
+   Full-width row (order: 12) so it wraps under the switch in the
+   flex-wrapped head. Hidden forever once the first message is sent. */
+.chat-view__toolprev {
+  order: 12;
+  flex: 1 0 100%;
+  margin-top: 2px;
+  padding: 4px 8px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.chat-view__toolprev-summary {
+  font-weight: 600;
+  color: var(--fg-soft);
+  line-height: 1.3;
+}
+.chat-view__toolprev-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.chat-view__toolprev-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.chat-view__toolprev-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--fg);
+  word-break: break-all;
+}
+.chat-view__toolprev-chip {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+.chat-view__toolprev-chip.is-full {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.chat-view__toolprev-chip.is-reduced {
+  background: rgba(210, 153, 34, 0.16);
+  color: var(--warning);
+}
+.chat-view__toolprev-desc {
+  flex: 1 0 100%;
+  font-size: 0.66rem;
+  color: var(--muted);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 /* The model select wraps to its own full-width row below the
    title/actions row (its flex-basis is 100%). On a narrow phone
    the <select> no longer competes with the title for horizontal
