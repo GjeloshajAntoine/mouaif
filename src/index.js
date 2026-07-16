@@ -15,6 +15,7 @@ const trace = require('./trace.js');
 const inspector = require('./inspector.js');
 const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
+const tags = require('./tags.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
@@ -865,6 +866,23 @@ async function handleChatStream(req, res, chatId) {
       upstreamMessages.push({ role: 'system', content: profile.systemMessage });
     }
   } catch { /* non-fatal; stream proceeds without a profile system message */ }
+  // Tagged files (decisions §15). Injected after the profile but before
+  // the custom prompt and the transcript, so they are the deepest
+  // context. includeInChat entries ride as `system`; any file the user
+  // @-referenced in this turn's message is promoted to `user`. A trace
+  // line records what was injected without re-reading disk on replay.
+  try {
+    const referencedPaths = tags.parseReferences(projectDir, content);
+    const injected = tags.resolveForInjection(projectDir, { referencedPaths });
+    if (injected.length) {
+      for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
+      if (traceStream) {
+        trace.write(traceStream, 'tags', {
+          files: injected.map(m => ({ path: m.relPath, role: m.role }))
+        });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without tagged files */ }
   if (chat.promptId) {
     try {
       const prompt = prompts.getPrompt(projectDir, chat.promptId);
@@ -970,6 +988,14 @@ async function handleProjects(req, res, parsed) {
   const method = req.method;
   const q = parsed.query || {};
 
+  // File tagging (docs/decisions.md §15). Routes live under a
+  // registered project id: /api/projects/:id/tags[/...]. Delegated to
+  // handleTags before the folder-picker / registered-project routes so
+  // the more specific path wins.
+  if (/^\/api\/projects\/[^/]+\/tags(\/.*)?$/.test(urlPath)) {
+    return handleTags(req, res, parsed);
+  }
+
   // GET /api/projects?dir=<abs>  -> list subdirs
   if (urlPath === '/api/projects' && method === 'GET') {
     const dir = typeof q.dir === 'string' && q.dir ? q.dir : os.homedir();
@@ -1039,6 +1065,91 @@ async function handleProjects(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'projects' });
+}
+
+// ---- File tagging API ---------------------------------------------------
+// Per-project file tags (docs/decisions.md §15). All routes hang off a
+// registered project id so the UI never has to pass an absolute path:
+//   GET    /api/projects/:id/tags               -> { tags: { ... } }
+//   PUT    /api/projects/:id/tags               body { tags: {...} }
+//   POST   /api/projects/:id/tags/scan          body { exts? }
+//   DELETE /api/projects/:id/tags/files/<relPath>
+// The project id resolves to its absolute dir via projects.getProject.
+// Tag CRUD requires a registered project (404 otherwise). Path escapes
+// return 403 EOUTSIDE_PROJECT.
+
+function tagsErrorStatus(err) {
+  switch (err && err.code) {
+    case 'EBADINPUT':        return 400;
+    case 'EOUTSIDE_PROJECT': return 403;
+    case 'MOUAIF_PROJECT_PARSE_ERROR': return 422;
+    default:                 return 500;
+  }
+}
+
+async function handleTags(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+
+  // Pull the project id out of the path and resolve to an absolute dir.
+  const idMatch = urlPath.match(/^\/api\/projects\/([^/]+)\/tags/);
+  if (!idMatch) return sendJSON(res, 404, { error: 'Not found', scope: 'tags' });
+  const projectId = decodeURIComponent(idMatch[1]);
+  const project = projects.getProject(projectId);
+  if (!project) return sendJSON(res, 404, { error: 'Project not registered', id: projectId });
+  const dir = project.path;
+
+  const rest = urlPath.slice(idMatch[0].length); // '' | '/scan' | '/files/<rel>'
+
+  // GET /api/projects/:id/tags
+  if (rest === '' && method === 'GET') {
+    try {
+      return sendJSON(res, 200, { tags: tags.getTags(dir) });
+    } catch (e) {
+      return sendJSON(res, tagsErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PUT /api/projects/:id/tags  body: { tags: { ... } }
+  if (rest === '' && method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const map = body && typeof body.tags === 'object' && body.tags ? body.tags : {};
+    try {
+      return sendJSON(res, 200, { tags: tags.setTags(dir, map) });
+    } catch (e) {
+      return sendJSON(res, tagsErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/projects/:id/tags/scan  body: { exts?: [...] }
+  if (rest === '/scan' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const exts = body && Array.isArray(body.exts) ? body.exts : null;
+    try {
+      return sendJSON(res, 200, { files: tags.scanFiles(dir, exts) });
+    } catch (e) {
+      return sendJSON(res, tagsErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // DELETE /api/projects/:id/tags/files/<relPath>
+  const fileMatch = rest.match(/^\/files\/(.+)$/);
+  if (fileMatch && method === 'DELETE') {
+    const relPath = decodeURIComponent(fileMatch[1]);
+    try {
+      const removed = tags.removeTag(dir, relPath);
+      if (!removed) return sendJSON(res, 404, { error: 'Tag entry not found', path: relPath });
+      return sendJSON(res, 200, { ok: true, removed: relPath });
+    } catch (e) {
+      return sendJSON(res, tagsErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'tags' });
 }
 
 // ---- AI API -------------------------------------------------------------

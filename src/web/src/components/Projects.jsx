@@ -120,6 +120,10 @@ export function ProjectsView() {
     // tool toggle), so the user can review and edit every setting —
     // including the security-sensitive ones — from the card itself.
     addItem('Settings…', () => nav('settings/project?projectDir=' + encodeURIComponent(project.path)));
+    // File tags… opens the per-project file-tagging view (decisions
+    // §15). It needs the registered project id (the REST surface hangs
+    // off /api/projects/:id/tags) plus the path so the view can show it.
+    addItem('File tags…', () => nav('settings/tags?projectId=' + encodeURIComponent(project.id) + '&projectDir=' + encodeURIComponent(project.path)));
     addItem('Rename…', () => renameProject(project));
     addItem('Unregister', () => unregisterProject(project), true);
     wrap.appendChild(pop);

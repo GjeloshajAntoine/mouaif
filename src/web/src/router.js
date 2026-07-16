@@ -56,6 +56,14 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsMcpEdit', id, projectDir: params.get('projectDir') || '' };
   }
+  // settings/tags is project-scoped (file tagging, decisions §15). It
+  // needs the registered project id for the REST surface plus the path
+  // for display. Both ride the query string.
+  if (h === 'settings/tags' || h.startsWith('settings/tags?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsTags', projectId: params.get('projectId') || '', projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/about') return { name: 'settingsAbout' };
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);

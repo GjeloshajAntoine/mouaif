@@ -2008,6 +2008,29 @@ textarea#projectEditor {
 .mcp__tools-name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; color: var(--accent); word-break: break-all; }
 .mcp__tools-desc { font-size: 0.76rem; color: var(--fg-soft); margin-top: 1px; }
 
+/* ---- File tags (decisions §15) ----------------------------------- */
+
+.tags__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tags__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.82rem; line-height: 1.45; }
+.tags__row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 6px 10px; display: flex; flex-direction: column; gap: 5px; }
+.tags__row.is-tagged { border-color: var(--accent-soft); }
+.tags__row.is-binary { opacity: 0.6; }
+.tags__row-head { display: flex; align-items: center; gap: 6px; }
+.tags__row-path { flex: 1 1 auto; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; color: var(--fg); word-break: break-all; }
+.tags__badge { flex: 0 0 auto; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 5px; }
+.tags__badge--missing { color: var(--warning); border-color: var(--warning); }
+.tags__chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tags__chip { display: inline-flex; align-items: center; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 3px 1px 8px; font-size: 0.72rem; color: var(--fg); }
+.tags__chip-x { min-width: 18px; min-height: 18px; border: none; background: transparent; color: var(--fg-soft); font-size: 0.9rem; line-height: 1; cursor: pointer; border-radius: 999px; }
+.tags__chip-x:active { background: var(--surface-3); }
+.tags__chip-input { flex: 1 1 90px; min-width: 90px; min-height: var(--tap); background: transparent; border: none; color: var(--fg); font-size: 0.76rem; padding: 0 4px; }
+.tags__chip-input:focus { outline: none; }
+.tags__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tags__toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; color: var(--fg-soft); }
+.tags__excerpt { display: inline-flex; align-items: center; gap: 3px; font-size: 0.72rem; color: var(--fg-soft); }
+.tags__excerpt-num { width: 52px; min-height: var(--tap); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--fg); font-size: 0.74rem; padding: 0 5px; text-align: center; }
+.tags__controls .btn { margin-left: auto; min-height: var(--tap); padding: 0 8px; font-size: 0.74rem; }
+
 /* ---- Chat: tool_call / tool_result cards ------------------------- */
 
 .tool-card {

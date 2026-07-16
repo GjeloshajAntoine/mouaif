@@ -16,7 +16,7 @@
     "dev": "node --watch bin/mouaif.js",
     "dev:web": "vite --config src/web/vite.config.js",
     "build:web": "vite build --config src/web/vite.config.js",
-    "prepublishOnly": "node -c bin/mouaif.js && node -c src/index.js && node -c src/messages.js && node -c src/trace.js && node -c src/oauth-anthropic.js && node -c src/chats.js && node -c src/projects.js && node -c src/settings.js && node -c src/ai.js && node -c src/auth.js && node -c src/inspector.js && node -c src/mcp.js && node -c src/usage.js && node -c src/prompts.js && node -c src/promptProfiles.js && node -c src/tools/shell.js && node -c src/oauth-github-copilot.js"
+    "prepublishOnly": "node -c bin/mouaif.js && node -c src/index.js && node -c src/messages.js && node -c src/trace.js && node -c src/oauth-anthropic.js && node -c src/chats.js && node -c src/projects.js && node -c src/settings.js && node -c src/ai.js && node -c src/auth.js && node -c src/inspector.js && node -c src/mcp.js && node -c src/usage.js && node -c src/prompts.js && node -c src/promptProfiles.js && node -c src/tags.js && node -c src/tools/shell.js && node -c src/oauth-github-copilot.js"
   },
   "keywords": [
     "cli",
