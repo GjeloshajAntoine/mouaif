@@ -1369,19 +1369,55 @@ async function handleAI(req, res, parsed) {
     if (cached && (now - cached.fetchedAt) < MODEL_LIST_TTL_MS) {
       return sendJSON(res, 200, { models: cached.models, fetchedAt: cached.fetchedAt, cached: true });
     }
-    // Bound the call so a slow upstream cannot hang the server.
+    // Bound the call so a slow upstream cannot hang the server. The
+    // per-call AbortController is passed through to listModels so the
+    // adapter can distinguish "user-configured" errors (ENO_APIKEY,
+    // EUNREACHABLE, EUPSTREAM) from "we hit MODEL_LIST_TIMEOUT_MS and
+    // cancelled" (EABORTED, surfaced as 504 Gateway Timeout).
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), MODEL_LIST_TIMEOUT_MS);
-    ai.listModels(provider, cred)
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, MODEL_LIST_TIMEOUT_MS);
+    // Pass signal through if the adapter accepts it. The current
+    // listModels adapters ignore it (they call fetch() without a
+    // signal), so the AbortController is belt-and-braces: the fetch
+    // call may run to completion, but the result is still discarded
+    // because timedOut === true when it lands. A future commit can
+    // thread `signal: ac.signal` through to each adapter.
+    const args = cred ? [provider, cred] : [provider];
+    ai.listModels(...args)
       .then((models) => {
         clearTimeout(timer);
+        if (timedOut) {
+          // Discard the late result: the client already saw 504.
+          return;
+        }
         MODEL_LIST_CACHE.set(cacheKey, { models, fetchedAt: Date.now() });
         return sendJSON(res, 200, { models, fetchedAt: Date.now(), cached: false });
       })
       .catch((err) => {
         clearTimeout(timer);
-        const status = err && err.code === 'ENO_LIST' ? 400 : 502;
-        return sendJSON(res, status, { error: String(err && err.message || err), code: err && err.code || 'ELIVE' });
+        if (timedOut) {
+          return sendJSON(res, 504, { error: 'Timed out after ' + Math.round(MODEL_LIST_TIMEOUT_MS / 1000) + 's waiting for ' + provider + ' upstream', code: 'EABORTED', provider });
+        }
+        // Map typed error codes to HTTP statuses. 502 is reserved for
+        // "upstream answered with a non-2xx" (EUPSTREAM) — anything
+        // that isn't a recognized failure shape falls through to a
+        // generic 502 so a regression in the adapter still surfaces
+        // somewhere observable. Distinct failure modes get distinct
+        // statuses so the chat UI can show a useful next step.
+        const code = err && err.code;
+        let status;
+        if (code === 'ENO_LIST')       status = 400;
+        else if (code === 'ENO_APIKEY') status = 400;
+        else if (code === 'EUNREACHABLE') status = 503;
+        else if (code === 'EUPSTREAM' && typeof err.status === 'number') status = err.status;
+        else                            status = 502;
+        const body = { error: String((err && err.message) || err), code: code || 'ELIVE', provider };
+        if (code === 'EUPSTREAM' && typeof err.status === 'number') body.upstreamStatus = err.status;
+        return sendJSON(res, status, body);
       });
     return;  // response is sent in the .then/.catch above.
   }

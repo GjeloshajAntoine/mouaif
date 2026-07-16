@@ -185,7 +185,22 @@ export function ChatView(props) {
     try {
       const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + '&_=' + Date.now());
       if (r.status !== 200) {
-        setChatStatus('model list failed', 'error');
+        // Map the server's typed error code to a one-line, actionable
+        // status pill. The raw 5xx/4xx in DevTools is still useful for
+        // debugging, but the user sees what to do next. The full error
+        // message lands in the status pill when it fits in one line.
+        const code = r.body && r.body.code;
+        const msg = r.body && r.body.error;
+        let pill;
+        if (code === 'ENO_APIKEY')      pill = 'add API key in Settings \u2192 Providers';
+        else if (code === 'EUNREACHABLE') pill = (provider === 'ollama')
+          ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
+          : (provider + ' unreachable');
+        else if (code === 'EABORTED')    pill = 'timeout \u2014 ' + provider + ' did not respond in 8s';
+        else if (code === 'EUPSTREAM')   pill = (provider + ' returned ' + (r.status || '?'));
+        else if (code === 'ENO_LIST')    pill = (provider + ' has no model list endpoint');
+        else                              pill = 'model list failed (' + (r.status || '?') + ')';
+        setChatStatus(pill + (msg && msg !== pill ? ' \u2014 ' + msg : ''), 'error');
         if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
         return;
       }

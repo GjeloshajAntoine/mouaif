@@ -33,11 +33,20 @@ const ENDPOINTS = {
   'openai-compatible': {
     chatPath: '/chat/completions',
     authHeader: (apiKey) => ({ 'Authorization': 'Bearer ' + apiKey }),
-    // GET {baseUrl}/models — OpenAI-shaped. Optional key.
+    // GET {baseUrl}/models — OpenAI-shaped. Optional key in practice,
+    // but in this env the upstream returns 401 when no Authorization
+    // header is sent, so treat "no cred" as a typed ENO_APIKEY error
+    // instead of a generic upstream 401.
     listModels: async (cred) => {
       const def = ENDPOINTS['openai-compatible'];
       const url = (def.baseUrl || 'https://api.openai.com/v1') + '/models';
-      const r = await fetch(url, { headers: cred ? def.authHeader(cred) : {} });
+      let r;
+      try { r = await fetch(url, { headers: cred ? def.authHeader(cred) : {} }); }
+      catch (e) { throw unreachableError('openai-compatible', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('openai-compatible');
+        throw httpError(r);
+      }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
       return parseOpenAIShapedModels(body);
@@ -73,12 +82,20 @@ const ENDPOINTS = {
     baseUrl: 'https://generativelanguage.googleapis.com',
     authHeader: (apiKey) => ({ 'x-goog-api-key': apiKey }),
     // GET /v1beta/models?key=<key> — Gemini-shaped (no Bearer header;
-    // key is a query param). No cred at all is allowed: the call
-    // returns the public list with `supportedGenerationMethods`.
+    // key is a query param). The unauthenticated call used to be
+    // public, but the public list endpoint now returns 403 without
+    // a key, so a missing cred is a typed ENO_APIKEY error rather
+    // than a generic upstream 403.
     listModels: async (cred) => {
       const url = ENDPOINTS.gemini.baseUrl + '/v1beta/models?pageSize=200'
         + (cred ? '&key=' + encodeURIComponent(cred) : '');
-      const r = await fetch(url);
+      let r;
+      try { r = await fetch(url); }
+      catch (e) { throw unreachableError('gemini', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('gemini');
+        throw httpError(r);
+      }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
       return parseGeminiModels(body);
@@ -90,10 +107,17 @@ const ENDPOINTS = {
     // No auth header. Ollama streams NDJSON, not SSE — we adapt below.
     authHeader: () => ({}),
     streamFormat: 'ndjson',
-    // GET /api/tags — Ollama's local catalog (no auth).
+    // GET /api/tags — Ollama's local catalog (no auth). When the local
+    // server is not running, fetch() throws TypeError("fetch failed")
+    // (Node 18+ collapses ECONNREFUSED / ENOTFOUND into a generic
+    // failure). Surface that as EUNREACHABLE so the HTTP layer can
+    // return 503 "service unavailable" instead of a misleading 502
+    // "bad gateway".
     listModels: async () => {
       const url = ENDPOINTS.ollama.baseUrl + '/api/tags';
-      const r = await fetch(url);
+      let r;
+      try { r = await fetch(url); }
+      catch (e) { throw unreachableError('ollama', e); }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
       return parseOllamaModels(body);
@@ -141,11 +165,15 @@ const ENDPOINTS = {
     baseUrl: 'https://openrouter.ai/api/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
-    // GET /api/v1/models — OpenAI-shaped. Optional key (some models
-    // are returned unauthenticated).
+    // GET /api/v1/models — OpenAI-shaped. OpenRouter allows the public
+    // list unauthenticated, so missing cred is fine here; upstream
+    // errors are surfaced as EUPSTREAM with the upstream status, and
+    // a network failure is EUNREACHABLE (handled like the others).
     listModels: async (cred) => {
       const url = ENDPOINTS.openrouter.baseUrl + '/models';
-      const r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {} });
+      let r;
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {} }); }
+      catch (e) { throw unreachableError('openrouter', e); }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
       return parseOpenAIShapedModels(body);
@@ -213,6 +241,41 @@ function httpError(resp) {
   const e = new Error('upstream ' + resp.status + ' ' + resp.statusText);
   e.code = 'EUPSTREAM';
   e.status = resp.status;
+  return e;
+}
+
+// noApiKeyError(provider, hint) — typed error thrown by listModels adapters
+// when a provider requires a credential but none is configured. Lets the
+// HTTP layer distinguish "add a key" (400 ENO_APIKEY) from "upstream
+// misbehaved" (502 EUPSTREAM) so the chat UI can show an actionable
+// message instead of a generic "model list failed".
+function noApiKeyError(provider, hint) {
+  const e = new Error('No API key configured for ' + provider + '. ' + (hint || 'Add one in Settings \u2192 Providers.'));
+  e.code = 'ENO_APIKEY';
+  e.provider = provider;
+  return e;
+}
+
+// unreachableError(provider, cause) — typed error thrown when the upstream
+// is not reachable (ECONNREFUSED, ENOTFOUND, fetch failed). Distinct from
+// EUPSTREAM (upstream answered with a non-2xx) so the HTTP layer can
+// return 503 "service unavailable" instead of 502 "bad gateway".
+function unreachableError(provider, cause) {
+  const e = new Error('Cannot reach ' + provider + ' upstream: ' + (cause && cause.message ? cause.message : String(cause || 'unknown')));
+  e.code = 'EUNREACHABLE';
+  e.provider = provider;
+  e.cause = cause;
+  return e;
+}
+
+// abortedError(provider) — typed error thrown when the upstream call was
+// aborted by the per-call AbortController (timeout). Distinct from
+// EUNREACHABLE so the HTTP layer can return 504 "gateway timeout" with
+// a clear message instead of 503.
+function abortedError(provider) {
+  const e = new Error('Timed out waiting for ' + provider + ' upstream');
+  e.code = 'EABORTED';
+  e.provider = provider;
   return e;
 }
 

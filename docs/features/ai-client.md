@@ -20,6 +20,8 @@ Six providers ship today:
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
 | GET    | `/api/ai/models` | `?projectDir=<abs>` (optional) | `{ models: [{id,provider,label,auth}], providers: [...] }` |
+| GET    | `/api/ai/models/live` | `?provider=<id>` | `{ models: [...], fetchedAt, cached }` — see [Live model list](#live-model-list) for the error contract |
+| GET    | `/api/ai/models-all` | — | `{ ids: [...] }` — union of every model id across all projects + app-level models |
 | POST   | `/api/ai/test` | `{ modelId, projectDir? }` | `{ ok: true }` or `{ ok: false, error, code? }` |
 | POST   | `/api/ai/chat`  | `{ modelId, messages, projectDir? }` | `text/event-stream` — see below |
 
@@ -87,12 +89,27 @@ const result = await ai.streamChat({
 // result: { ok: true, usage: { promptTokens, completionTokens } } | { ok: false, error: { code, message } }
 ```
 
+### Live model list
+
+`GET /api/ai/models/live?provider=<id>` fetches the provider's live catalog and merges it into the chat <select>. Results are cached per provider in memory for one hour; the chat UI's refresh button bypasses the cache via a `_` query string. The handler returns typed errors with HTTP statuses that match the failure mode, not a generic 502:
+
+| Code | Status | When | Chat UI message |
+|------|--------|------|-----------------|
+| `ENO_LIST` | 400 | Provider has no `listModels` adapter | `<provider> has no model list endpoint` |
+| `ENO_APIKEY` | 400 | Provider requires a key but none is configured | `add API key in Settings → Providers` |
+| `EUNREACHABLE` | 503 | Network failure (Ollama not running, DNS error, `fetch failed`) | `ollama not running on 127.0.0.1:11434` / `<provider> unreachable` |
+| `EABORTED` | 504 | Hit the 8 s per-call timeout | `timeout — <provider> did not respond in 8s` |
+| `EUPSTREAM` | `<err.status>` | Upstream returned a non-2xx (e.g. 401, 403, 500) | `<provider> returned <status>` |
+| other | 502 | Unexpected adapter failure | `model list failed (<status>)` |
+
+The response body is always `{ error, code, provider, upstreamStatus? }`. The `upstreamStatus` field is present only on `EUPSTREAM` and carries the raw upstream HTTP status for debugging.
+
 ## Behavior
 
 - **SSE in, SSE out.** The proxy reads the upstream's SSE (or Ollama's NDJSON) and re-emits the same event names with normalized shapes. The browser does not need to know what provider is behind the URL.
 - **Apikey only in this commit.** Models with `auth: 'oauth'` produce a typed `ENOAUTH` error. The OAuth commits add the flow; nothing in this commit stores tokens.
 - **Reserved provider: `github-copilot`.** Listed in `ENDPOINTS` and `providers`, gated by `reserved: true`, so any attempt to call it returns `ENOAUTH`. The provider's auth flow ships separately.
-- **Live model catalog.** Each `ENDPOINTS` entry carries a `listModels(cred)` that returns a normalized `[{ id, label, contextWindow? }]`. The chat <select> is populated from this list (see [docs/decisions.md §20](../decisions.md) and [docs/features/chat-ui.md](./chat-ui.md#per-chat-controls)). Throws `ENO_LIST` for providers without an adapter, `EUPSTREAM` for upstream failures.
+- **Live model catalog.** Each `ENDPOINTS` entry carries a `listModels(cred)` that returns a normalized `[{ id, label, contextWindow? }]`. The chat <select> is populated from this list (see [docs/decisions.md §20](../decisions.md) and [docs/features/chat-ui.md](./chat-ui.md#per-chat-controls)). Throws `ENO_LIST` for providers without an adapter, `ENO_APIKEY` when a provider requires a credential and none is configured, `EUNREACHABLE` for network failures (Ollama not running, DNS error), `EABORTED` for the per-call timeout, and `EUPSTREAM` (with `err.status` forwarded) for upstream HTTP errors. The HTTP layer maps these to the right status code so the chat UI can show an actionable message — see [Live model list](#live-model-list).
 - **Errors are typed.** The proxy maps upstream HTTP errors to `EUPSTREAM`, network failures to `ENETWORK`, aborts to `EABORTED`, unknown providers to `EUNKNOWN_PROVIDER`, missing keys to `ENOAPIKEY`, OAuth-marked models to `ENOAUTH`, and bad input to `EBADINPUT` / `EMODEL_NOT_FOUND`. The UI branches on `code`, not on `message`.
 - **Connectivity tests time out.** `/api/ai/test` converts its own ten-second abort into `ETIMEDOUT`; unrelated aborted chat requests remain `EABORTED`.
 - **No tool calls yet.** This commit transports text + usage. Tool-call events (`tool_call`, `tool_result`) are reserved names and will land in a later commit.

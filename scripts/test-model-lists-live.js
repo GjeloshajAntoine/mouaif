@@ -54,11 +54,27 @@ async function main() {
   check('copilot second call: cached true', cop2.body && cop2.body.cached === true,
     'body=' + JSON.stringify(cop2.body).slice(0, 120));
 
-  // 4) Gemini: no key in this test env -> 502 EUPSTREAM.
+  // 4) Gemini: no key in this test env -> 400 ENO_APIKEY (a missing
+  //    key is a client config issue, not an upstream 502). The
+  //    server detects "no cred" + 401/403 from the upstream and
+  //    surfaces a typed error so the chat UI can show "add API key
+  //    in Settings → Providers" instead of a generic 502.
   const gem = await get('/api/ai/models/live?provider=gemini');
-  check('gemini (no key): 502', gem.status === 502);
-  check('gemini (no key): code EUPSTREAM', gem.body && gem.body.code === 'EUPSTREAM',
-    'body=' + JSON.stringify(gem.body).slice(0, 120));
+  check('gemini (no key): 400', gem.status === 400,
+    'body=' + JSON.stringify(gem.body).slice(0, 200));
+  check('gemini (no key): code ENO_APIKEY', gem.body && gem.body.code === 'ENO_APIKEY',
+    'body=' + JSON.stringify(gem.body).slice(0, 200));
+  check('gemini (no key): provider echoed', gem.body && gem.body.provider === 'gemini',
+    'body=' + JSON.stringify(gem.body).slice(0, 200));
+
+  // 4b) Ollama not running -> 503 EUNREACHABLE (local server down,
+  //     not a bad gateway). The 503 vs 502 distinction is what the
+  //     chat UI branches on.
+  const oll = await get('/api/ai/models/live?provider=ollama');
+  check('ollama (not running): 503', oll.status === 503,
+    'body=' + JSON.stringify(oll.body).slice(0, 200));
+  check('ollama (not running): code EUNREACHABLE', oll.body && oll.body.code === 'EUNREACHABLE',
+    'body=' + JSON.stringify(oll.body).slice(0, 200));
 
   // 5) OpenRouter: 200 + data list (no key needed for the public list).
   const ort = await get('/api/ai/models/live?provider=openrouter');

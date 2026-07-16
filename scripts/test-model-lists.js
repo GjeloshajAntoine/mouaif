@@ -186,6 +186,84 @@ async function main() {
   check('listModels: no empty ids',
     !sample.some((m) => !m.id || m.id.trim() === ''));
 
+  // 12) OpenAI-compatible: 401 + no cred -> ENO_APIKEY (so the HTTP
+  //     layer can return 400 "add an API key" instead of a generic
+  //     502 "upstream misbehaved"). The case the chat UI hits when
+  //     the user has not configured a key yet.
+  await withStubbedFetch(async () => ({
+    ok: false, status: 401, statusText: 'Unauthorized',
+    json: async () => ({})
+  }), async () => {
+    let caught = null;
+    try { await ai.listModels('openai-compatible', null); }
+    catch (e) { caught = e; }
+    check('openai-compatible (no cred, 401): ENO_APIKEY',
+      caught && caught.code === 'ENO_APIKEY', 'caught=' + (caught && caught.code));
+    check('openai-compatible (no cred, 401): provider echoed',
+      caught && caught.provider === 'openai-compatible');
+  });
+
+  // 13) OpenAI-compatible: 401 WITH cred -> still EUPSTREAM (the
+  //     key is bad; the user already has one, the upstream rejected
+  //     it). The chat UI surfaces "returned 401" so the user can
+  //     re-check the key.
+  await withStubbedFetch(async () => ({
+    ok: false, status: 401, statusText: 'Unauthorized',
+    json: async () => ({})
+  }), async () => {
+    let caught = null;
+    try { await ai.listModels('openai-compatible', 'sk-stale'); }
+    catch (e) { caught = e; }
+    check('openai-compatible (with cred, 401): EUPSTREAM + status 401',
+      caught && caught.code === 'EUPSTREAM' && caught.status === 401,
+      'caught=' + JSON.stringify(caught));
+  });
+
+  // 14) Gemini: 403 + no cred -> ENO_APIKEY (the public list used
+  //     to be open, now requires a key).
+  await withStubbedFetch(async () => ({
+    ok: false, status: 403, statusText: 'Forbidden',
+    json: async () => ({})
+  }), async () => {
+    let caught = null;
+    try { await ai.listModels('gemini', null); }
+    catch (e) { caught = e; }
+    check('gemini (no cred, 403): ENO_APIKEY',
+      caught && caught.code === 'ENO_APIKEY', 'caught=' + (caught && caught.code));
+  });
+
+  // 15) Ollama: fetch() throws -> EUNREACHABLE. Node 18+ collapses
+  //     ECONNREFUSED / ENOTFOUND into a generic TypeError("fetch
+  //     failed"); the adapter must surface that as a typed code so
+  //     the HTTP layer returns 503, not 502.
+  await withStubbedFetch(async () => { throw new TypeError('fetch failed'); }, async () => {
+    let caught = null;
+    try { await ai.listModels('ollama', null); }
+    catch (e) { caught = e; }
+    check('ollama: fetch throws -> EUNREACHABLE',
+      caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
+    check('ollama: provider echoed on EUNREACHABLE',
+      caught && caught.provider === 'ollama');
+  });
+
+  // 16) OpenAI-compatible: fetch() throws -> EUNREACHABLE too.
+  await withStubbedFetch(async () => { throw new TypeError('fetch failed'); }, async () => {
+    let caught = null;
+    try { await ai.listModels('openai-compatible', 'sk-x'); }
+    catch (e) { caught = e; }
+    check('openai-compatible: fetch throws -> EUNREACHABLE',
+      caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
+  });
+
+  // 17) OpenRouter: fetch() throws -> EUNREACHABLE.
+  await withStubbedFetch(async () => { throw new TypeError('fetch failed'); }, async () => {
+    let caught = null;
+    try { await ai.listModels('openrouter', 'sk-x'); }
+    catch (e) { caught = e; }
+    check('openrouter: fetch throws -> EUNREACHABLE',
+      caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
+  });
+
   // Summary.
   console.log('---');
   console.log('passed: ' + passed);
