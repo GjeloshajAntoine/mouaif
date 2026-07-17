@@ -73,7 +73,7 @@ The "trace to file" feature is a **user export**, not a background stream and no
 
 - The mobile UI never holds an API key. All provider calls go through `POST /api/ai/chat` on the mouaif server, which streams the response back over SSE.
 - Provider set, this commit: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are key-only in this commit; `github-copilot` is documented but its auth lands with the OAuth commits. `openrouter` is the sixth provider — OpenAI-shaped, apikey-only, reuses the openai-compatible builder and parser, and stores its key in the `openai` keyring namespace so users do not have to manage a separate credential store.
-- The request-time model is the merge of the project model `{ id, provider, label?, contextWindow? }` and its app-level provider connection `{ baseUrl, apiKey, auth, oauthAccount? }`. Legacy self-contained model records remain readable during migration.
+- At request time, project-owned metadata (`id`, `provider`, `label`, context/pricing limits) is combined with the referenced app provider. Transport and credential fields (`baseUrl`, `apiKey`, `auth`, `oauthAccount`, headers, tokens) always come from the app connection; project JSON cannot override them.
 - Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
 - 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.
 

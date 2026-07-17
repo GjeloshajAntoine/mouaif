@@ -83,7 +83,7 @@ const ai = require('mouaif/src/ai.js');
 
 const events = [];
 const result = await ai.streamChat({
-  model: { id: 'gpt-4o-mini', provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-...' },
+  model: { id: 'gpt-4o-mini', provider: 'openai-compatible' },
   messages: [{ role: 'user', content: 'hi' }],
   onEvent: (name, data) => events.push({ name, data })
 });

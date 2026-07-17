@@ -1370,9 +1370,8 @@ function resolveModel(modelId, projectDir, providerId) {
       throw e;
     }
   }
-  // New shape: project models contain identity/selection data while the
-  // app-level provider connection owns credentials and transport settings.
-  // Model fields win to keep legacy self-contained model records working.
+  // Project models contain identity/selection metadata only. The app-level
+  // provider connection exclusively owns transport and credentials.
   const app = settings.getApp();
   const providers = Array.isArray(app.providers) ? app.providers : [];
   const connection = providers.find(p => p && p.id === m.provider);
@@ -1382,14 +1381,18 @@ function resolveModel(modelId, projectDir, providerId) {
     throw e;
   }
 
-  // SECURITY FIX: Prevent project models from overriding global credentials, transport, or headers.
-  // We only allow project models to override non-sensitive fields like label, contextWindow, etc.
+  // Never let committed project JSON redirect a global credential to an
+  // attacker-controlled endpoint or replace auth/account/header policy.
   const safeModel = { ...m };
   delete safeModel.apiKey;
   delete safeModel.baseUrl;
   delete safeModel.auth;
   delete safeModel.oauthAccount;
   delete safeModel.headers;
+  delete safeModel.staticHeaders;
+  delete safeModel.authHeader;
+  delete safeModel.token;
+  delete safeModel.accessToken;
 
   const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';
