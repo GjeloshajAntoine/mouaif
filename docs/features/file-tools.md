@@ -8,18 +8,18 @@ The tools cover the common "find the file, read the file, edit the file" loop wi
 
 ## Usage
 
-### Enabling file tools on a project
+### Availability
 
-- **Settings → Project → Tools → File tools** — toggle on.
-- Off by default per project, the same default as the shell tool. The toggle writes `tools.file.enabled` into `<projectDir>/.mouaif.json`.
-- The chat picker shows the file tools as soon as the toggle is on; no extra restart required.
+- Native file tools are always included in the base tool declaration.
+- **Settings → Project → Tools → File tools authorization** controls execution: `ask` by default, `off` to reject calls, or `allow` to run without prompting.
+- Legacy `tools.file.enabled` values remain readable but no longer affect detection.
 
 ### Authorization modes
 
 - **off** — the runner returns `ETOOL_DISABLED` for every call.
 - **ask** — every call shows an "Authorization required" card. The card carries the path, the tool name, and a preview of the body for `read_file` / `write_file` / `edit_file`. The user picks **Allow once**, **Allow for this session**, or **Deny**.
 - **allowlist** — calls whose `path` matches a regex in the per-project allowlist run without prompting. Everything else falls through to `ask`.
-- **allow** — every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`.
+- **allow** — every call is auto-approved across chats and restarts. The authorization card's **Always allow** action persists this mode.
 
 The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `tools.file` (parallel to `tools.shell`). The shape is:
 

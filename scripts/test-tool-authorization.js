@@ -77,20 +77,35 @@ async function main() {
   settings.setProject(projectDir, {
     tools: { file: { enabled: true, mode: 'allow' } }
   });
-  for (const tool of ['read_file', 'list_files', 'search_files', 'write_file']) {
+  for (const tool of ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']) {
     const allowed = await authz.authorize({
       projectDir, chatId: 'a1b2c3d4', callId: 'call_' + tool, tool, summary: 'README.md'
     });
     assert.equal(allowed.decision, 'allow', tool + ' must use the tools.file authorization gate');
   }
 
-  settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'allow' } } });
+  settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'ask', allowlist: ['^echo safe$'] } } });
+  const legacyDisabled = await authz.authorize({
+    projectDir, chatId: 'a1b2c3d4', callId: 'call_legacy_disabled', tool: 'shell', cmd: 'echo available'
+  });
+  assert.equal(legacyDisabled.decision, 'prompt', 'legacy enabled=false must not hide a base tool');
+  authz.recordDecision(projectDir, 'a1b2c3d4', 'call_legacy_disabled', 'allow-always');
+  await legacyDisabled.wait;
+  const persisted = settings.getProject(projectDir).tools.shell;
+  assert.equal(persisted.mode, 'allow', 'allow-always persists mode=allow');
+  assert.deepEqual(persisted.allowlist, ['^echo safe$'], 'allow-always preserves the allowlist');
+  const alwaysAllowed = await authz.authorize({
+    projectDir, chatId: 'another1', callId: 'call_always', tool: 'shell', cmd: 'echo no prompt'
+  });
+  assert.equal(alwaysAllowed.decision, 'allow', 'persisted allow applies to another chat session');
+
+  settings.setProject(projectDir, { tools: { shell: { mode: 'off' } } });
   await assert.rejects(
     authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_off', tool: 'shell', cmd: 'echo no' }),
     { code: 'ETOOL_DISABLED' }
   );
 
-  console.log('tool authorization: 16 assertions passed');
+  console.log('tool authorization: 21 assertions passed');
 }
 
 main().finally(() => {

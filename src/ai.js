@@ -904,12 +904,10 @@ async function streamChat(opts) {
 
   // ---- Tool specs advertised to the model ----------------------------
   // Three sources feed the `tools` field of the outgoing request:
-  //   1. The native `shell` tool (src/tools/shell.js), enabled per
-  //      project via opts.shellEnabled (default off — the caller
-  //      decides based on project settings).
+  //   1. The native `shell` tool (src/tools/shell.js), always present.
   //   2. The native file tools (read_file / list_files / search_files /
-  //      write_file, src/tools/files.js), enabled per project via
-  //      opts.fileToolsEnabled (default off). These cover the common
+  //      write_file, src/tools/files.js), always present. Authorization
+  //      decides whether a call prompts, runs, or is rejected. These cover
   //      "read this file / find where X is used / patch a small file"
   //      loop without requiring an MCP server.
   //   3. MCP-discovered tools (decision §18), which use the
@@ -919,16 +917,12 @@ async function streamChat(opts) {
   // Other providers stream normally and never see a `tools` field, so
   // their happy path is unchanged.
   const toolSpecs = [];
-  if (opts && opts.shellEnabled) {
-    try { toolSpecs.push(require('./tools/shell.js').SPEC); }
-    catch { /* shell tool module unavailable; skip */ }
-  }
-  if (opts && opts.fileToolsEnabled) {
-    try {
-      const ft = require('./tools/files.js');
-      for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
-    } catch { /* file tools module unavailable; skip */ }
-  }
+  try { toolSpecs.push(require('./tools/shell.js').SPEC); }
+  catch { /* shell tool module unavailable; skip */ }
+  try {
+    const ft = require('./tools/files.js');
+    for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
+  } catch { /* file tools module unavailable; skip */ }
   try {
     if (opts && opts.projectDir) {
       const mcpMod = require('./mcp.js');
@@ -1218,10 +1212,6 @@ async function streamChat(opts) {
   async function dispatchTool(name, args, callOpts) {
     // Native shell tool.
     if (name === 'shell') {
-      if (!(callOpts && callOpts.shellEnabled)) {
-        const r = { error: { code: 'ETOOL_DISABLED', message: 'shell tool is disabled for this project' } };
-        return { ok: false, content: JSON.stringify(r), result: r };
-      }
       let out;
       try {
         const shell = require('./tools/shell.js');
@@ -1243,10 +1233,6 @@ async function streamChat(opts) {
     // path-safety, size-cap, and authorization story, so a single
     // dispatch helper keeps the call site readable.
     if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'write_file' || name === 'edit_file') {
-      if (!(callOpts && callOpts.fileToolsEnabled)) {
-        const r = { error: { code: 'ETOOL_DISABLED', message: 'file tools are disabled for this project' } };
-        return { ok: false, content: JSON.stringify(r), result: r };
-      }
       let ft;
       try { ft = require('./tools/files.js'); }
       catch (e) {

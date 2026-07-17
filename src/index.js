@@ -869,17 +869,10 @@ async function handleChats(req, res, parsed) {
         const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
-      // Collect the tool specs exactly as streamChat does: native
-      // shell (gated by the project's resolved tools.shell.enabled),
-      // native file tools (gated by tools.file.enabled), plus any
-      // ready MCP servers for the project.
-      let shellEnabled = false;
-      let fileToolsEnabled = false;
-      try {
-        const rs = settings.getResolved(dir || null);
-        shellEnabled = !!(rs && rs.tools && rs.tools.shell && rs.tools.shell.enabled);
-        fileToolsEnabled = !!(rs && rs.tools && rs.tools.file && rs.tools.file.enabled);
-      } catch { /* tools stay off */ }
+      // Collect the tool specs exactly as streamChat does: base shell and
+      // file tools are always advertised, plus ready MCP servers.
+      const shellEnabled = true;
+      const fileToolsEnabled = true;
       const toolSpecs = [];
       if (shellEnabled) {
         try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
@@ -1145,25 +1138,10 @@ async function handleChatStream(req, res, chatId) {
   // is per-delta; the cost line is final); that's intentional.
   let lastEnrichment = null;
 
-  // Resolve the per-project tool configuration. The native `shell`
-  // tool is off unless the project's resolved settings turn it on
-  // (settings.tools.shell.enabled); the native file tools
-  // (read_file / list_files / search_files / write_file) are gated
-  // by settings.tools.file.enabled. projectDir also activates MCP
-  // tool discovery inside the AI client.
-  let shellEnabled = false;
-  let fileToolsEnabled = false;
-  try {
-    const resolvedSettings = settings.getResolved(projectDir || null);
-    shellEnabled = !!(resolvedSettings
-      && resolvedSettings.tools
-      && resolvedSettings.tools.shell
-      && resolvedSettings.tools.shell.enabled);
-    fileToolsEnabled = !!(resolvedSettings
-      && resolvedSettings.tools
-      && resolvedSettings.tools.file
-      && resolvedSettings.tools.file.enabled);
-  } catch { /* non-fatal; tools stay off */ }
+  // Built-in shell and file tools are always advertised. Their authorization
+  // modes decide whether calls prompt, run automatically, or are disabled.
+  const shellEnabled = true;
+  const fileToolsEnabled = true;
 
   // App-level knobs (size caps etc.) are read once and passed through
   // to the file tool dispatcher. The dispatcher itself uses the

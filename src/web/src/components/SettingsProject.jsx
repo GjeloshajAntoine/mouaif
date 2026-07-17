@@ -65,10 +65,11 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     }
     if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
 
-    // Shell tool toggle.
+    // Legacy enable flags no longer hide base tools. Authorization mode is
+    // the sole execution gate; keep the controls checked for clarity.
     if (shellToggle.current) {
-      shellToggle.current.checked = !!(currentProject.tools && currentProject.tools.shell && currentProject.tools.shell.enabled);
-      shellToggle.current.disabled = false;
+      shellToggle.current.checked = true;
+      shellToggle.current.disabled = true;
     }
     if (shellStatus.current) shellStatus.current.textContent = '';
 
@@ -84,8 +85,8 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
     // File tools toggle.
     if (fileToggle.current) {
-      fileToggle.current.checked = !!(currentProject.tools && currentProject.tools.file && currentProject.tools.file.enabled);
-      fileToggle.current.disabled = false;
+      fileToggle.current.checked = true;
+      fileToggle.current.disabled = true;
     }
     if (fileStatus.current) fileStatus.current.textContent = '';
 
@@ -162,16 +163,6 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     }
   }
 
-  async function onShellToggle(e) {
-    const want = !!(e && e.target && e.target.checked);
-    if (shellToggle.current) shellToggle.current.disabled = true;
-    const next = { tools: Object.assign({}, currentProject.tools) };
-    next.tools.shell = Object.assign({}, next.tools && next.tools.shell, { enabled: want });
-    const ok = await patchProject(next, shellStatus, want ? 'shell tool enabled' : 'shell tool disabled');
-    if (shellToggle.current) shellToggle.current.disabled = false;
-    if (!ok && shellToggle.current) shellToggle.current.checked = !want;
-  }
-
   async function saveShellAuthorization() {
     const mode = shellModeSel.current ? shellModeSel.current.value : 'ask';
     const allowlist = shellAllowlist.current
@@ -184,16 +175,6 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       body: JSON.stringify({ projectDir: dir(), tools: { shell: { mode, allowlist } } })
     });
     if (shellStatus.current) shellStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
-  }
-
-  async function onFileToggle(e) {
-    const want = !!(e && e.target && e.target.checked);
-    if (fileToggle.current) fileToggle.current.disabled = true;
-    const next = { tools: Object.assign({}, currentProject.tools) };
-    next.tools.file = Object.assign({}, next.tools && next.tools.file, { enabled: want });
-    const ok = await patchProject(next, fileStatus, want ? 'file tools enabled' : 'file tools disabled');
-    if (fileToggle.current) fileToggle.current.disabled = false;
-    if (!ok && fileToggle.current) fileToggle.current.checked = !want;
   }
 
   async function saveFileAuthorization() {
@@ -280,7 +261,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
           h('div', { class: 'card__title' }, 'Shell tool'),
           h('div', { class: 'card__summary' }, 'Let the model run commands in this project folder.')
         ),
-        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: onShellToggle })
+        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
       ),
       h('p', { ref: shellStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
       h('div', { class: 'row' },
@@ -289,7 +270,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
           h('option', { value: 'off' }, 'Off'),
           h('option', { value: 'ask' }, 'Ask every time'),
           h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
-          h('option', { value: 'allow' }, 'Allow this session')
+          h('option', { value: 'allow' }, 'Always allow')
         ),
         h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Full-command regex allowlist (one per line)'),
         h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
@@ -303,7 +284,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
           h('div', { class: 'card__title' }, 'File tools'),
           h('div', { class: 'card__summary' }, 'Let the model read, list, search, and edit files in this project folder.')
         ),
-        h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: onFileToggle })
+        h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
       ),
       h('p', { ref: fileStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
       h('div', { class: 'row' },
@@ -312,7 +293,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
           h('option', { value: 'off' }, 'Off'),
           h('option', { value: 'ask' }, 'Ask every time'),
           h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
-          h('option', { value: 'allow' }, 'Allow this session')
+          h('option', { value: 'allow' }, 'Always allow')
         ),
         h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Path regex allowlist (one per line)'),
         h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),

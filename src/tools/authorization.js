@@ -5,7 +5,7 @@ const settings = require('../settings.js');
 const trace = require('../trace.js');
 
 const MODES = new Set(['off', 'ask', 'allowlist', 'allow']);
-const DECISIONS = new Set(['allow-once', 'allow-session', 'deny']);
+const DECISIONS = new Set(['allow-once', 'allow-session', 'allow-always', 'deny']);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 600_000;
 const sessions = new Map();
@@ -82,8 +82,12 @@ function effectiveConfig(projectDir, tool) {
     const appValue = app && app.tools && app.tools[tool];
     const value = projectValue || appValue || {};
     const source = projectValue ? 'project' : (appValue ? 'app' : 'default');
-    const enabled = !!(resolved && resolved.tools && resolved.tools[tool] && resolved.tools[tool].enabled);
-    return normalizeConfig(value, source, enabled);
+    // Built-in tools are part of the base agent surface and are always
+    // discoverable. Authorization mode is the gate: `ask` prompts on first
+    // use, `allow` runs directly, and `off` explicitly disables execution.
+    // Keep accepting legacy `enabled` fields in project files, but do not let
+    // a missing/false flag make a base tool disappear from the model.
+    return normalizeConfig(value, source, true);
   }
   if (tool.startsWith('mcp__')) {
     const projectValue = project && project.mcp && project.mcp.authorization;
@@ -255,6 +259,27 @@ function recordDecision(projectDir, chatId, callId, decision) {
   session.pending.delete(callId);
 
   if (decision === 'allow-session') session.grants.add(pending.tool);
+  if (decision === 'allow-always') {
+    const family = configToolName(pending.tool);
+    if (NATIVE_TOOLS.has(family)) {
+      const current = effectiveConfig(projectDir, family);
+      setAuthorization(projectDir, { tools: { [family]: {
+        mode: 'allow',
+        allowlist: current.allowlist,
+        defaultTimeoutMs: current.defaultTimeoutMs,
+        maxTimeoutMs: current.maxTimeoutMs
+      } } });
+    } else if (family.startsWith('mcp__')) {
+      const current = effectiveConfig(projectDir, family);
+      setAuthorization(projectDir, { mcp: {
+        mode: 'allow',
+        allowlist: current.allowlist,
+        defaultTimeoutMs: current.defaultTimeoutMs,
+        maxTimeoutMs: current.maxTimeoutMs
+      } });
+    }
+    session.grants.add(pending.tool);
+  }
   if (decision === 'allow-once' && pending.flow === 'retry') session.allowedCallIds.set(callId, pending.tool);
   if (decision === 'deny') session.deniedCallIds.add(callId);
 

@@ -1,7 +1,7 @@
 // mouaif web — ChatView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, parseSSEFrame, projectsReload } from '../api.js';
+import { fetchJson, parseSSEFrame, projectsReload, loadModels, invalidateModelsCache } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
 
@@ -139,7 +139,7 @@ export function ChatView(props) {
     if (!projectDir || !chatId) return;
     const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
+      loadModels(projectDir),
       fetchJson('/api/ai/models/providers'),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
@@ -149,7 +149,7 @@ export function ChatView(props) {
     const c = rChat.body.chat;
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
-    modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
+    modelsRef.current = rModels.status === 200 ? (rModels.models || []) : [];
     providersRef.current = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
     // Seed the per-provider live cache with the project-level
     // records. Live fetches overwrite these; a project-level model
@@ -183,6 +183,50 @@ export function ChatView(props) {
     // been built (renderTranscript + updateSetupVisibility run first
     // and decide whether the card is on screen at all).
     updateSwitch(activeProfileId());
+  }
+
+  // refreshAllProviders with live models — invalidate the cached
+  // project models so a subsequent load() picks up any new project
+  // model entries too (e.g. user just typed a slug in Settings).
+  async function refreshAllProviders() {
+    if (headRefreshBtn.current) headRefreshBtn.current.disabled = true;
+    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = true;
+    setChatStatus('refreshing models…', 'busy');
+    invalidateModelsCache();
+    const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
+    if (!providers.length) {
+      setChatStatus('add a provider in Settings \u2192 Providers', 'error');
+      if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
+      if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
+      return;
+    }
+    const results = await Promise.all(providers.map((p) => fetchLiveForProvider(p).catch((e) => ({ provider: p, ok: false, body: { error: String(e), code: 'ELIVE' }, status: 0 }))));
+    let total = 0, failed = 0, primary = null;
+    for (const r of results) {
+      if (r.ok) total += r.count;
+      else failed++;
+    }
+    const active = activeProviderId();
+    primary = results.find((r) => r.provider === active);
+    if (primary && !primary.ok) {
+      const code = primary.body && primary.body.code;
+      const msg = primary.body && primary.body.error;
+      let pill;
+      if (code === 'ENO_APIKEY')      pill = 'add API key in Settings \u2192 Providers';
+      else if (code === 'EUNREACHABLE') pill = (primary.provider === 'ollama')
+        ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
+        : (primary.provider + ' unreachable');
+      else if (code === 'EABORTED')    pill = 'timeout \u2014 ' + primary.provider + ' did not respond in 8s';
+      else if (code === 'EUPSTREAM')   pill = (primary.provider + ' returned ' + (primary.status || '?'));
+      else if (code === 'ENO_LIST')    pill = (primary.provider + ' has no model list endpoint');
+      else                              pill = 'model list failed (' + (primary.status || '?') + ')';
+      setChatStatus(pill + (msg && msg !== pill ? ' \u2014 ' + msg : ''), 'error');
+    } else {
+      setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
+    }
+    renderModelPicker();
+    if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
+    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
   }
 
   function activeProviderId() {
@@ -266,8 +310,8 @@ export function ChatView(props) {
       empty.className = 'chat-view__picker-empty';
       if (q) empty.textContent = 'no matches';
       else if (!providersRef.current.length) empty.textContent = 'add a provider in Settings \u2192 Providers';
-      else if (providerFilter !== 'all') empty.textContent = 'no ' + providerFilter + ' models \u2014 tap ↻';
-      else empty.textContent = 'no models \u2014 tap ↻';
+      else if (providerFilter !== 'all') empty.textContent = 'no ' + providerFilter + ' models \u2014 tap \u21bb';
+      else empty.textContent = 'no models \u2014 tap \u21bb';
       list.appendChild(empty);
       return;
     }
@@ -382,58 +426,12 @@ export function ChatView(props) {
   // currently selected provider (so a brand-new chat opens with
   // more than just the hand-typed project slugs). Errors are
   // silent: a stale list is still usable, and the user can retry
-  // via the picker ↻ button.
+  // via the picker \u21bb button.
   async function refreshActiveProvider() {
     const provider = activeProviderId();
     if (!provider) return;
     const res = await fetchLiveForProvider(provider);
     if (res.ok) renderModelPicker();
-  }
-
-  // refreshAllProviders() — fire the live catalog fetch for every
-  // configured provider in parallel, update the picker when each
-  // resolves, and surface a one-line status pill with the totals.
-  // Used by the head refresh button and the picker ↻ button. The
-  // picker is openable during the fetch (the user sees rows fill
-  // in); the button is disabled while the call is in flight.
-  async function refreshAllProviders() {
-    if (headRefreshBtn.current) headRefreshBtn.current.disabled = true;
-    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = true;
-    setChatStatus('refreshing models…', 'busy');
-    const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
-    if (!providers.length) {
-      setChatStatus('add a provider in Settings \u2192 Providers', 'error');
-      if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
-      if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
-      return;
-    }
-    const results = await Promise.all(providers.map((p) => fetchLiveForProvider(p).catch((e) => ({ provider: p, ok: false, body: { error: String(e), code: 'ELIVE' }, status: 0 }))));
-    let total = 0, failed = 0, primary = null;
-    for (const r of results) {
-      if (r.ok) total += r.count;
-      else failed++;
-    }
-    const active = activeProviderId();
-    primary = results.find((r) => r.provider === active);
-    if (primary && !primary.ok) {
-      const code = primary.body && primary.body.code;
-      const msg = primary.body && primary.body.error;
-      let pill;
-      if (code === 'ENO_APIKEY')      pill = 'add API key in Settings \u2192 Providers';
-      else if (code === 'EUNREACHABLE') pill = (primary.provider === 'ollama')
-        ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
-        : (primary.provider + ' unreachable');
-      else if (code === 'EABORTED')    pill = 'timeout \u2014 ' + primary.provider + ' did not respond in 8s';
-      else if (code === 'EUPSTREAM')   pill = (primary.provider + ' returned ' + (primary.status || '?'));
-      else if (code === 'ENO_LIST')    pill = (primary.provider + ' has no model list endpoint');
-      else                              pill = 'model list failed (' + (primary.status || '?') + ')';
-      setChatStatus(pill + (msg && msg !== pill ? ' \u2014 ' + msg : ''), 'error');
-    } else {
-      setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
-    }
-    renderModelPicker();
-    if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
-    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
   }
 
   // openModelPicker() / closeModelPicker() — popover show/hide.
@@ -557,9 +555,9 @@ export function ChatView(props) {
     sel.id = 'chatPromptSize';
     sel.setAttribute('aria-label', 'Prompt size');
     for (const opt of [
-      { id: 'very-small', label: 'Very small — tool names only, no parameter schemas, smallest prompt' },
-      { id: 'average',    label: 'Average — full tools, recommended' },
-      { id: 'extensive',  label: 'Extensive — full tools + best-practice guidance' }
+      { id: 'very-small', label: 'Very small \u2014 tool names only, no parameter schemas, smallest prompt' },
+      { id: 'average',    label: 'Average \u2014 full tools, recommended' },
+      { id: 'extensive',  label: 'Extensive \u2014 full tools + best-practice guidance' }
     ]) {
       const o = document.createElement('option');
       o.value = opt.id;
@@ -636,11 +634,11 @@ export function ChatView(props) {
     row.appendChild(role); row.appendChild(body); row.appendChild(ts);
     transcript.current.appendChild(row);
     if (m.role === 'assistant' && isLive) row._body = body;
-    // Per-turn meta line (decision §14). Lives directly under the
+    // Per-turn meta line (decision \u00a714). Lives directly under the
     // assistant bubble and shows the model id, token counts, cost,
     // and live token rate. For non-assistant messages or for
     // assistant messages without a usage block, the line is hidden
-    // — the typical case is a fresh chat before any AI turn, or a
+    // \u2014 the typical case is a fresh chat before any AI turn, or a
     // transcript from before this commit shipped.
     if (m.role === 'assistant') {
       const meta = document.createElement('div');
@@ -660,10 +658,10 @@ export function ChatView(props) {
     transcript.current.scrollTop = transcript.current.scrollHeight;
   }
 
-  // Render the per-turn meta line. Pure DOM, no framework — the chat
+  // Render the per-turn meta line. Pure DOM, no framework \u2014 the chat
   // view intentionally avoids Preact here so the SSE hot path stays
   // as cheap as a textContent assignment. The line is a flat row of
-  // "•"-separated tokens sized for a 360 px viewport.
+  // "\u2022"-separated tokens sized for a 360 px viewport.
   function renderUsageMeta(el, info) {
     el.innerHTML = '';
     el.hidden = false;
@@ -695,7 +693,7 @@ export function ChatView(props) {
       if (i > 0) {
         const sep = document.createElement('span');
         sep.className = 'chat-msg__meta-sep';
-        sep.textContent = '•';
+        sep.textContent = '\u2022';
         el.appendChild(sep);
       }
       const span = document.createElement('span');
@@ -736,7 +734,7 @@ export function ChatView(props) {
     args.textContent = formatToolArgs(toolCall.args);
     const pill = document.createElement('span');
     pill.className = 'tool-card__pill tool-card__pill--busy';
-    pill.textContent = 'running…';
+    pill.textContent = 'running\u2026';
     card.appendChild(role); card.appendChild(name); card.appendChild(args); card.appendChild(pill);
     transcript.current.appendChild(card);
     transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -840,6 +838,7 @@ export function ChatView(props) {
       for (const [decision, label] of [
         ['allow-once', 'Allow once'],
         ['allow-session', 'Allow for session'],
+        ['allow-always', 'Always allow'],
         ['deny', 'Deny']
       ]) {
         const button = document.createElement('button');
@@ -915,7 +914,7 @@ export function ChatView(props) {
   }
 
   async function exportTrace() {
-    setChatStatus('exporting trace…', 'busy');
+    setChatStatus('exporting trace\u2026', 'busy');
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/trace/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -936,8 +935,8 @@ export function ChatView(props) {
 
   // Reflect the active profile in the in-transcript <select>. The
   // select is updated by toggling `selected` on the matching <option>
-  // — not by setting `value` on the <select> (Preact can drop a
-  // <select value=…> on first mount when the option list isn't
+  // \u2014 not by setting `value` on the <select> (Preact can drop a
+  // <select value=\u2026> on first mount when the option list isn't
   // attached yet, see user memory). updateSwitch is a no-op if the
   // setup card has already been removed.
   function updateSwitch(id) {
@@ -953,7 +952,7 @@ export function ChatView(props) {
   // The setup control is a CREATION-TIME widget: it is only mounted
   // while the chat has no messages yet, so the user picks the prompt
   // budget up front. As soon as the first message exists the control
-  // is removed and never comes back — the prompt size is fixed for
+  // is removed and never comes back \u2014 the prompt size is fixed for
   // the life of the chat. Removing it (instead of hiding it) keeps
   // the transcript clean: no empty shape behind later messages.
   function updateSetupVisibility() {
@@ -996,7 +995,7 @@ export function ChatView(props) {
     promptInput.current.value = '';
     autoresize();
     appendToolCallCard({ id: null, name: 'shell', args: { cmd } });
-    setChatStatus('running shell…', 'busy');
+    setChatStatus('running shell\u2026', 'busy');
     sendBtn.current.disabled = true;
     const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     async function requestShell() {
@@ -1034,13 +1033,13 @@ export function ChatView(props) {
   async function send() {
     if (!projectDir || !chatId) return;
     // The model picker is the source of truth (not a <select>
-    // value) — the chat record carries { providerId, modelId }.
+    // value) \u2014 the chat record carries { providerId, modelId }.
     const c = chatRef.current || {};
     const modelId = c.modelId || '';
     const providerId = c.providerId || '';
     const content = (promptInput.current.value || '').trim();
     if (!content) { statusEl.current.textContent = 'type something'; return; }
-    // /shell <cmd> — direct tool invocation, no model.
+    // /shell <cmd> \u2014 direct tool invocation, no model.
     if (content.startsWith('/shell ')) {
       const cmd = content.slice('/shell '.length).trim();
       if (cmd) return runShellCommand(cmd);
@@ -1059,7 +1058,7 @@ export function ChatView(props) {
     await updateChat({ providerId, modelId });
 
     sendBtn.current.disabled = true;
-    setChatStatus('streaming…', 'busy');
+    setChatStatus('streaming\u2026', 'busy');
     promptInput.current.value = '';
     autoresize();
 
@@ -1075,7 +1074,7 @@ export function ChatView(props) {
     // Live per-turn counter. The chat UI runs this on every delta;
     // the server's authoritative completionTokens (sent on `done`)
     // replaces the heuristic on the final tick. The counter is
-    // scoped to a single turn — reset() is called after `done` so
+    // scoped to a single turn \u2014 reset() is called after `done` so
     // the next user message starts from 0.
     const counter = createCounter();
 
@@ -1170,7 +1169,7 @@ export function ChatView(props) {
     // completionTokens (from `usage.completionTokens`); the cost is
     // already on the `done` event. The stored message keeps both so
     // a chat that is reopened later shows the same numbers (decision
-    // §14 — usage is persisted on the assistant message).
+    // \u00a714 \u2014 usage is persisted on the assistant message).
     const finalRate = counter.rate(usage && usage.completionTokens);
     const persisted = {
       role: 'assistant',
@@ -1193,8 +1192,8 @@ export function ChatView(props) {
       }
     }
     counter.reset();
-    if (statusEl.current.textContent === 'streaming…') {
-      setChatStatus(usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
+    if (statusEl.current.textContent === 'streaming\u2026') {
+      setChatStatus(usage ? ('done \u2014 ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
     if (sendBtn.current) sendBtn.current.disabled = false;
   }
@@ -1226,7 +1225,7 @@ export function ChatView(props) {
   useEffect(() => {
     function closeSettings() { if (settingsPopRef.current && !settingsPopRef.current.hidden) { settingsPopRef.current.hidden = true; if (settingsBtnRef.current) settingsBtnRef.current.setAttribute('aria-expanded', 'false'); } }
     function onDocClick(e) {
-      // The two popovers are independent — close whichever one is
+      // The two popovers are independent \u2014 close whichever one is
       // open and didn't get the click. (Both can be closed in the
       // same tick; they never overlap visually because the model
       // picker is a near-full-screen sheet and the settings pop is
@@ -1269,9 +1268,9 @@ export function ChatView(props) {
 
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
-      h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects'), 'aria-label': 'Back to projects' }, '←'),
+      h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects'), 'aria-label': 'Back to projects' }, '\u2190'),
       h('div', { class: 'chat-view__title-stack' },
-        h('div', { ref: chatName, class: 'chat-view__name' }, '…'),
+        h('div', { ref: chatName, class: 'chat-view__name' }, '\u2026'),
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
       ),
       h('div', { class: 'chat-view__model-row' },
@@ -1280,7 +1279,7 @@ export function ChatView(props) {
             h('span', { class: 'chat-view__model-id' }, '(pick a model)'),
             h('span', { class: 'chat-view__model-provider' }, '')
           ),
-          h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '▾')
+          h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '\u25be')
         ),
         h('button', { ref: headRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshAllProviders, 'aria-label': 'Refresh model lists from all providers', title: 'Refresh models from all providers' },
           h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
@@ -1295,7 +1294,7 @@ export function ChatView(props) {
                 h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
               )
             ),
-            h('button', { class: 'chat-view__picker-close', type: 'button', onClick: closeModelPicker, 'aria-label': 'Close', title: 'Close' }, '×')
+            h('button', { class: 'chat-view__picker-close', type: 'button', onClick: closeModelPicker, 'aria-label': 'Close', title: 'Close' }, '\u00d7')
           ),
           h('div', { class: 'chat-view__picker-chips', role: 'tablist', 'aria-label': 'Filter by provider' }),
           h('div', { ref: modelPickerListRef, class: 'chat-view__picker-list' })
@@ -1319,8 +1318,8 @@ export function ChatView(props) {
           h('button', { class: 'btn', type: 'button', onClick: exportTrace }, 'Export trace')
         )
       ),
-      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
-      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '×')
+      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '\u2711'),
+      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '\u00d7')
     ),
     // The setup card (prompt-size switch + tool-declaration preview)
     // is mounted into this transcript at render time, only while the

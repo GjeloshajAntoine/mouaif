@@ -7,7 +7,7 @@
 
 ## Overview
 
-Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. The gate is per-project, per-tool, and per-session; the user can choose between four modes (`off`, `ask`, `allowlist`, `allow`) and a default for each project. The default for new tools is `ask`, so the model can only run a command after the user has explicitly approved it (or a matching allowlist rule). Approvals are recorded so the user can re-prompt by switching back to `ask`.
+Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. Base tools (`shell` and the native file tools) are always advertised to the model; the gate controls execution rather than discovery. The user can choose between four modes (`off`, `ask`, `allowlist`, `allow`) per project. The default is `ask`, so first use prompts for approval.
 
 ## Usage
 
@@ -18,7 +18,7 @@ Every tool call the model initiates — and every `/shell` slash command the use
 | `off` | The tool is disabled. Calls return `ETOOL_DISABLED` and the runner never runs. |
 | `ask` | Every call must be approved by the user in the UI. The chat shows a prompt with the command, working dir, and the proposed timeout; the user taps **Allow** or **Deny**. |
 | `allowlist` | Calls whose `cmd` matches an allowlist regex run without prompting. Calls that do not match fall through to `ask`. |
-| `allow` | Every call in the session is auto-approved. Toggling back to `ask` revokes the blanket grant. |
+| `allow` | Every call is auto-approved. This project-level choice persists across chats and server restarts. |
 
 The mode is set on the project record (per decision §2) and can be overridden per session by the user without writing the new value to disk:
 
@@ -50,7 +50,7 @@ When the gate is `ask` and the model initiates a call, the chat pauses the strea
 - the project directory the command will run in
 - the chat id and a "review trace" link (only when tracing is on)
 
-The user can tap **Allow once**, **Allow for this session** (equivalent to flipping to `allow` until the chat is reopened), or **Deny**. The chat resumes on **Allow once** with a single execution, on **Allow for this session** without further prompts for the same tool, and on **Deny** with a `tool_result` carrying `ok: false, code: 'EDENIED'`. The upstream sees a `tool` message with the same error, so the model can recover and try a different command.
+The user can tap **Allow once**, **Allow for session**, **Always allow**, or **Deny**. **Always allow** persists `mode: "allow"` for that tool family in `.mouaif.json`, so it also applies to new chats and after restart. **Allow for session** remains in memory and is cleared when the chat is reopened.
 
 The composer `/shell` slash command uses the same gate. A `/shell` invocation in `ask` mode shows the same card; the only difference is the source line ("user-typed slash command" instead of "model-initiated call").
 
@@ -70,7 +70,7 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - **Allowlist is regex-matched against the full command.** The match is anchored on the full string (`^...$`); partial matches do not pass. Each untrusted expression runs in an isolated worker that is terminated after 1 ms, so catastrophic backtracking cannot block the HTTP process.
 - **Decisions are session-scoped, not persisted.** An `allow-once` decision resumes exactly one blocked call. An `allow-session` decision is kept in server memory and cleared by `POST /api/chats/:id/touch` when the chat is reopened.
 - **Deny reasons are kept private.** A deny records only the call id in the in-memory session. The upstream receives `{ ok: false, code: 'EDENIED', reason: 'user denied' }`, without the command, project, or chat id.
-- **Authorization is independent of the tool's enable switch.** A tool can be `off` (no calls) and `allow` (mode wouldn't matter). The order in the runner is: enabled? → mode? → allowlist? → execute.
+- **Base tools are always discoverable.** Legacy `enabled` fields are accepted but no longer hide `shell` or file tools. Set authorization mode to `off` to disable execution while keeping the stable base-tool declaration visible to the model.
 - **File operations share one gate.** The model-facing `read_file`, `list_files`, `search_files`, and `write_file` names all resolve through `tools.file`; enabling File tools therefore enables authorization for all four operations instead of returning `ETOOL_DISABLED` for their individual names.
 - **Timeouts are bounded by the project.** A call's effective timeout is `clamp(requestedTimeoutMs || defaultTimeoutMs, 1 ms, maxTimeoutMs)`. Anything above the cap is clamped silently; the UI surfaces the clamped value in the prompt.
 - **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping from `ask` to `off` rejects the next call with `ETOOL_DISABLED` and the model's prior `tool_result` history is left untouched.
