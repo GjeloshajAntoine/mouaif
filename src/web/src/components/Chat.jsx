@@ -73,10 +73,6 @@ export function ChatView(props) {
   const modelPickerSearchRef = useRef(null);
   const modelPickerRefreshRef = useRef(null);
   const modelPickerListRef = useRef(null);
-  // Head refresh button (separate from the picker refresh) — opens
-  // the picker first so the user sees the new list refresh, then
-  // refetches all providers in the background.
-  const headRefreshBtn = useRef(null);
   const promptInput = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
@@ -247,14 +243,12 @@ export function ChatView(props) {
   // project models so a subsequent load() picks up any new project
   // model entries too (e.g. user just typed a slug in Settings).
   async function refreshAllProviders() {
-    if (headRefreshBtn.current) headRefreshBtn.current.disabled = true;
     if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = true;
     setChatStatus('refreshing models…', 'busy');
     invalidateModelsCache();
     const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
     if (!providers.length) {
       setChatStatus('add a provider in Settings \u2192 Providers', 'error');
-      if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
       if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
       return;
     }
@@ -283,7 +277,6 @@ export function ChatView(props) {
       setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
     }
     renderModelPicker();
-    if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
     if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
   }
 
@@ -1419,11 +1412,6 @@ export function ChatView(props) {
             h('span', { class: 'chat-view__model-provider' }, '')
           ),
           h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '\u25be')
-        ),
-        h('button', { ref: headRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshAllProviders, 'aria-label': 'Refresh model lists from all providers', title: 'Refresh models from all providers' },
-          h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-            h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
-          )
         ),
         h('div', { ref: modelPickerPopRef, class: 'chat-view__picker', hidden: true, role: 'dialog', 'aria-label': 'Pick a model' },
           h('div', { class: 'chat-view__picker-head' },
