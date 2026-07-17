@@ -440,12 +440,13 @@ async function handleSettings(req, res, parsed) {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const { projectDir, ...patch } = body || {};
+    const { projectDir, unset, ...patch } = body || {};
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }
     try {
-      const next = settings.setProject(projectDir, patch);
+      let next = Object.keys(patch).length ? settings.setProject(projectDir, patch) : settings.getProject(projectDir);
+      if (Array.isArray(unset) && unset.length) next = settings.unsetProjectKeys(projectDir, unset);
       return sendJSON(res, 200, { project: settingsForClient(next), path: settings.getProjectPath(projectDir) });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });

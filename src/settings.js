@@ -175,6 +175,16 @@ function setProject(projectDir, patch) {
   return next;
 }
 
+function unsetProjectKeys(projectDir, keys) {
+  if (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string' || !key)) {
+    throw new TypeError('unsetProjectKeys() expects an array of key names');
+  }
+  const next = getProjectRaw(projectDir);
+  for (const key of keys) delete next[key];
+  writeJsonFile(getProjectPath(projectDir), next);
+  return next;
+}
+
 // ---- Resolution ---------------------------------------------------------
 
 function isPlainObject(v) {
@@ -220,6 +230,7 @@ module.exports = {
   getProjectPath,
   getProject,
   setProject,
+  unsetProjectKeys,
   // resolution
   getResolved,
   // lifecycle (mostly for tests)

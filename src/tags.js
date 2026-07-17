@@ -210,11 +210,9 @@ function scanFiles(projectDir, exts, limit) {
 function readExcerpt(body, excerpt) {
   if (!excerpt) return body;
   const lines = body.split(/\r?\n/);
-  // 1-indexed inclusive. A 0-length window (start === end) is allowed and
-  // renders an empty body (mention-by-location).
+  // 1-indexed inclusive: [2,2] contains line 2.
   const start = Math.max(1, excerpt.start);
   const end = Math.min(lines.length, excerpt.end);
-  if (excerpt.start === excerpt.end) return '';
   return lines.slice(start - 1, end).join('\n');
 }
 

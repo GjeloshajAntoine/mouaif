@@ -95,7 +95,7 @@ The hash route `#/projects/new?dir=<abs>` is the on-screen filesystem browser. T
 - A **Select** button on every row registers that folder (no need to drill in just to register).
 - A `Create new folder` disclosure at the bottom captures a name, mints the directory under the current parent, and drills into the new folder on success so the user can see it and (optionally) register it. A failed create surfaces the typed error in the status line (e.g. `EEXIST Directory already exists`).
 
-Touch targets are 32 × 32 px (`--tap`); long lists scroll inside the picker card. The picker is fully DOM-direct (no JSX subtree per row) to keep the small-list cost down and the first paint fast.
+Touch targets are at least 44 × 44 px (`--tap`); long lists scroll inside the picker card. The picker is fully DOM-direct (no JSX subtree per row) to keep the small-list cost down and the first paint fast.
 
 ## Related
 

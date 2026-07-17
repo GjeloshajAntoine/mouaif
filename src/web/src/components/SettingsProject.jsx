@@ -128,7 +128,24 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
   async function onPromptSize(e) {
     const v = e && e.target ? e.target.value : '';
     // Empty string clears the project override (inherit app default).
-    await patchProject({ promptSize: v || undefined }, promptSizeStatus, v ? ('set to ' + v) : 'inheriting app default');
+    if (v) {
+      await patchProject({ promptSize: v }, promptSizeStatus, 'set to ' + v);
+      return;
+    }
+    const d = dir();
+    if (promptSizeStatus.current) promptSizeStatus.current.textContent = 'saving…';
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: d, unset: ['promptSize'] })
+    });
+    if (r.status === 200) {
+      currentProject = r.body.project || {};
+      if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+      if (promptSizeStatus.current) promptSizeStatus.current.textContent = 'inheriting app default';
+    } else if (promptSizeStatus.current) {
+      promptSizeStatus.current.textContent = 'HTTP ' + r.status;
+    }
   }
 
   async function onShellToggle(e) {

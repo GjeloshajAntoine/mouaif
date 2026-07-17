@@ -81,7 +81,7 @@ check('removeTag actually gone', !tags.getTags(PROJ)['README.md']);
 // Re-tag: one included whole-file, one excerpt, one excluded, one oversize.
 tags.setTags(PROJ, {
   'src/a.js':   { tags: ['api'], excerpt: { start: 2, end: 3 }, includeInChat: true }, // real multi-line range
-  'README.md':  { tags: ['docs'], excerpt: { start: 2, end: 2 }, includeInChat: true }, // 0-length -> empty body
+  'README.md':  { tags: ['docs'], excerpt: { start: 2, end: 2 }, includeInChat: true }, // one inclusive line
   'big.txt':    { tags: ['big'], excerpt: null, includeInChat: true }, // oversize, no excerpt -> skipped
   'gone.js':    { tags: ['stale'], excerpt: null, includeInChat: true }  // missing -> skipped
 });
@@ -100,8 +100,8 @@ check('excerpt header present', aMsg && aMsg.content.includes('# Excerpt: 2-3'))
 check('excerpt body is lines 2-3', aMsg && aMsg.content.includes('line2') && aMsg.content.includes('line3') && !aMsg.content.includes('line1') && !aMsg.content.includes('line4'));
 
 const rMsg = injected.find(m => m.relPath === 'README.md');
-check('0-length excerpt header present', rMsg && rMsg.content.includes('# Excerpt: 2-2'));
-check('0-length excerpt body is empty', rMsg && rMsg.content.trim().endsWith('# Excerpt: 2-2'));
+check('single-line excerpt header present', rMsg && rMsg.content.includes('# Excerpt: 2-2'));
+check('single-line excerpt contains line 2', rMsg && rMsg.content.includes('\nbody'));
 
 // ---- @-reference parsing + promotion -----------------------------------
 

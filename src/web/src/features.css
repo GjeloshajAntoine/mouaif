@@ -251,7 +251,7 @@
 .tags__badge--missing { color: var(--warning); border-color: var(--warning); }
 .tags__chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .tags__chip { display: inline-flex; align-items: center; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 3px 1px 8px; font-size: 0.72rem; color: var(--fg); }
-.tags__chip-x { min-width: 18px; min-height: 18px; border: none; background: transparent; color: var(--fg-soft); font-size: 0.9rem; line-height: 1; cursor: pointer; border-radius: 999px; }
+.tags__chip-x { min-width: var(--tap); min-height: var(--tap); border: none; background: transparent; color: var(--fg-soft); font-size: 0.9rem; line-height: 1; cursor: pointer; border-radius: 999px; }
 .tags__chip-x:active { background: var(--surface-3); }
 .tags__chip-input { flex: 1 1 90px; min-width: 90px; min-height: var(--tap); background: transparent; border: none; color: var(--fg); font-size: 0.76rem; padding: 0 4px; }
 .tags__chip-input:focus { outline: none; }
