@@ -22,7 +22,9 @@
 //     lastOpenedAt: undefined,            // set when the chat is opened
 //     trace:        false,                // per-chat trace-to-file override
 //     promptSize:   'average',            // per-chat prompt-size profile
-//     promptId:     null                  // optional; references a project prompt
+//     promptId:     null,                 // optional; references a project prompt
+//     providerId:   null,                 // selected app-level provider
+//     modelId:      null                  // selected project/live model slug
 //   }
 //
 // New chats always start with tracing off unless the creation request
@@ -84,7 +86,9 @@ function normalizeChat(chat) {
     lastOpenedAt: chat.lastOpenedAt || null,
     trace: chat.trace === true,
     promptSize: ['very-small', 'average', 'extensive'].includes(chat.promptSize) ? chat.promptSize : 'average',
-    promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null
+    promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null,
+    providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
+    modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null
   };
 }
 
@@ -150,6 +154,12 @@ function updateChat(projectDir, chatId, patch) {
   if (patch && ['very-small', 'average', 'extensive'].includes(patch.promptSize)) merged.promptSize = patch.promptSize;
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
     merged.promptId = (patch.promptId === null || patch.promptId === '') ? null : String(patch.promptId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'providerId')) {
+    merged.providerId = (patch.providerId === null || patch.providerId === '') ? null : String(patch.providerId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
+    merged.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);

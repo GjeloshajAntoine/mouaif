@@ -917,6 +917,7 @@ async function handleChatStream(req, res, chatId) {
   catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
+  const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
   const content = body && typeof body.content === 'string' ? body.content : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
@@ -933,8 +934,8 @@ async function handleChatStream(req, res, chatId) {
   // Resolve the project model and hydrate it with its app-level provider
   // connection (credentials, base URL, and auth account).
   let model;
-  try { model = resolveModel(modelId, projectDir); }
-  catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId }); }
+  try { model = resolveModel(modelId, projectDir, providerId); }
+  catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId, providerId: providerId || undefined }); }
 
   // Append the user message and bump lastOpenedAt BEFORE streaming.
   let userMsg;
@@ -1286,7 +1287,7 @@ async function handleTags(req, res, parsed) {
 // Implements docs/decisions.md section 10. Auth = apikey only in this
 // commit; auth = oauth returns ENOAUTH (typed SSE error).
 
-function resolveModel(modelId, projectDir) {
+function resolveModel(modelId, projectDir, providerId) {
   if (!modelId || typeof modelId !== 'string') {
     const e = new Error('modelId is required');
     e.code = 'EBADINPUT';
@@ -1294,11 +1295,21 @@ function resolveModel(modelId, projectDir) {
   }
   const resolved = settings.getResolved(projectDir || null);
   const list = Array.isArray(resolved.models) ? resolved.models : [];
-  const m = list.find(x => x && x.id === modelId);
+  const wantedProvider = typeof providerId === 'string' ? providerId.trim() : '';
+  let m = list.find(x => x && x.id === modelId && (!wantedProvider || x.provider === wantedProvider));
+  let liveCatalogModel = false;
   if (!m) {
-    const e = new Error('Model not found: ' + modelId);
-    e.code = 'EMODEL_NOT_FOUND';
-    throw e;
+    // Live catalog entries are intentionally not persisted into the
+    // project's optional models array. The browser submits providerId so
+    // the server can build the same minimal model record on demand.
+    if (wantedProvider && ai.ENDPOINTS[wantedProvider]) {
+      m = { id: modelId, provider: wantedProvider };
+      liveCatalogModel = true;
+    } else {
+      const e = new Error('Model not found: ' + modelId);
+      e.code = 'EMODEL_NOT_FOUND';
+      throw e;
+    }
   }
   // New shape: project models contain identity/selection data while the
   // app-level provider connection owns credentials and transport settings.
@@ -1306,6 +1317,11 @@ function resolveModel(modelId, projectDir) {
   const app = settings.getApp();
   const providers = Array.isArray(app.providers) ? app.providers : [];
   const connection = providers.find(p => p && p.id === m.provider);
+  if (!connection && liveCatalogModel) {
+    const e = new Error('Provider connection not found: ' + m.provider);
+    e.code = 'EPROVIDER_NOT_FOUND';
+    throw e;
+  }
   const hydrated = Object.assign({}, connection || {}, m, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';
   return hydrated;
@@ -1420,6 +1436,18 @@ async function handleAI(req, res, parsed) {
         return sendJSON(res, status, body);
       });
     return;  // response is sent in the .then/.catch above.
+  }
+
+  // GET /api/ai/models/providers -> { providers: [{ id }] }
+  // The chat uses this when a project has no model records yet. Returning
+  // every configured connection avoids the old "first provider wins"
+  // fallback, which silently queried OpenAI when the user wanted OpenRouter.
+  if (urlPath === '/api/ai/models/providers' && method === 'GET') {
+    const app = settings.getApp();
+    const providers = (Array.isArray(app.providers) ? app.providers : [])
+      .filter((p) => p && typeof p.id === 'string' && ai.ENDPOINTS[p.id])
+      .map((p) => ({ id: p.id }));
+    return sendJSON(res, 200, { providers });
   }
 
   // GET /api/ai/models-all  -> { ids: [..] }
@@ -2299,7 +2327,7 @@ function createServer(port = DEFAULT_PORT) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats };
+module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats, resolveModel };
 
 // ---- Static /web/ serving -----------------------------------------------
 

@@ -799,6 +799,18 @@ textarea#projectEditor {
   gap: 4px;
   min-width: 0;
 }
+.chat-view__provider {
+  flex: 0 1 34%;
+  min-width: 0;
+  min-height: var(--tap);
+  height: var(--tap);
+  padding: 0 22px 0 8px;
+  font-size: 0.76rem;
+  background: var(--surface-2);
+  border-radius: 6px;
+  color: var(--fg-soft);
+  text-overflow: ellipsis;
+}
 .chat-view__model-row .chat-view__model {
   flex: 1 1 auto;
   min-width: 0;

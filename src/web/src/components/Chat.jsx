@@ -39,6 +39,7 @@ export function ChatView(props) {
   const setupCardRef = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
+  const providerSelect = useRef(null);
   const modelSelect = useRef(null);
   const modelRefreshBtn = useRef(null);
   const promptInput = useRef(null);
@@ -55,6 +56,7 @@ export function ChatView(props) {
   const chatRef = useRef(null);
   const messagesRef = useRef([]);
   const modelsRef = useRef([]);
+  const providersRef = useRef([]);
   const promptsRef = useRef([]);
   // The effective system context (resolved prompt-size profile + custom
   // prompt) as it will be sent upstream. Fetched from
@@ -91,9 +93,10 @@ export function ChatView(props) {
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rMsgs, rPrompts, rSys] = await Promise.all([
+    const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/ai/models/providers'),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir))
@@ -103,6 +106,7 @@ export function ChatView(props) {
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
+    providersRef.current = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
     systemPromptRef.current = rSys.status === 200 ? rSys.body : null;
 
@@ -110,14 +114,18 @@ export function ChatView(props) {
     updateMetaLine();
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
 
-    if (modelSelect.current) populateModelSelect(modelsRef.current);
+    populateProviderSelect(providersRef.current, c.providerId || '');
+    if (modelSelect.current) {
+      populateModelSelect(modelsForProvider(activeProviderId()));
+      if (c.modelId) modelSelect.current.value = c.modelId;
+    }
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
     // Auto-fetch the live catalog on first load so a brand-new chat
     // opens with the provider's full list, not just the project
     // hand-typed slugs. The button next to the <select> does the same
     // thing on demand. Errors are silent — a stale list is still
     // usable; the user can retry via the refresh button.
-    refreshModelList().catch(() => {});
+    if (activeProviderId()) refreshModelList().catch(() => {});
 
     renderTranscript();
     updateSetupVisibility();
@@ -125,6 +133,43 @@ export function ChatView(props) {
     // been built (renderTranscript + updateSetupVisibility run first
     // and decide whether the card is on screen at all).
     updateSwitch(activeProfileId());
+  }
+
+  function activeProviderId() {
+    return providerSelect.current ? providerSelect.current.value : '';
+  }
+
+  function modelsForProvider(provider) {
+    if (!provider) return modelsRef.current || [];
+    return (modelsRef.current || []).filter((m) => m && m.provider === provider);
+  }
+
+  function populateProviderSelect(list, savedProvider) {
+    if (!providerSelect.current) return;
+    const projectProvider = (modelsRef.current || []).find((m) => m && m.provider);
+    const current = providerSelect.current.value;
+    const wanted = savedProvider || current || (projectProvider && projectProvider.provider) || (list.length === 1 && list[0].id) || '';
+    providerSelect.current.innerHTML = '';
+    if (!wanted && list.length > 1) {
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '(provider)';
+      providerSelect.current.appendChild(blank);
+    }
+    for (const p of list) {
+      if (!p || !p.id) continue;
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.id;
+      providerSelect.current.appendChild(opt);
+    }
+    if (!list.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(no providers)';
+      providerSelect.current.appendChild(opt);
+    }
+    if (wanted) providerSelect.current.value = wanted;
   }
 
   function populateModelSelect(list) {
@@ -156,29 +201,16 @@ export function ChatView(props) {
     if (!projectDir) return;
     if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = true;
     setChatStatus('loading models…', 'busy');
-    // Pick a provider. Try (1) the currently selected modelId, (2)
-    // the first model in the project's list, (3) the first app-level
-    // configured provider.
-    const cur = modelSelect.current ? modelSelect.current.value : '';
-    const fromSelect = (modelsRef.current || []).find((m) => m && m.id === cur);
-    let provider = fromSelect && fromSelect.provider;
-    if (!provider && (modelsRef.current || []).length) {
-      provider = modelsRef.current[0].provider;
-    }
+    // The provider is explicit. Never fall back silently to the first
+    // app connection: that queried OpenAI when an empty project intended
+    // to use OpenRouter and produced a misleading OpenAI 401.
+    const savedModel = chatRef.current && chatRef.current.providerId === activeProviderId()
+      ? chatRef.current.modelId
+      : '';
+    const cur = (modelSelect.current && modelSelect.current.value) || savedModel || '';
+    const provider = activeProviderId();
     if (!provider) {
-      // Ask the server for the first available app provider.
-      try {
-        const r = await fetchJson('/api/settings');
-        const providers = (r.status === 200 && r.body && Array.isArray(r.body.providers))
-          ? r.body.providers
-          : (r.body && Array.isArray(r.body.app && r.body.app.providers) ? r.body.app.providers : []);
-        // The settings endpoint redacts keys; we just need the ids.
-        const ids = (Array.isArray(providers) ? providers : []).map((p) => p && p.id).filter(Boolean);
-        if (ids.length) provider = ids[0];
-      } catch { /* fall through */ }
-    }
-    if (!provider) {
-      setChatStatus('add a provider first', 'error');
+      setChatStatus(providersRef.current.length ? 'pick a provider' : 'add a provider first', 'error');
       if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
       return;
     }
@@ -206,10 +238,11 @@ export function ChatView(props) {
       }
       const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
       // Merge with project-level ids so any user-defined slugs stay.
-      const merged = mergeModelLists(modelsRef.current, live.map((m) => ({
+      const providerModels = modelsForProvider(provider);
+      const merged = mergeModelLists(providerModels, live.map((m) => ({
         id: m.id, provider: provider, label: m.label
       })));
-      modelsRef.current = merged;
+      modelsRef.current = (modelsRef.current || []).filter((m) => m && m.provider !== provider).concat(merged);
       populateModelSelect(merged);
       // Restore previous selection if still present, else first live.
       if (modelSelect.current) {
@@ -218,12 +251,31 @@ export function ChatView(props) {
         } else if (merged.length) {
           modelSelect.current.value = merged[0].id;
         }
+        const selectedModel = modelSelect.current.value || null;
+        if (selectedModel && chatRef.current &&
+            (chatRef.current.providerId !== provider || chatRef.current.modelId !== selectedModel)) {
+          chatRef.current = Object.assign({}, chatRef.current, { providerId: provider, modelId: selectedModel });
+          await updateChat({ providerId: provider, modelId: selectedModel });
+        }
       }
       setChatStatus('models: ' + merged.length, 'success');
     } catch (err) {
       setChatStatus('model list error', 'error');
     }
     if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
+  }
+
+  async function onProviderChange() {
+    if (chatRef.current) chatRef.current = Object.assign({}, chatRef.current, { providerId: activeProviderId() || null, modelId: null });
+    await updateChat({ providerId: activeProviderId(), modelId: null });
+    populateModelSelect(modelsForProvider(activeProviderId()));
+    await refreshModelList();
+  }
+
+  function onModelChange() {
+    if (!modelSelect.current) return;
+    if (chatRef.current) chatRef.current = Object.assign({}, chatRef.current, { providerId: activeProviderId() || null, modelId: modelSelect.current.value || null });
+    updateChat({ providerId: activeProviderId(), modelId: modelSelect.current.value || null });
   }
 
   function populatePromptSelect(list, currentId) {
@@ -684,6 +736,7 @@ export function ChatView(props) {
   async function send() {
     if (!projectDir || !chatId) return;
     const modelId = modelSelect.current ? modelSelect.current.value : '';
+    const providerId = activeProviderId();
     const content = (promptInput.current.value || '').trim();
     if (!content) { statusEl.current.textContent = 'type something'; return; }
     // /shell <cmd> — direct tool invocation, no model.
@@ -692,6 +745,10 @@ export function ChatView(props) {
       if (cmd) return runShellCommand(cmd);
     }
     if (!modelId) { statusEl.current.textContent = 'pick a model'; return; }
+
+    // Persist the pair before sending so reopening this chat keeps the exact
+    // provider/model choice instead of falling back to the first connection.
+    await updateChat({ providerId, modelId });
 
     sendBtn.current.disabled = true;
     setChatStatus('streaming…', 'busy');
@@ -719,7 +776,7 @@ export function ChatView(props) {
       resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir, modelId, content })
+        body: JSON.stringify({ projectDir, modelId, providerId, content })
       });
     } catch (err) {
       setChatStatus('network error', 'error');
@@ -874,7 +931,8 @@ export function ChatView(props) {
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
       ),
       h('div', { class: 'chat-view__model-row' },
-        h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model' }),
+        h('select', { ref: providerSelect, class: 'input chat-view__provider', id: 'chatProvider', 'aria-label': 'Provider', onChange: onProviderChange }),
+        h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model', onChange: onModelChange }),
         h('button', { ref: modelRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshModelList, 'aria-label': 'Refresh model list from provider', title: 'Refresh models from the provider' },
           h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
             h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })

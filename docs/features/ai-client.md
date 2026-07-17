@@ -20,6 +20,7 @@ Six providers ship today:
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
 | GET    | `/api/ai/models` | `?projectDir=<abs>` (optional) | `{ models: [{id,provider,label,auth}], providers: [...] }` |
+| GET    | `/api/ai/models/providers` | — | `{ providers: [{id}] }` — configured provider connections, credentials omitted |
 | GET    | `/api/ai/models/live` | `?provider=<id>` | `{ models: [...], fetchedAt, cached }` — see [Live model list](#live-model-list) for the error contract |
 | GET    | `/api/ai/models-all` | — | `{ ids: [...] }` — union of every model id across all projects + app-level models |
 | POST   | `/api/ai/test` | `{ modelId, projectDir? }` | `{ ok: true }` or `{ ok: false, error, code? }` |
@@ -73,7 +74,7 @@ The app store owns the provider connection:
 }
 ```
 
-The chat proxy picks a project model by `id`, then hydrates it with the provider connection referenced by `provider`.
+The chat proxy picks a project model by `id`, then hydrates it with the provider connection referenced by `provider`. For a model selected directly from a live catalog, the client also submits `providerId`; the server builds a minimal `{ id, provider }` model and hydrates it from that connection. This keeps the project `models` array optional while preserving an unambiguous provider choice.
 
 ### Programmatic (Node)
 
@@ -103,6 +104,8 @@ const result = await ai.streamChat({
 | other | 502 | Unexpected adapter failure | `model list failed (<status>)` |
 
 The response body is always `{ error, code, provider, upstreamStatus? }`. The `upstreamStatus` field is present only on `EUPSTREAM` and carries the raw upstream HTTP status for debugging.
+
+When more than one provider is configured, the chat shows an explicit provider picker. A chat without a saved choice starts on a `(provider)` placeholder; it never guesses by taking the first app connection. The chosen provider/model pair is persisted on the chat. This matters when the project has no saved models: choosing OpenRouter must query `/api/ai/models/live?provider=openrouter`, not a previously configured OpenAI-compatible connection.
 
 ## Behavior
 

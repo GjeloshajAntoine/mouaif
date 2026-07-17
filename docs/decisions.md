@@ -26,6 +26,7 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
   - GitHub Copilot â†’ curated catalog (no public list endpoint)
   - OpenRouter â†’ `GET /api/v1/models` (OpenAI-shaped); key optional
 - The project `models` array (when present) is merged with the live list, so user-defined slugs stay. The chat <select> shows the union, deduped by id.
+- The chat selects the provider explicitly from configured app connections. It never falls back silently to the first connection when the project has no models; the selected `providerId` + `modelId` pair is stored on the chat and restored on reopen. A live-catalog send carries `{ modelId, providerId }`, allowing the server to hydrate a transient model record without writing the full catalog into project settings.
 - Results are cached per `${provider}:${credHash}` for 1 hour on the server. The chat head has a refresh button that re-fetches the live list for the current provider.
 
 ## 4. Projects â€” full filesystem browse
@@ -167,9 +168,9 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - New module: `src/promptProfiles.js`. New test: [scripts/test-prompt-profiles.js](../scripts/test-prompt-profiles.js). No new runtime dependencies. The existing `prepublishOnly` lint chain in `package.json` was extended to `node -c src/promptProfiles.js`.
 
 
-## 20. Live model catalog — per-provider /models, with a 1h cache
+## 20. Live model catalog ï¿½ per-provider /models, with a 1h cache
 
-The chat <select> (decision §3) is populated from a live upstream
+The chat <select> (decision ï¿½3) is populated from a live upstream
 catalog rather than the project's hand-typed models array. Each
 provider entry in ENDPOINTS carries a listModels(cred) that
 returns a normalized [{ id, label, contextWindow? }]. The chat
