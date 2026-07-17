@@ -67,7 +67,7 @@ The `scan` endpoint is the directory walk the UI uses to populate the file list.
 - The injection happens in `src/index.js` → `handleChatStream`, immediately before the existing `promptId` block. Tagged files go first (deepest context), then the prompt, then the transcript.
 - A `tags` section is appended to the per-chat trace file (decision §5) as a single `system event` line so a trace replay shows what was injected without re-reading the file from disk.
 - The `scan` endpoint is a one-pass walk; large projects (>50k files) are paged by directory depth. The UI can stop at any time and the server is not blocked.
-- Mobile-first layout: the file list uses the existing virtual-list primitive ([docs/features/virtual-list.md](./virtual-list.md)) so a 10k-file project scrolls without jank. Each row is a single line — path + tag chip strip + the include toggle on the trailing edge.
+- Mobile-first layout: the bounded file list uses the existing virtual-list primitive ([docs/features/virtual-list.md](./virtual-list.md)) with recycled fixed-height editor rows and overscan, so only the visible files own DOM controls and listeners.
 
 ## Related
 

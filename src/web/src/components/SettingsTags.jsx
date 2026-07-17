@@ -12,6 +12,7 @@
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, setStatus } from '../api.js';
+import { createVirtualList } from '../virtual-list.js';
 
 export function SettingsTagsView(props) {
   const projectId = props.projectId || '';
@@ -20,6 +21,7 @@ export function SettingsTagsView(props) {
   const listEl = useRef(null);
   const statusEl = useRef(null);
   const scanBtn = useRef(null);
+  const virtualList = useRef(null);
 
   // Local working state. `tagMap` is the persisted { relPath: entry }
   // map; `files` is the last scan result. Kept in refs (not signals)
@@ -88,21 +90,20 @@ export function SettingsTagsView(props) {
 
   function render() {
     if (!listEl.current) return;
-    listEl.current.innerHTML = '';
     const all = rows();
+    listEl.current.classList.toggle('is-empty', !all.length);
     if (!all.length) {
-      const li = document.createElement('li');
-      li.className = 'tags__empty';
-      li.textContent = 'No files scanned yet. Tap Scan to list the project\u2019s text files.';
-      listEl.current.appendChild(li);
+      if (virtualList.current) virtualList.current.setData([]);
+      listEl.current.dataset.emptyText = 'No files scanned yet. Tap Scan to list the project\u2019s text files.';
       return;
     }
-    for (const f of all) listEl.current.appendChild(renderRow(f));
+    delete listEl.current.dataset.emptyText;
+    if (virtualList.current) virtualList.current.setData(all);
   }
 
   function renderRow(f) {
     const entry = tagMap.current[f.path] || null;
-    const li = document.createElement('li');
+    const li = document.createElement('div');
     li.className = 'tags__row' + (entry ? ' is-tagged' : '') + (f.binary ? ' is-binary' : '');
 
     const head = document.createElement('div');
@@ -255,8 +256,22 @@ export function SettingsTagsView(props) {
   }
 
   useEffect(() => {
+    virtualList.current = createVirtualList({
+      scroller: listEl.current,
+      itemHeight: 248,
+      overscan: 3,
+      data: [],
+      render: (file, node) => {
+        node.className = 'tags__virtual-slot';
+        node.replaceChildren(renderRow(file));
+      }
+    });
     loadTags().then(scan).catch(() => setStatus(statusEl, 'load failed', 'error'));
-  }, []);
+    return () => {
+      if (virtualList.current) virtualList.current.destroy();
+      virtualList.current = null;
+    };
+  }, [projectId]);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -265,7 +280,7 @@ export function SettingsTagsView(props) {
     ),
     h('p', { class: 'hint hint--compact' }, projectDir || '(project)'),
     h('p', { class: 'hint hint--compact' }, 'Tag project files, then toggle “Include in chat” to auto-inject them into every chat send. Reference one explicitly with @path in the composer.'),
-    h('ul', { ref: listEl, class: 'tags__list', 'aria-label': 'Project files' }),
+    h('div', { ref: listEl, class: 'tags__list', role: 'list', 'aria-label': 'Project files' }),
     h('div', { class: 'page-bar' },
       h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
       h('button', { ref: scanBtn, class: 'btn', type: 'button', onClick: scan }, 'Scan')
