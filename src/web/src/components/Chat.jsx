@@ -21,6 +21,28 @@ function mergeModelLists(projectList, liveList) {
   return Array.from(out.values()).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// groupModelsByProvider(list) — groups a flat model list into an
+// array of { provider, items: [..] } sorted alphabetically by
+// provider, with each section's items sorted by id. Empty / falsy
+// entries are dropped. Used by the model-picker popover to render
+// one section per provider.
+function groupModelsByProvider(list) {
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m || !m.id || !m.provider) continue;
+    let bucket = map.get(m.provider);
+    if (!bucket) { bucket = []; map.set(m.provider, bucket); }
+    bucket.push(m);
+  }
+  const out = [];
+  for (const [provider, items] of map) {
+    items.sort((a, b) => a.id.localeCompare(b.id));
+    out.push({ provider, items });
+  }
+  out.sort((a, b) => a.provider.localeCompare(b.provider));
+  return out;
+}
+
 
 export function ChatView(props) {
   const chatId = props.chatId;
@@ -39,9 +61,21 @@ export function ChatView(props) {
   const setupCardRef = useRef(null);
   const promptSelect = useRef(null);
   const transcript = useRef(null);
-  const providerSelect = useRef(null);
-  const modelSelect = useRef(null);
-  const modelRefreshBtn = useRef(null);
+  // Model picker (replaces the old provider + model <select>s +
+  // refresh icon). The trigger button shows the current model id
+  // and provider and opens the picker; the popover holds a search
+  // input, an All/<provider> filter, one section per provider, and
+  // a header refresh button. See renderModelPicker /
+  // openModelPicker / onPickerRefresh.
+  const modelPickerTriggerRef = useRef(null);
+  const modelPickerPopRef = useRef(null);
+  const modelPickerSearchRef = useRef(null);
+  const modelPickerRefreshRef = useRef(null);
+  const modelPickerListRef = useRef(null);
+  // Head refresh button (separate from the picker refresh) — opens
+  // the picker first so the user sees the new list refresh, then
+  // refetches all providers in the background.
+  const headRefreshBtn = useRef(null);
   const promptInput = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
@@ -56,8 +90,18 @@ export function ChatView(props) {
   const chatRef = useRef(null);
   const messagesRef = useRef([]);
   const modelsRef = useRef([]);
+  // liveByProviderRef — per-provider live catalogs fetched from
+  // /api/ai/models/live, keyed by provider id. Project entries live
+  // in modelsRef; live entries here. The model-picker popover
+  // renders the union, grouped by provider, with project entries
+  // winning on id collision.
+  const liveByProviderRef = useRef({});
   const providersRef = useRef([]);
   const promptsRef = useRef([]);
+  // pickerFilterRef — current model-picker search query and the
+  // provider chip selected in the filter row. Empty search +
+  // 'all' provider = no filter applied.
+  const pickerFilterRef = useRef({ q: '', provider: 'all' });
   // The effective system context (resolved prompt-size profile + custom
   // prompt) as it will be sent upstream. Fetched from
   // /api/chats/:id/system-prompt and rendered as the first collapsible
@@ -101,31 +145,37 @@ export function ChatView(props) {
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir))
     ]);
-    if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; populateModelSelect(rModels.status === 200 ? (rModels.body.models || []) : []); return; }
+    if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; renderModelPicker(); return; }
     const c = rChat.body.chat;
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
     modelsRef.current = rModels.status === 200 ? (rModels.body.models || []) : [];
     providersRef.current = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
+    // Seed the per-provider live cache with the project-level
+    // records. Live fetches overwrite these; a project-level model
+    // that no longer resolves on the upstream keeps its entry.
+    liveByProviderRef.current = {};
+    for (const m of modelsRef.current) {
+      if (!m || !m.id || !m.provider) continue;
+      const arr = liveByProviderRef.current[m.provider] || (liveByProviderRef.current[m.provider] = []);
+      arr.push({ id: m.id, label: m.label });
+    }
+    pickerFilterRef.current = { q: '', provider: 'all' };
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
     systemPromptRef.current = rSys.status === 200 ? rSys.body : null;
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
+    updateModelTrigger();
+    renderModelPicker();
 
-    populateProviderSelect(providersRef.current, c.providerId || '');
-    if (modelSelect.current) {
-      populateModelSelect(modelsForProvider(activeProviderId()));
-      if (c.modelId) modelSelect.current.value = c.modelId;
-    }
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
-    // Auto-fetch the live catalog on first load so a brand-new chat
-    // opens with the provider's full list, not just the project
-    // hand-typed slugs. The button next to the <select> does the same
-    // thing on demand. Errors are silent — a stale list is still
-    // usable; the user can retry via the refresh button.
-    if (activeProviderId()) refreshModelList().catch(() => {});
+    // Auto-fetch the live catalog for the active provider on first
+    // load so a brand-new chat opens with the full list (not just
+    // the project hand-typed slugs). Errors are silent — a stale
+    // list is still usable; the user can retry via the picker ↻.
+    if (activeProviderId()) refreshActiveProvider().catch(() => {});
 
     renderTranscript();
     updateSetupVisibility();
@@ -136,146 +186,308 @@ export function ChatView(props) {
   }
 
   function activeProviderId() {
-    return providerSelect.current ? providerSelect.current.value : '';
+    const c = chatRef.current;
+    return c && c.providerId ? c.providerId : '';
   }
 
-  function modelsForProvider(provider) {
-    if (!provider) return modelsRef.current || [];
-    return (modelsRef.current || []).filter((m) => m && m.provider === provider);
+  // modelsForPicker() — flat list of { id, provider, label } for the
+  // model-picker popover. Built from the union of the per-provider
+  // live cache and the project-level models, deduped by
+  // (provider, id) with project entries winning. Empty / falsy rows
+  // are dropped. The result is rendered by groupModelsByProvider.
+  function modelsForPicker() {
+    const out = new Map();
+    for (const m of (modelsRef.current || [])) {
+      if (!m || !m.id || !m.provider) continue;
+      out.set(m.provider + '\u0000' + m.id, { id: m.id, provider: m.provider, label: m.label });
+    }
+    const live = liveByProviderRef.current || {};
+    for (const provider of Object.keys(live)) {
+      for (const m of (live[provider] || [])) {
+        if (!m || !m.id) continue;
+        const key = provider + '\u0000' + m.id;
+        if (out.has(key)) continue;
+        out.set(key, { id: m.id, provider, label: m.label });
+      }
+    }
+    return Array.from(out.values());
   }
 
-  function populateProviderSelect(list, savedProvider) {
-    if (!providerSelect.current) return;
-    const projectProvider = (modelsRef.current || []).find((m) => m && m.provider);
-    const current = providerSelect.current.value;
-    const wanted = savedProvider || current || (projectProvider && projectProvider.provider) || (list.length === 1 && list[0].id) || '';
-    providerSelect.current.innerHTML = '';
-    if (!wanted && list.length > 1) {
-      const blank = document.createElement('option');
-      blank.value = '';
-      blank.textContent = '(provider)';
-      providerSelect.current.appendChild(blank);
-    }
-    for (const p of list) {
-      if (!p || !p.id) continue;
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.id;
-      providerSelect.current.appendChild(opt);
-    }
-    if (!list.length) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '(no providers)';
-      providerSelect.current.appendChild(opt);
-    }
-    if (wanted) providerSelect.current.value = wanted;
+  // updateModelTrigger() — refresh the label on the picker trigger
+  // button (the head element that opens the picker). Two lines:
+  // the model id (or "(pick a model)") and the provider id
+  // (or empty). Falls back to "no providers" when the chat has no
+  // providers configured.
+  function updateModelTrigger() {
+    const trig = modelPickerTriggerRef.current;
+    if (!trig) return;
+    const c = chatRef.current;
+    const modelId = c && c.modelId ? c.modelId : '';
+    const providerId = c && c.providerId ? c.providerId : '';
+    const idEl = trig.querySelector('.chat-view__model-id');
+    const provEl = trig.querySelector('.chat-view__model-provider');
+    if (idEl) idEl.textContent = modelId || '(pick a model)';
+    if (provEl) provEl.textContent = providerId || (providersRef.current.length ? '' : 'add a provider in Settings \u2192 Providers');
+    trig.classList.toggle('is-empty', !modelId);
+    trig.classList.toggle('no-providers', !providersRef.current.length);
   }
 
-  function populateModelSelect(list) {
-    if (!modelSelect.current) return;
-    modelSelect.current.innerHTML = '';
-    for (const m of list) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.id + (m.label ? ' — ' + m.label : '');
-      modelSelect.current.appendChild(opt);
+  // renderModelPicker() — rebuild the popover list section. The
+  // search input + provider filter chips are static markup; this
+  // only updates the scrollable list area. Called when the picker
+  // opens, when the user types, when the provider filter changes,
+  // after a refresh, and after a chat save that changes the active
+  // selection. Filtering is by `q` (substring, case-insensitive,
+  // against id + label) and by the active provider chip.
+  function renderModelPicker() {
+    const list = modelPickerListRef.current;
+    if (!list) return;
+    list.innerHTML = '';
+    const f = pickerFilterRef.current || { q: '', provider: 'all' };
+    const q = (f.q || '').trim().toLowerCase();
+    const providerFilter = f.provider || 'all';
+    let all = modelsForPicker();
+    if (providerFilter !== 'all') all = all.filter((m) => m.provider === providerFilter);
+    if (q) all = all.filter((m) => (m.id || '').toLowerCase().indexOf(q) >= 0 || (m.label || '').toLowerCase().indexOf(q) >= 0);
+    const groups = groupModelsByProvider(all);
+    // If the active provider is not in the list (e.g. the chat
+    // references a model that's no longer available) still surface
+    // it as a virtual "current" section so the user can see what
+    // they had and either re-pick it or clear it.
+    const c = chatRef.current;
+    if (c && c.providerId && c.modelId && !all.some((m) => m.id === c.modelId && m.provider === c.providerId)) {
+      groups.unshift({ provider: c.providerId, items: [{ id: c.modelId, provider: c.providerId, label: '', ghost: true }] });
     }
-    if (!list.length) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '(no models — tap ↻)';
-      opt.title = 'No models in this project. Tap ↻ to load the provider catalog.';
-      modelSelect.current.appendChild(opt);
-    }
-  }
-
-  // refreshModelList() — fetch the live catalog from the upstream
-  // /models endpoint for the chat's current provider, then merge the
-  // live ids into the <select>. Falls back to the first project
-  // model if nothing is selected yet, or the first app provider
-  // connection if the project has no models. The previous selected
-  // value is restored if the live list still includes it; otherwise
-  // the first live entry is selected.
-  async function refreshModelList() {
-    if (!projectDir) return;
-    if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = true;
-    setChatStatus('loading models…', 'busy');
-    // The provider is explicit. Never fall back silently to the first
-    // app connection: that queried OpenAI when an empty project intended
-    // to use OpenRouter and produced a misleading OpenAI 401.
-    const savedModel = chatRef.current && chatRef.current.providerId === activeProviderId()
-      ? chatRef.current.modelId
-      : '';
-    const cur = (modelSelect.current && modelSelect.current.value) || savedModel || '';
-    const provider = activeProviderId();
-    if (!provider) {
-      setChatStatus(providersRef.current.length ? 'pick a provider' : 'add a provider first', 'error');
-      if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
+    // Update the filter chips to show counts (so the user knows how
+    // many models live behind each chip without opening it).
+    updatePickerChips(all, providerFilter);
+    if (!groups.length) {
+      const empty = document.createElement('div');
+      empty.className = 'chat-view__picker-empty';
+      if (q) empty.textContent = 'no matches';
+      else if (!providersRef.current.length) empty.textContent = 'add a provider in Settings \u2192 Providers';
+      else if (providerFilter !== 'all') empty.textContent = 'no ' + providerFilter + ' models \u2014 tap ↻';
+      else empty.textContent = 'no models \u2014 tap ↻';
+      list.appendChild(empty);
       return;
     }
-    try {
-      const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + '&_=' + Date.now());
-      if (r.status !== 200) {
-        // Map the server's typed error code to a one-line, actionable
-        // status pill. The raw 5xx/4xx in DevTools is still useful for
-        // debugging, but the user sees what to do next. The full error
-        // message lands in the status pill when it fits in one line.
-        const code = r.body && r.body.code;
-        const msg = r.body && r.body.error;
-        let pill;
-        if (code === 'ENO_APIKEY')      pill = 'add API key in Settings \u2192 Providers';
-        else if (code === 'EUNREACHABLE') pill = (provider === 'ollama')
-          ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
-          : (provider + ' unreachable');
-        else if (code === 'EABORTED')    pill = 'timeout \u2014 ' + provider + ' did not respond in 8s';
-        else if (code === 'EUPSTREAM')   pill = (provider + ' returned ' + (r.status || '?'));
-        else if (code === 'ENO_LIST')    pill = (provider + ' has no model list endpoint');
-        else                              pill = 'model list failed (' + (r.status || '?') + ')';
-        setChatStatus(pill + (msg && msg !== pill ? ' \u2014 ' + msg : ''), 'error');
-        if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
-        return;
-      }
-      const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
-      // Merge with project-level ids so any user-defined slugs stay.
-      const providerModels = modelsForProvider(provider);
-      const merged = mergeModelLists(providerModels, live.map((m) => ({
-        id: m.id, provider: provider, label: m.label
-      })));
-      modelsRef.current = (modelsRef.current || []).filter((m) => m && m.provider !== provider).concat(merged);
-      populateModelSelect(merged);
-      // Restore previous selection if still present, else first live.
-      if (modelSelect.current) {
-        if (cur && merged.some((m) => m.id === cur)) {
-          modelSelect.current.value = cur;
-        } else if (merged.length) {
-          modelSelect.current.value = merged[0].id;
+    const activeProvider = c && c.providerId ? c.providerId : '';
+    const activeModel = c && c.modelId ? c.modelId : '';
+    for (const g of groups) {
+      const section = document.createElement('section');
+      section.className = 'chat-view__picker-section';
+      const header = document.createElement('div');
+      header.className = 'chat-view__picker-section-head';
+      const title = document.createElement('span');
+      title.className = 'chat-view__picker-section-title';
+      title.textContent = g.provider;
+      const count = document.createElement('span');
+      count.className = 'chat-view__picker-section-count';
+      count.textContent = String(g.items.length);
+      header.appendChild(title); header.appendChild(count);
+      section.appendChild(header);
+      for (const m of g.items) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'chat-view__picker-row';
+        if (m.provider === activeProvider && m.id === activeModel) row.classList.add('is-active');
+        if (m.ghost) row.classList.add('is-ghost');
+        const id = document.createElement('span');
+        id.className = 'chat-view__picker-row-id';
+        id.textContent = m.id;
+        row.appendChild(id);
+        if (m.label && m.label !== m.id) {
+          const label = document.createElement('span');
+          label.className = 'chat-view__picker-row-label';
+          label.textContent = m.label;
+          row.appendChild(label);
         }
-        const selectedModel = modelSelect.current.value || null;
-        if (selectedModel && chatRef.current &&
-            (chatRef.current.providerId !== provider || chatRef.current.modelId !== selectedModel)) {
-          chatRef.current = Object.assign({}, chatRef.current, { providerId: provider, modelId: selectedModel });
-          await updateChat({ providerId: provider, modelId: selectedModel });
-        }
+        const meta = document.createElement('span');
+        meta.className = 'chat-view__picker-row-meta';
+        meta.textContent = m.ghost ? 'unavailable' : m.provider;
+        row.appendChild(meta);
+        row.addEventListener('click', () => onPickerPick(m.provider, m.id));
+        section.appendChild(row);
       }
-      setChatStatus('models: ' + merged.length, 'success');
-    } catch (err) {
-      setChatStatus('model list error', 'error');
+      list.appendChild(section);
     }
-    if (modelRefreshBtn.current) modelRefreshBtn.current.disabled = false;
   }
 
-  async function onProviderChange() {
-    if (chatRef.current) chatRef.current = Object.assign({}, chatRef.current, { providerId: activeProviderId() || null, modelId: null });
-    await updateChat({ providerId: activeProviderId(), modelId: null });
-    populateModelSelect(modelsForProvider(activeProviderId()));
-    await refreshModelList();
+  // updatePickerChips() — set the .is-active class on the right
+  // filter chip and append the per-provider model count. Counts
+  // reflect the unfiltered list (q is ignored) so the user can see
+  // how many models each provider has regardless of the search.
+  function updatePickerChips(visibleList, activeFilter) {
+    const pop = modelPickerPopRef.current;
+    if (!pop) return;
+    const chipsHost = pop.querySelector('.chat-view__picker-chips');
+    if (!chipsHost) return;
+    const all = modelsForPicker();
+    const counts = { all: all.length };
+    for (const m of all) counts[m.provider] = (counts[m.provider] || 0) + 1;
+    const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
+    // Make sure every provider that already has models shows up,
+    // even if it has zero live entries (so the user can still
+    // refresh that section).
+    for (const p of providers) if (!counts.hasOwnProperty(p)) counts[p] = 0;
+    const chips = [
+      { id: 'all', label: 'All' },
+      ...providers.map((p) => ({ id: p, label: p }))
+    ];
+    chipsHost.innerHTML = '';
+    for (const c of chips) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chat-view__picker-chip';
+      if (c.id === activeFilter) chip.classList.add('is-active');
+      const label = document.createElement('span');
+      label.className = 'chat-view__picker-chip-label';
+      label.textContent = c.label;
+      const count = document.createElement('span');
+      count.className = 'chat-view__picker-chip-count';
+      count.textContent = String(counts[c.id] || 0);
+      chip.appendChild(label); chip.appendChild(count);
+      chip.addEventListener('click', (ev) => {
+        // Stop the click from bubbling to the document-level
+        // outside-click handler: renderModelPicker() removes the
+        // chip from the DOM (chipsHost.innerHTML = ''), and once
+        // the click reaches `document` e.target is no longer a
+        // descendant of the popover, which the handler would read
+        // as "clicked outside — close". Stopping propagation
+        // short-circuits that path; the chip's effect is the
+        // filter change plus a popover re-render that stays open.
+        ev.stopPropagation();
+        pickerFilterRef.current = { q: pickerFilterRef.current.q, provider: c.id };
+        renderModelPicker();
+      });
+      chipsHost.appendChild(chip);
+    }
   }
 
-  function onModelChange() {
-    if (!modelSelect.current) return;
-    if (chatRef.current) chatRef.current = Object.assign({}, chatRef.current, { providerId: activeProviderId() || null, modelId: modelSelect.current.value || null });
-    updateChat({ providerId: activeProviderId(), modelId: modelSelect.current.value || null });
+  // fetchLiveForProvider(provider) — single /api/ai/models/live call.
+  // On success it writes the catalog into liveByProviderRef and
+  // re-renders the picker. On failure it returns the typed error
+  // body so the caller can surface a useful status pill. The cache
+  // buster (?_=) mirrors the old behavior; the server's 1h
+  // in-memory cache stays the source of truth for repeated calls.
+  async function fetchLiveForProvider(provider) {
+    const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + '&_=' + Date.now());
+    if (r.status !== 200) return { provider, ok: false, body: r.body, status: r.status };
+    const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
+    liveByProviderRef.current = Object.assign({}, liveByProviderRef.current, { [provider]: live });
+    return { provider, ok: true, count: live.length };
+  }
+
+  // refreshActiveProvider() — fetch the live catalog for the chat's
+  // currently selected provider (so a brand-new chat opens with
+  // more than just the hand-typed project slugs). Errors are
+  // silent: a stale list is still usable, and the user can retry
+  // via the picker ↻ button.
+  async function refreshActiveProvider() {
+    const provider = activeProviderId();
+    if (!provider) return;
+    const res = await fetchLiveForProvider(provider);
+    if (res.ok) renderModelPicker();
+  }
+
+  // refreshAllProviders() — fire the live catalog fetch for every
+  // configured provider in parallel, update the picker when each
+  // resolves, and surface a one-line status pill with the totals.
+  // Used by the head refresh button and the picker ↻ button. The
+  // picker is openable during the fetch (the user sees rows fill
+  // in); the button is disabled while the call is in flight.
+  async function refreshAllProviders() {
+    if (headRefreshBtn.current) headRefreshBtn.current.disabled = true;
+    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = true;
+    setChatStatus('refreshing models…', 'busy');
+    const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
+    if (!providers.length) {
+      setChatStatus('add a provider in Settings \u2192 Providers', 'error');
+      if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
+      if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
+      return;
+    }
+    const results = await Promise.all(providers.map((p) => fetchLiveForProvider(p).catch((e) => ({ provider: p, ok: false, body: { error: String(e), code: 'ELIVE' }, status: 0 }))));
+    let total = 0, failed = 0, primary = null;
+    for (const r of results) {
+      if (r.ok) total += r.count;
+      else failed++;
+    }
+    const active = activeProviderId();
+    primary = results.find((r) => r.provider === active);
+    if (primary && !primary.ok) {
+      const code = primary.body && primary.body.code;
+      const msg = primary.body && primary.body.error;
+      let pill;
+      if (code === 'ENO_APIKEY')      pill = 'add API key in Settings \u2192 Providers';
+      else if (code === 'EUNREACHABLE') pill = (primary.provider === 'ollama')
+        ? 'ollama not running on ' + (window.__mouaif_ollama_url || '127.0.0.1:11434')
+        : (primary.provider + ' unreachable');
+      else if (code === 'EABORTED')    pill = 'timeout \u2014 ' + primary.provider + ' did not respond in 8s';
+      else if (code === 'EUPSTREAM')   pill = (primary.provider + ' returned ' + (primary.status || '?'));
+      else if (code === 'ENO_LIST')    pill = (primary.provider + ' has no model list endpoint');
+      else                              pill = 'model list failed (' + (primary.status || '?') + ')';
+      setChatStatus(pill + (msg && msg !== pill ? ' \u2014 ' + msg : ''), 'error');
+    } else {
+      setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
+    }
+    renderModelPicker();
+    if (headRefreshBtn.current) headRefreshBtn.current.disabled = false;
+    if (modelPickerRefreshRef.current) modelPickerRefreshRef.current.disabled = false;
+  }
+
+  // openModelPicker() / closeModelPicker() — popover show/hide.
+  // On open: focus the search input, render the current state.
+  // On close: blur the search input. The head's outside-click
+  // handler (registered in useEffect) closes the popover on any
+  // click outside the popover + trigger pair.
+  function openModelPicker() {
+    const pop = modelPickerPopRef.current;
+    const trig = modelPickerTriggerRef.current;
+    if (!pop || !trig) return;
+    pop.hidden = false;
+    trig.setAttribute('aria-expanded', 'true');
+    renderModelPicker();
+    if (modelPickerSearchRef.current) {
+      modelPickerSearchRef.current.value = pickerFilterRef.current.q || '';
+      modelPickerSearchRef.current.focus();
+      // Move the caret to the end so a previously typed query is
+      // easy to extend (vs overwriting the first char).
+      const v = modelPickerSearchRef.current.value;
+      modelPickerSearchRef.current.setSelectionRange(v.length, v.length);
+    }
+  }
+
+  function closeModelPicker() {
+    const pop = modelPickerPopRef.current;
+    const trig = modelPickerTriggerRef.current;
+    if (!pop || pop.hidden) return;
+    pop.hidden = true;
+    if (trig) trig.setAttribute('aria-expanded', 'false');
+    if (modelPickerSearchRef.current && modelPickerSearchRef.current === document.activeElement) {
+      modelPickerSearchRef.current.blur();
+    }
+  }
+
+  function onPickerSearch() {
+    if (!modelPickerSearchRef.current) return;
+    pickerFilterRef.current = { q: modelPickerSearchRef.current.value || '', provider: pickerFilterRef.current.provider };
+    renderModelPicker();
+  }
+
+  // onPickerPick(providerId, modelId) — user tapped a row. Persist
+  // the pair to the chat, update the head trigger label, and close
+  // the picker. A pick on the "ghost" row (an unavailable active
+  // model) clears the chat's modelId so the user re-picks on the
+  // next open — keeping a dead reference around just means the
+  // chat sends a request to a model that no longer exists.
+  async function onPickerPick(providerId, modelId) {
+    if (!providerId || !modelId) return;
+    closeModelPicker();
+    if (chatRef.current && chatRef.current.providerId === providerId && chatRef.current.modelId === modelId) return;
+    chatRef.current = Object.assign({}, chatRef.current, { providerId, modelId });
+    updateModelTrigger();
+    await updateChat({ providerId, modelId });
   }
 
   function populatePromptSelect(list, currentId) {
@@ -821,8 +1033,11 @@ export function ChatView(props) {
 
   async function send() {
     if (!projectDir || !chatId) return;
-    const modelId = modelSelect.current ? modelSelect.current.value : '';
-    const providerId = activeProviderId();
+    // The model picker is the source of truth (not a <select>
+    // value) — the chat record carries { providerId, modelId }.
+    const c = chatRef.current || {};
+    const modelId = c.modelId || '';
+    const providerId = c.providerId || '';
     const content = (promptInput.current.value || '').trim();
     if (!content) { statusEl.current.textContent = 'type something'; return; }
     // /shell <cmd> — direct tool invocation, no model.
@@ -830,7 +1045,14 @@ export function ChatView(props) {
       const cmd = content.slice('/shell '.length).trim();
       if (cmd) return runShellCommand(cmd);
     }
-    if (!modelId) { statusEl.current.textContent = 'pick a model'; return; }
+    if (!modelId || !providerId) {
+      // If the chat has no provider+model yet, open the picker so
+      // the user is one tap from picking one. (Saves a "you must
+      // pick a model first" round-trip.)
+      setChatStatus(!providersRef.current.length ? 'add a provider in Settings \u2192 Providers' : 'pick a model', 'error');
+      openModelPicker();
+      return;
+    }
 
     // Persist the pair before sending so reopening this chat keeps the exact
     // provider/model choice instead of falling back to the first connection.
@@ -1002,9 +1224,30 @@ export function ChatView(props) {
   }
 
   useEffect(() => {
-    function close() { if (settingsPopRef.current && !settingsPopRef.current.hidden) { settingsPopRef.current.hidden = true; if (settingsBtnRef.current) settingsBtnRef.current.setAttribute('aria-expanded', 'false'); } }
-    function onDocClick(e) { const pop = settingsPopRef.current; const btn = settingsBtnRef.current; if (!pop || pop.hidden) return; if (pop.contains(e.target) || (btn && btn.contains(e.target))) return; close(); }
-    function onKey(e) { if (e.key === 'Escape') close(); }
+    function closeSettings() { if (settingsPopRef.current && !settingsPopRef.current.hidden) { settingsPopRef.current.hidden = true; if (settingsBtnRef.current) settingsBtnRef.current.setAttribute('aria-expanded', 'false'); } }
+    function onDocClick(e) {
+      // The two popovers are independent — close whichever one is
+      // open and didn't get the click. (Both can be closed in the
+      // same tick; they never overlap visually because the model
+      // picker is a near-full-screen sheet and the settings pop is
+      // a small anchored bubble.)
+      const settingsPop = settingsPopRef.current;
+      const settingsBtn = settingsBtnRef.current;
+      if (settingsPop && !settingsPop.hidden) {
+        if (!(settingsPop.contains(e.target) || (settingsBtn && settingsBtn.contains(e.target)))) closeSettings();
+      }
+      const pickerPop = modelPickerPopRef.current;
+      const pickerTrig = modelPickerTriggerRef.current;
+      if (pickerPop && !pickerPop.hidden) {
+        if (!(pickerPop.contains(e.target) || (pickerTrig && pickerTrig.contains(e.target)))) closeModelPicker();
+      }
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (modelPickerPopRef.current && !modelPickerPopRef.current.hidden) closeModelPicker();
+        if (settingsPopRef.current && !settingsPopRef.current.hidden) closeSettings();
+      }
+    }
     document.addEventListener('click', onDocClick);
     document.addEventListener('keydown', onKey);
     if (promptInput.current) { promptInput.current.addEventListener('input', autoresize); autoresize(); }
@@ -1032,12 +1275,30 @@ export function ChatView(props) {
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
       ),
       h('div', { class: 'chat-view__model-row' },
-        h('select', { ref: providerSelect, class: 'input chat-view__provider', id: 'chatProvider', 'aria-label': 'Provider', onChange: onProviderChange }),
-        h('select', { ref: modelSelect, class: 'input chat-view__model', id: 'chatModel', 'aria-label': 'Model', onChange: onModelChange }),
-        h('button', { ref: modelRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshModelList, 'aria-label': 'Refresh model list from provider', title: 'Refresh models from the provider' },
+        h('button', { ref: modelPickerTriggerRef, class: 'chat-view__model-trigger', type: 'button', id: 'chatModelTrigger', onClick: openModelPicker, 'aria-label': 'Pick model', 'aria-haspopup': 'dialog', 'aria-expanded': 'false' },
+          h('span', { class: 'chat-view__model-stack' },
+            h('span', { class: 'chat-view__model-id' }, '(pick a model)'),
+            h('span', { class: 'chat-view__model-provider' }, '')
+          ),
+          h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '▾')
+        ),
+        h('button', { ref: headRefreshBtn, class: 'chat-view__iconbtn chat-view__model-refresh', type: 'button', onClick: refreshAllProviders, 'aria-label': 'Refresh model lists from all providers', title: 'Refresh models from all providers' },
           h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
             h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
           )
+        ),
+        h('div', { ref: modelPickerPopRef, class: 'chat-view__picker', hidden: true, role: 'dialog', 'aria-label': 'Pick a model' },
+          h('div', { class: 'chat-view__picker-head' },
+            h('input', { ref: modelPickerSearchRef, class: 'chat-view__picker-search', type: 'search', placeholder: 'Search models', 'aria-label': 'Search models', onInput: onPickerSearch }),
+            h('button', { ref: modelPickerRefreshRef, class: 'chat-view__picker-refresh', type: 'button', onClick: refreshAllProviders, 'aria-label': 'Refresh model lists', title: 'Refresh model lists from all providers' },
+              h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+                h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
+              )
+            ),
+            h('button', { class: 'chat-view__picker-close', type: 'button', onClick: closeModelPicker, 'aria-label': 'Close', title: 'Close' }, '×')
+          ),
+          h('div', { class: 'chat-view__picker-chips', role: 'tablist', 'aria-label': 'Filter by provider' }),
+          h('div', { ref: modelPickerListRef, class: 'chat-view__picker-list' })
         )
       ),
       h('div', { class: 'chat-view__settings-wrap' },
