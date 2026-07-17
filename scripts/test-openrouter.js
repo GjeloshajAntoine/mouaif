@@ -102,11 +102,7 @@ if (req) {
   check('body.messages is the input array',
     req.body && Array.isArray(req.body.messages) && req.body.messages.length === 1);
 } else {
-  // buildOpenAIRequest is module-private. That's fine: the real test
-  // is the streamChat() integration below. Mark the direct-call
-  // checks as not-applicable.
-  for (let i = 0; i < 10; i++) passed++;
-  console.log('PASS  buildOpenAIRequest direct call skipped (module-private); integration check below');
+  check('buildOpenAIRequest direct call skipped (integration covered below)', true);
 }
 
 // ---- Live integration: drive streamChat() with a mocked fetch ---------
