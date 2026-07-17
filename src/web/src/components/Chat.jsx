@@ -204,12 +204,29 @@ export function ChatView(props) {
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     updateModelTrigger();
 
-    // Auto-fetch the live catalog for the active provider before
-    // the picker renders, so a brand-new chat opens with the full
-    // list (not just the project hand-typed slugs). Errors are
-    // silent — a stale list is still usable; the user can retry
-    // via the picker ↻.
-    if (activeProviderId()) await refreshActiveProvider().catch(() => {});
+    // Auto-fetch the live catalog before the picker renders, so a
+    // brand-new chat opens with the full list (not just the
+    // project hand-typed slugs). Two paths:
+    //
+    //   - The chat already has a providerId (e.g. it was picked
+    //     earlier, or the chat was resumed). Fetch just that one
+    //     provider's catalog.
+    //   - The chat has no providerId yet (a brand-new chat that has
+    //     never sent a message). The active-provider path is a
+    //     no-op in that case, which left the picker empty. Fall
+    //     back to fetching every configured provider in parallel so
+    //     the user sees the full catalog from the first paint.
+    //
+    // Errors are silent — a stale list is still usable; the user
+    // can retry via the picker ↻ or the head refresh button.
+    if (activeProviderId()) {
+      await refreshActiveProvider().catch(() => {});
+    } else {
+      const providers = providersRef.current.map((p) => p && p.id).filter(Boolean);
+      if (providers.length) {
+        await Promise.all(providers.map((p) => fetchLiveForProvider(p).catch(() => {})));
+      }
+    }
 
     renderModelPicker();
 

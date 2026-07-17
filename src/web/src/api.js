@@ -66,7 +66,31 @@ export async function loadAccounts({ force = false } = {}) {
   return _accountsCache;
 }
 
-// ---- Settings constants -----------------------------------------------
+// ---- Models list cache ------------------------------------------------
+
+export async function loadModels(projectDir, { force = false } = {}) {
+  const r = await fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir));
+  if (r.status !== 200) return { models: [] };
+  return { models: r.body.models || [], projectDir };
+}
+
+export function invalidateModelsCache() {
+  // No-op (relying entirely on server-side model cache)
+}
+
+// ---- Live models cache ------------------------------------------------
+
+export async function fetchLiveModels(provider, { force = false } = {}) {
+  // Convert force to an extra parameter so the server also knows whether to bypass its internal Map cache.
+  const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + (force ? '&_bust=1' : ''));
+  if (r.status !== 200) return { error: r.body, status: r.status, provider };
+  const models = Array.isArray(r.body && r.body.models) ? r.body.models : [];
+  return { models, cached: r.body.cached, provider };
+}
+
+export function invalidateLiveModelsCache(provider) {
+  // No-op (relying entirely on server-side model cache)
+}
 
 export const SETTINGS_PROVIDERS = [
   // `oauth: true` means the server has an OAuth sign-in flow registered for

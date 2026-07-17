@@ -1539,8 +1539,14 @@ async function handleAI(req, res, parsed) {
     const cred = conn && conn.apiKey ? conn.apiKey : null;
     // 1h cache keyed by `${provider}:${credHash}`.
     const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
-    const cached = MODEL_LIST_CACHE.get(cacheKey);
     const now = Date.now();
+
+    // If _bust is provided, remove the entry from cache to force reload
+    if (parsed.query._bust) {
+      MODEL_LIST_CACHE.delete(cacheKey);
+    }
+
+    const cached = MODEL_LIST_CACHE.get(cacheKey);
     if (cached && (now - cached.fetchedAt) < MODEL_LIST_TTL_MS) {
       return sendJSON(res, 200, { models: cached.models, fetchedAt: cached.fetchedAt, cached: true });
     }
