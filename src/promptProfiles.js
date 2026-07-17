@@ -132,14 +132,65 @@ function listProfiles() {
   return Object.keys(PROFILES).map(k => Object.assign({}, PROFILES[k]));
 }
 
-// reduceToolSpecs(specs, profileValue) — shrink the tool declaration
+const DISCOVER_TOOL_NAME = 'discover_tool';
+
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function cloneToolSpec(spec) {
+  const fn = (spec && spec.function) || {};
+  return {
+    type: 'function',
+    function: {
+      name: fn.name,
+      description: fn.description,
+      parameters: cloneJson(fn.parameters)
+    }
+  };
+}
+
+function toolNameList(specs) {
+  return (Array.isArray(specs) ? specs : [])
+    .map(s => s && s.function && s.function.name)
+    .filter(Boolean);
+}
+
+function makeDiscoverToolSpec(specs) {
+  const names = toolNameList(specs);
+  const list = names.length ? names.join(', ') : '(none)';
+  return {
+    type: 'function',
+    function: {
+      name: DISCOVER_TOOL_NAME,
+      description: 'Discover the complete description and parameter schema for one available tool before calling it. Available tools: ' + list + '.',
+      parameters: {
+        type: 'object',
+        properties: {
+          toolName: {
+            type: 'string',
+            description: 'Name of the tool to expand.',
+            enum: names
+          }
+        },
+        required: ['toolName'],
+        additionalProperties: false
+      }
+    }
+  };
+}
+
+// reduceToolSpecs(specs, profileValue, opts) — shrink the tool declaration
 // advertised to the model according to the active prompt-size profile.
 // This is the core of the "three prompt-size profiles" feature
 // (.github/copilot-instructions.md §4): the profile controls HOW MUCH
 // of each tool is sent upstream, not just the system prompt text.
 //
-//   very-small : tool name + a short (<=1 line, ~120 char) description,
-//                NO parameter schema. Smallest possible tool budget.
+//   very-small : initially advertises only discover_tool. Its description
+//                lists available tool names. After the model discovers a
+//                tool, pass opts.discoveredToolNames to advertise that
+//                chosen tool's full schema alongside discover_tool.
 //   average    : full tool list, name + full description + parameters
 //                (the compact-but-complete default).
 //   extensive  : same as average (full), kept separate so the extensive
@@ -150,34 +201,24 @@ function listProfiles() {
 // ({ type:'function', function:{ name, description, parameters } }).
 // Returns a NEW array; the input is never mutated. Unknown profiles
 // fall through to the full list.
-function reduceToolSpecs(specs, profileValue) {
+function reduceToolSpecs(specs, profileValue, opts) {
   if (!Array.isArray(specs) || !specs.length) return [];
   const profile = isValidProfile(profileValue) ? profileValue : DEFAULT_PROFILE;
   if (profile !== 'very-small') {
     // average + extensive: full specs, defensively copied.
-    return specs.map(s => Object.assign({}, s, { function: Object.assign({}, s.function) }));
+    return specs.map(cloneToolSpec);
   }
-  // very-small: drop the parameter schema, clamp the description.
-  return specs.map(s => {
-    const fn = (s && s.function) || {};
-    let desc = typeof fn.description === 'string' ? fn.description : '';
-    // First line only, hard-capped so a verbose MCP description can't
-    // blow the budget the profile is meant to protect.
-    desc = desc.split('\n')[0].trim();
-    if (desc.length > 120) desc = desc.slice(0, 117) + '…';
-    return {
-      type: 'function',
-      function: {
-        name: fn.name,
-        description: desc,
-        // Advertise an empty object schema so the tool is still
-        // callable but carries no property definitions. Providers
-        // require `parameters` to be present; an empty schema is the
-        // minimal valid value.
-        parameters: { type: 'object', properties: {} }
-      }
-    };
-  });
+  const discovered = new Set();
+  const rawNames = opts && opts.discoveredToolNames;
+  if (rawNames && typeof rawNames[Symbol.iterator] === 'function') {
+    for (const n of rawNames) if (typeof n === 'string' && n) discovered.add(n);
+  }
+  const out = [makeDiscoverToolSpec(specs)];
+  for (const spec of specs) {
+    const name = spec && spec.function && spec.function.name;
+    if (name && discovered.has(name)) out.push(cloneToolSpec(spec));
+  }
+  return out;
 }
 
 // resolveProfile({ chat, projectDir }) — pick the profile that applies
@@ -210,5 +251,7 @@ module.exports = {
   describeProfile,
   listProfiles,
   resolveProfile,
-  reduceToolSpecs
+  reduceToolSpecs,
+  DISCOVER_TOOL_NAME,
+  makeDiscoverToolSpec
 };

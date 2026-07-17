@@ -989,15 +989,13 @@ async function streamChat(opts) {
   } catch { /* mcp module not loaded or project dir invalid; fall through without MCP tools */ }
 
   // Shrink the tool declaration according to the active prompt-size
-  // profile (decisions §4). very-small advertises tool names + short
-  // descriptions with no parameter schema; average/extensive send the
-  // full specs. This is applied AFTER both sources (shell + MCP) are
-  // collected so every advertised tool is reduced uniformly.
-  let effectiveToolSpecs = toolSpecs;
-  try {
-    const pp = require('./promptProfiles.js');
-    effectiveToolSpecs = pp.reduceToolSpecs(toolSpecs, opts && opts.promptSize);
-  } catch { /* non-fatal; fall back to the full specs */ }
+  // profile (decisions §4). For very-small, the first request advertises
+  // discover_tool only; its description lists tool names. When the model
+  // discovers a specific tool, later requests include that tool's full
+  // schema too. average/extensive send the full specs from the start.
+  const discoveredToolNames = new Set();
+  let promptProfilesMod = null;
+  try { promptProfilesMod = require('./promptProfiles.js'); } catch { /* optional */ }
 
   // The multi-turn tool loop. `convo` is the working message array; it
   // grows by one assistant (tool-call) message + N tool-result messages
@@ -1011,6 +1009,12 @@ async function streamChat(opts) {
   const FINAL_ANSWER_RETRIES = 2;
 
   while (true) {
+    let effectiveToolSpecs = toolSpecs;
+    try {
+      effectiveToolSpecs = promptProfilesMod
+        ? promptProfilesMod.reduceToolSpecs(toolSpecs, opts && opts.promptSize, { discoveredToolNames })
+        : toolSpecs;
+    } catch { /* non-fatal; fall back to the full specs */ }
     const result = await runUpstreamTurn(convo, effectiveToolSpecs);
     if (!result.ok) return { ok: false, error: result.error, usage };
 
@@ -1073,6 +1077,27 @@ async function streamChat(opts) {
       let exec;
       let callEmitted = false;
       try {
+        if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
+          const requested = args && (args.toolName || args.name || args.tool);
+          const spec = toolSpecs.find(s => s && s.function && s.function.name === requested);
+          if (!spec) {
+            exec = {
+              ok: false,
+              content: JSON.stringify({ error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }),
+              result: { error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }
+            };
+          } else {
+            discoveredToolNames.add(requested);
+            const fn = spec.function || {};
+            exec = {
+              ok: true,
+              content: JSON.stringify({ name: fn.name, description: fn.description, parameters: fn.parameters }),
+              result: { name: fn.name, description: fn.description, parameters: fn.parameters }
+            };
+          }
+          onEvent('tool_call', { id: c.id || null, name: c.name, args });
+          callEmitted = true;
+        } else {
         const authGate = require('./tools/authorization.js');
         // The summary shown on the "Authorization required" card and
         // matched against the file-tool allowlist needs the right
@@ -1118,6 +1143,7 @@ async function streamChat(opts) {
         onEvent('tool_call', { id: c.id || null, name: c.name, args });
         callEmitted = true;
         exec = await dispatchTool(c.name, args, opts);
+        }
       } catch (e) {
         // Denied/disabled/error calls still need a call card immediately
         // before their result so persisted history remains a valid pair.

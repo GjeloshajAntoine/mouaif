@@ -171,15 +171,19 @@ async function main() {
     ext[0].function.parameters && ext[0].function.parameters.properties.cmd,
     'got: ' + JSON.stringify(ext[0].function.parameters));
   const tiny = pp.reduceToolSpecs(sampleSpecs, 'very-small');
-  check('reduceToolSpecs very-small drops parameter schema',
-    tiny[0].function.parameters && Object.keys(tiny[0].function.parameters.properties).length === 0,
-    'got: ' + JSON.stringify(tiny[0].function.parameters));
-  check('reduceToolSpecs very-small keeps the tool name',
-    tiny[0].function.name === 'shell',
-    'got: ' + tiny[0].function.name);
-  check('reduceToolSpecs very-small clamps description to first line',
-    tiny[0].function.description === 'Run a shell command in the project directory.',
-    'got: ' + tiny[0].function.description);
+  check('reduceToolSpecs very-small initially exposes discover_tool only',
+    tiny.length === 1 && tiny[0].function.name === 'discover_tool',
+    'got: ' + JSON.stringify(tiny.map(s => s.function.name)));
+  check('reduceToolSpecs very-small discover_tool lists tool names',
+    tiny[0].function.description.indexOf('shell') !== -1 &&
+    tiny[0].function.parameters.properties.toolName.enum.indexOf('shell') !== -1,
+    'got: ' + JSON.stringify(tiny[0].function));
+  const tinyDiscovered = pp.reduceToolSpecs(sampleSpecs, 'very-small', { discoveredToolNames: new Set(['shell']) });
+  check('reduceToolSpecs very-small adds discovered tool full schema',
+    tinyDiscovered.length === 2 &&
+    tinyDiscovered[1].function.name === 'shell' &&
+    tinyDiscovered[1].function.parameters.properties.cmd,
+    'got: ' + JSON.stringify(tinyDiscovered));
   check('reduceToolSpecs invalid profile falls through to full',
     pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,
     'unknown profile did not keep full specs');

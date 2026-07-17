@@ -848,8 +848,8 @@ async function handleChats(req, res, parsed) {
   // GET /api/chats/:id/tool-preview?projectDir= -> { profile, tools }
   // Returns the tool-declaration state for the chat's resolved
   // prompt-size profile: which tools are advertised to the model and
-  // in what shape (full spec vs. the very-small name+description-only
-  // reduction). The chat UI shows this as a temporary preview while
+  // in what shape (full spec vs. the very-small discover_tool flow).
+  // The chat UI shows this as a temporary preview while
   // the chat is still empty, so the user sees the concrete effect of
   // the S/M/L switch on the tool budget before the first message.
   // The collection logic mirrors ai.streamChat (native shell + MCP),
@@ -894,7 +894,9 @@ async function handleChats(req, res, parsed) {
           }
         }
       } catch { /* no MCP tools */ }
-      // Apply the same per-profile reduction the stream applies.
+      // Apply the same initial per-profile reduction the stream applies.
+      // For very-small, this starts with discover_tool only; discovered
+      // tool schemas are added dynamically during the tool loop.
       let effective = toolSpecs;
       try { effective = promptProfiles.reduceToolSpecs(toolSpecs, profileId); } catch { /* full specs */ }
       const reduced = profileId === 'very-small';
@@ -904,8 +906,9 @@ async function handleChats(req, res, parsed) {
         return {
           name: fn.name || '',
           description: typeof fn.description === 'string' ? fn.description : '',
-          // hasSchema is false when the profile stripped the parameter
-          // definitions (very-small), true when the full schema rides.
+          // hasSchema reflects whether this advertised tool exposes
+          // parameter names. For very-small's initial preview this is
+          // discover_tool's own schema.
           hasSchema: params.length > 0,
           params
         };
