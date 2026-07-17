@@ -90,6 +90,8 @@ export function ChatView(props) {
 
   const chatRef = useRef(null);
   const messagesRef = useRef([]);
+  const streamingRef = useRef(false);
+  const transcriptSignatureRef = useRef('');
   const modelsRef = useRef([]);
   // liveByProviderRef — per-provider live catalogs fetched from
   // /api/ai/models/live, keyed by provider id. Project entries live
@@ -183,6 +185,7 @@ export function ChatView(props) {
     const c = rChat.body.chat;
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+    transcriptSignatureRef.current = JSON.stringify(messagesRef.current);
     modelsRef.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
     providersRef.current = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
     // Seed the per-provider live cache with the project-level
@@ -1121,6 +1124,7 @@ export function ChatView(props) {
     await updateChat({ providerId, modelId });
 
     sendBtn.current.disabled = true;
+    streamingRef.current = true;
     setChatStatus('streaming\u2026', 'busy');
     promptInput.current.value = '';
     autoresize();
@@ -1151,6 +1155,7 @@ export function ChatView(props) {
     } catch (err) {
       setChatStatus('network error', 'error');
       finalizeLiveMessage({ content: '[network error]' });
+      streamingRef.current = false;
       if (sendBtn.current) sendBtn.current.disabled = false;
       return;
     }
@@ -1158,6 +1163,7 @@ export function ChatView(props) {
       const text = await resp.text();
       setChatStatus('HTTP ' + resp.status, 'error');
       finalizeLiveMessage({ content: '[error: HTTP ' + resp.status + ']' });
+      streamingRef.current = false;
       sendBtn.current.disabled = false;
       return;
     }
@@ -1249,6 +1255,7 @@ export function ChatView(props) {
     if (streamFailed) {
       finalizeLiveMessage({ content: assembled || '[stream interrupted]' });
       counter.reset();
+      streamingRef.current = false;
       return;
     }
     finalizeLiveMessage({ content: assembled });
@@ -1289,6 +1296,7 @@ export function ChatView(props) {
       const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
       if (synced.status === 200 && Array.isArray(synced.body.messages)) {
         messagesRef.current = synced.body.messages;
+        transcriptSignatureRef.current = JSON.stringify(messagesRef.current);
         renderTranscript();
       }
     } catch (syncError) {
@@ -1298,6 +1306,7 @@ export function ChatView(props) {
       setChatStatus(usage ? ('done \u2014 ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
     if (sendBtn.current) sendBtn.current.disabled = false;
+    streamingRef.current = false;
   }
 
   const settingsPopRef = useRef(null);
@@ -1367,6 +1376,30 @@ export function ChatView(props) {
   }
 
   useEffect(() => { load().catch((err) => { if (statusEl.current) statusEl.current.textContent = 'load failed'; }); }, [chatId, projectDir]);
+
+  useEffect(() => {
+    if (!chatId || !projectDir) return undefined;
+    let stopped = false;
+    async function reconcileRunningChat() {
+      // A reload disconnects the browser from its SSE response, but the
+      // server-side agent may still be appending tool calls, results, and
+      // assistant segments. Poll the persisted transcript so those new
+      // elements appear without requiring another manual reload. Do not
+      // reconcile over this tab's own live stream.
+      if (stopped || streamingRef.current) return;
+      try {
+        const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+        if (stopped || synced.status !== 200 || !Array.isArray(synced.body.messages)) return;
+        const signature = JSON.stringify(synced.body.messages);
+        if (signature === transcriptSignatureRef.current) return;
+        messagesRef.current = synced.body.messages;
+        transcriptSignatureRef.current = signature;
+        renderTranscript();
+      } catch { /* the next tick retries */ }
+    }
+    const timer = setInterval(reconcileRunningChat, 1000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [chatId, projectDir]);
 
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },

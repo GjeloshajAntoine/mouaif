@@ -120,6 +120,12 @@ The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 
 
 ## Implementation notes
 
+When a chat page is reloaded while an agent run is still active on the
+server, the replacement page polls the persisted transcript once per second.
+New assistant segments, tool calls, and tool results therefore appear as they
+are saved, without requiring another manual reload. A tab that owns the live
+SSE stream does not poll over its in-progress rendering.
+
 Each model tool round-trip has an explicit `assistant_turn_end` SSE boundary.
 Text emitted before a tool call is finalized in its own assistant bubble, the
 tool call and result follow it, and subsequent model text starts a new bubble.
