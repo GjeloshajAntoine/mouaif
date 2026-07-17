@@ -61,7 +61,7 @@ The "trace to file" feature is a **user export**, not a background stream and no
 ## 8. Web serving — served by `mouaif serve` at `/web/`
 
 - The existing Node server on port `5732` gains a `GET /web/...` route that serves the built mobile UI bundle.
-- One process, one port. CORS stays permissive.
+- One process, one port. The UI and API are same-origin. The default listener is `127.0.0.1`; browser API requests require the HttpOnly session cookie issued by `/web/`, and cross-origin requests are rejected.
 - Vite builds into `src/web/dist/`. The dev flow is `npm run build:web` then `mouaif serve`.
 
 ## 9. Build order — settings first

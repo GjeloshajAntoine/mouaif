@@ -1664,8 +1664,7 @@ async function handleAI(req, res, parsed) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
+      Connection: 'keep-alive'
     });
     // Initial comment so the client sees headers immediately.
     res.write(': connected\n\n');
