@@ -70,6 +70,13 @@ function normalizeMessage(m) {
     if (typeof m.streamingMs === 'number') out.streamingMs = m.streamingMs;
     if (typeof m.modelId === 'string') out.modelId = m.modelId;
   }
+  if (m.role === 'tool') {
+    if (typeof m.toolCallId === 'string') out.toolCallId = m.toolCallId;
+    if (typeof m.name === 'string') out.name = m.name;
+    if (m.args && typeof m.args === 'object') out.args = m.args;
+    if (typeof m.ok === 'boolean') out.ok = m.ok;
+    if (typeof m.phase === 'string') out.phase = m.phase;
+  }
   return out;
 }
 
@@ -127,6 +134,13 @@ function appendMessage(projectDir, chatId, msg) {
     if (msg.cost && typeof msg.cost === 'object') normalized.cost = msg.cost;
     if (typeof msg.streamingMs === 'number') normalized.streamingMs = msg.streamingMs;
     if (typeof msg.modelId === 'string') normalized.modelId = msg.modelId;
+  }
+  if (msg.role === 'tool') {
+    if (typeof msg.toolCallId === 'string') normalized.toolCallId = msg.toolCallId;
+    if (typeof msg.name === 'string') normalized.name = msg.name;
+    if (msg.args && typeof msg.args === 'object') normalized.args = msg.args;
+    if (typeof msg.ok === 'boolean') normalized.ok = msg.ok;
+    if (typeof msg.phase === 'string') normalized.phase = msg.phase;
   }
   stored.push(normalized);
   writeRaw(projectDir, chatId, { messages: stored });

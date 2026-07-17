@@ -955,6 +955,23 @@ async function handleChats(req, res, parsed) {
     }
   }
 
+  const exportTraceMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/trace\/export$/);
+  if (exportTraceMatch && method === 'POST') {
+    const id = decodeURIComponent(exportTraceMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const file = trace.exportMessages(dir, id, messages.listMessages(dir, id));
+      return sendJSON(res, 200, { ok: true, path: file });
+    } catch (e) {
+      return sendJSON(res, e.code === 'EBADINPUT' ? 400 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // POST /api/chats/:id/messages/stream  body: { projectDir, modelId, content }
   // Appends the user message, calls ai.streamChat, streams the
   // response back as SSE, appends the assistant message on done, and
@@ -1019,6 +1036,10 @@ async function handleChatStream(req, res, chatId) {
     } catch { /* socket closed */ }
     if (traceStream) trace.write(traceStream, name, data);
   }
+  if (traceStream) {
+    const event = trace.eventForMessage(userMsg);
+    trace.write(traceStream, event.type, event.payload);
+  }
 
   // Build the message list to send upstream: existing transcript + the
   // user message we just appended. The list is composed in this order
@@ -1074,7 +1095,28 @@ async function handleChatStream(req, res, chatId) {
       }
     } catch { /* non-fatal; stream proceeds without the prompt */ }
   }
-  for (const m of history) upstreamMessages.push({ role: m.role, content: m.content });
+  for (const m of history) {
+    if (m.role === 'tool' && m.phase === 'call') {
+      upstreamMessages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: m.toolCallId || undefined,
+          type: 'function',
+          function: { name: m.name || 'tool', arguments: JSON.stringify(m.args || {}) }
+        }]
+      });
+    } else if (m.role === 'tool' && m.phase === 'result') {
+      upstreamMessages.push({
+        role: 'tool',
+        tool_call_id: m.toolCallId || undefined,
+        name: m.name || 'tool',
+        content: m.content
+      });
+    } else {
+      upstreamMessages.push({ role: m.role, content: m.content });
+    }
+  }
 
   let assistantContent = '';
   let assistantMsg = null;
@@ -1115,6 +1157,22 @@ async function handleChatStream(req, res, chatId) {
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         assistantContent += data.delta;
+        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+        return;
+      } else if (name === 'tool_call') {
+        try {
+          messages.appendMessage(projectDir, chatId, {
+            role: 'tool', phase: 'call', toolCallId: data.id || '', name: data.name || '',
+            args: data.args || {}, content: JSON.stringify(data.args || {})
+          });
+        } catch { /* non-fatal */ }
+      } else if (name === 'tool_result') {
+        try {
+          messages.appendMessage(projectDir, chatId, {
+            role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
+            ok: !!data.ok, content: JSON.stringify(data.result || {})
+          });
+        } catch { /* non-fatal */ }
       } else if (name === 'done') {
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
@@ -1153,6 +1211,10 @@ async function handleChatStream(req, res, chatId) {
               modelId: enriched.modelId
             });
           } catch { /* non-fatal */ }
+        }
+        if (traceStream && assistantMsg) {
+          const event = trace.eventForMessage(assistantMsg);
+          trace.write(traceStream, event.type, event.payload);
         }
         emit('done', enriched);
         return;

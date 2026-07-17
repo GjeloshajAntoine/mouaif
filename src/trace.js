@@ -54,9 +54,47 @@ function close(stream) {
   try { stream.end(); } catch { /* swallow */ }
 }
 
+function eventForMessage(message) {
+  const role = message && message.role;
+  if (role === 'user') return { type: 'user_message', payload: { role, content: message.content, ts: message.ts } };
+  if (role === 'assistant') return {
+    type: 'assistant_message',
+    payload: {
+      role,
+      content: message.content,
+      ts: message.ts,
+      usage: message.usage,
+      cost: message.cost,
+      streamingMs: message.streamingMs,
+      modelId: message.modelId
+    }
+  };
+  if (role === 'tool') return {
+    type: message.phase === 'call' ? 'tool_call' : 'tool_result',
+    payload: Object.assign({}, message, { type: undefined })
+  };
+  return { type: 'system', payload: { role: role || 'system', content: message && message.content, ts: message && message.ts } };
+}
+
+function exportMessages(projectDir, chatId, list) {
+  const file = traceFilePath(projectDir, chatId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const lines = [];
+  for (const message of list || []) {
+    const event = eventForMessage(message);
+    const payload = Object.assign({}, event.payload);
+    delete payload.type;
+    lines.push(JSON.stringify(Object.assign({ ts: payload.ts || new Date().toISOString(), type: event.type }, payload)));
+  }
+  fs.writeFileSync(file, lines.length ? lines.join('\n') + '\n' : '', 'utf8');
+  return file;
+}
+
 module.exports = {
   traceFilePath,
   open,
   write,
-  close
+  close,
+  eventForMessage,
+  exportMessages
 };

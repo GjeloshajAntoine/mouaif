@@ -387,9 +387,21 @@ export function ChatView(props) {
       text.textContent = 'Type a message below. The model streams its reply in real time; everything you send is saved to this chat\'s transcript on disk.';
       empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       transcript.current.appendChild(empty);
+      renderSystemPromptMessage();
       return;
     }
-    for (const m of messagesRef.current) appendMessageToTranscript(m, false);
+    renderSystemPromptMessage();
+    for (const m of messagesRef.current) {
+      if (m.role === 'tool' && m.phase === 'call') {
+        appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args });
+      } else if (m.role === 'tool' && m.phase === 'result') {
+        let result = {};
+        try { result = JSON.parse(m.content || '{}'); } catch { result = { output: m.content || '' }; }
+        appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, result });
+      } else {
+        appendMessageToTranscript(m, false);
+      }
+    }
     transcript.current.scrollTop = transcript.current.scrollHeight;
   }
 
@@ -690,6 +702,17 @@ export function ChatView(props) {
     updateChat({ trace: !!traceToggle.current.checked });
   }
 
+  async function exportTrace() {
+    setChatStatus('exporting trace…', 'busy');
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/trace/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir })
+    });
+    if (r.status === 200) setChatStatus('trace exported: ' + r.body.path, 'success');
+    else setChatStatus('trace export failed: HTTP ' + r.status, 'error');
+  }
+
   // Shared setter for the in-transcript setup control. The prompt
   // size is chosen once, while the chat is still empty; the control
   // is not a permanent fixture (see updateSetupVisibility below).
@@ -873,38 +896,52 @@ export function ChatView(props) {
       const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
       renderUsageMeta(meta, info);
     }
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n\n')) !== -1) {
-        const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        const ev = parseSSEFrame(frame); if (!ev) continue;
-        let data; try { data = JSON.parse(ev.data); } catch { continue; }
-        if (ev.eventName === 'message' && typeof data.delta === 'string') {
-          assembled += data.delta;
-          counter.add(data.delta);
-          appendDeltaToLive(data.delta);
-          const now = performance.now ? performance.now() : Date.now();
-          if (now - lastRepaintAt > 120) {
-            lastRepaintAt = now;
-            repaintLiveRate();
+    let streamFailed = false;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          const ev = parseSSEFrame(frame); if (!ev) continue;
+          let data; try { data = JSON.parse(ev.data); } catch { continue; }
+          if (ev.eventName === 'message' && typeof data.delta === 'string') {
+            assembled += data.delta;
+            counter.add(data.delta);
+            appendDeltaToLive(data.delta);
+            const now = performance.now ? performance.now() : Date.now();
+            if (now - lastRepaintAt > 120) {
+              lastRepaintAt = now;
+              repaintLiveRate();
+            }
+          }
+          else if (ev.eventName === 'done') {
+            usage = data.usage || null;
+            cost = data.cost || null;
+            streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+          }
+          else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
+          else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
+          else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
+          else if (ev.eventName === 'error') {
+            streamFailed = true;
+            setChatStatus('error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
           }
         }
-        else if (ev.eventName === 'done') {
-          usage = data.usage || null;
-          // Server-side cost enrichment (decision §14). The server
-          // already walked the pricing resolution order; the client
-          // just renders.
-          cost = data.cost || null;
-          streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
-        }
-        else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
-        else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
-        else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
-        else if (ev.eventName === 'error') { statusEl.current.textContent = 'error: ' + (data.code || '') + ' ' + (data.message || ''); }
       }
+    } catch (err) {
+      streamFailed = true;
+      setChatStatus('stream interrupted', 'error');
+    } finally {
+      try { reader.releaseLock(); } catch { /* already released */ }
+      if (sendBtn.current) sendBtn.current.disabled = false;
+    }
+    if (streamFailed) {
+      finalizeLiveMessage({ content: assembled || '[stream interrupted]' });
+      counter.reset();
+      return;
     }
     finalizeLiveMessage({ content: assembled });
     // Final meta line: the live counter has the authoritative
@@ -937,7 +974,7 @@ export function ChatView(props) {
     if (statusEl.current.textContent === 'streaming…') {
       setChatStatus(usage ? ('done — ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }
-    sendBtn.current.disabled = false;
+    if (sendBtn.current) sendBtn.current.disabled = false;
   }
 
   const settingsPopRef = useRef(null);
@@ -1017,7 +1054,8 @@ export function ChatView(props) {
           h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatTrace' },
             h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),
             h('span', { class: 'label' }, 'Trace to file')
-          )
+          ),
+          h('button', { class: 'btn', type: 'button', onClick: exportTrace }, 'Export trace')
         )
       ),
       h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '✎'),
@@ -1028,7 +1066,7 @@ export function ChatView(props) {
     // chat is empty. See buildSetupCard + updateSetupVisibility.
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },
-      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatPrompt', rows: 1, placeholder: 'Type a message', onKeydown: onComposerKey }),
+      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey }),
       h('button', { ref: sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
         h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
           h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
