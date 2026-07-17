@@ -48,14 +48,12 @@ const DEFAULT_READ_LINES = 2000;
 const MAX_TIMEOUT_MS = 60_000; // hard ceiling per call (defensive)
 
 // Directories the list_files / search_files walk never descends into.
-// Same set as src/tags.js so the two stay consistent.
 const SKIP_DIRS = new Set([
-  'node_modules', '.git', '.mouaif', 'dist', 'build', '.next', '.cache', '.parcel-cache'
+  'node_modules', '.git', '.mouaif', 'dist', 'build'
 ]);
 
-// Extension allowlist for list_files (search_files uses binary detection
-// on file content, not the extension). Mirrors src/tags.js so the two
-// stay in lockstep; binary files are still skipped at scan time.
+// Extension allowlist for list_files and search_files. It keeps the walk
+// focused on files the model can reasonably consume as text.
 const TEXT_EXTS = new Set([
   '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.md', '.mdx',
   '.txt', '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift',
@@ -163,37 +161,6 @@ function toAbsInside(root, rel) {
   return abs;
 }
 
-// Refuse files over `cap` bytes unless the caller is asking for a slice.
-// Returns { size, truncated } so the runner can render a header.
-function sizeOrSlice(size, cap, startLine, endLine) {
-  const isSlice = Number.isInteger(startLine) && Number.isInteger(endLine) && endLine >= startLine;
-  if (!isSlice && size > cap) {
-    throw err('ETOOL_CAP', 'file is ' + size + ' bytes, exceeds cap ' + cap + ' (use startLine/endLine)', { size, cap });
-  }
-  return { size, truncated: false };
-}
-
-// ---- Binary detection (used by list_files and search_files) -----------
-
-// A file is treated as binary if it contains a NUL byte in the first 8 KB
-// — the standard heuristic (same as ripgrep --binary).
-async function isBinary(absPath) {
-  let fh;
-  try {
-    fh = await fsp.open(absPath, 'r');
-    const buf = Buffer.alloc(8192);
-    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-    for (let i = 0; i < bytesRead; i++) {
-      if (buf[i] === 0) return true;
-    }
-    return false;
-  } catch {
-    return true; // unreadable = treat as binary
-  } finally {
-    if (fh) { try { await fh.close(); } catch { /* ignore */ } }
-  }
-}
-
 // ---- read_file ---------------------------------------------------------
 
 // Read a file. Optional `startLine` / `endLine` (1-indexed, inclusive) pin
@@ -224,7 +191,6 @@ async function runReadFile(opts) {
     return {
       relPath: rel,
       size: st.size,
-      binary: false,
       startLine: 1,
       endLine: raw ? raw.split('\n').length : 0,
       body: raw,
@@ -243,7 +209,6 @@ async function runReadFile(opts) {
   return {
     relPath: rel,
     size: st.size,
-    binary: false,
     startLine: a,
     endLine: b,
     totalLines,
@@ -300,10 +265,7 @@ async function runListFiles(opts) {
       if (!TEXT_EXTS.has(ext)) { skipped++; continue; }
       let st;
       try { st = await fsp.stat(childAbs); } catch { skipped++; continue; }
-      // Mark binary up front; the runner doesn't read content here so
-      // we use the extension allowlist as a first cut. search_files
-      // does the real NUL-byte check.
-      out.push({ path: childRel, size: st.size, binary: false });
+      out.push({ path: childRel, size: st.size });
       total++;
     }
   }
@@ -344,12 +306,41 @@ function globToRegExp(pattern) {
   return new RegExp('^' + src + '$');
 }
 
+function stripSearchPathFilter(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  let s = raw.trim().replace(/\\/g, '/');
+  if (s === '.' || s === './') return null;
+  while (s.startsWith('./')) s = s.slice(2);
+  s = s.replace(/\/+/g, '/');
+  return s;
+}
+
+function makeSearchPathFilter(root, rawPath) {
+  const rel = stripSearchPathFilter(rawPath);
+  if (!rel) return null;
+  const safeRel = toRelPath(root, rel);
+  const abs = toAbsInside(root, safeRel);
+  let isDir = rel.endsWith('/');
+  try { isDir = fs.statSync(abs).isDirectory(); } catch { /* keep slash heuristic */ }
+  if (isDir) {
+    const prefix = safeRel.replace(/\/+$/, '');
+    return {
+      mayContain: (childRel) => childRel === prefix || childRel.startsWith(prefix + '/'),
+      matchesFile: (childRel) => childRel.startsWith(prefix + '/')
+    };
+  }
+  return {
+    mayContain: (childRel) => safeRel.startsWith(childRel + '/'),
+    matchesFile: (childRel) => childRel === safeRel
+  };
+}
+
 // ---- search_files ------------------------------------------------------
 
 // ripgrep-style text search. Walks the project, reads each candidate
-// file (binary files are skipped after the NUL-byte check), and emits a
-// line-oriented match list. Capped by maxMatches and maxBytes so a
-// model that asks for "every TODO in the repo" can't blow the budget.
+// text file and emits a line-oriented match list. Capped by maxMatches
+// and maxBytes so a model that asks for "every TODO in the repo" can't
+// blow the budget.
 async function runSearchFiles(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
@@ -365,9 +356,7 @@ async function runSearchFiles(opts) {
   try { re = new RegExp(query); }
   catch (e) { throw err('EBADINPUT', 'invalid regex: ' + e.message); }
 
-  const pathFilter = (args && typeof args.path === 'string' && args.path.trim()) ? args.path.trim() : null;
-  const dirFilter = pathFilter ? pathFilter.split('/').slice(0, -1).join('/') : null;
-  const fileFilter = pathFilter ? pathFilter.split('/').pop() : null;
+  const pathFilter = makeSearchPathFilter(root, args && args.path);
 
   const matches = [];
   let bytesRead = 0;
@@ -385,17 +374,15 @@ async function runSearchFiles(opts) {
       const childRel = (dirRel ? dirRel + '/' : '') + ent.name;
       if (ent.isDirectory()) {
         if (SKIP_DIRS.has(ent.name)) continue;
-        if (dirFilter && !childRel.startsWith(dirFilter)) continue;
+        if (pathFilter && !pathFilter.mayContain(childRel)) continue;
         await walk(childAbs, childRel);
         continue;
       }
       if (!ent.isFile()) continue;
-      if (fileFilter && ent.name !== fileFilter) continue;
-      if (dirFilter && !childRel.startsWith(dirFilter)) continue;
+      if (pathFilter && !pathFilter.matchesFile(childRel)) continue;
       const ext = path.extname(ent.name).toLowerCase();
       if (!TEXT_EXTS.has(ext)) continue;
       filesScanned++;
-      if (await isBinary(childAbs)) continue;
       let content;
       try { content = await fsp.readFile(childAbs, 'utf8'); }
       catch { continue; }
@@ -626,12 +613,12 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search for a regex in text files under the project directory. Returns one match per line as "path:line: text". Optional `path` filters to a directory or single file. Capped at 200 matches / 2 MB scanned.',
+      description: 'Search for a regex in text files under the project directory. Returns one match per line as "path:line: text". Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2 MB scanned.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'JavaScript regular expression source (no flags).' },
-          path: { type: 'string', description: 'Optional directory or single file to scope the search.' }
+          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole project.' }
         },
         required: ['query'],
         additionalProperties: false

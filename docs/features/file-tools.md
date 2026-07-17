@@ -41,15 +41,14 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 |---|---|---|---|
 | `read_file` | Read a text file. | `path` (POSIX-relative) | `startLine`, `endLine` (1-indexed inclusive) for slicing large files |
 | `list_files` | List text files under the project. | — | `pattern` (glob) |
-| `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file) |
+| `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file; `.`, `./`, `src`, `src/`, and `src/file.js` are accepted) |
 | `write_file` | Create or overwrite a text file. | `path`, `content` | — |
 | `edit_file` | Replace one unique block in an existing file. Line-ending differences are ignored. | `path` (or `file`), `oldText`, `newText` | — |
 
 Every tool:
 
 - Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`. .`, absolute paths outside the root, and symlinks that point outside are all rejected).
-- Refuses binary files (detected by a NUL byte in the first 8 KB).
-- Honours the same skip-dir list as `src/tags.js` (`node_modules`, `.git`, `.mouaif`, `dist`, `build`, `.next`, `.cache`).
+- Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses whole-file reads over `fileReadMaxBytes` (default 256 KB). A `startLine` / `endLine` slice bypasses the cap.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
 - Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` scanned (default 200 / 2 MB).

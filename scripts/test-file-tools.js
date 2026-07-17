@@ -82,7 +82,6 @@ function writeFile(p, content) {
   const r1 = await files.runFileTool('read_file', { projectDir: root, args: { path: 'src/index.js' } });
   assert(r1.ok === true, 'read_file ok');
   assert(r1.result.relPath === 'src/index.js', 'read_file relPath normalized');
-  assert(r1.result.binary === false, 'read_file binary false for text');
   assert(r1.content.includes('# File: src/index.js'), 'read_file content has file header');
   assert(r1.content.includes('three'), 'read_file content has body');
 
@@ -115,6 +114,7 @@ function writeFile(p, content) {
   writeFile(path.join(root, 'node_modules', 'lib', 'd.js'), 'd');
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
   writeFile(path.join(root, '.git', 'HEAD'), 'ref: ...');
+  writeFile(path.join(root, '.next', 'cache.js'), 'cache');
 
   const r2 = await files.runFileTool('list_files', { projectDir: root, args: {} });
   assert(r2.ok === true, 'list_files ok');
@@ -122,6 +122,7 @@ function writeFile(p, content) {
   assert(paths.indexOf('src/a.js') >= 0, 'list_files includes src/a.js');
   assert(paths.indexOf('src/b.ts') >= 0, 'list_files includes src/b.ts');
   assert(paths.indexOf('README.md') >= 0, 'list_files includes README.md');
+  assert(paths.indexOf('.next/cache.js') >= 0, 'list_files includes .next');
   assert(paths.indexOf('node_modules/lib/d.js') === -1, 'list_files skips node_modules');
   assert(paths.indexOf('.git/HEAD') === -1, 'list_files skips .git');
 
@@ -145,7 +146,13 @@ function writeFile(p, content) {
   assert(r3p.some((s) => s.startsWith('src/logout.js:1')), 'search_files finds logout.js:1');
   assert(r3.result.filesScanned >= 4, 'search_files filesScanned counted');
 
-  // Path filter (single file).
+  // Path filter (directory and single file).
+  const r3d = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)', path: 'src' } });
+  assert(r3d.ok === true, 'search_files directory path filter ok');
+  assert(r3d.result.matches.some((m) => m.path === 'src/auth.js'), 'search_files directory path includes auth.js');
+  assert(r3d.result.matches.some((m) => m.path === 'src/logout.js'), 'search_files directory path includes logout.js');
+  const r3dot = await files.runFileTool('search_files', { projectDir: root, args: { query: 'TOKEN', path: '.' } });
+  assert(r3dot.ok === true && r3dot.result.filesScanned > 0, 'search_files dot path means whole project');
   const r3f = await files.runFileTool('search_files', { projectDir: root, args: { query: 'TOKEN', path: 'src/auth.js' } });
   assert(r3f.ok === true, 'search_files path filter ok');
   assert(r3f.result.matches.length === 1, 'search_files path filter narrows to one file');
