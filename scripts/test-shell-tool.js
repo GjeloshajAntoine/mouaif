@@ -134,6 +134,8 @@ async function main() {
     boundary && boundary.data.content === 'I will run the command.', JSON.stringify(boundary));
   check('post-tool assistant text follows tool result',
     names.lastIndexOf('message') > names.indexOf('tool_result'), JSON.stringify(names));
+  check('tool call immediately precedes its result when authorized',
+    names.indexOf('tool_result') === names.indexOf('tool_call') + 1, JSON.stringify(names));
   check('emitted exactly one done event', names.filter(n => n === 'done').length === 1, JSON.stringify(names));
 
   const toolCall = events.find(e => e.name === 'tool_call');

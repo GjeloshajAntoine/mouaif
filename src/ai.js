@@ -1000,9 +1000,8 @@ async function streamChat(opts) {
         try { args = JSON.parse(c.arguments); }
         catch { args = { __raw: c.arguments }; }
       }
-      onEvent('tool_call', { id: c.id || null, name: c.name, args });
-
       let exec;
+      let callEmitted = false;
       try {
         const authGate = require('./tools/authorization.js');
         // The summary shown on the "Authorization required" card and
@@ -1041,8 +1040,18 @@ async function streamChat(opts) {
           });
           await authResult.wait;
         }
+        // Only announce a running tool after authorization has completed.
+        // Previously the UI showed "tool call — running" while the server
+        // was actually blocked waiting for an authorization decision. If the
+        // authorization card was missed or the page reloaded, the transcript
+        // appeared permanently stuck on a tool call with no messages.
+        onEvent('tool_call', { id: c.id || null, name: c.name, args });
+        callEmitted = true;
         exec = await dispatchTool(c.name, args, opts);
       } catch (e) {
+        // Denied/disabled/error calls still need a call card immediately
+        // before their result so persisted history remains a valid pair.
+        if (!callEmitted) onEvent('tool_call', { id: c.id || null, name: c.name, args });
         if (e.code === 'EDENIED') {
           exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
         } else if (e.code === 'ETOOL_DISABLED') {
