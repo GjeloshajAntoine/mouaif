@@ -903,11 +903,16 @@ async function streamChat(opts) {
   }
 
   // ---- Tool specs advertised to the model ----------------------------
-  // Two sources feed the `tools` field of the outgoing request:
+  // Three sources feed the `tools` field of the outgoing request:
   //   1. The native `shell` tool (src/tools/shell.js), enabled per
   //      project via opts.shellEnabled (default off — the caller
   //      decides based on project settings).
-  //   2. MCP-discovered tools (decision §18), which use the
+  //   2. The native file tools (read_file / list_files / search_files /
+  //      write_file, src/tools/files.js), enabled per project via
+  //      opts.fileToolsEnabled (default off). These cover the common
+  //      "read this file / find where X is used / patch a small file"
+  //      loop without requiring an MCP server.
+  //   3. MCP-discovered tools (decision §18), which use the
   //      mcp__<serverSlug>__<toolName> name convention.
   // Tool calling and the multi-turn loop below are wired only for the
   // OpenAI-compatible tool shape (openai-compatible + github-copilot).
@@ -917,6 +922,12 @@ async function streamChat(opts) {
   if (opts && opts.shellEnabled) {
     try { toolSpecs.push(require('./tools/shell.js').SPEC); }
     catch { /* shell tool module unavailable; skip */ }
+  }
+  if (opts && opts.fileToolsEnabled) {
+    try {
+      const ft = require('./tools/files.js');
+      for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
+    } catch { /* file tools module unavailable; skip */ }
   }
   try {
     if (opts && opts.projectDir) {
@@ -994,13 +1005,25 @@ async function streamChat(opts) {
       let exec;
       try {
         const authGate = require('./tools/authorization.js');
+        // The summary shown on the "Authorization required" card and
+        // matched against the file-tool allowlist needs the right
+        // argument per tool family. For shell it's the command; for
+        // the file tools it's the path (with the optional query /
+        // content as a hint, when relevant).
+        let summary;
+        if (c.name === 'shell') summary = (args && args.cmd) || '';
+        else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file') {
+          summary = (args && args.path) || (args && args.query) || '';
+        } else {
+          summary = firstStringArgument(args);
+        }
         const authResult = await authGate.authorize({
           projectDir: opts && opts.projectDir,
           chatId: opts && opts.chatId,
           tool: c.name,
           callId: c.id,
           cmd: args && args.cmd,
-          summary: c.name === 'shell' ? (args && args.cmd) : firstStringArgument(args),
+          summary,
           timeoutMs: args && args.timeoutMs
         });
 
@@ -1010,6 +1033,9 @@ async function streamChat(opts) {
             callId: c.id,
             tool: c.name,
             cmd: args && args.cmd,
+            path: args && args.path,
+            query: args && args.query,
+            summary,
             timeoutMs: args && args.timeoutMs,
             projectDir: opts && opts.projectDir
           });
@@ -1208,6 +1234,29 @@ async function streamChat(opts) {
         out = { ok: false, error: e.message || String(e), code: 'ESHELL' };
       }
       return { ok: !!out.ok, content: JSON.stringify(out), result: out };
+    }
+
+    // Native file tools: read_file, list_files, search_files, write_file.
+    // Gated by callOpts.fileToolsEnabled (matches the spec-collection
+    // branch above). Dispatched in one shot — all four share the same
+    // path-safety, size-cap, and authorization story, so a single
+    // dispatch helper keeps the call site readable.
+    if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'write_file') {
+      if (!(callOpts && callOpts.fileToolsEnabled)) {
+        const r = { error: { code: 'ETOOL_DISABLED', message: 'file tools are disabled for this project' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      let ft;
+      try { ft = require('./tools/files.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'file tools module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      return await ft.runFileTool(name, {
+        projectDir: callOpts && callOpts.projectDir,
+        args,
+        settings: callOpts && callOpts.appSettings
+      });
     }
 
     // MCP tools (mcp__<serverSlug>__<toolName>).

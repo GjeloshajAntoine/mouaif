@@ -24,6 +24,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [File tagging](features/file-tagging.md) — annotate project files with tags, pin excerpts, and auto-inject them into new chat messages; tags live in the project's `.mouaif.json`.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.
+- [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
 
 ## Architectural decisions

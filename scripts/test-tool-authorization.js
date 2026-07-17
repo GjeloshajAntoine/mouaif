@@ -74,13 +74,23 @@ async function main() {
 
   assert.equal(await authz.regexMatch('(a+)+$', 'a'.repeat(50000) + '!', 1), false);
 
+  settings.setProject(projectDir, {
+    tools: { file: { enabled: true, mode: 'allow' } }
+  });
+  for (const tool of ['read_file', 'list_files', 'search_files', 'write_file']) {
+    const allowed = await authz.authorize({
+      projectDir, chatId: 'a1b2c3d4', callId: 'call_' + tool, tool, summary: 'README.md'
+    });
+    assert.equal(allowed.decision, 'allow', tool + ' must use the tools.file authorization gate');
+  }
+
   settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'allow' } } });
   await assert.rejects(
     authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_off', tool: 'shell', cmd: 'echo no' }),
     { code: 'ETOOL_DISABLED' }
   );
 
-  console.log('tool authorization: 12 assertions passed');
+  console.log('tool authorization: 16 assertions passed');
 }
 
 main().finally(() => {

@@ -58,16 +58,31 @@ function normalizeConfig(raw, source, enabled) {
   };
 }
 
+// Tools whose authorization is project-scoped (in addition to MCP, which
+// has its own block under project.mcp.authorization). The same shape
+// works for any future native tool: { mode, allowlist, defaultTimeoutMs,
+// maxTimeoutMs } under project.tools.<name>.
+const NATIVE_TOOLS = new Set(['shell', 'file']);
+const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file']);
+
+// Model-facing file operations share the single project.tools.file gate.
+// Keep the original operation name for session grants and audit events, but
+// resolve enablement and authorization mode through the canonical family.
+function configToolName(tool) {
+  return FILE_TOOL_NAMES.has(tool) ? 'file' : tool;
+}
+
 function effectiveConfig(projectDir, tool) {
+  tool = configToolName(tool);
   const resolved = settings.getResolved(projectDir);
   const project = settings.getProject(projectDir);
   const app = settings.getApp();
-  if (tool === 'shell') {
-    const projectValue = project && project.tools && project.tools.shell;
-    const appValue = app && app.tools && app.tools.shell;
+  if (NATIVE_TOOLS.has(tool)) {
+    const projectValue = project && project.tools && project.tools[tool];
+    const appValue = app && app.tools && app.tools[tool];
     const value = projectValue || appValue || {};
     const source = projectValue ? 'project' : (appValue ? 'app' : 'default');
-    const enabled = !!(resolved && resolved.tools && resolved.tools.shell && resolved.tools.shell.enabled);
+    const enabled = !!(resolved && resolved.tools && resolved.tools[tool] && resolved.tools[tool].enabled);
     return normalizeConfig(value, source, enabled);
   }
   if (tool.startsWith('mcp__')) {
@@ -81,7 +96,10 @@ function effectiveConfig(projectDir, tool) {
 
 function getAuthorization(projectDir) {
   return {
-    tools: { shell: effectiveConfig(projectDir, 'shell') },
+    tools: {
+      shell: effectiveConfig(projectDir, 'shell'),
+      file: effectiveConfig(projectDir, 'file')
+    },
     mcp: effectiveConfig(projectDir, 'mcp__any__tool')
   };
 }
@@ -91,16 +109,22 @@ function setAuthorization(projectDir, patch) {
   if (!patch || typeof patch !== 'object') throw typedError('EBADINPUT', 'authorization patch is required');
   const project = settings.getProject(projectDir);
   const next = {};
-  if (patch.tools && patch.tools.shell) {
-    const shell = normalizeConfig(patch.tools.shell, 'project', true);
-    next.tools = Object.assign({}, project.tools, {
-      shell: Object.assign({}, project.tools && project.tools.shell, {
-        mode: shell.mode,
-        allowlist: shell.allowlist,
-        defaultTimeoutMs: shell.defaultTimeoutMs,
-        maxTimeoutMs: shell.maxTimeoutMs
-      })
-    });
+  // Each native tool (shell, file, ...) gets its own block under
+  // project.tools.<name>. The shape is the same: { mode, allowlist,
+  // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
+  // owned by the project tools toggle (a different setting) and is
+  // not duplicated here.
+  for (const name of NATIVE_TOOLS) {
+    if (patch.tools && patch.tools[name]) {
+      const cfg = normalizeConfig(patch.tools[name], 'project', true);
+      next.tools = Object.assign({}, next.tools, project.tools);
+      next.tools[name] = Object.assign({}, project.tools && project.tools[name], {
+        mode: cfg.mode,
+        allowlist: cfg.allowlist,
+        defaultTimeoutMs: cfg.defaultTimeoutMs,
+        maxTimeoutMs: cfg.maxTimeoutMs
+      });
+    }
   }
   if (patch.mcp) {
     const mcpAuth = normalizeConfig(patch.mcp, 'project', true);
@@ -113,7 +137,7 @@ function setAuthorization(projectDir, patch) {
       }
     });
   }
-  if (!Object.keys(next).length) throw typedError('EBADINPUT', 'tools.shell or mcp authorization is required');
+  if (!Object.keys(next).length) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
   settings.setProject(projectDir, next);
   return getAuthorization(projectDir);
 }
@@ -249,5 +273,6 @@ module.exports = {
   clearGrants,
   regexMatch,
   matchesAllowlist,
+  configToolName,
   _sessions: sessions
 };

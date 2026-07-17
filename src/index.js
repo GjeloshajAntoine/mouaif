@@ -870,16 +870,25 @@ async function handleChats(req, res, parsed) {
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
       // Collect the tool specs exactly as streamChat does: native
-      // shell (gated by the project's resolved tools.shell.enabled)
-      // plus any ready MCP servers for the project.
+      // shell (gated by the project's resolved tools.shell.enabled),
+      // native file tools (gated by tools.file.enabled), plus any
+      // ready MCP servers for the project.
       let shellEnabled = false;
+      let fileToolsEnabled = false;
       try {
         const rs = settings.getResolved(dir || null);
         shellEnabled = !!(rs && rs.tools && rs.tools.shell && rs.tools.shell.enabled);
+        fileToolsEnabled = !!(rs && rs.tools && rs.tools.file && rs.tools.file.enabled);
       } catch { /* tools stay off */ }
       const toolSpecs = [];
       if (shellEnabled) {
         try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
+      }
+      if (fileToolsEnabled) {
+        try {
+          const fileTools = require('./tools/files.js');
+          for (const n of fileTools.FILE_TOOL_NAMES) toolSpecs.push(fileTools.SPECS[n]);
+        } catch { /* skip */ }
       }
       try {
         const specs = mcp.listComposedToolSpecs(dir);
@@ -912,6 +921,7 @@ async function handleChats(req, res, parsed) {
         profile: profileId,
         reduced,
         shellEnabled,
+        fileToolsEnabled,
         count: tools.length,
         tools
       });
@@ -1137,16 +1147,30 @@ async function handleChatStream(req, res, chatId) {
 
   // Resolve the per-project tool configuration. The native `shell`
   // tool is off unless the project's resolved settings turn it on
-  // (settings.tools.shell.enabled). projectDir also activates MCP
+  // (settings.tools.shell.enabled); the native file tools
+  // (read_file / list_files / search_files / write_file) are gated
+  // by settings.tools.file.enabled. projectDir also activates MCP
   // tool discovery inside the AI client.
   let shellEnabled = false;
+  let fileToolsEnabled = false;
   try {
     const resolvedSettings = settings.getResolved(projectDir || null);
     shellEnabled = !!(resolvedSettings
       && resolvedSettings.tools
       && resolvedSettings.tools.shell
       && resolvedSettings.tools.shell.enabled);
+    fileToolsEnabled = !!(resolvedSettings
+      && resolvedSettings.tools
+      && resolvedSettings.tools.file
+      && resolvedSettings.tools.file.enabled);
   } catch { /* non-fatal; tools stay off */ }
+
+  // App-level knobs (size caps etc.) are read once and passed through
+  // to the file tool dispatcher. The dispatcher itself uses the
+  // DEFAULT_* constants when these are missing, so passing the whole
+  // app object is fine — only the file-tool keys are consulted.
+  let appSettings = {};
+  try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
 
   const result = await ai.streamChat({
     model,
@@ -1154,6 +1178,8 @@ async function handleChatStream(req, res, chatId) {
     projectDir,
     chatId, // Pass chatId for authorization gate
     shellEnabled,
+    fileToolsEnabled,
+    appSettings,
     promptSize: resolvedProfileId,
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {

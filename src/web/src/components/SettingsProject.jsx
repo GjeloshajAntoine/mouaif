@@ -21,6 +21,10 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
   const shellStatus = useRef(null);
   const shellModeSel = useRef(null);
   const shellAllowlist = useRef(null);
+  const fileToggle = useRef(null);
+  const fileStatus = useRef(null);
+  const fileModeSel = useRef(null);
+  const fileAllowlist = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   // Advanced (raw JSON + resolved)
@@ -73,7 +77,17 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       const shell = authz.status === 200 && authz.body.tools && authz.body.tools.shell;
       if (shellModeSel.current) shellModeSel.current.value = shell && shell.mode || 'ask';
       if (shellAllowlist.current) shellAllowlist.current.value = shell && Array.isArray(shell.allowlist) ? shell.allowlist.join('\n') : '';
+      const file = authz.status === 200 && authz.body.tools && authz.body.tools.file;
+      if (fileModeSel.current) fileModeSel.current.value = file && file.mode || 'ask';
+      if (fileAllowlist.current) fileAllowlist.current.value = file && Array.isArray(file.allowlist) ? file.allowlist.join('\n') : '';
     } catch { /* keep ask + empty allowlist */ }
+
+    // File tools toggle.
+    if (fileToggle.current) {
+      fileToggle.current.checked = !!(currentProject.tools && currentProject.tools.file && currentProject.tools.file.enabled);
+      fileToggle.current.disabled = false;
+    }
+    if (fileStatus.current) fileStatus.current.textContent = '';
 
     // Prompts count for the card summary.
     try {
@@ -172,6 +186,30 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     if (shellStatus.current) shellStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
   }
 
+  async function onFileToggle(e) {
+    const want = !!(e && e.target && e.target.checked);
+    if (fileToggle.current) fileToggle.current.disabled = true;
+    const next = { tools: Object.assign({}, currentProject.tools) };
+    next.tools.file = Object.assign({}, next.tools && next.tools.file, { enabled: want });
+    const ok = await patchProject(next, fileStatus, want ? 'file tools enabled' : 'file tools disabled');
+    if (fileToggle.current) fileToggle.current.disabled = false;
+    if (!ok && fileToggle.current) fileToggle.current.checked = !want;
+  }
+
+  async function saveFileAuthorization() {
+    const mode = fileModeSel.current ? fileModeSel.current.value : 'ask';
+    const allowlist = fileAllowlist.current
+      ? fileAllowlist.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      : [];
+    if (fileStatus.current) fileStatus.current.textContent = 'saving authorization…';
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), tools: { file: { mode, allowlist } } })
+    });
+    if (fileStatus.current) fileStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
+  }
+
   // Advanced: save the raw JSON editor verbatim.
   async function saveRaw() {
     const d = dir();
@@ -258,6 +296,29 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
         h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save authorization')
       ),
       h('p', { class: 'hint hint--compact' }, '⚠︎ Commands run with your account, in the project directory. Enable only on projects you trust.'),
+
+      // ---- File tools ----------------------------------------------
+      h('label', { class: 'card', 'aria-label': 'Enable file tools' },
+        h('div', { class: 'card__main' },
+          h('div', { class: 'card__title' }, 'File tools'),
+          h('div', { class: 'card__summary' }, 'Let the model read, list, search, and edit files in this project folder.')
+        ),
+        h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: onFileToggle })
+      ),
+      h('p', { ref: fileStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-file-mode' }, 'File tools authorization'),
+        h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode' },
+          h('option', { value: 'off' }, 'Off'),
+          h('option', { value: 'ask' }, 'Ask every time'),
+          h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+          h('option', { value: 'allow' }, 'Allow this session')
+        ),
+        h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Path regex allowlist (one per line)'),
+        h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),
+        h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save authorization')
+      ),
+      h('p', { class: 'hint hint--compact' }, 'Allowlist matches the file path the model asks for. read_file, list_files, search_files, write_file all share one gate.'),
 
       // ---- Prompts ----------------------------------------------------
       h('h3', null, 'Prompts'),
