@@ -186,6 +186,40 @@ function writeFile(p, content) {
   const e4 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'duplicate.txt', oldText: 'same', newText: 'x' } });
   assert(e4.ok === false && e4.result.error.code === 'EMULTI_MATCH', 'edit_file rejects ambiguous oldText');
 
+  // Line-ending differences are not meaningful patch differences. A model
+  // commonly sends JSON strings with LF even when the checked-out file uses
+  // CRLF; edit_file must match them and preserve the file's convention.
+  const crlfFile = path.join(root, 'crlf.js');
+  writeFile(crlfFile, 'function oldName() {\r\n  const one = 1;\r\n  const two = 2;\r\n  return one + two;\r\n}\r\n');
+  const e5 = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: {
+      path: 'crlf.js',
+      oldText: 'function oldName() {\n  const one = 1;\n  const two = 2;\n  return one + two;\n}',
+      newText: 'function newName() {\n  return 3;\n}'
+    }
+  });
+  const crlfEdited = fs.readFileSync(crlfFile, 'utf8');
+  assert(e5.ok === true, 'edit_file matches LF oldText against a CRLF file');
+  assert(crlfEdited === 'function newName() {\r\n  return 3;\r\n}\r\n', 'edit_file preserves CRLF in replacement text');
+  assert(!/(^|[^\r])\n/.test(crlfEdited), 'edit_file does not introduce bare LF into a CRLF file');
+
+  const lfFile = path.join(root, 'lf.js');
+  writeFile(lfFile, 'alpha\nbeta\ngamma\n');
+  const e6 = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'lf.js', oldText: 'alpha\r\nbeta', newText: 'one\r\ntwo' }
+  });
+  assert(e6.ok === true, 'edit_file matches CRLF oldText against an LF file');
+  assert(fs.readFileSync(lfFile, 'utf8') === 'one\ntwo\ngamma\n', 'edit_file preserves LF in replacement text');
+
+  writeFile(path.join(root, 'duplicate-eol.txt'), 'same\r\nblock\r\nsame\nblock\n');
+  const e7 = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'duplicate-eol.txt', oldText: 'same\nblock', newText: 'x' }
+  });
+  assert(e7.ok === false && e7.result.error.code === 'EMULTI_MATCH', 'edit_file detects duplicates across line-ending styles');
+
   // Outside project.
   const w3 = await files.runFileTool('write_file', { projectDir: root, args: { path: '../escape.js', content: 'x' } });
   assert(w3.ok === false && w3.result.error.code === 'EOUTSIDE_PROJECT', 'write_file EOUTSIDE_PROJECT on ..');

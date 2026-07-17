@@ -15,7 +15,7 @@
 //
 // Each runner is self-contained: path safety, size caps, and the textual
 // response shape are all enforced here. The AI client in src/ai.js maps
-// any tool_call whose name matches one of the four over to runFileTool().
+// any tool_call whose name matches one of the five over to runFileTool().
 //
 // Path safety: every path the model supplies is normalized to a
 // POSIX-relative path under the project root, then resolved back to an
@@ -423,6 +423,53 @@ function formatSearchFilesResult(r) {
 
 // ---- write_file / edit_file --------------------------------------------
 
+// Normalize line endings for comparison while retaining a map from each
+// normalized character boundary back to its byte-for-byte source offset.
+// This lets edit_file accept an LF oldText for a CRLF file (and vice versa)
+// without rewriting any content outside the matched block.
+function normalizedTextWithOffsets(text) {
+  let normalized = '';
+  const offsets = [];
+  for (let i = 0; i < text.length;) {
+    offsets.push(i);
+    if (text[i] === '\r') {
+      normalized += '\n';
+      i += text[i + 1] === '\n' ? 2 : 1;
+    } else {
+      normalized += text[i];
+      i++;
+    }
+  }
+  offsets.push(text.length);
+  return { normalized, offsets };
+}
+
+// Pick the file's dominant newline convention. Ties use the first newline,
+// which keeps small or mixed files stable. A file with no newline leaves the
+// replacement exactly as supplied by the caller.
+function detectLineEnding(text) {
+  const counts = { '\r\n': 0, '\n': 0, '\r': 0 };
+  let first = null;
+  for (let i = 0; i < text.length; i++) {
+    let eol = null;
+    if (text[i] === '\r') {
+      eol = text[i + 1] === '\n' ? '\r\n' : '\r';
+      if (eol === '\r\n') i++;
+    } else if (text[i] === '\n') {
+      eol = '\n';
+    }
+    if (!eol) continue;
+    if (!first) first = eol;
+    counts[eol]++;
+  }
+  if (!first) return null;
+  return Object.keys(counts).reduce((best, eol) => counts[eol] > counts[best] ? eol : best, first);
+}
+
+function convertLineEndings(text, eol) {
+  return eol ? text.replace(/\r\n|\r|\n/g, eol) : text;
+}
+
 // Create or overwrite a file. `dirs: true` allows the path to include
 // new directories (the runner mkdir -p's them); otherwise the parent
 // dir must already exist. Refuses paths that escape the root.
@@ -444,7 +491,8 @@ async function runWriteFile(opts) {
   return { relPath: rel, size: st.size, bytesWritten: Buffer.byteLength(content, 'utf8') };
 }
 
-// Replace one exact, unique block in an existing text file. This is kept
+// Replace one unique block in an existing text file. Line-ending styles are
+// considered equivalent during matching. This is kept
 // deliberately separate from write_file: coding models commonly interpret
 // "edit" as a patch operation and send only the changed line. Treating that
 // payload as a full-file body silently destroys the rest of the file.
@@ -464,13 +512,18 @@ async function runEditFile(opts) {
   const st = await fsp.stat(abs);
   if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
   const original = await fsp.readFile(abs, 'utf8');
-  const first = original.indexOf(oldText);
+  const source = normalizedTextWithOffsets(original);
+  const needle = normalizedTextWithOffsets(oldText).normalized;
+  const first = source.normalized.indexOf(needle);
   if (first < 0) throw err('ENO_MATCH', 'oldText was not found in ' + rel + '; read the file and retry with an exact block');
-  if (original.indexOf(oldText, first + oldText.length) >= 0) {
+  if (source.normalized.indexOf(needle, first + needle.length) >= 0) {
     throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
   }
 
-  const content = original.slice(0, first) + newText + original.slice(first + oldText.length);
+  const originalStart = source.offsets[first];
+  const originalEnd = source.offsets[first + needle.length];
+  const replacement = convertLineEndings(newText, detectLineEnding(original));
+  const content = original.slice(0, originalStart) + replacement + original.slice(originalEnd);
   const cap = (settings && settings.fileWriteMaxBytes) || DEFAULT_WRITE_MAX_BYTES;
   const bytes = Buffer.byteLength(content, 'utf8');
   if (bytes > cap) throw err('ETOOL_CAP', 'edited file is ' + bytes + ' bytes, exceeds cap ' + cap);
@@ -487,8 +540,8 @@ async function runEditFile(opts) {
   return {
     relPath: rel,
     size: bytes,
-    bytesWritten: Buffer.byteLength(newText, 'utf8'),
-    replacedBytes: Buffer.byteLength(oldText, 'utf8')
+    bytesWritten: Buffer.byteLength(replacement, 'utf8'),
+    replacedBytes: Buffer.byteLength(original.slice(originalStart, originalEnd), 'utf8')
   };
 }
 
@@ -605,13 +658,13 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Safely edit an existing text file by replacing one exact, unique block. Read the relevant lines first, then send their exact text as oldText and the replacement as newText. Fails without changing the file if oldText is missing or appears more than once. Use write_file only to create a file or intentionally replace its complete contents.',
+      description: 'Safely edit an existing text file by replacing one unique block. Read the relevant lines first, then send their text as oldText and the replacement as newText. LF and CRLF are treated as equivalent, and newText adopts the file line endings. Fails without changing the file if oldText is missing or appears more than once. Use write_file only to create a file or intentionally replace its complete contents.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'POSIX path relative to the project root.' },
           file: { type: 'string', description: 'Compatibility alias for path.' },
-          oldText: { type: 'string', description: 'Exact existing text to replace. Include surrounding lines when needed to make it unique.' },
+          oldText: { type: 'string', description: 'Existing text to replace. LF/CRLF differences are ignored. Include surrounding lines when needed to make it unique.' },
           newText: { type: 'string', description: 'Replacement text. May be empty to delete the matched block.' }
         },
         required: ['oldText', 'newText'],
