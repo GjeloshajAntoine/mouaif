@@ -707,6 +707,7 @@ textarea#projectEditor {
   padding: 2px 6px 4px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
+  position: relative;
 }
 
 /* Setup control — mounted into the TRANSCRIPT (not the head) on a
@@ -772,10 +773,8 @@ textarea#projectEditor {
 .chat-view__iconbtn--danger:hover { background: var(--danger-soft); }
 .chat-view__iconbtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Model row: trigger button + refresh icon. flex: 1 0 100% on the
-   parent is already set on the head, so this row fills the second
-   line of the head. position: relative anchors the picker
-   popover (see .chat-view__picker). */
+/* Model row: trigger button + refresh icon. Keep this compact in the
+   top bar; the popover itself is widened by anchoring to the head. */
 .chat-view__model-row {
   flex: 1 1 136px;
   display: flex;
@@ -783,7 +782,6 @@ textarea#projectEditor {
   gap: 4px;
   min-width: 96px;
   max-width: 190px;
-  position: relative;
 }
 
 /* The trigger button is a compact two-line summary: model id on
@@ -867,8 +865,9 @@ textarea#projectEditor {
 .chat-view__picker {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  left: 6px;
+  right: 6px;
+  width: auto;
   z-index: 36;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
