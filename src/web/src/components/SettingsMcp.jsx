@@ -7,18 +7,18 @@ import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
 
-function projectDirFromProps() {
+function projectDirFromProps(props = {}) {
   // The route can override the active project (testing + deep links).
-  return (activeProject.value && activeProject.value.dir) || '';
+  return props.projectDir || (activeProject.value && activeProject.value.dir) || '';
 }
 
-export function SettingsMcpView() {
+export function SettingsMcpView(props = {}) {
   const listEl = useRef(null);
   const statusEl = useRef(null);
   const projectDirEl = useRef(null);
   const loadBtn = useRef(null);
 
-  let projectDir = projectDirFromProps();
+  let projectDir = projectDirFromProps(props);
 
   async function load() {
     const dir = (projectDirEl.current && projectDirEl.current.value || '').trim() || projectDir;
@@ -140,7 +140,11 @@ export function SettingsMcpView() {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '‹'),
+      h('a', {
+        href: projectDir ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir)) : '#/settings',
+        class: 'view-back',
+        'aria-label': projectDir ? 'Back to project settings' : 'Back to settings'
+      }, '‹'),
       h('h2', { class: 'view-title' }, 'MCP servers')
     ),
     h('p', { class: 'hint hint--compact' }, 'Connect per-project Model Context Protocol servers. The AI client discovers each server\'s tools and advertises them to the model.'),
@@ -155,7 +159,7 @@ export function SettingsMcpView() {
     h('div', { class: 'page-bar' },
       h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
       h('a', {
-        href: '#/settings/mcp/new?projectDir=' + encodeURIComponent(projectDir),
+        href: '#/settings/mcp/new?projectDir=' + encodeURIComponent((projectDirEl.current && projectDirEl.current.value || '').trim() || projectDir),
         class: 'page-bar__add',
         'aria-label': 'Add MCP server'
       }, '+')
@@ -165,7 +169,7 @@ export function SettingsMcpView() {
 
 export function SettingsMcpEditView(props) {
   const id = props.id || '';
-  const projectDir = (activeProject.value && activeProject.value.dir) || props.projectDir || '';
+  const projectDir = props.projectDir || (activeProject.value && activeProject.value.dir) || '';
 
   const nameEl = useRef(null);
   const commandEl = useRef(null);
@@ -277,7 +281,7 @@ export function SettingsMcpEditView(props) {
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (r.status !== 200 && r.status !== 201) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
     setStatus(statusEl, 'saved', 'success');
-    nav('settings/mcp');
+    nav('settings/mcp?projectDir=' + encodeURIComponent(projectDir));
   }
 
   async function deleteServer() {
@@ -290,7 +294,7 @@ export function SettingsMcpEditView(props) {
       r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
     } catch (e) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
-    nav('settings/mcp');
+    nav('settings/mcp?projectDir=' + encodeURIComponent(projectDir));
   }
 
   useEffect(() => { load(); }, [id]);
@@ -299,7 +303,7 @@ export function SettingsMcpEditView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/mcp', class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
+      h('a', { href: '#/settings/mcp?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, title)
     ),
     h('div', { class: 'row' },

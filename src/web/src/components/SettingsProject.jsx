@@ -27,6 +27,8 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
   const fileAllowlist = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
+  const mcpCard = useRef(null);
+  const mcpSummary = useRef(null);
   // Advanced (raw JSON + resolved)
   const editor = useRef(null);
   const saveBtn = useRef(null);
@@ -57,6 +59,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     setActiveProject(d, '');
     if (pathEl.current) pathEl.current.textContent = projRes.body.path || d;
     if (promptsCard.current) promptsCard.current.href = '#/settings/prompts?projectDir=' + encodeURIComponent(d);
+    if (mcpCard.current) mcpCard.current.href = '#/settings/mcp?projectDir=' + encodeURIComponent(d);
 
     // Prompt size (project override; '' means "inherit app default").
     if (promptSizeSel.current) {
@@ -89,6 +92,17 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       fileToggle.current.disabled = true;
     }
     if (fileStatus.current) fileStatus.current.textContent = '';
+
+    // MCP server count for the card summary.
+    try {
+      const mr = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(d));
+      if (mcpSummary.current) {
+        if (mr.status === 200) {
+          const n = (mr.body.servers || []).length;
+          mcpSummary.current.textContent = n ? (n + (n === 1 ? ' server' : ' servers')) : 'no servers yet';
+        } else { mcpSummary.current.textContent = '—'; }
+      }
+    } catch { if (mcpSummary.current) mcpSummary.current.textContent = '—'; }
 
     // Prompts count for the card summary.
     try {
@@ -300,6 +314,21 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
         h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save authorization')
       ),
       h('p', { class: 'hint hint--compact' }, 'Allowlist matches the file path the model asks for. read_file, list_files, search_files, write_file all share one gate.'),
+
+      // ---- MCP --------------------------------------------------------
+      h('h3', null, 'MCP'),
+      h('a', {
+        ref: mcpCard,
+        class: 'card',
+        'aria-label': 'MCP servers',
+        href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir.current || '')
+      },
+        h('div', { class: 'card__main' },
+          h('div', { class: 'card__title' }, 'MCP servers'),
+          h('div', { ref: mcpSummary, class: 'card__summary' }, '—')
+        ),
+        h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      ),
 
       // ---- Prompts ----------------------------------------------------
       h('h3', null, 'Prompts'),
