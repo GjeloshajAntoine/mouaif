@@ -1001,27 +1001,17 @@ async function streamChat(opts) {
 
   // The multi-turn tool loop. `convo` is the working message array; it
   // grows by one assistant (tool-call) message + N tool-result messages
-  // each iteration the model asks for tools. Bounded by MAX_TOOL_TURNS
-  // so a runaway model cannot spin forever.
-  const MAX_TOOL_TURNS = (opts && typeof opts.maxToolTurns === 'number') ? opts.maxToolTurns : 12;
+  // each iteration the model asks for tools. The model decides when its
+  // task is complete; tool use is not cut off after an arbitrary count.
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
   let providerCost = null;
   let completedToolRound = false;
   let emptyPostToolRetries = 0;
-  let finalInstructionAdded = false;
   const FINAL_ANSWER_RETRIES = 2;
 
-  for (let turn = 0; turn <= MAX_TOOL_TURNS + FINAL_ANSWER_RETRIES; turn++) {
-    const toolsExhausted = turn >= MAX_TOOL_TURNS;
-    if (toolsExhausted && completedToolRound && !finalInstructionAdded) {
-      convo.push({
-        role: 'system',
-        content: 'Tool use is now finished. Do not call more tools. Complete the user task now and return a clear user-facing final response. Summarize what was done and its result; if anything remains incomplete, say exactly what remains.'
-      });
-      finalInstructionAdded = true;
-    }
-    const result = await runUpstreamTurn(convo, effectiveToolSpecs, toolsExhausted);
+  while (true) {
+    const result = await runUpstreamTurn(convo, effectiveToolSpecs);
     if (!result.ok) return { ok: false, error: result.error, usage };
 
     const calls = result.toolCalls;
@@ -1031,7 +1021,7 @@ async function streamChat(opts) {
       // an incomplete exchange rather than a successful empty answer. A
       // short system reminder reliably gets the model to summarize the tool
       // output, while the retry cap prevents a silent model from looping.
-      if (completedToolRound && !String(result.assistantText || '').trim() && emptyPostToolRetries < FINAL_ANSWER_RETRIES && turn < MAX_TOOL_TURNS + FINAL_ANSWER_RETRIES) {
+      if (completedToolRound && !String(result.assistantText || '').trim() && emptyPostToolRetries < FINAL_ANSWER_RETRIES) {
         emptyPostToolRetries++;
         convo.push({
           role: 'system',
@@ -1048,17 +1038,6 @@ async function streamChat(opts) {
       // final `done` with the accumulated usage and return.
       onEvent('done', { usage, providerCost });
       return { ok: true, usage, providerCost };
-    }
-
-    // A provider may serialize another tool call even after the tools field
-    // has been removed. Do not execute beyond the configured bound. Ask for
-    // a final answer instead, using one of the reserved answer-only retries.
-    if (toolsExhausted) {
-      convo.push({
-        role: 'system',
-        content: 'The tool-call limit was reached. Do not emit or request another tool call. Give the best final answer possible from the existing conversation and tool results.'
-      });
-      continue;
     }
 
     for (const c of calls) {
@@ -1166,22 +1145,15 @@ async function streamChat(opts) {
     // Loop: request again with the tool results in context.
   }
 
-  // Defensive fallback for a provider that ignored every answer-only retry.
-  onEvent('message', {
-    delta: 'The tool-call limit was reached, but the model did not provide a final response. Review the tool results above before retrying.'
-  });
-  onEvent('done', { usage, providerCost });
-  return { ok: true, usage, providerCost };
-
   // ---- One upstream request (stream + accumulate) --------------------
   // Performs a single request/response against the provider, streaming
   // `message` deltas through onEvent as they arrive. Returns
   //   { ok: true, assistantText, toolCalls: [{ id, name, arguments }] }
   // or { ok: false, error }. `done` is NOT emitted here — the caller
   // decides when the whole exchange is finished.
-  async function runUpstreamTurn(convoMessages, specs, suppressTools) {
+  async function runUpstreamTurn(convoMessages, specs) {
   const req = build(model, convoMessages, true);
-  if (specs && specs.length && !suppressTools) {
+  if (specs && specs.length) {
     const builderBody = req.body;
     if (builderBody && typeof builderBody === 'object') {
       builderBody.tools = specs;

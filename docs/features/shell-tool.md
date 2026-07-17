@@ -36,7 +36,7 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
 
 ### In a chat
 
-When the model decides to call the tool, the server intercepts the call (the model only sees the tool's description; the actual execution lives behind the mouaif server), runs the command in `projectDir`, and forwards the result back to the upstream as a `tool` message before continuing the stream. This is a real **multi-turn loop**: the model can call the tool, read the result, and call again (or answer), for up to `maxToolTurns` iterations (default 12) per user message. The chat UI shows every call and result inline in the conversation.
+When the model decides to call the tool, the server intercepts the call (the model only sees the tool's description; the actual execution lives behind the mouaif server), runs the command in `projectDir`, and forwards the result back to the upstream as a `tool` message before continuing the stream. This is a real **multi-turn loop**: the model can call the tool, read the result, and call again until it considers the task complete or the user aborts the request. The chat UI shows every call and result inline in the conversation.
 
 The wire shape on the SSE stream:
 
@@ -79,7 +79,7 @@ const out = await runShell({
 - **Sandboxing.** The runner does not provide OS-level sandboxing (containers, seccomp, `bwrap`). It is the user's responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.
 - **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: timeoutMs + 5000 }`.
 - **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256 KB each, configurable via `app.shellOutputMaxBytes`). Truncation adds a final `\n...[truncated at 256000 bytes]` line; the original exit code is preserved.
-- **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). The loop is bounded by `maxToolTurns` (default 12); on the final allowed turn the tool specs are withheld so the model is forced to produce a text answer.
+- **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). There is no fixed tool-turn limit; cancellation comes from the user aborting the active request.
 - **No streaming on the wire.** The tool returns a single `tool_result` after the command exits. A future revision may stream stdout/stderr line-by-line; for this commit, a single result is enough to keep the upstream contract simple.
 - **Disabled by default.** A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`).
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.
