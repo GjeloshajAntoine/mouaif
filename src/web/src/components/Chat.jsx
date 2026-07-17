@@ -1222,6 +1222,20 @@ export function ChatView(props) {
       }
     }
     counter.reset();
+    // The server transcript is authoritative. Reconcile after the complete
+    // exchange so tool-heavy turns cannot leave the browser showing only the
+    // last tool card when a delta/boundary was missed, reordered, or failed
+    // to render. This also restores every intermediate assistant segment with
+    // exactly the same ordering that will be shown after reopening the chat.
+    try {
+      const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+      if (synced.status === 200 && Array.isArray(synced.body.messages)) {
+        messagesRef.current = synced.body.messages;
+        renderTranscript();
+      }
+    } catch (syncError) {
+      console.error('chat transcript reconciliation failed', syncError);
+    }
     if (statusEl.current.textContent === 'streaming\u2026') {
       setChatStatus(usage ? ('done \u2014 ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
     }

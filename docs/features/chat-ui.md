@@ -135,6 +135,11 @@ tool-call card. The call appears as “running” only after approval; denial or
 disabled tool still produces an adjacent call/result pair. This avoids leaving
 a misleading permanent “running” card while execution is waiting for input.
 
+After a streamed exchange completes, the browser reconciles the rendered turn
+with the server transcript. The persisted transcript is authoritative, so a
+missed or failed live DOM update cannot leave the screen ending on a tool card
+when the post-tool assistant message was successfully stored.
+
 - Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/web/` route prefers `src/web/dist/`, falls back to `src/web/` for dev.
 - Messages: [src/messages.js](../../src/messages.js) — per-chat file `<projectDir>/.mouaif.messages.<chatId>.json`. Robust read (drops malformed entries), throws `MOUAIF_PROJECT_PARSE_ERROR` (422) only if the file itself is corrupt.
