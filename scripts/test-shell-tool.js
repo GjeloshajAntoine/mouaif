@@ -152,7 +152,49 @@ async function main() {
   const finalMsg = events.filter(e => e.name === 'message').map(e => e.data.delta).join('');
   check('final assistant text present', /output was captured/.test(finalMsg), finalMsg);
 
-  // ---- Part 3: MiniMax text-serialized tool calls via OpenRouter -----
+  // ---- Part 3: retry an empty response after a tool result ------------
+  let emptyReplyRequests = 0;
+  let emptyReplySawReminder = false;
+  const serverEmptyReply = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      emptyReplyRequests++;
+      const parsed = JSON.parse(body);
+      if (emptyReplyRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_empty', function: { name: 'search_files', arguments: '{"query":"needle"}' } }] } }] },
+          { choices: [{ finish_reason: 'tool_calls' }] }
+        ]);
+      } else if (emptyReplyRequests === 2) {
+        // Reproduce providers that acknowledge the tool result with an
+        // empty `stop` response instead of answering the user.
+        sse(res, [{ choices: [{ finish_reason: 'stop' }] }]);
+      } else {
+        emptyReplySawReminder = parsed.messages.some((m) => m.role === 'system' && /Now answer the user/.test(m.content || ''));
+        sse(res, [
+          { choices: [{ delta: { content: 'The search found no matches.' } }] },
+          { choices: [{ finish_reason: 'stop' }] }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverEmptyReply.listen(0, '127.0.0.1', resolve));
+  const emptyReplyEvents = [];
+  const emptyReplyResult = await ai.streamChat({
+    model: Object.assign({}, model, { baseUrl: 'http://127.0.0.1:' + serverEmptyReply.address().port }),
+    messages: [{ role: 'user', content: 'find needle' }],
+    projectDir,
+    chatId,
+    onEvent: (name, data) => emptyReplyEvents.push({ name, data })
+  });
+  serverEmptyReply.close();
+  check('empty post-tool answer is retried', emptyReplyResult.ok && emptyReplyRequests === 3, JSON.stringify(emptyReplyResult));
+  check('post-tool retry includes an answer reminder', emptyReplySawReminder === true);
+  check('post-tool retry emits the final answer', emptyReplyEvents.some((e) => e.name === 'message' && /no matches/.test(e.data.delta)));
+  check('post-tool retry still emits one done', emptyReplyEvents.filter((e) => e.name === 'done').length === 1);
+
+  // ---- Part 4: MiniMax text-serialized tool calls via OpenRouter -----
   let minimaxRequests = 0;
   let minimaxSawToolMessage = false;
   const serverMiniMax = http.createServer((req, res) => {
@@ -192,7 +234,7 @@ async function main() {
   check('MiniMax private markers are hidden', !minimaxEvents.some((e) => e.name === 'message' && /minimax|tool_call|invoke/.test(e.data.delta)));
   check('MiniMax final answer is emitted', minimaxEvents.some((e) => e.name === 'message' && e.data.delta === 'Search completed.'));
 
-  // ---- Part 4: specs stay advertised; authorization gates execution ----
+  // ---- Part 5: specs stay advertised; authorization gates execution ----
   let advertisedWhenDisabled = null;
   const server2 = http.createServer((req, res) => {
     let body = '';

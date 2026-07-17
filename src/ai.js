@@ -1007,6 +1007,8 @@ async function streamChat(opts) {
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
   let providerCost = null;
+  let completedToolRound = false;
+  let emptyPostToolRetries = 0;
 
   for (let turn = 0; turn <= MAX_TOOL_TURNS; turn++) {
     const isFinalAllowedTurn = turn === MAX_TOOL_TURNS;
@@ -1015,6 +1017,19 @@ async function streamChat(opts) {
 
     const calls = result.toolCalls;
     if (!calls || !calls.length) {
+      // Some OpenAI-compatible models end the first follow-up request with
+      // `stop` but no content after receiving a tool result. Treat that as
+      // an incomplete exchange rather than a successful empty answer. A
+      // short system reminder reliably gets the model to summarize the tool
+      // output, while the retry cap prevents a silent model from looping.
+      if (completedToolRound && !String(result.assistantText || '').trim() && emptyPostToolRetries < 2 && turn < MAX_TOOL_TURNS) {
+        emptyPostToolRetries++;
+        convo.push({
+          role: 'system',
+          content: 'The tool call has completed. Now answer the user using the tool result. Do not return an empty response.'
+        });
+        continue;
+      }
       // No tool calls this turn -> the assistant is done. Emit the
       // final `done` with the accumulated usage and return.
       onEvent('done', { usage, providerCost });
@@ -1121,6 +1136,8 @@ async function streamChat(opts) {
         content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
       });
     }
+    completedToolRound = true;
+    emptyPostToolRetries = 0;
     // Loop: request again with the tool results in context.
   }
 
