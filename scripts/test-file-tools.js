@@ -48,18 +48,20 @@ function writeFile(p, content) {
   assert(files.SPECS.list_files.function.name === 'list_files', 'list_files spec name');
   assert(files.SPECS.search_files.function.name === 'search_files', 'search_files spec name');
   assert(files.SPECS.write_file.function.name === 'write_file', 'write_file spec name');
+  assert(files.SPECS.edit_file.function.name === 'edit_file', 'edit_file spec name');
   for (const n of files.FILE_TOOL_NAMES) {
     const s = files.SPECS[n];
     assert(s && s.type === 'function' && s.function && s.function.parameters && s.function.parameters.type === 'object', n + ' has OpenAI shape');
     // read_file, search_files, write_file require at least one arg;
     // list_files takes an optional pattern only.
-    if (n === 'read_file' || n === 'search_files' || n === 'write_file') {
+    if (n === 'read_file' || n === 'search_files' || n === 'write_file' || n === 'edit_file') {
       assert(Array.isArray(s.function.parameters.required) && s.function.parameters.required.length >= 1, n + ' has required[]');
     } else {
       assert(!s.function.parameters.required || s.function.parameters.required.length === 0, n + ' has empty required[]');
     }
   }
   assert(files.isFileToolName('read_file'), 'isFileToolName(read_file) true');
+  assert(files.isFileToolName('edit_file'), 'isFileToolName(edit_file) true');
   assert(!files.isFileToolName('shell'), 'isFileToolName(shell) false');
   assert(!files.isFileToolName('mcp__x__y'), 'isFileToolName(mcp__x__y) false');
 
@@ -168,6 +170,14 @@ function writeFile(p, content) {
   const w2 = await files.runFileTool('write_file', { projectDir: root, args: { path: 'src/utils/new.js', content: 'replaced\n' } });
   assert(w2.ok === true, 'write_file overwrite ok');
   assert(fs.readFileSync(newFile, 'utf8') === 'replaced\n', 'write_file overwrite content matches');
+
+  // edit_file compatibility alias accepts the `file` argument used by
+  // some coding models and follows the same authorization family.
+  const e1 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js', content: 'edited\n' } });
+  assert(e1.ok === true, 'edit_file alias ok');
+  assert(fs.readFileSync(newFile, 'utf8') === 'edited\n', 'edit_file alias overwrites content');
+  const e2 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js' } });
+  assert(e2.ok === false && e2.result.error.code === 'EBADINPUT', 'edit_file missing content -> EBADINPUT');
 
   // Outside project.
   const w3 = await files.runFileTool('write_file', { projectDir: root, args: { path: '../escape.js', content: 'x' } });

@@ -1012,8 +1012,8 @@ async function streamChat(opts) {
         // content as a hint, when relevant).
         let summary;
         if (c.name === 'shell') summary = (args && args.cmd) || '';
-        else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file') {
-          summary = (args && args.path) || (args && args.query) || '';
+        else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
+          summary = (args && (args.path || args.file)) || (args && args.query) || '';
         } else {
           summary = firstStringArgument(args);
         }
@@ -1236,12 +1236,13 @@ async function streamChat(opts) {
       return { ok: !!out.ok, content: JSON.stringify(out), result: out };
     }
 
-    // Native file tools: read_file, list_files, search_files, write_file.
+    // Native file tools: read_file, list_files, search_files, write_file,
+    // edit_file (compatibility alias for a full-file write).
     // Gated by callOpts.fileToolsEnabled (matches the spec-collection
     // branch above). Dispatched in one shot — all four share the same
     // path-safety, size-cap, and authorization story, so a single
     // dispatch helper keeps the call site readable.
-    if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'write_file') {
+    if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'write_file' || name === 'edit_file') {
       if (!(callOpts && callOpts.fileToolsEnabled)) {
         const r = { error: { code: 'ETOOL_DISABLED', message: 'file tools are disabled for this project' } };
         return { ok: false, content: JSON.stringify(r), result: r };

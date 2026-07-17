@@ -2,9 +2,9 @@
 
 ## Overview
 
-`mouaif` ships four built-in tools the model can call to read, list, search, and write project files — `read_file`, `list_files`, `search_files`, `write_file`. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
+`mouaif` ships built-in tools the model can call to read, list, search, and write project files — `read_file`, `list_files`, `search_files`, `write_file`, plus the `edit_file` compatibility alias. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
 
-The four tools cover the common "find the file, read the file, edit the file" loop without requiring an MCP server. They are not a replacement for `shell` (a model that wants to run a build, install a dep, or `git diff` still uses `shell`) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via `mcp__<server>__<tool>`). They are the boring file primitives every agent needs.
+The tools cover the common "find the file, read the file, edit the file" loop without requiring an MCP server. They are not a replacement for `shell` (a model that wants to run a build, install a dep, or `git diff` still uses `shell`) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via `mcp__<server>__<tool>`). They are the boring file primitives every agent needs.
 
 ## Usage
 
@@ -12,12 +12,12 @@ The four tools cover the common "find the file, read the file, edit the file" lo
 
 - **Settings → Project → Tools → File tools** — toggle on.
 - Off by default per project, the same default as the shell tool. The toggle writes `tools.file.enabled` into `<projectDir>/.mouaif.json`.
-- The chat picker shows the four tools as soon as the toggle is on; no extra restart required.
+- The chat picker shows the file tools as soon as the toggle is on; no extra restart required.
 
 ### Authorization modes
 
 - **off** — the runner returns `ETOOL_DISABLED` for every call.
-- **ask** — every call shows an "Authorization required" card. The card carries the path, the tool name, and a preview of the body for `read_file` / `write_file`. The user picks **Allow once**, **Allow for this session**, or **Deny**.
+- **ask** — every call shows an "Authorization required" card. The card carries the path, the tool name, and a preview of the body for `read_file` / `write_file` / `edit_file`. The user picks **Allow once**, **Allow for this session**, or **Deny**.
 - **allowlist** — calls whose `path` matches a regex in the per-project allowlist run without prompting. Everything else falls through to `ask`.
 - **allow** — every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`.
 
@@ -35,7 +35,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 }
 ```
 
-### The four tools
+### The file tools
 
 | Tool | Purpose | Required args | Optional args |
 |---|---|---|---|
@@ -43,6 +43,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 | `list_files` | List text files under the project. | — | `pattern` (glob) |
 | `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file) |
 | `write_file` | Create or overwrite a text file. | `path`, `content` | — |
+| `edit_file` | Compatibility alias for a full-file overwrite. | `content`, plus `path` or `file` | — |
 
 Every tool:
 
@@ -108,7 +109,7 @@ The file tools are dispatched by the same `tool_call` flow as the shell tool ins
 
 - New module: [src/tools/files.js](../../src/tools/files.js). Public surface: `SPECS` (four OpenAI-compatible function specs), `FILE_TOOL_NAMES` (frozen array of the four), `isFileToolName(name)`, `runFileTool(name, opts)`, `resolveSandbox(projectDir)` (re-export of the shell tool's helper for parity).
 - The AI client collects file-tool specs alongside shell and MCP specs in [src/ai.js](../../src/ai.js) `streamChat` and reduces them through `promptProfiles.reduceToolSpecs` like every other advertised tool, so the per-profile tool budget is uniform across shell, file, and MCP.
-- The dispatcher in `streamChat` (`dispatchTool` in [src/ai.js](../../src/ai.js)) routes `read_file` / `list_files` / `search_files` / `write_file` to `runFileTool`. The enable check is `callOpts.fileToolsEnabled`, which the chat stream resolves once from `settings.getResolved(projectDir).tools.file.enabled` in [src/index.js](../../src/index.js) `handleChatStream` and passes through as a stream option.
+- The dispatcher in `streamChat` (`dispatchTool` in [src/ai.js](../../src/ai.js)) routes `read_file` / `list_files` / `search_files` / `write_file` / `edit_file` to `runFileTool`. `edit_file` accepts the `file` argument emitted by some coding models and otherwise has the same full-content overwrite behavior as `write_file`; a call without `content` returns `EBADINPUT`, not `ETOOL_DISABLED`. The enable check is `callOpts.fileToolsEnabled`, which the chat stream resolves once from `settings.getResolved(projectDir).tools.file.enabled` in [src/index.js](../../src/index.js) `handleChatStream` and passes through as a stream option.
 - The authorization module ([src/tools/authorization.js](../../src/tools/authorization.js)) now treats `file` as a native tool alongside `shell`. The `NATIVE_TOOLS = new Set(['shell', 'file'])` set is the single source of truth; adding a future native tool is a one-line addition. The per-tool summary on the "Authorization required" card is `args.path` for file tools (so the allowlist regex can match the path), `args.cmd` for `shell`, and the first string argument for MCP tools.
 - The path-safety contract is the same as [src/tags.js](../../src/tags.js): every model-supplied path is normalized to POSIX-relative, then resolved back through `realpath` (walking up to the first existing ancestor for `write_file`-style paths that don't exist yet), with the same `EOUTSIDE_PROJECT` error shape. Symlinks that point outside the project root are rejected.
 - Mobile UI ([src/web/src/components/SettingsProject.jsx](../../src/web/src/components/SettingsProject.jsx)): a second card under the shell tool, "File tools", with the same toggle, mode `<select>`, allowlist `<textarea>`, and Save button. The same `card` / `row` / `hint` styles as the shell tool.

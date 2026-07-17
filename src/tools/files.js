@@ -1,13 +1,14 @@
 'use strict';
 
-// Native file tools — `read_file`, `list_files`, `search_files`, `write_file`.
+// Native file tools — `read_file`, `list_files`, `search_files`, `write_file`,
+// `edit_file`.
 //
 // Implements the "Native file tools" feature: read / list / search / write
 // inside the project directory, with the same authorization gate and
 // path-safety rules as the rest of the tool surface (decisions §16, §17).
 //
 // Public surface:
-//   SPECS                       : { 'read_file', 'list_files', 'search_files', 'write_file' }
+//   SPECS                       : { 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file' }
 //                                 each value is an OpenAI-compatible function spec
 //   runFileTool(name, opts)     -> Promise<{ ok, content, result }>
 //   resolveSandbox(projectDir)  -> string  (re-exported from shell.js for parity)
@@ -428,9 +429,11 @@ function formatSearchFilesResult(r) {
 async function runWriteFile(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
-  const rel = toRelPath(root, args && args.path);
+  const requestedPath = args && (args.path || args.file);
+  const rel = toRelPath(root, requestedPath);
   const abs = toAbsInside(root, rel);
-  const content = (args && typeof args.content === 'string') ? args.content : '';
+  if (!args || typeof args.content !== 'string') throw err('EBADINPUT', 'content is required');
+  const content = args.content;
   const cap = (settings && settings.fileWriteMaxBytes) || DEFAULT_WRITE_MAX_BYTES;
   if (Buffer.byteLength(content, 'utf8') > cap) {
     throw err('ETOOL_CAP', 'content is ' + Buffer.byteLength(content, 'utf8') + ' bytes, exceeds cap ' + cap);
@@ -459,7 +462,7 @@ async function runFileTool(name, opts) {
     if (name === 'read_file') out = await runReadFile(opts);
     else if (name === 'list_files') out = await runListFiles(opts);
     else if (name === 'search_files') out = await runSearchFiles(opts);
-    else if (name === 'write_file') out = await runWriteFile(opts);
+    else if (name === 'write_file' || name === 'edit_file') out = await runWriteFile(opts);
     else throw err('EUNKNOWN_TOOL', 'Unknown file tool: ' + name);
   } catch (e) {
     const r = { error: { code: e.code || 'EUNKNOWN', message: e.message } };
@@ -474,7 +477,7 @@ async function runFileTool(name, opts) {
     if (name === 'read_file') content = formatReadFileResult(out);
     else if (name === 'list_files') content = formatListFilesResult(out);
     else if (name === 'search_files') content = formatSearchFilesResult(out);
-    else if (name === 'write_file') content = formatWriteFileResult(out);
+    else if (name === 'write_file' || name === 'edit_file') content = formatWriteFileResult(out);
     else content = JSON.stringify(out);
   } catch (e) {
     const r = { error: { code: 'EENCODE', message: 'failed to encode result: ' + e.message } };
@@ -548,10 +551,27 @@ const SPECS = Object.freeze({
         additionalProperties: false
       }
     }
+  },
+  edit_file: {
+    type: 'function',
+    function: {
+      name: 'edit_file',
+      description: 'Compatibility alias for write_file. Create or overwrite a text file in the project directory with the supplied full content. Accepts path or file for the relative filename; content is capped at 1 MB.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'POSIX path relative to the project root.' },
+          file: { type: 'string', description: 'Compatibility alias for path.' },
+          content: { type: 'string', description: 'The full replacement file body.' }
+        },
+        required: ['content'],
+        additionalProperties: false
+      }
+    }
   }
 });
 
-const FILE_TOOL_NAMES = Object.freeze(['read_file', 'list_files', 'search_files', 'write_file']);
+const FILE_TOOL_NAMES = Object.freeze(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 
 function isFileToolName(name) {
   return FILE_TOOL_NAMES.indexOf(name) !== -1;

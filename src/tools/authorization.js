@@ -63,7 +63,7 @@ function normalizeConfig(raw, source, enabled) {
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
 const NATIVE_TOOLS = new Set(['shell', 'file']);
-const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file']);
+const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 
 // Model-facing file operations share the single project.tools.file gate.
 // Keep the original operation name for session grants and audit events, but
