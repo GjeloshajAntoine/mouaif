@@ -726,6 +726,47 @@ function* parseOpenAISSE(eventName, data) {
   }
 }
 
+// Some models routed through OpenRouter (notably MiniMax) occasionally put
+// their private tool-call serialization in `delta.content` instead of using
+// the OpenAI `delta.tool_calls` field. OpenRouter forwards that text verbatim:
+//
+//   ]<]minimax[>[<tool_call> ... <invoke name="search_files"> ...
+//
+// Parse that compatibility form only after a complete upstream turn. Keeping
+// it out of parseOpenAISSE avoids interpreting ordinary XML/code examples as
+// calls, and the MiniMax sentinel makes the fallback deliberately narrow.
+function parseMiniMaxTextToolCalls(text) {
+  const source = String(text || '');
+  if (source.indexOf(']<]minimax[>[') < 0 || source.indexOf('<tool_call>') < 0) {
+    return { text: source, calls: [] };
+  }
+
+  const calls = [];
+  const blockRe = /\]<\]minimax\[>\[<tool_call>[\s\S]*?\]<\]minimax\[>\[<\/tool_call>/g;
+  let match;
+  while ((match = blockRe.exec(source))) {
+    const block = match[0];
+    const invoke = /<invoke\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/invoke>/.exec(block);
+    if (!invoke) continue;
+    const args = {};
+    const argRe = /<([A-Za-z_][\w.-]*)>([\s\S]*?)<\/\1>/g;
+    let arg;
+    while ((arg = argRe.exec(invoke[2]))) {
+      const value = arg[2].trim();
+      try { args[arg[1]] = JSON.parse(value); }
+      catch { args[arg[1]] = value; }
+    }
+    calls.push({
+      id: 'call_minimax_' + (calls.length + 1),
+      name: invoke[1],
+      arguments: JSON.stringify(args)
+    });
+  }
+
+  if (!calls.length) return { text: source, calls: [] };
+  return { text: source.replace(blockRe, '').trim(), calls };
+}
+
 function* parseAnthropicSSE(eventName, data) {
   if (!data) return;
   let obj;
@@ -1163,10 +1204,28 @@ async function streamChat(opts) {
   for (const tc of toolAcc.values()) {
     if (tc.name) toolCalls.push({ id: tc.id, name: tc.name, arguments: tc.arguments });
   }
+  // MiniMax/OpenRouter compatibility: if no native OpenAI tool call was
+  // emitted, recover calls serialized into assistant text. OpenRouter text is
+  // buffered for one turn so private sentinels never flash in the browser.
+  if (!toolCalls.length && model.provider === 'openrouter') {
+    const compat = parseMiniMaxTextToolCalls(assistantText);
+    if (compat.calls.length) {
+      assistantText = compat.text;
+      toolCalls.push(...compat.calls);
+    }
+  }
+  if (model.provider === 'openrouter' && assistantText) {
+    onEvent('message', { delta: assistantText });
+  }
   return { ok: true, assistantText, toolCalls };
 
   function apply(ev) {
-    if (ev.name === 'message') { if (ev.data && typeof ev.data.delta === 'string') assistantText += ev.data.delta; onEvent('message', ev.data); }
+    if (ev.name === 'message') {
+      if (ev.data && typeof ev.data.delta === 'string') assistantText += ev.data.delta;
+      // OpenRouter is buffered until the turn completes because MiniMax may
+      // serialize a tool call across several ordinary content deltas.
+      if (model.provider !== 'openrouter') onEvent('message', ev.data);
+    }
     else if (ev.name === 'done') {
       // Accumulate usage into the shared counter. Do NOT emit `done`
       // here — the outer tool loop owns the single final `done` after

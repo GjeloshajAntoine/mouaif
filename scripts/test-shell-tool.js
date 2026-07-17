@@ -35,7 +35,10 @@ async function main() {
   const chatId = 'a1b2c3d4';
   settings.setProject(projectDir, {
     chats: [{ id: chatId, title: 'Shell tool test', trace: false }],
-    tools: { shell: { enabled: true, mode: 'allow' } }
+    tools: {
+      shell: { enabled: true, mode: 'allow' },
+      file: { enabled: true, mode: 'allow' }
+    }
   });
   // ---- Part 1: runShell directly ----------------------------------
   const echoCmd = process.platform === 'win32' ? 'echo hello-shell' : 'echo hello-shell';
@@ -149,7 +152,47 @@ async function main() {
   const finalMsg = events.filter(e => e.name === 'message').map(e => e.data.delta).join('');
   check('final assistant text present', /output was captured/.test(finalMsg), finalMsg);
 
-  // ---- Part 3: specs stay advertised; authorization gates execution ----
+  // ---- Part 3: MiniMax text-serialized tool calls via OpenRouter -----
+  let minimaxRequests = 0;
+  let minimaxSawToolMessage = false;
+  const serverMiniMax = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      minimaxRequests++;
+      const parsed = JSON.parse(body);
+      if (minimaxRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { content: 'Searching now.\n]<]minimax[>[<tool_call>\n]<]minimax[>[<invoke name="search_files">\n]<]minimax[>[<query>providersRef</query>\n]<]minimax[>[</invoke>\n]<]minimax[>[</tool_call>' } }] },
+          { choices: [{ finish_reason: 'stop' }] }
+        ]);
+      } else {
+        minimaxSawToolMessage = parsed.messages.some((m) => m.role === 'tool' && m.name === 'search_files');
+        sse(res, [
+          { choices: [{ delta: { content: 'Search completed.' } }] },
+          { choices: [{ finish_reason: 'stop' }] }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverMiniMax.listen(0, '127.0.0.1', resolve));
+  const minimaxEvents = [];
+  const minimaxResult = await ai.streamChat({
+    model: Object.assign({}, model, { provider: 'openrouter', baseUrl: 'http://127.0.0.1:' + serverMiniMax.address().port }),
+    messages: [{ role: 'user', content: 'find providersRef' }],
+    projectDir,
+    chatId,
+    onEvent: (name, data) => minimaxEvents.push({ name, data })
+  });
+  serverMiniMax.close();
+  check('MiniMax text tool call continues the loop', minimaxResult.ok && minimaxRequests === 2, JSON.stringify(minimaxResult));
+  check('MiniMax text tool call is dispatched', minimaxEvents.some((e) => e.name === 'tool_call' && e.data.name === 'search_files'));
+  check('MiniMax XML argument is decoded', minimaxEvents.some((e) => e.name === 'tool_call' && e.data.args.query === 'providersRef'));
+  check('MiniMax tool result is fed upstream', minimaxSawToolMessage === true);
+  check('MiniMax private markers are hidden', !minimaxEvents.some((e) => e.name === 'message' && /minimax|tool_call|invoke/.test(e.data.delta)));
+  check('MiniMax final answer is emitted', minimaxEvents.some((e) => e.name === 'message' && e.data.delta === 'Search completed.'));
+
+  // ---- Part 4: specs stay advertised; authorization gates execution ----
   let advertisedWhenDisabled = null;
   const server2 = http.createServer((req, res) => {
     let body = '';
