@@ -35,6 +35,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const settings = require('./settings.js');
+const { CHAT_ID_RE } = require('./messages.js');
 
 const PROJECT_FILE = '.mouaif.json';
 
@@ -78,7 +79,7 @@ function defaultsForProject(project) {
 
 function normalizeChat(chat) {
   if (!chat || typeof chat !== 'object') return null;
-  if (!chat.id || typeof chat.id !== 'string') return null;
+  if (!chat.id || typeof chat.id !== 'string' || !CHAT_ID_RE.test(chat.id)) return null;
   return {
     id: chat.id,
     title: typeof chat.title === 'string' ? chat.title : 'New chat',
@@ -123,8 +124,16 @@ function createChat(projectDir, opts) {
   const project = readProject(projectDir);
   const resolved = settings.getResolved(projectDir);
   const defaults = defaultsForProject(resolved);
+  const id = newChatId();
+
+  // SECURITY & LIFECYCLE: Clear session grants for the new chat
+  try {
+    const authGate = require('./tools/authorization.js');
+    authGate.clearGrants(id);
+  } catch { /* ignore */ }
+
   const chat = normalizeChat({
-    id: newChatId(),
+    id,
     title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.title.trim() : 'New chat',
     createdAt: new Date().toISOString(),
     lastOpenedAt: null,
@@ -180,6 +189,11 @@ function deleteChat(projectDir, chatId) {
 
 // Touch lastOpenedAt to "now". Returns the updated chat or null.
 function touchChat(projectDir, chatId) {
+  // SECURITY & LIFECYCLE: Clear session grants when reopening/touching a chat
+  try {
+    const authGate = require('./tools/authorization.js');
+    authGate.clearGrants(chatId);
+  } catch { /* ignore */ }
   return updateChat(projectDir, chatId, { lastOpenedAt: new Date().toISOString() });
 }
 

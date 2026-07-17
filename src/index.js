@@ -3,6 +3,7 @@ const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
@@ -32,6 +33,7 @@ oauthOpenRouter.register();
 mcp.installShutdown();
 
 const DEFAULT_PORT = 5732;
+const SESSION_COOKIE = 'mouaif_session';
 const WEB_DIR = path.join(__dirname, 'web');
 // Vite builds the mobile UI into src/web/dist/. The /web/ route serves
 // that directory when it exists; otherwise it falls back to the
@@ -97,8 +99,7 @@ function handleSSE(req, res) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
+    Connection: 'keep-alive'
   });
 
   // Send initial connection event
@@ -125,19 +126,67 @@ function broadcast(event, data) {
   }
 }
 
-function handleRequest(req, res, activePort = DEFAULT_PORT) {
+function parseCookies(header) {
+  const out = {};
+  for (const part of String(header || '').split(';')) {
+    const at = part.indexOf('=');
+    if (at <= 0) continue;
+    const key = part.slice(0, at).trim();
+    const value = part.slice(at + 1).trim();
+    if (key) out[key] = value;
+  }
+  return out;
+}
+
+function requestOrigin(req) {
+  const raw = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  if (!raw) return '';
+  try { return new URL(raw).origin; } catch { return null; }
+}
+
+function expectedOrigin(req) {
+  const host = typeof req.headers.host === 'string' ? req.headers.host.trim() : '';
+  if (!host || /[\r\n]/.test(host)) return null;
+  try { return new URL('http://' + host).origin; } catch { return null; }
+}
+
+function authorizeBrowserRequest(req, res, sessionToken) {
+  const origin = requestOrigin(req);
+  if (!origin) return true;
+  const expected = expectedOrigin(req);
+  if (!expected || origin !== expected) {
+    sendJSON(res, 403, { error: 'Cross-origin requests are not allowed', code: 'EORIGIN' });
+    return false;
+  }
+  const cookies = parseCookies(req.headers.cookie);
+  const actual = cookies[SESSION_COOKIE] || '';
+  const valid = actual.length === sessionToken.length
+    && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
+  if (!valid) {
+    sendJSON(res, 401, { error: 'Browser session is missing or expired', code: 'ESESSION' });
+    return false;
+  }
+  return true;
+}
+
+function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '') {
   const parsed = url.parse(req.url, true);
   const urlPath = parsed.pathname;
   const method = req.method;
 
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+  // The UI and API are deliberately same-origin. A browser first loads
+  // /web/, which receives an HttpOnly SameSite cookie. API/SSE requests
+  // carrying an Origin must present that cookie and match Host exactly.
+  // Requests without Origin remain available to local CLI clients and tests;
+  // the CLI binds to loopback unless the user explicitly opts into a remote
+  // host. No Access-Control-Allow-Origin header is emitted.
   if (method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
+    return sendJSON(res, 403, { error: 'Cross-origin preflight is not allowed', code: 'EORIGIN' });
+  }
+  const browserProtected = urlPath === '/events'
+    || urlPath === '/oauth/callback'
+    || urlPath.startsWith('/api/');
+  if (browserProtected && !authorizeBrowserRequest(req, res, sessionToken)) {
     return;
   }
 
@@ -151,6 +200,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   // (e.g. during development before `npm run build:web`). This lets the
   // repo keep working in either state without breaking.
   if (urlPath === '/web' || urlPath === '/web/') {
+    res.setHeader('Set-Cookie', SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict');
     return serveWebFile(res, 'index.html', { preferDist: true });
   }
   if (urlPath.startsWith('/web/')) {
@@ -235,6 +285,11 @@ function handleRequest(req, res, activePort = DEFAULT_PORT) {
   // Prompts (custom per-project prompts)
   if (urlPath === '/api/prompts' || urlPath.startsWith('/api/prompts/')) {
     return handlePrompts(req, res, parsed);
+  }
+
+  // Tool Authorization API
+  if (urlPath.startsWith('/api/tools/authorization')) {
+    return handleToolAuthorization(req, res, parsed);
   }
 
   // Tools — the native shell tool's direct REST surface (also the
@@ -741,6 +796,7 @@ async function handleChats(req, res, parsed) {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       return sendJSON(res, 200, { messages: messages.listMessages(dir, id) });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
@@ -875,6 +931,7 @@ async function handleChats(req, res, parsed) {
     const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const msg = messages.appendMessage(dir, id, { role: body.role, content: body.content, ts: body.ts });
       return sendJSON(res, 201, { message: msg });
     } catch (e) {
@@ -888,6 +945,7 @@ async function handleChats(req, res, parsed) {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const removed = messages.clearMessages(dir, id);
       return sendJSON(res, 200, { ok: true, removed });
     } catch (e) {
@@ -947,8 +1005,7 @@ async function handleChatStream(req, res, chatId) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
+    Connection: 'keep-alive'
   });
   res.write(': connected\n\n');
 
@@ -1051,6 +1108,7 @@ async function handleChatStream(req, res, chatId) {
     model,
     messages: upstreamMessages,
     projectDir,
+    chatId, // Pass chatId for authorization gate
     shellEnabled,
     promptSize: resolvedProfileId,
     onEvent: (name, data) => {
@@ -1322,7 +1380,17 @@ function resolveModel(modelId, projectDir, providerId) {
     e.code = 'EPROVIDER_NOT_FOUND';
     throw e;
   }
-  const hydrated = Object.assign({}, connection || {}, m, { provider: m.provider });
+
+  // SECURITY FIX: Prevent project models from overriding global credentials, transport, or headers.
+  // We only allow project models to override non-sensitive fields like label, contextWindow, etc.
+  const safeModel = { ...m };
+  delete safeModel.apiKey;
+  delete safeModel.baseUrl;
+  delete safeModel.auth;
+  delete safeModel.oauthAccount;
+  delete safeModel.headers;
+
+  const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';
   return hydrated;
 }
@@ -1396,13 +1464,8 @@ async function handleAI(req, res, parsed) {
       timedOut = true;
       ac.abort();
     }, MODEL_LIST_TIMEOUT_MS);
-    // Pass signal through if the adapter accepts it. The current
-    // listModels adapters ignore it (they call fetch() without a
-    // signal), so the AbortController is belt-and-braces: the fetch
-    // call may run to completion, but the result is still discarded
-    // because timedOut === true when it lands. A future commit can
-    // thread `signal: ac.signal` through to each adapter.
-    const args = cred ? [provider, cred] : [provider];
+    // Pass signal through if the adapter accepts it.
+    const args = cred ? [provider, cred, ac.signal] : [provider, null, ac.signal];
     ai.listModels(...args)
       .then((models) => {
         clearTimeout(timer);
@@ -2279,6 +2342,60 @@ async function handleInspector(req, res, parsed) {
   return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
 }
 
+async function handleToolAuthorization(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+  const authGate = require('./tools/authorization.js');
+
+  // GET /api/tools/authorization?projectDir=<abs>
+  if (urlPath === '/api/tools/authorization' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, authGate.getAuthorization(dir));
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message });
+    }
+  }
+
+  // PUT /api/tools/authorization
+  if (urlPath === '/api/tools/authorization' && method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const { projectDir, tools } = body || {};
+    if (!projectDir || typeof projectDir !== 'string') {
+      return sendJSON(res, 400, { error: 'projectDir is required' });
+    }
+    try {
+      const next = authGate.setAuthorization(projectDir, { tools });
+      return sendJSON(res, 200, next);
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // POST /api/tools/authorization/decision
+  if (urlPath === '/api/tools/authorization/decision' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const { chatId, callId, decision } = body || {};
+    if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
+    if (!callId) return sendJSON(res, 400, { error: 'callId is required' });
+    if (!decision) return sendJSON(res, 400, { error: 'decision is required' });
+    try {
+      const out = authGate.recordDecision(chatId, callId, decision);
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'tools-authorization' });
+}
+
 function createServer(port = DEFAULT_PORT) {
   // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
   // are never consumed and would otherwise accumulate PKCE verifiers in the
@@ -2289,9 +2406,10 @@ function createServer(port = DEFAULT_PORT) {
   } catch (e) {
     console.warn('[mouaif] could not prune stale OAuth flows:', e.message);
   }
+  const sessionToken = crypto.randomBytes(32).toString('base64url');
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
-    handleRequest(req, res, port);
+    handleRequest(req, res, port, sessionToken);
   });
   // WebSocket upgrade routing. Only /api/inspector/proxy is upgraded;
   // any other upgrade is rejected so the rest of the server stays
@@ -2301,6 +2419,17 @@ function createServer(port = DEFAULT_PORT) {
   server.on('upgrade', (req, socket, head) => {
     const u = req.url || '';
     if (u.startsWith('/api/inspector/proxy')) {
+      const origin = requestOrigin(req);
+      const expected = expectedOrigin(req);
+      const cookies = parseCookies(req.headers.cookie);
+      const actual = cookies[SESSION_COOKIE] || '';
+      const validToken = actual.length === sessionToken.length
+        && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
+      if (!origin || origin !== expected || !validToken) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        socket.end();
+        return;
+      }
       // The inspector module does the heavy lifting. We pass `server`
       // so it can complete the upgrade on the browser side via
       // server.handleUpgrade().

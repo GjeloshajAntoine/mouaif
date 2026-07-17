@@ -14,14 +14,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertChatId } = require('./messages.js');
 
 function traceFilePath(projectDir, chatId) {
   if (!projectDir || typeof projectDir !== 'string') {
     throw new TypeError('projectDir must be a non-empty string');
   }
-  if (!chatId || typeof chatId !== 'string') {
-    throw new TypeError('chatId must be a non-empty string');
-  }
+  assertChatId(chatId);
   return path.join(projectDir, '.mouaif', 'traces', chatId + '.ndjson');
 }
 

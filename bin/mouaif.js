@@ -14,7 +14,7 @@ program
   .command('serve')
   .description('Start the HTTP server')
   .option('-p, --port <port>', 'Port to listen on', DEFAULT_PORT)
-  .option('-h, --host <host>', 'Host to bind to', '0.0.0.0')
+  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .action((options) => {
     const port = parseInt(options.port, 10);
     const server = createServer(port);

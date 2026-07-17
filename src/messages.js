@@ -29,13 +29,22 @@
 const fs = require('fs');
 const path = require('path');
 
+const CHAT_ID_RE = /^[a-f0-9]{8}$/i;
+
+function assertChatId(chatId) {
+  if (!chatId || typeof chatId !== 'string' || !CHAT_ID_RE.test(chatId)) {
+    const e = new Error('chatId must be an 8-character hexadecimal id');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  return chatId;
+}
+
 function messagesFilePath(projectDir, chatId) {
   if (!projectDir || typeof projectDir !== 'string') {
     throw new TypeError('projectDir must be a non-empty string');
   }
-  if (!chatId || typeof chatId !== 'string') {
-    throw new TypeError('chatId must be a non-empty string');
-  }
+  assertChatId(chatId);
   return path.join(projectDir, '.mouaif.messages.' + chatId + '.json');
 }
 
@@ -143,6 +152,8 @@ function clearMessages(projectDir, chatId) {
 
 module.exports = {
   VALID_ROLES,
+  CHAT_ID_RE,
+  assertChatId,
   messagesFilePath,
   listMessages,
   getMessage,
