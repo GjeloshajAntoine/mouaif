@@ -1119,18 +1119,15 @@ textarea#projectEditor {
 .chat-view__name:hover { color: var(--accent); }
 .chat-view__meta { color: var(--muted); font-size: 0.66rem; }
 
-/* Inline chat settings: a popover anchored to the head's ⚙ button.
-   The strip that used to live below the head is gone — it ate a
-   whole row on a phone and pushed the transcript off-screen. The
-   popover holds the trace toggle + prompt-size selector and only
-   appears on demand. */
+/* Inline chat settings. Keep this in normal header flow instead of
+   positioning it as an overlay; this avoids clipping / stacking issues
+   inside the scroll-locked chat view. */
 .chat-view__settings-wrap { position: relative; }
 .chat-view__settings-pop[hidden] { display: none !important; }
 .chat-view__settings-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  min-width: 220px;
+  flex: 1 0 100%;
+  min-width: 0;
+  width: 100%;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -1138,8 +1135,7 @@ textarea#projectEditor {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 35;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 .chat-view__settings-pop .chat-view__settings-row { padding: 6px 8px; border-radius: 8px; }
 .chat-view__settings-pop .chat-view__settings-row:hover { background: var(--surface-2); }
