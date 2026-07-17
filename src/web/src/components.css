@@ -727,12 +727,9 @@ textarea#projectEditor {
   font-size: 0.84rem;
 }
 
-/* The model picker trigger wraps to its own full-width row below
-   the title/actions row (its flex-basis is 100%). On a narrow phone
-   the trigger no longer competes with the title for horizontal
-   space and the header can never overflow vertically. The
-   accompanying refresh icon flush to the right keeps the head
-   chrome compact (one row, not two stacked). */
+/* Keep the model picker trigger on the same header line as the
+   title and action buttons. The title is allowed to shrink first,
+   while the picker keeps a compact but usable tap target. */
 .chat-view__back {
   font: inherit;
   color: var(--fg-soft);
@@ -780,11 +777,12 @@ textarea#projectEditor {
    line of the head. position: relative anchors the picker
    popover (see .chat-view__picker). */
 .chat-view__model-row {
-  flex: 1 0 100%;
+  flex: 1 1 136px;
   display: flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
+  min-width: 96px;
+  max-width: 190px;
   position: relative;
 }
 
@@ -1106,7 +1104,7 @@ textarea#projectEditor {
   line-height: 1.4;
 }
 
-.chat-view__title-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.chat-view__title-stack { flex: 2 1 96px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .chat-view__name {
   font-weight: 600;
   font-size: 0.9rem;
