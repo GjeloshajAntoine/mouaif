@@ -596,6 +596,56 @@ export function ChatView(props) {
     try { return JSON.stringify(r, null, 2); } catch { return String(r); }
   }
 
+  function authorizationCard(request, resume) {
+    return new Promise((resolve) => {
+      if (!transcript.current) return resolve('deny');
+      const card = document.createElement('div');
+      card.className = 'tool-card tool-card--authorization';
+      const title = document.createElement('div');
+      title.className = 'tool-card__role';
+      title.textContent = 'authorization required';
+      const name = document.createElement('div');
+      name.className = 'tool-card__name';
+      name.textContent = request.tool || 'tool';
+      const detail = document.createElement('pre');
+      detail.className = 'tool-card__body';
+      detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
+        .filter(Boolean).join('\n');
+      const actions = document.createElement('div');
+      actions.className = 'tool-card__actions';
+      for (const [decision, label] of [
+        ['allow-once', 'Allow once'],
+        ['allow-session', 'Allow for session'],
+        ['deny', 'Deny']
+      ]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn' + (decision === 'deny' ? ' btn--danger' : '');
+        button.textContent = label;
+        button.addEventListener('click', async () => {
+          for (const child of actions.querySelectorAll('button')) child.disabled = true;
+          const r = await fetchJson('/api/tools/authorization/decision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision })
+          });
+          if (r.status !== 200) {
+            for (const child of actions.querySelectorAll('button')) child.disabled = false;
+            setChatStatus('authorization failed: HTTP ' + r.status, 'error');
+            return;
+          }
+          card.remove();
+          if (decision !== 'deny' && typeof resume === 'function') await resume();
+          resolve(decision);
+        });
+        actions.appendChild(button);
+      }
+      card.appendChild(title); card.appendChild(name); card.appendChild(detail); card.appendChild(actions);
+      transcript.current.appendChild(card);
+      transcript.current.scrollTop = transcript.current.scrollHeight;
+    });
+  }
+
   // CSS.escape polyfill for older mobile browsers; we only need to
   // escape the chars that can appear in a tool call id (alnum, _, -).
   function cssEscape(s) {
@@ -713,13 +763,26 @@ export function ChatView(props) {
     appendToolCallCard({ id: null, name: 'shell', args: { cmd } });
     setChatStatus('running shell…', 'busy');
     sendBtn.current.disabled = true;
-    let r;
-    try {
-      r = await fetchJson('/api/tools/shell', {
+    const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    async function requestShell() {
+      return fetchJson('/api/tools/shell', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir, cmd })
+        body: JSON.stringify({ projectDir, chatId, callId, cmd })
       });
+    }
+    let r;
+    try {
+      r = await requestShell();
+      if (r.status === 409 && r.body && r.body.code === 'EAUTH_REQUIRED') {
+        let resumed = null;
+        const decision = await authorizationCard(r.body, async () => { resumed = await requestShell(); });
+        if (decision === 'deny') {
+          r = { status: 403, body: { ok: false, code: 'EDENIED', error: 'user denied' } };
+        } else {
+          r = resumed;
+        }
+      }
     } catch (err) {
       appendToolResultCard({ id: null, name: 'shell', ok: false, result: { error: String(err) } });
       setChatStatus('shell error', 'error');
@@ -837,6 +900,7 @@ export function ChatView(props) {
           cost = data.cost || null;
           streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
         }
+        else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
         else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
         else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
         else if (ev.eventName === 'error') { statusEl.current.textContent = 'error: ' + (data.code || '') + ' ' + (data.message || ''); }

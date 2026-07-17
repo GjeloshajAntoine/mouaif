@@ -9,9 +9,12 @@
 
 const http = require('node:http');
 const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const shell = require('../src/tools/shell.js');
 const ai = require('../src/ai.js');
+const settings = require('../src/settings.js');
 
 let passed = 0;
 let failed = 0;
@@ -28,6 +31,12 @@ function sse(res, lines) {
 }
 
 async function main() {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-shell-project-'));
+  const chatId = 'a1b2c3d4';
+  settings.setProject(projectDir, {
+    chats: [{ id: chatId, title: 'Shell tool test', trace: false }],
+    tools: { shell: { enabled: true, mode: 'allow' } }
+  });
   // ---- Part 1: runShell directly ----------------------------------
   const echoCmd = process.platform === 'win32' ? 'echo hello-shell' : 'echo hello-shell';
   const r1 = await shell.runShell({ projectDir: process.cwd(), cmd: echoCmd });
@@ -101,7 +110,8 @@ async function main() {
   const result = await ai.streamChat({
     model,
     messages: [{ role: 'user', content: 'run echo loop-works' }],
-    projectDir: process.cwd(),
+    projectDir,
+    chatId,
     shellEnabled: true,
     onEvent: (name, data) => events.push({ name, data })
   });
@@ -155,6 +165,9 @@ async function main() {
   });
   server2.close();
   check('shell not advertised when disabled', advertisedWhenDisabled === false, String(advertisedWhenDisabled));
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+  settings.close();
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);

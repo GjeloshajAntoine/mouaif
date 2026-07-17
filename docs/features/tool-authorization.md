@@ -39,7 +39,7 @@ The mode is set on the project record (per decision §2) and can be overridden p
 }
 ```
 
-A project with no `tools` block falls back to the app-level default (`settings.app.tools.<name>.mode`), which in turn falls back to `off`. The Settings UI surfaces the effective value and shows a one-line "Default" hint pointing at the app-level source.
+A project with no authorization mode falls back to the app-level value, then to `ask`. The independent Shell enable switch remains off by default, so both conditions must pass before a command runs.
 
 ### Approval flow
 
@@ -62,14 +62,14 @@ The composer `/shell` slash command uses the same gate. A `/shell` invocation in
 | `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... } }` | `{ tools: { ... } }` (echo) |
 | `POST` | `/api/tools/authorization/decision` | `{ chatId, callId, decision: 'allow-once' | 'allow-session' | 'deny' }` | `{ ok: true }` |
 
-The `decision` endpoint is the only path the UI uses to answer a pending prompt; the server keeps the prompt's `callId` opaque to the client and validates the chat + project ownership before recording the decision.
+The `decision` endpoint is the only path the UI uses to answer a pending prompt. It validates the chat and project ownership before recording the decision. Direct REST calls retry with the same opaque `callId` after approval; model calls remain blocked on their SSE stream.
 
 ## Behavior
 
 - **Default: `ask`.** New tools land with `ask` so the first call always requires a tap. A user who wants a friction-free experience flips to `allowlist` with a tight regex set.
-- **Allowlist is regex-matched against the full command.** The match is anchored on the full string (`^...$`); partial matches do not pass. The regex engine is `RegExp` (the built-in V8 engine); catastrophic backtracking is mitigated by a 1 ms match timeout enforced in the runner.
-- **Decisions are session-scoped, not persisted.** An `allow-once` decision is consumed by the next matching call and then dropped. An `allow-session` decision is recorded on the chat object (`chat.toolGrants[toolName] = { mode: 'allow', grantedAt }`) and is cleared when the chat is reopened (decision §3/§4 chat lifecycle) or when the user flips the tool back to `ask`.
-- **Deny reasons are kept private.** A `deny` decision records the deny on the chat's `toolGrants[toolName].deniedCallIds` so the same call id is not re-asked within the session. The deny does **not** leak the command, the project, or the chat to the upstream — the `tool` message forwarded to the model is `{ ok: false, code: 'EDENIED', reason: 'user denied' }`.
+- **Allowlist is regex-matched against the full command.** The match is anchored on the full string (`^...$`); partial matches do not pass. Each untrusted expression runs in an isolated worker that is terminated after 1 ms, so catastrophic backtracking cannot block the HTTP process.
+- **Decisions are session-scoped, not persisted.** An `allow-once` decision resumes exactly one blocked call. An `allow-session` decision is kept in server memory and cleared by `POST /api/chats/:id/touch` when the chat is reopened.
+- **Deny reasons are kept private.** A deny records only the call id in the in-memory session. The upstream receives `{ ok: false, code: 'EDENIED', reason: 'user denied' }`, without the command, project, or chat id.
 - **Authorization is independent of the tool's enable switch.** A tool can be `off` (no calls) and `allow` (mode wouldn't matter). The order in the runner is: enabled? → mode? → allowlist? → execute.
 - **Timeouts are bounded by the project.** A call's effective timeout is `clamp(requestedTimeoutMs || defaultTimeoutMs, 1 ms, maxTimeoutMs)`. Anything above the cap is clamped silently; the UI surfaces the clamped value in the prompt.
 - **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping from `ask` to `off` rejects the next call with `ETOOL_DISABLED` and the model's prior `tool_result` history is left untouched.
@@ -79,9 +79,9 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt;
 
 - Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`.
 - The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
-- The chat lifecycle in `src/chats.js` clears `chat.toolGrants` on `createChat` and on `touchChat` (decision §4 lifecycle: reopening a chat starts a fresh session). A future revision may add a "remember for this project" toggle, but for this commit session-scoping is the rule.
+- The chat touch route clears in-memory grants before updating `lastOpenedAt`; grants never enter `.mouaif.json`.
 - The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under a new **Tools** card. The card shows the effective mode per tool with the source (`project`, `app`, `default`) on a small caption line, and links to the per-tool allowlist editor.
-- The Authorization card in the chat composer is a single tappable surface — Allow once, Allow for this session, Deny — all 32 × 32 px touch targets, no hover-only affordances, mobile-first.
+- The Authorization card in the chat composer exposes Allow once, Allow for this session, and Deny as tap-accessible controls with no hover-only affordance.
 
 ## Related
 

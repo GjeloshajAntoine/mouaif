@@ -195,9 +195,10 @@ export function SettingsMcpEditView(props) {
       if (nameEl.current) nameEl.current.value = current.name || '';
       if (commandEl.current) commandEl.current.value = current.command || '';
       if (argsEl.current) argsEl.current.value = (current.args || []).join(' ');
-      if (envEl.current) envEl.current.value = Object.entries(current.env || {}).map(([k, v]) => k + '=' + v).join('\n');
+      // Secret values are write-only. The server only returns key names.
+      if (envEl.current) envEl.current.value = '';
       if (cwdEl.current) cwdEl.current.value = current.cwd || '';
-      if (enabledEl.current) enabledEl.current.checked = current.enabled !== false;
+      if (enabledEl.current) enabledEl.current.checked = current.enabled === true;
       if (deleteBtn.current) deleteBtn.current.hidden = false;
       renderTools(current);
     } else {
@@ -258,10 +259,11 @@ export function SettingsMcpEditView(props) {
       name: (nameEl.current.value || '').trim(),
       command: (commandEl.current.value || '').trim(),
       args: parseArgs(argsEl.current.value),
-      env: parseEnv(envEl.current.value),
       cwd: (cwdEl.current.value || '').trim(),
       enabled: enabledEl.current.checked !== false
     };
+    const envText = envEl.current.value || '';
+    if (!id || envText.trim()) body.env = parseEnv(envText);
     if (!body.name) { setStatus(statusEl, 'name is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
     if (!body.command) { setStatus(statusEl, 'command is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
     let r;
@@ -314,14 +316,15 @@ export function SettingsMcpEditView(props) {
     ),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'mcp-env' }, 'Environment (one KEY=value per line)'),
-      h('textarea', { ref: envEl, class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: 'API_TOKEN=...\nLOG_LEVEL=info' })
+      h('textarea', { ref: envEl, class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: 'API_TOKEN=...\nLOG_LEVEL=info', 'aria-describedby': 'mcp-env-hint' }),
+      h('span', { id: 'mcp-env-hint', class: 'hint hint--compact' }, 'Values are write-only and are never returned by the API. Leave blank to preserve existing values when editing.')
     ),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'mcp-cwd' }, 'Working directory (optional, relative to project)'),
       h('input', { ref: cwdEl, class: 'input', id: 'mcp-cwd', type: 'text', placeholder: 'tools/my-mcp' })
     ),
     h('div', { class: 'row row--inline' },
-      h('input', { ref: enabledEl, class: 'checkbox', id: 'mcp-enabled', type: 'checkbox', checked: true }),
+      h('input', { ref: enabledEl, class: 'checkbox', id: 'mcp-enabled', type: 'checkbox' }),
       h('label', { class: 'label', for: 'mcp-enabled' }, 'Enabled')
     ),
     id ? h('div', { class: 'row' },

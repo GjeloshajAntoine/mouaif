@@ -126,12 +126,6 @@ function createChat(projectDir, opts) {
   const defaults = defaultsForProject(resolved);
   const id = newChatId();
 
-  // SECURITY & LIFECYCLE: Clear session grants for the new chat
-  try {
-    const authGate = require('./tools/authorization.js');
-    authGate.clearGrants(id);
-  } catch { /* ignore */ }
-
   const chat = normalizeChat({
     id,
     title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.title.trim() : 'New chat',
@@ -189,11 +183,6 @@ function deleteChat(projectDir, chatId) {
 
 // Touch lastOpenedAt to "now". Returns the updated chat or null.
 function touchChat(projectDir, chatId) {
-  // SECURITY & LIFECYCLE: Clear session grants when reopening/touching a chat
-  try {
-    const authGate = require('./tools/authorization.js');
-    authGate.clearGrants(chatId);
-  } catch { /* ignore */ }
   return updateChat(projectDir, chatId, { lastOpenedAt: new Date().toISOString() });
 }
 

@@ -760,6 +760,7 @@ async function handleChats(req, res, parsed) {
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
+      require('./tools/authorization.js').clearGrants(dir, id);
       const chat = chats.touchChat(dir, id);
       if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
       return sendJSON(res, 200, { chat });
@@ -1989,8 +1990,12 @@ async function handleTools(req, res, parsed) {
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
     const timeoutMs = body && typeof body.timeoutMs === 'number' ? body.timeoutMs : undefined;
+    const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
+    const callId = body && typeof body.callId === 'string' ? body.callId : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!cmd) return sendJSON(res, 400, { error: 'cmd is required' });
+    if (!chatId || !callId) return sendJSON(res, 400, { error: 'chatId and callId are required' });
+    if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
 
     // Gate on the per-project enable flag.
     let enabled = false;
@@ -2002,7 +2007,29 @@ async function handleTools(req, res, parsed) {
       return sendJSON(res, 403, { ok: false, error: 'shell tool is disabled for this project', code: 'ETOOL_DISABLED' });
     }
 
-    const out = await shellTool.runShell({ projectDir, cmd, timeoutMs });
+    let authorization;
+    try {
+      authorization = await require('./tools/authorization.js').authorize({
+        projectDir, chatId, callId, tool: 'shell', cmd, summary: cmd, timeoutMs, flow: 'retry'
+      });
+    } catch (e) {
+      const status = e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED' ? 403 : 400;
+      return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
+    }
+    if (authorization.decision === 'prompt') {
+      return sendJSON(res, 409, {
+        ok: false,
+        code: 'EAUTH_REQUIRED',
+        chatId,
+        callId,
+        tool: 'shell',
+        cmd,
+        timeoutMs: authorization.timeoutMs,
+        projectDir
+      });
+    }
+
+    const out = await shellTool.runShell({ projectDir, cmd, timeoutMs: authorization.timeoutMs });
     const status = out.ok ? 200 : (out.code === 'EOUTSIDE_PROJECT' || out.code === 'ENOENT' ? 400 : 200);
     return sendJSON(res, status, out);
   }
@@ -2279,6 +2306,30 @@ async function handleMcp(req, res, parsed) {
     try {
       const entry = mcp.getServer(dir, body.serverId);
       if (!entry) return sendJSON(res, 404, { error: 'Server not found', id: body.serverId });
+      if (typeof body.chatId !== 'string' || typeof body.callId !== 'string') {
+        return sendJSON(res, 400, { error: 'chatId and callId are required' });
+      }
+      if (!chats.getChat(dir, body.chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId: body.chatId });
+      const tool = mcp.composedToolName(entry.slug, body.toolName);
+      const authorization = await require('./tools/authorization.js').authorize({
+        projectDir: dir,
+        chatId: body.chatId,
+        callId: body.callId,
+        tool,
+        summary: firstStringValue(body.args),
+        flow: 'retry'
+      });
+      if (authorization.decision === 'prompt') {
+        return sendJSON(res, 409, {
+          ok: false,
+          code: 'EAUTH_REQUIRED',
+          projectDir: dir,
+          chatId: body.chatId,
+          callId: body.callId,
+          tool,
+          timeoutMs: authorization.timeoutMs
+        });
+      }
       const out = await mcp.callTool(dir, entry.slug, body.toolName, body.args || {});
       return sendJSON(res, 200, out);
     } catch (e) {
@@ -2364,12 +2415,12 @@ async function handleToolAuthorization(req, res, parsed) {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const { projectDir, tools } = body || {};
+    const { projectDir, tools, mcp: mcpAuthorization } = body || {};
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }
     try {
-      const next = authGate.setAuthorization(projectDir, { tools });
+      const next = authGate.setAuthorization(projectDir, { tools, mcp: mcpAuthorization });
       return sendJSON(res, 200, next);
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -2381,12 +2432,14 @@ async function handleToolAuthorization(req, res, parsed) {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const { chatId, callId, decision } = body || {};
+    const { projectDir, chatId, callId, decision } = body || {};
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
     if (!callId) return sendJSON(res, 400, { error: 'callId is required' });
     if (!decision) return sendJSON(res, 400, { error: 'decision is required' });
     try {
-      const out = authGate.recordDecision(chatId, callId, decision);
+      if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
+      const out = authGate.recordDecision(projectDir, chatId, callId, decision);
       return sendJSON(res, 200, out);
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -2500,4 +2553,10 @@ function serveWebFile(res, absOrRel, opts) {
 function serveWebRequest(res, relPath) {
   if (!relPath) return serveWebFile(res, 'index.html', { preferDist: true });
   return serveWebFile(res, relPath, { preferDist: true });
+}
+
+function firstStringValue(value) {
+  if (!value || typeof value !== 'object') return '';
+  for (const item of Object.values(value)) if (typeof item === 'string') return item;
+  return '';
 }

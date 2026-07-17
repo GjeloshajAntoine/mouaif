@@ -37,11 +37,11 @@ const ENDPOINTS = {
     // but in this env the upstream returns 401 when no Authorization
     // header is sent, so treat "no cred" as a typed ENO_APIKEY error
     // instead of a generic upstream 401.
-    listModels: async (cred) => {
+    listModels: async (cred, signal) => {
       const def = ENDPOINTS['openai-compatible'];
       const url = (def.baseUrl || 'https://api.openai.com/v1') + '/models';
       let r;
-      try { r = await fetch(url, { headers: cred ? def.authHeader(cred) : {} }); }
+      try { r = await fetch(url, { headers: cred ? def.authHeader(cred) : {}, signal }); }
       catch (e) { throw unreachableError('openai-compatible', e); }
       if (r.status === 401 || r.status === 403) {
         if (!cred) throw noApiKeyError('openai-compatible');
@@ -86,11 +86,11 @@ const ENDPOINTS = {
     // public, but the public list endpoint now returns 403 without
     // a key, so a missing cred is a typed ENO_APIKEY error rather
     // than a generic upstream 403.
-    listModels: async (cred) => {
+    listModels: async (cred, signal) => {
       const url = ENDPOINTS.gemini.baseUrl + '/v1beta/models?pageSize=200'
         + (cred ? '&key=' + encodeURIComponent(cred) : '');
       let r;
-      try { r = await fetch(url); }
+      try { r = await fetch(url, { signal }); }
       catch (e) { throw unreachableError('gemini', e); }
       if (r.status === 401 || r.status === 403) {
         if (!cred) throw noApiKeyError('gemini');
@@ -113,10 +113,10 @@ const ENDPOINTS = {
     // failure). Surface that as EUNREACHABLE so the HTTP layer can
     // return 503 "service unavailable" instead of a misleading 502
     // "bad gateway".
-    listModels: async () => {
+    listModels: async (cred, signal) => {
       const url = ENDPOINTS.ollama.baseUrl + '/api/tags';
       let r;
-      try { r = await fetch(url); }
+      try { r = await fetch(url, { signal }); }
       catch (e) { throw unreachableError('ollama', e); }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
@@ -169,10 +169,10 @@ const ENDPOINTS = {
     // list unauthenticated, so missing cred is fine here; upstream
     // errors are surfaced as EUPSTREAM with the upstream status, and
     // a network failure is EUNREACHABLE (handled like the others).
-    listModels: async (cred) => {
+    listModels: async (cred, signal) => {
       const url = ENDPOINTS.openrouter.baseUrl + '/models';
       let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {} }); }
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {}, signal }); }
       catch (e) { throw unreachableError('openrouter', e); }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
@@ -334,17 +334,17 @@ function parseCuratedModels(catalog) {
   }));
 }
 
-// listModels(provider, cred) -> Promise<[{ id, label, contextWindow? }]>
+// listModels(provider, cred, signal) -> Promise<[{ id, label, contextWindow? }]>
 // Returns the live list for a provider; throws on upstream error so the
 // caller can surface a typed error to the chat UI.
-async function listModels(provider, cred) {
+async function listModels(provider, cred, signal) {
   const def = ENDPOINTS[provider];
   if (!def || typeof def.listModels !== 'function') {
     const e = new Error('no listModels for provider: ' + provider);
     e.code = 'ENO_LIST';
     throw e;
   }
-  const out = await def.listModels(cred);
+  const out = await def.listModels(cred, signal);
   // Stable, friendly order: by id ascending. Dedupe.
   const seen = new Set();
   const dedup = [];
@@ -619,7 +619,8 @@ function buildOpenAIRequest(model, messages, stream) {
 }
 
 function buildAnthropicRequest(model, messages, stream) {
-  const systemMsg = messages.find(m => m.role === 'system');
+  const systemMsgs = messages.filter(m => m.role === 'system');
+  const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
   return {
     // model.baseUrl wins when set, so test mocks and Anthropic-compatible
@@ -634,7 +635,7 @@ function buildAnthropicRequest(model, messages, stream) {
     body: {
       model: model.id,
       max_tokens: model.maxTokens || 1024,
-      system: systemMsg ? systemMsg.content : undefined,
+      system: systemContent || undefined,
       messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
       stream: !!stream
     }
@@ -644,12 +645,13 @@ function buildAnthropicRequest(model, messages, stream) {
 function buildGeminiRequest(model, messages, stream) {
   // Gemini uses ?alt=sse for streaming responses.
   const url = joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'));
-  const systemMsg = messages.find(m => m.role === 'system');
+  const systemMsgs = messages.filter(m => m.role === 'system');
+  const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const contents = messages
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
   const body = { contents };
-  if (systemMsg) body.systemInstruction = { role: 'system', parts: [{ text: systemMsg.content }] };
+  if (systemContent) body.systemInstruction = { role: 'system', parts: [{ text: systemContent }] };
   return {
     url,
     headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
@@ -963,6 +965,10 @@ async function streamChat(opts) {
       return { ok: true, usage };
     }
 
+    for (const c of calls) {
+      if (!c.id) c.id = 'call_' + Math.random().toString(36).slice(2, 12);
+    }
+
     // The model asked for tools. Append the assistant's tool-call
     // message (OpenAI shape) so the follow-up request has the context.
     convo.push({
@@ -985,7 +991,41 @@ async function streamChat(opts) {
       }
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
 
-      const exec = await dispatchTool(c.name, args, opts);
+      let exec;
+      try {
+        const authGate = require('./tools/authorization.js');
+        const authResult = await authGate.authorize({
+          projectDir: opts && opts.projectDir,
+          chatId: opts && opts.chatId,
+          tool: c.name,
+          callId: c.id,
+          cmd: args && args.cmd,
+          summary: c.name === 'shell' ? (args && args.cmd) : firstStringArgument(args),
+          timeoutMs: args && args.timeoutMs
+        });
+
+        if (authResult.decision === 'prompt') {
+          onEvent('authorization_required', {
+            chatId: opts && opts.chatId,
+            callId: c.id,
+            tool: c.name,
+            cmd: args && args.cmd,
+            timeoutMs: args && args.timeoutMs,
+            projectDir: opts && opts.projectDir
+          });
+          await authResult.wait;
+        }
+        exec = await dispatchTool(c.name, args, opts);
+      } catch (e) {
+        if (e.code === 'EDENIED') {
+          exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
+        } else if (e.code === 'ETOOL_DISABLED') {
+          exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
+        } else {
+          exec = { ok: false, content: JSON.stringify({ ok: false, error: e.message }), result: { ok: false, error: e.message } };
+        }
+      }
+
       onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
 
       convo.push({
@@ -1135,6 +1175,14 @@ async function streamChat(opts) {
     }
   }
   } // end runUpstreamTurn
+
+  function firstStringArgument(value) {
+    if (!value || typeof value !== 'object') return '';
+    for (const item of Object.values(value)) {
+      if (typeof item === 'string') return item;
+    }
+    return '';
+  }
 
   // ---- Tool dispatcher -----------------------------------------------
   // Routes one tool call to its runner and returns

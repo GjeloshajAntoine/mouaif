@@ -318,6 +318,10 @@
 .tool-card__pill--busy { background: var(--accent-soft); color: var(--accent); }
 .tool-card__pill--ok   { background: rgba(111, 212, 154, 0.15); color: var(--success); }
 .tool-card__pill--err  { background: var(--danger-soft); color: var(--danger); }
+.tool-card--authorization { border-color: var(--warning); }
+.tool-card--authorization .tool-card__body { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.tool-card__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tool-card__actions .btn { min-height: var(--tap); }
 
 /* ---- Model pricing page ------------------------------------------ */
 

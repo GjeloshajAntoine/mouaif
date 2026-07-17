@@ -111,10 +111,8 @@ function parseServerSlugAndToolName(composedName) {
 }
 
 // Per-server denylist (decision §16's runtime env policy) plus a few
-// extra vars an MCP server should not be allowed to override. We strip
-// these from the inherited env and from the per-server env map. The
-// per-server env map (if any) is applied on top, so the user can set
-// e.g. GITHUB_TOKEN explicitly.
+// extra vars an MCP server must not be allowed to override. We strip
+// these from both the inherited env and the per-server map.
 const ENV_DENYLIST = new Set([
   'LD_PRELOAD',
   'LD_LIBRARY_PATH',
@@ -137,6 +135,7 @@ function buildChildEnv(perServerEnv) {
   // (like our own spawn here) still works correctly.
   if (perServerEnv && typeof perServerEnv === 'object') {
     for (const [k, v] of Object.entries(perServerEnv)) {
+      if (ENV_DENYLIST.has(k)) continue;
       if (typeof v === 'string') env[k] = v;
       else if (v == null) delete env[k];
     }
@@ -188,7 +187,7 @@ function normalizeServerEntry(raw, usedSlugs) {
     args,
     env,
     cwd,
-    enabled: raw.enabled !== false, // default true
+    enabled: raw.enabled === true, // default off
     createdAt: raw.createdAt || new Date().toISOString()
   };
 }
@@ -264,9 +263,17 @@ function decorate(entry, projectDir) {
   const status = session ? session.status : 'stopped';
   const tools = session ? session.tools.slice() : [];
   const error = session && session.error ? session.error : null;
-  const decorated = Object.assign({}, entry, { status, tools });
+  const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), status, tools });
   if (error) decorated.error = error;
   return decorated;
+}
+
+function redactEnv(env) {
+  const out = {};
+  for (const [key, value] of Object.entries(env || {})) {
+    out[key] = { configured: typeof value === 'string' };
+  }
+  return out;
 }
 
 function addServer(projectDir, opts) {
@@ -302,7 +309,9 @@ function updateServer(projectDir, serverId, patch) {
     Promise.resolve(session.shutdown()).catch(() => {});
     untrackSession(projectDir, serverId);
   }
-  const merged = Object.assign({}, normalized[idx], patch || {}, { id: serverId });
+  const cleanPatch = Object.assign({}, patch || {});
+  if (!Object.prototype.hasOwnProperty.call(cleanPatch, 'env')) cleanPatch.env = normalized[idx].env;
+  const merged = Object.assign({}, normalized[idx], cleanPatch, { id: serverId });
   // Re-slug only if the name changed and the user did not pin a slug.
   if (patch && typeof patch.name === 'string' && !patch.slug) {
     const others = normalized.filter((_, i) => i !== idx);

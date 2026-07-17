@@ -19,6 +19,8 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
   const promptSizeStatus = useRef(null);
   const shellToggle = useRef(null);
   const shellStatus = useRef(null);
+  const shellModeSel = useRef(null);
+  const shellAllowlist = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   // Advanced (raw JSON + resolved)
@@ -65,6 +67,13 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       shellToggle.current.disabled = false;
     }
     if (shellStatus.current) shellStatus.current.textContent = '';
+
+    try {
+      const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
+      const shell = authz.status === 200 && authz.body.tools && authz.body.tools.shell;
+      if (shellModeSel.current) shellModeSel.current.value = shell && shell.mode || 'ask';
+      if (shellAllowlist.current) shellAllowlist.current.value = shell && Array.isArray(shell.allowlist) ? shell.allowlist.join('\n') : '';
+    } catch { /* keep ask + empty allowlist */ }
 
     // Prompts count for the card summary.
     try {
@@ -130,6 +139,20 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     const ok = await patchProject(next, shellStatus, want ? 'shell tool enabled' : 'shell tool disabled');
     if (shellToggle.current) shellToggle.current.disabled = false;
     if (!ok && shellToggle.current) shellToggle.current.checked = !want;
+  }
+
+  async function saveShellAuthorization() {
+    const mode = shellModeSel.current ? shellModeSel.current.value : 'ask';
+    const allowlist = shellAllowlist.current
+      ? shellAllowlist.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      : [];
+    if (shellStatus.current) shellStatus.current.textContent = 'saving authorization…';
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), tools: { shell: { mode, allowlist } } })
+    });
+    if (shellStatus.current) shellStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
   }
 
   // Advanced: save the raw JSON editor verbatim.
@@ -205,6 +228,18 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
         h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', disabled: true, onChange: onShellToggle })
       ),
       h('p', { ref: shellStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sp-shell-mode' }, 'Shell authorization'),
+        h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode' },
+          h('option', { value: 'off' }, 'Off'),
+          h('option', { value: 'ask' }, 'Ask every time'),
+          h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+          h('option', { value: 'allow' }, 'Allow this session')
+        ),
+        h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Full-command regex allowlist (one per line)'),
+        h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
+        h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save authorization')
+      ),
       h('p', { class: 'hint hint--compact' }, '⚠︎ Commands run with your account, in the project directory. Enable only on projects you trust.'),
 
       // ---- Prompts ----------------------------------------------------
