@@ -1125,6 +1125,42 @@ export function ChatView(props) {
       renderUsageMeta(meta, info);
     }
     let streamFailed = false;
+    function handleStreamEvent(ev, data) {
+      if (ev.eventName === 'message' && typeof data.delta === 'string') {
+        assembled += data.delta;
+        counter.add(data.delta);
+        appendDeltaToLive(data.delta);
+        const now = performance.now ? performance.now() : Date.now();
+        if (now - lastRepaintAt > 120) {
+          lastRepaintAt = now;
+          repaintLiveRate();
+        }
+      }
+      else if (ev.eventName === 'done') {
+        usage = data.usage || null;
+        cost = data.cost || null;
+        streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+      }
+      else if (ev.eventName === 'assistant_turn_end') {
+        const segment = assembled;
+        if (segment) {
+          finalizeLiveMessage({ content: segment });
+          messagesRef.current = messagesRef.current.concat([{
+            role: 'assistant', content: segment, ts: new Date().toISOString(), modelId
+          }]);
+        } else {
+          finalizeLiveMessage({ content: '' });
+        }
+        assembled = '';
+      }
+      else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
+      else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
+      else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
+      else if (ev.eventName === 'error') {
+        streamFailed = true;
+        setChatStatus('error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
+      }
+    }
     try {
       for (;;) {
         const { value, done } = await reader.read();
@@ -1135,45 +1171,20 @@ export function ChatView(props) {
           const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
           const ev = parseSSEFrame(frame); if (!ev) continue;
           let data; try { data = JSON.parse(ev.data); } catch { continue; }
-          if (ev.eventName === 'message' && typeof data.delta === 'string') {
-            assembled += data.delta;
-            counter.add(data.delta);
-            appendDeltaToLive(data.delta);
-            const now = performance.now ? performance.now() : Date.now();
-            if (now - lastRepaintAt > 120) {
-              lastRepaintAt = now;
-              repaintLiveRate();
-            }
-          }
-          else if (ev.eventName === 'done') {
-            usage = data.usage || null;
-            cost = data.cost || null;
-            streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
-          }
-          else if (ev.eventName === 'assistant_turn_end') {
-            const segment = assembled;
-            if (segment) {
-              finalizeLiveMessage({ content: segment });
-              messagesRef.current = messagesRef.current.concat([{
-                role: 'assistant', content: segment, ts: new Date().toISOString(), modelId
-              }]);
-            } else {
-              finalizeLiveMessage({ content: '' });
-            }
-            assembled = '';
-          }
-          else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
-          else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
-          else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
-          else if (ev.eventName === 'error') {
-            streamFailed = true;
-            setChatStatus('error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
+          try {
+            handleStreamEvent(ev, data);
+          } catch (eventError) {
+            // A rendering failure in one tool card must not cancel the
+            // network reader: the model may still be producing the next
+            // assistant turn. Surface it for diagnostics and keep reading.
+            console.error('chat SSE event failed', ev.eventName, eventError);
           }
         }
       }
     } catch (err) {
       streamFailed = true;
-      setChatStatus('stream interrupted', 'error');
+      console.error('chat SSE reader failed', err);
+      setChatStatus('stream interrupted: ' + (err && err.message ? err.message : 'connection closed'), 'error');
     } finally {
       try { reader.releaseLock(); } catch { /* already released */ }
       if (sendBtn.current) sendBtn.current.disabled = false;
