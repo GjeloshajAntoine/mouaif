@@ -2,7 +2,7 @@
 
 ## Overview
 
-`mouaif` ships built-in tools the model can call to read, list, search, and write project files — `read_file`, `list_files`, `search_files`, `write_file`, plus the `edit_file` compatibility alias. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
+`mouaif` ships built-in tools the model can call to read, list, search, create, and safely edit project files — `read_file`, `list_files`, `search_files`, `write_file`, and `edit_file`. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
 
 The tools cover the common "find the file, read the file, edit the file" loop without requiring an MCP server. They are not a replacement for `shell` (a model that wants to run a build, install a dep, or `git diff` still uses `shell`) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via `mcp__<server>__<tool>`). They are the boring file primitives every agent needs.
 
@@ -43,7 +43,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 | `list_files` | List text files under the project. | — | `pattern` (glob) |
 | `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file) |
 | `write_file` | Create or overwrite a text file. | `path`, `content` | — |
-| `edit_file` | Compatibility alias for a full-file overwrite. | `content`, plus `path` or `file` | — |
+| `edit_file` | Replace one exact, unique block in an existing file. | `path` (or `file`), `oldText`, `newText` | — |
 
 Every tool:
 
@@ -101,15 +101,15 @@ The chat UI gets a richer object on the `tool_result` SSE event (full result, no
 | `PUT` | `/api/settings/project` | Toggle `tools.file.enabled` (same payload as `tools.shell.enabled`) |
 | `GET` | `/api/tools/authorization?projectDir=…` | Read the resolved `tools.file` config |
 | `PUT` | `/api/tools/authorization` | Set `tools.file.mode` / `allowlist` (same shape as `tools.shell`) |
-| `GET` | `/api/chats/:id/tool-preview?projectDir=…` | Returns the file-tool specs the model would see, with `fileToolsEnabled: true/false` and the four entries listed in `tools` |
+| `GET` | `/api/chats/:id/tool-preview?projectDir=…` | Returns the file-tool specs the model would see, with `fileToolsEnabled: true/false` and the five entries listed in `tools` |
 
 The file tools are dispatched by the same `tool_call` flow as the shell tool inside the AI client. There is no separate `/api/tools/file/*` HTTP endpoint — the model-facing tools all run in-process through the same dispatcher.
 
 ## Implementation notes
 
-- New module: [src/tools/files.js](../../src/tools/files.js). Public surface: `SPECS` (four OpenAI-compatible function specs), `FILE_TOOL_NAMES` (frozen array of the four), `isFileToolName(name)`, `runFileTool(name, opts)`, `resolveSandbox(projectDir)` (re-export of the shell tool's helper for parity).
+- New module: [src/tools/files.js](../../src/tools/files.js). Public surface: `SPECS` (five OpenAI-compatible function specs), `FILE_TOOL_NAMES` (frozen array of the five), `isFileToolName(name)`, `runFileTool(name, opts)`, `resolveSandbox(projectDir)` (re-export of the shell tool's helper for parity).
 - The AI client collects file-tool specs alongside shell and MCP specs in [src/ai.js](../../src/ai.js) `streamChat` and reduces them through `promptProfiles.reduceToolSpecs` like every other advertised tool, so the per-profile tool budget is uniform across shell, file, and MCP.
-- The dispatcher in `streamChat` (`dispatchTool` in [src/ai.js](../../src/ai.js)) routes `read_file` / `list_files` / `search_files` / `write_file` / `edit_file` to `runFileTool`. `edit_file` accepts the `file` argument emitted by some coding models and otherwise has the same full-content overwrite behavior as `write_file`; a call without `content` returns `EBADINPUT`, not `ETOOL_DISABLED`. The enable check is `callOpts.fileToolsEnabled`, which the chat stream resolves once from `settings.getResolved(projectDir).tools.file.enabled` in [src/index.js](../../src/index.js) `handleChatStream` and passes through as a stream option.
+- The dispatcher in `streamChat` (`dispatchTool` in [src/ai.js](../../src/ai.js)) routes all five names to `runFileTool`. `write_file` intentionally writes the complete supplied body. `edit_file` is a distinct, non-destructive exact-replacement operation: it accepts `path` or `file`, requires `oldText` and `newText`, and returns `ENO_MATCH` or `EMULTI_MATCH` without changing the file when the target is stale or ambiguous. It writes through a temporary sibling and rename so interruption cannot leave a partial file.
 - The authorization module ([src/tools/authorization.js](../../src/tools/authorization.js)) now treats `file` as a native tool alongside `shell`. The `NATIVE_TOOLS = new Set(['shell', 'file'])` set is the single source of truth; adding a future native tool is a one-line addition. The per-tool summary on the "Authorization required" card is `args.path` for file tools (so the allowlist regex can match the path), `args.cmd` for `shell`, and the first string argument for MCP tools.
 - The path-safety contract is the same as [src/tags.js](../../src/tags.js): every model-supplied path is normalized to POSIX-relative, then resolved back through `realpath` (walking up to the first existing ancestor for `write_file`-style paths that don't exist yet), with the same `EOUTSIDE_PROJECT` error shape. Symlinks that point outside the project root are rejected.
 - Mobile UI ([src/web/src/components/SettingsProject.jsx](../../src/web/src/components/SettingsProject.jsx)): a second card under the shell tool, "File tools", with the same toggle, mode `<select>`, allowlist `<textarea>`, and Save button. The same `card` / `row` / `hint` styles as the shell tool.

@@ -171,13 +171,20 @@ function writeFile(p, content) {
   assert(w2.ok === true, 'write_file overwrite ok');
   assert(fs.readFileSync(newFile, 'utf8') === 'replaced\n', 'write_file overwrite content matches');
 
-  // edit_file compatibility alias accepts the `file` argument used by
-  // some coding models and follows the same authorization family.
-  const e1 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js', content: 'edited\n' } });
+  // edit_file performs an exact replacement rather than interpreting a
+  // one-line patch as the complete file body.
+  const e1 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js', oldText: 'replaced', newText: 'edited' } });
   assert(e1.ok === true, 'edit_file alias ok');
   assert(fs.readFileSync(newFile, 'utf8') === 'edited\n', 'edit_file alias overwrites content');
-  const e2 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js' } });
-  assert(e2.ok === false && e2.result.error.code === 'EBADINPUT', 'edit_file missing content -> EBADINPUT');
+  const beforeBadEdit = fs.readFileSync(newFile, 'utf8');
+  const e2 = await files.runFileTool('edit_file', { projectDir: root, args: { file: 'src/utils/new.js', content: 'dangerous partial body' } });
+  assert(e2.ok === false && e2.result.error.code === 'EBADINPUT', 'edit_file rejects write_file-style content');
+  assert(fs.readFileSync(newFile, 'utf8') === beforeBadEdit, 'rejected edit_file leaves file unchanged');
+  const e3 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'src/utils/new.js', oldText: 'missing', newText: 'x' } });
+  assert(e3.ok === false && e3.result.error.code === 'ENO_MATCH', 'edit_file rejects missing oldText');
+  writeFile(path.join(root, 'duplicate.txt'), 'same\nsame\n');
+  const e4 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'duplicate.txt', oldText: 'same', newText: 'x' } });
+  assert(e4.ok === false && e4.result.error.code === 'EMULTI_MATCH', 'edit_file rejects ambiguous oldText');
 
   // Outside project.
   const w3 = await files.runFileTool('write_file', { projectDir: root, args: { path: '../escape.js', content: 'x' } });

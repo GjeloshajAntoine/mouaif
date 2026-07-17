@@ -421,7 +421,7 @@ function formatSearchFilesResult(r) {
   return header + '\n\n' + body;
 }
 
-// ---- write_file --------------------------------------------------------
+// ---- write_file / edit_file --------------------------------------------
 
 // Create or overwrite a file. `dirs: true` allows the path to include
 // new directories (the runner mkdir -p's them); otherwise the parent
@@ -444,6 +444,54 @@ async function runWriteFile(opts) {
   return { relPath: rel, size: st.size, bytesWritten: Buffer.byteLength(content, 'utf8') };
 }
 
+// Replace one exact, unique block in an existing text file. This is kept
+// deliberately separate from write_file: coding models commonly interpret
+// "edit" as a patch operation and send only the changed line. Treating that
+// payload as a full-file body silently destroys the rest of the file.
+async function runEditFile(opts) {
+  const { projectDir, args, settings } = opts;
+  const root = resolveSandbox(projectDir);
+  const requestedPath = args && (args.path || args.file);
+  const rel = toRelPath(root, requestedPath);
+  const abs = toAbsInside(root, rel);
+  const oldText = args && (typeof args.oldText === 'string' ? args.oldText : args.old_string);
+  const newText = args && (typeof args.newText === 'string' ? args.newText : args.new_string);
+  if (typeof oldText !== 'string' || !oldText) {
+    throw err('EBADINPUT', 'oldText is required and must be a non-empty exact block; use write_file for full-file replacement');
+  }
+  if (typeof newText !== 'string') throw err('EBADINPUT', 'newText is required');
+
+  const st = await fsp.stat(abs);
+  if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
+  const original = await fsp.readFile(abs, 'utf8');
+  const first = original.indexOf(oldText);
+  if (first < 0) throw err('ENO_MATCH', 'oldText was not found in ' + rel + '; read the file and retry with an exact block');
+  if (original.indexOf(oldText, first + oldText.length) >= 0) {
+    throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
+  }
+
+  const content = original.slice(0, first) + newText + original.slice(first + oldText.length);
+  const cap = (settings && settings.fileWriteMaxBytes) || DEFAULT_WRITE_MAX_BYTES;
+  const bytes = Buffer.byteLength(content, 'utf8');
+  if (bytes > cap) throw err('ETOOL_CAP', 'edited file is ' + bytes + ' bytes, exceeds cap ' + cap);
+
+  // Write beside the target and rename so an interrupted write cannot leave a
+  // partially-written source file. Preserve the existing permission bits.
+  const tmp = abs + '.mouaif-edit-' + process.pid + '-' + Math.random().toString(16).slice(2);
+  try {
+    await fsp.writeFile(tmp, content, { encoding: 'utf8', mode: st.mode });
+    await fsp.rename(tmp, abs);
+  } finally {
+    try { await fsp.unlink(tmp); } catch { /* rename succeeded or cleanup best-effort */ }
+  }
+  return {
+    relPath: rel,
+    size: bytes,
+    bytesWritten: Buffer.byteLength(newText, 'utf8'),
+    replacedBytes: Buffer.byteLength(oldText, 'utf8')
+  };
+}
+
 function formatWriteFileResult(r) {
   return '# Wrote: ' + r.relPath + '\n# Bytes: ' + r.bytesWritten + ' / ' + r.size;
 }
@@ -462,7 +510,8 @@ async function runFileTool(name, opts) {
     if (name === 'read_file') out = await runReadFile(opts);
     else if (name === 'list_files') out = await runListFiles(opts);
     else if (name === 'search_files') out = await runSearchFiles(opts);
-    else if (name === 'write_file' || name === 'edit_file') out = await runWriteFile(opts);
+    else if (name === 'write_file') out = await runWriteFile(opts);
+    else if (name === 'edit_file') out = await runEditFile(opts);
     else throw err('EUNKNOWN_TOOL', 'Unknown file tool: ' + name);
   } catch (e) {
     const r = { error: { code: e.code || 'EUNKNOWN', message: e.message } };
@@ -556,15 +605,16 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Compatibility alias for write_file. Create or overwrite a text file in the project directory with the supplied full content. Accepts path or file for the relative filename; content is capped at 1 MB.',
+      description: 'Safely edit an existing text file by replacing one exact, unique block. Read the relevant lines first, then send their exact text as oldText and the replacement as newText. Fails without changing the file if oldText is missing or appears more than once. Use write_file only to create a file or intentionally replace its complete contents.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'POSIX path relative to the project root.' },
           file: { type: 'string', description: 'Compatibility alias for path.' },
-          content: { type: 'string', description: 'The full replacement file body.' }
+          oldText: { type: 'string', description: 'Exact existing text to replace. Include surrounding lines when needed to make it unique.' },
+          newText: { type: 'string', description: 'Replacement text. May be empty to delete the matched block.' }
         },
-        required: ['content'],
+        required: ['oldText', 'newText'],
         additionalProperties: false
       }
     }

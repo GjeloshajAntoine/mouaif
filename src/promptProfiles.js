@@ -67,6 +67,8 @@ const PROFILES = Object.freeze({
       '- Be terse. Default to short paragraphs and small code blocks; expand only when asked.\n' +
       '- Use fenced code with a language tag for every snippet. Prefer editing an existing ' +
       'file over writing a new one.\n' +
+      '- For existing files, use edit_file with an exact oldText/newText replacement. Use ' +
+      'write_file only for new files or an intentional full-file replacement.\n' +
       '- Cite paths relative to the project root. Never invent files or functions you have ' +
       'not seen.\n' +
       '- When a task is destructive (delete, rewrite, push, install), ask first.\n' +
@@ -91,6 +93,9 @@ const PROFILES = Object.freeze({
       '- Use fenced code with a language tag for every snippet. Prefer editing an existing ' +
       'file over writing a new one. When you propose a new file, name the path and explain ' +
       'in one line why it is new.\n' +
+      '- For existing files, read the relevant region and use edit_file with an exact, unique ' +
+      'oldText/newText block. write_file replaces the complete file and is only appropriate ' +
+      'for new files or deliberate full rewrites.\n' +
       '- Cite paths relative to the project root. Never invent files or functions you have ' +
       'not seen. If you are not sure, say so and ask for the file.\n' +
       '- When a task is destructive (delete, rewrite, push, install, run an unknown command), ' +
