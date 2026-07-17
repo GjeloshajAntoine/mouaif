@@ -80,6 +80,7 @@ async function main() {
           Array.isArray(parsed.tools) && parsed.tools.some(t => t.function && t.function.name === 'shell'),
           JSON.stringify(parsed.tools));
         sse(res, [
+          { choices: [{ delta: { content: 'I will run the command.' } }] },
           { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'shell', arguments: '' } }] } }] },
           { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"cmd":"echo loop-works"}' } }] } }] },
           { choices: [{ finish_reason: 'tool_calls' }] },
@@ -125,6 +126,14 @@ async function main() {
   const names = events.map(e => e.name);
   check('emitted a tool_call event', names.includes('tool_call'));
   check('emitted a tool_result event', names.includes('tool_result'));
+  check('assistant segment closes before tool call',
+    names.indexOf('assistant_turn_end') !== -1 && names.indexOf('assistant_turn_end') < names.indexOf('tool_call'),
+    JSON.stringify(names));
+  const boundary = events.find(e => e.name === 'assistant_turn_end');
+  check('assistant boundary carries pre-tool text',
+    boundary && boundary.data.content === 'I will run the command.', JSON.stringify(boundary));
+  check('post-tool assistant text follows tool result',
+    names.lastIndexOf('message') > names.indexOf('tool_result'), JSON.stringify(names));
   check('emitted exactly one done event', names.filter(n => n === 'done').length === 1, JSON.stringify(names));
 
   const toolCall = events.find(e => e.name === 'tool_call');
@@ -138,7 +147,7 @@ async function main() {
   const finalMsg = events.filter(e => e.name === 'message').map(e => e.data.delta).join('');
   check('final assistant text present', /output was captured/.test(finalMsg), finalMsg);
 
-  // ---- Part 3: shell disabled means the tool is not advertised ----
+  // ---- Part 3: specs stay advertised; authorization gates execution ----
   let advertisedWhenDisabled = null;
   const server2 = http.createServer((req, res) => {
     let body = '';
@@ -164,7 +173,7 @@ async function main() {
     onEvent: () => {}
   });
   server2.close();
-  check('shell not advertised when disabled', advertisedWhenDisabled === false, String(advertisedWhenDisabled));
+  check('shell remains advertised for authorization gating', advertisedWhenDisabled === true, String(advertisedWhenDisabled));
 
   fs.rmSync(projectDir, { recursive: true, force: true });
   settings.close();

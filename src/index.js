@@ -1164,6 +1164,21 @@ async function handleChatStream(req, res, chatId) {
         assistantContent += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
+      } else if (name === 'assistant_turn_end') {
+        // Persist text produced before a tool call at its real transcript
+        // position, then start a fresh segment for the post-tool response.
+        if (assistantContent) {
+          try {
+            assistantMsg = messages.appendMessage(projectDir, chatId, {
+              role: 'assistant', content: assistantContent, modelId: model.id
+            });
+            if (traceStream && assistantMsg) {
+              const event = trace.eventForMessage(assistantMsg);
+              trace.write(traceStream, event.type, event.payload);
+            }
+          } catch { /* non-fatal */ }
+        }
+        assistantContent = '';
       } else if (name === 'tool_call') {
         try {
           messages.appendMessage(projectDir, chatId, {

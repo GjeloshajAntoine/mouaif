@@ -986,6 +986,12 @@ async function streamChat(opts) {
       }))
     });
 
+    // Close the streamed assistant segment before tool cards are emitted.
+    // A model may send explanatory text and then request a tool; without an
+    // explicit boundary the browser keeps one live bubble above the tool
+    // cards and appends the post-tool answer back into that old bubble.
+    onEvent('assistant_turn_end', { content: result.assistantText || '', hasToolCalls: true });
+
     // Execute each call, emit tool_call + tool_result, and append the
     // `tool` result message the upstream needs on the next turn.
     for (const c of calls) {

@@ -120,6 +120,12 @@ The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 
 
 ## Implementation notes
 
+Each model tool round-trip has an explicit `assistant_turn_end` SSE boundary.
+Text emitted before a tool call is finalized in its own assistant bubble, the
+tool call and result follow it, and subsequent model text starts a new bubble.
+This preserves the real assistant → tool → assistant order both live and after
+reopening the chat.
+
 - Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/web/` route prefers `src/web/dist/`, falls back to `src/web/` for dev.
 - Messages: [src/messages.js](../../src/messages.js) — per-chat file `<projectDir>/.mouaif.messages.<chatId>.json`. Robust read (drops malformed entries), throws `MOUAIF_PROJECT_PARSE_ERROR` (422) only if the file itself is corrupt.

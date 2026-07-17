@@ -704,7 +704,14 @@ export function ChatView(props) {
 
   function appendDeltaToLive(delta) {
     if (!transcript.current) return;
-    const live = transcript.current.querySelector('[data-live="1"] .chat-msg__body');
+    let live = transcript.current.querySelector('[data-live="1"] .chat-msg__body');
+    // Tool calls end an assistant segment. The next upstream delta belongs
+    // after the tool result, so create a new live bubble lazily instead of
+    // appending it to the pre-tool bubble.
+    if (!live) {
+      appendMessageToTranscript({ role: 'assistant', content: '', ts: new Date().toISOString(), modelId }, true);
+      live = transcript.current.querySelector('[data-live="1"] .chat-msg__body');
+    }
     if (live) {
       live.textContent += delta;
       transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -1142,6 +1149,18 @@ export function ChatView(props) {
             usage = data.usage || null;
             cost = data.cost || null;
             streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+          }
+          else if (ev.eventName === 'assistant_turn_end') {
+            const segment = assembled;
+            if (segment) {
+              finalizeLiveMessage({ content: segment });
+              messagesRef.current = messagesRef.current.concat([{
+                role: 'assistant', content: segment, ts: new Date().toISOString(), modelId
+              }]);
+            } else {
+              finalizeLiveMessage({ content: '' });
+            }
+            assembled = '';
           }
           else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
           else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
