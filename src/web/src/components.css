@@ -1309,6 +1309,18 @@ textarea#projectEditor {
   user-select: none;
 }
 
+/* Conversation totals stay visible in the compact head. Context is the
+   latest prompt-token count; cost is the sum of known assistant-turn costs. */
+.chat-view__usage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  color: var(--accent);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The live assistant message (data-live="1" on the row) gets a
    blinking caret at the end while the stream is open. The caret
    is a pseudo-element on the body, not a real text node, so the

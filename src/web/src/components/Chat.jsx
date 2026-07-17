@@ -1,7 +1,7 @@
 // mouaif web — ChatView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, parseSSEFrame, projectsReload, loadModels, invalidateModelsCache } from '../api.js';
+import { fetchJson, parseSSEFrame, projectsReload, loadModels, invalidateModelsCache, fetchLiveModels } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
 
@@ -50,6 +50,7 @@ export function ChatView(props) {
   const back = useRef(null);
   const chatName = useRef(null);
   const chatMeta = useRef(null);
+  const usageSummaryRef = useRef(null);
   const traceToggle = useRef(null);
   // The creation-time setup card lives in the TRANSCRIPT (above the
   // system message) instead of the head, so the prompt-size choice is
@@ -135,6 +136,39 @@ export function ChatView(props) {
     chatMeta.current.textContent = c.trace ? 'trace on' : '';
   }
 
+  // The head shows conversation-wide totals while each assistant turn keeps
+  // its own breakdown below the bubble. "Context" is the latest upstream
+  // prompt size (not a sum: every turn already includes earlier context).
+  function updateUsageSummary(liveInfo) {
+    const el = usageSummaryRef.current;
+    if (!el) return;
+    const assistant = messagesRef.current.filter((m) => m && m.role === 'assistant');
+    let latestContext = null;
+    let totalCost = 0;
+    let hasKnownCost = false;
+    for (const m of assistant) {
+      if (m.usage && typeof m.usage.promptTokens === 'number') latestContext = m.usage.promptTokens;
+      if (m.cost && m.cost.known && typeof m.cost.total === 'number') {
+        totalCost += m.cost.total;
+        hasKnownCost = true;
+      }
+    }
+    if (liveInfo) {
+      if (liveInfo.usage && typeof liveInfo.usage.promptTokens === 'number') latestContext = liveInfo.usage.promptTokens;
+      if (liveInfo.cost && liveInfo.cost.known && typeof liveInfo.cost.total === 'number') {
+        totalCost += liveInfo.cost.total;
+        hasKnownCost = true;
+      }
+    }
+    el.innerHTML = '';
+    const context = document.createElement('span');
+    context.textContent = 'Context ' + (latestContext == null ? '--' : formatTokens(latestContext));
+    const cost = document.createElement('span');
+    cost.textContent = 'Total ' + (hasKnownCost ? formatCost(totalCost) : '--');
+    el.appendChild(context);
+    el.appendChild(cost);
+  }
+
   async function load() {
     if (!projectDir || !chatId) return;
     const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys] = await Promise.all([
@@ -149,7 +183,7 @@ export function ChatView(props) {
     const c = rChat.body.chat;
     chatRef.current = c;
     messagesRef.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
-    modelsRef.current = rModels.status === 200 ? (rModels.models || []) : [];
+    modelsRef.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
     providersRef.current = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
     // Seed the per-provider live cache with the project-level
     // records. Live fetches overwrite these; a project-level model
@@ -166,16 +200,20 @@ export function ChatView(props) {
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
+    updateUsageSummary();
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     updateModelTrigger();
+
+    // Auto-fetch the live catalog for the active provider before
+    // the picker renders, so a brand-new chat opens with the full
+    // list (not just the project hand-typed slugs). Errors are
+    // silent — a stale list is still usable; the user can retry
+    // via the picker ↻.
+    if (activeProviderId()) await refreshActiveProvider().catch(() => {});
+
     renderModelPicker();
 
     if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
-    // Auto-fetch the live catalog for the active provider on first
-    // load so a brand-new chat opens with the full list (not just
-    // the project hand-typed slugs). Errors are silent — a stale
-    // list is still usable; the user can retry via the picker ↻.
-    if (activeProviderId()) refreshActiveProvider().catch(() => {});
 
     renderTranscript();
     updateSetupVisibility();
@@ -415,11 +453,11 @@ export function ChatView(props) {
   // buster (?_=) mirrors the old behavior; the server's 1h
   // in-memory cache stays the source of truth for repeated calls.
   async function fetchLiveForProvider(provider) {
-    const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + '&_=' + Date.now());
-    if (r.status !== 200) return { provider, ok: false, body: r.body, status: r.status };
-    const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
+    const res = await fetchLiveModels(provider);
+    if (res && res.error) return { provider, ok: false, body: res.error, status: res.status || 0 };
+    const live = Array.isArray(res && res.models) ? res.models : [];
     liveByProviderRef.current = Object.assign({}, liveByProviderRef.current, { [provider]: live });
-    return { provider, ok: true, count: live.length };
+    return { provider, ok: true, count: live.length, cached: !!(res && res.cached) };
   }
 
   // refreshActiveProvider() — fetch the live catalog for the chat's
@@ -613,6 +651,7 @@ export function ChatView(props) {
       }
     }
     transcript.current.scrollTop = transcript.current.scrollHeight;
+    updateUsageSummary();
   }
 
   function appendMessageToTranscript(m, isLive) {
@@ -658,7 +697,7 @@ export function ChatView(props) {
     transcript.current.scrollTop = transcript.current.scrollHeight;
   }
 
-  // Render the per-turn meta line. Pure DOM, no framework \u2014 the chat
+  // Render the per-turn breakdown. Pure DOM, no framework \u2014 the chat
   // view intentionally avoids Preact here so the SSE hot path stays
   // as cheap as a textContent assignment. The line is a flat row of
   // "\u2022"-separated tokens sized for a 360 px viewport.
@@ -671,13 +710,13 @@ export function ChatView(props) {
     const tokens = [];
     if (modelId) tokens.push(modelId);
     if (typeof usage.promptTokens === 'number') {
-      tokens.push(formatTokens(usage.promptTokens) + ' in');
+      tokens.push('context ' + formatTokens(usage.promptTokens));
     }
     if (typeof usage.completionTokens === 'number') {
-      tokens.push(formatTokens(usage.completionTokens) + ' out');
+      tokens.push('output ' + formatTokens(usage.completionTokens));
     }
     if (cost && cost.known) {
-      tokens.push(formatCost(cost.total));
+      tokens.push('cost ' + formatCost(cost.total));
     } else if (cost && cost.known === false) {
       tokens.push('--');
     }
@@ -1123,6 +1162,7 @@ export function ChatView(props) {
       if (!meta) return;
       const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
       renderUsageMeta(meta, info);
+      updateUsageSummary(info);
     }
     let streamFailed = false;
     function handleStreamEvent(ev, data) {
@@ -1212,6 +1252,7 @@ export function ChatView(props) {
       liveRate: finalRate
     };
     messagesRef.current = messagesRef.current.concat([persisted]);
+    updateUsageSummary();
     // Replace the live row's meta with the final, authoritative
     // version (counter is reset on next turn).
     if (transcript.current) {
@@ -1315,7 +1356,11 @@ export function ChatView(props) {
       h('button', { ref: back, class: 'chat-view__back', type: 'button', onClick: () => nav('projects'), 'aria-label': 'Back to projects' }, '\u2190'),
       h('div', { class: 'chat-view__title-stack' },
         h('div', { ref: chatName, class: 'chat-view__name' }, '\u2026'),
-        h('div', { ref: chatMeta, class: 'chat-view__meta' }, '')
+        h('div', { ref: chatMeta, class: 'chat-view__meta' }, ''),
+        h('div', { ref: usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage totals' },
+          h('span', null, 'Context --'),
+          h('span', null, 'Total --')
+        )
       ),
       h('div', { class: 'chat-view__model-row' },
         h('button', { ref: modelPickerTriggerRef, class: 'chat-view__model-trigger', type: 'button', id: 'chatModelTrigger', onClick: openModelPicker, 'aria-label': 'Pick model', 'aria-haspopup': 'dialog', 'aria-expanded': 'false' },
