@@ -171,7 +171,7 @@ async function main() {
         // empty `stop` response instead of answering the user.
         sse(res, [{ choices: [{ finish_reason: 'stop' }] }]);
       } else {
-        emptyReplySawReminder = parsed.messages.some((m) => m.role === 'system' && /Now answer the user/.test(m.content || ''));
+        emptyReplySawReminder = parsed.messages.some((m) => m.role === 'system' && /final user-facing answer now/.test(m.content || ''));
         sse(res, [
           { choices: [{ delta: { content: 'The search found no matches.' } }] },
           { choices: [{ finish_reason: 'stop' }] }
@@ -194,7 +194,48 @@ async function main() {
   check('post-tool retry emits the final answer', emptyReplyEvents.some((e) => e.name === 'message' && /no matches/.test(e.data.delta)));
   check('post-tool retry still emits one done', emptyReplyEvents.filter((e) => e.name === 'done').length === 1);
 
-  // ---- Part 4: MiniMax text-serialized tool calls via OpenRouter -----
+  // ---- Part 4: reserve an answer-only turn after the tool-call cap ------
+  let cappedRequests = 0;
+  let cappedFinalHasTools = true;
+  let cappedSawInstruction = false;
+  const serverCapped = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      cappedRequests++;
+      const parsed = JSON.parse(body);
+      if (cappedRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_cap', function: { name: 'search_files', arguments: '{"query":"needle"}' } }] } }] },
+          { choices: [{ finish_reason: 'tool_calls' }] }
+        ]);
+      } else {
+        cappedFinalHasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+        cappedSawInstruction = parsed.messages.some((m) => m.role === 'system' && /Tool use is now finished/.test(m.content || ''));
+        sse(res, [
+          { choices: [{ delta: { content: 'I completed the bounded search and found no matches.' } }] },
+          { choices: [{ finish_reason: 'stop' }] }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverCapped.listen(0, '127.0.0.1', resolve));
+  const cappedEvents = [];
+  const cappedResult = await ai.streamChat({
+    model: Object.assign({}, model, { baseUrl: 'http://127.0.0.1:' + serverCapped.address().port }),
+    messages: [{ role: 'user', content: 'find needle and report back' }],
+    projectDir,
+    chatId,
+    maxToolTurns: 1,
+    onEvent: (name, data) => cappedEvents.push({ name, data })
+  });
+  serverCapped.close();
+  check('tool cap reserves a final answer request', cappedResult.ok && cappedRequests === 2, JSON.stringify(cappedResult));
+  check('final request suppresses tool declarations', cappedFinalHasTools === false);
+  check('final request explicitly requires completion', cappedSawInstruction === true);
+  check('tool cap still emits a user-facing answer', cappedEvents.some((e) => e.name === 'message' && /completed the bounded search/.test(e.data.delta)));
+
+  // ---- Part 5: MiniMax text-serialized tool calls via OpenRouter -----
   let minimaxRequests = 0;
   let minimaxSawToolMessage = false;
   const serverMiniMax = http.createServer((req, res) => {
@@ -234,7 +275,7 @@ async function main() {
   check('MiniMax private markers are hidden', !minimaxEvents.some((e) => e.name === 'message' && /minimax|tool_call|invoke/.test(e.data.delta)));
   check('MiniMax final answer is emitted', minimaxEvents.some((e) => e.name === 'message' && e.data.delta === 'Search completed.'));
 
-  // ---- Part 5: specs stay advertised; authorization gates execution ----
+  // ---- Part 6: specs stay advertised; authorization gates execution ----
   let advertisedWhenDisabled = null;
   const server2 = http.createServer((req, res) => {
     let body = '';
