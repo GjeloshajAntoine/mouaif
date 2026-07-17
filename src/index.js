@@ -1202,7 +1202,12 @@ async function handleChatStream(req, res, chatId) {
         let enriched = data;
         try {
           const app = settings.getApp();
-          const cost = usage.computeCost({ model, usage: data && data.usage, app });
+          const providerCost = data && typeof data.providerCost === 'number' && isFinite(data.providerCost) && data.providerCost >= 0
+            ? data.providerCost
+            : null;
+          const cost = providerCost == null
+            ? usage.computeCost({ model, usage: data && data.usage, app })
+            : { known: true, input: 0, output: 0, total: providerCost, currency: 'USD' };
           const streamingMs = Date.now() - streamStartedAt;
           enriched = Object.assign({}, data, {
             cost: {

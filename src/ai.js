@@ -722,7 +722,16 @@ function* parseOpenAISSE(eventName, data) {
     yield { name: 'finish', data: { reason: choice.finish_reason } };
   }
   if (obj.usage) {
-    yield { name: 'done', data: { usage: { promptTokens: obj.usage.prompt_tokens || 0, completionTokens: obj.usage.completion_tokens || 0 } } };
+    const providerCost = typeof obj.usage.cost === 'number' && isFinite(obj.usage.cost) && obj.usage.cost >= 0
+      ? obj.usage.cost
+      : null;
+    yield {
+      name: 'done',
+      data: {
+        usage: { promptTokens: obj.usage.prompt_tokens || 0, completionTokens: obj.usage.completion_tokens || 0 },
+        providerCost
+      }
+    };
   }
 }
 
@@ -997,6 +1006,7 @@ async function streamChat(opts) {
   const MAX_TOOL_TURNS = (opts && typeof opts.maxToolTurns === 'number') ? opts.maxToolTurns : 12;
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
+  let providerCost = null;
 
   for (let turn = 0; turn <= MAX_TOOL_TURNS; turn++) {
     const isFinalAllowedTurn = turn === MAX_TOOL_TURNS;
@@ -1007,8 +1017,8 @@ async function streamChat(opts) {
     if (!calls || !calls.length) {
       // No tool calls this turn -> the assistant is done. Emit the
       // final `done` with the accumulated usage and return.
-      onEvent('done', { usage });
-      return { ok: true, usage };
+      onEvent('done', { usage, providerCost });
+      return { ok: true, usage, providerCost };
     }
 
     for (const c of calls) {
@@ -1117,8 +1127,8 @@ async function streamChat(opts) {
   // We fell out of the loop at MAX_TOOL_TURNS with tool calls still
   // pending. runUpstreamTurn on the final turn suppresses tool specs
   // so the model is forced to answer, so this is defensive only.
-  onEvent('done', { usage });
-  return { ok: true, usage };
+  onEvent('done', { usage, providerCost });
+  return { ok: true, usage, providerCost };
 
   // ---- One upstream request (stream + accumulate) --------------------
   // Performs a single request/response against the provider, streaming
@@ -1233,6 +1243,9 @@ async function streamChat(opts) {
       if (ev.data && ev.data.usage) {
         usage.promptTokens = (usage.promptTokens || 0) + (ev.data.usage.promptTokens || 0);
         usage.completionTokens = (usage.completionTokens || 0) + (ev.data.usage.completionTokens || 0);
+      }
+      if (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0) {
+        providerCost = (providerCost || 0) + ev.data.providerCost;
       }
     } else if (ev.name === 'usage_input') {
       usage.promptTokens = (usage.promptTokens || 0) + (ev.data.promptTokens || 0);

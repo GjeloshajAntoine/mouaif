@@ -123,7 +123,7 @@ let lastFetchUrl = null;
 let userAgentHeader = null;
 const sseBody =
   'data: {"choices":[{"delta":{"content":"hello from openrouter"}}]}\n\n' +
-  'data: {"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":7}}\n\n' +
+  'data: {"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":7,"cost":0.00042}}\n\n' +
   'data: [DONE]\n\n';
 globalThis.fetch = async function stubFetch(url, init) {
   lastFetchUrl = url;
@@ -182,6 +182,9 @@ globalThis.fetch = async function stubFetch(url, init) {
       doneEvents.length === 1 && doneEvents[0].data.usage &&
         doneEvents[0].data.usage.promptTokens === 3 &&
         doneEvents[0].data.usage.completionTokens === 7,
+      'got ' + JSON.stringify(doneEvents));
+    check('streamChat preserves OpenRouter authoritative usage cost',
+      doneEvents.length === 1 && doneEvents[0].data.providerCost === 0.00042,
       'got ' + JSON.stringify(doneEvents));
   } catch (e) {
     check('streamChat did not throw', false, e && e.message);
