@@ -5,13 +5,27 @@
 // not involved in that path.
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  root: 'src/web',
+  // The config lives in src/web/ itself, so the project root for
+  // Vite is the config file's directory. We resolve it to an
+  // absolute path because Vite resolves `root` relative to the
+  // config file's location when the config is passed via
+  // --config from the project root: a relative `root: 'src/web'`
+  // was double-prefixed to src/web/src/web/ (which doesn't exist)
+  // and a relative `root: '.'` resolved against the CWD (the
+  // project root) instead of the config directory. An absolute
+  // path makes the resolution independent of where the user ran
+  // the build from.
+  root: __dirname,
   base: '/web/',
   plugins: [preact()],
   build: {
-    outDir: 'dist',
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
     sourcemap: false,
     target: 'es2020',
