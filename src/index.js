@@ -164,8 +164,17 @@ function authorizeBrowserRequest(req, res, sessionToken) {
   const valid = actual.length === sessionToken.length
     && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
   if (!valid) {
-    sendJSON(res, 401, { error: 'Browser session is missing or expired', code: 'ESESSION' });
-    return false;
+    if (!actual) {
+      sendJSON(res, 401, { error: 'Browser session is missing or expired', code: 'ESESSION' });
+      return false;
+    }
+    // A server restart generates a new in-memory browser session token.
+    // The already-open mobile UI still has the old HttpOnly cookie and
+    // would otherwise get stuck with ESESSION until the user reloads
+    // /web/. Same-origin Origin validation above is the CSRF boundary; for
+    // same-origin browser traffic with a stale cookie, mint the fresh cookie
+    // and let the request continue.
+    res.setHeader('Set-Cookie', SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict');
   }
   return true;
 }
@@ -327,9 +336,12 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleInspector(req, res, parsed);
   }
 
-  // REST: GET /
+  // Root opens the mobile UI. Keep the actual static bundle under
+  // /web/ so asset URLs and the browser session cookie stay consistent.
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/files?projectDir=...&dir=...', 'GET /api/file?projectDir=...&path=...', 'PUT /api/file (body: { projectDir, path, content })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize?, tools? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize?, tools? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'GET /api/tools/list?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
+    res.writeHead(302, { Location: '/web/' });
+    res.end();
+    return;
   }
 
   // REST: GET /data
@@ -1056,9 +1068,18 @@ async function handleChatStream(req, res, chatId) {
   catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId, providerId: providerId || undefined }); }
 
   // Append the user message and bump lastOpenedAt BEFORE streaming.
+  // If this is the first prompt in a new/default-named chat, also
+  // derive a human title from that prompt and persist it immediately.
   let userMsg;
   try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  try {
+    const history = messages.listMessages(projectDir, chatId);
+    if (history.filter(m => m && m.role === 'user').length === 1 && content) {
+      const renamed = chats.titleChatFromPrompt(projectDir, chatId, content);
+      if (renamed) chat = renamed;
+    }
+  } catch { /* non-fatal */ }
   try { chats.touchChat(projectDir, chatId); } catch { /* non-fatal */ }
 
   // Open SSE.

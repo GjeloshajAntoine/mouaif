@@ -457,6 +457,28 @@ function convertLineEndings(text, eol) {
   return eol ? text.replace(/\r\n|\r|\n/g, eol) : text;
 }
 
+function previewEditDiff(rel, before, after) {
+  const oldLines = String(before || '').replace(/\r\n|\r/g, '\n').split('\n');
+  const newLines = String(after || '').replace(/\r\n|\r/g, '\n').split('\n');
+  const out = ['--- ' + rel, '+++ ' + rel];
+  const max = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < max; i++) {
+    const a = i < oldLines.length ? oldLines[i] : null;
+    const b = i < newLines.length ? newLines[i] : null;
+    if (a === b) {
+      if (out.length < 80) out.push(' ' + a);
+    } else {
+      if (a != null) out.push('-' + a);
+      if (b != null) out.push('+' + b);
+    }
+    if (out.length >= 80) {
+      out.push('...[diff truncated]');
+      break;
+    }
+  }
+  return out.join('\n');
+}
+
 // Create or overwrite a file. `dirs: true` allows the path to include
 // new directories (the runner mkdir -p's them); otherwise the parent
 // dir must already exist. Refuses paths that escape the root.
@@ -509,6 +531,7 @@ async function runEditFile(opts) {
 
   const originalStart = source.offsets[first];
   const originalEnd = source.offsets[first + needle.length];
+  const replaced = original.slice(originalStart, originalEnd);
   const replacement = convertLineEndings(newText, detectLineEnding(original));
   const content = original.slice(0, originalStart) + replacement + original.slice(originalEnd);
   const cap = (settings && settings.fileWriteMaxBytes) || DEFAULT_WRITE_MAX_BYTES;
@@ -528,7 +551,8 @@ async function runEditFile(opts) {
     relPath: rel,
     size: bytes,
     bytesWritten: Buffer.byteLength(replacement, 'utf8'),
-    replacedBytes: Buffer.byteLength(original.slice(originalStart, originalEnd), 'utf8')
+    replacedBytes: Buffer.byteLength(replaced, 'utf8'),
+    diff: previewEditDiff(rel, replaced, replacement)
   };
 }
 

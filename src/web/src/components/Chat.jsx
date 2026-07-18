@@ -1,6 +1,9 @@
 // mouaif web — ChatView
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
+import { EditorState, RangeSetBuilder } from '@codemirror/state';
+import { EditorView, Decoration, lineNumbers } from '@codemirror/view';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { fetchJson, parseSSEFrame, projectsReload, loadModels, invalidateModelsCache, fetchLiveModels } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
@@ -947,9 +950,7 @@ export function ChatView(props) {
       if (m.role === 'tool' && m.phase === 'call') {
         appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args });
       } else if (m.role === 'tool' && m.phase === 'result') {
-        let result = {};
-        try { result = JSON.parse(m.content || '{}'); } catch { result = { output: m.content || '' }; }
-        appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, result });
+        appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, result: m.content || '' });
       } else {
         appendMessageToTranscript(m, false);
       }
@@ -1078,6 +1079,7 @@ export function ChatView(props) {
     const card = document.createElement('div');
     card.className = 'tool-card tool-card--call';
     card.dataset.toolId = id;
+    card.dataset.toolName = normalizeToolName(toolCall.name);
     const role = document.createElement('div');
     role.className = 'tool-card__role';
     role.textContent = 'tool call';
@@ -1086,7 +1088,7 @@ export function ChatView(props) {
     name.textContent = toolCall.name || 'tool';
     const args = document.createElement('pre');
     args.className = 'tool-card__args';
-    args.textContent = formatToolArgs(toolCall.args);
+    args.textContent = formatToolArgs(toolCall.args, toolCall.name);
     const pill = document.createElement('span');
     pill.className = 'tool-card__pill tool-card__pill--busy';
     pill.textContent = 'running\u2026';
@@ -1107,13 +1109,14 @@ export function ChatView(props) {
       card = document.createElement('div');
       card.className = 'tool-card tool-card--result';
       card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
+      card.dataset.toolName = normalizeToolName(toolResult.name);
       const role = document.createElement('div');
       role.className = 'tool-card__role';
       role.textContent = 'tool result';
       const name = document.createElement('div');
       name.className = 'tool-card__name';
       name.textContent = toolResult.name || 'tool';
-      const body = document.createElement('pre');
+      const body = document.createElement('div');
       body.className = 'tool-card__body';
       card.appendChild(role); card.appendChild(name); card.appendChild(body);
       card.addEventListener('click', () => card.classList.toggle('is-expanded'));
@@ -1126,23 +1129,21 @@ export function ChatView(props) {
       if (existingPill) existingPill.remove();
       const role = card.querySelector('.tool-card__role');
       if (role) role.textContent = 'tool result';
+      card.dataset.toolName = normalizeToolName(toolResult.name);
       const args = card.querySelector('.tool-card__args');
-      if (args) {
-        // Repurpose the args pre as the body; rename the class so the
-        // collapse-on-tap CSS hits it. A new pre is cleaner, but
-        // reusing keeps the same DOM stable.
-        args.classList.remove('tool-card__args');
-        args.classList.add('tool-card__body');
-        card.addEventListener('click', () => card.classList.toggle('is-expanded'));
-      } else {
-        const body = document.createElement('pre');
+      if (args) args.remove();
+      let body = card.querySelector('.tool-card__body');
+      if (!body) {
+        body = document.createElement('div');
         body.className = 'tool-card__body';
         card.appendChild(body);
-        card.addEventListener('click', () => card.classList.toggle('is-expanded'));
       }
+      card.addEventListener('click', () => card.classList.toggle('is-expanded'));
     }
+    if (isSubagentTool(toolResult && toolResult.name)) card.classList.add('tool-card--subagent');
     const body = card.querySelector('.tool-card__body');
     if (body) renderToolResultBody(body, toolResult);
+    if (isSubagentTool(toolResult && toolResult.name)) renderSubagentChat(card, toolResult);
     const pill = document.createElement('span');
     pill.className = 'tool-card__pill ' + (toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
     pill.textContent = toolResult.ok ? 'ok' : 'error';
@@ -1150,46 +1151,273 @@ export function ChatView(props) {
     transcript.current.scrollTop = transcript.current.scrollHeight;
   }
 
-  function formatToolArgs(args) {
+  function isSubagentTool(name) {
+    return name === 'subagent' || name === 'functions.subagent';
+  }
+
+  function formatToolArgs(args, toolName) {
     if (args == null) return '';
     if (typeof args === 'string') return args;
+    const name = normalizeToolName(toolName);
+    if (name === 'shell') return args.cmd || '';
+    if (name === 'read_file') {
+      const range = args.startLine != null || args.endLine != null ? (' lines ' + (args.startLine || 1) + '-' + (args.endLine || 'end')) : '';
+      return (args.path || args.file || '') + range;
+    }
+    if (name === 'list_files') return args.pattern || 'all text files';
+    if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
+    if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
     try { return JSON.stringify(args, null, 2); }
     catch { return String(args); }
   }
 
   function renderToolResultBody(body, toolResult) {
     body.textContent = '';
-    const r = toolResult && toolResult.result;
-    if (r && Array.isArray(r.content)) {
-      let wrote = false;
-      for (const c of r.content) {
-        if (c && typeof c.text === 'string') {
-          appendToolText(body, (wrote ? '\n' : '') + c.text);
-          wrote = true;
-        } else if (c && c.type === 'image') {
-          const img = imageBlockToElement(c);
-          if (img) {
-            body.appendChild(img);
-            wrote = true;
-          } else {
-            appendToolText(body, (wrote ? '\n' : '') + '[image]');
-            wrote = true;
-          }
-        } else if (c && c.type === 'resource') {
-          appendToolText(body, (wrote ? '\n' : '') + JSON.stringify(c.resource || c));
-          wrote = true;
-        } else {
-          appendToolText(body, (wrote ? '\n' : '') + JSON.stringify(c));
-          wrote = true;
-        }
-      }
+    body.className = 'tool-card__body';
+    const cardTool = body.closest && body.closest('.tool-card');
+    const name = normalizeToolName((toolResult && toolResult.name) || (cardTool && cardTool.dataset.toolName));
+    const r = coerceToolResult(toolResult && toolResult.result, name);
+    if (name === 'shell') return renderShellToolResult(body, r);
+    if (name === 'read_file') return renderReadFileToolResult(body, r);
+    if (name === 'list_files') return renderListFilesToolResult(body, r);
+    if (name === 'search_files') return renderSearchFilesToolResult(body, r);
+    if (name === 'edit_file') return renderEditFileToolResult(body, r);
+    if (name === 'write_file') return renderWriteFileToolResult(body, r);
+    if (isSubagentTool(toolResult && toolResult.name) && r && Array.isArray(r.chat)) {
+      body.textContent = r.text || '';
       return;
     }
-    body.textContent = formatToolResult(toolResult);
+    if (r && Array.isArray(r.content)) {
+      const lines = [];
+      for (const c of r.content) {
+        if (c && typeof c.text === 'string') lines.push(c.text);
+        else if (c && c.type === 'image') {
+          const img = imageBlockToElement(c);
+          if (img) body.appendChild(img);
+          else lines.push('[image]');
+        } else if (c && c.type === 'resource') lines.push('[resource] ' + JSON.stringify(c.resource || c));
+        else lines.push(String(c && (c.text || c.type) || c));
+      }
+      if (lines.length) renderPreviewPre(body, lines.join('\n'), 'tool-preview__pre');
+      return;
+    }
+    renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+  }
+
+  function normalizeToolName(name) {
+    return String(name || '').replace(/^functions\./, '');
+  }
+
+  function coerceToolResult(r, name) {
+    if (typeof r !== 'string') return r;
+    const s = r.trim();
+    if (!s) return r;
+    try {
+      const parsed = JSON.parse(s);
+      if (typeof parsed === 'string') return coerceToolResult(parsed, name);
+      return parsed;
+    } catch { /* plain text */ }
+    if (['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(name)) return parsePlainFileToolResult(r);
+    return r;
+  }
+
+  function formatReadableToolResult(r) {
+    if (r == null) return '';
+    if (typeof r === 'string') {
+      const s = r.trim();
+      try { return formatReadableToolResult(JSON.parse(s)); } catch { return r; }
+    }
+    if (r.error) return typeof r.error === 'string' ? r.error : (r.error.message || 'error');
+    if (typeof r.output === 'string') return r.output;
+    if (typeof r.text === 'string') return r.text;
+    if (typeof r.stdout === 'string' || typeof r.stderr === 'string') return [r.stdout, r.stderr].filter(Boolean).join('\n');
+    const lines = [];
+    for (const [k, v] of Object.entries(r)) {
+      if (v == null || v === '') continue;
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') lines.push(k + ': ' + v);
+    }
+    return lines.length ? lines.join('\n') : '(no preview)';
+  }
+
+  function parsePlainFileToolResult(text) {
+    const s = typeof text === 'string' ? text : '';
+    const parts = s.split(/\n\n/);
+    const header = parts.shift() || '';
+    const body = parts.join('\n\n');
+    const out = { body };
+    for (const line of header.split('\n')) {
+      let m;
+      if ((m = line.match(/^# File: (.*)$/))) out.relPath = m[1];
+      else if ((m = line.match(/^# Bytes: (\d+)/))) out.size = Number(m[1]);
+      else if ((m = line.match(/^# Lines: (\d+)-(\d+)(?: \/ (\d+))?/))) {
+        out.startLine = Number(m[1]); out.endLine = Number(m[2]); if (m[3]) out.totalLines = Number(m[3]);
+      } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = m[1] === '<all text files>' ? '' : m[1];
+      else if ((m = line.match(/^# Search: (.*)$/))) out.query = m[1];
+      else if ((m = line.match(/^# Wrote: (.*)$/))) out.relPath = m[1];
+    }
+    return out;
+  }
+
+  function renderToolMeta(parent, items) {
+    const meta = document.createElement('div');
+    meta.className = 'tool-preview__meta';
+    meta.textContent = items.filter(Boolean).join(' · ');
+    parent.appendChild(meta);
+  }
+
+  function renderPreviewPre(parent, text, className) {
+    const pre = document.createElement('pre');
+    pre.className = className || 'tool-preview__pre';
+    pre.textContent = text || '';
+    parent.appendChild(pre);
+    return pre;
+  }
+
+  function diffDecorations(view) {
+    const builder = new RangeSetBuilder();
+    for (let i = 1; i <= view.state.doc.lines; i++) {
+      const line = view.state.doc.line(i);
+      const text = line.text;
+      const cls = text.startsWith('+') && !text.startsWith('+++')
+        ? 'cm-diff-added'
+        : text.startsWith('-') && !text.startsWith('---')
+          ? 'cm-diff-removed'
+          : text.startsWith('@@')
+            ? 'cm-diff-hunk'
+            : '';
+      if (cls) builder.add(line.from, line.from, Decoration.line({ class: cls }));
+    }
+    return builder.finish();
+  }
+
+  function renderDiffPreview(parent, text) {
+    const host = document.createElement('div');
+    host.className = 'tool-preview__diff';
+    const raw = text == null ? '' : String(text);
+    const lines = raw ? raw.split('\n') : ['(edit applied)'];
+    for (let i = 0; i < lines.length; i++) {
+      const lineText = lines[i];
+      const line = document.createElement('div');
+      let kind = 'ctx';
+      if (lineText.startsWith('+') && !lineText.startsWith('+++')) kind = 'add';
+      else if (lineText.startsWith('-') && !lineText.startsWith('---')) kind = 'del';
+      else if (lineText.startsWith('@@')) kind = 'hunk';
+      else if (lineText.startsWith('---') || lineText.startsWith('+++')) kind = 'meta';
+      line.className = 'tool-preview__diff-line tool-preview__diff-line--' + kind;
+
+      const gutter = document.createElement('span');
+      gutter.className = 'tool-preview__diff-gutter';
+      gutter.textContent = String(i + 1);
+      const code = document.createElement('span');
+      code.className = 'tool-preview__diff-code';
+      code.textContent = lineText || ' ';
+      line.appendChild(gutter);
+      line.appendChild(code);
+      host.appendChild(line);
+    }
+    parent.appendChild(host);
+    return host;
+  }
+
+  function renderReadFileToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--file');
+    if (typeof r === 'string') r = parsePlainFileToolResult(r);
+    if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+    renderToolMeta(body, [
+      r.relPath || r.path,
+      (r.startLine != null && r.endLine != null) ? ('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')) : null,
+      r.size != null ? (r.size + ' bytes') : null
+    ]);
+    renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
+  }
+
+  function renderListFilesToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--list');
+    if (typeof r === 'string') r = parsePlainFileToolResult(r);
+    if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+    renderToolMeta(body, [
+      r.pattern ? ('pattern ' + r.pattern) : 'all text files',
+      Array.isArray(r.entries) ? (r.entries.length + ' shown') : null,
+      r.skipped ? (r.skipped + ' skipped') : null,
+      r.truncated ? 'capped' : null
+    ]);
+    const lines = Array.isArray(r.entries) ? r.entries.map((e) => (e.path || '') + (e.size != null ? '\t' + e.size : '')) : String(r.body || '').split('\n');
+    renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+  }
+
+  function renderSearchFilesToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--list');
+    if (typeof r === 'string') r = parsePlainFileToolResult(r);
+    if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+    renderToolMeta(body, [r.query ? ('search ' + r.query) : null, Array.isArray(r.matches) ? (r.matches.length + ' matches') : null]);
+    const lines = Array.isArray(r.matches) ? r.matches.map((m) => (m.path || '') + ':' + m.line + ': ' + (m.text || '')) : String(r.body || '').split('\n');
+    renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+  }
+
+  function renderEditFileToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--diff');
+    if (typeof r === 'string') r = parsePlainFileToolResult(r);
+    if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+    renderToolMeta(body, [
+      r.relPath || r.path,
+      r.replacedBytes != null ? ('replaced ' + r.replacedBytes + ' bytes') : null,
+      r.bytesWritten != null ? ('wrote ' + r.bytesWritten + ' bytes') : null
+    ]);
+    renderDiffPreview(body, r.diff || '(edit applied)');
+  }
+
+  function renderWriteFileToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--file');
+    if (typeof r === 'string') r = parsePlainFileToolResult(r);
+    if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+    renderToolMeta(body, [r.relPath || r.path, r.bytesWritten != null ? ('wrote ' + r.bytesWritten + ' bytes') : null, r.size != null ? (r.size + ' bytes') : null]);
+    renderPreviewPre(body, 'write complete', 'tool-preview__pre');
+  }
+
+  function renderShellToolResult(body, r) {
+    body.classList.add('tool-preview', 'tool-preview--terminal');
+    if (typeof r === 'string') r = coerceToolResult(r, 'shell');
+    if (!r || r.error) {
+      renderToolMeta(body, [r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null]);
+      return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__terminal');
+    }
+    renderToolMeta(body, ['exit ' + (r.exitCode ?? 0), r.durationMs != null ? (r.durationMs + 'ms') : null]);
+    const out = [];
+    if (r.stdout) out.push('$ stdout\n' + r.stdout);
+    if (r.stderr) out.push('$ stderr\n' + r.stderr);
+    renderPreviewPre(body, out.length ? out.join('\n\n') : '(no output)', 'tool-preview__terminal');
   }
 
   function appendToolText(parent, text) {
     parent.appendChild(document.createTextNode(text));
+  }
+
+  function renderSubagentChat(card, toolResult) {
+    if (!card) return;
+    const old = card.querySelector('.tool-card__subagent-chat');
+    if (old) old.remove();
+    const r = toolResult && toolResult.result;
+    const chat = r && Array.isArray(r.chat) ? r.chat : null;
+    if (!chat || !chat.length) return;
+    const details = document.createElement('details');
+    details.className = 'tool-card__subagent-chat';
+    details.open = true;
+    const summary = document.createElement('summary');
+    summary.textContent = 'Subagent chat (' + chat.length + ' messages)';
+    details.appendChild(summary);
+    for (const m of chat) {
+      const row = document.createElement('div');
+      row.className = 'tool-card__subagent-msg tool-card__subagent-msg--' + (m.role || 'message');
+      const role = document.createElement('div');
+      role.className = 'tool-card__subagent-role';
+      role.textContent = m.role || 'message';
+      const text = document.createElement('pre');
+      text.className = 'tool-card__subagent-text';
+      text.textContent = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '', null, 2);
+      row.appendChild(role); row.appendChild(text);
+      details.appendChild(row);
+    }
+    card.appendChild(details);
   }
 
   function imageBlockToElement(block) {
@@ -1313,6 +1541,17 @@ export function ChatView(props) {
     updateMetaLine();
     updateModelTrigger();
     refreshProviderCredit();
+  }
+
+  async function refreshChatTitle() {
+    if (!projectDir || !chatId) return;
+    try {
+      const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir));
+      if (r.status === 200 && r.body && r.body.chat) {
+        chatRef.current = r.body.chat;
+        if (chatName.current) chatName.current.textContent = chatRef.current.title || chatId;
+      }
+    } catch { /* non-fatal */ }
   }
 
   function renameChat() {
@@ -1563,6 +1802,7 @@ export function ChatView(props) {
         usage = data.usage || null;
         cost = data.cost || null;
         streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+        refreshChatTitle();
       }
       else if (ev.eventName === 'assistant_turn_end') {
         const segment = assembled;

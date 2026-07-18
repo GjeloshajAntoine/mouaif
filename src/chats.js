@@ -42,7 +42,6 @@
 // project settings, falling back to the app-level default.
 
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const settings = require('./settings.js');
 const { CHAT_ID_RE, listMessages } = require('./messages.js');
@@ -50,27 +49,20 @@ const { CHAT_ID_RE, listMessages } = require('./messages.js');
 const PROJECT_FILE = '.mouaif.json';
 
 function projectFilePath(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') {
-    throw new TypeError('projectDir must be a non-empty string');
-  }
-  return path.join(projectDir, PROJECT_FILE);
+  // settings.getProjectPath enforces the same non-empty-string contract
+  // and is the single source of truth for the <projectDir>/.mouaif.json path.
+  return settings.getProjectPath(projectDir);
 }
 
+// Read/write the project file through the shared helpers in settings.js so
+// the on-disk format (2-space JSON + trailing LF) and the corrupt-file
+// contract (MOUAIF_PROJECT_PARSE_ERROR) live in one place.
 function readProject(projectDir) {
-  const file = projectFilePath(projectDir);
-  if (!fs.existsSync(file)) return {};
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (e) {
-    const err = new Error('Failed to parse ' + file + ': ' + e.message);
-    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
-    throw err;
-  }
+  return settings.readProjectJson(projectFilePath(projectDir));
 }
 
 function writeProject(projectDir, obj) {
-  const file = projectFilePath(projectDir);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+  settings.writeProjectJson(projectFilePath(projectDir), obj);
 }
 
 function ensureDir(dir) {
@@ -79,6 +71,19 @@ function ensureDir(dir) {
 
 function newChatId() {
   return crypto.randomBytes(4).toString('hex'); // 8 hex chars
+}
+
+function titleFromPrompt(content) {
+  const text = String(content || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'New chat';
+  const max = 60;
+  if (text.length <= max) return text;
+  return text.slice(0, max).replace(/[\s.,;:!?\-–—]+$/g, '') + '…';
+}
+
+function isDefaultTitle(title) {
+  const t = String(title || '').trim();
+  return !t || t === 'New chat';
 }
 
 function defaultsForProject(project) {
@@ -226,6 +231,23 @@ function touchChat(projectDir, chatId) {
   return updateChat(projectDir, chatId, { lastOpenedAt: new Date().toISOString() });
 }
 
+// Set the chat title from the first user prompt, but only while the
+// title is still the untouched default. Manual renames are preserved.
+function titleChatFromPrompt(projectDir, chatId, content) {
+  if (!chatId) return null;
+  const title = titleFromPrompt(content);
+  if (isDefaultTitle(title)) return null;
+  const project = readProject(projectDir);
+  const idx = Array.isArray(project.chats) ? project.chats.findIndex(c => c && c.id === chatId) : -1;
+  if (idx < 0) return null;
+  const current = normalizeChat(project.chats[idx]);
+  if (!current || !isDefaultTitle(current.title)) return current;
+  const merged = Object.assign({}, current, { title });
+  project.chats[idx] = merged;
+  writeProject(projectDir, project);
+  return merged;
+}
+
 // Cascade-clear `promptId` on every chat in the project that references
 // the given prompt id. Called when a prompt is deleted, so a chat that
 // used to inject the prompt no longer carries a dangling reference.
@@ -316,6 +338,7 @@ module.exports = {
   updateChat,
   deleteChat,
   touchChat,
+  titleChatFromPrompt,
   clearPromptId,
   // metrics
   chatTotalCost

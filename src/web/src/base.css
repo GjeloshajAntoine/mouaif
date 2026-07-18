@@ -43,6 +43,7 @@
   --gap: 6px;
   --tap: 44px;
   --tabbar-h: 40px;   /* bottom tab bar height (incl. safe area) */
+  --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --r-sm: 5px;
   --r-md: 8px;
   --r-lg: 12px;

@@ -27,8 +27,8 @@
 //     ]
 //   }
 
-const fs = require('fs');
 const path = require('path');
+const settings = require('./settings.js');
 
 const CHAT_ID_RE = /^[a-f0-9]{8}$/i;
 
@@ -106,21 +106,18 @@ function normalizeMessage(m) {
   return out;
 }
 
+// Read/write the per-chat messages file through the shared helpers in
+// settings.js so the on-disk format (2-space JSON + trailing LF) and the
+// corrupt-file contract (MOUAIF_PROJECT_PARSE_ERROR) match the rest of the
+// project files. A missing transcript resolves to { messages: [] }.
 function readRaw(projectDir, chatId) {
   const file = messagesFilePath(projectDir, chatId);
-  if (!fs.existsSync(file)) return { messages: [] };
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (e) {
-    const err = new Error('Failed to parse ' + file + ': ' + e.message);
-    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
-    throw err;
-  }
+  return settings.readProjectJson(file, { messages: [] });
 }
 
 function writeRaw(projectDir, chatId, obj) {
   const file = messagesFilePath(projectDir, chatId);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+  settings.writeProjectJson(file, obj);
 }
 
 function listMessages(projectDir, chatId) {

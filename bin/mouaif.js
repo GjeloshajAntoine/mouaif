@@ -129,11 +129,11 @@ program
       server = createServer(port, { lifecycle });
       server.listen(port, options.host, () => {
         console.log(`🚀 mouaif server running at http://${options.host}:${port}`);
-        console.log(`   REST:   GET  /         — info`);
-        console.log(`   REST:   GET  /data     — get data`);
-        console.log(`   REST:   POST /data     — update data`);
-        console.log(`   SSE:    GET  /events   — subscribe to events`);
-        console.log(`   Web:    /web/          — mobile UI`);
+        console.log(`   Web:    /             — mobile UI`);
+        console.log(`   Web:    /web/         — mobile UI`);
+        console.log(`   REST:   GET  /data    — get data`);
+        console.log(`   REST:   POST /data    — update data`);
+        console.log(`   SSE:    GET  /events  — subscribe to events`);
         console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
         console.log('   Press Ctrl+C to stop');
       });

@@ -84,6 +84,42 @@ function writeJsonFile(filePath, obj) {
   fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n', 'utf8');
 }
 
+// ---- Shared project-file I/O -------------------------------------------
+//
+// Single source of truth for the on-disk project-file contract (see
+// docs/features/app-and-project-settings.md): 2-space indented JSON,
+// trailing LF, missing file treated as {}, corrupt file surfaced as a
+// MOUAIF_PROJECT_PARSE_ERROR. Both src/chats.js and src/messages.js
+// read/write JSON files next to the project (`.mouaif.json` and the
+// per-chat `.mouaif.messages.<id>.json`); they go through these helpers
+// so the format and error contract live in one place.
+
+// Read and JSON-parse an arbitrary project-relative JSON file. Missing
+// file returns `fallback` (default {}). A corrupt file throws with
+// code 'MOUAIF_PROJECT_PARSE_ERROR' so the HTTP layer can map it to 422.
+function readProjectJson(filePath, fallback) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new TypeError('filePath must be a non-empty string');
+  }
+  if (!fs.existsSync(filePath)) return fallback === undefined ? {} : fallback;
+  try { return readJsonFile(filePath); }
+  catch (e) {
+    const err = new Error('Failed to parse ' + filePath + ': ' + e.message);
+    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
+    err.cause = e;
+    throw err;
+  }
+}
+
+// Write an object to a project-relative JSON file in the canonical
+// format (2-space indent, trailing LF), creating parent dirs as needed.
+function writeProjectJson(filePath, obj) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new TypeError('filePath must be a non-empty string');
+  }
+  writeJsonFile(filePath, obj);
+}
+
 // ---- App-level store ----------------------------------------------------
 
 let _appDb = null;
@@ -148,16 +184,9 @@ function getProjectPath(projectDir) {
 }
 
 function getProjectRaw(projectDir) {
-  const file = getProjectPath(projectDir);
-  if (!fs.existsSync(file)) return {};
-  try { return readJsonFile(file); } catch (e) {
-    // A corrupt project file is a user error. Surface it clearly rather than
-    // silently returning {} — the caller can decide to ignore.
-    const err = new Error(`Failed to parse ${file}: ${e.message}`);
-    err.code = 'MOUAIF_PROJECT_PARSE_ERROR';
-    err.cause = e;
-    throw err;
-  }
+  // A corrupt project file is a user error. readProjectJson surfaces it as
+  // MOUAIF_PROJECT_PARSE_ERROR; a missing file resolves to {}.
+  return readProjectJson(getProjectPath(projectDir));
 }
 
 function getProject(projectDir) {
@@ -171,7 +200,7 @@ function setProject(projectDir, patch) {
   }
   const current = getProjectRaw(projectDir);
   const next = { ...current, ...patch };
-  writeJsonFile(getProjectPath(projectDir), next);
+  writeProjectJson(getProjectPath(projectDir), next);
   return next;
 }
 
@@ -181,7 +210,7 @@ function unsetProjectKeys(projectDir, keys) {
   }
   const next = getProjectRaw(projectDir);
   for (const key of keys) delete next[key];
-  writeJsonFile(getProjectPath(projectDir), next);
+  writeProjectJson(getProjectPath(projectDir), next);
   return next;
 }
 
@@ -231,6 +260,9 @@ module.exports = {
   getProject,
   setProject,
   unsetProjectKeys,
+  // shared project-file I/O (used by chats.js / messages.js)
+  readProjectJson,
+  writeProjectJson,
   // resolution
   getResolved,
   // lifecycle (mostly for tests)

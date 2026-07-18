@@ -33,6 +33,10 @@ function renderInline(text) {
   return s;
 }
 
+function renderInlineLines(lines) {
+  return lines.map((line) => renderInline(line)).join('<br>');
+}
+
 // Split into blocks by blank lines, then render each block.
 // Fenced code blocks are detected first and left as-is.
 export function renderMarkdown(text) {
@@ -82,8 +86,8 @@ export function renderMarkdown(text) {
       const lines = trimmed.split('\n');
       // Check for blockquote
       if (/^\s*>/.test(lines[0])) {
-        let quoteText = lines.map(l => l.replace(/^\s*> ?/, '')).join('\n');
-        out.push('<blockquote>' + renderInline(quoteText.trim()) + '</blockquote>');
+        const quoteLines = lines.map(l => l.replace(/^\s*> ?/, ''));
+        out.push('<blockquote>' + renderInlineLines(quoteLines) + '</blockquote>');
         continue;
       }
       // Check for unordered list
@@ -123,12 +127,12 @@ export function renderMarkdown(text) {
         out.push('<h' + level + '>' + renderInline(headingText) + '</h' + level + '>');
         if (restLines.trim()) {
           // Remaining text after heading inside same block
-          out.push('<p>' + renderInline(restLines.trim()) + '</p>');
+          out.push('<p>' + renderInlineLines(restLines.trim().split('\n')) + '</p>');
         }
         continue;
       }
       // Regular paragraph (with line breaks)
-      out.push('<p>' + renderInline(lines.join('<br>')) + '</p>');
+      out.push('<p>' + renderInlineLines(lines) + '</p>');
     }
   }
   return out.join('\n');

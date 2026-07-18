@@ -251,25 +251,27 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     ),
     h('section', { class: 'settings-project' },
       h('div', { class: 'settings-project__hero' },
-        h('div', { class: 'settings-project__eyebrow' }, 'Project file'),
+        h('div', { class: 'settings-project__eyebrow' }, 'This project'),
         h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
-        h('p', { class: 'settings-project__lede' }, 'Saved in .mouaif.json — applies to this project only.'),
+        h('p', { class: 'settings-project__lede' }, 'Saved in ', h('code', null, '.mouaif.json'), '. These choices override app defaults for this folder only.'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
+      h('p', { class: 'settings-project__intro' }, 'Use this page for project-specific behavior. Provider accounts, API keys, and app defaults stay in the main Settings pages.'),
 
       // ---- Project ----------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Project'),
+        h('div', { class: 'group__title' }, 'Project defaults', h('span', { class: 'group__title-note' }, 'Overrides app defaults')),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item' },
             h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt size'),
-              h('div', { ref: promptSizeStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, 'Inherits unless set here')
+              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt context size'),
+              h('div', { class: 'settings-project__item-note' }, 'How much project context the model receives.'),
+              h('div', { ref: promptSizeStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, 'Inherits the app default until changed here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
-              h('option', { value: '' }, 'Inherit'),
+              h('option', { value: '' }, 'Inherit app default'),
               h('option', { value: 'very-small' }, 'Very small'),
-              h('option', { value: 'average' }, 'Average'),
+              h('option', { value: 'average' }, 'Average (recommended)'),
               h('option', { value: 'extensive' }, 'Extensive')
             )
           )
@@ -278,62 +280,66 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
       // ---- Tools ------------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Tool access'),
+        h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per project')),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
               h('div', { class: 'settings-project__item-main' },
-                h('div', { class: 'settings-project__item-title' }, 'Shell'),
-                h('div', { class: 'settings-project__item-note' }, 'Run commands in this project folder')
+                h('div', { class: 'settings-project__item-title' }, 'Shell commands'),
+                h('div', { class: 'settings-project__item-note' }, 'Controls whether the AI can run terminal commands in this folder.')
               ),
-              h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
+              h('span', { class: 'settings-project__pill' }, 'Available')
             ),
-            h('div', { class: 'settings-project__sub' }, 'Authorization'),
-            h('label', { class: 'label', for: 'sp-shell-mode' }, 'Mode'),
+            h('div', { class: 'settings-project__sub' }, 'Permission mode'),
+            h('label', { class: 'label', for: 'sp-shell-mode' }, 'When the AI requests shell access'),
             h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode' },
-              h('option', { value: 'off' }, 'Off'),
+              h('option', { value: 'off' }, 'Off — never run commands'),
               h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+              h('option', { value: 'allowlist' }, 'Allowlist matches run automatically; otherwise ask'),
               h('option', { value: 'allow' }, 'Always allow')
             ),
-            h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Full-command regex allowlist'),
+            h('p', { class: 'settings-project__help' }, '“Ask every time” is the safest default. Use an allowlist for commands you already trust.'),
+            h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Allowed command patterns'),
+            h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command.'),
             h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
             h('div', { class: 'settings-project__actions' },
               h('span', { ref: shellStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save')
+              h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save shell permissions')
             ),
-            h('p', { class: 'settings-project__warning' }, 'Commands run with your account. Enable only on projects you trust.')
+            h('p', { class: 'settings-project__warning' }, 'Shell commands run with your user account. Only loosen access for projects you trust.')
           ),
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
               h('div', { class: 'settings-project__item-main' },
-                h('div', { class: 'settings-project__item-title' }, 'Files'),
-                h('div', { class: 'settings-project__item-note' }, 'Read, list, search, and edit files')
+                h('div', { class: 'settings-project__item-title' }, 'File tools'),
+                h('div', { class: 'settings-project__item-note' }, 'Controls whether the AI can read, search, and edit files in this folder.')
               ),
-              h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
+              h('span', { class: 'settings-project__pill' }, 'Available')
             ),
-            h('div', { class: 'settings-project__sub' }, 'Authorization'),
-            h('label', { class: 'label', for: 'sp-file-mode' }, 'Mode'),
+            h('div', { class: 'settings-project__sub' }, 'Permission mode'),
+            h('label', { class: 'label', for: 'sp-file-mode' }, 'When the AI requests file access'),
             h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode' },
-              h('option', { value: 'off' }, 'Off'),
+              h('option', { value: 'off' }, 'Off — never use file tools'),
               h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+              h('option', { value: 'allowlist' }, 'Allowlist matches run automatically; otherwise ask'),
               h('option', { value: 'allow' }, 'Always allow')
             ),
-            h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Path regex allowlist'),
+            h('p', { class: 'settings-project__help' }, 'Use an allowlist for paths the AI may access without asking.'),
+            h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
+            h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path.'),
             h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),
             h('div', { class: 'settings-project__actions' },
               h('span', { ref: fileStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save')
+              h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save file permissions')
             ),
-            h('p', { class: 'settings-project__warning' }, 'Allowlist matches the path requested by file tools.')
+            h('p', { class: 'settings-project__warning' }, 'File edits still stay inside this project folder boundary.')
           )
         )
       ),
 
       // ---- Links ------------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Project extras'),
+        h('div', { class: 'group__title' }, 'Project add-ons'),
         h('ul', { class: 'group__list' },
           h('li', null,
             h('a', {
@@ -368,8 +374,8 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
       // ---- Advanced (raw file + resolved) ----------------------------
       h('details', { class: 'settings__advanced settings-project__advanced' },
-        h('summary', null, 'Advanced'),
-        h('p', { class: 'hint hint--compact' }, 'Edit ', h('code', null, '.mouaif.json'), ' directly. Structured controls write the same file.'),
+        h('summary', null, 'Advanced: raw project file'),
+        h('p', { class: 'hint hint--compact' }, 'Use this only if you need to hand-edit ', h('code', null, '.mouaif.json'), '. The controls above write the same file.'),
         h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
         h('textarea', { ref: editor, class: 'input settings-project__code', id: 'sp-project-editor', rows: 10, spellcheck: false }),
         h('div', { class: 'row row--actions' },
