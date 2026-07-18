@@ -1204,7 +1204,12 @@ async function handleChatStream(req, res, chatId) {
   // (The chat UI independently tracks its own counter for live
   // updates; the server-side number is the fallback when the client
   // missed frames — e.g. when the tab was backgrounded.)
-  const streamStartedAt = Date.now();
+  //
+  // streamingMs accumulates ONLY the assistant-streaming windows, not
+  // the tool-execution gaps between them. The multi-round tool loop
+  // would otherwise stretch the window and under-report tok/s.
+  let streamStartedAt = 0;   // set on first message/reasoning delta
+  let streamingMs = 0;       // accumulated across streaming windows
   // Per-turn enrichment (cost + usage) is computed once on `done`
   // and reused for both the SSE emit and the persisted assistant
   // message. The chat UI's own live counter and the cost line
@@ -1240,14 +1245,20 @@ async function handleChatStream(req, res, chatId) {
     enabledTools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null),
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
+        if (!streamStartedAt) streamStartedAt = Date.now();
         assistantContent += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
       } else if (name === 'reasoning' && typeof data.delta === 'string') {
+        if (!streamStartedAt) streamStartedAt = Date.now();
         assistantReasoning += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
       } else if (name === 'assistant_turn_end') {
+        // A tool round is starting: fold the window that just ended into
+        // the accumulator and clear the start marker. The next assistant
+        // delta re-arms streamStartedAt.
+        if (streamStartedAt) { streamingMs += Date.now() - streamStartedAt; streamStartedAt = 0; }
         // Persist text produced before a tool call at its real transcript
         // position, then start a fresh segment for the post-tool response.
         if (assistantContent || assistantReasoning) {
@@ -1292,7 +1303,10 @@ async function handleChatStream(req, res, chatId) {
           const cost = providerCost == null
             ? usage.computeCost({ model, usage: data && data.usage, app })
             : { known: true, input: 0, output: 0, total: providerCost, currency: 'USD' };
-          const streamingMs = Date.now() - streamStartedAt;
+          // Fold the still-open window (first delta → done) into the
+          // accumulated tool-round windows. Falls back to the full
+          // elapsed time when no message delta ever armed the start.
+          const finalStreamingMs = streamingMs + (streamStartedAt ? Date.now() - streamStartedAt : 0);
           enriched = Object.assign({}, data, {
             cost: {
               known: cost.known,
@@ -1301,7 +1315,7 @@ async function handleChatStream(req, res, chatId) {
               total: cost.total,
               currency: cost.currency
             },
-            streamingMs,
+            streamingMs: finalStreamingMs,
             modelId: model.id
           });
         } catch { /* keep data as-is on any pricing resolution error */ }

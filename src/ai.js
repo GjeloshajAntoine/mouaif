@@ -1430,15 +1430,27 @@ async function streamChat(opts) {
       // Accumulate usage into the shared counter. Do NOT emit `done`
       // here — the outer tool loop owns the single final `done` after
       // the whole exchange (all tool round-trips) has completed.
+      //
+      // promptTokens: the last round wins. Every round-trip re-sends the
+      // full conversation, so summing would double-count the context on
+      // tool-heavy turns (N rounds × full convo). The final round's
+      // prompt is the accurate footprint.
+      // completionTokens: summed — each round's output is genuinely new.
       if (ev.data && ev.data.usage) {
-        usage.promptTokens = (usage.promptTokens || 0) + (ev.data.usage.promptTokens || 0);
+        const p = Number(ev.data.usage.promptTokens);
+        // Only overwrite when the provider actually reported a count;
+        // a 0/absent value must not clobber a real `usage_input` number.
+        if (isFinite(p) && p > 0) usage.promptTokens = p;
         usage.completionTokens = (usage.completionTokens || 0) + (ev.data.usage.completionTokens || 0);
       }
       if (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0) {
         providerCost = (providerCost || 0) + ev.data.providerCost;
       }
     } else if (ev.name === 'usage_input') {
-      usage.promptTokens = (usage.promptTokens || 0) + (ev.data.promptTokens || 0);
+      const p = Number(ev.data && ev.data.promptTokens);
+      // Anthropic reports this once at message_start; last wins so the
+      // final round's prompt (the full conversation footprint) prevails.
+      if (isFinite(p) && p > 0) usage.promptTokens = p;
       onEvent('usage_input', ev.data);
     } else if (ev.name === 'usage_output') {
       usage.completionTokens = (usage.completionTokens || 0) + (ev.data.completionTokens || 0);
