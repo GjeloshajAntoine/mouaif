@@ -1,15 +1,16 @@
 'use strict';
 
 // Native `subagent` tool — delegates a focused prompt to a nested model call.
-// The nested call uses the same model but is advertised no tools, so it cannot
-// recursively call tools or mutate the project. The result is returned as an
-// ordinary tool result for the parent assistant to summarize or use.
+// The nested call uses the same model and the same project tool surface (except
+// subagent itself, to avoid recursive delegation loops). Tool authorization is
+// still enforced by the normal gate. The result is returned as an ordinary tool
+// result for the parent assistant to summarize or use.
 
 const SPEC = {
   type: 'function',
   function: {
     name: 'subagent',
-    description: 'Delegate a focused analysis or planning task to a nested AI call. The subagent has no tools and returns only text.',
+    description: 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts.',
     parameters: {
       type: 'object',
       properties: {

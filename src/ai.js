@@ -1461,9 +1461,11 @@ async function streamChat(opts) {
       return { ok: !!out.ok, content: JSON.stringify(out), result: out };
     }
 
-    // Native subagent tool. It delegates to the same model with tools
-    // explicitly filtered to none, so the nested call is text-only and
-    // cannot recurse through this dispatcher.
+    // Native subagent tool. It delegates to the same model with the same
+    // project tool surface, including MCP. The nested call intentionally omits
+    // only `subagent` itself to avoid unbounded recursive delegation loops.
+    // Authorization uses the parent chat id so the existing chat popup/card is
+    // reused for any nested tool or MCP call that needs approval.
     if (name === 'subagent') {
       const task = args && typeof args.task === 'string' ? args.task.trim() : '';
       const context = args && typeof args.context === 'string' ? args.context.trim() : '';
@@ -1474,7 +1476,7 @@ async function streamChat(opts) {
       const nestedMessages = [
         {
           role: 'system',
-          content: 'You are a focused subagent. Answer only the delegated task. Be concise and do not ask to use tools.'
+          content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
         },
         {
           role: 'user',
@@ -1482,21 +1484,38 @@ async function streamChat(opts) {
         }
       ];
       const nestedEvents = [];
+      const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
+      const nestedEnabled = parentEnabled
+        ? parentEnabled.filter((toolName) => toolName !== 'subagent')
+        : visibleToolSpecs
+            .map((spec) => spec && spec.function && spec.function.name)
+            .filter((toolName) => toolName && toolName !== 'subagent');
       const nested = await streamChat({
         model,
         messages: nestedMessages,
         signal,
+        projectDir: callOpts && callOpts.projectDir,
+        chatId: callOpts && callOpts.chatId,
+        appSettings: callOpts && callOpts.appSettings,
         promptSize: callOpts && callOpts.promptSize,
-        enabledTools: [],
-        onEvent: (eventName, data) => nestedEvents.push({ name: eventName, data })
+        enabledTools: nestedEnabled,
+        onEvent: (eventName, data) => {
+          nestedEvents.push({ name: eventName, data });
+          if (eventName === 'authorization_required' && typeof onEvent === 'function') {
+            onEvent(eventName, Object.assign({}, data, { parentTool: 'subagent' }));
+          }
+        }
       });
       let text = '';
+      const nestedToolEvents = [];
       for (const ev of nestedEvents) {
         if (ev.name === 'message' && ev.data && typeof ev.data.delta === 'string') text += ev.data.delta;
+        else if (ev.name === 'tool_call' || ev.name === 'tool_result' || ev.name === 'authorization_required') nestedToolEvents.push(ev);
       }
+      const chat = nestedMessages.concat([{ role: 'assistant', content: text }]);
       const r = nested && nested.ok
-        ? { ok: true, text, usage: nested.usage || null, providerCost: nested.providerCost || null }
-        : { ok: false, text, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+        ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost || null }
+        : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
       return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
     }
 
