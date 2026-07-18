@@ -56,7 +56,10 @@ function close(stream) {
 
 function eventForMessage(message) {
   const role = message && message.role;
-  if (role === 'user') return { type: 'user_message', payload: { role, content: message.content, ts: message.ts } };
+  if (role === 'user') return {
+    type: 'user_message',
+    payload: { role, content: message.content, attachments: message.attachments, ts: message.ts }
+  };
   if (role === 'assistant') return {
     type: 'assistant_message',
     payload: {

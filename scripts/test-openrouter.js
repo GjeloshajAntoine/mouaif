@@ -99,6 +99,10 @@ if (req) {
     'got ' + (req.body && req.body.model));
   check('body.stream is true',
     req.body && req.body.stream === true);
+  check('body requests streaming usage',
+    req.body && req.body.stream_options && req.body.stream_options.include_usage === true);
+  check('body requests OpenRouter authoritative cost',
+    req.body && req.body.usage && req.body.usage.include === true);
   check('body.messages is the input array',
     req.body && Array.isArray(req.body.messages) && req.body.messages.length === 1);
 } else {
@@ -173,6 +177,10 @@ globalThis.fetch = async function stubFetch(url, init) {
       sentBody.model === 'anthropic/claude-3.5-sonnet');
     check('fetch body.stream is true',
       sentBody.stream === true);
+    check('fetch body requests streaming usage',
+      sentBody.stream_options && sentBody.stream_options.include_usage === true);
+    check('fetch body requests OpenRouter authoritative cost',
+      sentBody.usage && sentBody.usage.include === true);
     const messageEvents = events.filter(e => e.name === 'message');
     check('streamChat emitted a message event with the upstream delta',
       messageEvents.length === 1 && messageEvents[0].data.delta === 'hello from openrouter',

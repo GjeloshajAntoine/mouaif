@@ -264,6 +264,20 @@ async function main() {
       caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
   });
 
+  // 18) OpenAI/OpenRouter streaming requests explicitly ask for final usage.
+  const openaiReq = ai.BUILDERS['openai-compatible']({
+    id: 'gpt-4o-mini', provider: 'openai-compatible', apiKey: 'sk-test'
+  }, [{ role: 'user', content: 'hi' }], true);
+  check('openai-compatible: stream_options.include_usage is set',
+    openaiReq.body && openaiReq.body.stream_options && openaiReq.body.stream_options.include_usage === true);
+  const openrouterReq = ai.BUILDERS.openrouter({
+    id: 'openai/gpt-5-mini', provider: 'openrouter', apiKey: 'sk-or-test'
+  }, [{ role: 'user', content: 'hi' }], true);
+  check('openrouter: stream_options.include_usage is set',
+    openrouterReq.body && openrouterReq.body.stream_options && openrouterReq.body.stream_options.include_usage === true);
+  check('openrouter: usage.include is set for billed cost',
+    openrouterReq.body && openrouterReq.body.usage && openrouterReq.body.usage.include === true);
+
   // Summary.
   console.log('---');
   console.log('passed: ' + passed);

@@ -21,6 +21,7 @@
 //     messages: [
 //       { role: 'user' | 'assistant' | 'system' | 'tool',
 //         content: 'string',
+//         attachments?: [{ type: 'image', mimeType, dataUrl, name? }],
 //         ts: '2026-07-14T12:34:00.000Z' },
 //       ...
 //     ]
@@ -49,6 +50,27 @@ function messagesFilePath(projectDir, chatId) {
 }
 
 const VALID_ROLES = new Set(['user', 'assistant', 'system', 'tool']);
+const MAX_IMAGE_ATTACHMENTS = 8;
+const MAX_IMAGE_DATA_URL_CHARS = 12 * 1024 * 1024;
+
+function normalizeAttachments(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const a of list) {
+    if (!a || typeof a !== 'object') continue;
+    if (a.type !== 'image') continue;
+    const mimeType = typeof a.mimeType === 'string' ? a.mimeType : '';
+    const dataUrl = typeof a.dataUrl === 'string' ? a.dataUrl : '';
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mimeType)) continue;
+    if (!dataUrl.startsWith('data:' + mimeType + ';base64,')) continue;
+    if (dataUrl.length > MAX_IMAGE_DATA_URL_CHARS) continue;
+    const item = { type: 'image', mimeType, dataUrl };
+    if (typeof a.name === 'string' && a.name) item.name = a.name.slice(0, 160);
+    out.push(item);
+    if (out.length >= MAX_IMAGE_ATTACHMENTS) break;
+  }
+  return out;
+}
 
 function normalizeMessage(m) {
   if (!m || typeof m !== 'object') return null;
@@ -59,6 +81,10 @@ function normalizeMessage(m) {
     content: m.content,
     ts: typeof m.ts === 'string' ? m.ts : new Date().toISOString()
   };
+  if (m.role === 'user') {
+    const attachments = normalizeAttachments(m.attachments);
+    if (attachments.length) out.attachments = attachments;
+  }
   // The assistant message is the only one that carries usage + cost
   // (decision §14). We persist them on the message itself so a chat
   // reopened later shows the same numbers that were on screen when
@@ -129,6 +155,10 @@ function appendMessage(projectDir, chatId, msg) {
   // Same enrichment as normalizeMessage. The setter path and the
   // loader path share the same shape so a chat that is appended to
   // and then re-loaded never loses its cost / usage fields.
+  if (msg.role === 'user') {
+    const attachments = normalizeAttachments(msg.attachments);
+    if (attachments.length) normalized.attachments = attachments;
+  }
   if (msg.role === 'assistant') {
     if (msg.usage && typeof msg.usage === 'object') normalized.usage = msg.usage;
     if (msg.cost && typeof msg.cost === 'object') normalized.cost = msg.cost;
@@ -167,6 +197,7 @@ function clearMessages(projectDir, chatId) {
 module.exports = {
   VALID_ROLES,
   CHAT_ID_RE,
+  normalizeAttachments,
   assertChatId,
   messagesFilePath,
   listMessages,

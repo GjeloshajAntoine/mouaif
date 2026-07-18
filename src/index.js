@@ -1020,9 +1020,10 @@ async function handleChatStream(req, res, chatId) {
   const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
   const content = body && typeof body.content === 'string' ? body.content : '';
+  const attachments = messages.normalizeAttachments(body && body.attachments);
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
-  if (!content) return sendJSON(res, 400, { error: 'content is required' });
+  if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
 
   let chat;
   try { chat = chats.getChat(projectDir, chatId); }
@@ -1040,7 +1041,7 @@ async function handleChatStream(req, res, chatId) {
 
   // Append the user message and bump lastOpenedAt BEFORE streaming.
   let userMsg;
-  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content }); }
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
   try { chats.touchChat(projectDir, chatId); } catch { /* non-fatal */ }
 
@@ -1120,6 +1121,14 @@ async function handleChatStream(req, res, chatId) {
       }
     } catch { /* non-fatal; stream proceeds without the prompt */ }
   }
+  function upstreamContentForMessage(m) {
+    if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return m && m.content;
+    const parts = [];
+    if (m.content) parts.push({ type: 'text', text: m.content });
+    for (const a of m.attachments) parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
+    return parts;
+  }
+
   for (const m of history) {
     if (m.role === 'tool' && m.phase === 'call') {
       upstreamMessages.push({
@@ -1139,7 +1148,7 @@ async function handleChatStream(req, res, chatId) {
         content: m.content
       });
     } else {
-      upstreamMessages.push({ role: m.role, content: m.content });
+      upstreamMessages.push({ role: m.role, content: upstreamContentForMessage(m) });
     }
   }
 
@@ -1557,7 +1566,14 @@ async function handleAI(req, res, parsed) {
     // calls (rate-limited but useful), Ollama/Copilot don't need one.
     const app = settings.getApp();
     const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
-    const cred = conn && conn.apiKey ? conn.apiKey : null;
+    let cred = conn && conn.apiKey ? conn.apiKey : null;
+    if (!cred && conn && conn.auth === 'oauth') {
+      try {
+        const token = auth.tokenForModel({ provider, oauthAccount: conn.oauthAccount });
+        const parsedToken = token ? JSON.parse(token) : null;
+        cred = parsedToken && parsedToken.accessToken ? parsedToken.accessToken : null;
+      } catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
+    }
     // 1h cache keyed by `${provider}:${credHash}`.
     const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
     const now = Date.now();
@@ -2260,7 +2276,8 @@ async function handlePrompts(req, res, parsed) {
 // ---- MCP API ------------------------------------------------------------
 // Per-project MCP server registry + lifecycle + tool dispatch
 // (docs/decisions.md §18). The server entries live in
-// <projectDir>/.mouaif.json under mcp.servers; runtime state is
+// <projectDir>/.mcp.json under servers; legacy .mouaif.json
+// mcp.servers is read as a fallback. Runtime state is
 // in-memory. The AI client dispatches through the in-process mcp
 // module, so these endpoints are for the Settings UI and for tests.
 //

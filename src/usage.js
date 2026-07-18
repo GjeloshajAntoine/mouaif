@@ -38,13 +38,21 @@ const BUILTIN_PRICING = Object.freeze({
   'o3':                      { inputPer1K: 0.01000, outputPer1K: 0.04000 },
   'o3-mini':                 { inputPer1K: 0.00110, outputPer1K: 0.00440 },
   'o4-mini':                 { inputPer1K: 0.00110, outputPer1K: 0.00440 },
+  'gpt-5':                   { inputPer1K: 0.00125, outputPer1K: 0.01000 },
+  'gpt-5-mini':              { inputPer1K: 0.00025, outputPer1K: 0.00200 },
+  'gpt-5-nano':              { inputPer1K: 0.00005, outputPer1K: 0.00040 },
   // Anthropic (https://www.anthropic.com/pricing)
   'claude-3-5-sonnet-latest':{ inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-3-5-haiku-latest': { inputPer1K: 0.00080, outputPer1K: 0.00400 },
   'claude-3-opus-latest':    { inputPer1K: 0.01500, outputPer1K: 0.07500 },
+  'claude-sonnet-4':         { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-sonnet-4-5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
+  'claude-sonnet-4.5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-haiku-4-5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
+  'claude-haiku-4.5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
+  'claude-opus-4':           { inputPer1K: 0.01500, outputPer1K: 0.07500 },
   'claude-opus-4-1':         { inputPer1K: 0.01500, outputPer1K: 0.07500 },
+  'claude-opus-4.1':         { inputPer1K: 0.01500, outputPer1K: 0.07500 },
   // Google Gemini (https://ai.google.dev/pricing)
   'gemini-2.5-pro':          { inputPer1K: 0.00125, outputPer1K: 0.01000 },
   'gemini-2.5-flash':        { inputPer1K: 0.00030, outputPer1K: 0.00250 },
@@ -78,8 +86,22 @@ function resolvePricing(model, app) {
     const fromApp = pickPricing(appPricing[id]);
     if (fromApp) return Object.assign({ source: 'app' }, fromApp);
   }
-  const fromBuiltIn = BUILTIN_PRICING[id];
+  const fromBuiltIn = builtinPricingForId(id);
   if (fromBuiltIn) return Object.assign({ source: 'builtin' }, fromBuiltIn);
+  return null;
+}
+
+function builtinPricingForId(id) {
+  if (!id) return null;
+  if (BUILTIN_PRICING[id]) return BUILTIN_PRICING[id];
+  // OpenRouter model ids are vendor-prefixed (e.g. openai/gpt-5-mini,
+  // anthropic/claude-sonnet-4.5). Reuse the built-in vendor price when
+  // the suffix exactly matches a known native model id.
+  const slash = String(id).lastIndexOf('/');
+  if (slash >= 0) {
+    const suffix = String(id).slice(slash + 1);
+    if (BUILTIN_PRICING[suffix]) return BUILTIN_PRICING[suffix];
+  }
   return null;
 }
 
@@ -263,6 +285,7 @@ function createCounter() {
 
 module.exports = {
   BUILTIN_PRICING,
+  builtinPricingForId,
   resolvePricing,
   computeCost,
   formatCost,

@@ -607,15 +607,53 @@ function buildOpenAIRequest(model, messages, stream) {
       : def.staticHeaders);
   }
   if (model && model.headers && typeof model.headers === 'object') Object.assign(headers, model.headers);
+  const body = {
+    model: model.id,
+    messages,
+    stream: !!stream
+  };
+  if (stream && (model.provider === 'openai-compatible' || model.provider === 'openrouter')) {
+    // OpenAI-shaped streaming APIs do not include final token usage by
+    // default. Request it explicitly so the chat's Context/Cost line is
+    // based on upstream counts instead of staying at zero.
+    body.stream_options = { include_usage: true };
+  }
+  if (stream && model.provider === 'openrouter') {
+    // OpenRouter only includes its authoritative billed `usage.cost` when
+    // asked. Prefer that over local pricing when present.
+    body.usage = { include: true };
+  }
   return {
     url: joinUrl(baseUrl, ENDPOINTS['openai-compatible'].chatPath),
     headers,
-    body: {
-      model: model.id,
-      messages,
-      stream: !!stream
-    }
+    body
   };
+}
+
+function openAIContentToAnthropic(content) {
+  if (!Array.isArray(content)) return content;
+  return content.map((part) => {
+    if (!part || typeof part !== 'object') return { type: 'text', text: String(part || '') };
+    if (part.type === 'text') return { type: 'text', text: part.text || '' };
+    if (part.type === 'image_url' && part.image_url && typeof part.image_url.url === 'string') {
+      const m = part.image_url.url.match(/^data:([^;]+);base64,(.*)$/);
+      if (m) return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+    }
+    return { type: 'text', text: '' };
+  }).filter((part) => part.type !== 'text' || part.text);
+}
+
+function openAIContentToGeminiParts(content) {
+  if (!Array.isArray(content)) return [{ text: content == null ? '' : String(content) }];
+  return content.map((part) => {
+    if (!part || typeof part !== 'object') return { text: String(part || '') };
+    if (part.type === 'text') return { text: part.text || '' };
+    if (part.type === 'image_url' && part.image_url && typeof part.image_url.url === 'string') {
+      const m = part.image_url.url.match(/^data:([^;]+);base64,(.*)$/);
+      if (m) return { inlineData: { mimeType: m[1], data: m[2] } };
+    }
+    return { text: '' };
+  }).filter((part) => part.text || part.inlineData);
 }
 
 function buildAnthropicRequest(model, messages, stream) {
@@ -636,7 +674,7 @@ function buildAnthropicRequest(model, messages, stream) {
       model: model.id,
       max_tokens: model.maxTokens || 1024,
       system: systemContent || undefined,
-      messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
+      messages: chatMessages.map(m => ({ role: m.role, content: openAIContentToAnthropic(m.content) })),
       stream: !!stream
     }
   };
@@ -649,7 +687,7 @@ function buildGeminiRequest(model, messages, stream) {
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const contents = messages
     .filter(m => m.role !== 'system')
-    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: openAIContentToGeminiParts(m.content) }));
   const body = { contents };
   if (systemContent) body.systemInstruction = { role: 'system', parts: [{ text: systemContent }] };
   return {
@@ -694,6 +732,14 @@ const PARSERS = {
   'ollama':           parseOllamaNDJSON
 };
 
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const n = Number(value);
+    if (isFinite(n) && n >= 0) return n;
+  }
+  return 0;
+}
+
 function* parseOpenAISSE(eventName, data) {
   if (!data) return;
   // OpenAI uses the literal "[DONE]" as a stream terminator. Suppress it.
@@ -722,13 +768,27 @@ function* parseOpenAISSE(eventName, data) {
     yield { name: 'finish', data: { reason: choice.finish_reason } };
   }
   if (obj.usage) {
-    const providerCost = typeof obj.usage.cost === 'number' && isFinite(obj.usage.cost) && obj.usage.cost >= 0
-      ? obj.usage.cost
-      : null;
+    const promptTokens = firstFiniteNumber(
+      obj.usage.prompt_tokens,
+      obj.usage.input_tokens,
+      obj.usage.promptTokens,
+      obj.usage.inputTokens
+    );
+    const completionTokens = firstFiniteNumber(
+      obj.usage.completion_tokens,
+      obj.usage.output_tokens,
+      obj.usage.completionTokens,
+      obj.usage.outputTokens
+    );
+    const providerCost = firstFiniteNumber(
+      obj.usage.cost,
+      obj.usage.total_cost,
+      obj.usage.totalCost
+    );
     yield {
       name: 'done',
       data: {
-        usage: { promptTokens: obj.usage.prompt_tokens || 0, completionTokens: obj.usage.completion_tokens || 0 },
+        usage: { promptTokens, completionTokens },
         providerCost
       }
     };
