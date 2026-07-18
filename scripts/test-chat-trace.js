@@ -28,6 +28,40 @@ try {
   assert.equal(reopened[2].phase, 'result');
   assert.equal(reopened[2].ok, true);
 
+  const reconstructed = messages.reconstructUpstreamHistory([
+    { role: 'user', content: 'first' },
+    { role: 'tool', phase: 'call', toolCallId: 'call_complete', name: 'shell', args: { cmd: 'echo ok' }, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: 'call_complete', name: 'shell', content: '{"stdout":"ok"}' },
+    { role: 'assistant', content: 'finished' },
+    { role: 'tool', phase: 'result', toolCallId: 'orphan_result', name: 'shell', content: '{}' },
+    { role: 'tool', phase: 'call', toolCallId: 'call_without_result', name: 'shell', args: { cmd: 'echo interrupted' }, content: '{}' },
+    { role: 'user', content: 'continue' }
+  ]);
+  assert.deepEqual(reconstructed.map((m) => m.role), ['user', 'assistant', 'tool', 'assistant', 'user']);
+  assert.equal(reconstructed[1].tool_calls[0].id, 'call_complete');
+  assert.equal(reconstructed[2].tool_call_id, 'call_complete');
+  assert.equal(reconstructed.some((m) => JSON.stringify(m).includes('call_without_result')), false);
+
+  const longId = 'tool_search_files_' + 'x'.repeat(40);
+  const portable = messages.reconstructUpstreamHistory([
+    { role: 'tool', phase: 'call', toolCallId: longId, name: 'search_files', args: { query: 'x' }, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: longId, name: 'search_files', content: '{"matches":[]}' },
+    { role: 'tool', phase: 'call', toolCallId: 'duplicate', name: 'read_file', args: {}, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: 'duplicate', name: 'read_file', content: '{}' },
+    { role: 'tool', phase: 'call', toolCallId: 'duplicate', name: 'read_file', args: {}, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: 'duplicate', name: 'read_file', content: '{}' }
+  ]);
+  assert.match(portable[0].tool_calls[0].id, /^call_history_/);
+  assert.equal(portable[0].tool_calls[0].id, portable[1].tool_call_id);
+  assert.notEqual(portable[2].tool_calls[0].id, portable[4].tool_calls[0].id);
+  const withoutTools = messages.reconstructUpstreamHistory([
+    { role: 'user', content: 'question' },
+    { role: 'tool', phase: 'call', toolCallId: 'call_1', name: 'shell', args: {}, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: 'call_1', name: 'shell', content: '{}' },
+    { role: 'assistant', content: 'answer' }
+  ], null, { includeTools: false });
+  assert.deepEqual(withoutTools.map((m) => m.role), ['user', 'assistant']);
+
   const file = trace.exportMessages(projectDir, chatId, [user, call, result, assistant]);
   const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(lines.map((line) => line.type), ['user_message', 'tool_call', 'tool_result', 'assistant_message']);
@@ -49,7 +83,7 @@ try {
   ], true);
   assert.equal(gemini.body.systemInstruction.parts[0].text, 'profile\n\ntagged file\n\ncustom prompt');
 
-  console.log('chat trace: 11 assertions passed');
+  console.log('chat trace: 19 assertions passed');
 } finally {
   fs.rmSync(projectDir, { recursive: true, force: true });
 }

@@ -1184,28 +1184,16 @@ async function handleChatStream(req, res, chatId) {
     return parts;
   }
 
-  for (const m of history) {
-    if (m.role === 'tool' && m.phase === 'call') {
-      upstreamMessages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: [{
-          id: m.toolCallId || undefined,
-          type: 'function',
-          function: { name: m.name || 'tool', arguments: JSON.stringify(m.args || {}) }
-        }]
-      });
-    } else if (m.role === 'tool' && m.phase === 'result') {
-      upstreamMessages.push({
-        role: 'tool',
-        tool_call_id: m.toolCallId || undefined,
-        name: m.name || 'tool',
-        content: m.content
-      });
-    } else {
-      upstreamMessages.push({ role: m.role, content: upstreamContentForMessage(m) });
-    }
-  }
+  // Reconstruct only complete historical tool call/result pairs. An aborted
+  // run can leave a persisted call with no result; strict OpenAI-compatible
+  // providers reject that orphan on the next send with HTTP 400. The helper
+  // also canonicalizes provider-specific call ids for cross-model resumes.
+  const supportsOpenAIToolHistory = model.provider === 'openai-compatible'
+    || model.provider === 'openrouter'
+    || model.provider === 'github-copilot';
+  upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {
+    includeTools: supportsOpenAIToolHistory
+  }));
 
   let assistantContent = '';
   let assistantReasoning = '';

@@ -192,6 +192,75 @@ function clearMessages(projectDir, chatId) {
   return before;
 }
 
+// Convert the persisted transcript into the OpenAI-shaped history used by
+// the provider clients. Tool records are written as adjacent call/result
+// pairs. A process stop, aborted request, or closed browser can leave the
+// final call without its result; forwarding that orphan makes strict
+// OpenAI-compatible providers reject the next user turn with HTTP 400.
+//
+// Only complete adjacent pairs are reconstructed. Historical call ids are
+// also canonicalized when missing, duplicated, or unusually long. The ids
+// are conversation-local correlation keys, so replacing one on both sides
+// of a stored pair preserves its meaning while keeping the next request
+// portable across OpenAI-shaped providers.
+function reconstructUpstreamHistory(list, contentForMessage, options) {
+  const source = Array.isArray(list) ? list : [];
+  const contentOf = typeof contentForMessage === 'function'
+    ? contentForMessage
+    : (m) => m && m.content;
+  const includeTools = !options || options.includeTools !== false;
+  const out = [];
+  const usedIds = new Set();
+  let pairNumber = 0;
+
+  for (let i = 0; i < source.length; i++) {
+    const m = source[i];
+    if (!m || typeof m !== 'object') continue;
+
+    if (m.role === 'tool') {
+      if (!includeTools) continue;
+      if (m.phase !== 'call') continue; // orphan result or unknown phase
+      const result = source[i + 1];
+      if (!result || result.role !== 'tool' || result.phase !== 'result') continue;
+
+      const callId = typeof m.toolCallId === 'string' ? m.toolCallId : '';
+      const resultId = typeof result.toolCallId === 'string' ? result.toolCallId : '';
+      if (callId !== resultId) continue;
+
+      pairNumber++;
+      let wireId = callId;
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(wireId) || usedIds.has(wireId)) {
+        wireId = 'call_history_' + pairNumber.toString(36);
+      }
+      while (usedIds.has(wireId)) {
+        pairNumber++;
+        wireId = 'call_history_' + pairNumber.toString(36);
+      }
+      usedIds.add(wireId);
+
+      let args = '{}';
+      try { args = JSON.stringify(m.args || {}); } catch { /* keep empty object */ }
+      const name = m.name || result.name || 'tool';
+      out.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: wireId, type: 'function', function: { name, arguments: args } }]
+      });
+      out.push({
+        role: 'tool',
+        tool_call_id: wireId,
+        name,
+        content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content || {})
+      });
+      i++; // consume the paired result
+      continue;
+    }
+
+    out.push({ role: m.role, content: contentOf(m) });
+  }
+  return out;
+}
+
 module.exports = {
   VALID_ROLES,
   CHAT_ID_RE,
@@ -202,5 +271,6 @@ module.exports = {
   getMessage,
   appendMessage,
   replaceMessages,
-  clearMessages
+  clearMessages,
+  reconstructUpstreamHistory
 };

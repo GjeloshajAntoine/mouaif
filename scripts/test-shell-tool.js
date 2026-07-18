@@ -262,6 +262,38 @@ async function main() {
   server2.close();
   check('shell remains advertised for authorization gating', advertisedWhenDisabled === true, String(advertisedWhenDisabled));
 
+  // Non-OpenAI providers use different tool declaration schemas. Until
+  // their native loops are implemented, they must not receive the OpenAI
+  // `type:function` specs collected above or strict APIs return HTTP 400.
+  let anthropicBody = null;
+  const serverAnthropic = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      anthropicBody = JSON.parse(body);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: content_block_delta\n');
+      res.write('data: {"delta":{"type":"text_delta","text":"ok"}}\n\n');
+      res.write('event: message_stop\n');
+      res.write('data: {}\n\n');
+      res.end();
+    });
+  });
+  await new Promise((resolve) => serverAnthropic.listen(0, '127.0.0.1', resolve));
+  const anthropicResult = await ai.streamChat({
+    model: {
+      id: 'mock-claude', provider: 'anthropic', auth: 'apikey', apiKey: 'test-key',
+      baseUrl: 'http://127.0.0.1:' + serverAnthropic.address().port
+    },
+    messages: [{ role: 'user', content: 'hi' }],
+    projectDir,
+    chatId,
+    onEvent: () => {}
+  });
+  serverAnthropic.close();
+  check('Anthropic request succeeds without OpenAI tool specs', anthropicResult.ok === true, JSON.stringify(anthropicResult));
+  check('Anthropic request omits OpenAI tool specs', anthropicBody && !Object.hasOwn(anthropicBody, 'tools'), JSON.stringify(anthropicBody && anthropicBody.tools));
+
   fs.rmSync(projectDir, { recursive: true, force: true });
   settings.close();
 

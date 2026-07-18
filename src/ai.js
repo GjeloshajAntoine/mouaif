@@ -1319,7 +1319,10 @@ async function streamChat(opts) {
   // decides when the whole exchange is finished.
   async function runUpstreamTurn(convoMessages, specs) {
   const req = build(model, convoMessages, true);
-  if (specs && specs.length) {
+  const supportsOpenAITools = model.provider === 'openai-compatible'
+    || model.provider === 'openrouter'
+    || model.provider === 'github-copilot';
+  if (supportsOpenAITools && specs && specs.length) {
     const builderBody = req.body;
     if (builderBody && typeof builderBody === 'object') {
       builderBody.tools = specs;
