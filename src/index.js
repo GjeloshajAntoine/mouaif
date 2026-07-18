@@ -666,7 +666,7 @@ function projectsErrorStatus(err) {
 // identified by a short hex id generated at creation time.
 //
 // Endpoints:
-//   GET    /api/chats?projectDir=<abs>          -> { chats: [...] }
+//   GET    /api/chats?projectDir=<abs>          -> { chats: [..., totalCost: { total, known, currency }] }
 //   GET    /api/chats/:id?projectDir=<abs>      -> { chat } | 404
 //   POST   /api/chats                            { projectDir, title?, trace?, promptSize? }
 //   PATCH  /api/chats/:id                        { projectDir, title?, trace?, promptSize? }
@@ -697,7 +697,25 @@ async function handleChats(req, res, parsed) {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
-      return sendJSON(res, 200, { chats: chats.listChats(dir) });
+      const list = chats.listChats(dir);
+      // Enrich every chat with a `totalCost` block so the mobile
+      // chat list can render a cost summary in place of the old
+      // prompt-size label (decision §14). The summary is computed
+      // from the assistant messages' persisted `cost.total` values
+      // — no pricing re-resolution is needed because the streaming
+      // layer already baked the price in at `done` time. We pull
+      // the app settings once so every chat in the project shares
+      // the same call, and so chatTotalCost() can stay a pure
+      // sum-with-known-flag. A corrupt / missing messages file
+      // surfaces as `{ total: 0, known: false }` — the UI renders
+      // `--` for those.
+      let app;
+      try { app = settings.getApp(); } catch { app = null; }
+      for (const c of list) {
+        try { c.totalCost = chats.chatTotalCost(dir, c.id, app); }
+        catch { c.totalCost = { total: 0, known: false, currency: 'USD' }; }
+      }
+      return sendJSON(res, 200, { chats: list });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }

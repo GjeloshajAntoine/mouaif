@@ -12,7 +12,10 @@
 // separate chat data store commit. Per docs/decisions.md §5, the only
 // per-chat fields the trace-to-file commit needs to read are `id` and
 // `trace`; the project card commit adds the per-chat `promptSize` so
-// the chat list can show which profile each chat is using.
+// the chat list can show which profile each chat is using; the chat
+// list cost-summary commit (this one) adds a `totalCost` block on the
+// API response (NOT persisted on the chat record — the source of truth
+// is the per-assistant-message `cost` field in the messages file).
 //
 // Schema (per chat, inside project.chats):
 //   {
@@ -27,6 +30,12 @@
 //     modelId:      null                  // selected project/live model slug
 //   }
 //
+// API enrichment (added by GET /api/chats, NOT persisted on disk):
+//   {
+//     ...persisted fields...,
+//     totalCost: { total: <USD>, known: <bool>, currency: 'USD' }
+//   }
+//
 // New chats always start with tracing off unless the creation request
 // explicitly opts in (decision §5). `promptSize` inherits from resolved
 // project settings, falling back to the app-level default.
@@ -35,7 +44,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const settings = require('./settings.js');
-const { CHAT_ID_RE } = require('./messages.js');
+const { CHAT_ID_RE, listMessages } = require('./messages.js');
 
 const PROJECT_FILE = '.mouaif.json';
 
@@ -212,6 +221,59 @@ function clearPromptId(projectDir, promptId) {
   return changed;
 }
 
+// Sum the per-message cost (decision §14) across every assistant
+// message in the chat. Returns
+//   { total: <USD>, known: <bool>, currency: 'USD' }
+// where `known` is true when at least one assistant message carried
+// a `cost` block — i.e. the upstream reported usage and the model
+// had resolvable pricing. A chat with no assistant messages (or a
+// chat whose transcript is missing / unreadable) is reported as
+// `{ total: 0, known: false }` so the UI can render `--` cleanly
+// instead of `$0.00` — `0` is a meaningful number for a chat that
+// actually has assistant messages, but is misleading for a brand
+// new chat.
+//
+// `app` is the resolved app-level settings object (settings.getApp()),
+// passed in by the caller so we don't re-fetch on every chat.
+//
+// Pricing for messages that *do* have a `cost` block is already
+// baked into the persisted value (the cost was computed at streaming
+// time using resolvePricing), so this function does NOT re-resolve
+// pricing — it just sums. The only reason to look at pricing again
+// is the `known` flag, which is set by the streaming layer when the
+// cost was actually computed.
+function chatTotalCost(projectDir, chatId, app) {
+  const out = { total: 0, known: false, currency: 'USD' };
+  if (!projectDir || !chatId) return out;
+  let msgs;
+  try { msgs = listMessages(projectDir, chatId); }
+  catch (e) {
+    // A corrupt messages file shouldn't take down the whole chat
+    // list. Surface as "unknown" so the UI can show `--` and the
+    // user can still open the chat to see the messages.
+    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return out;
+    return out;
+  }
+  let total = 0;
+  let any = false;
+  for (const m of msgs) {
+    if (!m || m.role !== 'assistant' || !m.cost || typeof m.cost !== 'object') continue;
+    const t = Number(m.cost.total);
+    if (isFinite(t) && t >= 0) {
+      total += t;
+      any = true;
+    }
+  }
+  out.total = total;
+  out.known = any;
+  // app is accepted for API symmetry / future use (e.g. backfilling
+  // cost for messages that landed before pricing was configured);
+  // for now it is intentionally unused. Reference it to keep linters
+  // and IDEs from flagging the unused parameter.
+  void app;
+  return out;
+}
+
 module.exports = {
   // introspection
   PROJECT_FILE,
@@ -223,5 +285,7 @@ module.exports = {
   updateChat,
   deleteChat,
   touchChat,
-  clearPromptId
+  clearPromptId,
+  // metrics
+  chatTotalCost
 };

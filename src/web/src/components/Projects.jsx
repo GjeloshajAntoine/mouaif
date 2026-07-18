@@ -3,6 +3,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
+import { formatCost } from '../usage.js';
 
 export function ProjectsView() {
   const projectsList = useRef(null);
@@ -59,6 +60,10 @@ export function ProjectsView() {
     name.className = 'project-card__name';
     name.textContent = project.name || project.path;
     head.appendChild(name);
+    const costEl = document.createElement('span');
+    costEl.className = 'project-card__cost';
+    costEl.textContent = '--';
+    head.appendChild(costEl);
     head.appendChild(renderProjectMenu(project));
     frag.appendChild(head);
 
@@ -130,9 +135,26 @@ export function ProjectsView() {
     const ul = card.querySelector('.project-card__chats');
     let r;
     try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path)); }
-    catch (err) { renderChatList(ul, [], project); return; }
-    if (r.status !== 200) { renderChatList(ul, [], project); return; }
-    renderChatList(ul, r.body.chats || [], project);
+    catch (err) { renderChatList(ul, [], project); updateProjectCost(card, []); return; }
+    if (r.status !== 200) { renderChatList(ul, [], project); updateProjectCost(card, []); return; }
+    const chats = r.body.chats || [];
+    renderChatList(ul, chats, project);
+    updateProjectCost(card, chats);
+  }
+
+  function updateProjectCost(card, chats) {
+    const costEl = card.querySelector('.project-card__cost');
+    if (!costEl) return;
+    let total = 0;
+    let hasKnown = false;
+    for (const c of chats) {
+      const cb = c.totalCost || {};
+      if (cb.known && typeof cb.total === 'number') {
+        total += cb.total;
+        hasKnown = true;
+      }
+    }
+    costEl.textContent = hasKnown ? formatCost(total) : '--';
   }
 
   function renderChatList(ul, chats, project) {
@@ -168,14 +190,18 @@ export function ProjectsView() {
       li.appendChild(title);
       const meta = document.createElement('span');
       meta.className = 'project-card__chat-meta';
-      // The chat view shows the friendly profile label ('Average',
-      // 'Extensive', 'Very small') in its meta line; the chat list
-      // was showing the raw id ('average', 'extensive',
-      // 'very-small'). Map id -> label here so both surfaces use
-      // the same wording; fall back to the id for unknown values
-      // (e.g. a profile that was removed) so we never print
-      // "undefined".
-      const label = profileLabel(c.promptSize);
+      // The chat list shows the running cost of the chat instead
+      // of the prompt-size profile label. The server attaches a
+      // `totalCost` block on every chat in GET /api/chats:
+      //   { total: <USD>, known: <bool>, currency: 'USD' }
+      // `known` is false when the chat has no assistant messages
+      // with a cost block yet (e.g. brand new, or the upstream
+      // never reported usage) — render `--` so the row doesn't
+      // look like the chat cost $0.00. For known totals, format
+      // the same way the per-turn meta line does (decision §14):
+      // 2–5 fractional digits, locale decimal separator, $ prefix.
+      const costBits = c.totalCost || { total: 0, known: false, currency: 'USD' };
+      const costStr = costBits.known ? formatCost(costBits.total) : '--';
       const dateBits = fmtChatDate(c);
       // dateBits.kind is 'opened' when lastOpenedAt is set,
       // 'created' otherwise. Prefix with a single short word so
@@ -185,8 +211,12 @@ export function ProjectsView() {
       // a small dot so the on/off state is glanceable on a phone.
       const dateStr = (dateBits.kind === 'created' ? 'new · ' : '') + dateBits.text;
       const traceStr = c.trace ? ' · trace' : '';
-      meta.textContent = label + ' · ' + dateStr + traceStr;
+      meta.textContent = costStr + ' · ' + dateStr + traceStr;
       if (c.trace) meta.dataset.trace = '1';
+      // Mark the row so the per-row styling / a future tooltip
+      // can reach for the known/total fields without re-parsing
+      // the formatted text. data-cost-known is "1" / "0".
+      meta.dataset.costKnown = costBits.known ? '1' : '0';
       li.appendChild(meta);
       const del = document.createElement('button');
       del.className = 'project-card__chat-delete';
@@ -228,19 +258,6 @@ export function ProjectsView() {
     else if (sameYear) text = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
     else text = d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
     return { kind: chat.lastOpenedAt ? 'opened' : 'created', text };
-  }
-
-  // Friendly label for a promptSize id, matching the labels the
-  // server returns from /api/prompt-profiles. Kept inline so the
-  // chat list doesn't have to wait for a second fetch before it
-  // can render; if the id isn't one of the three known profiles,
-  // return the id itself rather than an empty string (a deleted
-  // profile should still render as something).
-  function profileLabel(id) {
-    if (id === 'very-small') return 'Very small';
-    if (id === 'average')    return 'Average';
-    if (id === 'extensive')  return 'Extensive';
-    return id || '';
   }
 
   async function createProjectChat(project, btn) {

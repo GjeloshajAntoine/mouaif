@@ -430,7 +430,7 @@ textarea#projectEditor {
   display: flex;
   flex-direction: column;
 }
-.project-card__head { display: flex; align-items: center; gap: 2px; }
+.project-card__head { display: flex; align-items: center; gap: 6px; }
 .project-card__name {
   font-weight: 600;
   font-size: 0.94rem;
@@ -446,6 +446,12 @@ textarea#projectEditor {
   align-items: center;
 }
 .project-card__name:hover { color: var(--accent); }
+.project-card__cost {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .project-card__path {
   color: var(--muted);
   font-size: 0.7rem;
