@@ -846,7 +846,7 @@ export function ChatView(props) {
       }
     }
     const body = card.querySelector('.tool-card__body');
-    if (body) body.textContent = formatToolResult(toolResult);
+    if (body) renderToolResultBody(body, toolResult);
     const pill = document.createElement('span');
     pill.className = 'tool-card__pill ' + (toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
     pill.textContent = toolResult.ok ? 'ok' : 'error';
@@ -859,6 +859,57 @@ export function ChatView(props) {
     if (typeof args === 'string') return args;
     try { return JSON.stringify(args, null, 2); }
     catch { return String(args); }
+  }
+
+  function renderToolResultBody(body, toolResult) {
+    body.textContent = '';
+    const r = toolResult && toolResult.result;
+    if (r && Array.isArray(r.content)) {
+      let wrote = false;
+      for (const c of r.content) {
+        if (c && typeof c.text === 'string') {
+          appendToolText(body, (wrote ? '\n' : '') + c.text);
+          wrote = true;
+        } else if (c && c.type === 'image') {
+          const img = imageBlockToElement(c);
+          if (img) {
+            body.appendChild(img);
+            wrote = true;
+          } else {
+            appendToolText(body, (wrote ? '\n' : '') + '[image]');
+            wrote = true;
+          }
+        } else if (c && c.type === 'resource') {
+          appendToolText(body, (wrote ? '\n' : '') + JSON.stringify(c.resource || c));
+          wrote = true;
+        } else {
+          appendToolText(body, (wrote ? '\n' : '') + JSON.stringify(c));
+          wrote = true;
+        }
+      }
+      return;
+    }
+    body.textContent = formatToolResult(toolResult);
+  }
+
+  function appendToolText(parent, text) {
+    parent.appendChild(document.createTextNode(text));
+  }
+
+  function imageBlockToElement(block) {
+    const data = block && (block.data || block.base64);
+    const mimeType = (block && (block.mimeType || block.mime_type || block.mediaType || block.media_type)) || 'image/png';
+    let src = block && (block.url || block.uri);
+    if (!src && typeof data === 'string' && data) {
+      src = data.startsWith('data:') ? data : ('data:' + mimeType + ';base64,' + data);
+    }
+    if (!src) return null;
+    const img = document.createElement('img');
+    img.className = 'tool-card__image';
+    img.src = src;
+    img.alt = 'MCP image result';
+    img.loading = 'lazy';
+    return img;
   }
 
   function formatToolResult(toolResult) {

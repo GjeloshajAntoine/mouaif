@@ -1128,6 +1128,9 @@ async function streamChat(opts) {
 
     // Execute each call, emit tool_call + tool_result, and append the
     // `tool` result message the upstream needs on the next turn.
+    // Image blocks are also attached as native vision message parts after
+    // all required tool messages have been added.
+    const postToolImageMessages = [];
     for (const c of calls) {
       let args = {};
       if (c.arguments) {
@@ -1225,7 +1228,19 @@ async function streamChat(opts) {
         name: c.name,
         content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
       });
+
+      const imageParts = toolResultImageParts(exec && exec.result);
+      if (imageParts.length) {
+        postToolImageMessages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Image result from tool `' + c.name + '`:' },
+            ...imageParts
+          ]
+        });
+      }
     }
+    if (postToolImageMessages.length) convo.push(...postToolImageMessages);
     completedToolRound = true;
     emptyPostToolRetries = 0;
     // Loop: request again with the tool results in context.
@@ -1383,6 +1398,21 @@ async function streamChat(opts) {
     }
   }
   } // end runUpstreamTurn
+
+  function toolResultImageParts(result) {
+    if (!result || !Array.isArray(result.content)) return [];
+    const out = [];
+    for (const block of result.content) {
+      if (!block || block.type !== 'image') continue;
+      const data = block.data || block.base64;
+      const mimeType = block.mimeType || block.mime_type || block.mediaType || block.media_type || 'image/png';
+      if (typeof data === 'string' && data) {
+        const url = data.startsWith('data:') ? data : ('data:' + mimeType + ';base64,' + data);
+        out.push({ type: 'image_url', image_url: { url } });
+      }
+    }
+    return out;
+  }
 
   function firstStringArgument(value) {
     if (!value || typeof value !== 'object') return '';

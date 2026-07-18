@@ -306,6 +306,16 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
+.tool-card__image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 4px 0;
+  border-radius: var(--r-sm);
+  object-fit: contain;
+  background: var(--surface-2);
+}
+.tool-card.is-expanded .tool-card__image { max-height: none; }
 .tool-card__pill {
   position: absolute;
   top: 5px;
