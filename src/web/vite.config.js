@@ -7,8 +7,32 @@ import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Tiny Vite plugin: emit dist/sw.js from build/sw-src.js with a
+// content-hashed cache version baked in. The plugin runs at the
+// `generateBundle` stage so Vite has already prepared the dist
+// directory. The SW doesn't precache the hashed JS/CSS asset
+// filenames — those vary per build and are picked up by the
+// cache-first branch the first time the page loads.
+function mouaifServiceWorkerPlugin() {
+  return {
+    name: 'mouaif-service-worker',
+    apply: 'build',
+    generateBundle() {
+      const src = readFileSync(resolve(__dirname, 'build', 'sw-src.js'), 'utf8');
+      // Cache version = first 8 hex chars of sha256 of the source
+      // body. Every change to the SW source bumps the version,
+      // which the activate handler uses to evict the old cache.
+      const hash = createHash('sha256').update(src).digest('hex').slice(0, 8);
+      const body = src.replace('__CACHE_VERSION__', hash);
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: body });
+    }
+  };
+}
 
 export default defineConfig({
   // The config lives in src/web/ itself, so the project root for
@@ -23,7 +47,13 @@ export default defineConfig({
   // the build from.
   root: __dirname,
   base: '/web/',
-  plugins: [preact()],
+  // public/ holds the PWA manifest and the icon PNGs. Vite copies
+  // its contents verbatim into dist/ at build time, so the
+  // resulting bundle URL for the manifest is /web/manifest.webmanifest
+  // and the icons live at /web/icons/*.png — matching the absolute
+  // paths declared in the manifest itself.
+  publicDir: 'public',
+  plugins: [preact(), mouaifServiceWorkerPlugin()],
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,

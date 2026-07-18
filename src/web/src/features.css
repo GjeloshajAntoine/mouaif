@@ -550,6 +550,71 @@
 }
 .pricing__copy { flex: 0 0 auto; }
 
+/* ---- PWA banners ------------------------------------------------- */
+
+/* Thin strips pinned to the top of the app shell. They sit between
+   the header and the main content so they don't push the bottom tab
+   bar around, and they use the same surface palette as everything
+   else. The animation slides them down from -16px so they enter from
+   the chrome rather than from the middle of the screen. Multiple
+   banners stack vertically: the offline banner sits at the top, the
+   update banner immediately below it. */
+.pwa-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg-soft);
+  animation: mouaif-banner-in var(--dur) var(--ease-out) both;
+}
+.pwa-banner__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.pwa-banner__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pwa-banner__btn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent-soft);
+  border-radius: 6px;
+  padding: 4px 10px;
+  min-height: 28px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.pwa-banner__btn:hover { background: var(--accent-soft); }
+.pwa-banner__btn:active { transform: scale(0.97); }
+
+.pwa-banner--offline { color: var(--warning); }
+.pwa-banner--offline .pwa-banner__icon { color: var(--warning); }
+.pwa-banner--update { color: var(--accent); }
+.pwa-banner--update .pwa-banner__icon { color: var(--accent); }
+
+@keyframes mouaif-banner-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ---- Reduce motion ----------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -557,4 +622,5 @@
      content:none rule from components.css already hides the pseudo,
      but some browsers may still animate a zero-size box). */
   .chat-msg[data-live="1"] .chat-msg__body::after { animation: none; }
+  .pwa-banner { animation: none; }
 }

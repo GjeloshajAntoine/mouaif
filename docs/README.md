@@ -13,6 +13,7 @@ Static-page-ready docs for every feature in mouaif. Each file in `features/` is 
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 - [Project card](features/project-card.md) — per-project card in the mobile UI: chat list (scrolling inside the card), New chat, options menu (rename / unregister), per-project rename endpoint. Chats persisted in `<projectDir>/.mouaif.json`.
 - [Chat UI](features/chat-ui.md) — Preact + Vite mobile shell with chat, projects, inspector, and settings; provider authentication is integrated into Settings.
+- [PWA](features/pwa.md) — installable mobile shell: manifest, hand-rolled service worker (precache the shell, network-first for navigations, cache-first for fingerprinted assets, bypass `/api/*` and SSE), iOS Add-to-Home-Screen, offline + "new version" banners.
 - [Inspector](features/inspector.md) — from-scratch mobile-friendly DevTools-style UI on top of CDP over WebSocket. Console + Network panels driven by a virtual list; targets list + connect flow. Mobile shell's fourth tab.
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 6 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.

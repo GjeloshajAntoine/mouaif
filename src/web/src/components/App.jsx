@@ -1,6 +1,7 @@
 // mouaif web — App shell, Header, BottomTab
 import { h, Fragment } from 'preact';
 import { route, activeProject, setActiveProject } from '../api.js';
+import { PwaBanners } from './PwaBanners.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
 import { SettingsProjectView } from './SettingsProject.jsx';
@@ -90,6 +91,7 @@ export function App() {
   else body = h(ProjectsView, null);
   return h('div', { class: 'app__shell' },
     h(Header, null),
+    h(PwaBanners, null),
     h('main', { class: 'app__main' + (showTabBar ? '' : ' app__main--flush') }, body),
     showTabBar ? h(BottomNav, null) : null
   );

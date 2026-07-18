@@ -15,12 +15,37 @@
   This page is the mobile UI for mouaif. It is a Preact + Vite app
   served from /web/dist/ by the Node server. See docs/decisions.md
   sections 7 and 8.
+
+  PWA plumbing:
+    - <link rel="manifest"> declares the app metadata. Served from
+      public/manifest.webmanifest (Vite copies public/ verbatim into
+      dist/, so the absolute URL /web/manifest.webmanifest matches
+      what the browser expects).
+    - apple-mobile-web-app-* meta tags make the page installable on
+      iOS Safari (Apple doesn't honour the manifest scope field, so
+      the iOS-specific tags are required for an Add-to-Home-Screen
+      experience there).
+    - <link rel="apple-touch-icon"> points at the same 180x180 PNG
+      the manifest exposes. iOS picks this up when the user taps
+      Share → Add to Home Screen.
+    - The service worker is registered from src/main.jsx (after the
+      first paint, in production builds only — dev mode skips it so
+      HMR stays fast and stale code doesn't get cached).
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#111418" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="mouaif — chat with AI providers, manage prompts, run tools against your projects." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="mouaif" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/web/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/web/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/web/icons/icon-180-apple.png" />
   <title>mouaif</title>
 </head>
 <body>

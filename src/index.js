@@ -217,12 +217,10 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return serveWebRequest(res, urlPath.slice('/web/'.length));
   }
 
-  // Browser auto-requests a favicon. Reply 204 (no body) so the console
-  // doesn't pile up 404s; we don't ship a real favicon in this commit.
+  // Browser auto-requests a favicon. Serve the real one now that
+  // we've generated a 32x32 PNG (no more 204 stub).
   if (urlPath === '/favicon.ico' && method === 'GET') {
-    res.writeHead(204);
-    res.end();
-    return;
+    return serveWebFile(res, 'icons/favicon-32.png', { preferDist: true });
   }
 
   // Settings API
@@ -2911,15 +2909,56 @@ module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai
 // ---- Static /web/ serving -----------------------------------------------
 
 const WEB_MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css':  'text/css; charset=utf-8',
-  '.js':   'application/javascript; charset=utf-8',
-  '.mjs':  'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg':  'image/svg+xml',
-  '.png':  'image/png',
-  '.ico':  'image/x-icon'
+  '.html':            'text/html; charset=utf-8',
+  '.css':             'text/css; charset=utf-8',
+  '.js':              'application/javascript; charset=utf-8',
+  '.mjs':             'application/javascript; charset=utf-8',
+  '.json':            'application/json; charset=utf-8',
+  '.webmanifest':     'application/manifest+json; charset=utf-8',
+  '.svg':             'image/svg+xml',
+  '.png':             'image/png',
+  '.webp':            'image/webp',
+  '.ico':             'image/x-icon'
 };
+
+// Cache-Control for the PWA's static, fingerprinted assets (the
+// hashed JS/CSS rollup emits). These URLs change on every build, so
+// they can be cached forever by the browser; the cache name busts on
+// each release because the hashed filename changes.
+const LONG_LIVED = new Set(['.js', '.css', '.png', '.webp', '.svg', '.ico']);
+
+// Headers the service worker script needs to be installed for the
+// /web/ scope. SW scripts normally inherit their scope from their
+// script URL's directory, but `Service-Worker-Allowed` lets the
+// /web/sw.js script claim the entire /web/ prefix (which is what
+// we want so navigation + static requests are both handled).
+// `Cache-Control: no-cache` keeps the browser from serving a stale
+// SW after a redeploy; the activate handler then evicts the old
+// cache on the next load.
+function applyPwaHeaders(res, absPath, relPath) {
+  const ext = path.extname(absPath).toLowerCase();
+  const isSw = relPath === 'sw.js';
+  if (isSw) {
+    res.setHeader('Service-Worker-Allowed', '/web/');
+    res.setHeader('Cache-Control', 'no-cache');
+    return;
+  }
+  if (LONG_LIVED.has(ext)) {
+    // Cap to 1 year so we don't hand out "never expires" assets.
+    // The Vite build hashes every entry, so a stale copy will be
+    // garbage-collected next deploy anyway.
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return;
+  }
+  if (relPath === 'manifest.webmanifest') {
+    // Manifests are stable for a release (no content-hash in their
+    // URL), so cache briefly — long enough for the install prompt
+    // to be available offline, short enough to refresh across
+    // deploys.
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return;
+  }
+}
 
 function serveWebFile(res, absOrRel, opts) {
   const opt = opts || {};
@@ -2942,6 +2981,7 @@ function serveWebFile(res, absOrRel, opts) {
   }
   fs.readFile(abs, (err, data) => {
     if (err) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
+    applyPwaHeaders(res, abs, absOrRel);
     res.writeHead(200, { 'Content-Type': WEB_MIME[path.extname(abs)] || 'application/octet-stream' });
     res.end(data);
   });

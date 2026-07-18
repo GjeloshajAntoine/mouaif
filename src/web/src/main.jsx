@@ -12,6 +12,7 @@
 
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
+import { registerServiceWorker } from './sw-registration.js';
 import './style.css';
 import './router.js';
 
@@ -19,3 +20,8 @@ import './router.js';
 
 const root = document.getElementById('app');
 if (root) render(h(App, null), root);
+
+// Register the service worker (no-op in dev; see sw-registration.js
+// for the production-only path). Deferred until after first paint so
+// the SW install doesn't block the entry bundle download.
+registerServiceWorker();
