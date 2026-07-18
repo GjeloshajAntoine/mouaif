@@ -5,6 +5,8 @@ import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
 
+const CHAT_PAGE_SIZE = 30;
+
 export function ProjectsView() {
   const projectsList = useRef(null);
   const projectsStatus = useRef(null);
@@ -75,6 +77,11 @@ export function ProjectsView() {
     const chatsUl = document.createElement('ul');
     chatsUl.className = 'project-card__chats';
     chatsUl.setAttribute('aria-label', 'Chats in ' + (project.name || project.path));
+    chatsUl.addEventListener('scroll', () => {
+      if (chatsUl.scrollTop + chatsUl.clientHeight >= chatsUl.scrollHeight - 48) {
+        loadMoreProjectChats(chatsUl, project);
+      }
+    });
     const placeholder = document.createElement('li');
     placeholder.className = 'project-card__chats-empty';
     placeholder.textContent = 'loading chats…';
@@ -133,18 +140,43 @@ export function ProjectsView() {
 
   async function loadProjectChats(card, project) {
     const ul = card.querySelector('.project-card__chats');
+    if (!ul) return;
+    ul.dataset.loading = '1';
+    ul.dataset.offset = '0';
+    ul.dataset.total = '0';
     let r;
-    try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path)); }
-    catch (err) { renderChatList(ul, [], project); updateProjectCost(card, []); return; }
-    if (r.status !== 200) { renderChatList(ul, [], project); updateProjectCost(card, []); return; }
+    try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE); }
+    catch (err) { renderChatList(ul, [], project, { total: 0 }); updateProjectCost(card, null); return; }
+    if (r.status !== 200) { renderChatList(ul, [], project, { total: 0 }); updateProjectCost(card, null); return; }
     const chats = r.body.chats || [];
-    renderChatList(ul, chats, project);
-    updateProjectCost(card, chats);
+    renderChatList(ul, chats, project, { total: r.body.total || chats.length, append: false });
+    updateProjectCost(card, r.body.projectTotalCost || chats);
   }
 
-  function updateProjectCost(card, chats) {
+  async function loadMoreProjectChats(ul, project) {
+    if (!ul || ul.dataset.loading === '1') return;
+    const offset = parseInt(ul.dataset.offset || '0', 10) || 0;
+    const total = parseInt(ul.dataset.total || '0', 10) || 0;
+    if (total && offset >= total) return;
+    ul.dataset.loading = '1';
+    const sentinel = renderChatLoading(ul);
+    let r;
+    try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=' + offset + '&limit=' + CHAT_PAGE_SIZE); }
+    catch (err) { sentinel.remove(); ul.dataset.loading = '0'; return; }
+    sentinel.remove();
+    if (r.status !== 200) { ul.dataset.loading = '0'; return; }
+    const chats = r.body.chats || [];
+    renderChatList(ul, chats, project, { total: r.body.total || total || (offset + chats.length), append: true });
+  }
+
+  function updateProjectCost(card, chatsOrTotalCost) {
     const costEl = card.querySelector('.project-card__cost');
     if (!costEl) return;
+    if (chatsOrTotalCost && !Array.isArray(chatsOrTotalCost) && chatsOrTotalCost.known) {
+      costEl.textContent = formatCost(chatsOrTotalCost.total);
+      return;
+    }
+    const chats = Array.isArray(chatsOrTotalCost) ? chatsOrTotalCost : [];
     let total = 0;
     let hasKnown = false;
     for (const c of chats) {
@@ -157,9 +189,13 @@ export function ProjectsView() {
     costEl.textContent = hasKnown ? formatCost(total) : '--';
   }
 
-  function renderChatList(ul, chats, project) {
-    ul.innerHTML = '';
-    if (!chats.length) {
+  function renderChatList(ul, chats, project, opts = {}) {
+    if (!opts.append) ul.innerHTML = '';
+    const total = typeof opts.total === 'number' ? opts.total : chats.length;
+    if (!opts.append) ul.dataset.total = String(total);
+    if (!chats.length && !opts.append) {
+      ul.dataset.offset = '0';
+      ul.dataset.loading = '0';
       const empty = document.createElement('li');
       empty.className = 'project-card__chats-empty';
       // Warmer copy than 'no chats yet': mentions the + New chat
@@ -168,17 +204,10 @@ export function ProjectsView() {
       ul.appendChild(empty);
       return;
     }
-    // Most-recently-opened first; ties and never-opened chats fall
-    // back to createdAt. Without this the list is just "insertion
-    // order in .mouaif.json", which is unhelpful once a project has
-    // more than a couple of chats.
-    const sorted = chats.slice().sort((a, b) => {
-      const aT = a.lastOpenedAt || a.createdAt || '';
-      const bT = b.lastOpenedAt || b.createdAt || '';
-      if (aT === bT) return 0;
-      return aT < bT ? 1 : -1;
-    });
-    for (const c of sorted) {
+    // The API returns chats sorted by recency and paginated; keep
+    // that order while appending later pages so the list can scroll
+    // indefinitely without re-rendering already-visible rows.
+    for (const c of chats) {
       const li = document.createElement('li');
       const title = document.createElement('span');
       title.className = 'project-card__chat-title';
@@ -228,13 +257,26 @@ export function ProjectsView() {
       li.addEventListener('click', () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)));
       ul.appendChild(li);
     }
+    const nextOffset = (parseInt(ul.dataset.offset || '0', 10) || 0) + chats.length;
+    ul.dataset.offset = String(nextOffset);
+    ul.dataset.total = String(total);
+    ul.dataset.loading = '0';
+    if (nextOffset < total) {
+      const more = document.createElement('li');
+      more.className = 'project-card__chats-more';
+      more.textContent = 'Scroll for more…';
+      ul.appendChild(more);
+    }
   }
 
-  function fmtDate(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
+  function renderChatLoading(ul) {
+    const existing = ul.querySelector('.project-card__chats-more');
+    if (existing) existing.remove();
+    const li = document.createElement('li');
+    li.className = 'project-card__chats-more';
+    li.textContent = 'Loading more…';
+    ul.appendChild(li);
+    return li;
   }
 
   // Smart date for the chat list: prefer the lastOpenedAt when
@@ -287,7 +329,11 @@ export function ProjectsView() {
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(project.path), { method: 'DELETE' });
     if (r.status !== 200) { alert('delete failed: HTTP ' + r.status); return; }
     li.remove();
-    if (!ul.children.length) renderChatList(ul, [], project);
+    const offset = Math.max(0, (parseInt(ul.dataset.offset || '0', 10) || 0) - 1);
+    const total = Math.max(0, (parseInt(ul.dataset.total || '0', 10) || 0) - 1);
+    ul.dataset.offset = String(offset);
+    ul.dataset.total = String(total);
+    if (!ul.querySelector('li:not(.project-card__chats-more)')) renderChatList(ul, [], project, { total: 0 });
   }
 
   async function renameProject(project) {

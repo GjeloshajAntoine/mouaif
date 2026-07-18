@@ -691,7 +691,8 @@ function projectsErrorStatus(err) {
 // identified by a short hex id generated at creation time.
 //
 // Endpoints:
-//   GET    /api/chats?projectDir=<abs>          -> { chats: [..., totalCost: { total, known, currency }] }
+//   GET    /api/chats?projectDir=<abs>[&offset=0&limit=20]
+//          -> { chats: [..., totalCost: { total, known, currency }], total, offset, limit, projectTotalCost }
 //   GET    /api/chats/:id?projectDir=<abs>      -> { chat } | 404
 //   POST   /api/chats                            { projectDir, title?, trace?, promptSize? }
 //   PATCH  /api/chats/:id                        { projectDir, title?, trace?, promptSize?, draft? }
@@ -717,30 +718,49 @@ async function handleChats(req, res, parsed) {
     return dir;
   }
 
-  // GET /api/chats?projectDir=<abs>
+  // GET /api/chats?projectDir=<abs>[&offset=0&limit=20]
   if (urlPath === '/api/chats' && method === 'GET') {
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const offset = Math.max(0, parseInt(typeof q.offset === 'string' ? q.offset : '0', 10) || 0);
+    const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
+    const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
     try {
       const list = chats.listChats(dir);
-      // Enrich every chat with a `totalCost` block so the mobile
-      // chat list can render a cost summary in place of the old
-      // prompt-size label (decision §14). The summary is computed
-      // from the assistant messages' persisted `cost.total` values
-      // — no pricing re-resolution is needed because the streaming
-      // layer already baked the price in at `done` time. We pull
-      // the app settings once so every chat in the project shares
-      // the same call, and so chatTotalCost() can stay a pure
-      // sum-with-known-flag. A corrupt / missing messages file
-      // surfaces as `{ total: 0, known: false }` — the UI renders
-      // `--` for those.
+      list.sort((a, b) => {
+        const aT = a.lastOpenedAt || a.createdAt || '';
+        const bT = b.lastOpenedAt || b.createdAt || '';
+        if (aT === bT) return 0;
+        return aT < bT ? 1 : -1;
+      });
+      const page = limit > 0 ? list.slice(offset, offset + limit) : list;
+      // Enrich every returned chat with a `totalCost` block so the
+      // mobile chat list can render a cost summary in place of the
+      // old prompt-size label (decision §14). The project-level cost
+      // is still computed from the full list so pagination does not
+      // make the project header total drift as the user scrolls.
       let app;
       try { app = settings.getApp(); } catch { app = null; }
+      let total = 0;
+      let hasKnown = false;
+      const pageIds = new Set(page.map((c) => c.id));
       for (const c of list) {
-        try { c.totalCost = chats.chatTotalCost(dir, c.id, app); }
-        catch { c.totalCost = { total: 0, known: false, currency: 'USD' }; }
+        let totalCost;
+        try { totalCost = chats.chatTotalCost(dir, c.id, app); }
+        catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
+        if (pageIds.has(c.id)) c.totalCost = totalCost;
+        if (totalCost.known && typeof totalCost.total === 'number') {
+          total += totalCost.total;
+          hasKnown = true;
+        }
       }
-      return sendJSON(res, 200, { chats: list });
+      return sendJSON(res, 200, {
+        chats: page,
+        total: list.length,
+        offset,
+        limit: limit || list.length,
+        projectTotalCost: { total, known: hasKnown, currency: 'USD' }
+      });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
