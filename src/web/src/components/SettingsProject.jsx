@@ -246,118 +246,139 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '←'),
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Project settings')
     ),
-    h('section', null,
-      h('p', { class: 'hint hint--compact' },
-        h('code', { ref: pathEl }, '…'),
-        ' — settings live in ', h('code', null, '.mouaif.json'), ' and can be committed with the project.'
+    h('section', { class: 'settings-project' },
+      h('div', { class: 'settings-project__hero' },
+        h('div', { class: 'settings-project__eyebrow' }, 'Project file'),
+        h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
+        h('p', { class: 'settings-project__lede' }, 'Saved in .mouaif.json — applies to this project only.'),
+        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
-      h('div', { class: 'row' }, h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })),
 
-      // ---- Prompt size ------------------------------------------------
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-prompt-size' }, 'Prompt size (this project)'),
-        h('select', { ref: promptSizeSel, class: 'input', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
-          h('option', { value: '' }, 'Inherit app default'),
-          h('option', { value: 'very-small' }, 'very-small'),
-          h('option', { value: 'average' }, 'average'),
-          h('option', { value: 'extensive' }, 'extensive')
-        ),
-        h('span', { ref: promptSizeStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, '')
+      // ---- Project ----------------------------------------------------
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Project'),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item' },
+            h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt size'),
+              h('div', { ref: promptSizeStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, 'Inherits unless set here')
+            ),
+            h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
+              h('option', { value: '' }, 'Inherit'),
+              h('option', { value: 'very-small' }, 'Very small'),
+              h('option', { value: 'average' }, 'Average'),
+              h('option', { value: 'extensive' }, 'Extensive')
+            )
+          )
+        )
       ),
 
       // ---- Tools ------------------------------------------------------
-      h('h3', null, 'Tools'),
-      h('label', { class: 'card', 'aria-label': 'Enable shell tool' },
-        h('div', { class: 'card__main' },
-          h('div', { class: 'card__title' }, 'Shell tool'),
-          h('div', { class: 'card__summary' }, 'Let the model run commands in this project folder.')
-        ),
-        h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
-      ),
-      h('p', { ref: shellStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-shell-mode' }, 'Shell authorization'),
-        h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode' },
-          h('option', { value: 'off' }, 'Off'),
-          h('option', { value: 'ask' }, 'Ask every time'),
-          h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
-          h('option', { value: 'allow' }, 'Always allow')
-        ),
-        h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Full-command regex allowlist (one per line)'),
-        h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
-        h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save authorization')
-      ),
-      h('p', { class: 'hint hint--compact' }, '⚠︎ Commands run with your account, in the project directory. Enable only on projects you trust.'),
-
-      // ---- File tools ----------------------------------------------
-      h('label', { class: 'card', 'aria-label': 'Enable file tools' },
-        h('div', { class: 'card__main' },
-          h('div', { class: 'card__title' }, 'File tools'),
-          h('div', { class: 'card__summary' }, 'Let the model read, list, search, and edit files in this project folder.')
-        ),
-        h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
-      ),
-      h('p', { ref: fileStatus, class: 'hint hint--compact', 'aria-live': 'polite' }, ''),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sp-file-mode' }, 'File tools authorization'),
-        h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode' },
-          h('option', { value: 'off' }, 'Off'),
-          h('option', { value: 'ask' }, 'Ask every time'),
-          h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
-          h('option', { value: 'allow' }, 'Always allow')
-        ),
-        h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Path regex allowlist (one per line)'),
-        h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),
-        h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save authorization')
-      ),
-      h('p', { class: 'hint hint--compact' }, 'Allowlist matches the file path the model asks for. read_file, list_files, search_files, write_file all share one gate.'),
-
-      // ---- MCP --------------------------------------------------------
-      h('h3', null, 'MCP'),
-      h('a', {
-        ref: mcpCard,
-        class: 'card',
-        'aria-label': 'MCP servers',
-        href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir.current || '')
-      },
-        h('div', { class: 'card__main' },
-          h('div', { class: 'card__title' }, 'MCP servers'),
-          h('div', { ref: mcpSummary, class: 'card__summary' }, '—')
-        ),
-        h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Tool access'),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('div', { class: 'settings-project__item-main' },
+                h('div', { class: 'settings-project__item-title' }, 'Shell'),
+                h('div', { class: 'settings-project__item-note' }, 'Run commands in this project folder')
+              ),
+              h('input', { ref: shellToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
+            ),
+            h('div', { class: 'settings-project__sub' }, 'Authorization'),
+            h('label', { class: 'label', for: 'sp-shell-mode' }, 'Mode'),
+            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode' },
+              h('option', { value: 'off' }, 'Off'),
+              h('option', { value: 'ask' }, 'Ask every time'),
+              h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+              h('option', { value: 'allow' }, 'Always allow')
+            ),
+            h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Full-command regex allowlist'),
+            h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
+            h('div', { class: 'settings-project__actions' },
+              h('span', { ref: shellStatus, class: 'status', 'aria-live': 'polite' }),
+              h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save')
+            ),
+            h('p', { class: 'settings-project__warning' }, 'Commands run with your account. Enable only on projects you trust.')
+          ),
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('div', { class: 'settings-project__item-main' },
+                h('div', { class: 'settings-project__item-title' }, 'Files'),
+                h('div', { class: 'settings-project__item-note' }, 'Read, list, search, and edit files')
+              ),
+              h('input', { ref: fileToggle, class: 'checkbox', type: 'checkbox', checked: true, disabled: true })
+            ),
+            h('div', { class: 'settings-project__sub' }, 'Authorization'),
+            h('label', { class: 'label', for: 'sp-file-mode' }, 'Mode'),
+            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode' },
+              h('option', { value: 'off' }, 'Off'),
+              h('option', { value: 'ask' }, 'Ask every time'),
+              h('option', { value: 'allowlist' }, 'Allowlist, then ask'),
+              h('option', { value: 'allow' }, 'Always allow')
+            ),
+            h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Path regex allowlist'),
+            h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),
+            h('div', { class: 'settings-project__actions' },
+              h('span', { ref: fileStatus, class: 'status', 'aria-live': 'polite' }),
+              h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save')
+            ),
+            h('p', { class: 'settings-project__warning' }, 'Allowlist matches the path requested by file tools.')
+          )
+        )
       ),
 
-      // ---- Prompts ----------------------------------------------------
-      h('h3', null, 'Prompts'),
-      h('a', {
-        ref: promptsCard,
-        class: 'card',
-        'aria-label': 'Custom prompts',
-        href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
-      },
-        h('div', { class: 'card__main' },
-          h('div', { class: 'card__title' }, 'Custom prompts'),
-          h('div', { ref: promptsSummary, class: 'card__summary' }, '—')
-        ),
-        h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      // ---- Links ------------------------------------------------------
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Project extras'),
+        h('ul', { class: 'group__list' },
+          h('li', null,
+            h('a', {
+              ref: mcpCard,
+              class: 'card',
+              'aria-label': 'MCP servers',
+              href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir.current || '')
+            },
+              h('div', { class: 'card__main' },
+                h('div', { class: 'card__title' }, 'MCP servers'),
+                h('div', { ref: mcpSummary, class: 'card__summary' }, '—')
+              ),
+              h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+            )
+          ),
+          h('li', null,
+            h('a', {
+              ref: promptsCard,
+              class: 'card',
+              'aria-label': 'Custom prompts',
+              href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
+            },
+              h('div', { class: 'card__main' },
+                h('div', { class: 'card__title' }, 'Custom prompts'),
+                h('div', { ref: promptsSummary, class: 'card__summary' }, '—')
+              ),
+              h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+            )
+          )
+        )
       ),
 
       // ---- Advanced (raw file + resolved) ----------------------------
-      h('details', { class: 'settings__advanced' },
-        h('summary', null, 'Advanced — raw file & resolved settings'),
-        h('p', { class: 'hint hint--compact' }, 'Edit ', h('code', null, '.mouaif.json'), ' directly. The structured controls above write the same file.'),
+      h('details', { class: 'settings__advanced settings-project__advanced' },
+        h('summary', null, 'Advanced'),
+        h('p', { class: 'hint hint--compact' }, 'Edit ', h('code', null, '.mouaif.json'), ' directly. Structured controls write the same file.'),
         h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
-        h('textarea', { ref: editor, class: 'input', id: 'sp-project-editor', rows: 10, spellcheck: false }),
+        h('textarea', { ref: editor, class: 'input settings-project__code', id: 'sp-project-editor', rows: 10, spellcheck: false }),
         h('div', { class: 'row row--actions' },
           h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: true }, 'Save file'),
           h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revertRaw, disabled: true }, 'Revert'),
           h('span', { ref: editorStatus, class: 'status', 'aria-live': 'polite' })
         ),
-        h('h3', null, 'Resolved (effective)'),
-        h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. The chat layer reads this. Provider keys are redacted.'),
+        h('div', { class: 'group__title settings-project__subhead' }, 'Resolved settings'),
+        h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. Provider keys are redacted.'),
         h('pre', { ref: resolvedOut, class: 'settings__out' })
       )
     )

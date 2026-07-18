@@ -352,6 +352,198 @@
   color: var(--fg-soft);
 }
 
+/* ---- Settings: project page ------------------------------------- */
+
+/* The project page carries a lot of sections (hero, prompt size,
+   two tool cards with their own sub-controls, project-extras links,
+   advanced editor). The hierarchy used to blur: the hero had the
+   same surface as a group list, the tool sub-labels (Authorization,
+   Full-command regex allowlist) used the same muted style as the
+   tool descriptions, and the warning strip was the only colored
+   accent. The rules below give each level its own weight so the
+   eye reads page → file → groups → tool → advanced in one pass. */
+
+.settings-project { padding-bottom: 12px; }
+
+/* Hero: "you are editing THIS file." Visually it is the only block
+   on the page with a colored accent, so it reads as the anchor
+   even though the cards underneath are denser. No decorative
+   gradient — the accent stripe + tinted background do the work. */
+.settings-project__hero {
+  position: relative;
+  margin: 0 10px 14px;
+  padding: 12px 12px 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.settings-project__eyebrow {
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.settings-project__path {
+  margin: 0 0 6px;
+  color: var(--fg);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  word-break: break-all;
+  /* The path is the most important piece of info on the page
+     (which file is being edited). Tight line-height + a slightly
+     stronger size than the lede makes it scan first. */
+}
+.settings-project__path code,
+.settings-project__code {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+.settings-project__path code {
+  display: block;
+  color: var(--fg);
+  font-size: 0.86rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-top: 2px;
+}
+.settings-project__lede {
+  color: var(--fg-soft);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 0 0 6px;
+}
+
+.settings-project__item,
+.settings-project__tool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+}
+.settings-project__item {
+  flex-direction: row;
+  align-items: center;
+}
+.settings-project__item-main { flex: 1; min-width: 0; }
+.settings-project__item-title {
+  color: var(--fg);
+  font-size: 0.94rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+.settings-project__item-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+.settings-project__select {
+  width: auto;
+  min-width: 118px;
+  max-width: 46%;
+  flex-shrink: 0;
+}
+
+.settings-project__tool-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 4px;
+  /* The tool head holds the title row. A faint bottom rule
+     separates the title from the authorization controls below so
+     the tool card reads as "title → settings", not a flat list. */
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+/* A tiny uppercase label that introduces a sub-section inside a
+   tool card (Authorization, Allowlist). It is deliberately
+   smaller and lighter than the .label used for individual form
+   fields, so the tool title is the only loud thing in the card. */
+.settings-project__sub {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 6px 0 -2px;
+}
+/* The form .label that lives directly under a .settings-project__sub
+   loses its default top margin so the heading and the field sit
+   as one block. The .label class is shared with all forms, so we
+   only override it within the project tool cards. */
+.settings-project__tool .label {
+  margin: 2px 0 -4px;
+  color: var(--fg-soft);
+}
+
+.settings-project__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+.settings-project__actions .status { flex: 1; }
+.settings-project__warning {
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border-left: 2px solid var(--warning);
+  border-radius: 6px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin: 2px 0 0;
+  padding: 7px 9px;
+}
+
+/* The advanced <details> is the only block that escapes the iOS
+   inset list shape. A solid surface + a stronger top divider make
+   it read as "below the fold, opt-in" rather than another group. */
+.settings-project__advanced {
+  margin: 16px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.settings-project__advanced > summary {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.settings-project__advanced[open] {
+  border-color: var(--border-strong);
+}
+.settings-project__advanced[open] > summary {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-2);
+}
+.settings-project__advanced > .label,
+.settings-project__advanced > .settings__out { margin-left: 10px; margin-right: 10px; }
+.settings-project__code {
+  margin: 4px 10px 0;
+  width: calc(100% - 20px);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  min-height: 160px;
+}
+.settings-project__subhead {
+  margin: 14px 10px 4px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .code-inline {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   font-size: 0.86em;
@@ -1231,7 +1423,6 @@ textarea#projectEditor {
   border: 1px solid var(--border);
   border-radius: 12px 12px 12px 4px;
   padding: 6px 10px;
-  white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.88rem;
   line-height: 1.4;
@@ -1242,12 +1433,130 @@ textarea#projectEditor {
   color: var(--on-accent);
   border-color: transparent;
   border-radius: 12px 12px 4px 12px;
+  white-space: pre-wrap;
 }
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
   color: var(--danger);
   font-style: italic;
 }
+
+/* Markdown-rendered content inside assistant / system messages.
+   The text container itself is what the user sees; the inner
+   elements (p, ul, pre, code, etc.) come from renderMarkdown() in
+   src/web/src/markdown.js. We style them here so headings, lists,
+   fences, and inline code look at home inside the existing bubble
+   without depending on a global markdown stylesheet. */
+.chat-msg--assistant .chat-msg__body,
+.chat-msg--system .chat-msg__body {
+  white-space: normal;
+  padding: 8px 12px;
+}
+.chat-msg--assistant .chat-msg__body > :first-child,
+.chat-msg--system .chat-msg__body > :first-child { margin-top: 0; }
+.chat-msg--assistant .chat-msg__body > :last-child,
+.chat-msg--system .chat-msg__body > :last-child { margin-bottom: 0; }
+.chat-msg--assistant .chat-msg__body p,
+.chat-msg--system .chat-msg__body p { margin: 0 0 6px 0; }
+.chat-msg--assistant .chat-msg__body p:last-child,
+.chat-msg--system .chat-msg__body p:last-child { margin-bottom: 0; }
+.chat-msg--assistant .chat-msg__body h1,
+.chat-msg--assistant .chat-msg__body h2,
+.chat-msg--assistant .chat-msg__body h3,
+.chat-msg--assistant .chat-msg__body h4,
+.chat-msg--assistant .chat-msg__body h5,
+.chat-msg--assistant .chat-msg__body h6,
+.chat-msg--system .chat-msg__body h1,
+.chat-msg--system .chat-msg__body h2,
+.chat-msg--system .chat-msg__body h3,
+.chat-msg--system .chat-msg__body h4,
+.chat-msg--system .chat-msg__body h5,
+.chat-msg--system .chat-msg__body h6 {
+  margin: 8px 0 4px 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.chat-msg--assistant .chat-msg__body h1,
+.chat-msg--system .chat-msg__body h1 { font-size: 1.06rem; }
+.chat-msg--assistant .chat-msg__body h2,
+.chat-msg--system .chat-msg__body h2 { font-size: 1rem; }
+.chat-msg--assistant .chat-msg__body h3,
+.chat-msg--system .chat-msg__body h3 { font-size: 0.96rem; }
+.chat-msg--assistant .chat-msg__body h4,
+.chat-msg--assistant .chat-msg__body h5,
+.chat-msg--assistant .chat-msg__body h6,
+.chat-msg--system .chat-msg__body h4,
+.chat-msg--system .chat-msg__body h5,
+.chat-msg--system .chat-msg__body h6 { font-size: 0.92rem; }
+.chat-msg--assistant .chat-msg__body ul,
+.chat-msg--assistant .chat-msg__body ol,
+.chat-msg--system .chat-msg__body ul,
+.chat-msg--system .chat-msg__body ol {
+  margin: 0 0 6px 0;
+  padding-left: 1.2em;
+}
+.chat-msg--assistant .chat-msg__body li,
+.chat-msg--system .chat-msg__body li { margin: 2px 0; }
+.chat-msg--assistant .chat-msg__body li > p,
+.chat-msg--system .chat-msg__body li > p { margin: 0; }
+.chat-msg--assistant .chat-msg__body blockquote,
+.chat-msg--system .chat-msg__body blockquote {
+  margin: 4px 0 6px 0;
+  padding: 2px 8px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+.chat-msg--assistant .chat-msg__body pre,
+.chat-msg--system .chat-msg__body pre {
+  margin: 4px 0 6px 0;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre;
+}
+.chat-msg--assistant .chat-msg__body code,
+.chat-msg--system .chat-msg__body code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.chat-msg--assistant .chat-msg__body pre code,
+.chat-msg--system .chat-msg__body pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+}
+.chat-msg--assistant .chat-msg__body a,
+.chat-msg--system .chat-msg__body a {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-word;
+}
+.chat-msg--assistant .chat-msg__body a:hover,
+.chat-msg--system .chat-msg__body a:hover { color: var(--fg); }
+.chat-msg--assistant .chat-msg__body img,
+.chat-msg--system .chat-msg__body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.chat-msg--assistant .chat-msg__body hr,
+.chat-msg--system .chat-msg__body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.chat-msg--assistant .chat-msg__body del,
+.chat-msg--system .chat-msg__body del { color: var(--muted); }
 .chat-msg__ts { display: none; }
 
 /* System prompt — the first message of the transcript, rendered as a

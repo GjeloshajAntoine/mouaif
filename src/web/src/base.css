@@ -68,9 +68,15 @@ html, body {
      like a black void; a soft vignette at the bottom anchors the
      tab bar visually. The two gradients are warm-cold balanced so
      the page reads as a single surface, not two stacked bands. */
+  /* The page used to carry a soft accent-tinted glow at the top and
+     a vignette at the bottom. On a phone the glow only blurred the
+     contrast between the page and the cards sitting on it, so the
+     cards looked like they floated on a fog. The page is now a flat
+     near-black; cards and the new project hero bring their own
+     surfaces, which keeps the hierarchy clear. The vignette is
+     kept very faint so the bottom tab bar still feels anchored. */
   background:
-    radial-gradient(1100px 520px at 50% -8%, rgba(127,177,255,.10), transparent 65%),
-    radial-gradient(900px  420px at 50% 110%, rgba(127,177,255,.05), transparent 60%),
+    radial-gradient(900px 420px at 50% 110%, rgba(127,177,255,.04), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--fg);
