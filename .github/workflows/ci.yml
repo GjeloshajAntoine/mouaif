@@ -18,3 +18,5 @@ jobs:
       - run: npm test
       - run: npm run build:web
       - run: git diff --exit-code -- src/web/dist
+      - run: npm run docs:build
+      - run: git diff --exit-code -- docs-dist

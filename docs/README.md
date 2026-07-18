@@ -2,6 +2,8 @@
 
 Static-page-ready docs for every feature in mouaif. Each file in `features/` is a self-contained page that can be rendered with any static site generator (GitHub Pages, VitePress, Docusaurus, plain HTML).
 
+The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that turns this tree into a navigable static HTML site in `docs-dist/`. Run `npm run docs:build` to regenerate it; CI runs the build on every push and fails if the committed `docs-dist/` is out of date. The script has no external dependencies — it embeds a small markdown renderer that covers the subset used in this tree (headings, fenced code, ordered/unordered lists with nesting, GFM tables, blockquotes, inline code, bold/italic/strikethrough, links, images).
+
 ## Index
 
 <!-- New feature docs must be added here in the same commit that introduces them. -->
