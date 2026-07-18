@@ -44,6 +44,17 @@ const WEB_DIST = path.join(WEB_DIR, 'dist');
 // Store connected SSE clients
 const sseClients = new Set();
 
+// Chats with an in-flight streaming run. handleChatStream registers a
+// chat here for the lifetime of its SSE response; GET /api/chats/:id
+// surfaces it as a response-only `running` flag so a client that
+// reloads mid-run can re-enter its busy/streaming state instead of
+// showing the transcript frozen. In-memory (not persisted): a process
+// restart ends every run anyway, so nothing survives to clear.
+const runningChats = new Set();
+function runningKey(projectDir, chatId) {
+  return String(projectDir) + '::' + String(chatId);
+}
+
 // In-memory store for REST demo
 const store = { message: 'Hello from mouaif!', timestamp: new Date().toISOString() };
 
@@ -775,6 +786,8 @@ async function handleChats(req, res, parsed) {
     try {
       const chat = chats.getChat(dir, id);
       if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      // Response-only liveness marker (never persisted on the record).
+      if (runningChats.has(runningKey(dir, id))) chat.running = true;
       return sendJSON(res, 200, { chat });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -1079,6 +1092,11 @@ async function handleChatStream(req, res, chatId) {
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
+  // Mark the chat as running for the lifetime of this request so a
+  // reloaded client re-enters its busy state. Cleared at every exit
+  // below (normal end + upstream-error end).
+  runningChats.add(runningKey(projectDir, chatId));
+
   // Resolve the project model and hydrate it with its app-level provider
   // connection (credentials, base URL, and auth account).
   let model;
@@ -1229,7 +1247,9 @@ async function handleChatStream(req, res, chatId) {
   let appSettings = {};
   try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
 
-  const result = await ai.streamChat({
+  let result;
+  try {
+    result = await ai.streamChat({
     model,
     messages: upstreamMessages,
     projectDir,
@@ -1346,11 +1366,21 @@ async function handleChatStream(req, res, chatId) {
       emit(name, data);
     }
   });
+  } catch (streamErr) {
+    // A throw out of the streaming layer must still clear the running
+    // marker or the chat would look busy forever after a reload.
+    runningChats.delete(runningKey(projectDir, chatId));
+    if (traceStream) trace.close(traceStream);
+    try { emit('error', { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' }); } catch { /* socket closed */ }
+    res.end();
+    return;
+  }
 
   if (!result.ok && !assistantContent && !assistantReasoning) {
     emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
   }
   if (traceStream) trace.close(traceStream);
+  runningChats.delete(runningKey(projectDir, chatId));
   res.end();
 }
 

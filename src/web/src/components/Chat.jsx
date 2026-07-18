@@ -2319,6 +2319,13 @@ export function ChatView(props) {
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
     let stopped = false;
+    // True once we've observed the server-side `running` flag on a
+    // reloaded chat. While set, the poll drives a busy "still
+    // streaming" status; when the flag flips off we restore idle.
+    // This is the reload counterpart of streamingRef — that one is
+    // this tab's own live stream, this one is a run started before
+    // the reload (or in another tab) that we're only watching.
+    let watchingRun = false;
     async function reconcileRunningChat() {
       // A reload disconnects the browser from its SSE response, but the
       // server-side agent may still be appending tool calls, results, and
@@ -2327,13 +2334,37 @@ export function ChatView(props) {
       // reconcile over this tab's own live stream.
       if (stopped || streamingRef.current) return;
       try {
-        const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+        // The chat record carries the authoritative `running` flag
+        // (set by the server while a stream is in flight). Fetch it
+        // alongside the transcript so a single tick knows both whether
+        // new rows landed and whether the run is still going.
+        const [rChat, synced] = await Promise.all([
+          fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir))
+        ]);
         if (stopped || synced.status !== 200 || !Array.isArray(synced.body.messages)) return;
+        const running = !!(rChat.status === 200 && rChat.body.chat && rChat.body.chat.running);
+
         const signature = JSON.stringify(synced.body.messages);
-        if (signature === transcriptSignatureRef.current) return;
-        messagesRef.current = synced.body.messages;
-        transcriptSignatureRef.current = signature;
-        renderTranscript();
+        if (signature !== transcriptSignatureRef.current) {
+          messagesRef.current = synced.body.messages;
+          transcriptSignatureRef.current = signature;
+          renderTranscript();
+        }
+
+        if (running) {
+          // Reflect the in-flight run. sendBtn stays enabled (this tab
+          // isn't streaming; the user can still type), but the status
+          // line shows the chat is alive rather than frozen.
+          watchingRun = true;
+          setChatStatus('streaming…', 'busy');
+        } else if (watchingRun) {
+          // The run we were watching finished. Clear the busy state so
+          // the composer returns to idle (the final transcript rows are
+          // already rendered above).
+          watchingRun = false;
+          setChatStatus('done', 'success');
+        }
       } catch { /* the next tick retries */ }
     }
     const timer = setInterval(reconcileRunningChat, 1000);
