@@ -1,9 +1,11 @@
 // mouaif web — ChatView
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, parseSSEFrame, projectsReload, loadModels, invalidateModelsCache, fetchLiveModels } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost, formatTokPerSecond, formatTokens, createCounter } from '../usage.js';
+import { renderMarkdown } from '../markdown.js';
+import { FileEditorView } from './FileEditor.jsx';
 
 // mergeModelLists(projectList, liveList) — dedupes by id, project
 // entries win on conflict (user-defined slugs preserve their label/
@@ -76,6 +78,13 @@ export function ChatView(props) {
   const promptInput = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
+  // File editor popup (CodeMirror) — toggled by the file-icon button
+  // on the composer. The popup is rendered as a full-screen overlay
+  // over the chat view; mounting/unmounting it on open/close keeps
+  // the CodeMirror EditorView lifecycle simple and lets the popup
+  // own its own state (open file, dirty flag, etc.).
+  const fileEditorOpen = useState(false);
+  const setFileEditorOpen = fileEditorOpen[1];
 
   function setChatStatus(text, state) {
     if (!statusEl.current) return;
@@ -679,7 +688,12 @@ export function ChatView(props) {
     role.textContent = m.role;
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
-    body.textContent = m.content || '';
+    if (m.role === 'assistant') {
+      // Markdown is escaped by the renderer, so innerHTML is safe here.
+      body.innerHTML = renderMarkdown(m.content || '');
+    } else {
+      body.textContent = m.content || '';
+    }
     const ts = document.createElement('div');
     ts.className = 'chat-msg__ts';
     ts.textContent = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
@@ -991,7 +1005,17 @@ export function ChatView(props) {
     const liveRow = transcript.current.querySelector('[data-live="1"]');
     if (liveRow) {
       delete liveRow.dataset.live;
-      if (liveRow._body && message && typeof message.content === 'string') liveRow._body.textContent = message.content;
+      if (liveRow._body && message && typeof message.content === 'string') {
+        // Render the assembled assistant turn as markdown. Non-assistant
+        // roles (and the rare "stream interrupted" sentinel) stay as
+        // plain text so we never inject HTML into error placeholders.
+        const isAssistant = liveRow.classList.contains('chat-msg--assistant');
+        if (isAssistant) {
+          liveRow._body.innerHTML = renderMarkdown(message.content);
+        } else {
+          liveRow._body.textContent = message.content;
+        }
+      }
     }
   }
 
@@ -1398,6 +1422,11 @@ export function ChatView(props) {
     }
     function onKey(e) {
       if (e.key === 'Escape') {
+        // File editor takes priority: it's a full-screen overlay
+        // and a stray Escape from inside the CodeMirror editor
+        // would otherwise fall through to the chat's own
+        // popovers.
+        if (fileEditorOpen[0]) { setFileEditorOpen(false); return; }
         if (modelPickerPopRef.current && !modelPickerPopRef.current.hidden) closeModelPicker();
         if (settingsPopRef.current && !settingsPopRef.current.hidden) closeSettings();
       }
@@ -1502,6 +1531,17 @@ export function ChatView(props) {
     // chat is empty. See buildSetupCard + updateSetupVisibility.
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('div', { class: 'chat-view__composer' },
+      h('button', {
+        class: 'chat-view__iconbtn chat-view__files-btn',
+        type: 'button',
+        onClick: () => setFileEditorOpen(true),
+        'aria-label': 'Edit project files',
+        title: 'Edit project files'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+          h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm12 1.5V7h3.5L15 7.5ZM6 8h6v1.5H6V8Zm0 3h9v1.5H6V11Zm0 3h7v1.5H6V14Z', fill: 'currentColor' })
+        )
+      ),
       h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey }),
       h('button', { ref: sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
         h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
@@ -1509,6 +1549,10 @@ export function ChatView(props) {
         )
       ),
       h('span', { ref: statusEl, class: 'status chat-view__status', 'aria-live': 'polite' })
-    )
+    ),
+    // File editor popup. Rendered as a full-screen overlay over the
+    // chat view; only mounted while open so the CodeMirror EditorView
+    // is created once per session and torn down on close.
+    fileEditorOpen[0] ? h(FileEditorView, { projectDir, onClose: () => setFileEditorOpen(false) }) : null
   );
 }

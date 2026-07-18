@@ -21,6 +21,7 @@ const tags = require('./tags.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
+const files = require('./files.js');
 
 // Register each per-provider exchange function with the auth
 // skeleton. Idempotent; safe to call from require-time side effects
@@ -225,6 +226,13 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleProjects(req, res, parsed);
   }
 
+  // File editor (in-app CodeMirror popup). See handleFileEditor for the
+  // contract; dispatched here as a top-level route so /api/file and
+  // /api/files are first-class (they do not start with /api/projects).
+  if (urlPath === '/api/file' || urlPath === '/api/files') {
+    return handleFileEditor(req, res, parsed);
+  }
+
   // AI proxy (server-side call to upstream providers; SSE stream back)
   if (urlPath.startsWith('/api/ai/')) {
     return handleAI(req, res, parsed);
@@ -321,7 +329,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/files?projectDir=...&dir=...', 'GET /api/file?projectDir=...&path=...', 'PUT /api/file (body: { projectDir, path, content })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
   }
 
   // REST: GET /data
@@ -1297,6 +1305,13 @@ async function handleProjects(req, res, parsed) {
   const method = req.method;
   const q = parsed.query || {};
 
+  // File editor (in-app CodeMirror popup). See handleFileEditor for the
+  // contract; dispatched here so /api/file and /api/files win over the
+  // generic /api/projects routes below.
+  if (urlPath === '/api/file' || urlPath === '/api/files') {
+    return handleFileEditor(req, res, parsed);
+  }
+
   // File tagging (docs/decisions.md §15). Routes live under a
   // registered project id: /api/projects/:id/tags[/...]. Delegated to
   // handleTags before the folder-picker / registered-project routes so
@@ -1374,6 +1389,88 @@ async function handleProjects(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'projects' });
+}
+
+// ---- File editor API ---------------------------------------------------
+// Read + write text files inside a registered project folder, for the
+// in-app CodeMirror editor popup. All paths are project-relative (or
+// absolute under the project root). Both the project root and every
+// read/write/list path go through files.resolveSafe, so the same
+// home + MOUAIF_ALLOW_ANY_ROOT guard that protects the rest of the
+// server applies here too.
+//
+// Endpoints:
+//   GET  /api/files?projectDir=<abs>&dir=<abs>          -> list a folder
+//   GET  /api/file?projectDir=<abs>&path=<abs|rel>      -> read a text file
+//   PUT  /api/file   body { projectDir, path, content } -> write a text file
+//
+// Errors map to typed codes so the UI can render the right message
+// (EBINARY -> "binary file, cannot edit", ETOOLARGE -> "file too big",
+// EOUTSIDE_PROJECT -> 403, etc.).
+
+function filesErrorStatus(err) {
+  switch (err && err.code) {
+    case 'EBADPATH':         return 400;
+    case 'EBADINPUT':        return 400;
+    case 'EOUTSIDE_PROJECT': return 403;
+    case 'EOUTSIDE_HOME':    return 403;
+    case 'ENOENT':           return 404;
+    case 'ENOTDIR':          return 400;
+    case 'ENOTFILE':         return 400;
+    case 'EISDIR':           return 400;
+    case 'EACCES':           return 403;
+    case 'EBINARY':          return 415;
+    case 'ETOOLARGE':        return 413;
+    case 'EREAD':            return 500;
+    default:                 return 400;
+  }
+}
+
+async function handleFileEditor(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  // GET /api/files?projectDir=<abs>&dir=<abs>  -> list a folder
+  if (urlPath === '/api/files' && method === 'GET') {
+    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = typeof q.dir === 'string' ? q.dir : '';
+    try {
+      return sendJSON(res, 200, files.listDir(projectDir, dir));
+    } catch (e) {
+      return sendJSON(res, filesErrorStatus(e), { error: e.message, code: e.code, path: e.path });
+    }
+  }
+
+  // GET /api/file?projectDir=<abs>&path=<abs|rel>  -> read a text file
+  if (urlPath === '/api/file' && method === 'GET') {
+    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const path = typeof q.path === 'string' ? q.path : '';
+    try {
+      const out = await files.readFile(projectDir, path);
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, filesErrorStatus(e), { error: e.message, code: e.code, path: e.path, size: e.size, maxBytes: e.maxBytes });
+    }
+  }
+
+  // PUT /api/file  body { projectDir, path, content }  -> write a text file
+  if (urlPath === '/api/file' && method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const path = body && typeof body.path === 'string' ? body.path : '';
+    const content = body && typeof body.content === 'string' ? body.content : null;
+    try {
+      const out = await files.writeFile(projectDir, path, content);
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, filesErrorStatus(e), { error: e.message, code: e.code, path: e.path, size: e.size, maxBytes: e.maxBytes });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'fileEditor' });
 }
 
 // ---- File tagging API ---------------------------------------------------
