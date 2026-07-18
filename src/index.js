@@ -694,7 +694,7 @@ function projectsErrorStatus(err) {
 //   GET    /api/chats?projectDir=<abs>          -> { chats: [..., totalCost: { total, known, currency }] }
 //   GET    /api/chats/:id?projectDir=<abs>      -> { chat } | 404
 //   POST   /api/chats                            { projectDir, title?, trace?, promptSize? }
-//   PATCH  /api/chats/:id                        { projectDir, title?, trace?, promptSize? }
+//   PATCH  /api/chats/:id                        { projectDir, title?, trace?, promptSize?, draft? }
 //   POST   /api/chats/:id/touch                  { projectDir }      (bumps lastOpenedAt)
 //   DELETE /api/chats/:id?projectDir=<abs>      -> { ok, removed }
 
@@ -776,7 +776,7 @@ async function handleChats(req, res, parsed) {
     }
   }
 
-  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize? }
+  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize?, draft? }
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const id = decodeURIComponent(m[1]);

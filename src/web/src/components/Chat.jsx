@@ -80,6 +80,7 @@ export function ChatView(props) {
   const promptInput = useRef(null);
   const imageInputRef = useRef(null);
   const [imageAttachments, setImageAttachments] = useState([]);
+  const draftSaveTimerRef = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
   // File editor popup (CodeMirror) — toggled by the file-icon button
@@ -258,6 +259,10 @@ export function ChatView(props) {
     };
     mcpServersRef.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
 
+    if (promptInput.current && !promptInput.current.value && typeof c.draft === 'string' && c.draft) {
+      promptInput.current.value = c.draft;
+      autoresize();
+    }
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
     updateUsageSummary();
@@ -1777,6 +1782,7 @@ export function ChatView(props) {
     streamingRef.current = true;
     setChatStatus('streaming\u2026', 'busy');
     promptInput.current.value = '';
+    await clearComposerDraft();
     setImageAttachments([]);
     if (imageInputRef.current) imageInputRef.current.value = '';
     autoresize();
@@ -1981,6 +1987,28 @@ export function ChatView(props) {
     el.style.height = next + 'px';
   }
 
+  function queueComposerDraftSave(value) {
+    if (!projectDir || !chatId) return;
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      draftSaveTimerRef.current = null;
+      updateChat({ draft: value || '' }).catch(() => {});
+    }, 250);
+  }
+
+  function clearComposerDraft() {
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+    return updateChat({ draft: '' });
+  }
+
+  function onComposerInput() {
+    queueComposerDraftSave(promptInput.current ? promptInput.current.value : '');
+    autoresize();
+  }
+
   useEffect(() => {
     function onDocClick(e) {
       const pickerPop = modelPickerPopRef.current;
@@ -2001,11 +2029,10 @@ export function ChatView(props) {
     }
     document.addEventListener('click', onDocClick);
     document.addEventListener('keydown', onKey);
-    if (promptInput.current) { promptInput.current.addEventListener('input', autoresize); autoresize(); }
+    autoresize();
     return () => {
       document.removeEventListener('click', onDocClick);
       document.removeEventListener('keydown', onKey);
-      if (promptInput.current) promptInput.current.removeEventListener('input', autoresize);
     };
   }, []);
 
@@ -2109,7 +2136,7 @@ export function ChatView(props) {
         )
       ),
       h('input', { ref: imageInputRef, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
-      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste }),
+      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
       h('button', { ref: sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
         h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
           h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })

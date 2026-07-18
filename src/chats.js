@@ -28,6 +28,7 @@
 //     promptId:     null,                 // optional; references a project prompt
 //     providerId:   null,                 // selected app-level provider
 //     modelId:      null,                 // selected project/live model slug
+//     draft:        '',                   // unsent composer text
 //     tools:        undefined | null | [name] // per-chat tool filter; absent/null = all
 //   }
 //
@@ -110,6 +111,7 @@ function normalizeChat(chat) {
     promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null,
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
+    draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined)
   };
 }
@@ -191,6 +193,9 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
     merged.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
+    merged.draft = typeof patch.draft === 'string' ? patch.draft : '';
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
     // `null` means "all tools"; `[]` means "advertise no tools".
