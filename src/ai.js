@@ -718,6 +718,7 @@ const BUILDERS = {
 // Each parser reads one event from the upstream and emits zero or more
 // normalized events. The normalized event names are:
 //   message   -> { delta: 'text' }
+//   reasoning -> { delta: 'thinking/reasoning text' }
 //   done      -> { usage: { promptTokens, completionTokens } }
 //   error     -> { code, message }
 // Anything else from the upstream is passed through as `passthrough` so
@@ -740,6 +741,14 @@ function firstFiniteNumber(...values) {
   return 0;
 }
 
+function firstStringField(obj, names) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (const name of names) {
+    if (typeof obj[name] === 'string') return obj[name];
+  }
+  return '';
+}
+
 function* parseOpenAISSE(eventName, data) {
   if (!data) return;
   // OpenAI uses the literal "[DONE]" as a stream terminator. Suppress it.
@@ -751,8 +760,31 @@ function* parseOpenAISSE(eventName, data) {
     return;
   }
   const choice = obj.choices && obj.choices[0];
-  if (choice && choice.delta && typeof choice.delta.content === 'string') {
-    yield { name: 'message', data: { delta: choice.delta.content } };
+  const delta = choice && choice.delta;
+  const reasoning = firstStringField(delta, [
+    'reasoning',
+    'reasoning_content',
+    'reasoningContent',
+    'thinking',
+    'thought',
+    'chain_of_thought'
+  ]);
+  if (reasoning) {
+    yield { name: 'reasoning', data: { delta: reasoning } };
+  }
+  if (choice && choice.message) {
+    const messageReasoning = firstStringField(choice.message, [
+      'reasoning',
+      'reasoning_content',
+      'reasoningContent',
+      'thinking',
+      'thought',
+      'chain_of_thought'
+    ]);
+    if (messageReasoning) yield { name: 'reasoning', data: { delta: messageReasoning } };
+  }
+  if (delta && typeof delta.content === 'string') {
+    yield { name: 'message', data: { delta: delta.content } };
   }
   // OpenAI tool calls stream as a `delta.tool_calls` array. The id
   // appears on the first delta for a given index; subsequent deltas
@@ -852,6 +884,10 @@ function* parseAnthropicSSE(eventName, data) {
     case 'content_block_delta':
       if (obj.delta && obj.delta.type === 'text_delta' && typeof obj.delta.text === 'string') {
         yield { name: 'message', data: { delta: obj.delta.text } };
+      } else if (obj.delta && obj.delta.type === 'thinking_delta' && typeof obj.delta.thinking === 'string') {
+        yield { name: 'reasoning', data: { delta: obj.delta.thinking } };
+      } else if (obj.delta && obj.delta.type === 'signature_delta') {
+        // Anthropic signs extended-thinking blocks; the signature is not user-facing.
       }
       break;
     case 'content_block_stop':
@@ -877,7 +913,9 @@ function* parseGeminiSSE(eventName, data) {
   const cand = obj.candidates && obj.candidates[0];
   if (cand && cand.content && cand.content.parts) {
     for (const part of cand.content.parts) {
-      if (typeof part.text === 'string') yield { name: 'message', data: { delta: part.text } };
+      if (typeof part.thought === 'string') yield { name: 'reasoning', data: { delta: part.thought } };
+      else if (part.thought === true && typeof part.text === 'string') yield { name: 'reasoning', data: { delta: part.text } };
+      else if (typeof part.text === 'string') yield { name: 'message', data: { delta: part.text } };
     }
   }
   if (cand && cand.finishReason) yield { name: 'finish', data: { reason: cand.finishReason } };
@@ -896,6 +934,16 @@ function* parseOllamaNDJSON(_eventName, data) {
   if (!data) return;
   let obj;
   try { obj = JSON.parse(data); } catch { yield { name: 'passthrough', data: { raw: data } }; return; }
+  if (obj.message) {
+    const reasoning = firstStringField(obj.message, [
+      'thinking',
+      'reasoning',
+      'reasoning_content',
+      'reasoningContent',
+      'thought'
+    ]);
+    if (reasoning) yield { name: 'reasoning', data: { delta: reasoning } };
+  }
   if (obj.message && typeof obj.message.content === 'string') {
     yield { name: 'message', data: { delta: obj.message.content } };
   }
@@ -1311,6 +1359,7 @@ async function streamChat(opts) {
   // what to do with them. `done` is NOT emitted here.
   let sawError = null;
   let assistantText = '';
+  let reasoningText = '';
   // OpenAI tool-call accumulator. Deltas arrive split across frames;
   // we assemble by `index`. The accumulator lives only for the
   // duration of one turn.
@@ -1357,8 +1406,9 @@ async function streamChat(opts) {
       toolCalls.push(...compat.calls);
     }
   }
-  if (model.provider === 'openrouter' && assistantText) {
-    onEvent('message', { delta: assistantText });
+  if (model.provider === 'openrouter') {
+    if (reasoningText) onEvent('reasoning', { delta: reasoningText });
+    if (assistantText) onEvent('message', { delta: assistantText });
   }
   return { ok: true, assistantText, toolCalls };
 
@@ -1368,6 +1418,10 @@ async function streamChat(opts) {
       // OpenRouter is buffered until the turn completes because MiniMax may
       // serialize a tool call across several ordinary content deltas.
       if (model.provider !== 'openrouter') onEvent('message', ev.data);
+    }
+    else if (ev.name === 'reasoning') {
+      if (ev.data && typeof ev.data.delta === 'string') reasoningText += ev.data.delta;
+      if (model.provider !== 'openrouter') onEvent('reasoning', ev.data);
     }
     else if (ev.name === 'done') {
       // Accumulate usage into the shared counter. Do NOT emit `done`

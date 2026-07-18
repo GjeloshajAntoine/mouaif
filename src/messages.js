@@ -91,6 +91,7 @@ function normalizeMessage(m) {
   // the message was produced. The cost block is optional and may be
   // absent on older transcripts.
   if (m.role === 'assistant') {
+    if (typeof m.reasoning === 'string') out.reasoning = m.reasoning;
     if (m.usage && typeof m.usage === 'object') out.usage = m.usage;
     if (m.cost && typeof m.cost === 'object') out.cost = m.cost;
     if (typeof m.streamingMs === 'number') out.streamingMs = m.streamingMs;

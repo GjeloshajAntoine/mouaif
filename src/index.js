@@ -1188,6 +1188,7 @@ async function handleChatStream(req, res, chatId) {
   }
 
   let assistantContent = '';
+  let assistantReasoning = '';
   let assistantMsg = null;
   // Track the streaming window so the cost line (which is computed
   // server-side from the upstream's authoritative usage block) also
@@ -1234,13 +1235,17 @@ async function handleChatStream(req, res, chatId) {
         assistantContent += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
+      } else if (name === 'reasoning' && typeof data.delta === 'string') {
+        assistantReasoning += data.delta;
+        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+        return;
       } else if (name === 'assistant_turn_end') {
         // Persist text produced before a tool call at its real transcript
         // position, then start a fresh segment for the post-tool response.
-        if (assistantContent) {
+        if (assistantContent || assistantReasoning) {
           try {
             assistantMsg = messages.appendMessage(projectDir, chatId, {
-              role: 'assistant', content: assistantContent, modelId: model.id
+              role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id
             });
             if (traceStream && assistantMsg) {
               const event = trace.eventForMessage(assistantMsg);
@@ -1249,6 +1254,7 @@ async function handleChatStream(req, res, chatId) {
           } catch { /* non-fatal */ }
         }
         assistantContent = '';
+        assistantReasoning = '';
       } else if (name === 'tool_call') {
         try {
           messages.appendMessage(projectDir, chatId, {
@@ -1295,11 +1301,12 @@ async function handleChatStream(req, res, chatId) {
         // Persist the assistant message with the same enrichment so
         // a chat that is later reopened renders the same numbers
         // (decision §14 — the usage block rides the message).
-        if (assistantContent) {
+        if (assistantContent || assistantReasoning) {
           try {
             assistantMsg = messages.appendMessage(projectDir, chatId, {
               role: 'assistant',
               content: assistantContent,
+              reasoning: assistantReasoning,
               usage: data && data.usage,
               cost: enriched.cost,
               streamingMs: enriched.streamingMs,
@@ -1318,7 +1325,7 @@ async function handleChatStream(req, res, chatId) {
     }
   });
 
-  if (!result.ok && !assistantContent) {
+  if (!result.ok && !assistantContent && !assistantReasoning) {
     emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
   }
   if (traceStream) trace.close(traceStream);

@@ -951,8 +951,7 @@ export function ChatView(props) {
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
     if (m.role === 'assistant') {
-      // Markdown is escaped by the renderer, so innerHTML is safe here.
-      body.innerHTML = renderMarkdown(m.content || '');
+      renderAssistantBody(body, m.content || '', m.reasoning || '', true);
     } else {
       body.textContent = m.content || '';
     }
@@ -961,7 +960,11 @@ export function ChatView(props) {
     ts.textContent = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
     row.appendChild(role); row.appendChild(body); row.appendChild(ts);
     transcript.current.appendChild(row);
-    if (m.role === 'assistant' && isLive) row._body = body;
+    if (m.role === 'assistant' && isLive) {
+      row._body = body;
+      row._content = m.content || '';
+      row._reasoning = m.reasoning || '';
+    }
     // Per-turn meta line (decision \u00a714). Lives directly under the
     // assistant bubble and shows the model id, token counts, cost,
     // and live token rate. For non-assistant messages or for
@@ -1030,18 +1033,54 @@ export function ChatView(props) {
     }
   }
 
+  function renderAssistantBody(body, content, reasoning, final) {
+    body.innerHTML = '';
+    if (reasoning) {
+      const details = document.createElement('details');
+      details.className = 'chat-msg__reasoning';
+      if (!final) details.open = true;
+      const summary = document.createElement('summary');
+      summary.textContent = final ? 'Thinking' : 'Thinking…';
+      const pre = document.createElement('pre');
+      pre.textContent = reasoning;
+      details.appendChild(summary);
+      details.appendChild(pre);
+      body.appendChild(details);
+    }
+    const answer = document.createElement('div');
+    answer.className = 'chat-msg__answer';
+    if (final) answer.innerHTML = renderMarkdown(content || '');
+    else answer.textContent = content || '';
+    body.appendChild(answer);
+  }
+
   function appendDeltaToLive(delta) {
     if (!transcript.current) return;
-    let live = transcript.current.querySelector('[data-live="1"] .chat-msg__body');
+    let liveRow = transcript.current.querySelector('[data-live="1"]');
     // Tool calls end an assistant segment. The next upstream delta belongs
     // after the tool result, so create a new live bubble lazily instead of
     // appending it to the pre-tool bubble.
-    if (!live) {
-      appendMessageToTranscript({ role: 'assistant', content: '', ts: new Date().toISOString(), modelId }, true);
-      live = transcript.current.querySelector('[data-live="1"] .chat-msg__body');
+    if (!liveRow) {
+      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId }, true);
+      liveRow = transcript.current.querySelector('[data-live="1"]');
     }
-    if (live) {
-      live.textContent += delta;
+    if (liveRow) {
+      liveRow._content = (liveRow._content || '') + delta;
+      renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
+      transcript.current.scrollTop = transcript.current.scrollHeight;
+    }
+  }
+
+  function appendReasoningToLive(delta) {
+    if (!transcript.current) return;
+    let liveRow = transcript.current.querySelector('[data-live="1"]');
+    if (!liveRow) {
+      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId }, true);
+      liveRow = transcript.current.querySelector('[data-live="1"]');
+    }
+    if (liveRow) {
+      liveRow._reasoning = (liveRow._reasoning || '') + delta;
+      renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
       transcript.current.scrollTop = transcript.current.scrollHeight;
     }
   }
@@ -1500,7 +1539,7 @@ export function ChatView(props) {
         // plain text so we never inject HTML into error placeholders.
         const isAssistant = liveRow.classList.contains('chat-msg--assistant');
         if (isAssistant) {
-          liveRow._body.innerHTML = renderMarkdown(message.content);
+          renderAssistantBody(liveRow._body, message.content, message.reasoning || liveRow._reasoning || '', true);
         } else {
           liveRow._body.textContent = message.content;
         }
@@ -1725,7 +1764,7 @@ export function ChatView(props) {
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    let buf = '', assembled = '';
+    let buf = '', assembled = '', reasoning = '';
     let usage = null;
     let cost = null;
     let streamingMs = null;
@@ -1755,6 +1794,10 @@ export function ChatView(props) {
           repaintLiveRate();
         }
       }
+      else if (ev.eventName === 'reasoning' && typeof data.delta === 'string') {
+        reasoning += data.delta;
+        appendReasoningToLive(data.delta);
+      }
       else if (ev.eventName === 'done') {
         usage = data.usage || null;
         cost = data.cost || null;
@@ -1763,15 +1806,17 @@ export function ChatView(props) {
       }
       else if (ev.eventName === 'assistant_turn_end') {
         const segment = assembled;
-        if (segment) {
-          finalizeLiveMessage({ content: segment });
+        const thoughtSegment = reasoning;
+        if (segment || thoughtSegment) {
+          finalizeLiveMessage({ content: segment, reasoning: thoughtSegment });
           messagesRef.current = messagesRef.current.concat([{
-            role: 'assistant', content: segment, ts: new Date().toISOString(), modelId
+            role: 'assistant', content: segment, reasoning: thoughtSegment, ts: new Date().toISOString(), modelId
           }]);
         } else {
-          finalizeLiveMessage({ content: '' });
+          finalizeLiveMessage({ content: '', reasoning: '' });
         }
         assembled = '';
+        reasoning = '';
       }
       else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
       else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
@@ -1810,12 +1855,12 @@ export function ChatView(props) {
       if (sendBtn.current) sendBtn.current.disabled = false;
     }
     if (streamFailed) {
-      finalizeLiveMessage({ content: assembled || '[stream interrupted]' });
+      finalizeLiveMessage({ content: assembled || '[stream interrupted]', reasoning });
       counter.reset();
       streamingRef.current = false;
       return;
     }
-    finalizeLiveMessage({ content: assembled });
+    finalizeLiveMessage({ content: assembled, reasoning });
     // Final meta line: the live counter has the authoritative
     // completionTokens (from `usage.completionTokens`); the cost is
     // already on the `done` event. The stored message keeps both so
@@ -1825,6 +1870,7 @@ export function ChatView(props) {
     const persisted = {
       role: 'assistant',
       content: assembled,
+      reasoning,
       ts: new Date().toISOString(),
       modelId,
       usage: usage || undefined,

@@ -1618,6 +1618,28 @@ textarea#projectEditor {
 .chat-msg--system .chat-msg__body > :first-child { margin-top: 0; }
 .chat-msg--assistant .chat-msg__body > :last-child,
 .chat-msg--system .chat-msg__body > :last-child { margin-bottom: 0; }
+.chat-msg__reasoning {
+  margin: 0 0 8px 0;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.03);
+  color: var(--muted);
+}
+.chat-msg__reasoning summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.chat-msg__reasoning pre {
+  margin: 6px 0 0 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
 .chat-msg--assistant .chat-msg__body p,
 .chat-msg--system .chat-msg__body p { margin: 0 0 6px 0; }
 .chat-msg--assistant .chat-msg__body p:last-child,
