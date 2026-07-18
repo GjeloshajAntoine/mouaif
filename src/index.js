@@ -759,7 +759,13 @@ async function handleChats(req, res, parsed) {
         let totalCost;
         try { totalCost = chats.chatTotalCost(dir, c.id, app); }
         catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
-        if (pageIds.has(c.id)) c.totalCost = totalCost;
+        if (pageIds.has(c.id)) {
+          c.totalCost = totalCost;
+          // Response-only liveness marker (never persisted), same
+          // contract as GET /api/chats/:id, so the project-card
+          // chat list can show which chats have a run in flight.
+          if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+        }
         if (totalCost.known && typeof totalCost.total === 'number') {
           total += totalCost.total;
           hasKnown = true;

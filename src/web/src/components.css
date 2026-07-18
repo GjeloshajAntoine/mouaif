@@ -874,6 +874,27 @@ textarea#projectEditor {
    out from the muted neutral but doesn't compete with the
    destructive red used by the delete button. */
 .project-card__chat-meta[data-trace="1"] { color: var(--warning); }
+/* Running indicator. Projects.jsx sets data-running="1" on the
+   meta span and inserts a dot before it when GET /api/chats
+   reports the response-only `running` flag (a streaming run is
+   in flight for that chat). The dot pulses in the accent color
+   so an in-flight chat is glanceable on the project card. */
+.project-card__chat-meta[data-running="1"] { color: var(--accent); }
+.project-card__chat-running {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: project-card-running-pulse 1.2s ease-in-out infinite;
+}
+@keyframes project-card-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-card__chat-running { animation: none; }
+}
 .project-card__chat-delete {
   font: inherit;
   color: var(--muted);

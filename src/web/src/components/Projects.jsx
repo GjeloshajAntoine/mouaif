@@ -242,6 +242,20 @@ export function ProjectsView() {
       const traceStr = c.trace ? ' · trace' : '';
       meta.textContent = costStr + ' · ' + dateStr + traceStr;
       if (c.trace) meta.dataset.trace = '1';
+      // Running indicator: the list endpoint surfaces the same
+      // response-only `running` flag as GET /api/chats/:id, so a
+      // chat with a run in flight is glanceable from the project
+      // card (e.g. started on another tab/device). Shown as a
+      // pulsing dot before the meta text; the flag is a snapshot
+      // at load time, so it clears on the next list reload.
+      if (c.running) {
+        meta.dataset.running = '1';
+        const dot = document.createElement('span');
+        dot.className = 'project-card__chat-running';
+        dot.setAttribute('aria-hidden', 'true');
+        li.appendChild(dot);
+        li.setAttribute('aria-label', ((c.title && c.title.trim()) ? c.title : 'New chat') + ' (running)');
+      }
       // Mark the row so the per-row styling / a future tooltip
       // can reach for the known/total fields without re-parsing
       // the formatted text. data-cost-known is "1" / "0".
