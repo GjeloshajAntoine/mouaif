@@ -72,8 +72,17 @@ export default defineConfig({
         // with the correct hashed <script> src, so nothing hard-codes the
         // old name.
         entryFileNames: 'assets/index-[hash].js',
-        chunkFileNames: 'assets/index-[hash].js',
-        assetFileNames: 'assets/index-[hash][extname]'
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/index-[hash][extname]',
+        // Split the heavy CodeMirror bundle out of the main entry. The
+        // chat view only uses it when the file editor overlay is opened,
+        // so a named manual chunk lets the browser cache it separately
+        // and keeps the entry under the 500 kB warning line.
+        manualChunks(id) {
+          if (id.includes('node_modules/@codemirror') || id.includes('node_modules/codemirror') || id.includes('node_modules/@lezer')) {
+            return 'codemirror';
+          }
+        }
       }
     }
   },

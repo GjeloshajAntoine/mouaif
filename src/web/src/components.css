@@ -356,19 +356,39 @@
 
 /* The project page carries a lot of sections (hero, prompt size,
    two tool cards with their own sub-controls, project-extras links,
-   advanced editor). The hierarchy used to blur: the hero had the
-   same surface as a group list, the tool sub-labels (Authorization,
-   Full-command regex allowlist) used the same muted style as the
-   tool descriptions, and the warning strip was the only colored
-   accent. The rules below give each level its own weight so the
-   eye reads page → file → groups → tool → advanced in one pass. */
+   advanced editor). Element distinction is the design problem here:
+   - the hero is the only accent-tinted block ("you are editing THIS file")
+   - groups get a visible border so lists read as containers
+   - inputs sit a step above the card surface (inset panel + border)
+   - status lines are accent-colored so they never blur into the
+     muted description text above them
+   - warnings are the only warning-tinted strips. */
 
 .settings-project { padding-bottom: 12px; }
 
-/* Hero: "you are editing THIS file." Visually it is the only block
-   on the page with a colored accent, so it reads as the anchor
-   even though the cards underneath are denser. No decorative
-   gradient — the accent stripe + tinted background do the work. */
+/* Groups on this page only: a hairline border separates the rounded
+   list from the page so its edges are findable at a glance. Scoped
+   to .settings-project so the Settings home keeps its plainer look. */
+.settings-project .group { margin-top: 16px; }
+.settings-project .group__list {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+}
+
+/* Inputs inside the page groups: the card surface and the base input
+   surface are the same token, which made fields invisible until
+   focused. Lift inputs one surface step and give them a border. */
+.settings-project .group .input {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+}
+.settings-project .group .input:hover,
+.settings-project .group .input:focus {
+  background: var(--surface-3);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
 .settings-project__hero {
   position: relative;
   margin: 0 10px 14px;
@@ -393,9 +413,6 @@
   font-size: 0.9rem;
   line-height: 1.35;
   word-break: break-all;
-  /* The path is the most important piece of info on the page
-     (which file is being edited). Tight line-height + a slightly
-     stronger size than the lede makes it scan first. */
 }
 .settings-project__path code,
 .settings-project__code {
@@ -405,8 +422,8 @@
   display: block;
   color: var(--fg);
   font-size: 0.86rem;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 5px 8px;
   margin-top: 2px;
@@ -417,23 +434,23 @@
   line-height: 1.4;
   margin: 0 0 6px;
 }
-.settings-project__intro {
-  color: var(--fg-soft);
-  font-size: 0.82rem;
-  line-height: 1.45;
-  margin: -4px 14px 14px;
-}
 
 .settings-project__item,
 .settings-project__tool {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 11px 12px;
+  padding: 12px 12px;
 }
 .settings-project__item {
   flex-direction: row;
   align-items: center;
+}
+.settings-project__item--col { flex-direction: column; align-items: stretch; }
+.settings-project__item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .settings-project__item-main { flex: 1; min-width: 0; }
 .settings-project__item-title {
@@ -449,64 +466,61 @@
   line-height: 1.35;
   margin-top: 3px;
 }
+/* Live status text ("inheriting app default", "trace on"). Same slot
+   and size as the note, but colored so "what the app is telling me"
+   never blurs into "what this setting does". */
+.settings-project__item-status {
+  color: var(--accent);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin-top: 3px;
+  min-height: 1em;
+}
+/* Secondary actions under a settings row (export / delete). Top rule
+   separates them from the setting itself; danger sits at the far end. */
+.settings-project__item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 9px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
+.settings-project__item-actions .btn--danger { margin-left: auto; }
 .settings-project__select {
   width: auto;
   min-width: 118px;
   max-width: 46%;
   flex-shrink: 0;
 }
-.settings-project__pill {
-  flex-shrink: 0;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid rgba(127, 177, 255, 0.24);
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 650;
-  line-height: 1;
-  padding: 5px 7px;
-}
 .settings-project__help {
   color: var(--muted);
   font-size: 0.74rem;
   line-height: 1.35;
-  margin: -3px 0 0;
+  margin: 0;
 }
 
+/* The tool head is just the title + one-line note now. The mode select
+   sits directly underneath; the title label points at it, so no extra
+   "Permission mode" label is needed. */
 .settings-project__tool-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding-bottom: 4px;
-  /* The tool head holds the title row. A faint bottom rule
-     separates the title from the authorization controls below so
-     the tool card reads as "title → settings", not a flat list. */
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 2px;
+  padding-bottom: 2px;
+  margin-bottom: 0;
 }
 
-/* A tiny uppercase label that introduces a sub-section inside a
-   tool card (Authorization, Allowlist). It is deliberately
-   smaller and lighter than the .label used for individual form
-   fields, so the tool title is the only loud thing in the card. */
-.settings-project__sub {
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 6px 0 -2px;
+/* The allowlist block only renders in allowlist mode. It is one
+   visual unit (label + hint + textarea), so group it with a tighter
+   stack. */
+.settings-project__allowlist {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
-/* The form .label that lives directly under a .settings-project__sub
-   loses its default top margin so the heading and the field sit
-   as one block. The .label class is shared with all forms, so we
-   only override it within the project tool cards. */
-.settings-project__tool .label {
-  margin: 2px 0 -4px;
-  color: var(--fg-soft);
-}
-.settings-project__tool .label + .settings-project__help {
-  margin-top: 0;
+.settings-project__allowlist[hidden] { display: none; }
+.settings-project__mono {
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
 }
 
 .settings-project__actions {
@@ -526,6 +540,63 @@
   line-height: 1.35;
   margin: 2px 0 0;
   padding: 7px 9px;
+}
+
+/* iOS-style switch for on/off settings (chat trace). More readable
+   at a glance than a square checkbox, and it matches the "one
+   setting, one row" layout. The input stays focusable on top. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 42px;
+  height: 26px;
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.switch__track {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  pointer-events: none;
+}
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--fg-soft);
+  border-radius: 50%;
+  transition: transform var(--dur) var(--ease), background var(--dur-fast) var(--ease);
+}
+.switch input:checked + .switch__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(16px);
+  background: var(--on-accent);
+}
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Smaller button for destructive inline actions (delete chat). */
+.btn--sm {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.78rem;
 }
 
 /* The advanced <details> is the only block that escapes the iOS

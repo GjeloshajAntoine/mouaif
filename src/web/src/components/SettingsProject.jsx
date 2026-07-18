@@ -8,7 +8,7 @@
 // collapsed "Advanced" section for power users who want to hand-edit the
 // file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 
@@ -18,18 +18,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Structured controls
   const promptSizeSel = useRef(null);
   const promptSizeStatus = useRef(null);
-  const chatTraceCard = useRef(null);
+  const [traceCardVisible, setTraceCardVisible] = useState(!!(initialChatId && initialChatId.trim()));
   const chatTraceToggle = useRef(null);
   const chatTraceStatus = useRef(null);
   const exportTraceBtn = useRef(null);
-  const shellToggle = useRef(null);
+  const exportTraceStatus = useRef(null);
   const shellStatus = useRef(null);
   const shellModeSel = useRef(null);
   const shellAllowlist = useRef(null);
-  const fileToggle = useRef(null);
+  const shellAllowlistWrap = useRef(null);
   const fileStatus = useRef(null);
   const fileModeSel = useRef(null);
   const fileAllowlist = useRef(null);
+  const fileAllowlistWrap = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
@@ -47,6 +48,16 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
   function dir() { return loadedDir.current; }
   function chatId() { return loadedChatId.current; }
+
+  // The allowlist textarea only matters in "allowlist" mode; in every
+  // other mode it is dead weight on the screen. Hide it so the tool
+  // card shows only the controls that actually apply.
+  function syncAllowlistVisibility(modeSel, wrap) {
+    if (!wrap) return;
+    wrap.hidden = !modeSel || modeSel.value !== 'allowlist';
+  }
+  function onShellModeChange() { syncAllowlistVisibility(shellModeSel.current, shellAllowlistWrap.current); }
+  function onFileModeChange() { syncAllowlistVisibility(fileModeSel.current, fileAllowlistWrap.current); }
 
   async function load(seedDir) {
     const d = (seedDir || '').trim();
@@ -75,14 +86,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
     if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
 
-    if (chatTraceCard.current) chatTraceCard.current.hidden = !chatId();
-    if (chatTraceStatus.current) chatTraceStatus.current.textContent = chatId() ? '' : 'Open from a chat to edit trace.';
+    setTraceCardVisible(!!chatId());
+    if (chatTraceStatus.current) chatTraceStatus.current.textContent = '';
+    if (exportTraceStatus.current) exportTraceStatus.current.textContent = '';
     if (chatId()) {
       try {
         const cr = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(d));
         if (cr.status === 200 && cr.body && cr.body.chat) {
-          if (chatTraceToggle.current) chatTraceToggle.current.checked = cr.body.chat.trace === true;
-          if (chatTraceStatus.current) chatTraceStatus.current.textContent = cr.body.chat.trace ? 'trace on' : 'trace off';
+          const on = cr.body.chat.trace === true;
+          if (chatTraceToggle.current) {
+            chatTraceToggle.current.checked = on;
+            chatTraceToggle.current.setAttribute('aria-checked', on ? 'true' : 'false');
+          }
+          if (chatTraceStatus.current) chatTraceStatus.current.textContent = on ? 'trace on' : 'trace off';
           if (exportTraceBtn.current) exportTraceBtn.current.disabled = false;
         } else {
           if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'chat not found';
@@ -92,31 +108,26 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'failed to load chat';
         if (exportTraceBtn.current) exportTraceBtn.current.disabled = true;
       }
+    } else if (chatTraceStatus.current) {
+      chatTraceStatus.current.textContent = 'Open from a chat to edit trace.';
     }
 
-    // Legacy enable flags no longer hide base tools. Authorization mode is
-    // the sole execution gate; keep the controls checked for clarity.
-    if (shellToggle.current) {
-      shellToggle.current.checked = true;
-      shellToggle.current.disabled = true;
-    }
     if (shellStatus.current) shellStatus.current.textContent = '';
 
     try {
       const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
       const shell = authz.status === 200 && authz.body.tools && authz.body.tools.shell;
-      if (shellModeSel.current) shellModeSel.current.value = shell && shell.mode || 'ask';
+      const shellMode = (shell && shell.mode) || 'ask';
+      if (shellModeSel.current) shellModeSel.current.value = shellMode;
+      syncAllowlistVisibility(shellModeSel.current, shellAllowlistWrap.current);
       if (shellAllowlist.current) shellAllowlist.current.value = shell && Array.isArray(shell.allowlist) ? shell.allowlist.join('\n') : '';
       const file = authz.status === 200 && authz.body.tools && authz.body.tools.file;
-      if (fileModeSel.current) fileModeSel.current.value = file && file.mode || 'ask';
+      const fileMode = (file && file.mode) || 'ask';
+      if (fileModeSel.current) fileModeSel.current.value = fileMode;
+      syncAllowlistVisibility(fileModeSel.current, fileAllowlistWrap.current);
       if (fileAllowlist.current) fileAllowlist.current.value = file && Array.isArray(file.allowlist) ? file.allowlist.join('\n') : '';
     } catch { /* keep ask + empty allowlist */ }
 
-    // File tools toggle.
-    if (fileToggle.current) {
-      fileToggle.current.checked = true;
-      fileToggle.current.disabled = true;
-    }
     if (fileStatus.current) fileStatus.current.textContent = '';
 
     // MCP server count for the card summary.
@@ -205,31 +216,38 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
   async function onChatTraceChange() {
     if (!chatId() || !chatTraceToggle.current) return;
+    const want = !!chatTraceToggle.current.checked;
+    chatTraceToggle.current.setAttribute('aria-checked', want ? 'true' : 'false');
     if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'saving…';
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), trace: !!chatTraceToggle.current.checked })
+      body: JSON.stringify({ projectDir: dir(), trace: want })
     });
     if (r.status === 200) {
       const on = r.body && r.body.chat && r.body.chat.trace === true;
-      if (chatTraceToggle.current) chatTraceToggle.current.checked = on;
+      if (chatTraceToggle.current) {
+        chatTraceToggle.current.checked = on;
+        chatTraceToggle.current.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
       if (chatTraceStatus.current) chatTraceStatus.current.textContent = on ? 'trace on' : 'trace off';
     } else if (chatTraceStatus.current) {
       chatTraceStatus.current.textContent = 'HTTP ' + r.status;
+      chatTraceToggle.current.checked = !want;
+      chatTraceToggle.current.setAttribute('aria-checked', !want ? 'true' : 'false');
     }
   }
 
   async function exportTrace() {
     if (!chatId()) return;
-    if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'exporting trace…';
+    if (exportTraceStatus.current) exportTraceStatus.current.textContent = 'exporting trace…';
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '/trace/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: dir() })
     });
-    if (chatTraceStatus.current) {
-      chatTraceStatus.current.textContent = r.status === 200 ? ('exported: ' + r.body.path) : ('export failed: HTTP ' + r.status);
+    if (exportTraceStatus.current) {
+      exportTraceStatus.current.textContent = r.status === 200 ? ('exported: ' + r.body.path) : ('export failed: HTTP ' + r.status);
     }
   }
 
@@ -325,8 +343,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('p', { class: 'settings-project__lede' }, 'Saved in ', h('code', null, '.mouaif.json'), '. These choices override app defaults for this folder only.'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
-      h('p', { class: 'settings-project__intro' }, 'Use this page for project-specific behavior. Provider accounts, API keys, and app defaults stay in the main Settings pages.'),
-
       // ---- Project ----------------------------------------------------
       h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'Project defaults', h('span', { class: 'group__title-note' }, 'Overrides app defaults')),
@@ -335,7 +351,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt context size'),
               h('div', { class: 'settings-project__item-note' }, 'How much project context the model receives.'),
-              h('div', { ref: promptSizeStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, 'Inherits the app default until changed here')
+              h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Inherits the app default until changed here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
               h('option', { value: '' }, 'Inherit app default'),
@@ -344,16 +360,22 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('option', { value: 'extensive' }, 'Extensive')
             )
           ),
-          h('li', { ref: chatTraceCard, class: 'settings-project__item', hidden: !initialChatId },
-            h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
-              h('div', { class: 'settings-project__item-note' }, 'Write this chat to a project trace file.'),
-              h('div', { ref: chatTraceStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, '')
+          h('li', { class: 'settings-project__item settings-project__item--col', hidden: !traceCardVisible },
+            h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
+                h('div', { class: 'settings-project__item-note' }, 'Write this chat to a project trace file.'),
+                h('div', { ref: chatTraceStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
+              ),
+              h('label', { class: 'switch' },
+                h('input', { ref: chatTraceToggle, id: 'sp-chat-trace', type: 'checkbox', role: 'switch', 'aria-checked': 'false', onChange: onChatTraceChange }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+              )
             ),
-            h('div', { class: 'settings-project__actions' },
-              h('input', { ref: chatTraceToggle, class: 'checkbox', id: 'sp-chat-trace', type: 'checkbox', onChange: onChatTraceChange }),
+            h('div', { class: 'settings-project__item-actions' },
+              h('span', { ref: exportTraceStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }),
               h('button', { ref: exportTraceBtn, class: 'btn', type: 'button', onClick: exportTrace, disabled: true }, 'Export trace'),
-              h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteChat }, 'Delete chat')
+              h('button', { class: 'btn btn--danger btn--sm', type: 'button', onClick: deleteChat }, 'Delete chat')
             )
           )
         )
@@ -366,54 +388,50 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
               h('div', { class: 'settings-project__item-main' },
-                h('div', { class: 'settings-project__item-title' }, 'Shell commands'),
-                h('div', { class: 'settings-project__item-note' }, 'Controls whether the AI can run terminal commands in this folder.')
-              ),
-              h('span', { class: 'settings-project__pill' }, 'Available')
+                h('label', { class: 'settings-project__item-title', for: 'sp-shell-mode' }, 'Shell commands'),
+                h('div', { class: 'settings-project__item-note' }, 'The AI can run terminal commands in this folder.')
+              )
             ),
-            h('div', { class: 'settings-project__sub' }, 'Permission mode'),
-            h('label', { class: 'label', for: 'sp-shell-mode' }, 'When the AI requests shell access'),
-            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode' },
-              h('option', { value: 'off' }, 'Off — never run commands'),
+            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode', onChange: onShellModeChange },
               h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist matches run automatically; otherwise ask'),
-              h('option', { value: 'allow' }, 'Always allow')
+              h('option', { value: 'allowlist' }, 'Allowlist — trusted commands run, others ask'),
+              h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
+              h('option', { value: 'off' }, 'Off — requests fail immediately')
             ),
-            h('p', { class: 'settings-project__help' }, '“Ask every time” is the safest default. Use an allowlist for commands you already trust.'),
-            h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Allowed command patterns'),
-            h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command.'),
-            h('textarea', { ref: shellAllowlist, class: 'input', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: '^npm test$\n^git status$' }),
+            h('div', { ref: shellAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
+              h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Allowed command patterns'),
+              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command.'),
+              h('textarea', { ref: shellAllowlist, class: 'input settings-project__mono', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$` })
+            ),
             h('div', { class: 'settings-project__actions' },
               h('span', { ref: shellStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn', type: 'button', onClick: saveShellAuthorization }, 'Save shell permissions')
+              h('button', { class: 'btn btn--primary', type: 'button', onClick: saveShellAuthorization }, 'Save')
             ),
-            h('p', { class: 'settings-project__warning' }, 'Shell commands run with your user account. Only loosen access for projects you trust.')
+            h('p', { class: 'settings-project__warning' }, 'Commands run as your user account.')
           ),
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
               h('div', { class: 'settings-project__item-main' },
-                h('div', { class: 'settings-project__item-title' }, 'File tools'),
-                h('div', { class: 'settings-project__item-note' }, 'Controls whether the AI can read, search, and edit files in this folder.')
-              ),
-              h('span', { class: 'settings-project__pill' }, 'Available')
+                h('label', { class: 'settings-project__item-title', for: 'sp-file-mode' }, 'File tools'),
+                h('div', { class: 'settings-project__item-note' }, 'The AI can read, search, and edit files in this folder.')
+              )
             ),
-            h('div', { class: 'settings-project__sub' }, 'Permission mode'),
-            h('label', { class: 'label', for: 'sp-file-mode' }, 'When the AI requests file access'),
-            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode' },
-              h('option', { value: 'off' }, 'Off — never use file tools'),
+            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode', onChange: onFileModeChange },
               h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist matches run automatically; otherwise ask'),
-              h('option', { value: 'allow' }, 'Always allow')
+              h('option', { value: 'allowlist' }, 'Allowlist — trusted paths open, others ask'),
+              h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
+              h('option', { value: 'off' }, 'Off — requests fail immediately')
             ),
-            h('p', { class: 'settings-project__help' }, 'Use an allowlist for paths the AI may access without asking.'),
-            h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
-            h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path.'),
-            h('textarea', { ref: fileAllowlist, class: 'input', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: '^src/.*\\.js$\n^README\\.md$' }),
+            h('div', { ref: fileAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
+              h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
+              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path.'),
+              h('textarea', { ref: fileAllowlist, class: 'input settings-project__mono', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$` })
+            ),
             h('div', { class: 'settings-project__actions' },
               h('span', { ref: fileStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn', type: 'button', onClick: saveFileAuthorization }, 'Save file permissions')
+              h('button', { class: 'btn btn--primary', type: 'button', onClick: saveFileAuthorization }, 'Save')
             ),
-            h('p', { class: 'settings-project__warning' }, 'File edits still stay inside this project folder boundary.')
+            h('p', { class: 'settings-project__warning' }, 'Edits stay inside this project folder.')
           )
         )
       ),
