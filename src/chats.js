@@ -172,11 +172,6 @@ function updateChat(projectDir, chatId, patch) {
   const idx = Array.isArray(project.chats) ? project.chats.findIndex(c => c && c.id === chatId) : -1;
   if (idx < 0) return null;
   const current = normalizeChat(project.chats[idx]);
-  // The `tools` field has load-bearing shape semantics (see
-  // normalizeChat): an explicit `[]` means "no tools", `undefined`
-  // or `null` means "all tools". We must preserve that distinction,
-  // so we snapshot the persisted value before the generic
-  // normalizeChat overwrites it.
   const previousTools = current.tools;
   const merged = Object.assign({}, current, normalizeChat(Object.assign({}, current, patch)));
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'title')) {

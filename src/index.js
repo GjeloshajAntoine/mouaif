@@ -824,8 +824,17 @@ async function handleChats(req, res, parsed) {
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    // Strip server-owned fields from the client patch. The generic
+    // merge in updateChat absorbs every key, so without this a PATCH
+    // could rewrite the chat's id, createdAt, or lastOpenedAt.
+    // Internal callers (touchChat, titleChatFromPrompt) set those
+    // fields intentionally and don't come through here.
+    const safeBody = Object.assign({}, body || {});
+    delete safeBody.id;
+    delete safeBody.createdAt;
+    delete safeBody.lastOpenedAt;
     try {
-      const chat = chats.updateChat(dir, id, body || {});
+      const chat = chats.updateChat(dir, id, safeBody);
       if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
       return sendJSON(res, 200, { chat });
     } catch (e) {
@@ -1098,10 +1107,13 @@ async function handleChatStream(req, res, chatId) {
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
-  // Mark the chat as running for the lifetime of this request so a
-  // reloaded client re-enters its busy state. Cleared at every exit
-  // below (normal end + upstream-error end).
-  runningChats.add(runningKey(projectDir, chatId));
+  // Reject a second concurrent stream on the same chat. Two in-flight
+  // runs interleave appendMessage read-modify-writes and both append
+  // assistant messages, corrupting transcript order.
+  const runKey = runningKey(projectDir, chatId);
+  if (runningChats.has(runKey)) {
+    return sendJSON(res, 409, { error: 'A response is already streaming for this chat', code: 'EALREADY_RUNNING', id: chatId });
+  }
 
   // Resolve the project model and hydrate it with its app-level provider
   // connection (credentials, base URL, and auth account).
@@ -1123,6 +1135,13 @@ async function handleChatStream(req, res, chatId) {
     }
   } catch { /* non-fatal */ }
   try { chats.touchChat(projectDir, chatId); } catch { /* non-fatal */ }
+
+  // Mark the chat as running for the lifetime of the SSE response so a
+  // reloaded client re-enters its busy state and a second stream is
+  // rejected (above). Registered only after every failable setup step
+  // (model resolution, message append) so an early 4xx cannot leak the
+  // marker; cleared at every exit below (normal, error, and throw).
+  runningChats.add(runKey);
 
   // Open SSE.
   res.writeHead(200, {
@@ -1375,7 +1394,7 @@ async function handleChatStream(req, res, chatId) {
   } catch (streamErr) {
     // A throw out of the streaming layer must still clear the running
     // marker or the chat would look busy forever after a reload.
-    runningChats.delete(runningKey(projectDir, chatId));
+    runningChats.delete(runKey);
     if (traceStream) trace.close(traceStream);
     try { emit('error', { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' }); } catch { /* socket closed */ }
     res.end();
@@ -1386,7 +1405,7 @@ async function handleChatStream(req, res, chatId) {
     emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
   }
   if (traceStream) trace.close(traceStream);
-  runningChats.delete(runningKey(projectDir, chatId));
+  runningChats.delete(runKey);
   res.end();
 }
 

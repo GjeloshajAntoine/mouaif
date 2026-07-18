@@ -191,7 +191,14 @@ function readProjectConfig(projectDir) {
 }
 
 function writeProjectConfig(projectDir, mcp) {
-  writeMcpFile(projectDir, mcp || { servers: [] });
+  // Merge into the existing file instead of replacing it: .mcp.json also
+  // carries the authorization block written by tools/authorization.js
+  // (setAuthorization), and a blanket overwrite would silently drop the
+  // user's MCP allow/allowlist policy on every server CRUD or toolCache
+  // persist. A corrupt or missing file falls back to the incoming object.
+  let base = {};
+  try { base = readMcpFile(projectDir) || {}; } catch { /* replace corrupt file */ }
+  writeMcpFile(projectDir, Object.assign({}, base, mcp || { servers: [] }));
 }
 
 function normalizeServerEntry(raw, usedSlugs) {
