@@ -57,7 +57,6 @@ export function ChatView(props) {
   const chatMeta = useRef(null);
   const usageSummaryRef = useRef(null);
   const providerCreditRef = useRef(null);
-  const traceToggle = useRef(null);
   // The creation-time setup card lives in the TRANSCRIPT (above the
   // system message) instead of the head, so the prompt-size choice is
   // part of the message area and not a permanent fixture of the top
@@ -66,7 +65,6 @@ export function ChatView(props) {
   // message is sent. The ref tracks the element so setPromptSize
   // updates the active-button highlight in place without rebuilding.
   const setupCardRef = useRef(null);
-  const promptSelect = useRef(null);
   const transcript = useRef(null);
   // Model picker (replaces the old provider + model <select>s +
   // refresh icon). The trigger button shows the current model id
@@ -263,7 +261,6 @@ export function ChatView(props) {
     updateMetaLine();
     updateUsageSummary();
     refreshProviderCredit();
-    if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     updateModelTrigger();
 
     // Auto-fetch the live catalog before the picker renders, so a
@@ -291,8 +288,6 @@ export function ChatView(props) {
     }
 
     renderModelPicker();
-
-    if (promptSelect.current) populatePromptSelect(promptsRef.current, c.promptId || '');
 
     renderTranscript();
     updateSetupVisibility();
@@ -601,22 +596,6 @@ export function ChatView(props) {
     updateModelTrigger();
     refreshProviderCredit();
     await updateChat({ providerId, modelId });
-  }
-
-  function populatePromptSelect(list, currentId) {
-    if (!promptSelect.current) return;
-    promptSelect.current.innerHTML = '';
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '(none)';
-    promptSelect.current.appendChild(blank);
-    for (const p of list) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = (p.title || p.id) + ' (' + p.role + ')';
-      promptSelect.current.appendChild(opt);
-    }
-    promptSelect.current.value = (currentId && list.some(p => p.id === currentId)) ? currentId : '';
   }
 
   // Render (or refresh) the system prompt as the FIRST message of the
@@ -1565,22 +1544,6 @@ export function ChatView(props) {
     });
   }
 
-  function onTraceChange() {
-    if (!traceToggle.current) return;
-    updateChat({ trace: !!traceToggle.current.checked });
-  }
-
-  async function exportTrace() {
-    setChatStatus('exporting trace\u2026', 'busy');
-    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/trace/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir })
-    });
-    if (r.status === 200) setChatStatus('trace exported: ' + r.body.path, 'success');
-    else setChatStatus('trace export failed: HTTP ' + r.status, 'error');
-  }
-
   // Shared setter for the in-transcript setup control. The prompt
   // size is chosen once, while the chat is still empty; the control
   // is not a permanent fixture (see updateSetupVisibility below).
@@ -1634,12 +1597,6 @@ export function ChatView(props) {
     const toolsHost = toolsCardRef.current;
     if (toolsHost && toolsHost.parentNode) toolsHost.parentNode.removeChild(toolsHost);
     toolsCardRef.current = null;
-  }
-
-  function onPromptChange() {
-    if (!promptSelect.current) return;
-    const v = promptSelect.current.value;
-    updateChat({ promptId: v || null }).then(() => refreshSystemPrompt());
   }
 
   function deleteThisChat() {
@@ -1909,9 +1866,6 @@ export function ChatView(props) {
     streamingRef.current = false;
   }
 
-  const settingsPopRef = useRef(null);
-  const settingsBtnRef = useRef(null);
-
   function autoresize() {
     const el = promptInput.current;
     if (!el) return;
@@ -1924,28 +1878,8 @@ export function ChatView(props) {
     el.style.height = next + 'px';
   }
 
-  function toggleSettings() {
-    const pop = settingsPopRef.current;
-    const btn = settingsBtnRef.current;
-    if (!pop || !btn) return;
-    const open = pop.hidden;
-    pop.hidden = !open;
-    btn.setAttribute('aria-expanded', String(open));
-  }
-
   useEffect(() => {
-    function closeSettings() { if (settingsPopRef.current && !settingsPopRef.current.hidden) { settingsPopRef.current.hidden = true; if (settingsBtnRef.current) settingsBtnRef.current.setAttribute('aria-expanded', 'false'); } }
     function onDocClick(e) {
-      // The two popovers are independent \u2014 close whichever one is
-      // open and didn't get the click. (Both can be closed in the
-      // same tick; they never overlap visually because the model
-      // picker is a near-full-screen sheet and the settings pop is
-      // a small anchored bubble.)
-      const settingsPop = settingsPopRef.current;
-      const settingsBtn = settingsBtnRef.current;
-      if (settingsPop && !settingsPop.hidden) {
-        if (!(settingsPop.contains(e.target) || (settingsBtn && settingsBtn.contains(e.target)))) closeSettings();
-      }
       const pickerPop = modelPickerPopRef.current;
       const pickerTrig = modelPickerTriggerRef.current;
       if (pickerPop && !pickerPop.hidden) {
@@ -1960,7 +1894,6 @@ export function ChatView(props) {
         // popovers.
         if (fileEditorOpen[0]) { setFileEditorOpen(false); return; }
         if (modelPickerPopRef.current && !modelPickerPopRef.current.hidden) closeModelPicker();
-        if (settingsPopRef.current && !settingsPopRef.current.hidden) closeSettings();
       }
     }
     document.addEventListener('click', onDocClick);
@@ -2039,23 +1972,10 @@ export function ChatView(props) {
           h('div', { ref: modelPickerListRef, class: 'chat-view__picker-list' })
         )
       ),
-      h('button', { ref: settingsBtnRef, class: 'chat-view__iconbtn', type: 'button', onClick: toggleSettings, 'aria-label': 'Chat settings', 'aria-expanded': 'false', title: 'Settings' },
+      h('a', { class: 'chat-view__iconbtn', href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''), 'aria-label': 'Project settings', title: 'Settings' },
         h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
           h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })
         )
-      ),
-      h('button', { class: 'chat-view__iconbtn', type: 'button', onClick: renameChat, 'aria-label': 'Rename chat', title: 'Rename' }, '\u2711'),
-      h('button', { class: 'chat-view__iconbtn chat-view__iconbtn--danger', type: 'button', onClick: deleteThisChat, 'aria-label': 'Delete chat', title: 'Delete' }, '\u00d7'),
-      h('div', { ref: settingsPopRef, class: 'chat-view__settings-pop', hidden: true, role: 'dialog', 'aria-label': 'Chat settings' },
-        h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatPrompt' },
-          h('span', { class: 'label' }, 'Prompt'),
-          h('select', { ref: promptSelect, class: 'input', id: 'chatPrompt', onChange: onPromptChange })
-        ),
-        h('label', { class: 'row row--inline chat-view__settings-row', for: 'chatTrace' },
-          h('input', { ref: traceToggle, class: 'checkbox', id: 'chatTrace', type: 'checkbox', onChange: onTraceChange }),
-          h('span', { class: 'label' }, 'Trace to file')
-        ),
-        h('button', { class: 'btn', type: 'button', onClick: exportTrace }, 'Export trace')
       )
     ),
     // The setup card (prompt-size switch + tool-declaration preview)

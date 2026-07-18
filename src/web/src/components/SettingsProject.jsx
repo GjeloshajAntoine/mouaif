@@ -9,14 +9,19 @@
 // file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
+import { fetchJson, setStatus, setActiveProject, activeProject, projectsReload } from '../api.js';
+import { nav } from '../router.js';
 
-export function SettingsProjectView({ projectDir: initialDir } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId } = {}) {
   const statusEl = useRef(null);
   const pathEl = useRef(null);
   // Structured controls
   const promptSizeSel = useRef(null);
   const promptSizeStatus = useRef(null);
+  const chatTraceCard = useRef(null);
+  const chatTraceToggle = useRef(null);
+  const chatTraceStatus = useRef(null);
+  const exportTraceBtn = useRef(null);
   const shellToggle = useRef(null);
   const shellStatus = useRef(null);
   const shellModeSel = useRef(null);
@@ -38,8 +43,10 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
   let currentProject = {};
   const loadedDir = useRef('');
+  const loadedChatId = useRef((initialChatId || '').trim());
 
   function dir() { return loadedDir.current; }
+  function chatId() { return loadedChatId.current; }
 
   async function load(seedDir) {
     const d = (seedDir || '').trim();
@@ -67,6 +74,25 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
       promptSizeSel.current.disabled = false;
     }
     if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
+
+    if (chatTraceCard.current) chatTraceCard.current.hidden = !chatId();
+    if (chatTraceStatus.current) chatTraceStatus.current.textContent = chatId() ? '' : 'Open from a chat to edit trace.';
+    if (chatId()) {
+      try {
+        const cr = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(d));
+        if (cr.status === 200 && cr.body && cr.body.chat) {
+          if (chatTraceToggle.current) chatTraceToggle.current.checked = cr.body.chat.trace === true;
+          if (chatTraceStatus.current) chatTraceStatus.current.textContent = cr.body.chat.trace ? 'trace on' : 'trace off';
+          if (exportTraceBtn.current) exportTraceBtn.current.disabled = false;
+        } else {
+          if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'chat not found';
+          if (exportTraceBtn.current) exportTraceBtn.current.disabled = true;
+        }
+      } catch {
+        if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'failed to load chat';
+        if (exportTraceBtn.current) exportTraceBtn.current.disabled = true;
+      }
+    }
 
     // Legacy enable flags no longer hide base tools. Authorization mode is
     // the sole execution gate; keep the controls checked for clarity.
@@ -177,6 +203,49 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
     }
   }
 
+  async function onChatTraceChange() {
+    if (!chatId() || !chatTraceToggle.current) return;
+    if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'saving…';
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), trace: !!chatTraceToggle.current.checked })
+    });
+    if (r.status === 200) {
+      const on = r.body && r.body.chat && r.body.chat.trace === true;
+      if (chatTraceToggle.current) chatTraceToggle.current.checked = on;
+      if (chatTraceStatus.current) chatTraceStatus.current.textContent = on ? 'trace on' : 'trace off';
+    } else if (chatTraceStatus.current) {
+      chatTraceStatus.current.textContent = 'HTTP ' + r.status;
+    }
+  }
+
+  async function exportTrace() {
+    if (!chatId()) return;
+    if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'exporting trace…';
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '/trace/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir() })
+    });
+    if (chatTraceStatus.current) {
+      chatTraceStatus.current.textContent = r.status === 200 ? ('exported: ' + r.body.path) : ('export failed: HTTP ' + r.status);
+    }
+  }
+
+  async function deleteChat() {
+    if (!chatId()) return;
+    if (!confirm('Delete this chat? Its messages will be removed; any exported trace file will be kept.')) return;
+    if (chatTraceStatus.current) chatTraceStatus.current.textContent = 'deleting chat…';
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
+    if (r.status === 200) {
+      projectsReload.value++;
+      nav('projects');
+    } else if (chatTraceStatus.current) {
+      chatTraceStatus.current.textContent = 'delete failed: HTTP ' + r.status;
+    }
+  }
+
   async function saveShellAuthorization() {
     const mode = shellModeSel.current ? shellModeSel.current.value : 'ask';
     const allowlist = shellAllowlist.current
@@ -246,7 +315,7 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
+      h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Project settings')
     ),
     h('section', { class: 'settings-project' },
@@ -273,6 +342,18 @@ export function SettingsProjectView({ projectDir: initialDir } = {}) {
               h('option', { value: 'very-small' }, 'Very small'),
               h('option', { value: 'average' }, 'Average (recommended)'),
               h('option', { value: 'extensive' }, 'Extensive')
+            )
+          ),
+          h('li', { ref: chatTraceCard, class: 'settings-project__item', hidden: !initialChatId },
+            h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
+              h('div', { class: 'settings-project__item-note' }, 'Write this chat to a project trace file.'),
+              h('div', { ref: chatTraceStatus, class: 'settings-project__item-note', 'aria-live': 'polite' }, '')
+            ),
+            h('div', { class: 'settings-project__actions' },
+              h('input', { ref: chatTraceToggle, class: 'checkbox', id: 'sp-chat-trace', type: 'checkbox', onChange: onChatTraceChange }),
+              h('button', { ref: exportTraceBtn, class: 'btn', type: 'button', onClick: exportTrace, disabled: true }, 'Export trace'),
+              h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteChat }, 'Delete chat')
             )
           )
         )

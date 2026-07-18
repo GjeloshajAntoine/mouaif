@@ -1125,6 +1125,7 @@ textarea#projectEditor {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-decoration: none;
   transition: background 80ms ease, color 80ms ease;
 }
 .chat-view__iconbtn:hover { background: var(--surface-2); color: var(--fg); }

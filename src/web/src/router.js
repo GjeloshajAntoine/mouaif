@@ -19,7 +19,7 @@ function parseHash() {
   if (h === 'settings/project' || h.startsWith('settings/project?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsProject', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsProject', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
   }
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
