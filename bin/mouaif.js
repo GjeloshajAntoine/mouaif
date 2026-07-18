@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 const { program } = require('commander');
 const { createServer, DEFAULT_PORT } = require('../src/index.js');
 
 const { name, version, description } = require('../package.json');
+
+const WATCH_CHILD_ENV = 'MOUAIF_WATCH_CHILD';
+const WATCH_EXTS = new Set(['.js', '.jsx', '.json', '.css', '.html']);
 
 function closeServer(server) {
   return new Promise((resolve, reject) => {
@@ -13,6 +19,83 @@ function closeServer(server) {
       resolve();
     });
   });
+}
+
+function collectWatchFiles(dir, out = []) {
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch { return out; }
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist' || entry.name === 'build') continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) collectWatchFiles(full, out);
+    else if (WATCH_EXTS.has(path.extname(entry.name))) out.push(full);
+  }
+  return out;
+}
+
+function runWatchSupervisor(options) {
+  const port = String(parseInt(options.port, 10));
+  const host = String(options.host || '127.0.0.1');
+  const binPath = path.join(__dirname, 'mouaif.js');
+  const watchRoots = [path.join(__dirname), path.join(__dirname, '..', 'src')];
+  const watched = new Set();
+  let child = null;
+  let stopping = false;
+  let pendingRestart = false;
+  let debounce = null;
+
+  function startChild() {
+    child = spawn(process.execPath, [binPath, 'serve', '--port', port, '--host', host], {
+      stdio: 'inherit',
+      env: { ...process.env, [WATCH_CHILD_ENV]: '1' }
+    });
+    child.on('exit', (code, signal) => {
+      child = null;
+      if (stopping) return;
+      if (pendingRestart || code === 0) {
+        pendingRestart = false;
+        startChild();
+        return;
+      }
+      console.error(`[mouaif] server stopped (${signal || code}); waiting for changes...`);
+    });
+  }
+
+  function restartChild(file) {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      console.log(`[mouaif] change detected: ${path.relative(process.cwd(), file)}; restarting...`);
+      pendingRestart = true;
+      if (child) child.kill('SIGTERM');
+      else startChild();
+    }, 100);
+  }
+
+  function refreshWatchFiles() {
+    for (const root of watchRoots) {
+      for (const file of collectWatchFiles(root)) {
+        if (watched.has(file)) continue;
+        watched.add(file);
+        fs.watchFile(file, { interval: 500 }, (cur, prev) => {
+          if (cur.mtimeMs !== prev.mtimeMs || cur.size !== prev.size) restartChild(file);
+        });
+      }
+    }
+  }
+
+  function stop() {
+    stopping = true;
+    for (const file of watched) fs.unwatchFile(file);
+    if (child) child.kill('SIGTERM');
+  }
+
+  console.log('[mouaif] watch mode enabled');
+  refreshWatchFiles();
+  setInterval(refreshWatchFiles, 2000);
+  startChild();
+  process.on('SIGINT', () => { stop(); process.exit(0); });
+  process.on('SIGTERM', () => { stop(); process.exit(0); });
 }
 
 program
@@ -25,7 +108,12 @@ program
   .description('Start the HTTP server')
   .option('-p, --port <port>', 'Port to listen on', DEFAULT_PORT)
   .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
+  .option('-w, --watch', 'Restart the server when local source files change')
   .action((options) => {
+    if (options.watch && process.env[WATCH_CHILD_ENV] !== '1') {
+      return runWatchSupervisor(options);
+    }
+
     const port = parseInt(options.port, 10);
     let server;
     const lifecycle = {
@@ -54,10 +142,12 @@ program
     start();
 
     // Graceful shutdown
-    process.on('SIGINT', () => {
+    function shutdown() {
       console.log('\n⏹  Shutting down...');
       closeServer(server).then(() => process.exit(0));
-    });
+    }
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   });
 
 program

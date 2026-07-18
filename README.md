@@ -27,9 +27,10 @@ Open `http://127.0.0.1:5732/web/` on your phone (or any browser, mobile-first). 
 ## CLI commands
 
 ```bash
-mouaif serve         # start the HTTP server (default port 5732)
-mouaif serve -p 9000 # custom port
-mouaif info          # show package version + default port
+mouaif serve               # start the HTTP server (default port 5732)
+mouaif serve --watch       # restart when local source files change
+mouaif serve -p 9000       # custom port
+mouaif info                # show package version + default port
 ```
 
 The server is a single Node process. CORS is permissive so the same `127.0.0.1:5732` origin can serve both the API and the mobile UI without preflight.

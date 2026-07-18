@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "start": "node bin/mouaif.js",
-    "dev": "node --watch bin/mouaif.js",
+    "dev": "node bin/mouaif.js serve --watch",
     "dev:web": "vite --config src/web/vite.config.js",
     "build:web": "vite build --config src/web/vite.config.js",
     "postinstall": "node scripts/patch-zimmerframe.js",
