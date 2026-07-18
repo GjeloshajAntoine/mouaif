@@ -1048,6 +1048,19 @@ async function streamChat(opts) {
     }
   } catch { /* mcp module not loaded or project dir invalid; fall through without MCP tools */ }
 
+  // Per-chat tool filter. opts.enabledTools === null / undefined:
+  //   legacy behavior — every collected spec is advertised. An array
+  //   (even empty): restrict to those names exactly. Unknown names
+  //   are dropped silently so a stale chat (a tool that was renamed
+  //   or whose MCP server was stopped) does not fail the request.
+  //   The array is captured here once — the chat UI persists the
+  //   same set on the chat record, so we don't need to re-read it.
+  let visibleToolSpecs = toolSpecs;
+  if (opts && Array.isArray(opts.enabledTools)) {
+    const allow = new Set(opts.enabledTools.map((n) => String(n)));
+    visibleToolSpecs = toolSpecs.filter((s) => s && s.function && allow.has(s.function.name));
+  }
+
   // Shrink the tool declaration according to the active prompt-size
   // profile (decisions §4). For very-small, the first request advertises
   // discover_tool only; its description lists tool names. When the model
@@ -1069,12 +1082,12 @@ async function streamChat(opts) {
   const FINAL_ANSWER_RETRIES = 2;
 
   while (true) {
-    let effectiveToolSpecs = toolSpecs;
+    let effectiveToolSpecs = visibleToolSpecs;
     try {
       effectiveToolSpecs = promptProfilesMod
-        ? promptProfilesMod.reduceToolSpecs(toolSpecs, opts && opts.promptSize, { discoveredToolNames })
-        : toolSpecs;
-    } catch { /* non-fatal; fall back to the full specs */ }
+        ? promptProfilesMod.reduceToolSpecs(visibleToolSpecs, opts && opts.promptSize, { discoveredToolNames })
+        : visibleToolSpecs;
+    } catch { /* non-fatal; fall back to the per-chat filtered set */ }
     const result = await runUpstreamTurn(convo, effectiveToolSpecs);
     if (!result.ok) return { ok: false, error: result.error, usage };
 

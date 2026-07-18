@@ -116,6 +116,23 @@ export function ChatView(props) {
   // message in the transcript, so the user sees what the model is told
   // without the prompt-size picker being a permanent fixture.
   const systemPromptRef = useRef(null);
+  // toolsRef — the per-project tool catalog from /api/tools/list, plus
+  // the chat's current `tools` filter. The catalog is the source of
+  // truth for what can be toggled; the filter is the user's choice and
+  // is persisted on the chat record (see updateChat). The toggle row
+  // sits below the system-prompt message in the setup card area, only
+  // while the chat is empty — after the first message the choice is
+  // fixed for the life of the chat (matching the prompt-size policy).
+  const toolsRef = useRef({ catalog: [], filter: null });
+  // toolsCardRef — the per-chat toggle row mounted in the transcript
+  // when the chat is empty. setToolTogglesRender / updateToolToggles
+  // rebuild it in place; toggleTool mutates one chip without a full
+  // rebuild so the visual feedback is instant.
+  const toolsCardRef = useRef(null);
+  // MCP server config shown below the per-tool toggles on a brand-new
+  // chat. These switches enable/disable the configured server; running
+  // lifecycle still lives in Settings → MCP.
+  const mcpServersRef = useRef([]);
 
   // Re-fetch the resolved system prompt (after a prompt-size or custom
   // prompt change) and re-render the first message.
@@ -178,13 +195,15 @@ export function ChatView(props) {
 
   async function load() {
     if (!projectDir || !chatId) return;
-    const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys] = await Promise.all([
+    const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
       loadModels(projectDir),
       fetchJson('/api/ai/models/providers'),
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
       fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir))
+      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
     ]);
     if (rChat.status !== 200) { statusEl.current.textContent = 'chat not found'; renderModelPicker(); return; }
     const c = rChat.body.chat;
@@ -205,6 +224,14 @@ export function ChatView(props) {
     pickerFilterRef.current = { q: '', provider: 'all' };
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
     systemPromptRef.current = rSys.status === 200 ? rSys.body : null;
+    // Tool catalog (native + MCP) + the chat's current filter. The
+    // server returns the catalog even when empty so the toggle row
+    // can show a "no tools" placeholder instead of disappearing.
+    toolsRef.current = {
+      catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
+      filter: Array.isArray(c.tools) ? c.tools.slice() : null
+    };
+    mcpServersRef.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
 
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
@@ -603,7 +630,231 @@ export function ChatView(props) {
     }
   }
 
-  // Build (or rebuild) the creation-time setup control. The prompt-size
+  // Build / rebuild the per-chat tool toggle card. Sits below the
+  // system-prompt message and above the empty-state hint, only
+  // while the chat has no messages yet (creation-time setup, same
+  // lifecycle as the prompt-size card). One chip per catalog entry;
+  // the chip's pressed state mirrors toolsRef.filter (null = all
+  // enabled, the per-chat array is the explicit selection). A
+  // short helper line tells the user that the choice is locked
+  // once they send the first message.
+  //
+  // The card is built imperatively (not as Preact JSX) because
+  // the rest of the transcript is built that way; mixing two
+  // rendering strategies inside the same scroll region would
+  // double the maintenance cost for very little benefit. See the
+  // Preact-on-the-head / DOM-on-the-transcript note near the top
+  // of renderTranscript.
+  function buildToolsCard() {
+    const t = toolsRef.current || { catalog: [], filter: null };
+    const card = document.createElement('div');
+    card.className = 'chat-view__tools-card';
+    card.dataset.toolsCard = '1';
+
+    const head = document.createElement('div');
+    head.className = 'chat-view__tools-card-head';
+    const title = document.createElement('span');
+    title.className = 'chat-view__tools-card-title';
+    title.textContent = 'Tools available to the model';
+    const note = document.createElement('span');
+    note.className = 'chat-view__tools-card-note';
+    note.textContent = (t.filter == null)
+      ? 'tap to disable — locked after first message'
+      : 'locked after first message';
+    head.appendChild(title); head.appendChild(note);
+    card.appendChild(head);
+
+    if (!t.catalog.length) {
+      const empty = document.createElement('div');
+      empty.className = 'chat-view__tools-empty';
+      empty.textContent = 'No tools available. Add an MCP server in Settings \u2192 MCP to expose its tools here.';
+      card.appendChild(empty);
+      return card;
+    }
+
+    const chips = document.createElement('div');
+    chips.className = 'chat-view__tools-chips';
+    for (const tool of t.catalog) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chat-view__tools-chip';
+      chip.dataset.toolName = tool.name;
+      // Effective state: filter === null means "all enabled"
+      // (legacy default); an array means "exactly these enabled".
+      // The chip is on when either rule says it is.
+      const enabled = (t.filter == null) || t.filter.indexOf(tool.name) >= 0;
+      if (enabled) chip.classList.add('is-on');
+      chip.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+      chip.title = tool.description || tool.name;
+      const label = document.createElement('span');
+      label.className = 'chat-view__tools-chip-label';
+      label.textContent = tool.name;
+      chip.appendChild(label);
+      if (tool.kind === 'mcp' && tool.source) {
+        const sub = document.createElement('span');
+        sub.className = 'chat-view__tools-chip-sub';
+        sub.textContent = tool.source;
+        chip.appendChild(sub);
+      }
+      chip.addEventListener('click', () => toggleTool(tool.name, !enabled));
+      chips.appendChild(chip);
+    }
+    card.appendChild(chips);
+
+    const mcp = buildMcpServerToggles();
+    if (mcp) card.appendChild(mcp);
+    return card;
+  }
+
+  // Build the MCP enable/disable switches shown under the tool list
+  // on a new chat. These update the project MCP server config; the
+  // user can still start/stop or edit servers from Settings → MCP.
+  function buildMcpServerToggles() {
+    const servers = (mcpServersRef.current || []).filter((s) => s && s.id);
+    if (!servers.length) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-view__mcp-toggles';
+    const head = document.createElement('div');
+    head.className = 'chat-view__mcp-toggles-head';
+    head.textContent = 'MCP servers';
+    wrap.appendChild(head);
+    for (const s of servers) {
+      const label = document.createElement('label');
+      label.className = 'chat-view__mcp-toggle';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = s.enabled === true;
+      input.setAttribute('aria-label', (s.name || s.id) + ' enabled');
+      const main = document.createElement('span');
+      main.className = 'chat-view__mcp-toggle-main';
+      const name = document.createElement('span');
+      name.className = 'chat-view__mcp-toggle-name';
+      name.textContent = s.name || s.id;
+      const meta = document.createElement('span');
+      meta.className = 'chat-view__mcp-toggle-meta';
+      const status = s.status || 'stopped';
+      const tools = Array.isArray(s.tools) ? s.tools.length : 0;
+      meta.textContent = status + ' · ' + tools + ' tool' + (tools === 1 ? '' : 's');
+      main.appendChild(name); main.appendChild(meta);
+      input.addEventListener('change', () => toggleMcpServer(s.id, input.checked));
+      label.appendChild(input); label.appendChild(main);
+      wrap.appendChild(label);
+    }
+    return wrap;
+  }
+
+  // toggleMcpServer(id, enabled) — quick project-level MCP enable
+  // switch from the new-chat setup card. PATCH stops any running
+  // session when the server config changes; refresh the catalog after
+  // so the tool chips immediately reflect enabled/ready MCP tools.
+  async function toggleMcpServer(id, enabled) {
+    if (!id || !projectDir) return;
+    const servers = mcpServersRef.current || [];
+    const idx = servers.findIndex((s) => s && s.id === id);
+    if (idx >= 0) {
+      const next = servers.slice();
+      next[idx] = Object.assign({}, next[idx], { enabled });
+      mcpServersRef.current = next;
+      updateToolsCard();
+    }
+    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, enabled })
+    });
+    if (r.status !== 200) {
+      setChatStatus('MCP update failed: HTTP ' + r.status, 'error');
+      return;
+    }
+    const rr = await Promise.all([
+      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
+    ]);
+    if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) mcpServersRef.current = rr[0].body.servers;
+    if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
+      toolsRef.current = Object.assign({}, toolsRef.current || {}, { catalog: rr[1].body.tools });
+    }
+    updateToolsCard();
+    setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
+  }
+
+  // Insert the tools card into the transcript in the right slot.
+  // Called from renderTranscript for brand-new chats, and from
+  // toggleTool after a chip is clicked (so the active-state
+  // highlight updates in place without a full rebuild).
+  function mountToolsCard() {
+    if (!transcript.current) return;
+    const existing = transcript.current.querySelector('[data-tools-card="1"]');
+    if (existing) existing.remove();
+    const card = buildToolsCard();
+    toolsCardRef.current = card;
+    // Insert AFTER the system-prompt message so the visual order is:
+    //   [setup card] [system prompt] [tools card] [empty state]
+    // The user asked for the toggles "below the system prompt".
+    const sysMsg = transcript.current.querySelector('[data-sys-prompt="1"]');
+    const empty = transcript.current.querySelector('.chat-view__empty');
+    if (sysMsg && sysMsg.parentNode === transcript.current) {
+      transcript.current.insertBefore(card, sysMsg.nextSibling);
+    } else if (empty && empty.parentNode === transcript.current) {
+      transcript.current.insertBefore(card, empty);
+    } else {
+      transcript.current.appendChild(card);
+    }
+  }
+
+  // Re-render the tools card in place after a chip toggle. Faster
+  // than calling renderTranscript (no need to re-fetch messages,
+  // re-render the empty state, etc.) and avoids a visible flash
+  // when a chip flips its pressed state.
+  function updateToolsCard() {
+    if (!toolsCardRef.current || !toolsCardRef.current.parentNode) return;
+    const fresh = buildToolsCard();
+    toolsCardRef.current.parentNode.replaceChild(fresh, toolsCardRef.current);
+    toolsCardRef.current = fresh;
+  }
+
+  // toggleTool(name, next) — flip one chip and persist the new
+  // filter to the chat. The server is the source of truth for
+  // which tools are advertised; the PATCH response carries the
+  // new chat record, so we sync chatRef.current in place. The
+  // local toolsRef.filter mirrors it so a subsequent rebuild
+  // (after re-opening the chat) reads the same value.
+  //
+  // Filter semantics: an empty array and `null` are not the same
+  // thing. `null` means "all available" (no user choice yet, or
+  // the user hit Reset). `[]` means "user explicitly chose no
+  // tools". The first time the user disables a tool we transition
+  // from `null` to an explicit array; the next time they re-enable
+  // every chip we go back to `null` so the chat record does not
+  // grow stale as new tools are added to the catalog.
+  async function toggleTool(name, next) {
+    const cur = toolsRef.current || { catalog: [], filter: null };
+    const catalog = cur.catalog || [];
+    if (!catalog.find((t) => t && t.name === name)) return;
+    const allNames = catalog.map((t) => t.name);
+    let nextFilter;
+    if (cur.filter == null) {
+      // First edit: snapshot the implicit "all" set, then apply
+      // the toggle. The full set minus the one the user just
+      // turned off.
+      nextFilter = allNames.filter((n) => n !== name);
+      if (next) nextFilter = allNames.slice();
+    } else {
+      const set = new Set(cur.filter);
+      if (next) set.add(name); else set.delete(name);
+      // If the explicit set covers every catalog entry, prefer
+      // `null` so the filter does not pin a chat to a stale
+      // catalog snapshot. Same idea when the set is empty — keep
+      // it as `[]` so "no tools" round-trips.
+      if (set.size === catalog.length) nextFilter = null;
+      else nextFilter = Array.from(set);
+    }
+    toolsRef.current = { catalog, filter: nextFilter };
+    updateToolsCard();
+    await updateChat({ tools: nextFilter == null ? null : nextFilter });
+    // updateChat already syncs chatRef.current from the server
+    // response, so the persisted value matches the local mirror.
+  }  // Build (or rebuild) the creation-time setup control. The prompt-size
   // choice is a single <select> dropdown — no title, no description,
   // no tool preview. The control lives in the transcript (the message
   // area), above the system-prompt message, and is the first thing the
@@ -658,6 +909,12 @@ export function ChatView(props) {
       empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
       transcript.current.appendChild(empty);
       renderSystemPromptMessage();
+      // Per-chat tool toggles (decisions: chat.tools). Mounted only
+      // while the chat is empty, so the user picks the tool surface
+      // before the first message. updateSetupVisibility removes the
+      // card on the first send — same lifecycle as the prompt-size
+      // setup card above.
+      mountToolsCard();
       return;
     }
     renderSystemPromptMessage();
@@ -1103,6 +1360,14 @@ export function ChatView(props) {
     }
     if (host && host.parentNode) host.parentNode.removeChild(host);
     setupCardRef.current = null;
+    // The per-chat tool toggles share the same lifecycle: visible
+    // only while the chat is empty, removed on first message. We
+    // drop the DOM node AND null the ref so a later mountToolsCard
+    // rebuilds it from scratch (e.g. if the chat is later emptied
+    // via the messages DELETE endpoint).
+    const toolsHost = toolsCardRef.current;
+    if (toolsHost && toolsHost.parentNode) toolsHost.parentNode.removeChild(toolsHost);
+    toolsCardRef.current = null;
   }
 
   function onPromptChange() {

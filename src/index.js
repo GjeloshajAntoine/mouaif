@@ -329,7 +329,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/files?projectDir=...&dir=...', 'GET /api/file?projectDir=...&path=...', 'PUT /api/file (body: { projectDir, path, content })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/files?projectDir=...&dir=...', 'GET /api/file?projectDir=...&path=...', 'PUT /api/file (body: { projectDir, path, content })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize?, tools? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize?, tools? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'GET /api/tools/list?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
   }
 
   // REST: GET /data
@@ -1204,6 +1204,11 @@ async function handleChatStream(req, res, chatId) {
     fileToolsEnabled,
     appSettings,
     promptSize: resolvedProfileId,
+    // Per-chat tool filter (decisions: chat.tools). null/undefined
+    // means "all tools available to the project"; an array (even an
+    // empty one) means "restrict to exactly these tool names". The
+    // legacy fields above stay so existing API clients keep working.
+    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         assistantContent += data.delta;
@@ -2210,6 +2215,13 @@ function inspectorErrorStatus(err) {
 // inside the AI client's tool loop; this endpoint powers the /shell
 // composer command and lets a script run a project command directly.
 // Routes:
+//   GET  /api/tools/list?projectDir=<abs>
+//     -> { tools: [{ name, kind, description, source }] }
+//        Catalog of every tool the model can be advertised to use on
+//        this project: native shell + file tools, plus MCP-discovered
+//        tools whose server is currently running. The chat UI reads
+//        this to render the per-chat tool toggles shown below the
+//        system prompt on a brand-new chat.
 //   POST /api/tools/shell  body: { projectDir, cmd, timeoutMs? }
 //     -> { ok, stdout, stderr, exitCode, durationMs } | { ok:false, error, code }
 // The tool is off unless the project's resolved settings enable it
@@ -2218,6 +2230,54 @@ function inspectorErrorStatus(err) {
 async function handleTools(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
+  const q = parsed.query || {};
+
+  // GET /api/tools/list?projectDir=<abs>
+  // The catalog is read-only; it does not require a chat id. Native
+  // tools are always present; MCP tools are filtered to servers
+  // whose session is currently 'ready' (decisions §18: tools belong
+  // to a running session). A server that is not running is not
+  // listed — the user can start it from Settings → MCP, and a
+  // subsequent call will pick up the newly discovered tools.
+  if (urlPath === '/api/tools/list' && method === 'GET') {
+    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const tools = [];
+    try {
+      const shell = require('./tools/shell.js');
+      tools.push({
+        name: 'shell',
+        kind: 'native',
+        source: 'shell',
+        description: (shell.SPEC && shell.SPEC.function && shell.SPEC.function.description) || 'Run a shell command in the project directory.'
+      });
+    } catch { /* shell module unavailable; omit */ }
+    try {
+      const ft = require('./tools/files.js');
+      for (const name of ft.FILE_TOOL_NAMES) {
+        const spec = ft.SPECS && ft.SPECS[name];
+        tools.push({
+          name,
+          kind: 'native',
+          source: 'files',
+          description: (spec && spec.function && spec.function.description) || ''
+        });
+      }
+    } catch { /* files module unavailable; omit */ }
+    try {
+      const mcpMod = require('./mcp.js');
+      const specs = mcpMod.listComposedToolSpecs(projectDir);
+      for (const s of (specs || [])) {
+        tools.push({
+          name: s.name,
+          kind: 'mcp',
+          source: s.serverSlug || '',
+          description: s.description || ''
+        });
+      }
+    } catch { /* mcp module not loaded; no MCP tools */ }
+    return sendJSON(res, 200, { tools });
+  }
 
   if (urlPath === '/api/tools/shell' && method === 'POST') {
     let body;

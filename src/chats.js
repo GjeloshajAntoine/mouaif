@@ -27,7 +27,8 @@
 //     promptSize:   'average',            // per-chat prompt-size profile
 //     promptId:     null,                 // optional; references a project prompt
 //     providerId:   null,                 // selected app-level provider
-//     modelId:      null                  // selected project/live model slug
+//     modelId:      null,                 // selected project/live model slug
+//     tools:        undefined | [name]    // per-chat tool filter; absent = all
 //   }
 //
 // API enrichment (added by GET /api/chats, NOT persisted on disk):
@@ -89,6 +90,11 @@ function defaultsForProject(project) {
 function normalizeChat(chat) {
   if (!chat || typeof chat !== 'object') return null;
   if (!chat.id || typeof chat.id !== 'string' || !CHAT_ID_RE.test(chat.id)) return null;
+  // The `tools` filter is intentionally NOT normalized to a default
+  // value here. Distinguishing `undefined` ("legacy: all tools") from
+  // `[]` ("explicitly no tools") is load-bearing for the AI client:
+  // the former advertises the full project catalog, the latter
+  // advertises nothing. A persisted `[]` must round-trip as `[]`.
   return {
     id: chat.id,
     title: typeof chat.title === 'string' ? chat.title : 'New chat',
@@ -98,7 +104,8 @@ function normalizeChat(chat) {
     promptSize: ['very-small', 'average', 'extensive'].includes(chat.promptSize) ? chat.promptSize : 'average',
     promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null,
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
-    modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null
+    modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
+    tools: Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined
   };
 }
 
@@ -141,7 +148,8 @@ function createChat(projectDir, opts) {
     createdAt: new Date().toISOString(),
     lastOpenedAt: null,
     trace: opts && opts.trace === true,
-    promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize
+    promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize,
+    tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
   });
   if (!project.chats) project.chats = [];
   project.chats.push(chat);
@@ -157,6 +165,12 @@ function updateChat(projectDir, chatId, patch) {
   const idx = Array.isArray(project.chats) ? project.chats.findIndex(c => c && c.id === chatId) : -1;
   if (idx < 0) return null;
   const current = normalizeChat(project.chats[idx]);
+  // The `tools` field has load-bearing shape semantics (see
+  // normalizeChat): an explicit `[]` means "no tools", `undefined`
+  // means "all tools (legacy default)". We must preserve that
+  // distinction, so we snapshot the persisted value before the
+  // generic normalizeChat overwrites it.
+  const previousTools = current.tools;
   const merged = Object.assign({}, current, normalizeChat(Object.assign({}, current, patch)));
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'title')) {
     const t = String(patch.title).trim();
@@ -172,6 +186,23 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
     merged.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
+    // `null` or `[]` is a valid value here (it means "advertise no
+    // tools"). Anything else is normalized to an array of strings
+    // so the AI client can build a Set from it cheaply.
+    if (patch.tools === null) {
+      merged.tools = [];
+    } else if (Array.isArray(patch.tools)) {
+      merged.tools = patch.tools.map((n) => String(n)).filter(Boolean);
+    } else {
+      // Reject non-array values (objects, numbers, booleans, etc.)
+      // by restoring the persisted value. The Object.assign above
+      // has already overwritten the slot via normalizeChat (which
+      // folds anything non-array to undefined), so previousTools is
+      // the only surviving copy of the real pre-patch state.
+      merged.tools = previousTools;
+    }
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);
