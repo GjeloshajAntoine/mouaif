@@ -46,7 +46,7 @@ server.listen(0, '127.0.0.1', () => {
       console.log('GET /api/tools/list ->', r1.status, JSON.stringify(r1.body, null, 2));
       if (r1.status !== 200) throw new Error('list failed: HTTP ' + r1.status);
       const names = r1.body.tools.map((t) => t.name);
-      for (const expected of ['shell', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file']) {
+      for (const expected of ['shell', 'subagent', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file']) {
         if (names.indexOf(expected) < 0) throw new Error('missing tool: ' + expected);
       }
 

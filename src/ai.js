@@ -1015,12 +1015,13 @@ async function streamChat(opts) {
   // ---- Tool specs advertised to the model ----------------------------
   // Three sources feed the `tools` field of the outgoing request:
   //   1. The native `shell` tool (src/tools/shell.js), always present.
-  //   2. The native file tools (read_file / list_files / search_files /
+  //   2. The native `subagent` tool (src/tools/subagent.js), always present.
+  //   3. The native file tools (read_file / list_files / search_files /
   //      write_file, src/tools/files.js), always present. Authorization
   //      decides whether a call prompts, runs, or is rejected. These cover
   //      "read this file / find where X is used / patch a small file"
   //      loop without requiring an MCP server.
-  //   3. MCP-discovered tools (decision §18), which use the
+  //   4. MCP-discovered tools (decision §18), which use the
   //      mcp__<serverSlug>__<toolName> name convention.
   // Tool calling and the multi-turn loop below are wired only for the
   // OpenAI-compatible tool shape (openai-compatible + github-copilot).
@@ -1029,6 +1030,8 @@ async function streamChat(opts) {
   const toolSpecs = [];
   try { toolSpecs.push(require('./tools/shell.js').SPEC); }
   catch { /* shell tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./tools/subagent.js').SPEC); }
+  catch { /* subagent tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -1182,6 +1185,7 @@ async function streamChat(opts) {
         // content as a hint, when relevant).
         let summary;
         if (c.name === 'shell') summary = (args && args.cmd) || '';
+        else if (c.name === 'subagent') summary = (args && args.task) || '';
         else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
           summary = (args && (args.path || args.file)) || (args && args.query) || '';
         } else {
@@ -1455,6 +1459,45 @@ async function streamChat(opts) {
         out = { ok: false, error: e.message || String(e), code: 'ESHELL' };
       }
       return { ok: !!out.ok, content: JSON.stringify(out), result: out };
+    }
+
+    // Native subagent tool. It delegates to the same model with tools
+    // explicitly filtered to none, so the nested call is text-only and
+    // cannot recurse through this dispatcher.
+    if (name === 'subagent') {
+      const task = args && typeof args.task === 'string' ? args.task.trim() : '';
+      const context = args && typeof args.context === 'string' ? args.context.trim() : '';
+      if (!task) {
+        const r = { error: { code: 'EBADINPUT', message: 'task is required' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      const nestedMessages = [
+        {
+          role: 'system',
+          content: 'You are a focused subagent. Answer only the delegated task. Be concise and do not ask to use tools.'
+        },
+        {
+          role: 'user',
+          content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
+        }
+      ];
+      const nestedEvents = [];
+      const nested = await streamChat({
+        model,
+        messages: nestedMessages,
+        signal,
+        promptSize: callOpts && callOpts.promptSize,
+        enabledTools: [],
+        onEvent: (eventName, data) => nestedEvents.push({ name: eventName, data })
+      });
+      let text = '';
+      for (const ev of nestedEvents) {
+        if (ev.name === 'message' && ev.data && typeof ev.data.delta === 'string') text += ev.data.delta;
+      }
+      const r = nested && nested.ok
+        ? { ok: true, text, usage: nested.usage || null, providerCost: nested.providerCost || null }
+        : { ok: false, text, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+      return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
     }
 
     // Native file tools: read_file, list_files, search_files, write_file,

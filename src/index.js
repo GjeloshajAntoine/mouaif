@@ -902,14 +902,15 @@ async function handleChats(req, res, parsed) {
         const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
-      // Collect the tool specs exactly as streamChat does: base shell and
-      // file tools are always advertised, plus ready MCP servers.
+      // Collect the tool specs exactly as streamChat does: base shell,
+      // subagent, and file tools are always advertised, plus ready MCP servers.
       const shellEnabled = true;
       const fileToolsEnabled = true;
       const toolSpecs = [];
       if (shellEnabled) {
         try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
       }
+      try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
       if (fileToolsEnabled) {
         try {
           const fileTools = require('./tools/files.js');
@@ -2288,6 +2289,15 @@ async function handleTools(req, res, parsed) {
         description: (shell.SPEC && shell.SPEC.function && shell.SPEC.function.description) || 'Run a shell command in the project directory.'
       });
     } catch { /* shell module unavailable; omit */ }
+    try {
+      const subagent = require('./tools/subagent.js');
+      tools.push({
+        name: 'subagent',
+        kind: 'native',
+        source: 'subagent',
+        description: (subagent.SPEC && subagent.SPEC.function && subagent.SPEC.function.description) || 'Delegate a focused task to a nested AI call.'
+      });
+    } catch { /* subagent module unavailable; omit */ }
     try {
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {

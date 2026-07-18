@@ -64,7 +64,7 @@ function normalizeConfig(raw, source, enabled) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
-const NATIVE_TOOLS = new Set(['shell', 'file']);
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file']);
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 const MCP_FILE = '.mcp.json';
 
@@ -124,6 +124,7 @@ function getAuthorization(projectDir) {
   return {
     tools: {
       shell: effectiveConfig(projectDir, 'shell'),
+      subagent: effectiveConfig(projectDir, 'subagent'),
       file: effectiveConfig(projectDir, 'file')
     },
     mcp: effectiveConfig(projectDir, 'mcp__any__tool')
