@@ -256,7 +256,15 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
       continue;
     }
 
-    out.push({ role: m.role, content: contentOf(m) });
+    const content = contentOf(m);
+    // A reasoning-only or interrupted assistant segment can be persisted with
+    // an empty visible content string. It has no value in the reconstructed
+    // conversation, and strict providers such as Moonshot reject it with
+    // "message ... with role 'assistant' must not be empty" (HTTP 400).
+    if (m.role === 'assistant' && (content == null || (typeof content === 'string' && !content.trim()))) {
+      continue;
+    }
+    out.push({ role: m.role, content });
   }
   return out;
 }

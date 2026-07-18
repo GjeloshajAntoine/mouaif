@@ -32,6 +32,8 @@ try {
     { role: 'user', content: 'first' },
     { role: 'tool', phase: 'call', toolCallId: 'call_complete', name: 'shell', args: { cmd: 'echo ok' }, content: '{}' },
     { role: 'tool', phase: 'result', toolCallId: 'call_complete', name: 'shell', content: '{"stdout":"ok"}' },
+    { role: 'assistant', content: '' },
+    { role: 'assistant', content: '   ' },
     { role: 'assistant', content: 'finished' },
     { role: 'tool', phase: 'result', toolCallId: 'orphan_result', name: 'shell', content: '{}' },
     { role: 'tool', phase: 'call', toolCallId: 'call_without_result', name: 'shell', args: { cmd: 'echo interrupted' }, content: '{}' },
@@ -41,6 +43,7 @@ try {
   assert.equal(reconstructed[1].tool_calls[0].id, 'call_complete');
   assert.equal(reconstructed[2].tool_call_id, 'call_complete');
   assert.equal(reconstructed.some((m) => JSON.stringify(m).includes('call_without_result')), false);
+  assert.equal(reconstructed.some((m) => m.role === 'assistant' && !String(m.content || '').trim() && !m.tool_calls), false);
 
   const longId = 'tool_search_files_' + 'x'.repeat(40);
   const portable = messages.reconstructUpstreamHistory([
@@ -83,7 +86,7 @@ try {
   ], true);
   assert.equal(gemini.body.systemInstruction.parts[0].text, 'profile\n\ntagged file\n\ncustom prompt');
 
-  console.log('chat trace: 19 assertions passed');
+  console.log('chat trace: 20 assertions passed');
 } finally {
   fs.rmSync(projectDir, { recursive: true, force: true });
 }
