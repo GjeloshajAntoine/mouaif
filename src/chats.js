@@ -28,7 +28,7 @@
 //     promptId:     null,                 // optional; references a project prompt
 //     providerId:   null,                 // selected app-level provider
 //     modelId:      null,                 // selected project/live model slug
-//     tools:        undefined | [name]    // per-chat tool filter; absent = all
+//     tools:        undefined | null | [name] // per-chat tool filter; absent/null = all
 //   }
 //
 // API enrichment (added by GET /api/chats, NOT persisted on disk):
@@ -96,7 +96,7 @@ function normalizeChat(chat) {
   if (!chat || typeof chat !== 'object') return null;
   if (!chat.id || typeof chat.id !== 'string' || !CHAT_ID_RE.test(chat.id)) return null;
   // The `tools` filter is intentionally NOT normalized to a default
-  // value here. Distinguishing `undefined` ("legacy: all tools") from
+  // value here. Distinguishing `undefined`/`null` ("all tools") from
   // `[]` ("explicitly no tools") is load-bearing for the AI client:
   // the former advertises the full project catalog, the latter
   // advertises nothing. A persisted `[]` must round-trip as `[]`.
@@ -110,7 +110,7 @@ function normalizeChat(chat) {
     promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null,
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
-    tools: Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined
+    tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined)
   };
 }
 
@@ -172,9 +172,9 @@ function updateChat(projectDir, chatId, patch) {
   const current = normalizeChat(project.chats[idx]);
   // The `tools` field has load-bearing shape semantics (see
   // normalizeChat): an explicit `[]` means "no tools", `undefined`
-  // means "all tools (legacy default)". We must preserve that
-  // distinction, so we snapshot the persisted value before the
-  // generic normalizeChat overwrites it.
+  // or `null` means "all tools". We must preserve that distinction,
+  // so we snapshot the persisted value before the generic
+  // normalizeChat overwrites it.
   const previousTools = current.tools;
   const merged = Object.assign({}, current, normalizeChat(Object.assign({}, current, patch)));
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'title')) {
@@ -193,11 +193,11 @@ function updateChat(projectDir, chatId, patch) {
     merged.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
-    // `null` or `[]` is a valid value here (it means "advertise no
-    // tools"). Anything else is normalized to an array of strings
-    // so the AI client can build a Set from it cheaply.
+    // `null` means "all tools"; `[]` means "advertise no tools".
+    // Arrays are normalized to strings so the AI client can build a
+    // Set from them cheaply.
     if (patch.tools === null) {
-      merged.tools = [];
+      merged.tools = null;
     } else if (Array.isArray(patch.tools)) {
       merged.tools = patch.tools.map((n) => String(n)).filter(Boolean);
     } else {

@@ -1229,7 +1229,7 @@ async function handleChatStream(req, res, chatId) {
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
-    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+    enabledTools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null),
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         assistantContent += data.delta;
