@@ -1625,6 +1625,19 @@ function resolveModel(modelId, projectDir, providerId) {
   return hydrated;
 }
 
+function credentialForProvider(provider) {
+  const app = settings.getApp();
+  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
+  if (!conn) return null;
+  if (conn.apiKey) return conn.apiKey;
+  if (conn.auth === 'oauth') {
+    const token = auth.tokenForModel({ provider, auth: 'oauth', oauthAccount: conn.oauthAccount });
+    const parsedToken = token ? JSON.parse(token) : null;
+    return parsedToken && parsedToken.accessToken ? parsedToken.accessToken : null;
+  }
+  return null;
+}
+
 // In-memory cache for /api/ai/models/live. Keyed by
 // `${provider}:${credHash}` so a key rotation invalidates the entry.
 // Cleared on process restart; the chat UI also has its own explicit
@@ -1673,16 +1686,9 @@ async function handleAI(req, res, parsed) {
     // Look up the app-level provider connection. Missing connection
     // is fine — OpenAI/OpenRouter/Gemini allow unauthenticated list
     // calls (rate-limited but useful), Ollama/Copilot don't need one.
-    const app = settings.getApp();
-    const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
-    let cred = conn && conn.apiKey ? conn.apiKey : null;
-    if (!cred && conn && conn.auth === 'oauth') {
-      try {
-        const token = auth.tokenForModel({ provider, oauthAccount: conn.oauthAccount });
-        const parsedToken = token ? JSON.parse(token) : null;
-        cred = parsedToken && parsedToken.accessToken ? parsedToken.accessToken : null;
-      } catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
-    }
+    let cred = null;
+    try { cred = credentialForProvider(provider); }
+    catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
     // 1h cache keyed by `${provider}:${credHash}`.
     const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
     const now = Date.now();
@@ -1742,6 +1748,36 @@ async function handleAI(req, res, parsed) {
         return sendJSON(res, status, body);
       });
     return;  // response is sent in the .then/.catch above.
+  }
+
+  // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }
+  // Provider-specific account balance lookup. Only OpenRouter exposes a
+  // simple key-scoped credits endpoint; unsupported providers return
+  // { supported: false } so the chat head can hide the pill.
+  if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
+    const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
+    if (provider !== 'openrouter') return sendJSON(res, 200, { provider, supported: false });
+    let cred;
+    try { cred = credentialForProvider(provider); }
+    catch (e) { return sendJSON(res, 400, { provider, supported: true, error: e.message, code: e.code || 'ENO_APIKEY' }); }
+    if (!cred) return sendJSON(res, 400, { provider, supported: true, error: 'OpenRouter API key required', code: 'ENO_APIKEY' });
+    let r;
+    try {
+      r = await fetch(ai.ENDPOINTS.openrouter.baseUrl + '/credits', {
+        headers: { ...ai.ENDPOINTS.openrouter.authHeader(cred), ...ai.ENDPOINTS.openrouter.staticHeaders }
+      });
+    } catch (e) {
+      return sendJSON(res, 503, { provider, supported: true, error: 'OpenRouter unreachable', code: 'EUNREACHABLE' });
+    }
+    if (!r.ok) return sendJSON(res, r.status, { provider, supported: true, error: 'OpenRouter returned ' + r.status, code: 'EUPSTREAM' });
+    const body = await r.json().catch(() => ({}));
+    const data = body && body.data ? body.data : body;
+    const totalCredits = Number(data && (data.total_credits ?? data.totalCredits ?? data.credits));
+    const totalUsage = Number(data && (data.total_usage ?? data.totalUsage ?? data.usage));
+    const remaining = Number(data && (data.remaining_credits ?? data.remainingCredits ?? data.remaining));
+    const value = isFinite(remaining) ? remaining : (isFinite(totalCredits) && isFinite(totalUsage) ? totalCredits - totalUsage : NaN);
+    if (!isFinite(value)) return sendJSON(res, 502, { provider, supported: true, error: 'OpenRouter credit response missing totals', code: 'EBAD_CREDITS' });
+    return sendJSON(res, 200, { provider, supported: true, label: 'Balance', remaining: value, totalCredits: isFinite(totalCredits) ? totalCredits : undefined, totalUsage: isFinite(totalUsage) ? totalUsage : undefined });
   }
 
   // GET /api/ai/models/providers -> { providers: [{ id }] }

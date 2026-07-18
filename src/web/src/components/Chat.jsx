@@ -53,6 +53,7 @@ export function ChatView(props) {
   const chatName = useRef(null);
   const chatMeta = useRef(null);
   const usageSummaryRef = useRef(null);
+  const providerCreditRef = useRef(null);
   const traceToggle = useRef(null);
   // The creation-time setup card lives in the TRANSCRIPT (above the
   // system message) instead of the head, so the prompt-size choice is
@@ -163,6 +164,23 @@ export function ChatView(props) {
   // The head shows conversation-wide totals while each assistant turn keeps
   // its own breakdown below the bubble. "Context" is the latest upstream
   // prompt size (not a sum: every turn already includes earlier context).
+  function updateProviderCredit(text) {
+    providerCreditRef.current = text || null;
+    updateUsageSummary();
+  }
+
+  async function refreshProviderCredit() {
+    const provider = activeProviderId();
+    if (!provider) return updateProviderCredit(null);
+    try {
+      const r = await fetchJson('/api/ai/provider-credit?provider=' + encodeURIComponent(provider));
+      if (r.status !== 200 || !r.body || !r.body.supported) return updateProviderCredit(null);
+      if (typeof r.body.remaining !== 'number') return updateProviderCredit(null);
+      const label = r.body.label || 'Balance';
+      updateProviderCredit(label + ' ' + formatCost(r.body.remaining));
+    } catch { updateProviderCredit(null); }
+  }
+
   function updateUsageSummary(liveInfo) {
     const el = usageSummaryRef.current;
     if (!el) return;
@@ -191,6 +209,11 @@ export function ChatView(props) {
     cost.textContent = 'Total ' + (hasKnownCost ? formatCost(totalCost) : '--');
     el.appendChild(context);
     el.appendChild(cost);
+    if (providerCreditRef.current) {
+      const credit = document.createElement('span');
+      credit.textContent = providerCreditRef.current;
+      el.appendChild(credit);
+    }
   }
 
   async function load() {
@@ -236,6 +259,7 @@ export function ChatView(props) {
     if (chatName.current) chatName.current.textContent = c.title || chatId;
     updateMetaLine();
     updateUsageSummary();
+    refreshProviderCredit();
     if (traceToggle.current) traceToggle.current.checked = !!c.trace;
     updateModelTrigger();
 
@@ -572,6 +596,7 @@ export function ChatView(props) {
     if (chatRef.current && chatRef.current.providerId === providerId && chatRef.current.modelId === modelId) return;
     chatRef.current = Object.assign({}, chatRef.current, { providerId, modelId });
     updateModelTrigger();
+    refreshProviderCredit();
     await updateChat({ providerId, modelId });
   }
 
@@ -1286,6 +1311,8 @@ export function ChatView(props) {
     if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
     chatRef.current = r.body.chat;
     updateMetaLine();
+    updateModelTrigger();
+    refreshProviderCredit();
   }
 
   function renameChat() {
@@ -1745,7 +1772,7 @@ export function ChatView(props) {
       h('div', { class: 'chat-view__title-stack' },
         h('div', { ref: chatName, class: 'chat-view__name' }, '\u2026'),
         h('div', { ref: chatMeta, class: 'chat-view__meta' }, ''),
-        h('div', { ref: usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage totals' },
+        h('div', { ref: usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage and provider credit' },
           h('span', null, 'Context --'),
           h('span', null, 'Total --')
         )
