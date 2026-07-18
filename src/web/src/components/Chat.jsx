@@ -304,7 +304,7 @@ export function ChatView(props) {
     for (const m of modelsRef.current) {
       if (!m || !m.id || !m.provider) continue;
       const arr = liveByProviderRef.current[m.provider] || (liveByProviderRef.current[m.provider] = []);
-      arr.push({ id: m.id, label: m.label });
+      arr.push({ id: m.id, label: m.label, contextWindow: m.contextWindow });
     }
     pickerFilterRef.current = { q: '', provider: 'all' };
     promptsRef.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
@@ -406,6 +406,29 @@ export function ChatView(props) {
   function activeProviderId() {
     const c = chatRef.current;
     return c && c.providerId ? c.providerId : '';
+  }
+
+  // activeContextWindow() — the token budget of the chat's current
+  // model, looked up from the live catalog (project entries merged
+  // in at load). Returns null when the model is unknown or the
+  // provider doesn't expose a context size (e.g. Ollama).
+  function activeContextWindow() {
+    const c = chatRef.current;
+    if (!c || !c.modelId || !c.providerId) return null;
+    const live = liveByProviderRef.current || {};
+    const arr = live[c.providerId] || [];
+    for (const m of arr) {
+      if (m && m.id === c.modelId && typeof m.contextWindow === 'number' && m.contextWindow > 0) {
+        return m.contextWindow;
+      }
+    }
+    // Fall back to the project-level model record.
+    for (const m of (modelsRef.current || [])) {
+      if (m && m.provider === c.providerId && m.id === c.modelId && typeof m.contextWindow === 'number' && m.contextWindow > 0) {
+        return m.contextWindow;
+      }
+    }
+    return null;
   }
 
   // modelsForPicker() — flat list of { id, provider, label } for the
@@ -1104,7 +1127,16 @@ export function ChatView(props) {
     const tokens = [];
     if (modelId) tokens.push(modelId);
     if (typeof usage.promptTokens === 'number') {
-      tokens.push('context ' + formatTokens(usage.promptTokens));
+      let label = 'context ' + formatTokens(usage.promptTokens);
+      // When the model's context window is known, show how much of
+      // it this turn consumed so the user can see the budget fill
+      // up (e.g. "context 14.8K/200K (7%)").
+      const win = activeContextWindow();
+      if (win) {
+        const pct = Math.round((usage.promptTokens / win) * 100);
+        label += '/' + formatTokens(win) + ' (' + pct + '%)';
+      }
+      tokens.push(label);
     }
     if (typeof usage.completionTokens === 'number') {
       tokens.push('output ' + formatTokens(usage.completionTokens));
@@ -1163,7 +1195,8 @@ export function ChatView(props) {
     // after the tool result, so create a new live bubble lazily instead of
     // appending it to the pre-tool bubble.
     if (!liveRow) {
-      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId }, true);
+      const mid = (chatRef.current && chatRef.current.modelId) || '';
+      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId: mid }, true);
       liveRow = transcript.current.querySelector('[data-live="1"]');
     }
     if (liveRow) {
@@ -1179,7 +1212,8 @@ export function ChatView(props) {
     if (!transcript.current) return;
     let liveRow = transcript.current.querySelector('[data-live="1"]');
     if (!liveRow) {
-      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId }, true);
+      const mid = (chatRef.current && chatRef.current.modelId) || '';
+      appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId: mid }, true);
       liveRow = transcript.current.querySelector('[data-live="1"]');
     }
     if (liveRow) {
@@ -1963,8 +1997,12 @@ export function ChatView(props) {
     // The first message ends the creation phase: remove the prompt-size
     // setup control for good (the prompt size is now fixed).
     updateSetupVisibility();
-    const liveMsg = { role: 'assistant', content: '', ts: new Date().toISOString(), modelId };
-    appendMessageToTranscript(liveMsg, true);
+    // Don't append the live assistant bubble eagerly: when the model
+    // opens with a tool call (no text delta first), the empty bubble
+    // would sit above the tool card with nothing in it. Both
+    // appendDeltaToLive and appendReasoningToLive create the live row
+    // lazily on the first delta, so the bubble appears exactly when
+    // there is content to show.
 
     // Live per-turn counter. The chat UI runs this on every delta;
     // the server's authoritative completionTokens (sent on `done`)
@@ -2030,12 +2068,41 @@ export function ChatView(props) {
       else if (ev.eventName === 'reasoning' && typeof data.delta === 'string') {
         reasoning += data.delta;
         appendReasoningToLive(data.delta);
+        // Reasoning deltas build the live bubble too (thinking-first
+        // turns), so repaint the meta line on the same throttle as
+        // text — otherwise context usage stays blank until the first
+        // answer token arrives.
+        const now = performance.now ? performance.now() : Date.now();
+        if (now - lastRepaintAt > 120) {
+          lastRepaintAt = now;
+          repaintLiveRate();
+        }
       }
       else if (ev.eventName === 'done') {
         usage = data.usage || null;
         cost = data.cost || null;
         streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
         refreshChatTitle();
+      }
+      else if (ev.eventName === 'usage_input') {
+        // Per-round prompt footprint (fires on each tool round for
+        // Anthropic; the final `done` carries the authoritative sum).
+        // Keep the largest prompt seen so the meta line reflects the
+        // fullest the context has been during this exchange.
+        const p = Number(data && data.promptTokens);
+        if (isFinite(p) && p > 0) {
+          usage = usage || {};
+          if (!usage.promptTokens || p > usage.promptTokens) usage.promptTokens = p;
+          repaintLiveRate();
+        }
+      }
+      else if (ev.eventName === 'usage_output') {
+        const c = Number(data && data.completionTokens);
+        if (isFinite(c) && c > 0) {
+          usage = usage || {};
+          usage.completionTokens = (usage.completionTokens || 0) + c;
+          repaintLiveRate();
+        }
       }
       else if (ev.eventName === 'assistant_turn_end') {
         const segment = assembled;

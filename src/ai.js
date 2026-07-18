@@ -1442,6 +1442,11 @@ async function streamChat(opts) {
         // a 0/absent value must not clobber a real `usage_input` number.
         if (isFinite(p) && p > 0) usage.promptTokens = p;
         usage.completionTokens = (usage.completionTokens || 0) + (ev.data.usage.completionTokens || 0);
+        // Surface the round's prompt footprint so the chat UI can
+        // refresh its context-usage line mid-exchange (tool rounds).
+        // Anthropic already streams usage_input/usage_output; this
+        // covers OpenAI-shaped providers that only report on `done`.
+        if (isFinite(p) && p > 0) onEvent('usage_input', { promptTokens: p });
       }
       if (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0) {
         providerCost = (providerCost || 0) + ev.data.providerCost;
