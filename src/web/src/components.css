@@ -924,6 +924,9 @@ textarea#projectEditor {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  /* Anchor for the jump-to-bottom FAB, which floats above the
+     transcript's lower-right corner. */
+  position: relative;
 }
 
 .chat-view__head {
@@ -1982,6 +1985,44 @@ textarea#projectEditor {
      between the input and the bottom of the composer pill. */
 }
 .chat-view__status:empty { display: none; }
+
+/* Jump-to-bottom FAB. Floats above the transcript's lower-right,
+   just over the composer. Shown only when the user has scrolled up
+   and new rows have landed underneath; the JS toggles `hidden` and
+   fills the count badge. Reuses the popover surface so it reads as
+   an overlay, not a transcript row. */
+.chat-view__jump {
+  position: absolute;
+  right: 14px;
+  /* Sit above the composer pill. The composer is ~46px tall plus its
+     6px bottom margin + safe area; 64px lifts the FAB clear of it. */
+  bottom: calc(var(--safe-bottom) + 64px);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--accent);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.chat-view__jump[hidden] { display: none; }
+.chat-view__jump:active { transform: scale(0.92); }
+.chat-view__jump svg { display: block; flex: 0 0 auto; }
+.chat-view__jump-count:empty { display: none; }
+.chat-view__jump-count {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---- Small screens / desktop fallback ---------------------------- */
 

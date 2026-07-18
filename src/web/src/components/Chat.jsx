@@ -83,6 +83,18 @@ export function ChatView(props) {
   const draftSaveTimerRef = useRef(null);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
+  // Jump-to-bottom FAB. The transcript auto-scrolls while the user
+  // is pinned to the bottom; once they scroll up mid-stream we stop
+  // hijacking the scroll and show a floating "↓ N" button instead.
+  // pendingCountRef counts messages/deltas appended while unpinned.
+  const jumpBtnRef = useRef(null);
+  const pinnedToBottomRef = useRef(true);
+  const pendingCountRef = useRef(0);
+  // Stream recovery. When the SSE connection drops mid-turn we poll
+  // the persisted transcript (the server keeps writing to it) and
+  // surface a manual "Resume" affordance after a few failed ticks.
+  // reconnectStateRef: { active, attempts, timer, stopped }.
+  const reconnectStateRef = useRef({ active: false, attempts: 0, timer: null, stopped: false });
   // File editor popup (CodeMirror) — toggled by the file-icon button
   // on the composer. The popup is rendered as a full-screen overlay
   // over the chat view; mounting/unmounting it on open/close keeps
@@ -96,6 +108,52 @@ export function ChatView(props) {
     statusEl.current.textContent = text;
     if (state) statusEl.current.dataset.state = state;
     else delete statusEl.current.dataset.state;
+  }
+
+  // --- Jump-to-bottom helpers -------------------------------------
+  // The transcript auto-scrolls to the newest message on every append
+  // while the user is "pinned" to the bottom. Once they scroll up more
+  // than a threshold we treat them as reading history: appends no
+  // longer yank the view down, a floating "↓" button appears, and a
+  // counter tracks how many new rows arrived in the meantime. Tapping
+  // the button (or scrolling back to the very bottom) re-pins.
+  function isNearBottom() {
+    const el = transcript.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }
+
+  function scrollTranscriptToBottom() {
+    const el = transcript.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    pinnedToBottomRef.current = true;
+    pendingCountRef.current = 0;
+    updateJumpButton();
+  }
+
+  function updateJumpButton() {
+    const btn = jumpBtnRef.current;
+    if (!btn) return;
+    const show = !pinnedToBottomRef.current && pendingCountRef.current > 0;
+    btn.hidden = !show;
+    if (show) {
+      const label = btn.querySelector('.chat-view__jump-count');
+      if (label) label.textContent = pendingCountRef.current > 99 ? '99+' : String(pendingCountRef.current);
+    }
+  }
+
+  // Centralised "something was appended" hook. While pinned, keep the
+  // view glued to the bottom; while unpinned, bump the FAB counter
+  // instead of scrolling. Replaces the raw `scrollTop = scrollHeight`
+  // assignments scattered through the append helpers.
+  function afterTranscriptAppend(countNew) {
+    if (pinnedToBottomRef.current || isNearBottom()) {
+      scrollTranscriptToBottom();
+    } else if (countNew) {
+      pendingCountRef.current += 1;
+      updateJumpButton();
+    }
   }
 
   const chatRef = useRef(null);
@@ -137,6 +195,7 @@ export function ChatView(props) {
   // chat. These switches enable/disable the configured server; running
   // lifecycle still lives in Settings → MCP.
   const mcpServersRef = useRef([]);
+  const mcpToggleBusyRef = useRef(new Set());
 
   // Re-fetch the resolved system prompt (after a prompt-size or custom
   // prompt change) and re-render the first message.
@@ -733,7 +792,9 @@ export function ChatView(props) {
       label.className = 'chat-view__mcp-toggle';
       const input = document.createElement('input');
       input.type = 'checkbox';
-      input.checked = s.enabled === true;
+      input.className = 'checkbox';
+      input.checked = s.enabled !== false;
+      input.disabled = mcpToggleBusyRef.current.has(s.id);
       input.setAttribute('aria-label', (s.name || s.id) + ' enabled');
       const main = document.createElement('span');
       main.className = 'chat-view__mcp-toggle-main';
@@ -758,34 +819,45 @@ export function ChatView(props) {
   // when the server config changes; refresh the catalog after so the
   // tool chips immediately reflect enabled/ready MCP tools.
   async function toggleMcpServer(id, enabled) {
-    if (!id || !projectDir) return;
+    if (!id || !projectDir || mcpToggleBusyRef.current.has(id)) return;
+    mcpToggleBusyRef.current.add(id);
     const servers = mcpServersRef.current || [];
     const idx = servers.findIndex((s) => s && s.id === id);
+    const prev = idx >= 0 ? servers[idx].enabled !== false : null;
     if (idx >= 0) {
       const next = servers.slice();
       next[idx] = Object.assign({}, next[idx], { enabled });
       mcpServersRef.current = next;
       updateToolsCard();
     }
-    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, enabled })
-    });
-    if (r.status !== 200) {
-      setChatStatus('MCP update failed: HTTP ' + r.status, 'error');
-      return;
+    try {
+      const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, enabled })
+      });
+      if (r.status !== 200) {
+        if (idx >= 0 && prev !== null) {
+          const rollback = (mcpServersRef.current || []).slice();
+          rollback[idx] = Object.assign({}, rollback[idx], { enabled: prev });
+          mcpServersRef.current = rollback;
+        }
+        setChatStatus('MCP update failed: HTTP ' + r.status, 'error');
+        return;
+      }
+      const rr = await Promise.all([
+        fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+        fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
+      ]);
+      if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) mcpServersRef.current = rr[0].body.servers;
+      if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
+        toolsRef.current = Object.assign({}, toolsRef.current || {}, { catalog: rr[1].body.tools });
+      }
+      setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
+    } finally {
+      mcpToggleBusyRef.current.delete(id);
+      updateToolsCard();
     }
-    const rr = await Promise.all([
-      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
-    ]);
-    if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) mcpServersRef.current = rr[0].body.servers;
-    if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
-      toolsRef.current = Object.assign({}, toolsRef.current || {}, { catalog: rr[1].body.tools });
-    }
-    updateToolsCard();
-    setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
   }
 
   // Insert the tools card into the transcript in the right slot.
@@ -936,7 +1008,8 @@ export function ChatView(props) {
         appendMessageToTranscript(m, false);
       }
     }
-    transcript.current.scrollTop = transcript.current.scrollHeight;
+    // A full rebuild always lands pinned at the newest message.
+    scrollTranscriptToBottom();
     updateUsageSummary();
   }
 
@@ -1001,7 +1074,7 @@ export function ChatView(props) {
       }
       row.appendChild(meta);
     }
-    transcript.current.scrollTop = transcript.current.scrollHeight;
+    afterTranscriptAppend(true);
   }
 
   function renderImageAttachments(host, attachments) {
@@ -1096,7 +1169,9 @@ export function ChatView(props) {
     if (liveRow) {
       liveRow._content = (liveRow._content || '') + delta;
       renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
-      transcript.current.scrollTop = transcript.current.scrollHeight;
+      // Deltas extend the current live bubble; keep the view glued to
+      // the bottom when pinned but don't bump the new-message counter.
+      afterTranscriptAppend(false);
     }
   }
 
@@ -1110,7 +1185,7 @@ export function ChatView(props) {
     if (liveRow) {
       liveRow._reasoning = (liveRow._reasoning || '') + delta;
       renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
-      transcript.current.scrollTop = transcript.current.scrollHeight;
+      afterTranscriptAppend(false);
     }
   }
 
@@ -1141,7 +1216,7 @@ export function ChatView(props) {
     pill.textContent = 'running\u2026';
     card.appendChild(role); card.appendChild(name); card.appendChild(args); card.appendChild(pill);
     transcript.current.appendChild(card);
-    transcript.current.scrollTop = transcript.current.scrollHeight;
+    afterTranscriptAppend(true);
   }
 
   // Render a tool_result event. If a matching tool_call card is on
@@ -1195,7 +1270,7 @@ export function ChatView(props) {
     pill.className = 'tool-card__pill ' + (toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
     pill.textContent = toolResult.ok ? 'ok' : 'error';
     card.appendChild(pill);
-    transcript.current.scrollTop = transcript.current.scrollHeight;
+    afterTranscriptAppend(true);
   }
 
   function isSubagentTool(name) {
@@ -1546,7 +1621,7 @@ export function ChatView(props) {
       }
       card.appendChild(title); card.appendChild(name); card.appendChild(detail); card.appendChild(actions);
       transcript.current.appendChild(card);
-      transcript.current.scrollTop = transcript.current.scrollHeight;
+      afterTranscriptAppend(true);
     });
   }
 
@@ -1750,6 +1825,101 @@ export function ChatView(props) {
     setImageAttachments((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  // --- SSE reconnect ----------------------------------------------
+  // When the live stream drops mid-turn the server keeps writing the
+  // run to the transcript file, so we recover by polling that file
+  // with exponential backoff. Each tick:
+  //   1. fetch the persisted transcript
+  //   2. if it's still identical to the last poll, the run is over
+  //      (or the server died too) — after a few stable ticks give up
+  //      and surface a manual "Resume" via a final render
+  //   3. if it changed, replace messagesRef and re-render from the
+  //      authoritative rows (this drops the frozen live bubble and
+  //      shows every assistant/tool segment the server already saved)
+  // `partialText` is the assistant text already streamed before the
+  // drop; we keep it on screen until the first successful sync lands
+  // so the user never sees the turn vanish.
+  function startStreamRecovery(partialText) {
+    const st = reconnectStateRef.current;
+    stopStreamRecovery(); // clear any stale timer from a prior drop
+    st.active = true;
+    st.attempts = 0;
+    st.stopped = false;
+    st.partialText = partialText || '';
+    streamingRef.current = true; // still "in a turn" for the poller
+    setChatStatus('connection lost — reconnecting…', 'busy');
+    scheduleRecoveryTick(0);
+  }
+
+  function scheduleRecoveryTick(attempt) {
+    const st = reconnectStateRef.current;
+    if (st.stopped) return;
+    // Backoff: 1s, 2s, 4s, 5s, 5s … (cap at 5s, cap total attempts).
+    const delay = Math.min(5000, 1000 * Math.pow(2, attempt));
+    st.timer = setTimeout(runRecoveryTick, delay);
+  }
+
+  async function runRecoveryTick() {
+    const st = reconnectStateRef.current;
+    if (st.stopped || !st.active) return;
+    st.attempts += 1;
+    let synced = null;
+    try {
+      const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+      if (r.status === 200 && Array.isArray(r.body.messages)) synced = r.body.messages;
+    } catch { synced = null; }
+
+    if (!synced) {
+      // Server unreachable — keep trying while attempts remain.
+      if (st.attempts < 6) return scheduleRecoveryTick(st.attempts);
+      return finishStreamRecovery('could not reconnect — tap to retry', true);
+    }
+
+    const signature = JSON.stringify(synced);
+    const grew = signature !== transcriptSignatureRef.current;
+    if (grew) {
+      // New content landed on disk. Swap in the authoritative rows and
+      // reset the stability counter — the run is clearly still going.
+      messagesRef.current = synced;
+      transcriptSignatureRef.current = signature;
+      renderTranscript();
+      st.stableTicks = 0;
+      setChatStatus('reconnected — syncing…', 'busy');
+      return scheduleRecoveryTick(st.attempts);
+    }
+
+    // Transcript is stable. A run is done when the last message is no
+    // longer a bare tool call (a call with no result yet means the agent
+    // is mid-tool) and we've seen a couple of identical polls.
+    const last = synced[synced.length - 1];
+    const midTool = last && last.role === 'tool' && last.phase === 'call';
+    st.stableTicks = (st.stableTicks || 0) + 1;
+    if (!midTool && st.stableTicks >= 2) {
+      return finishStreamRecovery(null, false);
+    }
+    if (st.attempts >= 8) {
+      return finishStreamRecovery('reconnect timed out — pull to retry', true);
+    }
+    scheduleRecoveryTick(st.attempts);
+  }
+
+  function finishStreamRecovery(message, failed) {
+    const st = reconnectStateRef.current;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    st.active = false;
+    streamingRef.current = false;
+    if (sendBtn.current) sendBtn.current.disabled = false;
+    if (message) setChatStatus(message, failed ? 'error' : 'success');
+    else setChatStatus('reconnected', 'success');
+  }
+
+  function stopStreamRecovery() {
+    const st = reconnectStateRef.current;
+    st.stopped = true;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    st.active = false;
+  }
+
   async function send() {
     if (!projectDir || !chatId) return;
     // The model picker is the source of truth (not a <select>
@@ -1886,7 +2056,7 @@ export function ChatView(props) {
       else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
       else if (ev.eventName === 'error') {
         streamFailed = true;
-        setChatStatus('error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
+        setChatStatus('error: ' + (data.code || '') + ' ' + (data.message || '') + (data.detail ? ' — ' + data.detail : ''), 'error');
       }
     }
     try {
@@ -1918,9 +2088,16 @@ export function ChatView(props) {
       if (sendBtn.current) sendBtn.current.disabled = false;
     }
     if (streamFailed) {
-      finalizeLiveMessage({ content: assembled || '[stream interrupted]', reasoning });
+      // The SSE socket dropped mid-turn, but the server-side agent may
+      // still be appending to the persisted transcript. Rather than
+      // end on a "[stream interrupted]" bubble, hand the partial turn
+      // over to a backoff poll that syncs from disk. If the transcript
+      // is still growing, new segments/tool cards appear as they land.
+      // The assistant text already streamed stays in the live bubble
+      // until the first poll replaces it with the authoritative rows.
+      finalizeLiveMessage({ content: assembled, reasoning });
       counter.reset();
-      streamingRef.current = false;
+      startStreamRecovery(assembled);
       return;
     }
     finalizeLiveMessage({ content: assembled, reasoning });
@@ -2043,7 +2220,32 @@ export function ChatView(props) {
     }
   }
 
+  // Track whether the user is pinned to the bottom. While pinned,
+  // appends keep auto-scrolling; once the user scrolls up we stop
+  // hijacking the scroll and surface the jump-to-bottom FAB instead.
+  useEffect(() => {
+    const el = transcript.current;
+    if (!el) return undefined;
+    function onScroll() {
+      const near = isNearBottom();
+      if (near && !pinnedToBottomRef.current) {
+        pinnedToBottomRef.current = true;
+        pendingCountRef.current = 0;
+        updateJumpButton();
+      } else if (!near && pinnedToBottomRef.current) {
+        pinnedToBottomRef.current = false;
+        updateJumpButton();
+      }
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [chatId, projectDir]);
+
   useEffect(() => { load().catch((err) => { if (statusEl.current) statusEl.current.textContent = 'load failed'; }); }, [chatId, projectDir]);
+
+  // Leaving the chat (or unmounting) cancels any in-flight reconnect
+  // timer so it can't re-render a detached transcript.
+  useEffect(() => () => stopStreamRecovery(), [chatId, projectDir]);
 
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
@@ -2112,6 +2314,19 @@ export function ChatView(props) {
     // is mounted into this transcript at render time, only while the
     // chat is empty. See buildSetupCard + updateSetupVisibility.
     h('div', { ref: transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
+    h('button', {
+      ref: jumpBtnRef,
+      class: 'chat-view__jump',
+      type: 'button',
+      hidden: true,
+      onClick: scrollTranscriptToBottom,
+      'aria-label': 'Jump to latest messages'
+    },
+      h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+        h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
+      ),
+      h('span', { class: 'chat-view__jump-count' }, '')
+    ),
     h('div', { class: 'chat-view__composer' },
       h('button', {
         class: 'chat-view__iconbtn chat-view__files-btn',
