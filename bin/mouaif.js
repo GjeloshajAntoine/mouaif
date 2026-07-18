@@ -5,6 +5,16 @@ const { createServer, DEFAULT_PORT } = require('../src/index.js');
 
 const { name, version, description } = require('../package.json');
 
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    if (!server || !server.listening) return resolve();
+    server.close((err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+}
+
 program
   .name(name)
   .version(version)
@@ -17,23 +27,36 @@ program
   .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .action((options) => {
     const port = parseInt(options.port, 10);
-    const server = createServer(port);
+    let server;
+    const lifecycle = {
+      restarting: false,
+      restart: async () => {
+        await closeServer(server);
+        lifecycle.restarting = false;
+        start();
+      }
+    };
 
-    server.listen(port, options.host, () => {
-      console.log(`🚀 mouaif server running at http://${options.host}:${port}`);
-      console.log(`   REST:   GET  /         — info`);
-      console.log(`   REST:   GET  /data     — get data`);
-      console.log(`   REST:   POST /data     — update data`);
-      console.log(`   SSE:    GET  /events   — subscribe to events`);
-      console.log(`   Web:    /web/          — mobile UI`);
-      console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
-      console.log('   Press Ctrl+C to stop');
-    });
+    function start() {
+      server = createServer(port, { lifecycle });
+      server.listen(port, options.host, () => {
+        console.log(`🚀 mouaif server running at http://${options.host}:${port}`);
+        console.log(`   REST:   GET  /         — info`);
+        console.log(`   REST:   GET  /data     — get data`);
+        console.log(`   REST:   POST /data     — update data`);
+        console.log(`   SSE:    GET  /events   — subscribe to events`);
+        console.log(`   Web:    /web/          — mobile UI`);
+        console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
+        console.log('   Press Ctrl+C to stop');
+      });
+    }
+
+    start();
 
     // Graceful shutdown
     process.on('SIGINT', () => {
       console.log('\n⏹  Shutting down...');
-      server.close(() => process.exit(0));
+      closeServer(server).then(() => process.exit(0));
     });
   });
 

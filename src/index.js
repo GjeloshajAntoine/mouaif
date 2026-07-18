@@ -169,7 +169,7 @@ function authorizeBrowserRequest(req, res, sessionToken) {
   return true;
 }
 
-function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '') {
+function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}) {
   const parsed = url.parse(req.url, true);
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -305,6 +305,13 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '') {
     return handleMcp(req, res, parsed);
   }
 
+  // Server lifecycle — graceful restart. Stops MCP children, closes the
+  // listening socket, then exits. When possible the CLI relaunches in-process;
+  // otherwise an external supervisor may relaunch after exit code 0.
+  if (urlPath === '/api/restart') {
+    return handleRestart(req, res, parsed, lifecycle);
+  }
+
   // Inspector — REST surface for the CDP bridge. The WebSocket proxy
   // at /api/inspector/proxy is handled in the server's 'upgrade'
   // event (see createServer below), not here.
@@ -314,7 +321,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '') {
 
   // REST: GET /
   if (urlPath === '/' && method === 'GET') {
-    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })'] });
+    return sendJSON(res, 200, { status: 'ok', service: 'mouaif', port: activePort, endpoints: ['GET /', 'GET /data', 'POST /data', 'GET /events (SSE)', 'GET /api/settings', 'GET /api/settings/resolved?projectDir=...', 'GET /api/settings/project?projectDir=...', 'PUT /api/settings/app', 'PUT /api/settings/project', 'POST /api/settings/app/providers', 'DELETE /api/settings/app/providers/:id', 'POST /api/settings/app/reset', 'GET /api/projects?dir=...', 'POST /api/projects (list|create|register)', 'GET /api/projects/registered', 'DELETE /api/projects/registered/:id', 'PATCH /api/projects/registered/:id (body: { name })', 'GET /api/chats?projectDir=...', 'GET /api/chats/:id?projectDir=...', 'POST /api/chats (body: { projectDir, title?, trace?, promptSize? })', 'PATCH /api/chats/:id (body: { projectDir, title?, trace?, promptSize? })', 'POST /api/chats/:id/touch (body: { projectDir })', 'DELETE /api/chats/:id?projectDir=...', 'GET /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages (body: { projectDir, role, content })', 'DELETE /api/chats/:id/messages?projectDir=...', 'POST /api/chats/:id/messages/stream (SSE; body: { projectDir, modelId, content })', 'GET /api/ai/models?projectDir=...', 'POST /api/ai/test (body: { modelId, projectDir? })', 'POST /api/ai/chat (SSE stream)', 'GET /api/auth/accounts', 'GET /api/auth/status?provider=...', 'DELETE /api/auth/accounts/:provider/:account', 'POST /api/auth/sign-in/anthropic', 'POST /api/auth/sign-in/github-copilot', 'POST /api/auth/sign-in/openrouter', 'GET /oauth/callback', 'POST /oauth/callback (no-browser fallback)', 'GET /api/inspector/config', 'PUT /api/inspector/config (body: { url })', 'GET /api/inspector/version', 'GET /api/inspector/targets', 'WS /api/inspector/proxy?ws=<wsUrl> | ?host=<httpBase>&targetId=<id>', 'GET /api/prompts?projectDir=...', 'POST /api/prompts (body: { projectDir, title?, content, role? })', 'PATCH /api/prompts/:id (body: { projectDir, title?, content?, role? })', 'DELETE /api/prompts/:id?projectDir=...', 'POST /api/tools/shell (body: { projectDir, cmd, timeoutMs? })', 'GET /api/mcp/servers?projectDir=...', 'POST /api/mcp/servers (body: { projectDir, name, command, args?, env?, cwd?, enabled? })', 'PATCH /api/mcp/servers/:id (body: { projectDir, name?, command?, args?, env?, cwd?, enabled? })', 'DELETE /api/mcp/servers/:id?projectDir=...', 'POST /api/mcp/servers/:id/start (body: { projectDir })', 'POST /api/mcp/servers/:id/stop (body: { projectDir })', 'GET /api/mcp/servers/:id/tools?projectDir=...', 'POST /api/mcp/call (body: { projectDir, serverId, toolName, args })', 'POST /api/restart (body: { reason?, delayMs? })'] });
   }
 
   // REST: GET /data
@@ -2473,6 +2480,38 @@ async function handleMcp(req, res, parsed) {
   return sendJSON(res, 404, { error: 'Not found', scope: 'mcp' });
 }
 
+// POST /api/restart  body: { reason?: string, delayMs?: number }
+// Graceful restart: stop running MCP children, flush the JSON response,
+// close the listening socket, then ask the launcher to relaunch. If no
+// launcher hook exists, exit with code 0 so a supervisor can relaunch.
+async function handleRestart(req, res, parsed, lifecycle = {}) {
+  if (req.method !== 'POST') {
+    return sendJSON(res, 405, { error: 'POST only' });
+  }
+  let body = {};
+  try { body = await readJsonBody(req); } catch (e) {
+    if (e && e.status) return sendJSON(res, e.status, { error: e.message });
+  }
+  const reason = (body && typeof body.reason === 'string') ? body.reason : 'user-requested';
+  const delayMs = (body && Number.isFinite(body.delayMs))
+    ? Math.max(0, Math.min(body.delayMs, 5000))
+    : 150;
+  if (lifecycle.restarting) {
+    return sendJSON(res, 409, { ok: false, restarting: true, error: 'Restart already in progress' });
+  }
+  lifecycle.restarting = true;
+  sendJSON(res, 200, { ok: true, restarting: true, reason, delayMs, mode: lifecycle.restart ? 'relaunch' : 'exit' });
+  setTimeout(async () => {
+    try { process.stdout.write('[mouaif] restart requested: ' + reason + '\n'); } catch (_) {}
+    try { await mcp.stopAll(); } catch (_) { /* best-effort */ }
+    if (typeof lifecycle.restart === 'function') {
+      try { await lifecycle.restart({ reason }); return; }
+      catch (e) { try { process.stderr.write('[mouaif] restart failed: ' + (e && e.message || e) + '\n'); } catch (_) {} }
+    }
+    process.exit(0);
+  }, delayMs).unref();
+}
+
 async function handleInspector(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -2582,7 +2621,7 @@ async function handleToolAuthorization(req, res, parsed) {
   return sendJSON(res, 404, { error: 'Not found', scope: 'tools-authorization' });
 }
 
-function createServer(port = DEFAULT_PORT) {
+function createServer(port = DEFAULT_PORT, options = {}) {
   // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
   // are never consumed and would otherwise accumulate PKCE verifiers in the
   // app store forever. Best-effort: a failure here must not stop the server.
@@ -2593,9 +2632,10 @@ function createServer(port = DEFAULT_PORT) {
     console.warn('[mouaif] could not prune stale OAuth flows:', e.message);
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
+  const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
-    handleRequest(req, res, port, sessionToken);
+    handleRequest(req, res, port, sessionToken, lifecycle);
   });
   // WebSocket upgrade routing. Only /api/inspector/proxy is upgraded;
   // any other upgrade is rejected so the rest of the server stays
