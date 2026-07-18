@@ -12,7 +12,7 @@
       ],
       "env": {},
       "cwd": "",
-      "enabled": true,
+      "enabled": false,
       "createdAt": "2026-07-17T23:45:00.000Z",
       "toolCache": [
         {

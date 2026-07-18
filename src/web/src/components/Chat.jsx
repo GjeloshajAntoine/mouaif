@@ -1175,10 +1175,12 @@ export function ChatView(props) {
       if (!final) details.open = true;
       const summary = document.createElement('summary');
       summary.textContent = final ? 'Thinking' : 'Thinking…';
-      const pre = document.createElement('pre');
-      pre.textContent = reasoning;
+      const thinkBody = document.createElement('div');
+      thinkBody.className = 'chat-msg__reasoning-body' + (final ? '' : ' chat-msg__reasoning-body--raw');
+      if (final) thinkBody.innerHTML = renderMarkdown(reasoning);
+      else thinkBody.textContent = reasoning;
       details.appendChild(summary);
-      details.appendChild(pre);
+      details.appendChild(thinkBody);
       body.appendChild(details);
     }
     const answer = document.createElement('div');

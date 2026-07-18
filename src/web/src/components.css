@@ -1710,10 +1710,10 @@ textarea#projectEditor {
 .chat-msg--system .chat-msg__body > :last-child { margin-bottom: 0; }
 .chat-msg__reasoning {
   margin: 0 0 8px 0;
-  padding: 6px 8px;
-  border: 1px dashed var(--border);
-  border-radius: 9px;
-  background: rgba(255,255,255,0.03);
+  padding: 0 0 0 8px;
+  border: 0;
+  border-left: 2px solid var(--border);
+  background: transparent;
   color: var(--muted);
 }
 .chat-msg__reasoning summary {
@@ -1722,14 +1722,42 @@ textarea#projectEditor {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  margin-left: -8px;
+  padding-left: 8px;
 }
-.chat-msg__reasoning pre {
-  margin: 6px 0 0 0;
-  white-space: pre-wrap;
-  font: inherit;
+.chat-msg__reasoning-body {
+  margin: 4px 0 0 0;
   font-size: 0.8rem;
-  line-height: 1.35;
+  line-height: 1.4;
+  white-space: normal;
 }
+/* While streaming the body is raw text (no markdown yet); preserve
+   the model's line breaks so it doesn't collapse into one blob. */
+.chat-msg__reasoning-body--raw { white-space: pre-wrap; }
+.chat-msg__reasoning-body p { margin: 0 0 4px 0; }
+.chat-msg__reasoning-body p:last-child { margin-bottom: 0; }
+.chat-msg__reasoning-body ul,
+.chat-msg__reasoning-body ol { margin: 0 0 4px 0; padding-left: 1.2em; }
+.chat-msg__reasoning-body pre {
+  margin: 4px 0;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  white-space: pre;
+}
+.chat-msg__reasoning-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.chat-msg__reasoning-body pre code { padding: 0; border: 0; background: transparent; font-size: inherit; }
 .chat-msg--assistant .chat-msg__body p,
 .chat-msg--system .chat-msg__body p { margin: 0 0 6px 0; }
 .chat-msg--assistant .chat-msg__body p:last-child,
