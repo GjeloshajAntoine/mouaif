@@ -11,7 +11,8 @@
 // module.
 //
 // Scope: one project directory = one MCP session. The set of servers
-// is per-project (in <projectDir>/.mouaif.json under mcp.servers).
+// is per-project (in <projectDir>/.mcp.json under servers; legacy
+// <projectDir>/.mouaif.json mcp.servers is read as a fallback).
 // The runtime state (child processes, discovered tool lists) is
 // in-memory only; it restarts on server boot. Servers are stopped on
 // `process.exit`.
@@ -41,7 +42,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
 const settings = require('./settings.js');
 
 // ---- SDK lazy load ------------------------------------------------------
@@ -145,17 +145,53 @@ function buildChildEnv(perServerEnv) {
 
 // ---- Project-level registry --------------------------------------------
 
+const MCP_FILE = '.mcp.json';
+
+function getMcpPath(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') {
+    throw new TypeError('projectDir must be a non-empty string');
+  }
+  return path.join(projectDir, MCP_FILE);
+}
+
+function readMcpFile(projectDir) {
+  const file = getMcpPath(projectDir);
+  if (!fs.existsSync(file)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch (e) {
+    const error = new Error(`Failed to parse ${file}: ${e.message}`);
+    error.code = 'MCP_PROJECT_PARSE_ERROR';
+    error.cause = e;
+    throw error;
+  }
+}
+
+function writeMcpFile(projectDir, obj) {
+  const file = getMcpPath(projectDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(obj || {}, null, 2) + '\n', 'utf8');
+}
+
 function readProjectConfig(projectDir) {
+  const config = readMcpFile(projectDir);
+  if (config) {
+    const list = Array.isArray(config.servers) ? config.servers : [];
+    return { mcp: config, list, source: MCP_FILE };
+  }
+
+  // Back-compat: older projects stored MCP under .mouaif.json -> mcp.servers.
   const project = settings.getProject(projectDir);
   const mcp = (project && typeof project === 'object' && project.mcp && typeof project.mcp === 'object')
     ? project.mcp
     : {};
   const list = Array.isArray(mcp.servers) ? mcp.servers : [];
-  return { mcp, list };
+  return { mcp, list, source: settings.PROJECT_FILE };
 }
 
 function writeProjectConfig(projectDir, mcp) {
-  settings.setProject(projectDir, { mcp });
+  writeMcpFile(projectDir, mcp || { servers: [] });
 }
 
 function normalizeServerEntry(raw, usedSlugs) {
@@ -613,6 +649,8 @@ function installShutdown() {
 module.exports = {
   // constants
   ENV_DENYLIST,
+  MCP_FILE,
+  getMcpPath,
   // helpers (exported for tests)
   slugify,
   composedToolName,

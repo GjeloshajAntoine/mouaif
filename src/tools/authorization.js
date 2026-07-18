@@ -1,6 +1,8 @@
 'use strict';
 
 const { Worker } = require('node:worker_threads');
+const fs = require('fs');
+const path = require('path');
 const settings = require('../settings.js');
 const trace = require('../trace.js');
 
@@ -64,6 +66,25 @@ function normalizeConfig(raw, source, enabled) {
 // maxTimeoutMs } under project.tools.<name>.
 const NATIVE_TOOLS = new Set(['shell', 'file']);
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
+const MCP_FILE = '.mcp.json';
+
+function getMcpConfig(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') return {};
+  const file = path.join(projectDir, MCP_FILE);
+  if (!fs.existsSync(file)) return {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMcpConfig(projectDir, config) {
+  const file = path.join(projectDir, MCP_FILE);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(config || {}, null, 2) + '\n', 'utf8');
+}
 
 // Model-facing file operations share the single project.tools.file gate.
 // Keep the original operation name for session grants and audit events, but
@@ -90,7 +111,8 @@ function effectiveConfig(projectDir, tool) {
     return normalizeConfig(value, source, true);
   }
   if (tool.startsWith('mcp__')) {
-    const projectValue = project && project.mcp && project.mcp.authorization;
+    const mcpConfig = getMcpConfig(projectDir);
+    const projectValue = (mcpConfig && mcpConfig.authorization) || (project && project.mcp && project.mcp.authorization);
     const appValue = app && app.mcp && app.mcp.authorization;
     const value = projectValue || appValue || {};
     return normalizeConfig(value, projectValue ? 'project' : (appValue ? 'app' : 'default'), true);
@@ -132,17 +154,18 @@ function setAuthorization(projectDir, patch) {
   }
   if (patch.mcp) {
     const mcpAuth = normalizeConfig(patch.mcp, 'project', true);
-    next.mcp = Object.assign({}, project.mcp, {
+    const mcpConfig = getMcpConfig(projectDir);
+    writeMcpConfig(projectDir, Object.assign({}, mcpConfig, {
       authorization: {
         mode: mcpAuth.mode,
         allowlist: mcpAuth.allowlist,
         defaultTimeoutMs: mcpAuth.defaultTimeoutMs,
         maxTimeoutMs: mcpAuth.maxTimeoutMs
       }
-    });
+    }));
   }
-  if (!Object.keys(next).length) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
-  settings.setProject(projectDir, next);
+  if (!Object.keys(next).length && !patch.mcp) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
+  if (Object.keys(next).length) settings.setProject(projectDir, next);
   return getAuthorization(projectDir);
 }
 

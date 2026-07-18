@@ -9,14 +9,12 @@ const fs = require('fs');
 const os = require('os');
 
 const mcp = require('../src/mcp.js');
-const settings = require('../src/settings.js');
-
 // Use a temp MOUAIF_HOME so the test never touches a real project file.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-test-'));
 process.env.MOUAIF_HOME = TMP;
 
 // Use a temp project directory; the test never writes to it other
-// than what the mcp module writes via settings.setProject.
+// than what the mcp module writes to .mcp.json.
 const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-proj-'));
 
 let passed = 0;
@@ -121,10 +119,10 @@ async function main() {
   await mcp.stopAll();
   check('stopAll is idempotent', true);
 
-  // 11) Settings persistence: re-reading the project file should
-  //     show mcp.servers = [] (we removed the only entry).
-  const project = settings.getProject(projectDir);
-  check('settings mcp.servers empty', Array.isArray(project.mcp && project.mcp.servers) && project.mcp.servers.length === 0);
+  // 11) Settings persistence: re-reading the MCP project file should
+  //     show servers = [] (we removed the only entry).
+  const projectMcp = JSON.parse(fs.readFileSync(mcp.getMcpPath(projectDir), 'utf8'));
+  check('settings mcp servers empty', Array.isArray(projectMcp.servers) && projectMcp.servers.length === 0);
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   // Best-effort cleanup of the project dir; the temp MOUAIF_HOME is

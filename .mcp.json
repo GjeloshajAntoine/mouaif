@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "id": "git",
+      "name": "git",
+      "slug": "git",
+      "command": "uvx",
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "."
+      ],
+      "env": {},
+      "cwd": "",
+      "enabled": true,
+      "createdAt": "2026-07-17T23:45:00.000Z"
+    }
+  ]
+}

@@ -26,7 +26,7 @@ The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to
    - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
 4. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 
-The server entry is committed to `<projectDir>/.mouaif.json` under `mcp.servers`. The runtime state (child process, discovered tool list) is in-memory only — it restarts on `mouaif` restart. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
+The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The runtime state (child process, discovered tool list) is in-memory only — it restarts on `mouaif` restart. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
 
 ### In a chat
 
@@ -103,7 +103,7 @@ await mcp.stopServer(projectDir, server.id);
 
 ## Behavior
 
-- **Server entries are project-scoped.** They live in `<projectDir>/.mouaif.json` under `mcp.servers`, so they can be committed to the repo and reviewed by collaborators.
+- **Server entries are project-scoped.** They live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. Legacy `.mouaif.json` `mcp.servers` is read as a fallback.
 - **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
 - **Discovery is cached on the session.** A successful `tools/list` lands on the server record; the AI client reuses it for every chat turn until the session stops or the user taps Refresh. There is no cross-process cache — `mouaif` restarts and a cold start pay one discovery per server.
 - **Tool calls ride the same SSE stream as the rest of the chat.** `tool_call` and `tool_result` are first-class events (decision §10). The chat UI renders them inline; the trace file (decision §5) writes them as `tool_call` / `tool_result` lines.
