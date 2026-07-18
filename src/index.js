@@ -2313,6 +2313,14 @@ async function handleTools(req, res, parsed) {
   if (urlPath === '/api/tools/list' && method === 'GET') {
     const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    // A chat opening (or the mobile UI re-loading a project) should
+    // re-attach the MCP servers it needs. The Settings UI documents
+    // this as "open a chat that references a stopped server" — without
+    // it, the tool list comes back empty after a server restart even
+    // though the servers are enabled, which reads as "not saved".
+    try {
+      await mcp.ensureEnabledServers(projectDir);
+    } catch { /* best-effort; the AI client retries on demand */ }
     const tools = [];
     try {
       const shell = require('./tools/shell.js');

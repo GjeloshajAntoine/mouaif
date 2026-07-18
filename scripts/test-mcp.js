@@ -109,11 +109,21 @@ async function main() {
   check('updateServer renames', updated && updated.name === 'Renamed');
   check('updateServer stops running session', !mcp._sessions.has(projectDir + '::' + server.id));
 
-  // 9) Remove server.
+  // 8b) Tool cache persists after the session is gone. The decorated
+  //     server should still expose the last-known tool list. (The
+  //     rename above re-slugged the entry to "renamed".)
+  check('toolCache persisted to config', updated && Array.isArray(updated.toolCache) && updated.toolCache.length === 2);
+  check('tools still visible after stop', updated && Array.isArray(updated.tools) && updated.tools.length === 2);
+  const cachedSpecs = mcp.listComposedToolSpecs(projectDir);
+  check('listComposedToolSpecs falls back to cache', cachedSpecs.length === 2 && cachedSpecs.every(s => s.serverSlug === 'renamed'));
+  check('cached spec names use mcp__ prefix', cachedSpecs.every(s => s.name.startsWith('mcp__renamed__')));
+
+  // 8c) Removing the server clears the cache.
   const removed = mcp.removeServer(projectDir, server.id);
   check('removeServer returns true', removed === true);
   const after = mcp.listServers(projectDir);
   check('removeServer clears from list', !after.some(s => s.id === server.id));
+  check('listComposedToolSpecs empty after remove', mcp.listComposedToolSpecs(projectDir).length === 0);
 
   // 10) stopAll is a no-op when nothing is running.
   await mcp.stopAll();

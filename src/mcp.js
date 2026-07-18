@@ -215,6 +215,7 @@ function normalizeServerEntry(raw, usedSlugs) {
     ? Object.fromEntries(Object.entries(raw.env).filter(([, v]) => typeof v === 'string' || v == null))
     : {};
   const cwd = typeof raw.cwd === 'string' && raw.cwd.trim() ? raw.cwd.trim() : '';
+  const toolCache = normalizeToolCache(raw.toolCache);
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : newServerId(),
     name,
@@ -224,7 +225,8 @@ function normalizeServerEntry(raw, usedSlugs) {
     env,
     cwd,
     enabled: raw.enabled === true, // default off
-    createdAt: raw.createdAt || new Date().toISOString()
+    createdAt: raw.createdAt || new Date().toISOString(),
+    toolCache
   };
 }
 
@@ -236,6 +238,33 @@ function normalizeAll(rawList) {
     if (n) out.push(n);
   }
   return out;
+}
+
+// The discovered tool list is persisted on the server entry under
+// `toolCache` so a stopped server still shows what it advertised the
+// last time it ran (and the model can still see its surface in the
+// tools catalog). The cache is refreshed on every successful start /
+// tools/list refresh, and cleared when the server is removed. The
+// runtime state (child process, live session) stays in-memory; only
+// the last-known tool descriptors are committed to disk.
+function normalizeToolCache(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(t => t && typeof t.name === 'string' && t.name)
+    .map(t => ({
+      name: t.name,
+      description: typeof t.description === 'string' ? t.description : '',
+      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} }
+    }));
+}
+
+function persistToolCache(projectDir, serverId, tools) {
+  const { list } = readProjectConfig(projectDir);
+  const normalized = normalizeAll(list);
+  const idx = normalized.findIndex(s => s.id === serverId);
+  if (idx < 0) return;
+  normalized[idx].toolCache = normalizeToolCache(tools);
+  writeProjectConfig(projectDir, { servers: normalized });
 }
 
 // ---- In-memory runtime state -------------------------------------------
@@ -297,7 +326,9 @@ function getServer(projectDir, serverId) {
 function decorate(entry, projectDir) {
   const session = getSession(projectDir, entry.id);
   const status = session ? session.status : 'stopped';
-  const tools = session ? session.tools.slice() : [];
+  // Live tools win; the persisted cache is the fallback so a stopped
+  // server still shows what it advertised the last time it ran.
+  const tools = session ? session.tools.slice() : (entry.toolCache || []).slice();
   const error = session && session.error ? session.error : null;
   const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), status, tools });
   if (error) decorated.error = error;
@@ -490,13 +521,12 @@ async function startServer(projectDir, serverId) {
   // Normalize tool descriptors: name (required), description, inputSchema.
   // The shape stored here is what the AI client turns into the
   // model-facing tool spec.
-  session.tools = discovered
-    .filter(t => t && typeof t.name === 'string' && t.name)
-    .map(t => ({
-      name: t.name,
-      description: typeof t.description === 'string' ? t.description : '',
-      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} }
-    }));
+  session.tools = normalizeToolCache(discovered);
+  // Persist the last-known tool list so a stopped server still shows
+  // what it advertised (and the model can still see its surface in
+  // the tools catalog). The write is best-effort — a disk failure
+  // should not abort the start.
+  try { persistToolCache(projectDir, serverId, session.tools); } catch { /* ignore */ }
 
   // Wire transport-close -> errored status so the next call surfaces
   // EMCP_TRANSPORT instead of a hung connection.
@@ -547,13 +577,9 @@ async function listDiscoveredTools(projectDir, serverId) {
   } catch (e) {
     throw err('EMCP_RPC', 'tools/list failed: ' + (e && e.message || e), { serverId });
   }
-  session.tools = discovered
-    .filter(t => t && typeof t.name === 'string' && t.name)
-    .map(t => ({
-      name: t.name,
-      description: typeof t.description === 'string' ? t.description : '',
-      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} }
-    }));
+  session.tools = normalizeToolCache(discovered);
+  // Keep the persisted cache in sync when the user taps Refresh.
+  try { persistToolCache(projectDir, serverId, session.tools); } catch { /* ignore */ }
   return session.tools.slice();
 }
 
@@ -612,14 +638,66 @@ function composedToolNameFor(serverEntry, tool) {
   return composedToolName(serverEntry.slug, tool.name);
 }
 
+// ensureEnabledServers(projectDir) -> Promise<[{ id, name, status, tools }]>
+//
+// Called when the user opens a chat (via /api/tools/list) so a project
+// whose MCP servers are enabled starts them lazily — the same behavior
+// the Settings UI documents ("open a chat that references a stopped
+// server"). Without this, the child process and tool cache are
+// in-memory only, so a server restart (or a new chat after one) leaves
+// `status: 'stopped'` and `/api/tools/list` returns an empty MCP tool
+// list. We only auto-start servers that are both configured *and*
+// enabled; a disabled server stays stopped even on chat open.
+//
+// Each start is fire-and-forget: failures are captured in the result
+// (never thrown) so one bad server does not block the chat from
+// loading. A server that fails to start is recorded as 'errored' and
+// surfaced in the Settings UI; the rest of the enabled set still
+// starts.
+async function ensureEnabledServers(projectDir) {
+  const { list } = readProjectConfig(projectDir);
+  const normalized = normalizeAll(list);
+  const enabled = normalized.filter(s => s && s.enabled === true);
+  if (!enabled.length) return [];
+  const results = [];
+  for (const entry of enabled) {
+    const existing = getSession(projectDir, entry.id);
+    if (existing && existing.status === 'ready') {
+      results.push(decorate(entry, projectDir));
+      continue;
+    }
+    if (existing && existing.status === 'starting') {
+      // Another request is already spawning it; report the current
+      // state without double-starting. The caller re-polls later.
+      results.push(decorate(entry, projectDir));
+      continue;
+    }
+    try {
+      const started = await startServer(projectDir, entry.id);
+      results.push(started);
+    } catch (e) {
+      results.push(Object.assign({}, entry, {
+        env: redactEnv(entry.env),
+        status: 'errored',
+        tools: [],
+        error: { code: (e && e.code) || 'EMCP_START', message: (e && e.message) || String(e) }
+      }));
+    }
+  }
+  return results;
+}
+
 // listComposedToolSpecs(projectDir) -> the model-facing tool spec list.
 // Each entry is { name, description, parameters, serverSlug, toolName }.
 // The AI client merges these into the upstream tools array.
 function listComposedToolSpecs(projectDir) {
   const out = [];
+  const seen = new Set();
+  // 1) Live sessions first — the running process is the source of truth.
   for (const serverId of (_byProject.get(projectDir) || new Set())) {
     const session = _sessions.get(keyOf(projectDir, serverId));
     if (!session || session.status !== 'ready' || !session.entry.enabled) continue;
+    seen.add(serverId);
     const entry = session.entry;
     for (const tool of session.tools) {
       out.push({
@@ -631,6 +709,26 @@ function listComposedToolSpecs(projectDir) {
       });
     }
   }
+  // 2) Enabled-but-stopped servers fall back to the persisted tool
+  //    cache. The model sees the same surface it saw the last time
+  //    the server ran; a call will surface EMCP_NOSESSION until the
+  //    user starts it again, which is the honest signal.
+  try {
+    const { list } = readProjectConfig(projectDir);
+    for (const entry of normalizeAll(list)) {
+      if (!entry || entry.enabled !== true || seen.has(entry.id)) continue;
+      if (!Array.isArray(entry.toolCache) || !entry.toolCache.length) continue;
+      for (const tool of entry.toolCache) {
+        out.push({
+          name: composedToolName(entry.slug, tool.name),
+          description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
+          parameters: tool.inputSchema || { type: 'object', properties: {} },
+          serverSlug: entry.slug,
+          toolName: tool.name
+        });
+      }
+    }
+  } catch { /* config unreadable; live sessions still advertised */ }
   return out;
 }
 
@@ -667,11 +765,14 @@ module.exports = {
   stopServer,
   stopAll,
   installShutdown,
+  ensureEnabledServers,
   // discovery + dispatch
   listDiscoveredTools,
   callTool,
   composedToolNameFor,
   listComposedToolSpecs,
+  normalizeToolCache,
+  persistToolCache,
   // for tests + diagnostics
   _sessions,
   _byProject

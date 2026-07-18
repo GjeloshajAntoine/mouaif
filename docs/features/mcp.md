@@ -26,7 +26,7 @@ The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to
    - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
 4. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 
-The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The runtime state (child process, discovered tool list) is in-memory only — it restarts on `mouaif` restart. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
+The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The child process itself is in-memory only — it restarts on `mouaif` restart — but the discovered tool list is persisted on the entry under `toolCache` so a stopped server still shows what it advertised the last time it ran, and the model keeps its tool surface in a new chat. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
 
 ### In a chat
 
@@ -105,7 +105,8 @@ await mcp.stopServer(projectDir, server.id);
 
 - **Server entries are project-scoped.** They live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. Legacy `.mouaif.json` `mcp.servers` is read as a fallback.
 - **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
-- **Discovery is cached on the session.** A successful `tools/list` lands on the server record; the AI client reuses it for every chat turn until the session stops or the user taps Refresh. There is no cross-process cache — `mouaif` restarts and a cold start pay one discovery per server.
+- **Discovery is cached on the session *and* persisted on the entry.** A successful `tools/list` lands on the server record's in-memory session and is also written to `toolCache` on the persisted entry. The AI client uses the live session when the server is running; it falls back to the persisted cache when the server is enabled but stopped (e.g. after a mouaif restart, or on a new chat before the auto-start fires). A tool call against a stopped server returns `EMCP_NOSESSION` — the honest signal — but the model still sees the surface and the user can tap Start.
+- **Enabled servers auto-start on chat open.** `GET /api/tools/list` (which the chat UI calls on load) runs `ensureEnabledServers(projectDir)`: every enabled server that is not already `ready` / `starting` is spawned and re-discovered before the catalog is returned. Disabled servers stay stopped. A failed start is captured as `errored` on that server only — the rest of the enabled set still starts.
 - **Tool calls ride the same SSE stream as the rest of the chat.** `tool_call` and `tool_result` are first-class events (decision §10). The chat UI renders them inline; the trace file (decision §5) writes them as `tool_call` / `tool_result` lines.
 - **Errors are typed.** Transport failures become `EMCP_TRANSPORT`; JSON-RPC errors become `EMCP_RPC`; timeouts become `EMCP_TIMEOUT`; missing slugs become `EMCP_NOSESSION`; missing tools become `EMCP_NOTFOUND`; disabled servers become `EMCP_DISABLED`. The chat UI can branch on `code` without parsing the message.
 - **Server args are not shell-parsed.** The `args` field is a whitespace-separated token list. Quoted multi-word args are not yet supported; a future revision can add a real `shlex`-style splitter.
