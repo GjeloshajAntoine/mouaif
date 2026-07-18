@@ -78,6 +78,8 @@ export function ChatView(props) {
   const modelPickerRefreshRef = useRef(null);
   const modelPickerListRef = useRef(null);
   const promptInput = useRef(null);
+  const imageInputRef = useRef(null);
+  const [imageAttachments, setImageAttachments] = useState([]);
   const sendBtn = useRef(null);
   const statusEl = useRef(null);
   // File editor popup (CodeMirror) — toggled by the file-icon button
@@ -947,13 +949,26 @@ export function ChatView(props) {
     if (isLive) row.dataset.live = '1';
     const role = document.createElement('div');
     role.className = 'chat-msg__role';
-    role.textContent = m.role;
+    // For assistant turns, show the model name instead of the bare
+    // "assistant" role label. The modelId is persisted on the
+    // message (decision §14); fall back to the chat's currently
+    // selected model when the message is missing one (e.g. an
+    // older transcript saved before modelId was tracked).
+    if (m.role === 'assistant') {
+      const modelId = m.modelId || (chatRef.current && chatRef.current.modelId) || 'assistant';
+      role.textContent = modelId;
+    } else {
+      role.textContent = m.role;
+    }
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
     if (m.role === 'assistant') {
       renderAssistantBody(body, m.content || '', m.reasoning || '', true);
     } else {
       body.textContent = m.content || '';
+      if (m.role === 'user' && Array.isArray(m.attachments) && m.attachments.length) {
+        renderImageAttachments(body, m.attachments);
+      }
     }
     const ts = document.createElement('div');
     ts.className = 'chat-msg__ts';
@@ -987,6 +1002,20 @@ export function ChatView(props) {
       row.appendChild(meta);
     }
     transcript.current.scrollTop = transcript.current.scrollHeight;
+  }
+
+  function renderImageAttachments(host, attachments) {
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-msg__attachments';
+    for (const a of attachments) {
+      if (!a || !a.dataUrl) continue;
+      const img = document.createElement('img');
+      img.className = 'chat-msg__attachment-img';
+      img.src = a.dataUrl;
+      img.alt = a.name || 'attached image';
+      wrap.appendChild(img);
+    }
+    host.appendChild(wrap);
   }
 
   // Render the per-turn breakdown. Pure DOM, no framework \u2014 the chat
@@ -1691,6 +1720,44 @@ export function ChatView(props) {
     if (sendBtn.current) sendBtn.current.disabled = false;
   }
 
+  function fileToImageAttachment(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\/(png|jpe?g|webp|gif)$/i.test(file.type || '')) return resolve(null);
+      const reader = new FileReader();
+      reader.onload = () => resolve({ type: 'image', mimeType: file.type, dataUrl: String(reader.result || ''), name: file.name || 'image' });
+      reader.onerror = () => reject(reader.error || new Error('image read failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addImagesFromFiles(files) {
+    const list = Array.from(files || []).filter((f) => f && /^image\/(png|jpe?g|webp|gif)$/i.test(f.type || ''));
+    if (!list.length) return;
+    try {
+      const items = (await Promise.all(list.map(fileToImageAttachment))).filter(Boolean);
+      setImageAttachments((prev) => prev.concat(items).slice(0, 8));
+      setChatStatus(items.length === 1 ? 'image attached' : (items.length + ' images attached'), 'success');
+    } catch {
+      setChatStatus('could not read image', 'error');
+    }
+  }
+
+  function onComposerPaste(e) {
+    const files = e.clipboardData && e.clipboardData.files;
+    if (files && Array.from(files).some((f) => /^image\//i.test(f.type || ''))) {
+      e.preventDefault();
+      addImagesFromFiles(files);
+    }
+  }
+
+  function onImagePickerChange(e) {
+    addImagesFromFiles(e.currentTarget.files);
+  }
+
+  function removeImageAttachment(idx) {
+    setImageAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   async function send() {
     if (!projectDir || !chatId) return;
     // The model picker is the source of truth (not a <select>
@@ -1699,7 +1766,8 @@ export function ChatView(props) {
     const modelId = c.modelId || '';
     const providerId = c.providerId || '';
     const content = (promptInput.current.value || '').trim();
-    if (!content) { statusEl.current.textContent = 'type something'; return; }
+    const attachments = imageAttachments;
+    if (!content && !attachments.length) { statusEl.current.textContent = 'type something or add an image'; return; }
     // /shell <cmd> \u2014 direct tool invocation, no model.
     if (content.startsWith('/shell ')) {
       const cmd = content.slice('/shell '.length).trim();
@@ -1722,9 +1790,11 @@ export function ChatView(props) {
     streamingRef.current = true;
     setChatStatus('streaming\u2026', 'busy');
     promptInput.current.value = '';
+    setImageAttachments([]);
+    if (imageInputRef.current) imageInputRef.current.value = '';
     autoresize();
 
-    const userMsg = { role: 'user', content, ts: new Date().toISOString() };
+    const userMsg = { role: 'user', content, attachments, ts: new Date().toISOString() };
     messagesRef.current = messagesRef.current.concat([userMsg]);
     appendMessageToTranscript(userMsg, false);
     // The first message ends the creation phase: remove the prompt-size
@@ -1745,7 +1815,7 @@ export function ChatView(props) {
       resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir, modelId, providerId, content })
+        body: JSON.stringify({ projectDir, modelId, providerId, content, attachments })
       });
     } catch (err) {
       setChatStatus('network error', 'error');
@@ -2040,12 +2110,30 @@ export function ChatView(props) {
           h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm12 1.5V7h3.5L15 7.5ZM6 8h6v1.5H6V8Zm0 3h9v1.5H6V11Zm0 3h7v1.5H6V14Z', fill: 'currentColor' })
         )
       ),
-      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey }),
+      h('button', {
+        class: 'chat-view__iconbtn chat-view__image-btn',
+        type: 'button',
+        onClick: () => imageInputRef.current && imageInputRef.current.click(),
+        'aria-label': 'Add image',
+        title: 'Add image'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+          h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
+        )
+      ),
+      h('input', { ref: imageInputRef, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
+      h('textarea', { ref: promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste }),
       h('button', { ref: sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
         h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
           h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
         )
       ),
+      imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
+        imageAttachments.map((a, idx) => h('button', { key: idx, class: 'chat-view__image-chip', type: 'button', onClick: () => removeImageAttachment(idx), title: 'Remove image' },
+          h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
+          h('span', null, '×')
+        ))
+      ) : null,
       h('span', { ref: statusEl, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
     // File editor popup. Rendered as a full-screen overlay over the

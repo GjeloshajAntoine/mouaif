@@ -1597,6 +1597,19 @@ textarea#projectEditor {
   border-radius: 12px 12px 4px 12px;
   white-space: pre-wrap;
 }
+.chat-msg__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-msg__attachment-img {
+  max-width: 180px;
+  max-height: 180px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.35);
+}
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
   color: var(--danger);
@@ -1899,6 +1912,43 @@ textarea#projectEditor {
   overflow-y: auto;
 }
 .chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
+.chat-view__image-input { display: none; }
+.chat-view__image-preview {
+  flex: 1 0 100%;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 38px 4px 34px;
+}
+.chat-view__image-chip {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.chat-view__image-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chat-view__image-chip span {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.72);
+  color: white;
+  font-size: 14px;
+  line-height: 15px;
+}
 .chat-view__send {
   /* 32px square: matches the --tap touch target used everywhere
      else in the app, and matches the textarea's min-height so the
