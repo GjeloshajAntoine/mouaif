@@ -2354,8 +2354,20 @@ export function ChatView(props) {
         }
       }
       else if (ev.eventName === 'done') {
-        usage = data.usage || null;
-        cost = data.cost || null;
+        // Merge rather than overwrite: usage_input/usage_output may have
+        // accumulated a prompt/completion count before `done`. A `done`
+        // that omits a field (e.g. Anthropic's empty message_stop, or a
+        // provider that only streamed per-round usage) must not clobber
+        // the numbers we already have.
+        if (data.usage) {
+          const merged = usage || {};
+          const p = Number(data.usage.promptTokens);
+          const c = Number(data.usage.completionTokens);
+          if (isFinite(p) && p > 0) merged.promptTokens = p;
+          if (isFinite(c) && c > 0) merged.completionTokens = c;
+          usage = merged;
+        }
+        cost = data.cost || cost;
         streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
         refreshChatTitle();
       }
@@ -2488,7 +2500,13 @@ export function ChatView(props) {
       console.error('chat transcript reconciliation failed', syncError);
     }
     if (statusEl.current.textContent === 'streaming\u2026') {
-      setChatStatus(usage ? ('done \u2014 ' + usage.promptTokens + ' in, ' + usage.completionTokens + ' out') : 'done', 'success');
+      const hasCounts = usage && (usage.promptTokens != null || usage.completionTokens != null);
+      setChatStatus(
+        hasCounts
+          ? ('done \u2014 ' + (usage.promptTokens || 0) + ' in, ' + (usage.completionTokens || 0) + ' out')
+          : 'done',
+        'success'
+      );
     }
     if (sendBtn.current) sendBtn.current.disabled = false;
     streamingRef.current = false;

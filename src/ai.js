@@ -1194,8 +1194,17 @@ async function streamChat(opts) {
     // `tool` result message the upstream needs on the next turn.
     // Image blocks are also attached as native vision message parts after
     // all required tool messages have been added.
+    //
+    // Parallelism: when every call in this turn is a `subagent`, run them
+    // concurrently — subagents are read-mostly nested chats, so the model
+    // can fan out independent research/analysis tasks in one turn. Mixed
+    // batches (subagent + file/shell/MCP) stay sequential so ordering
+    // guarantees hold for tools with side effects. The authorization
+    // session is keyed by callId and the UI routes nested events by
+    // parentCallId, so concurrent subagents prompt and render correctly.
+    const runParallel = calls.length > 1 && calls.every((c) => c.name === 'subagent');
     const postToolImageMessages = [];
-    for (const c of calls) {
+    const runOneCall = async (c) => {
       let args = {};
       if (c.arguments) {
         try { args = JSON.parse(c.arguments); }
@@ -1304,6 +1313,15 @@ async function streamChat(opts) {
           ]
         });
       }
+    };
+    if (runParallel) {
+      // Concurrent subagent fan-out. `convo` and `postToolImageMessages`
+      // are appended from each async worker; ordering of the tool
+      // messages in the follow-up request doesn't carry semantics (each
+      // is matched by tool_call_id), so completion order is fine.
+      await Promise.all(calls.map((c) => runOneCall(c)));
+    } else {
+      for (const c of calls) await runOneCall(c);
     }
     if (postToolImageMessages.length) convo.push(...postToolImageMessages);
     completedToolRound = true;
