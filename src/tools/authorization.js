@@ -242,11 +242,18 @@ async function authorize(input) {
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 
   const session = getSession(projectDir, chatId);
-  if (session.deniedCallIds.has(callId)) throw typedError('EDENIED', 'user denied');
-  if (session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  if (session.allowedCallIds.get(callId) === tool) {
-    session.allowedCallIds.delete(callId);
-    return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+  // Binary-mode tools (`ask_user`) must ALWAYS reach the prompt: the user
+  // is the only source of truth, so no session state may silently resolve
+  // the gate. A stale deny or grant would otherwise short-circuit here and
+  // the dispatcher would fall back to a `cancelled: true` result even
+  // though the user was never asked (or already answered a re-issued call).
+  if (!BINARY_MODE_TOOLS.has(tool)) {
+    if (session.deniedCallIds.has(callId)) throw typedError('EDENIED', 'user denied');
+    if (session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+    if (session.allowedCallIds.get(callId) === tool) {
+      session.allowedCallIds.delete(callId);
+      return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+    }
   }
   if (config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
   if (config.mode === 'allowlist' && await matchesAllowlist(input.summary || input.cmd || '', config.allowlist)) {
@@ -294,8 +301,13 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
   if (!pending) throw typedError('ENOTFOUND', 'authorization request not found');
   session.pending.delete(callId);
 
-  if (decision === 'allow-session') session.grants.add(pending.tool);
-  if (decision === 'allow-always') {
+  // Binary-mode tools never earn session/persistent state from a decision:
+  // an allow is for this one question only, and a deny must not block a
+  // re-issued call later in the session. Otherwise a single Dismiss would
+  // make every subsequent ask_user auto-cancel without ever prompting.
+  const binary = BINARY_MODE_TOOLS.has(pending.tool);
+  if (decision === 'allow-session' && !binary) session.grants.add(pending.tool);
+  if (decision === 'allow-always' && !binary) {
     const family = configToolName(pending.tool);
     if (NATIVE_TOOLS.has(family)) {
       const current = effectiveConfig(projectDir, family);
@@ -316,8 +328,8 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
     }
     session.grants.add(pending.tool);
   }
-  if (decision === 'allow-once' && pending.flow === 'retry') session.allowedCallIds.set(callId, pending.tool);
-  if (decision === 'deny') session.deniedCallIds.add(callId);
+  if (decision === 'allow-once' && pending.flow === 'retry' && !binary) session.allowedCallIds.set(callId, pending.tool);
+  if (decision === 'deny' && !binary) session.deniedCallIds.add(callId);
 
   appendAudit(projectDir, chatId, pending.tool, callId, decision);
   if (decision === 'deny') pending.reject(typedError('EDENIED', 'user denied'));

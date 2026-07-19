@@ -230,6 +230,40 @@ async function main() {
   check('authorization.tools.subagent present', all && all.tools && all.tools.subagent);
   check('authorization.tools.file present', all && all.tools && all.tools.file);
 
+  // 22) Regression: a deny on ask_user must NOT poison the session. A
+  //     later authorize for the same (or a new) callId must still prompt,
+  //     never auto-EDENIED — otherwise the model sees a spurious
+  //     `cancelled: true` for a question the user was never asked.
+  authz.clearGrants(projectDir, 'ask00001');
+  const denyGate = await authz.authorize({ projectDir, chatId: 'ask00001', callId: 'call_reissue', tool: 'ask_user' });
+  assert.equal(denyGate.decision, 'prompt');
+  await assert.rejects(
+    new Promise((resolve, reject) => {
+      denyGate.wait.then(resolve, reject);
+      authz.recordDecision(projectDir, 'ask00001', 'call_reissue', 'deny');
+    }),
+    { code: 'EDENIED' }
+  );
+  // Same callId re-issued: still prompts (not auto-denied).
+  const reGate = await authz.authorize({ projectDir, chatId: 'ask00001', callId: 'call_reissue', tool: 'ask_user' });
+  check('deny does not poison re-issued callId', reGate.decision === 'prompt');
+  // Resolve it with an answer so we don't leak a pending entry.
+  authz.recordDecision(projectDir, 'ask00001', 'call_reissue', 'allow-once', { choice: 'a', extra: '' });
+  await reGate.wait;
+
+  // 23) Regression: allow-session on ask_user must NOT create a session
+  //     grant. The next call must still prompt — ask_user has no
+  //     "remember this" semantics, the user is always the source of truth.
+  authz.clearGrants(projectDir, 'ask00001');
+  const s1 = await authz.authorize({ projectDir, chatId: 'ask00001', callId: 'call_sess1', tool: 'ask_user' });
+  assert.equal(s1.decision, 'prompt');
+  authz.recordDecision(projectDir, 'ask00001', 'call_sess1', 'allow-session', { choice: 'a', extra: '' });
+  await s1.wait;
+  const s2 = await authz.authorize({ projectDir, chatId: 'ask00001', callId: 'call_sess2', tool: 'ask_user' });
+  check('allow-session creates no grant for ask_user', s2.decision === 'prompt');
+  authz.recordDecision(projectDir, 'ask00001', 'call_sess2', 'allow-once', { choice: 'b', extra: '' });
+  await s2.wait;
+
   console.log('ask_user tool: ' + passed + ' passed, ' + failed + ' failed');
 }
 

@@ -1757,7 +1757,15 @@ async function streamChat(opts) {
         const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      const payload = (callOpts && callOpts.answerPayload) || { cancelled: true };
+      // The deny path passes { cancelled: true } explicitly. Any other
+      // missing payload means the gate resolved without prompting — a
+      // bug, not a user dismissal — so surface it as an internal error
+      // the model can report instead of a silent "cancelled".
+      const payload = (callOpts && callOpts.answerPayload);
+      if (!payload) {
+        const r = { error: { code: 'ENOANSWER', message: 'ask_user resolved without a user answer; the question was not shown or the session was stale. Ask the user again.' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
       const choice = payload && Array.isArray(payload.choice) ? payload.choice.slice() : (payload && typeof payload.choice === 'string' ? payload.choice : '');
       const extra = askMod.clampExtra(payload && typeof payload.extra === 'string' ? payload.extra : '');
       const out = askMod.buildResult({
