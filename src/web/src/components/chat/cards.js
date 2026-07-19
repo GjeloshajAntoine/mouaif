@@ -252,8 +252,8 @@ function buildMcpServerToggles(state) {
       const toggleArrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       toggleArrow.setAttribute('class', 'chat-view__mcp-toggle-arrow');
       toggleArrow.setAttribute('viewBox', '0 0 16 16');
-      toggleArrow.setAttribute('width', '16');
-      toggleArrow.setAttribute('height', '16');
+      toggleArrow.setAttribute('width', '12');
+      toggleArrow.setAttribute('height', '12');
       toggleArrow.setAttribute('aria-hidden', 'true');
       toggleArrow.setAttribute('focusable', 'false');
       const togglePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -572,12 +572,19 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
     if (!refs.transcript.current) return resolve('deny');
     const card = document.createElement('div');
     card.className = 'tool-card tool-card--authorization';
-    const title = document.createElement('div');
-    title.className = 'tool-card__role';
-    title.textContent = 'authorization required';
+    const head = document.createElement('div');
+    head.className = 'tool-card__head';
+    const chev = document.createElement('span');
+    chev.className = 'tool-card__chev';
+    chev.setAttribute('aria-hidden', 'true');
+    chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
     const name = document.createElement('div');
     name.className = 'tool-card__name';
     name.textContent = request.tool || 'tool';
+    const title = document.createElement('div');
+    title.className = 'tool-card__role';
+    title.textContent = 'authorization required';
+    head.appendChild(chev); head.appendChild(name); head.appendChild(title);
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
     detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
@@ -615,7 +622,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
       });
       actions.appendChild(button);
     }
-    card.appendChild(title); card.appendChild(name); card.appendChild(detail); card.appendChild(actions);
+    card.appendChild(head); card.appendChild(detail); card.appendChild(actions);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);
   });
@@ -637,12 +644,21 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   card.dataset.toolId = request.callId || ('ask_' + Math.random().toString(36).slice(2, 10));
   const head = document.createElement('div');
   head.className = 'tool-card__head';
+  const chev = document.createElement('span');
+  chev.className = 'tool-card__chev';
+  chev.setAttribute('aria-hidden', 'true');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
+  head.appendChild(chev);
   const role = document.createElement('span');
   role.className = 'tool-card__role';
   role.textContent = 'the model is asking';
   head.appendChild(role);
+  const name = document.createElement('span');
+  name.className = 'tool-card__name';
+  name.textContent = 'Question';
+  head.appendChild(name);
   const pill = document.createElement('span');
-  pill.className = 'tool-card__pill';
+  pill.className = 'tool-card__pill tool-card__pill--busy';
   pill.textContent = 'waiting';
   head.appendChild(pill);
   card.appendChild(head);

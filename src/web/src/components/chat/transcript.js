@@ -224,16 +224,45 @@ export function appendReasoningToLive(delta, refs, state) {
   }
 }
 
+// TOOL_VERBS — verb-style labels for the built-in tools, shown in
+// the card header instead of the raw snake_case name (the "Reading
+// index.ts" style used by modern agentic editors). Unknown tools
+// (MCP etc.) fall back to their raw name.
+const TOOL_VERBS = {
+  read_file: 'Read',
+  list_files: 'Listed',
+  search_files: 'Searched',
+  edit_file: 'Edited',
+  write_file: 'Wrote',
+  shell: 'Ran',
+  subagent: 'Subagent',
+  ask_user: 'Question'
+};
+
+function toolCardLabel(toolName) {
+  const name = normalizeToolName(toolName);
+  return TOOL_VERBS[name] || name || 'tool';
+}
+
 // buildToolCardHead(toolName, args, pillClass, pillText)
 //
-// The compact header row shared by tool_call and tool_result cards.
-// The whole row is the tap target for expand/collapse.
+// The compact header row shared by tool_call and tool_result cards:
+// a chevron, the verb-style tool label, the one-line arg summary,
+// and a status dot (busy/ok/err) on the right. The whole row is the
+// tap target for expand/collapse. The status element keeps the
+// legacy `.tool-card__pill` classes so subagent code that toggles
+// pill classes keeps working.
 function buildToolCardHead(toolName, args, pillClass, pillText) {
   const head = document.createElement('div');
   head.className = 'tool-card__head';
+  head.setAttribute('role', 'button');
+  const chev = document.createElement('span');
+  chev.className = 'tool-card__chev';
+  chev.setAttribute('aria-hidden', 'true');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
   const name = document.createElement('span');
   name.className = 'tool-card__name';
-  name.textContent = toolName || 'tool';
+  name.textContent = toolCardLabel(toolName);
   // `args` may be either a raw arg object or an already-formatted
   // string (when the caller has the display text already). Pass it
   // through formatToolArgs either way: passing a string returns
@@ -242,6 +271,7 @@ function buildToolCardHead(toolName, args, pillClass, pillText) {
   const pill = document.createElement('span');
   pill.className = 'tool-card__pill ' + pillClass;
   pill.textContent = pillText;
+  head.appendChild(chev);
   head.appendChild(name);
   if (argText) {
     const argsEl = document.createElement('pre');
@@ -281,7 +311,7 @@ export function appendToolCallCard(toolCall, refs) {
     live.className = 'tool-card__subagent-live';
     const hint = document.createElement('div');
     hint.className = 'tool-card__subagent-live-hint';
-    hint.textContent = 'Subagent is working…';
+    hint.innerHTML = '<span class="tool-card__spinner" aria-hidden="true"></span>Subagent is working…';
     live.appendChild(hint);
     body.appendChild(live);
     card.appendChild(body);
@@ -358,7 +388,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     if (data.id) row.dataset.nestedToolId = data.id;
     const callName = document.createElement('span');
     callName.className = 'tool-card__subagent-tool-name';
-    callName.textContent = data.name || 'tool';
+    callName.textContent = toolCardLabel(data.name);
     const callArgs = document.createElement('pre');
     callArgs.className = 'tool-card__subagent-text';
     callArgs.textContent = formatToolArgs(data.args, data.name);
@@ -462,7 +492,7 @@ function appendSubagentNestedToolCall(parent, tc) {
   if (tc && tc.id) call.dataset.nestedToolId = tc.id;
   const callName = document.createElement('span');
   callName.className = 'tool-card__subagent-tool-name';
-  callName.textContent = fn.name || 'tool';
+  callName.textContent = toolCardLabel(fn.name);
   const callArgs = document.createElement('pre');
   callArgs.className = 'tool-card__subagent-text';
   const rawArgs = fn.arguments != null ? fn.arguments : (tc && tc.args);
@@ -481,7 +511,7 @@ function appendSubagentToolResult(parent, m) {
   call.className = 'tool-card__subagent-tool';
   const callName = document.createElement('span');
   callName.className = 'tool-card__subagent-tool-name';
-  callName.textContent = m.name || 'tool';
+  callName.textContent = toolCardLabel(m.name);
   call.appendChild(callName);
   renderSubagentToolPreview(call, m.name, m.content);
   parent.appendChild(call);
@@ -657,7 +687,7 @@ function buildEmptyState() {
   empty.className = 'chat-view__empty';
   const icon = document.createElement('span');
   icon.className = 'chat-view__empty-icon';
-  icon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M4 4h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-9.586a1.5 1.5 0 0 0-1.06.44l-2.122 2.12A.5.5 0 0 1 6.4 20.146V18H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 5a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H7Z"/></svg>';
+  icon.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M4 4h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-9.586a1.5 1.5 0 0 0-1.06.44l-2.122 2.12A.5.5 0 0 1 6.4 20.146V18H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 5a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H7Z"/></svg>';
   const title = document.createElement('p');
   title.className = 'chat-view__empty-title';
   title.textContent = 'Start the conversation';
