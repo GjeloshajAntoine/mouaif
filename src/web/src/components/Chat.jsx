@@ -1212,10 +1212,21 @@ export function ChatView(props) {
         renderImageAttachments(body, m.attachments);
       }
     }
-    const ts = document.createElement('div');
+    // Header line: role label on the left, HH:MM timestamp pushed
+    // to the right edge of the message row.
+    const head = document.createElement('div');
+    head.className = 'chat-msg__head';
+    const ts = document.createElement('span');
     ts.className = 'chat-msg__ts';
-    ts.textContent = m.ts ? new Date(m.ts).toLocaleTimeString() : '';
-    row.appendChild(role); row.appendChild(body); row.appendChild(ts);
+    if (m.ts) {
+      ts.textContent = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      ts.hidden = true;
+    }
+    head.appendChild(role);
+    head.appendChild(ts);
+    row.appendChild(head);
+    row.appendChild(body);
     transcript.current.appendChild(row);
     if (m.role === 'assistant' && isLive) {
       row._body = body;

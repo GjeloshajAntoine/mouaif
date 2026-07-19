@@ -2008,7 +2008,26 @@ textarea#projectEditor {
 }
 .chat-msg--assistant .chat-msg__body del,
 .chat-msg--system .chat-msg__body del { color: var(--muted); }
-.chat-msg__ts { display: none; }
+/* Header line above the bubble: role label left, HH:MM timestamp
+   pushed to the right edge of the message. */
+.chat-msg__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  align-self: stretch;
+  width: 100%;
+}
+.chat-msg__head .chat-msg__role { padding: 0 4px; }
+.chat-msg__ts {
+  margin-left: auto;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 /* System prompt — the first message of the transcript, rendered as a
    normal chat bubble (not a permanent widget). Centered and muted so
