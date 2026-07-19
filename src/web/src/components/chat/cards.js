@@ -546,18 +546,38 @@ export async function toggleMcpServer(id, enabled, state, refs, updateChat, setC
       setChatStatus('MCP update failed: HTTP ' + r.status, 'error');
       return;
     }
-    const rr = await Promise.all([
-      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
-    ]);
-    if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) state.mcpServers = rr[0].body.servers;
-    if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
-      state.tools = Object.assign({}, state.tools || {}, { catalog: rr[1].body.tools });
+    // The PATCH resolved, so the flag is persisted. Show the cached
+    // state right away instead of blocking on the server boot: the
+    // freshly-PATCHed server record carries the persisted toolCache
+    // from its last run, which is enough to paint the child tool
+    // rows. Merge it into local state and repaint immediately…
+    if (r.body && r.body.server) {
+      const servers2 = (state.mcpServers || []).slice();
+      const i2 = servers2.findIndex((s) => s && s.id === id);
+      if (i2 >= 0) servers2[i2] = r.body.server; else servers2.push(r.body.server);
+      state.mcpServers = servers2;
     }
-    setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
-  } finally {
     state.mcpToggleBusy.delete(id);
     updateToolsCard(refs, state);
+    setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
+    // …then refresh in the background. /api/tools/list awaits
+    // ensureEnabledServers (i.e. the actual child-process boot),
+    // which is the slow part; when it lands we swap in the live
+    // catalog and repaint once more. The user never sees a frozen
+    // switch — they see the cached tools instantly, then the live
+    // set a moment later.
+    Promise.all([
+      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
+    ]).then((rr) => {
+      if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) state.mcpServers = rr[0].body.servers;
+      if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
+        state.tools = Object.assign({}, state.tools || {}, { catalog: rr[1].body.tools });
+      }
+      updateToolsCard(refs, state);
+    }).catch(() => {});
+  } finally {
+    state.mcpToggleBusy.delete(id);
   }
 }
 
