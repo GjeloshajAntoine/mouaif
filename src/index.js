@@ -18,6 +18,7 @@ const inspector = require('./inspector.js');
 const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
+const agentFiles = require('./agentFiles.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
@@ -897,13 +898,14 @@ async function handleChats(req, res, parsed) {
     }
   }
 
-  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, prompt, text }
+  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, agentFiles, prompt, text }
   // Returns the effective system context for a chat as it will be sent
-  // upstream: the resolved prompt-size profile system message and, if
-  // the chat references a custom prompt, that prompt's content. The
-  // chat UI renders this as the first (collapsible) message in the
-  // transcript so the user can see what the model is being told,
-  // without the prompt-size picker having to be a permanent fixture.
+  // upstream: the resolved prompt-size profile system message, the
+  // agent files (when enabled), and, if the chat references a custom
+  // prompt, that prompt's content. The chat UI renders this as the
+  // first (collapsible) message in the transcript so the user can see
+  // what the model is being told, without the prompt-size picker having
+  // to be a permanent fixture.
   const sysPromptMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/system-prompt$/);
   if (sysPromptMatch && method === 'GET') {
     const id = decodeURIComponent(sysPromptMatch[1]);
@@ -925,11 +927,25 @@ async function handleChats(req, res, parsed) {
         } catch { /* custom prompt stays null */ }
       }
       // The combined text mirrors the order handleChatStream uses:
-      // profile system message first, then the custom prompt.
+      // profile system message first, then agent files, then the custom
+      // prompt.
       const parts = [];
       if (profile && profile.systemMessage) parts.push(profile.systemMessage);
+      let agentFilesList = null;
+      try {
+        if (agentFiles.resolveEnabled({ chat, projectDir: dir })) {
+          const names = agentFiles.resolveFileNames({ chat, projectDir: dir });
+          agentFilesList = agentFiles.load(dir, names);
+          for (const af of agentFilesList) parts.push(af.content);
+        }
+      } catch { /* agent files stay null */ }
       if (prompt && prompt.content) parts.push(prompt.content);
-      return sendJSON(res, 200, { profile, prompt, text: parts.join('\n\n') });
+      return sendJSON(res, 200, {
+        profile,
+        agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        prompt,
+        text: parts.join('\n\n')
+      });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -1175,11 +1191,14 @@ async function handleChatStream(req, res, chatId) {
   //      settings.promptSize -> 'average'. The profile carries the
   //      model identity + the default guidance. A missing or unknown
   //      value falls through to the default; this code never throws.
-  //   2. Custom prompt (chat.promptId), if the chat references a
+  //   2. Agent files (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md),
+  //      when enabled for this chat. Each file rides as its own system
+  //      message so the model sees the file boundary.
+  //   3. Custom prompt (chat.promptId), if the chat references a
   //      project prompt. The custom prompt refines the profile — the
   //      instructions on each prompt say "where they do not conflict
   //      with the active profile".
-  //   3. The transcript (user + assistant turns), with the brand-new
+  //   4. The transcript (user + assistant turns), with the brand-new
   //      user turn already appended by the appendMessage call above.
   const history = messages.listMessages(projectDir, chatId);
   const upstreamMessages = [];
@@ -1196,6 +1215,22 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without a profile system message */ }
+  // Agent files (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).
+  // Injected after the profile but before tagged files and the custom
+  // prompt, so they sit close to the identity block. Each file rides
+  // as its own system message. A trace line records what was injected.
+  try {
+    if (agentFiles.resolveEnabled({ chat, projectDir })) {
+      const names = agentFiles.resolveFileNames({ chat, projectDir });
+      const injected = agentFiles.load(projectDir, names);
+      for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
+      if (traceStream && injected.length) {
+        trace.write(traceStream, 'agent-files', {
+          files: injected.map(m => m.name)
+        });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without agent files */ }
   // Tagged files (decisions §15). Injected after the profile but before
   // the custom prompt and the transcript, so they are the deepest
   // context. includeInChat entries ride as `system`; any file the user

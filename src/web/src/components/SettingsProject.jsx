@@ -35,6 +35,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // `onChange` handler on the mode <select> is enough.
   const askUserStatus = useRef(null);
   const askUserModeSel = useRef(null);
+  const agentFilesStatus = useRef(null);
+  const agentFilesToggle = useRef(null);
+  const agentFileNames = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
@@ -140,6 +143,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     if (fileStatus.current) fileStatus.current.textContent = '';
     if (askUserStatus.current) askUserStatus.current.textContent = '';
+    if (agentFilesStatus.current) agentFilesStatus.current.textContent = '';
 
     // MCP server count for the card summary.
     try {
@@ -162,6 +166,18 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         } else { promptsSummary.current.textContent = '—'; }
       }
     } catch { if (promptsSummary.current) promptsSummary.current.textContent = '—'; }
+
+    // Agent files: project-level enable + file list.
+    if (agentFilesToggle.current) {
+      const on = currentProject.agentFiles === true;
+      agentFilesToggle.current.checked = on;
+      agentFilesToggle.current.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+    if (agentFileNames.current) {
+      agentFileNames.current.value = Array.isArray(currentProject.agentFileNames)
+        ? currentProject.agentFileNames.join('\n')
+        : '';
+    }
 
     // Advanced: raw project file + resolved object.
     if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
@@ -326,6 +342,39 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', shellModeSel, shellAllowlist, shellStatus));
   const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', fileModeSel, fileAllowlist, fileStatus));
 
+  // Agent files: project-level enable/disable and custom file list.
+  async function saveAgentFiles() {
+    const enabled = agentFilesToggle.current ? !!agentFilesToggle.current.checked : false;
+    const namesRaw = agentFileNames.current ? agentFileNames.current.value : '';
+    const names = namesRaw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (agentFilesStatus.current) agentFilesStatus.current.textContent = 'saving…';
+    const patch = { agentFiles: enabled };
+    if (names.length) patch.agentFileNames = names;
+    else patch.unset = ['agentFileNames'];
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
+    });
+    if (r.status === 200) {
+      currentProject = r.body.project || Object.assign({}, currentProject, patch);
+      if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+      if (agentFilesStatus.current) agentFilesStatus.current.textContent = 'saved';
+    } else if (agentFilesStatus.current) {
+      agentFilesStatus.current.textContent = 'HTTP ' + r.status;
+    }
+  }
+  // Debounced version for the file-names textarea.
+  function makeAgentFilesSaver() {
+    let t = null;
+    return () => {
+      if (t) clearTimeout(t);
+      if (agentFilesStatus.current) agentFilesStatus.current.textContent = '…';
+      t = setTimeout(saveAgentFiles, 350);
+    };
+  }
+  const saveAgentFilesDebounced = useRef(makeAgentFilesSaver());
+
   // Advanced: save the raw JSON editor verbatim.
   async function saveRaw() {
     const d = dir();
@@ -478,6 +527,50 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('option', { value: 'ask' }, 'Ask every time (you always answer)'),
               h('option', { value: 'off' }, 'Off — model can no longer ask questions')
             )
+          )
+        )
+      ),
+
+      // ---- Agent files ------------------------------------------------
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Agent files', h('span', { class: 'group__title-note' }, 'Project-level defaults')),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
+              h('div', { class: 'settings-project__item-note' },
+                'When enabled, instruction files at the project root (e.g. AGENTS.md, CLAUDE.md) are injected into the model context. Chats can still override this. ',
+                h('span', { ref: agentFilesStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
+              )
+            ),
+            h('label', { class: 'switch' },
+              h('input', {
+                ref: agentFilesToggle,
+                id: 'sp-agent-files',
+                type: 'checkbox',
+                role: 'switch',
+                'aria-checked': 'false',
+                onChange: saveAgentFiles
+              }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+            )
+          ),
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
+              h('div', { class: 'settings-project__item-note' },
+                'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'
+              )
+            ),
+            h('textarea', {
+              ref: agentFileNames,
+              class: 'input settings-project__mono',
+              id: 'sp-agent-file-names',
+              rows: 3,
+              spellcheck: false,
+              placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
+              onInput: function () { saveAgentFilesDebounced.current(); }
+            })
           )
         )
       ),

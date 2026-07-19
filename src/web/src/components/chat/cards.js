@@ -457,6 +457,115 @@ export function mountToolsCard(refs, state) {
   }
 }
 
+// buildAgentFilesCard(state)
+//
+// A small card that shows which agent files (AGENTS.md, CLAUDE.md,
+// .github/copilot-instructions.md) were found at the project root
+// and whether they are being injected into the model context. One
+// toggle flips the per-chat `agentFiles` boolean; the default
+// (no explicit choice) follows the prompt-size profile:
+// very-small = OFF, average/extensive = ON.
+function buildAgentFilesCard(state) {
+  const af = state.agentFiles || { files: [], enabled: true, explicit: false };
+  const card = document.createElement('div');
+  card.className = 'chat-view__agent-files-card';
+  card.dataset.agentFilesCard = '1';
+
+  const head = document.createElement('div');
+  head.className = 'chat-view__agent-files-head';
+  const title = document.createElement('span');
+  title.className = 'chat-view__agent-files-title';
+  title.textContent = 'Agent files';
+  const note = document.createElement('span');
+  note.className = 'chat-view__agent-files-note';
+  note.textContent = af.explicit
+    ? (af.enabled ? 'on — applies next turn' : 'off — applies next turn')
+    : (af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable');
+  head.appendChild(title); head.appendChild(note);
+  card.appendChild(head);
+
+  if (!af.files.length) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-view__agent-files-empty';
+    empty.textContent = 'No agent files found at the project root.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'chat-view__agent-files-list';
+  for (const name of af.files) {
+    const row = document.createElement('div');
+    row.className = 'chat-view__agent-files-row';
+    const label = document.createElement('span');
+    label.className = 'chat-view__agent-files-name';
+    label.textContent = name;
+    row.appendChild(label);
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'chat-view__agent-files-toggle';
+  toggle.setAttribute('aria-pressed', af.enabled ? 'true' : 'false');
+  toggle.textContent = af.enabled ? 'Disable' : 'Enable';
+  toggle.addEventListener('click', () => state._toggleAgentFiles && state._toggleAgentFiles(!af.enabled));
+  card.appendChild(toggle);
+
+  return card;
+}
+
+// mountAgentFilesCard(refs, state)
+//
+// Insert the agent-files card into the transcript in the right slot.
+// Sits below the tools card (or below the system prompt if no tools
+// card is present).
+export function mountAgentFilesCard(refs, state) {
+  if (!refs.transcript.current) return;
+  const existing = refs.transcript.current.querySelector('[data-agent-files-card="1"]');
+  if (existing) existing.remove();
+  const card = buildAgentFilesCard(state);
+  refs.agentFilesCard.current = card;
+  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
+  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
+  const empty = refs.transcript.current.querySelector('.chat-view__empty');
+  if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
+  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
+  } else if (empty && empty.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, empty);
+  } else {
+    refs.transcript.current.appendChild(card);
+  }
+}
+
+// updateAgentFilesCard(refs, state)
+//
+// Re-render the agent-files card in place after a toggle. Same
+// pattern as updateToolsCard.
+export function updateAgentFilesCard(refs, state) {
+  if (!refs.agentFilesCard.current || !refs.agentFilesCard.current.parentNode) return;
+  const fresh = buildAgentFilesCard(state);
+  refs.agentFilesCard.current.parentNode.replaceChild(fresh, refs.agentFilesCard.current);
+  refs.agentFilesCard.current = fresh;
+}
+
+// toggleAgentFiles(next, state, refs, updateChat)
+//
+// Flip the per-chat agent-files toggle and persist it. The first
+// time the user interacts we write an explicit boolean; after that
+// the chat carries the user's choice until they reset it (by
+// switching to the profile default, which we do not expose in the
+// UI — the toggle is sticky).
+export async function toggleAgentFiles(next, state, refs, updateChat) {
+  const cur = state.agentFiles || { files: [], enabled: true, explicit: false };
+  state.agentFiles = { files: cur.files, enabled: next, explicit: true };
+  updateAgentFilesCard(refs, state);
+  await updateChat({ agentFiles: next });
+}
+
 // updateToolsCard(refs, state)
 //
 // Re-render the tools card in place after a chip toggle. Faster

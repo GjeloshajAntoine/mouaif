@@ -29,7 +29,8 @@
 //     providerId:   null,                 // selected app-level provider
 //     modelId:      null,                 // selected project/live model slug
 //     draft:        '',                   // unsent composer text
-//     tools:        undefined | null | [name] // per-chat tool filter; absent/null = all
+//     tools:        undefined | null | [name], // per-chat tool filter; absent/null = all
+//     agentFiles:   undefined | true | false   // per-chat agent-file toggle; absent = profile default
 //   }
 //
 // API enrichment (added by GET /api/chats, NOT persisted on disk):
@@ -112,7 +113,8 @@ function normalizeChat(chat) {
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
     draft: typeof chat.draft === 'string' ? chat.draft : '',
-    tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined)
+    tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
+    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined
   };
 }
 
@@ -208,6 +210,13 @@ function updateChat(projectDir, chatId, patch) {
       // the only surviving copy of the real pre-patch state.
       merged.tools = previousTools;
     }
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'agentFiles')) {
+    // `undefined` / `null` means "use the profile default"; a boolean
+    // pins the chat to an explicit choice.
+    merged.agentFiles = (patch.agentFiles === null || patch.agentFiles === undefined)
+      ? undefined
+      : patch.agentFiles === true;
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);

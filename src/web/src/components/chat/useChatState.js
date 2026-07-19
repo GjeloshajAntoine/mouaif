@@ -22,7 +22,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
 } from './transcript.js';
-import { mountToolsCard, buildSetupCard, toggleMcpServer, toggleTool } from './cards.js';
+import { mountToolsCard, mountAgentFilesCard, buildSetupCard, toggleMcpServer, toggleTool, toggleAgentFiles } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -70,6 +70,7 @@ export function useChatState(props) {
   const status = useRef(null);
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
+  const agentFilesCard = useRef(null);
   const mcpToggleBusy = useRef(new Set());
 
   // ---- High-frequency mutable state (refs, not useState) -----
@@ -84,6 +85,7 @@ export function useChatState(props) {
   const pickerFilter = useRef({ q: '', provider: 'all' });
   const systemPrompt = useRef(null);
   const tools = useRef({ catalog: [], filter: null });
+  const agentFiles = useRef({ files: [], enabled: true, explicit: false });
   const mcpServers = useRef([]);
   // Per-MCP collapsed state for the tool list inside the chat
   // tools card. Each MCP server has its own close toggle on its
@@ -129,6 +131,8 @@ export function useChatState(props) {
     set systemPrompt(v) { systemPrompt.current = v; },
     get tools() { return tools.current; },
     set tools(v) { tools.current = v; },
+    get agentFiles() { return agentFiles.current; },
+    set agentFiles(v) { agentFiles.current = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
     // `mcpCollapsed` is either `null` (the default — "everything
@@ -158,7 +162,7 @@ export function useChatState(props) {
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
     promptInput, imageInput, draftSaveTimer, sendBtn, status,
-    jumpBtn, toolsCard,
+    jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
     _autoresize: () => autoresize({ promptInput })
   };
@@ -210,6 +214,7 @@ export function useChatState(props) {
   }), [projectDir, chatId, chat, providers, imageAttachments]);
 
   const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
+  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound), [chat]);
   const onToggleMcpServer = useCallback((id, enabled) => toggleMcpServer(id, enabled, state, refs, updateChatBound, (txt, st) => setChatStatus(refs, txt, st), projectDir, chatId), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
     if (!providerId || !modelId) return;
@@ -235,6 +240,7 @@ export function useChatState(props) {
   state._renderTranscript = renderTranscriptBound;
   state._updateSetupVisibility = () => updateSetupVisibility(state, refs);
   state._toggleTool = onToggleTool;
+  state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleMcpServer = onToggleMcpServer;
 
   // ---- Initial load ----------------------------------------
@@ -280,6 +286,15 @@ export function useChatState(props) {
         tools.current = {
           catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
           filter: Array.isArray(c.tools) ? c.tools.slice() : null
+        };
+        // Seed the agent-files card from the chat record. The server
+        // tells us which files were discovered; the chat record tells
+        // us whether the user has explicitly toggled them.
+        const afEnabled = (typeof c.agentFiles === 'boolean') ? c.agentFiles : (c.promptSize !== 'very-small');
+        agentFiles.current = {
+          files: (rSys.status === 200 && Array.isArray(rSys.body.agentFiles)) ? rSys.body.agentFiles.map(f => f.name) : [],
+          enabled: afEnabled,
+          explicit: typeof c.agentFiles === 'boolean'
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
 

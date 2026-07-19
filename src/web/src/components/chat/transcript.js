@@ -18,7 +18,7 @@ import {
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
 import { cssEscape } from './utils.js';
-import { buildSetupCard, mountToolsCard } from './cards.js';
+import { buildSetupCard, mountToolsCard, mountAgentFilesCard } from './cards.js';
 import { setPromptSize } from './meta.js';
 import { updateUsageSummary } from './usage.js';
 import { updateJumpButton } from './scroll.js';
@@ -654,10 +654,12 @@ export function renderTranscript(state, refs) {
     refs.transcript.current.appendChild(empty);
     renderSystemPromptMessage(refs, state.systemPrompt);
     mountToolsCard(refs, state);
+    mountAgentFilesCard(refs, state);
     return;
   }
   renderSystemPromptMessage(refs, state.systemPrompt);
   mountToolsCard(refs, state);
+  mountAgentFilesCard(refs, state);
   for (const m of state.messages) {
     if (m.role === 'tool' && m.phase === 'call') {
       appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
