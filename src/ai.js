@@ -1270,7 +1270,7 @@ async function streamChat(opts) {
         // appeared permanently stuck on a tool call with no messages.
         onEvent('tool_call', { id: c.id || null, name: c.name, args });
         callEmitted = true;
-        exec = await dispatchTool(c.name, args, opts);
+        exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
         }
       } catch (e) {
         // Denied/disabled/error calls still need a call card immediately
@@ -1575,8 +1575,23 @@ async function streamChat(opts) {
         enabledTools: nestedEnabled,
         onEvent: (eventName, data) => {
           nestedEvents.push({ name: eventName, data });
-          if (eventName === 'authorization_required' && typeof onEvent === 'function') {
+          if (typeof onEvent !== 'function') return;
+          // Authorization still rides the normal event so the parent
+          // chat popup/card handles the nested approval.
+          if (eventName === 'authorization_required') {
             onEvent(eventName, Object.assign({}, data, { parentTool: 'subagent' }));
+            return;
+          }
+          // Forward nested progress under a distinct event name. The
+          // parent's SSE layer persists every `tool_call` / `tool_result`
+          // / `message` it sees, so reusing those names would corrupt
+          // the transcript with the subagent's internal turns.
+          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message') {
+            onEvent('subagent_event', {
+              parentCallId: (callOpts && callOpts.callId) || null,
+              kind: eventName,
+              data
+            });
           }
         }
       });
@@ -1586,7 +1601,44 @@ async function streamChat(opts) {
         if (ev.name === 'message' && ev.data && typeof ev.data.delta === 'string') text += ev.data.delta;
         else if (ev.name === 'tool_call' || ev.name === 'tool_result' || ev.name === 'authorization_required') nestedToolEvents.push(ev);
       }
-      const chat = nestedMessages.concat([{ role: 'assistant', content: text }]);
+      // Rebuild a faithful nested transcript for the UI. The plain
+      // `chat` (system+user+final assistant) hides every tool turn,
+      // which made the subagent preview look like no tools ran. We fold
+      // streamed tool_call / tool_result events back into OpenAI-shaped
+      // messages so the chat card can render them.
+      const chat = nestedMessages.slice();
+      {
+        let pendingCalls = [];
+        const flushCalls = () => {
+          if (!pendingCalls.length) return;
+          chat.push({
+            role: 'assistant',
+            content: null,
+            tool_calls: pendingCalls.map((c) => ({
+              id: c.id || undefined,
+              type: 'function',
+              function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
+            }))
+          });
+          pendingCalls = [];
+        };
+        for (const ev of nestedToolEvents) {
+          const d = ev.data || {};
+          if (ev.name === 'tool_call') {
+            pendingCalls.push({ id: d.id, name: d.name, args: d.args });
+          } else if (ev.name === 'tool_result') {
+            flushCalls();
+            chat.push({
+              role: 'tool',
+              tool_call_id: d.id || undefined,
+              name: d.name,
+              content: typeof d.result === 'string' ? d.result : JSON.stringify(d.result)
+            });
+          }
+        }
+        flushCalls();
+      }
+      chat.push({ role: 'assistant', content: text });
       const r = nested && nested.ok
         ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost || null }
         : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };

@@ -15,7 +15,15 @@ function escapeHtml(s) {
 
 // Inline-only pass: bold (**), italic (*), inline code (`), links ([text](url)), images (![alt](url)), strikethrough (~~)
 function renderInline(text) {
+  // Inline code is extracted first so its contents are never re-processed
+  // as bold/italic/links/etc. Private-use placeholders are swapped back
+  // at the end (U+E001 cannot appear in real chat text).
+  const codeSpans = [];
   let s = escapeHtml(text);
+  s = s.replace(/`([^`]+)`/g, (m, code) => {
+    codeSpans.push('<code>' + code + '</code>');
+    return '\uE001' + (codeSpans.length - 1) + '\uE001';
+  });
   // Images (must come before links)
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
   // Links
@@ -28,8 +36,8 @@ function renderInline(text) {
   s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
   // Strikethrough
   s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Restore inline code spans
+  s = s.replace(/\uE001(\d+)\uE001/g, (m, i) => codeSpans[Number(i)]);
   return s;
 }
 
@@ -45,27 +53,30 @@ export function renderMarkdown(text) {
   // Fenced code blocks: extract them before splitting into paragraphs.
   const blocks = [];
   let rest = String(text);
-  // Capture lines that start a fenced code block (``` or ~~~ with optional language)
-  const codeBlockRe = /^```(\w*)\s*$/m;
-  const codeBlockEnd = /^```\s*$/m;
+  // Opening fence: ``` or ~~~ followed by an optional info string.
+  // The language is the first word of the info string (CommonMark-style);
+  // any trailing words on the fence line are ignored.
+  const codeBlockRe = /^(```|~~~)([^\n]*)$/m;
 
   while (rest.length) {
     const m = codeBlockRe.exec(rest);
     if (!m) break;
+    const fence = m[1];
+    const lang = (m[2].trim().split(/\s+/)[0] || '');
+    const fenceEndRe = new RegExp('^' + fence + '\\s*$', 'm');
     // Everything before the code fence is normal text
     const before = rest.slice(0, m.index);
     if (before.trim()) blocks.push({ type: 'para', text: before });
     rest = rest.slice(m.index + m[0].length);
     // Find the closing fence
-    const endMatch = codeBlockEnd.exec(rest);
+    const endMatch = fenceEndRe.exec(rest);
     if (!endMatch) {
       // No closing fence — treat as regular text
-      blocks.push({ type: 'para', text: '```' + (m[1] || '') + '\n' + rest });
+      blocks.push({ type: 'para', text: fence + m[2] + '\n' + rest });
       rest = '';
       break;
     }
     const codeContent = rest.slice(0, endMatch.index);
-    const lang = m[1] || '';
     rest = rest.slice(endMatch.index + endMatch[0].length);
     blocks.push({ type: 'code', lang, content: codeContent });
   }

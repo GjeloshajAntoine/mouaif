@@ -127,9 +127,22 @@ export function ChatView(props) {
     const el = transcript.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    // Some appends render markdown or expand nested tool bodies after
+    // this tick. Pin again on the next frame so streaming subagent
+    // output doesn't stop a few pixels above the newest content.
+    requestAnimationFrame(() => {
+      if (pinnedToBottomRef.current && transcript.current === el) el.scrollTop = el.scrollHeight;
+    });
     pinnedToBottomRef.current = true;
     pendingCountRef.current = 0;
     updateJumpButton();
+  }
+
+  function scrollToolBodyToBottom(descendant) {
+    const body = descendant && descendant.closest && descendant.closest('.tool-card__body');
+    if (!body) return;
+    body.scrollTop = body.scrollHeight;
+    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
   }
 
   function updateJumpButton() {
@@ -1227,6 +1240,39 @@ export function ChatView(props) {
 
   // Render a tool_call event as a compact card above the live message
   // (or appended if there is no live row). The card shows the tool
+  function bindToolCardToggle(card) {
+    if (!card || card._toolCardToggleBound) return;
+    card._toolCardToggleBound = true;
+    // Only the explicit chevron toggles expansion. Whole-card/header
+    // taps made it too easy to collapse while trying to select/copy
+    // tool output on mobile.
+    ensureToolCardToggleButton(card);
+  }
+
+  // Add an explicit, obvious expand/collapse control to any card that
+  // owns a body. Tapping the tiny header text was not discoverable, so
+  // every expandable card gets a chevron button that always toggles.
+  function ensureToolCardToggleButton(card) {
+    if (!card || card.querySelector(':scope > .tool-card__toggle')) return;
+    const toggle = (e) => {
+      e.stopPropagation();
+      card.classList.toggle('is-expanded');
+    };
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tool-card__toggle';
+    btn.setAttribute('aria-label', 'Toggle details');
+    btn.addEventListener('click', toggle);
+    card.appendChild(btn);
+
+    const bottom = document.createElement('button');
+    bottom.type = 'button';
+    bottom.className = 'tool-card__toggle-bottom';
+    bottom.setAttribute('aria-label', 'Collapse details');
+    bottom.addEventListener('click', toggle);
+    card.appendChild(bottom);
+  }
+
   // name, a one-line argument summary, and a "running" pill. The
   // matching tool_result will replace this card.
   function appendToolCallCard(toolCall) {
@@ -1251,8 +1297,121 @@ export function ChatView(props) {
     pill.className = 'tool-card__pill tool-card__pill--busy';
     pill.textContent = 'running\u2026';
     card.appendChild(role); card.appendChild(name); card.appendChild(args); card.appendChild(pill);
+    if (isSubagentTool(toolCall.name)) {
+      card.classList.add('tool-card--subagent');
+      // A live body is added up front so the user can expand the card
+      // while the subagent is still running and watch nested tool
+      // activity stream in — previously the card only became
+      // expandable once the final result arrived.
+      const body = document.createElement('div');
+      body.className = 'tool-card__body';
+      const live = document.createElement('div');
+      live.className = 'tool-card__subagent-live';
+      const hint = document.createElement('div');
+      hint.className = 'tool-card__subagent-live-hint';
+      hint.textContent = 'Subagent is working\u2026';
+      live.appendChild(hint);
+      body.appendChild(live);
+      card.appendChild(body);
+      bindToolCardToggle(card);
+      // Expanded by default while running so progress is visible
+      // without a tap; the user can still collapse it.
+      card.classList.add('is-expanded');
+    }
     transcript.current.appendChild(card);
     afterTranscriptAppend(true);
+  }
+
+  // Fold a nested subagent stream event (tagged with parentTool) into
+  // the parent subagent card's live container. Returns true when the
+  // event was consumed and should not hit the normal handlers.
+  function handleSubagentStreamEvent(ev, data) {
+    if (!transcript.current) return false;
+    const card = findSubagentCard(data && data.parentCallId);
+    if (!card) return false;
+    const live = ensureSubagentLive(card);
+    if (!live) return false;
+    if (ev.eventName === 'message' && typeof data.delta === 'string') {
+      live._text = (live._text || '') + data.delta;
+      let textEl = live.querySelector('.tool-card__subagent-live-text');
+      if (!textEl) {
+        textEl = document.createElement('div');
+        textEl.className = 'tool-card__subagent-live-text';
+        live.appendChild(textEl);
+      }
+      renderAssistantBody(textEl, live._text, '', false);
+      scrollToolBodyToBottom(live);
+      afterTranscriptAppend(false);
+      return true;
+    }
+    if (ev.eventName === 'tool_call') {
+      const hint = live.querySelector('.tool-card__subagent-live-hint');
+      if (hint) hint.remove();
+      const row = document.createElement('div');
+      row.className = 'tool-card__subagent-tool';
+      if (data.id) row.dataset.nestedToolId = data.id;
+      const callName = document.createElement('span');
+      callName.className = 'tool-card__subagent-tool-name';
+      callName.textContent = data.name || 'tool';
+      const callArgs = document.createElement('pre');
+      callArgs.className = 'tool-card__subagent-text';
+      callArgs.textContent = formatToolArgs(data.args, data.name);
+      const status = document.createElement('span');
+      status.className = 'tool-card__pill tool-card__pill--busy';
+      status.textContent = 'running\u2026';
+      row.appendChild(callName); row.appendChild(callArgs); row.appendChild(status);
+      live.appendChild(row);
+      scrollToolBodyToBottom(live);
+      afterTranscriptAppend(false);
+      return true;
+    }
+    if (ev.eventName === 'tool_result') {
+      let row = data.id ? live.querySelector('[data-nested-tool-id="' + cssEscape(data.id) + '"]') : null;
+      if (!row) row = live.querySelector('.tool-card__subagent-tool:last-child');
+      if (row) {
+        const status = row.querySelector('.tool-card__pill');
+        if (status) {
+          status.className = 'tool-card__pill ' + (data.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
+          status.textContent = data.ok ? 'ok' : 'error';
+        }
+        const oldPreview = row.querySelector('.tool-card__subagent-preview');
+        if (oldPreview) oldPreview.remove();
+        renderSubagentToolPreview(row, data.name, data.result);
+      }
+      scrollToolBodyToBottom(live);
+      afterTranscriptAppend(false);
+      return true;
+    }
+    return false;
+  }
+
+  function findSubagentCard(parentCallId) {
+    if (!transcript.current) return null;
+    if (parentCallId) {
+      const byId = transcript.current.querySelector('[data-tool-id="' + cssEscape(parentCallId) + '"]');
+      if (byId) return byId;
+    }
+    // Fall back to the most recent subagent card (ids can be missing
+    // for providers that don't echo tool call ids).
+    const cards = transcript.current.querySelectorAll('.tool-card--subagent');
+    return cards.length ? cards[cards.length - 1] : null;
+  }
+
+  function ensureSubagentLive(card) {
+    if (!card) return null;
+    let body = card.querySelector('.tool-card__body');
+    if (!body) {
+      body = document.createElement('div');
+      body.className = 'tool-card__body';
+      card.appendChild(body);
+    }
+    let live = card.querySelector('.tool-card__subagent-live');
+    if (!live) {
+      live = document.createElement('div');
+      live.className = 'tool-card__subagent-live';
+      body.appendChild(live);
+    }
+    return live;
   }
 
   // Render a tool_result event. If a matching tool_call card is on
@@ -1277,7 +1436,7 @@ export function ChatView(props) {
       const body = document.createElement('div');
       body.className = 'tool-card__body';
       card.appendChild(role); card.appendChild(name); card.appendChild(body);
-      card.addEventListener('click', () => card.classList.toggle('is-expanded'));
+      bindToolCardToggle(card);
       transcript.current.appendChild(card);
     } else {
       // The call card now becomes a result card (clickable to expand).
@@ -1289,14 +1448,16 @@ export function ChatView(props) {
       if (role) role.textContent = 'tool result';
       card.dataset.toolName = normalizeToolName(toolResult.name);
       const args = card.querySelector('.tool-card__args');
-      if (args) args.remove();
+      // Keep the argument summary on subagent cards: the delegated task
+      // is the most useful bit of context for the finished preview.
+      if (args && !isSubagentTool(toolResult.name)) args.remove();
       let body = card.querySelector('.tool-card__body');
       if (!body) {
         body = document.createElement('div');
         body.className = 'tool-card__body';
         card.appendChild(body);
       }
-      card.addEventListener('click', () => card.classList.toggle('is-expanded'));
+      bindToolCardToggle(card);
     }
     if (isSubagentTool(toolResult && toolResult.name)) card.classList.add('tool-card--subagent');
     const body = card.querySelector('.tool-card__body');
@@ -1325,11 +1486,20 @@ export function ChatView(props) {
     if (name === 'list_files') return args.pattern || 'all text files';
     if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
     if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
+    if (name === 'subagent') return args.task || '';
     try { return JSON.stringify(args, null, 2); }
     catch { return String(args); }
   }
 
   function renderToolResultBody(body, toolResult) {
+    // For subagent cards we discard the streamed live container; the
+    // post-run chat render below (renderSubagentChat) shows the same
+    // activity as polished bubbles. Keeping both was duplicative and
+    // mixed two visual styles.
+    if (isSubagentTool(toolResult && toolResult.name)) {
+      const live = body.querySelector('.tool-card__subagent-live');
+      if (live) live.remove();
+    }
     body.textContent = '';
     body.className = 'tool-card__body';
     const cardTool = body.closest && body.closest('.tool-card');
@@ -1341,8 +1511,10 @@ export function ChatView(props) {
     if (name === 'search_files') return renderSearchFilesToolResult(body, r);
     if (name === 'edit_file') return renderEditFileToolResult(body, r);
     if (name === 'write_file') return renderWriteFileToolResult(body, r);
-    if (isSubagentTool(toolResult && toolResult.name) && r && Array.isArray(r.chat)) {
-      body.textContent = r.text || '';
+    if (isSubagentTool(toolResult && toolResult.name)) {
+      // The full chat (user / assistant / tool turns) is rendered
+      // by renderSubagentChat, which is called by the caller right
+      // after this body fill. Nothing else to add here.
       return;
     }
     if (r && Array.isArray(r.content)) {
@@ -1552,30 +1724,121 @@ export function ChatView(props) {
 
   function renderSubagentChat(card, toolResult) {
     if (!card) return;
+    // Drop any prior chat render so re-runs don't stack copies.
     const old = card.querySelector('.tool-card__subagent-chat');
     if (old) old.remove();
-    const r = toolResult && toolResult.result;
+    // If the live container already streamed nested activity in, we
+    // keep it (so per-tool rows aren't lost) and render the chat
+    // bubbles alongside it inside the same card body. The live
+    // container stays in place until we explicitly remove it.
+    const r = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
     const chat = r && Array.isArray(r.chat) ? r.chat : null;
-    if (!chat || !chat.length) return;
-    const details = document.createElement('details');
-    details.className = 'tool-card__subagent-chat';
-    details.open = true;
-    const summary = document.createElement('summary');
-    summary.textContent = 'Subagent chat (' + chat.length + ' messages)';
-    details.appendChild(summary);
-    for (const m of chat) {
+    if ((!chat || !chat.length) && !(r && typeof r.text === 'string' && r.text)) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tool-card__subagent-chat';
+    // Don't let taps inside the nested chat bubble up to the parent
+    // card's expand/collapse toggle.
+    wrap.addEventListener('click', (e) => e.stopPropagation());
+    const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
+    for (const m of turns) {
+      const role = m && m.role;
+      if (role === 'tool') {
+        // Tool turns are not chat bubbles — render them as compact
+        // tool rows so the nested transcript shows the full loop
+        // (assistant call → tool result) without breaking the
+        // bubble rhythm for the user/assistant turns around them.
+        const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+        if (toolCalls.length) {
+          for (const tc of toolCalls) appendSubagentNestedToolCall(wrap, tc);
+        } else {
+          appendSubagentToolResult(wrap, m);
+        }
+        continue;
+      }
+      if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
       const row = document.createElement('div');
-      row.className = 'tool-card__subagent-msg tool-card__subagent-msg--' + (m.role || 'message');
-      const role = document.createElement('div');
-      role.className = 'tool-card__subagent-role';
-      role.textContent = m.role || 'message';
-      const text = document.createElement('pre');
-      text.className = 'tool-card__subagent-text';
-      text.textContent = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '', null, 2);
-      row.appendChild(role); row.appendChild(text);
-      details.appendChild(row);
+      row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
+      const roleEl = document.createElement('div');
+      roleEl.className = 'chat-msg__role';
+      roleEl.textContent = role;
+      const body = document.createElement('div');
+      body.className = 'chat-msg__body';
+      const content = typeof m.content === 'string' ? m.content : (m.content ? JSON.stringify(m.content, null, 2) : '');
+      if (role === 'assistant') {
+        renderAssistantBody(body, content || '', '', true);
+      } else {
+        body.textContent = content || '';
+      }
+      row.appendChild(roleEl); row.appendChild(body);
+      // Inline any tool calls attached to this assistant turn so the
+      // bubble shows the full assistant→tool→assistant loop.
+      const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+      for (const tc of toolCalls) appendSubagentNestedToolCall(row, tc);
+      wrap.appendChild(row);
     }
-    card.appendChild(details);
+    // Append inside the card's body so the body's max-height,
+    // overflow, and expand/collapse mask control the nested chat.
+    const body = card.querySelector('.tool-card__body');
+    if (body) body.appendChild(wrap);
+    else card.appendChild(wrap);
+  }
+
+  // Shared helper for the compact "nested tool" row used both in the
+  // live stream and in the final chat dump. Kept here so the two
+  // paths stay visually identical.
+  function appendSubagentNestedToolCall(parent, tc) {
+    const fn = (tc && tc.function) || tc || {};
+    const call = document.createElement('div');
+    call.className = 'tool-card__subagent-tool';
+    if (tc && tc.id) call.dataset.nestedToolId = tc.id;
+    const callName = document.createElement('span');
+    callName.className = 'tool-card__subagent-tool-name';
+    callName.textContent = fn.name || 'tool';
+    const callArgs = document.createElement('pre');
+    callArgs.className = 'tool-card__subagent-text';
+    const rawArgs = fn.arguments != null ? fn.arguments : (tc && tc.args);
+    let parsedArgs = rawArgs;
+    if (typeof rawArgs === 'string') { try { parsedArgs = JSON.parse(rawArgs); } catch { /* keep raw string */ } }
+    callArgs.textContent = typeof parsedArgs === 'object' && parsedArgs !== null
+      ? formatToolArgs(parsedArgs, fn.name)
+      : String(rawArgs || '');
+    call.appendChild(callName); call.appendChild(callArgs);
+    parent.appendChild(call);
+    return call;
+  }
+
+  function appendSubagentToolResult(parent, m) {
+    const call = document.createElement('div');
+    call.className = 'tool-card__subagent-tool';
+    const callName = document.createElement('span');
+    callName.className = 'tool-card__subagent-tool-name';
+    callName.textContent = m.name || 'tool';
+    call.appendChild(callName);
+    renderSubagentToolPreview(call, m.name, m.content);
+    parent.appendChild(call);
+  }
+
+  function renderSubagentToolPreview(parent, name, raw) {
+    const toolName = normalizeToolName(name);
+    const r = coerceToolResult(raw, toolName);
+    const preview = document.createElement('div');
+    preview.className = 'tool-card__subagent-preview';
+    parent.appendChild(preview);
+    if (toolName === 'shell') return renderShellToolResult(preview, r);
+    if (toolName === 'read_file') return renderReadFileToolResult(preview, r);
+    if (toolName === 'list_files') return renderListFilesToolResult(preview, r);
+    if (toolName === 'search_files') return renderSearchFilesToolResult(preview, r);
+    if (toolName === 'edit_file') return renderEditFileToolResult(preview, r);
+    if (toolName === 'write_file') return renderWriteFileToolResult(preview, r);
+    if (r && Array.isArray(r.content)) {
+      const lines = [];
+      for (const c of r.content) {
+        if (c && typeof c.text === 'string') lines.push(c.text);
+        else lines.push(String(c && (c.text || c.type) || c));
+      }
+      return renderPreviewPre(preview, lines.join('\n'), 'tool-preview__pre');
+    }
+    return renderPreviewPre(preview, formatReadableToolResult(r), 'tool-preview__pre');
   }
 
   function imageBlockToElement(block) {
@@ -2057,6 +2320,16 @@ export function ChatView(props) {
     }
     let streamFailed = false;
     function handleStreamEvent(ev, data) {
+      // Nested subagent activity: render inside the parent subagent card
+      // instead of the live bubble / standalone tool cards.
+      if (ev.eventName === 'subagent_event' && data) {
+        handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}));
+        return;
+      }
+      if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {
+        authorizationCard(data);
+        return;
+      }
       if (ev.eventName === 'message' && typeof data.delta === 'string') {
         assembled += data.delta;
         counter.add(data.delta);
