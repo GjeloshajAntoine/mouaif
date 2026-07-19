@@ -31,6 +31,7 @@
 //     draft:        '',                   // unsent composer text
 //     tools:        undefined | null | [name], // per-chat tool filter; absent/null = all
 //     agentFiles:   undefined | true | false   // per-chat agent-file toggle; absent = profile default
+//     skills:       undefined | true | false   // per-chat skill toggle; absent = profile default
 //   }
 //
 // API enrichment (added by GET /api/chats, NOT persisted on disk):
@@ -114,7 +115,8 @@ function normalizeChat(chat) {
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
-    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined
+    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined,
+    skills: typeof chat.skills === 'boolean' ? chat.skills : undefined
   };
 }
 
@@ -217,6 +219,13 @@ function updateChat(projectDir, chatId, patch) {
     merged.agentFiles = (patch.agentFiles === null || patch.agentFiles === undefined)
       ? undefined
       : patch.agentFiles === true;
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
+    // `undefined` / `null` means "use the profile default"; a boolean
+    // pins the chat to an explicit choice.
+    merged.skills = (patch.skills === null || patch.skills === undefined)
+      ? undefined
+      : patch.skills === true;
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);

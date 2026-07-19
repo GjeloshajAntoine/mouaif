@@ -19,6 +19,7 @@ const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
 const agentFiles = require('./agentFiles.js');
+const skills = require('./skills.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
@@ -312,6 +313,11 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // Prompts (custom per-project prompts)
   if (urlPath === '/api/prompts' || urlPath.startsWith('/api/prompts/')) {
     return handlePrompts(req, res, parsed);
+  }
+
+  // Agent skills (project-scoped, read-only)
+  if (urlPath === '/api/skills' || urlPath.startsWith('/api/skills/')) {
+    return handleSkills(req, res, parsed);
   }
 
   // Tool Authorization API
@@ -898,7 +904,7 @@ async function handleChats(req, res, parsed) {
     }
   }
 
-  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, agentFiles, prompt, text }
+  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, agentFiles, skills, prompt, text }
   // Returns the effective system context for a chat as it will be sent
   // upstream: the resolved prompt-size profile system message, the
   // agent files (when enabled), and, if the chat references a custom
@@ -939,10 +945,18 @@ async function handleChats(req, res, parsed) {
           for (const af of agentFilesList) parts.push(af.content);
         }
       } catch { /* agent files stay null */ }
+      let skillsList = null;
+      try {
+        if (skills.resolveEnabled({ chat, projectDir: dir })) {
+          skillsList = skills.load(dir);
+          for (const s of skillsList) parts.push(s.content);
+        }
+      } catch { /* skills stay null */ }
       if (prompt && prompt.content) parts.push(prompt.content);
       return sendJSON(res, 200, {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        skills: skillsList ? skillsList.map(s => ({ name: s.name, title: s.title })) : null,
         prompt,
         text: parts.join('\n\n')
       });
@@ -1231,6 +1245,22 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without agent files */ }
+  // Agent skills (projectDir/.agents/skills/*/SKILL.md). Discovered
+  // read-only from the canonical skills directory, injected after the
+  // agent files and before the tagged files and custom prompt, so
+  // they sit close to the agent-instruction context. Each skill rides
+  // as its own system message. A trace line records what was injected.
+  try {
+    const injected = skills.resolveEnabled({ chat, projectDir }) ? skills.load(projectDir) : [];
+    if (injected.length) {
+      for (const s of injected) upstreamMessages.push({ role: s.role, content: s.content });
+      if (traceStream) {
+        trace.write(traceStream, 'skills', {
+          skills: injected.map(s => ({ name: s.name, title: s.title }))
+        });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without skills */ }
   // Tagged files (decisions §15). Injected after the profile but before
   // the custom prompt and the transcript, so they are the deepest
   // context. includeInChat entries ride as `system`; any file the user
@@ -2694,6 +2724,59 @@ async function handlePrompts(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'prompts' });
+}
+
+// ---- Agent skills API --------------------------------------------------
+// Project-scoped skills discovered from <projectDir>/.agents/skills/*/SKILL.md.
+// Read-only: the server never creates, edits, or deletes skill files.
+// Routes:
+//   GET /api/skills?projectDir=<abs>          -> { skills: [{ name, title, size }] }
+//   GET /api/skills/:name?projectDir=<abs>    -> { skill: { name, title, content } }
+
+function handleSkills(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
+
+  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+
+  // GET /api/skills?projectDir=<abs>
+  if (urlPath === '/api/skills') {
+    try {
+      const list = skills.discover(dir).map(s => ({
+        name: s.name,
+        title: s.name,
+        size: s.size
+      }));
+      // Enrich titles from load() so the UI shows the first heading.
+      const loaded = skills.load(dir);
+      for (const item of list) {
+        const found = loaded.find(l => l.name === item.name);
+        if (found) item.title = found.title;
+      }
+      return sendJSON(res, 200, { skills: list });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/skills/:name?projectDir=<abs>
+  const getMatch = urlPath.match(/^\/api\/skills\/([^/]+)$/);
+  if (getMatch) {
+    const name = decodeURIComponent(getMatch[1]);
+    try {
+      const loaded = skills.load(dir).find(s => s.name === name);
+      if (!loaded) return sendJSON(res, 404, { error: 'Skill not found', name });
+      return sendJSON(res, 200, { skill: loaded });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'skills' });
 }
 
 // ---- MCP API ------------------------------------------------------------
