@@ -37,6 +37,27 @@ When the model decides to call an MCP tool, the server intercepts the `tool_call
 
 The model sees the result as a structured `tool` message and can recover, retry, or summarize — same shape as any other tool the model invokes.
 
+#### Per-chat tool picker
+
+On a brand-new chat, the transcript carries a **Tools available to the model** card. Native tools (`shell`, `subagent`, the file tools) render as toggle chips; MCP tools render as a **nested checkbox list** — one parent row per configured MCP server, with an indented child row per discovered tool:
+
+```
+[ ] filesystem           (server)   ready · 4 tools
+    [ ] mcp__filesystem__read_file
+    [x] mcp__filesystem__list_files
+    [ ] mcp__filesystem__search_files
+    [ ] mcp__filesystem__write_file
+[ ] playwright           (server)   stopped · 0 tools
+    (no tools — start the server in Settings → MCP)
+```
+
+- The **parent checkbox** enables or disables the whole server (PATCHes the project config via `/api/mcp/servers/:id`; flips the running session). Disabling the server greys out the child rows.
+- Each **child checkbox** flips that single tool in the per-chat `tools` filter. The composed name (`mcp__<serverSlug>__<toolName>`) is the key the model sees in the tools array, so an unchecked row drops the tool from the next model turn and the chip above flips in sync.
+- A checked child is a no-op when the server itself is disabled — the model never sees tools from a stopped server, so the child row mirrors the parent state to keep the surface honest.
+- Empty tool lists (server not yet started) render no children; the user starts the server from **Settings → MCP** and the children populate on the next chat open.
+
+The per-chat `tools` filter is the same field the native-tool chips use, so the picker is one consistent surface: the model sees exactly the tools the user has opted into, MCP or native, and the next turn honors the choice without a server round-trip.
+
 ### Authorization
 
 Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call**, however, is routed through the project's `mcp.authorize` mode (default `ask`):

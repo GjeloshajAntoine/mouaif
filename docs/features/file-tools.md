@@ -71,7 +71,6 @@ The `tool` message the model sees is a small header followed by the body, so the
 
 ```text
 # File: src/index.js
-# Bytes: 1842
 # Lines: 1-72
 
 <file body>
@@ -88,7 +87,6 @@ src/logout.js:1: export function logout() {}
 
 ```text
 # Wrote: src/utils/new.js
-# Bytes: 20 / 20
 ```
 
 The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card.

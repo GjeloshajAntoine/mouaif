@@ -263,188 +263,126 @@
 .tags__excerpt-num { width: 52px; min-height: var(--tap); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--fg); font-size: 0.74rem; padding: 0 5px; text-align: center; }
 .tags__controls .btn { margin-left: auto; min-height: var(--tap); padding: 0 8px; font-size: 0.74rem; }
 
-/* ---- Chat: tool_call / tool_result cards ------------------------- */
+/* ---- Chat: tool_call / tool_result cards -------------------------
+   Flat, single-row collapsed card: tool name + short arg snippet + a
+   tiny status pill on the right. Tap the row to expand; expanded
+   cards show the full args + body underneath in the same flat list.
+   No uppercase role label, no floating chevron, no "tap to expand"
+   hint — the row itself is the tap target. */
 
 .tool-card {
   align-self: stretch;
   max-width: 100%;
-  margin: 4px 0;
-  padding: 7px 8px 8px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
-  position: relative;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, var(--accent) 8%), var(--surface-2));
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  box-shadow: var(--shadow-sm);
-  font-size: 0.8rem;
+  margin: 3px 0;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
 }
-.tool-card--call { border-color: color-mix(in srgb, var(--accent) 50%, var(--border-strong)); }
+.tool-card--call { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
 .tool-card--result { cursor: default; }
 .tool-card--call.tool-card--subagent { cursor: default; }
-.tool-card--result:active { background: var(--surface-2); }
 .tool-card--subagent { border-color: var(--accent); }
 .tool-card--authorization { border-color: var(--warning); }
-.tool-card__role {
-  grid-column: 1;
-  font-size: 0.62rem;
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-weight: 700;
-}
-.tool-card__name {
-  grid-column: 1;
+
+/* The header is one row: tool name + arg hint + status pill. Tapping
+   it expands the card. The chat-msg role label (TOOL CALL/TOOL
+   RESULT) is gone — the tool name and the pill already say enough. */
+.tool-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  padding-right: 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tool-card__role { display: none; }
+.tool-card__name {
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
-  line-height: 1.2;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25;
   color: var(--accent);
   word-break: break-all;
 }
+.tool-card__args {
+  /* Inline arg preview when collapsed: single-line ellipsis. Expands
+     into the full multi-line block under the head when expanded. */
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.25;
+  color: var(--fg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-card.is-expanded .tool-card__args {
+  /* Stay in the header row when expanded — the body underneath
+     already shows the full result, no need to box the args. The
+     single-line ellipsis becomes a multi-line wrap instead. */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .tool-card__pill {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: start;
-  justify-self: end;
+  flex: 0 0 auto;
+  align-self: center;
   font-size: 0.62rem;
   line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 4px 6px;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-weight: 700;
+  font-weight: 600;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 .tool-card__pill--busy { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
 .tool-card__pill--ok   { background: rgba(111, 212, 154, 0.14); color: var(--success); border-color: rgba(111, 212, 154, 0.28); }
 .tool-card__pill--err  { background: var(--danger-soft); color: var(--danger); border-color: rgba(255, 138, 138, 0.28); }
-.tool-card__args,
 .tool-card__body {
-  grid-column: 1 / -1;
-  margin: 1px 0 0;
+  /* Hidden when collapsed: the name + args row already says enough.
+     Expanded: scrolls inside a max-height so very long outputs do
+     not push the transcript. No fade mask, no "tap to expand" hint. */
+  margin: 0;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
-  line-height: 1.4;
+  font-size: 0.72rem;
+  line-height: 1.42;
   color: var(--fg-soft);
+  display: none;
+}
+.tool-card.is-expanded .tool-card__body { display: block; }
+.tool-card.is-expanded .tool-card__body,
+.tool-card--authorization .tool-card__body {
   background: color-mix(in srgb, var(--surface) 92%, #000 8%);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 6px 7px;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow: hidden;
-  position: relative;
+  overflow: auto;
+  max-height: min(60vh, 600px);
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;
 }
-.tool-card__args {
-  max-height: 4.4em;
-  color: var(--fg);
-  background: var(--surface);
-}
-.tool-card__body {
-  /* Collapsed: a clipped, non-scrolling preview so touch drags scroll
-     the transcript instead of getting trapped in a tiny inner box. */
-  max-height: 160px;
-  overflow: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
-}
-.tool-card.is-expanded .tool-card__body,
-.tool-card--authorization .tool-card__body {
-  max-height: min(70vh, 720px);
-  overflow: auto;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-.tool-card--result:not(.is-expanded) .tool-card__body::after,
-.tool-card--subagent:not(.is-expanded) .tool-card__body::after {
-  content: "tap to expand";
-  position: absolute;
-  right: 7px;
-  bottom: 4px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-3) 86%, transparent);
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 0.62rem;
-  line-height: 1.3;
-  pointer-events: none;
-}
 
-/* Explicit expand/collapse control. Sits in the header row next to
-   the status pill; the tiny header-tap target was not discoverable. */
-.tool-card__toggle {
-  position: absolute;
-  top: 34px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-3) 70%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-  z-index: 1;
-  -webkit-tap-highlight-color: transparent;
-}
-.tool-card__toggle:active { background: var(--surface-3); }
-.tool-card__toggle::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(-2px) rotate(45deg);
-  transition: transform 0.15s ease;
-}
-.tool-card.is-expanded .tool-card__toggle::before {
-  transform: translateY(1px) rotate(-135deg);
-}
-/* Reserve room in the header column so the pill/args never sit under
-   the absolutely-positioned chevron. */
-.tool-card:has(.tool-card__toggle) .tool-card__pill { margin-right: 32px; }
-.tool-card__toggle-bottom {
-  grid-column: 1 / -1;
-  justify-self: center;
-  display: none;
-  position: relative;
-  width: 28px;
-  height: 28px;
-  margin-top: 4px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-3) 70%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.tool-card.is-expanded > .tool-card__toggle-bottom { display: inline-flex; }
-.tool-card__toggle-bottom:active { background: var(--surface-3); }
-.tool-card__toggle-bottom::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(1px) rotate(-135deg);
-}
+/* The old absolute chevron is gone; the head row is the tap target.
+   Keep a subtle hover/active state so the affordance is visible on
+   a phone without relying on a floating icon. */
+.tool-card__head:hover { color: var(--fg); }
+.tool-card__head:active { background: var(--surface-3); border-radius: 6px; }
 .tool-card__subagent-live {
   display: flex;
   flex-direction: column;

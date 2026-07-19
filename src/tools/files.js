@@ -218,7 +218,7 @@ async function runReadFile(opts) {
 }
 
 function formatReadFileResult(r) {
-  const header = '# File: ' + r.relPath + '\n# Bytes: ' + r.size + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '') + (r.truncated ? '\n# Truncated: yes' : '');
+  const header = '# File: ' + r.relPath + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '') + (r.truncated ? '\n# Truncated: yes' : '');
   return header + '\n\n' + r.body;
 }
 
@@ -557,7 +557,7 @@ async function runEditFile(opts) {
 }
 
 function formatWriteFileResult(r) {
-  return '# Wrote: ' + r.relPath + '\n# Bytes: ' + r.bytesWritten + ' / ' + r.size;
+  return '# Wrote: ' + r.relPath;
 }
 
 // ---- Dispatcher --------------------------------------------------------

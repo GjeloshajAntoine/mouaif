@@ -1179,32 +1179,138 @@ textarea#projectEditor {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  /* The MCP header is a real <button> now: it collapses/expands the
+     nested server list. Keep its visual weight close to the previous
+     plain label so existing color/typography stays, but give it a
+     proper tap target on mobile and a hover affordance. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 4px 2px;
+  text-align: left;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
 }
-.chat-view__mcp-toggle {
+.chat-view__mcp-toggles-head:hover { color: var(--fg); background: var(--surface-3); }
+.chat-view__mcp-toggles-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-view__mcp-toggles-head-label { min-width: 0; }
+.chat-view__mcp-toggles-head-arrow {
+  flex: 0 0 auto;
+  display: inline-block;
+  font-size: 0.78rem;
+  line-height: 1;
+  transition: transform 120ms ease;
+  transform: rotate(90deg);
+  transform-origin: 50% 50%;
+}
+.chat-view__mcp-toggles-head.is-collapsed .chat-view__mcp-toggles-head-arrow {
+  /* Point rightward when collapsed (▸ un-rotated) to read as the
+     classic "click to expand" affordance; rotated 90° (▾) when open
+     to match the standard disclosure convention. */
+  transform: rotate(0deg);
+}
+/* Nested MCP server → tool list. The parent row is the server
+   enable checkbox (project-level, PATCHes the server entry); each
+   child row is a discovered tool the model can be advertised to.
+   The per-tool child checkbox routes through the per-chat tools
+   filter (see toggleTool in Chat.jsx), so toggling it changes the
+   next model turn the same way the chip above does. Indent the
+   children with padding so the hierarchy reads at a glance on
+   mobile without needing a tree-control affordance. */
+.chat-view__mcp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chat-view__mcp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-view__mcp-server {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 34px;
   padding: 4px 2px;
   color: var(--fg);
+  cursor: pointer;
 }
-.chat-view__mcp-toggle input { flex: 0 0 auto; }
-.chat-view__mcp-toggle-main {
+.chat-view__mcp-server input { flex: 0 0 auto; }
+.chat-view__mcp-server-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.chat-view__mcp-toggle-name {
+.chat-view__mcp-server-name {
   font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-view__mcp-server-meta {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.chat-view__mcp-tool-list {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 2px 0 4px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--border);
+  margin-left: 9px;
+}
+.chat-view__mcp-tool {
+  min-height: 0;
+}
+.chat-view__mcp-tool-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 4px 3px 8px;
+  color: var(--fg-soft);
+  cursor: pointer;
+  border-radius: 6px;
+}
+.chat-view__mcp-tool-label:hover { background: var(--surface-3); color: var(--fg); }
+.chat-view__mcp-tool-label input { flex: 0 0 auto; }
+.chat-view__mcp-tool-label input:disabled { opacity: 0.5; }
+.chat-view__mcp-tool-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chat-view__mcp-tool-name {
+  font-size: 0.76rem;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-view__mcp-toggle-meta {
-  font-size: 0.68rem;
+.chat-view__mcp-tool-slug {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.66rem;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Keep the model picker trigger on the same header line as the

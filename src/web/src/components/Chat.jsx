@@ -209,6 +209,12 @@ export function ChatView(props) {
   // lifecycle still lives in Settings → MCP.
   const mcpServersRef = useRef([]);
   const mcpToggleBusyRef = useRef(new Set());
+  // User-controlled collapsed state for the MCP server/tool list inside
+  // the tools card. The list can grow long once several servers are
+  // configured; let the user collapse it via the header arrow without
+  // re-rendering the transcript. Defaults to expanded; lives across
+  // re-renders of the same chat but is reset on chat switch.
+  const mcpExpandedRef = useRef(true);
 
   // Re-fetch the resolved system prompt (after a prompt-size or custom
   // prompt change) and re-render the first message.
@@ -811,42 +817,169 @@ export function ChatView(props) {
     return card;
   }
 
-  // Build the MCP enable/disable switches shown under the tool list.
-  // These update the project MCP server config; the user can still
-  // start/stop or edit servers from Settings → MCP.
+  // applyMcpExpanded(wrap) — reflect mcpExpandedRef on the freshly
+  // built tools-card subtree. Hides the <ul> and flips the header
+  // arrow + aria-expanded. Kept as a free function so the same
+  // collapse state is applied both on initial build and on toggle.
+  function applyMcpExpanded(wrap) {
+    if (!wrap) return;
+    const expanded = mcpExpandedRef.current !== false;
+    const head = wrap.querySelector('.chat-view__mcp-toggles-head');
+    const list = wrap.querySelector('.chat-view__mcp-list');
+    if (head) {
+      head.setAttribute('aria-expanded', String(expanded));
+      head.classList.toggle('is-collapsed', !expanded);
+    }
+    if (list) list.hidden = !expanded;
+  }
+
+  // Build the MCP enable/disable controls shown under the tool list.
+  // Rendered as a nested <ul>: one row per configured MCP server
+  // (parent checkbox enables the server itself, see toggleMcpServer)
+  // with an indented child row per discovered tool whose checkbox
+  // flips the per-chat tools filter (see toggleTool). The user can
+  // still start/stop or edit servers from Settings → MCP; this widget
+  // is the in-chat surface for the per-tool decision the model sees
+  // on its next turn.
   function buildMcpServerToggles() {
     const servers = (mcpServersRef.current || []).filter((s) => s && s.id);
     if (!servers.length) return null;
     const wrap = document.createElement('div');
     wrap.className = 'chat-view__mcp-toggles';
-    const head = document.createElement('div');
+    const head = document.createElement('button');
+    head.type = 'button';
     head.className = 'chat-view__mcp-toggles-head';
-    head.textContent = 'MCP servers';
+    head.setAttribute('aria-expanded', String(mcpExpandedRef.current !== false));
+    head.setAttribute('aria-controls', 'chat-view__mcp-list');
+    const headLabel = document.createElement('span');
+    headLabel.className = 'chat-view__mcp-toggles-head-label';
+    headLabel.textContent = 'MCP servers & tools';
+    const headArrow = document.createElement('span');
+    headArrow.className = 'chat-view__mcp-toggles-head-arrow';
+    headArrow.setAttribute('aria-hidden', 'true');
+    headArrow.textContent = '▸';
+    head.appendChild(headLabel);
+    head.appendChild(headArrow);
+    head.addEventListener('click', () => {
+      mcpExpandedRef.current = mcpExpandedRef.current === false;
+      applyMcpExpanded(wrap);
+    });
     wrap.appendChild(head);
-    for (const s of servers) {
-      const label = document.createElement('label');
-      label.className = 'chat-view__mcp-toggle';
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.className = 'checkbox';
-      input.checked = s.enabled !== false;
-      input.disabled = mcpToggleBusyRef.current.has(s.id);
-      input.setAttribute('aria-label', (s.name || s.id) + ' enabled');
-      const main = document.createElement('span');
-      main.className = 'chat-view__mcp-toggle-main';
-      const name = document.createElement('span');
-      name.className = 'chat-view__mcp-toggle-name';
-      name.textContent = s.name || s.id;
-      const meta = document.createElement('span');
-      meta.className = 'chat-view__mcp-toggle-meta';
-      const status = s.status || 'stopped';
-      const tools = Array.isArray(s.tools) ? s.tools.length : 0;
-      meta.textContent = status + ' · ' + tools + ' tool' + (tools === 1 ? '' : 's');
-      main.appendChild(name); main.appendChild(meta);
-      input.addEventListener('change', () => toggleMcpServer(s.id, input.checked));
-      label.appendChild(input); label.appendChild(main);
-      wrap.appendChild(label);
+
+    // Map each server to the catalog entries that belong to it, so the
+    // nested list stays aligned with /api/tools/list (which the chips
+    // above are built from). The server entry's own `tools` list is
+    // the authoritative discovered set when the server is running;
+    // the catalog's `source` field is the server slug it was wired
+    // through. Both come from the same MCP session so they line up
+    // on the next turn; if they ever disagree (stale cache, server
+    // stopped, etc.) the catalog wins because it is what the model
+    // will actually be advertised.
+    const catalog = (toolsRef.current && toolsRef.current.catalog) || [];
+    const bySlug = new Map();
+    for (const t of catalog) {
+      if (!t || t.kind !== 'mcp' || !t.source || !t.name) continue;
+      let bucket = bySlug.get(t.source);
+      if (!bucket) { bucket = []; bySlug.set(t.source, bucket); }
+      bucket.push(t);
     }
+
+    const list = document.createElement('ul');
+    list.className = 'chat-view__mcp-list';
+    list.id = 'chat-view__mcp-list';
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', 'MCP servers and their tools');
+    // Apply the current collapsed state to the freshly built list so
+    // a re-render of the tools card (e.g. after a tool toggle) keeps
+    // the user's choice instead of snapping back open.
+    applyMcpExpanded(wrap);
+
+    for (const s of servers) {
+      const serverSlug = s.slug || s.id;
+      const serverComposed = (n) => 'mcp__' + serverSlug + '__' + n;
+      const li = document.createElement('li');
+      li.className = 'chat-view__mcp-item';
+
+      // Parent row: server enable + label + status. Toggling the
+      // server checkbox goes through toggleMcpServer (PATCHes the
+      // project config, stops the running session when needed, and
+      // refreshes the catalog). The label is the click target so
+      // tapping the row flips the checkbox the same way the chips
+      // above do — the user can still start/stop from Settings → MCP.
+      const parentLabel = document.createElement('label');
+      parentLabel.className = 'chat-view__mcp-server';
+      const parentBox = document.createElement('input');
+      parentBox.type = 'checkbox';
+      parentBox.className = 'checkbox';
+      parentBox.checked = s.enabled !== false;
+      parentBox.disabled = mcpToggleBusyRef.current.has(s.id);
+      parentBox.setAttribute('aria-label', (s.name || s.id) + ' MCP server enabled');
+      const parentMain = document.createElement('span');
+      parentMain.className = 'chat-view__mcp-server-main';
+      const parentName = document.createElement('span');
+      parentName.className = 'chat-view__mcp-server-name';
+      parentName.textContent = s.name || s.id;
+      const parentMeta = document.createElement('span');
+      parentMeta.className = 'chat-view__mcp-server-meta';
+      const status = s.status || 'stopped';
+      const serverTools = Array.isArray(s.tools) ? s.tools.length : 0;
+      parentMeta.textContent = status + ' · ' + serverTools + ' tool' + (serverTools === 1 ? '' : 's');
+      parentMain.appendChild(parentName); parentMain.appendChild(parentMeta);
+      parentBox.addEventListener('change', () => toggleMcpServer(s.id, parentBox.checked));
+      parentLabel.appendChild(parentBox); parentLabel.appendChild(parentMain);
+      li.appendChild(parentLabel);
+
+      // Child list: one row per discovered tool. The checkbox mirrors
+      // toolsRef.filter (null = all enabled) the same way the chip
+      // above does, so flipping a child row is the per-tool equivalent
+      // of toggling a chip. The composed name `mcp__<slug>__<name>` is
+      // the name the model actually sees in the tools array, which is
+      // the key the per-chat filter is keyed on (see ai.js).
+      const discovered = (s.tools && s.tools.length) ? s.tools : null;
+      const catalogForServer = bySlug.get(serverSlug) || [];
+      const childTools = catalogForServer.length
+        ? catalogForServer.map((t) => t.name)
+        : (discovered ? discovered.map((t) => t.name || t) : []);
+      if (childTools.length) {
+        const sub = document.createElement('ul');
+        sub.className = 'chat-view__mcp-tool-list';
+        sub.setAttribute('role', 'group');
+        sub.setAttribute('aria-label', (s.name || s.id) + ' tools');
+        for (const toolName of childTools) {
+          const composed = serverComposed(toolName);
+          const childLi = document.createElement('li');
+          childLi.className = 'chat-view__mcp-tool';
+          const childLabel = document.createElement('label');
+          childLabel.className = 'chat-view__mcp-tool-label';
+          const childBox = document.createElement('input');
+          childBox.type = 'checkbox';
+          childBox.className = 'checkbox';
+          const cur = toolsRef.current || { filter: null };
+          const enabled = (cur.filter == null) || cur.filter.indexOf(composed) >= 0;
+          childBox.checked = enabled;
+          childBox.disabled = parentBox.disabled || s.enabled === false;
+          childBox.setAttribute('aria-label', (s.name || s.id) + ' — ' + toolName + ' tool enabled');
+          const childMain = document.createElement('span');
+          childMain.className = 'chat-view__mcp-tool-main';
+          const childName = document.createElement('span');
+          childName.className = 'chat-view__mcp-tool-name';
+          childName.textContent = toolName;
+          const childSlug = document.createElement('span');
+          childSlug.className = 'chat-view__mcp-tool-slug';
+          childSlug.textContent = composed;
+          childSlug.setAttribute('aria-hidden', 'true');
+          childMain.appendChild(childName); childMain.appendChild(childSlug);
+          childBox.addEventListener('change', () => toggleTool(composed, childBox.checked));
+          childLabel.appendChild(childBox); childLabel.appendChild(childMain);
+          childLi.appendChild(childLabel);
+          sub.appendChild(childLi);
+        }
+        li.appendChild(sub);
+      }
+
+      list.appendChild(li);
+    }
+    wrap.appendChild(list);
     return wrap;
   }
 
@@ -1240,37 +1373,45 @@ export function ChatView(props) {
 
   // Render a tool_call event as a compact card above the live message
   // (or appended if there is no live row). The card shows the tool
-  function bindToolCardToggle(card) {
-    if (!card || card._toolCardToggleBound) return;
-    card._toolCardToggleBound = true;
-    // Only the explicit chevron toggles expansion. Whole-card/header
-    // taps made it too easy to collapse while trying to select/copy
-    // tool output on mobile.
-    ensureToolCardToggleButton(card);
+  // name, a one-line argument summary, and a status pill. Tapping the
+  // header row expands the card to reveal the full body. The
+  // matching tool_result will replace this pill with an ok/error pill.
+  function buildToolCardHead(toolName, args, pillClass, pillText) {
+    const head = document.createElement('div');
+    head.className = 'tool-card__head';
+    const name = document.createElement('span');
+    name.className = 'tool-card__name';
+    name.textContent = toolName || 'tool';
+    // `args` may be either a raw arg object or an already-formatted
+    // string (when the caller has the display text already). Pass it
+    // through formatToolArgs either way: passing a string returns
+    // that string unchanged.
+    const argText = args == null ? '' : (typeof args === 'string' ? args : formatToolArgs(args, toolName));
+    const pill = document.createElement('span');
+    pill.className = 'tool-card__pill ' + pillClass;
+    pill.textContent = pillText;
+    head.appendChild(name);
+    if (argText) {
+      const argsEl = document.createElement('pre');
+      argsEl.className = 'tool-card__args';
+      argsEl.textContent = argText;
+      head.appendChild(argsEl);
+    }
+    head.appendChild(pill);
+    head.addEventListener('click', () => {
+      const card = head.closest('.tool-card');
+      if (card) card.classList.toggle('is-expanded');
+    });
+    return head;
   }
 
-  // Add an explicit, obvious expand/collapse control to any card that
-  // owns a body. Tapping the tiny header text was not discoverable, so
-  // every expandable card gets a chevron button that always toggles.
-  function ensureToolCardToggleButton(card) {
-    if (!card || card.querySelector(':scope > .tool-card__toggle')) return;
-    const toggle = (e) => {
-      e.stopPropagation();
-      card.classList.toggle('is-expanded');
-    };
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'tool-card__toggle';
-    btn.setAttribute('aria-label', 'Toggle details');
-    btn.addEventListener('click', toggle);
-    card.appendChild(btn);
-
-    const bottom = document.createElement('button');
-    bottom.type = 'button';
-    bottom.className = 'tool-card__toggle-bottom';
-    bottom.setAttribute('aria-label', 'Collapse details');
-    bottom.addEventListener('click', toggle);
-    card.appendChild(bottom);
+  function bindToolCardToggle(card) {
+    // The header row is the tap target (added by buildToolCardHead).
+    // This helper is now only used to mark the card as expandable; the
+    // actual click lives on the head element so the whole row reads as
+    // the affordance.
+    if (!card || card._toolCardToggleBound) return;
+    card._toolCardToggleBound = true;
   }
 
   // name, a one-line argument summary, and a "running" pill. The
@@ -1284,19 +1425,7 @@ export function ChatView(props) {
     card.className = 'tool-card tool-card--call';
     card.dataset.toolId = id;
     card.dataset.toolName = normalizeToolName(toolCall.name);
-    const role = document.createElement('div');
-    role.className = 'tool-card__role';
-    role.textContent = 'tool call';
-    const name = document.createElement('div');
-    name.className = 'tool-card__name';
-    name.textContent = toolCall.name || 'tool';
-    const args = document.createElement('pre');
-    args.className = 'tool-card__args';
-    args.textContent = formatToolArgs(toolCall.args, toolCall.name);
-    const pill = document.createElement('span');
-    pill.className = 'tool-card__pill tool-card__pill--busy';
-    pill.textContent = 'running\u2026';
-    card.appendChild(role); card.appendChild(name); card.appendChild(args); card.appendChild(pill);
+    card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running'));
     if (isSubagentTool(toolCall.name)) {
       card.classList.add('tool-card--subagent');
       // A live body is added up front so the user can expand the card
@@ -1416,41 +1545,38 @@ export function ChatView(props) {
 
   // Render a tool_result event. If a matching tool_call card is on
   // screen, update it; otherwise append a fresh card so the user can
-  // see the result regardless of order. The card collapses the result
-  // body on tap; long outputs are truncated to the first ~12 lines.
+  // see the result regardless of order. Tap the header row to expand.
   function appendToolResultCard(toolResult) {
     if (!transcript.current) return;
     const id = toolResult.id;
     let card = id ? transcript.current.querySelector('[data-tool-id="' + cssEscape(id) + '"]') : null;
+    const isSubagent = isSubagentTool(toolResult && toolResult.name);
+    const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
+    const pillText = toolResult.ok ? 'ok' : 'error';
     if (!card) {
       card = document.createElement('div');
       card.className = 'tool-card tool-card--result';
       card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
       card.dataset.toolName = normalizeToolName(toolResult.name);
-      const role = document.createElement('div');
-      role.className = 'tool-card__role';
-      role.textContent = 'tool result';
-      const name = document.createElement('div');
-      name.className = 'tool-card__name';
-      name.textContent = toolResult.name || 'tool';
+      // No args preview on standalone result cards — the body is the
+      // result. Subagent cards keep the delegated task in the args slot.
+      const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+      card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText));
       const body = document.createElement('div');
       body.className = 'tool-card__body';
-      card.appendChild(role); card.appendChild(name); card.appendChild(body);
+      card.appendChild(body);
       bindToolCardToggle(card);
       transcript.current.appendChild(card);
     } else {
-      // The call card now becomes a result card (clickable to expand).
+      // The call card becomes a result card. For non-subagent tools
+      // the args preview is dropped (the result body is the more
+      // useful preview). For subagent cards we keep the delegated
+      // task — it is the most useful context for the finished run.
       card.classList.add('tool-card--result');
       card.classList.remove('tool-card--call');
-      const existingPill = card.querySelector('.tool-card__pill');
-      if (existingPill) existingPill.remove();
-      const role = card.querySelector('.tool-card__role');
-      if (role) role.textContent = 'tool result';
       card.dataset.toolName = normalizeToolName(toolResult.name);
-      const args = card.querySelector('.tool-card__args');
-      // Keep the argument summary on subagent cards: the delegated task
-      // is the most useful bit of context for the finished preview.
-      if (args && !isSubagentTool(toolResult.name)) args.remove();
+      const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+      rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText);
       let body = card.querySelector('.tool-card__body');
       if (!body) {
         body = document.createElement('div');
@@ -1459,15 +1585,27 @@ export function ChatView(props) {
       }
       bindToolCardToggle(card);
     }
-    if (isSubagentTool(toolResult && toolResult.name)) card.classList.add('tool-card--subagent');
+    if (isSubagent) card.classList.add('tool-card--subagent');
     const body = card.querySelector('.tool-card__body');
     if (body) renderToolResultBody(body, toolResult);
-    if (isSubagentTool(toolResult && toolResult.name)) renderSubagentChat(card, toolResult);
-    const pill = document.createElement('span');
-    pill.className = 'tool-card__pill ' + (toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
-    pill.textContent = toolResult.ok ? 'ok' : 'error';
-    card.appendChild(pill);
+    if (isSubagent) renderSubagentChat(card, toolResult);
+    // Expand errors automatically so the user sees what went wrong
+    // without an extra tap. Successful results stay collapsed.
+    if (!toolResult.ok) card.classList.add('is-expanded');
     afterTranscriptAppend(true);
+  }
+
+  // Replace the header row of a tool card in place. Used when the
+  // call card is promoted to a result card and the args / pill need
+  // to update without rebuilding the whole card.
+  function rebuildToolCardHead(card, toolName, args, pillClass, pillText) {
+    const oldHead = card.querySelector(':scope > .tool-card__head');
+    const fresh = buildToolCardHead(toolName, args, pillClass, pillText);
+    if (oldHead && oldHead.parentNode === card) {
+      card.replaceChild(fresh, oldHead);
+    } else {
+      card.insertBefore(fresh, card.firstChild);
+    }
   }
 
   function isSubagentTool(name) {
@@ -1578,7 +1716,6 @@ export function ChatView(props) {
     for (const line of header.split('\n')) {
       let m;
       if ((m = line.match(/^# File: (.*)$/))) out.relPath = m[1];
-      else if ((m = line.match(/^# Bytes: (\d+)/))) out.size = Number(m[1]);
       else if ((m = line.match(/^# Lines: (\d+)-(\d+)(?: \/ (\d+))?/))) {
         out.startLine = Number(m[1]); out.endLine = Number(m[2]); if (m[3]) out.totalLines = Number(m[3]);
       } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = m[1] === '<all text files>' ? '' : m[1];
@@ -1655,8 +1792,7 @@ export function ChatView(props) {
     if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
     renderToolMeta(body, [
       r.relPath || r.path,
-      (r.startLine != null && r.endLine != null) ? ('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')) : null,
-      r.size != null ? (r.size + ' bytes') : null
+      (r.startLine != null && r.endLine != null) ? ('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')) : null
     ]);
     renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
   }
@@ -1689,9 +1825,7 @@ export function ChatView(props) {
     if (typeof r === 'string') r = parsePlainFileToolResult(r);
     if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
     renderToolMeta(body, [
-      r.relPath || r.path,
-      r.replacedBytes != null ? ('replaced ' + r.replacedBytes + ' bytes') : null,
-      r.bytesWritten != null ? ('wrote ' + r.bytesWritten + ' bytes') : null
+      r.relPath || r.path
     ]);
     renderDiffPreview(body, r.diff || '(edit applied)');
   }
@@ -1700,7 +1834,7 @@ export function ChatView(props) {
     body.classList.add('tool-preview', 'tool-preview--file');
     if (typeof r === 'string') r = parsePlainFileToolResult(r);
     if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-    renderToolMeta(body, [r.relPath || r.path, r.bytesWritten != null ? ('wrote ' + r.bytesWritten + ' bytes') : null, r.size != null ? (r.size + ' bytes') : null]);
+    renderToolMeta(body, [r.relPath || r.path]);
     renderPreviewPre(body, 'write complete', 'tool-preview__pre');
   }
 
@@ -2602,6 +2736,12 @@ export function ChatView(props) {
   }, [chatId, projectDir]);
 
   useEffect(() => { load().catch((err) => { if (statusEl.current) statusEl.current.textContent = 'load failed'; }); }, [chatId, projectDir]);
+
+  // Reset the MCP list collapsed/expanded state when the user moves
+  // to a different chat. Collapsed/expanded is a per-chat UI choice
+  // (the list is a per-chat surface for the model-side tool filter),
+  // so it should not silently carry over from another chat.
+  useEffect(() => { mcpExpandedRef.current = true; }, [chatId]);
 
   // Leaving the chat (or unmounting) cancels any in-flight reconnect
   // timer so it can't re-render a detached transcript.
