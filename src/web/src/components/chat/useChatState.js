@@ -85,7 +85,19 @@ export function useChatState(props) {
   const systemPrompt = useRef(null);
   const tools = useRef({ catalog: [], filter: null });
   const mcpServers = useRef([]);
-  const mcpExpanded = useRef(true);
+  // Per-MCP collapsed state for the tool list inside the chat
+  // tools card. Each MCP server has its own close toggle on its
+  // parent row (see buildMcpServerToggles in cards.js), so we
+  // track the set of collapsed server IDs rather than a single
+  // global boolean.
+  //
+  // Default is "collapse everything that hasn't been explicitly
+  // expanded". We model that with a `null` Set — the cards.js
+  // applyMcpCollapsed helper interprets `null` as "all collapsed"
+  // until the user opens a specific server, after which the Set
+  // becomes a concrete set of explicitly-collapsed server IDs.
+  // Reset on chat switch so each new chat starts collapsed again.
+  const mcpCollapsed = useRef(null);
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
   const watchingRun = useRef(false);
   const chatCurrent = useRef(null);
@@ -118,8 +130,16 @@ export function useChatState(props) {
     set tools(v) { tools.current = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
-    get mcpExpanded() { return mcpExpanded.current; },
-    set mcpExpanded(v) { mcpExpanded.current = v; },
+    // `mcpCollapsed` is either `null` (the default — "everything
+    // is collapsed until explicitly expanded") or a Set of server
+    // IDs that the user has explicitly collapsed. Anything not in
+    // the Set is considered open. See `applyMcpCollapsed` in
+    // chat/cards.js for the consumer side.
+    get mcpCollapsed() { return mcpCollapsed.current; },
+    set mcpCollapsed(v) {
+      if (v == null) mcpCollapsed.current = null;
+      else mcpCollapsed.current = (v instanceof Set) ? v : new Set(v);
+    },
     get transcriptSignature() { return transcriptSignature.current; },
     set transcriptSignature(v) { transcriptSignature.current = v; },
     get streaming() { return streaming.current; },
@@ -347,7 +367,7 @@ export function useChatState(props) {
     return () => el.removeEventListener('scroll', onScroll);
   }, [projectDir, chatId]);
 
-  useEffect(() => { mcpExpanded.current = true; }, [chatId]);
+  useEffect(() => { mcpCollapsed.current = null; }, [chatId]);
   useEffect(() => () => stopStreamRecovery(state, refs), [projectDir, chatId]);
 
   useEffect(() => {

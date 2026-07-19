@@ -42,7 +42,7 @@ The model sees the result as a structured `tool` message and can recover, retry,
 On a brand-new chat, the transcript carries a **Tools available to the model** card. Native tools (`shell`, `subagent`, the file tools) render as toggle chips; MCP tools render as a **nested checkbox list** — one parent row per configured MCP server, with an indented child row per discovered tool:
 
 ```
-[ ] filesystem           (server)   ready · 4 tools
+[ ] filesystem           (server)   ready · 4 tools   ▾
     [ ] mcp__filesystem__read_file
     [x] mcp__filesystem__list_files
     [ ] mcp__filesystem__search_files
@@ -52,6 +52,7 @@ On a brand-new chat, the transcript carries a **Tools available to the model** c
 ```
 
 - The **parent checkbox** enables or disables the whole server (PATCHes the project config via `/api/mcp/servers/:id`; flips the running session). Disabling the server greys out the child rows.
+- Each server row has its own **collapse toggle** on the right (`▾` / `▸`). Folding it hides just that server's tool list — other servers stay open. The choice is per-MCP, not global, so the user can keep long lists collapsed without losing the rest of the surface. State is per-chat and resets when switching chats. **Every server starts collapsed** on a fresh chat — the picker doesn't expand the whole tool list by default — and the user opens a server by tapping the row or the toggle. Clicking the checkbox itself still toggles the server enable; only the checkbox changes the enable, everything else on the row is a collapse handle.
 - Each **child checkbox** flips that single tool in the per-chat `tools` filter. The composed name (`mcp__<serverSlug>__<toolName>`) is the key the model sees in the tools array, so an unchecked row drops the tool from the next model turn and the chip above flips in sync.
 - A checked child is a no-op when the server itself is disabled — the model never sees tools from a stopped server, so the child row mirrors the parent state to keep the surface honest.
 - Empty tool lists (server not yet started) render no children; the user starts the server from **Settings → MCP** and the children populate on the next chat open.

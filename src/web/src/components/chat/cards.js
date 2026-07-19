@@ -40,20 +40,49 @@ function buildSetupCard() {
   return sel;
 }
 
-// applyMcpExpanded(wrap, expanded)
+// applyMcpCollapsed(wrap, collapsedIds)
 //
-// Reflect the expanded/collapsed state on the freshly built
-// tools-card subtree. Hides the <ul> and flips the header arrow +
-// aria-expanded.
-function applyMcpExpanded(wrap, expanded) {
+// Reflect the per-MCP collapsed state on the freshly built
+// tools-card subtree. Each server's tool list is independently
+// collapsible, so we walk every `.chat-view__mcp-item` and apply
+// the state matching its `data-mcp-id`. The hidden attribute is
+// not enough on its own — the base `.chat-view__mcp-tool-list
+// { display: flex }` rule out-specificities the user-agent
+// `[hidden] { display: none }` rule, so the toggle also flips
+// `.is-collapsed` (visual source of truth, specificity 0,2,0);
+// `hidden` is kept so assistive tech still gets the right
+// semantics.
+//
+// `collapsedIds` is either a `Set` of explicitly-collapsed server
+// IDs, or `null` to mean "everything is collapsed by default —
+// the user hasn't opened any server yet". The default-closed
+// behaviour is the one a fresh chat lands on, so the picker
+// doesn't push the chat off-screen with every tool list open
+// from the start.
+function applyMcpCollapsed(wrap, collapsedIds) {
   if (!wrap) return;
-  const head = wrap.querySelector('.chat-view__mcp-toggles-head');
-  const list = wrap.querySelector('.chat-view__mcp-list');
-  if (head) {
-    head.setAttribute('aria-expanded', String(expanded));
-    head.classList.toggle('is-collapsed', !expanded);
+  // null / undefined -> all collapsed (the fresh-chat default).
+  // Empty Set -> nothing collapsed (every server explicitly
+  // expanded by the user). Concrete Set -> the listed servers
+  // are collapsed, the rest are open.
+  const collapseAll = collapsedIds == null;
+  const set = collapsedIds instanceof Set ? collapsedIds : null;
+  const items = wrap.querySelectorAll('.chat-view__mcp-item');
+  for (const li of items) {
+    const id = li.getAttribute('data-mcp-id');
+    if (!id) continue;
+    const isCollapsed = collapseAll ? true : set.has(id);
+    const toggle = li.querySelector('.chat-view__mcp-toggle');
+    const sub = li.querySelector('.chat-view__mcp-tool-list');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(!isCollapsed));
+      toggle.classList.toggle('is-collapsed', isCollapsed);
+    }
+    if (sub) {
+      sub.hidden = isCollapsed;
+      sub.classList.toggle('is-collapsed', isCollapsed);
+    }
   }
-  if (list) list.hidden = !expanded;
 }
 
 // buildMcpServerToggles(state)
@@ -62,31 +91,15 @@ function applyMcpExpanded(wrap, expanded) {
 // Rendered as a nested <ul>: one row per configured MCP server
 // (parent checkbox enables the server itself, see toggleMcpServer)
 // with an indented child row per discovered tool whose checkbox
-// flips the per-chat tools filter (see toggleTool).
+// flips the per-chat tools filter (see toggleTool). Each server
+// row also has its own collapse toggle on the right so the user
+// can fold away long server tool lists without hiding the rest —
+// the close behaviour is per MCP, not global.
 function buildMcpServerToggles(state) {
   const servers = (state.mcpServers || []).filter((s) => s && s.id);
   if (!servers.length) return null;
   const wrap = document.createElement('div');
   wrap.className = 'chat-view__mcp-toggles';
-  const head = document.createElement('button');
-  head.type = 'button';
-  head.className = 'chat-view__mcp-toggles-head';
-  head.setAttribute('aria-expanded', String(state.mcpExpanded !== false));
-  head.setAttribute('aria-controls', 'chat-view__mcp-list');
-  const headLabel = document.createElement('span');
-  headLabel.className = 'chat-view__mcp-toggles-head-label';
-  headLabel.textContent = 'MCP servers & tools';
-  const headArrow = document.createElement('span');
-  headArrow.className = 'chat-view__mcp-toggles-head-arrow';
-  headArrow.setAttribute('aria-hidden', 'true');
-  headArrow.textContent = '▸';
-  head.appendChild(headLabel);
-  head.appendChild(headArrow);
-  head.addEventListener('click', () => {
-    state.mcpExpanded = state.mcpExpanded === false;
-    applyMcpExpanded(wrap, state.mcpExpanded !== false);
-  });
-  wrap.appendChild(head);
 
   // Map each server to the catalog entries that belong to it, so the
   // nested list stays aligned with /api/tools/list (which the chips
@@ -100,28 +113,62 @@ function buildMcpServerToggles(state) {
     bucket.push(t);
   }
 
+  // Per-MCP collapsed state. The toggle is per server: folding one
+  // MCP leaves the others open. Lives across re-renders of the same
+  // chat; reset on chat switch (see useChatState).
+  //
+  // `null` is the fresh-chat default and means "everything is
+  // collapsed until the user explicitly opens a server". The
+  // first interaction promotes it to a concrete Set (see
+  // `flipCollapsed` below).
+  const collapsed = state.mcpCollapsed; // null or Set
+
   const list = document.createElement('ul');
   list.className = 'chat-view__mcp-list';
   list.id = 'chat-view__mcp-list';
   list.setAttribute('role', 'group');
   list.setAttribute('aria-label', 'MCP servers and their tools');
-  list.hidden = state.mcpExpanded === false;
 
   for (const s of servers) {
     const serverSlug = s.slug || s.id;
     const serverComposed = (n) => 'mcp__' + serverSlug + '__' + n;
     const li = document.createElement('li');
     li.className = 'chat-view__mcp-item';
+    li.setAttribute('data-mcp-id', s.id);
 
-    // Parent row: server enable + label + status.
+    // Parent row layout. The row is a plain <div> (not a <label>)
+    // so we can split the click target into three zones:
+    //   1. The checkbox  -> enable/disable the server.
+    //   2. The text line (name + status) -> collapse/expand this
+    //      server's tool list.
+    //   3. The arrow button on the right -> collapse/expand.
+    // Wrapping the whole row in a <label> would have made every
+    // click toggle the server enable, which is the opposite of
+    // what the user expects — they want only the checkbox to
+    // enable, and the rest of the line to act as the per-MCP
+    // collapse handle.
+    const parentRow = document.createElement('div');
+    parentRow.className = 'chat-view__mcp-server';
+
+    // The checkbox + name share a small <label> so the standard
+    // pattern still works: clicking either the box or the name
+    // text flips the server enable. The name is also a click
+    // target for the collapse, but the inner <label> swallows
+    // those clicks for the enable first; we re-broadcast them to
+    // the row's collapse handler below so both stay in sync.
     const parentLabel = document.createElement('label');
-    parentLabel.className = 'chat-view__mcp-server';
+    parentLabel.className = 'chat-view__mcp-server-label';
     const parentBox = document.createElement('input');
     parentBox.type = 'checkbox';
     parentBox.className = 'checkbox';
     parentBox.checked = s.enabled !== false;
     parentBox.disabled = state.mcpToggleBusy.has(s.id);
     parentBox.setAttribute('aria-label', (s.name || s.id) + ' MCP server enabled');
+    // Block clicks on the checkbox from bubbling up to the row's
+    // collapse handler — the user explicitly asked for "only
+    // clicking on the checkbox should change it".
+    parentBox.addEventListener('click', (e) => { e.stopPropagation(); });
+    parentBox.addEventListener('change', () => state._toggleMcpServer && state._toggleMcpServer(s.id, parentBox.checked));
     const parentMain = document.createElement('span');
     parentMain.className = 'chat-view__mcp-server-main';
     const parentName = document.createElement('span');
@@ -133,9 +180,122 @@ function buildMcpServerToggles(state) {
     const serverTools = Array.isArray(s.tools) ? s.tools.length : 0;
     parentMeta.textContent = status + ' · ' + serverTools + ' tool' + (serverTools === 1 ? '' : 's');
     parentMain.appendChild(parentName); parentMain.appendChild(parentMeta);
-    parentBox.addEventListener('change', () => state._toggleMcpServer && state._toggleMcpServer(s.id, parentBox.checked));
-    parentLabel.appendChild(parentBox); parentLabel.appendChild(parentMain);
-    li.appendChild(parentLabel);
+    parentLabel.appendChild(parentBox);
+    parentLabel.appendChild(parentMain);
+    parentRow.appendChild(parentLabel);
+
+    // Helper that flips the collapsed state for THIS server and
+    // mirrors it to the toggle button + tool list. Used by both
+    // the row click handler (text line) and the arrow button.
+    //
+    // The first user interaction promotes the null/default state
+    // to a concrete Set of explicitly-collapsed server IDs, so
+    // subsequent updates only have to track the per-server
+    // changes from that point on. (e.g. opening server A from
+    // the all-collapsed default means "A is open" — we add
+    // every other server to the Set so the new state collapses
+    // them, and we explicitly leave A out so it stays open.)
+    const flipCollapsed = (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      // Snapshot every other server's current effective state
+      // before we touch the Set, so opening one server doesn't
+      // silently collapse the others (or vice-versa).
+      const isCurrentlyCollapsed = collapsed instanceof Set
+        ? collapsed.has(s.id)
+        : true; // null default => everything starts collapsed
+      const nextCollapsed = !isCurrentlyCollapsed;
+      // Promote the null default to a concrete Set on first use.
+      if (!(collapsed instanceof Set)) {
+        const fresh = new Set();
+        for (const other of servers) {
+          if (other && other.id && other.id !== s.id) fresh.add(other.id);
+        }
+        if (nextCollapsed) fresh.add(s.id);
+        state.mcpCollapsed = fresh;
+      } else {
+        if (nextCollapsed) collapsed.add(s.id);
+        else collapsed.delete(s.id);
+        state.mcpCollapsed = collapsed;
+      }
+      // Mirror the new state to the toggle button + tool list.
+      const t = li.querySelector('.chat-view__mcp-toggle');
+      const sub = li.querySelector('.chat-view__mcp-tool-list');
+      if (t) {
+        t.setAttribute('aria-expanded', String(!nextCollapsed));
+        t.classList.toggle('is-collapsed', nextCollapsed);
+      }
+      if (sub) {
+        sub.hidden = nextCollapsed;
+        sub.classList.toggle('is-collapsed', nextCollapsed);
+      }
+    };
+
+    // Per-MCP collapse toggle on the right end of the parent row.
+    // Sits as its own button so it has a real focus ring + tap
+    // target. Only added when the server actually has tools to
+    // hide; a server with no tools keeps the row as a plain
+    // enable/disable line.
+    let hasCollapseToggle = false;
+    if (Array.isArray(s.tools) && s.tools.length) {
+      hasCollapseToggle = true;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'chat-view__mcp-toggle';
+      toggle.setAttribute('aria-label', (s.name || s.id) + ' tools collapse');
+      toggle.setAttribute('aria-expanded', 'true');
+      toggle.setAttribute('aria-controls', 'chat-view__mcp-tools-' + s.id);
+      // Inline SVG arrow. A real <path> renders consistently across
+      // browsers and font fallbacks (the Unicode "▾" can disappear
+      // on systems missing the geometric shapes block). Sized to
+      // 16×16 so it reads clearly at a glance on mobile, rotated
+      // 90° via CSS when the row is collapsed.
+      const toggleArrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      toggleArrow.setAttribute('class', 'chat-view__mcp-toggle-arrow');
+      toggleArrow.setAttribute('viewBox', '0 0 16 16');
+      toggleArrow.setAttribute('width', '16');
+      toggleArrow.setAttribute('height', '16');
+      toggleArrow.setAttribute('aria-hidden', 'true');
+      toggleArrow.setAttribute('focusable', 'false');
+      const togglePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      togglePath.setAttribute('d', 'M3.5 5.5 L8 10 L12.5 5.5');
+      togglePath.setAttribute('fill', 'none');
+      togglePath.setAttribute('stroke', 'currentColor');
+      togglePath.setAttribute('stroke-width', '2');
+      togglePath.setAttribute('stroke-linecap', 'round');
+      togglePath.setAttribute('stroke-linejoin', 'round');
+      toggleArrow.appendChild(togglePath);
+      toggle.appendChild(toggleArrow);
+      toggle.addEventListener('click', flipCollapsed);
+      parentRow.appendChild(toggle);
+    }
+
+    // Click anywhere on the text line (the <label> region) flips
+    // the collapse — except clicks that landed on the checkbox.
+    // The <label> would otherwise re-dispatch the click to the
+    // checkbox and toggle the server enable, so we explicitly
+    // preventDefault when the target is the line text, and stop
+    // propagation when it is the checkbox. Net effect:
+    //   click on checkbox     -> enable/disable server
+    //   click on line text    -> collapse/expand
+    //   click on arrow button -> collapse/expand
+    if (hasCollapseToggle) {
+      parentLabel.addEventListener('click', (e) => {
+        if (e.target === parentBox) {
+          // The checkbox's own stopPropagation already runs in
+          // capture phase; this is the bubble-phase belt-and-
+          // braces in case the input handler is removed.
+          e.stopPropagation();
+          return;
+        }
+        // Label-text click: suppress the implicit click that
+        // would be forwarded to the checkbox (which would toggle
+        // the server enable) and run the collapse flip instead.
+        e.preventDefault();
+        flipCollapsed();
+      });
+    }
+
+    li.appendChild(parentRow);
 
     // Child list: one row per discovered tool.
     const discovered = (s.tools && s.tools.length) ? s.tools : null;
@@ -156,6 +316,7 @@ function buildMcpServerToggles(state) {
     if (childTools.length) {
       const sub = document.createElement('ul');
       sub.className = 'chat-view__mcp-tool-list';
+      sub.id = 'chat-view__mcp-tools-' + s.id;
       sub.setAttribute('role', 'group');
       sub.setAttribute('aria-label', (s.name || s.id) + ' tools');
       for (const tool of childTools) {
@@ -194,6 +355,11 @@ function buildMcpServerToggles(state) {
     list.appendChild(li);
   }
   wrap.appendChild(list);
+  // Apply the per-MCP collapsed state to the freshly built list so
+  // a re-render of the tools card (e.g. after a tool toggle or a
+  // server add) keeps the user's per-server choice instead of
+  // snapping every server back open.
+  applyMcpCollapsed(wrap, collapsed);
   return wrap;
 }
 
@@ -619,4 +785,4 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
 }
 
-export { buildSetupCard, applyMcpExpanded };
+export { buildSetupCard, applyMcpCollapsed };

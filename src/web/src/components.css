@@ -1173,49 +1173,55 @@ textarea#projectEditor {
   flex-direction: column;
   gap: 6px;
 }
-.chat-view__mcp-toggles-head {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  /* The MCP header is a real <button> now: it collapses/expands the
-     nested server list. Keep its visual weight close to the previous
-     plain label so existing color/typography stays, but give it a
-     proper tap target on mobile and a hover affordance. */
-  display: flex;
+/* Per-MCP collapse toggle. Sits at the right end of each server row
+   so the user can fold away that server's tool list without hiding
+   the others. Rotated 0° when expanded (▼), 90° when collapsed (▶)
+   to read as the classic disclosure affordance. The server enable
+   checkbox stays the leftmost control; clicking the rest of the
+   line also flips the collapse, only the checkbox itself changes
+   the server enable (see chat/cards.js for the click zoning). */
+.chat-view__mcp-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  /* Inherit the page font + clear the UA's small-control button
+     look so the SVG arrow inside renders consistently. */
+  font: inherit;
+  color: var(--muted);
   background: transparent;
   border: 0;
-  padding: 4px 2px;
-  text-align: left;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: var(--muted);
   cursor: pointer;
   border-radius: 6px;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.chat-view__mcp-toggles-head:hover { color: var(--fg); background: var(--surface-3); }
-.chat-view__mcp-toggles-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.chat-view__mcp-toggles-head-label { min-width: 0; }
-.chat-view__mcp-toggles-head-arrow {
-  flex: 0 0 auto;
+.chat-view__mcp-toggle:hover { color: var(--fg); background: var(--surface-3); }
+.chat-view__mcp-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-view__mcp-toggle-arrow {
+  /* Inline SVG chevron. The path is stroked at 2px so it stays
+     visible at any size; rotate the SVG to switch between
+     expanded (▼) and collapsed (▶) without changing geometry. */
   display: inline-block;
-  font-size: 0.78rem;
-  line-height: 1;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
   transition: transform 120ms ease;
-  transform: rotate(90deg);
-  transform-origin: 50% 50%;
-}
-.chat-view__mcp-toggles-head.is-collapsed .chat-view__mcp-toggles-head-arrow {
-  /* Point rightward when collapsed (▸ un-rotated) to read as the
-     classic "click to expand" affordance; rotated 90° (▾) when open
-     to match the standard disclosure convention. */
   transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  /* `currentColor` on the stroke picks up the button's color so
+     the hover and focus states stay in sync. */
+  color: inherit;
+}
+.chat-view__mcp-toggle.is-collapsed .chat-view__mcp-toggle-arrow {
+  /* Point rightward when collapsed (▶) to read as the classic
+     "click to expand" affordance. The geometry is the same
+     down-chevron, just rotated 90° counter-clockwise. */
+  transform: rotate(-90deg);
 }
 /* Nested MCP server → tool list. The parent row is the server
    enable checkbox (project-level, PATCHes the server entry); each
@@ -1233,6 +1239,18 @@ textarea#projectEditor {
   flex-direction: column;
   gap: 4px;
 }
+/* Per-MCP tool list hidden state. Each server's tool list is
+   individually collapsible via the toggle on the parent row (see
+   `applyMcpCollapsed` in chat/cards.js). The base rule above
+   declares `display: flex` on the same element, which by
+   specificity (0,1,0 vs the UA's `[hidden] { display: none }`)
+   would win and keep the list visible after a click on the
+   toggle. Restore the intended behaviour with a matching
+   `[hidden]` override AND a class-based override — the class
+   is the visual source of truth (specificity 0,2,0), `hidden`
+   keeps assistive tech informed. */
+.chat-view__mcp-tool-list[hidden],
+.chat-view__mcp-tool-list.is-collapsed { display: none; }
 .chat-view__mcp-item {
   display: flex;
   flex-direction: column;
@@ -1245,9 +1263,24 @@ textarea#projectEditor {
   min-height: 34px;
   padding: 4px 2px;
   color: var(--fg);
-  cursor: pointer;
 }
-.chat-view__mcp-server input { flex: 0 0 auto; }
+/* The label wraps just the checkbox + name/status text. Clicking
+   either still toggles the server enable, the standard <label>
+   pattern. We don't want the whole row to be a label any more
+   because the user wants "click on the line" to collapse/expand
+   the tool list — only the checkbox should change the server
+   enable. The text line's collapse handler lives on the label
+   and the row's flex container in chat/cards.js. */
+.chat-view__mcp-server-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  cursor: pointer;
+  color: var(--fg);
+}
+.chat-view__mcp-server-label input { flex: 0 0 auto; }
 .chat-view__mcp-server-main {
   min-width: 0;
   display: flex;
