@@ -1255,12 +1255,42 @@ async function handleChatStream(req, res, chatId) {
   // would otherwise stretch the window and under-report tok/s.
   let streamStartedAt = 0;   // set on first message/reasoning delta
   let streamingMs = 0;       // accumulated across streaming windows
+  // Per-round usage snapshots from ai.js. Each tool round's upstream
+  // call reports its own prompt/completion tokens. When a round ends
+  // with tool calls, the pending snapshot is attached to the segment
+  // persisted at `assistant_turn_end`, giving it a cost. When the
+  // turn ends without tool calls, the snapshot is redundant — the
+  // `done` handler computes the final cost from aggregated usage.
+  let pendingRoundUsage = null;
   // Per-turn enrichment (cost + usage) is computed once on `done`
   // and reused for both the SSE emit and the persisted assistant
   // message. The chat UI's own live counter and the cost line
   // diverge slightly while the stream is in flight (the live counter
   // is per-delta; the cost line is final); that's intentional.
   let lastEnrichment = null;
+
+  // Compute the cost for an intermediate segment from its round's
+  // usage snapshot. Returns null when pricing is unavailable.
+  function computeSegmentCost(roundUsage) {
+    if (!roundUsage) return null;
+    try {
+      const app = settings.getApp();
+      if (typeof roundUsage.providerCost === 'number' && isFinite(roundUsage.providerCost) && roundUsage.providerCost >= 0) {
+        // OpenRouter reports a real input/output split under
+        // cost_details; fall back to 0 when the round didn't carry it.
+        const split = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0;
+        return {
+          known: true,
+          input: split(roundUsage.providerCostInput),
+          output: split(roundUsage.providerCostOutput),
+          total: roundUsage.providerCost,
+          currency: 'USD'
+        };
+      }
+      const result = usage.computeCost({ model, usage: roundUsage, app });
+      return { known: result.known, input: result.input, output: result.output, total: result.total, currency: result.currency };
+    } catch { return null; }
+  }
 
   // Built-in shell and file tools are always advertised. Their authorization
   // modes decide whether calls prompt, run automatically, or are disabled.
@@ -1290,6 +1320,10 @@ async function handleChatStream(req, res, chatId) {
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
     enabledTools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null),
+    // Per-round usage snapshot (one per upstream API call, including
+    // tool rounds). Stashed so `assistant_turn_end` can attach cost
+    // to the intermediate segment it persists.
+    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; },
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         if (!streamStartedAt) streamStartedAt = Date.now();
@@ -1308,11 +1342,24 @@ async function handleChatStream(req, res, chatId) {
         if (streamStartedAt) { streamingMs += Date.now() - streamStartedAt; streamStartedAt = 0; }
         // Persist text produced before a tool call at its real transcript
         // position, then start a fresh segment for the post-tool response.
+        // Attach the round's usage/cost so this segment shows its own
+        // cost line in the chat UI.
+        // The same numbers ride the SSE event so the live bubble can
+        // render the round's real cost without waiting for reconciliation.
+        let segmentCost = null;
+        let segmentUsage;
         if (assistantContent || assistantReasoning) {
           try {
+            segmentCost = computeSegmentCost(pendingRoundUsage);
+            segmentUsage = pendingRoundUsage
+              ? { promptTokens: pendingRoundUsage.promptTokens, completionTokens: pendingRoundUsage.completionTokens }
+              : undefined;
             assistantMsg = messages.appendMessage(projectDir, chatId, {
-              role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id
+              role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
+              usage: segmentUsage,
+              cost: segmentCost || undefined
             });
+            pendingRoundUsage = null;
             if (traceStream && assistantMsg) {
               const event = trace.eventForMessage(assistantMsg);
               trace.write(traceStream, event.type, event.payload);
@@ -1321,6 +1368,14 @@ async function handleChatStream(req, res, chatId) {
         }
         assistantContent = '';
         assistantReasoning = '';
+        // Emit the enriched frame (cost + usage attached) and skip the
+        // generic emit below so the client never sees a cost-less copy.
+        emit(name, Object.assign({}, data, {
+          usage: segmentUsage,
+          cost: segmentCost || undefined,
+          modelId: model.id
+        }));
+        return;
       } else if (name === 'tool_call') {
         try {
           messages.appendMessage(projectDir, chatId, {
@@ -1367,6 +1422,7 @@ async function handleChatStream(req, res, chatId) {
           });
         } catch { /* keep data as-is on any pricing resolution error */ }
         lastEnrichment = enriched;
+        pendingRoundUsage = null; // consumed by the final `done` cost
         // Persist the assistant message with the same enrichment so
         // a chat that is later reopened renders the same numbers
         // (decision §14 — the usage block rides the message).

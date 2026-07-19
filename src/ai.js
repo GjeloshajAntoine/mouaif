@@ -817,11 +817,29 @@ function* parseOpenAISSE(eventName, data) {
       obj.usage.total_cost,
       obj.usage.totalCost
     );
+    // OpenRouter additionally reports a cost split under cost_details
+    // (docs: usage.cost_details.upstream_inference_prompt_cost /
+    // completions_cost). Capture it so persisted segments can show a
+    // real input/output cost breakdown instead of a bare total.
+    const cd = (obj.usage && obj.usage.cost_details) || {};
+    const providerCostInput = firstFiniteNumber(
+      cd.upstream_inference_prompt_cost,
+      cd.prompt_cost,
+      cd.input_cost
+    );
+    const providerCostOutput = firstFiniteNumber(
+      cd.upstream_inference_completions_cost,
+      cd.completion_cost,
+      cd.completions_cost,
+      cd.output_cost
+    );
     yield {
       name: 'done',
       data: {
         usage: { promptTokens, completionTokens },
-        providerCost
+        providerCost,
+        providerCostInput,
+        providerCostOutput
       }
     };
   }
@@ -1034,7 +1052,7 @@ async function* readNDJSON(stream) {
 }
 
 async function streamChat(opts) {
-  const { model, messages, signal, onEvent } = opts || {};
+  const { model, messages, signal, onEvent, onRoundUsage } = opts || {};
   if (!model || !model.provider) {
     return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
   }
@@ -1542,6 +1560,33 @@ async function streamChat(opts) {
       if (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0) {
         providerCost = (providerCost || 0) + ev.data.providerCost;
       }
+      // Per-round usage snapshot. Fires on every upstream `done`
+      // (one per API round-trip, including tool rounds). The outer
+      // loop's `done` still carries the final aggregated usage for
+      // the turn; this callback lets the chat server persist cost
+      // on each intermediate assistant segment. Fires after the
+      // accumulator updates so the snapshot reflects the round.
+      if (typeof onRoundUsage === 'function') {
+        try {
+          const promptTokens = (ev.data && ev.data.usage && Number(ev.data.usage.promptTokens)) || 0;
+          const completionTokens = (ev.data && ev.data.usage && Number(ev.data.usage.completionTokens)) || 0;
+          if (promptTokens > 0 || completionTokens > 0) {
+            // firstFiniteNumber yields 0 when a field is absent; map
+            // that to null so "no breakdown reported" stays distinct
+            // from a genuine $0 and doesn't masquerade as known.
+            const norm = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : null;
+            onRoundUsage({
+              promptTokens,
+              completionTokens,
+              providerCost: (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0)
+                ? ev.data.providerCost
+                : null,
+              providerCostInput: norm(ev.data && ev.data.providerCostInput),
+              providerCostOutput: norm(ev.data && ev.data.providerCostOutput)
+            });
+          }
+        } catch { /* listener errors must not abort the stream */ }
+      }
     } else if (ev.name === 'usage_input') {
       const p = Number(ev.data && ev.data.promptTokens);
       // Anthropic reports this once at message_start; last wins so the
@@ -1551,6 +1596,24 @@ async function streamChat(opts) {
     } else if (ev.name === 'usage_output') {
       usage.completionTokens = (usage.completionTokens || 0) + (ev.data.completionTokens || 0);
       onEvent('usage_output', ev.data);
+      // Anthropic does not put usage on its `done` frame; the output
+      // count arrives on `message_delta` and the input count on
+      // `message_start`. Emit the round snapshot here so per-round
+      // cost reaches intermediate segments for Anthropic too. The
+      // `done` branch above may fire a second time for providers
+      // that put usage on `done` — the server keeps the richer value.
+      if (typeof onRoundUsage === 'function') {
+        try {
+          const completionTokens = Number(ev.data.completionTokens) || 0;
+          if (completionTokens > 0) {
+            onRoundUsage({
+              promptTokens: usage.promptTokens || 0,
+              completionTokens,
+              providerCost: null
+            });
+          }
+        } catch { /* listener errors must not abort the stream */ }
+      }
     } else if (ev.name === 'finish') {
       // The tool-call finish reason is handled by the outer loop
       // (it emits tool_call / tool_result). Pass through only the

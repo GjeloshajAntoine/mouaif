@@ -102,6 +102,7 @@ export function useChatState(props) {
   const watchingRun = useRef(false);
   const chatCurrent = useRef(null);
   const providersCurrent = useRef([]);
+  const providerCredit = useRef(null);
 
   // ---- The mutable `state` bag for the imperative modules ----
   // The other modules read/write fields on this object directly.
@@ -148,7 +149,8 @@ export function useChatState(props) {
     get watchingRun() { return watchingRun.current; },
     set watchingRun(v) { watchingRun.current = v; },
     mcpToggleBusy: mcpToggleBusy.current,
-    providerCredit: null
+    get providerCredit() { return providerCredit.current; },
+    set providerCredit(v) { providerCredit.current = v; }
   };
 
   const refs = {

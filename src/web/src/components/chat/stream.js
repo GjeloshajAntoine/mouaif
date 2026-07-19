@@ -240,6 +240,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   let usage = null;
   let cost = null;
   let streamingMs = null;
+  // Track the latest round's usage so intermediate segments can
+  // carry their own cost estimate. The server sends `usage_input`
+  // per round; we pair it with `usage_output` to form a complete
+  // picture for the segment that ends at `assistant_turn_end`.
+  let roundPromptTokens = 0;
+  let roundCompletionTokens = 0;
   // Throttle the live tok/s repaint: redrawing on every delta
   // produces a strobe effect on a phone. We repaint at most every
   // 120 ms while deltas are flowing, and once on `done`.
@@ -300,6 +306,8 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       }
       cost = data.cost || cost;
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+      roundPromptTokens = 0;
+      roundCompletionTokens = 0;
       refreshChatTitle(state, refs);
     } else if (ev.eventName === 'usage_input') {
       // Per-round prompt footprint (fires on each tool round for
@@ -308,6 +316,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       if (isFinite(p) && p > 0) {
         usage = usage || {};
         if (!usage.promptTokens || p > usage.promptTokens) usage.promptTokens = p;
+        roundPromptTokens = p;
         repaintLiveRate();
       }
     } else if (ev.eventName === 'usage_output') {
@@ -315,6 +324,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       if (isFinite(c2) && c2 > 0) {
         usage = usage || {};
         usage.completionTokens = (usage.completionTokens || 0) + c2;
+        roundCompletionTokens += c2;
         repaintLiveRate();
       }
     } else if (ev.eventName === 'assistant_turn_end') {
@@ -322,9 +332,34 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       const thoughtSegment = reasoning;
       if (segment || thoughtSegment) {
         finalizeLiveMessage({ content: segment, reasoning: thoughtSegment }, refs);
+        // The server attaches the round's exact usage + cost to this
+        // event (computed from the per-round snapshot, incl. OpenRouter's
+        // real providerCost). Prefer it; fall back to locally tracked
+        // round counters only if the frame didn't carry usage.
+        const segmentUsage = data.usage
+          || ((roundPromptTokens || roundCompletionTokens)
+            ? { promptTokens: roundPromptTokens || undefined, completionTokens: roundCompletionTokens || undefined }
+            : undefined);
+        const segmentCost = data.cost || undefined;
         state.messages = state.messages.concat([{
-          role: 'assistant', content: segment, reasoning: thoughtSegment, ts: new Date().toISOString(), modelId
+          role: 'assistant', content: segment, reasoning: thoughtSegment, ts: new Date().toISOString(), modelId,
+          usage: segmentUsage,
+          cost: segmentCost
         }]);
+        // Update the just-finalized row's meta line so the segment
+        // shows its cost immediately without waiting for the
+        // post-stream reconciliation.
+        if (refs.transcript.current) {
+          const rows = refs.transcript.current.querySelectorAll('.chat-msg--assistant');
+          const lastRow = rows.length ? rows[rows.length - 1] : null;
+          if (lastRow) {
+            const meta = lastRow.querySelector('.chat-msg__meta');
+            if (meta) renderUsageMeta(meta, { modelId, usage: segmentUsage, cost: segmentCost }, state);
+          }
+        }
+        // Reset round counters for the next segment.
+        roundPromptTokens = 0;
+        roundCompletionTokens = 0;
       } else {
         finalizeLiveMessage({ content: '', reasoning: '' }, refs);
       }
@@ -340,6 +375,10 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       appendToolResultCard(data, refs);
     } else if (ev.eventName === 'error') {
       streamFailed = true;
+      // Clear the per-round counters so a subsequent turn does not
+      // inherit stale tokens from the failed exchange.
+      roundPromptTokens = 0;
+      roundCompletionTokens = 0;
       setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || '') + (data.detail ? ' — ' + data.detail : ''), 'error');
     }
   }
@@ -365,6 +404,10 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     }
   } catch (err) {
     streamFailed = true;
+    // Clear the per-round counters so a subsequent turn does not
+    // inherit stale tokens from the interrupted exchange.
+    roundPromptTokens = 0;
+    roundCompletionTokens = 0;
     console.error('chat SSE reader failed', err);
     setChatStatus(refs, 'stream interrupted: ' + (err && err.message ? err.message : 'connection closed'), 'error');
   } finally {
