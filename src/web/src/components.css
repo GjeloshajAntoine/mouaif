@@ -438,13 +438,19 @@
 .settings-project__item,
 .settings-project__tool {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px;
-}
-.settings-project__item {
   flex-direction: row;
   align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: var(--tap);
+}
+/* Tool rows wrap: title/note on the left, mode select on the right,
+   and the allowlist block drops to a full-width second row. The
+   overall row height matches a regular item. */
+.settings-project__tool {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  min-height: var(--tap);
 }
 .settings-project__item--col { flex-direction: column; align-items: stretch; }
 .settings-project__item-row {
@@ -455,26 +461,33 @@
 .settings-project__item-main { flex: 1; min-width: 0; }
 .settings-project__item-title {
   color: var(--fg);
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: -0.005em;
   line-height: 1.2;
 }
 .settings-project__item-note {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   line-height: 1.35;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 /* Live status text ("inheriting app default", "trace on"). Same slot
    and size as the note, but colored so "what the app is telling me"
    never blurs into "what this setting does". */
 .settings-project__item-status {
   color: var(--accent);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   line-height: 1.35;
-  margin-top: 3px;
+  margin-top: 2px;
   min-height: 1em;
+}
+.settings-project__tool-head .settings-project__item-status {
+  margin-top: 0;
+  margin-left: 2px;
+  font-size: 0.68rem;
+  color: var(--accent);
+  opacity: 0.85;
 }
 /* Secondary actions under a settings row (export / delete). Top rule
    separates them from the setting itself; danger sits at the far end. */
@@ -490,56 +503,65 @@
 .settings-project__item-actions .btn--danger { margin-left: auto; }
 .settings-project__select {
   width: auto;
-  min-width: 118px;
+  min-width: 0;
   max-width: 46%;
   flex-shrink: 0;
+  font-size: 0.82rem;
+  padding: 4px 8px;
+  min-height: 30px;
+}
+.settings-project__tool > .input {
+  width: auto;
+  min-width: 0;
+  max-width: 46%;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  padding: 4px 8px;
+  min-height: 30px;
 }
 .settings-project__help {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   line-height: 1.35;
   margin: 0;
 }
 
-/* The tool head is just the title + one-line note now. The mode select
-   sits directly underneath; the title label points at it, so no extra
-   "Permission mode" label is needed. */
+/* Tool row mirrors the regular item row: title + note on the left,
+   mode select on the right. Same overall height as Prompt context
+   size. The allowlist block only appears in allowlist mode and
+   drops to a second row, full width. */
 .settings-project__tool-head {
-  padding-bottom: 2px;
-  margin-bottom: 0;
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow: hidden;
+}
+.settings-project__tool-head .settings-project__item-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The allowlist block only renders in allowlist mode. It is one
    visual unit (label + hint + textarea), so group it with a tighter
    stack. */
 .settings-project__allowlist {
+  flex: 0 0 100%;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  padding-top: 4px;
 }
 .settings-project__allowlist[hidden] { display: none; }
+.settings-project__allowlist .label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 500;
+}
 .settings-project__mono {
   font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-}
-
-.settings-project__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 2px;
-}
-.settings-project__actions .status { flex: 1; }
-.settings-project__warning {
-  color: var(--fg-soft);
-  background: var(--surface-2);
-  border-left: 2px solid var(--warning);
-  border-radius: 6px;
-  font-size: 0.74rem;
-  line-height: 1.35;
-  margin: 2px 0 0;
-  padding: 7px 9px;
+  font-size: 0.78rem;
+  padding: 5px 8px;
+  min-height: 30px;
 }
 
 /* iOS-style switch for on/off settings (chat trace). More readable

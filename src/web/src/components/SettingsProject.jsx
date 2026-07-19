@@ -264,33 +264,39 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
   }
 
-  async function saveShellAuthorization() {
-    const mode = shellModeSel.current ? shellModeSel.current.value : 'ask';
-    const allowlist = shellAllowlist.current
-      ? shellAllowlist.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  // Save tool authorization for one tool (shell / file). The mode
+  // select auto-saves on change; the allowlist auto-saves on a short
+  // debounce, so the row stays one line tall and matches the other
+  // items in the list.
+  async function saveToolAuthorization(tool, modeSel, allowlistEl, statusEl) {
+    const mode = modeSel && modeSel.current ? modeSel.current.value : 'ask';
+    const allowlist = allowlistEl && allowlistEl.current
+      ? allowlistEl.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
       : [];
-    if (shellStatus.current) shellStatus.current.textContent = 'saving authorization…';
+    if (statusEl && statusEl.current) statusEl.current.textContent = 'saving…';
     const r = await fetchJson('/api/tools/authorization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools: { shell: { mode, allowlist } } })
+      body: JSON.stringify({ projectDir: dir(), tools: { [tool]: { mode, allowlist } } })
     });
-    if (shellStatus.current) shellStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
+    if (statusEl && statusEl.current) {
+      statusEl.current.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
+    }
   }
-
-  async function saveFileAuthorization() {
-    const mode = fileModeSel.current ? fileModeSel.current.value : 'ask';
-    const allowlist = fileAllowlist.current
-      ? fileAllowlist.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-      : [];
-    if (fileStatus.current) fileStatus.current.textContent = 'saving authorization…';
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools: { file: { mode, allowlist } } })
-    });
-    if (fileStatus.current) fileStatus.current.textContent = r.status === 200 ? 'authorization saved' : ('HTTP ' + r.status);
+  function saveShellAuthorization() { saveToolAuthorization('shell', shellModeSel, shellAllowlist, shellStatus); }
+  function saveFileAuthorization() { saveToolAuthorization('file', fileModeSel, fileAllowlist, fileStatus); }
+  // Debounced allowlist auto-save. Each tool has its own timer so the
+  // shell and file lists don't collide.
+  function makeAllowlistSaver(tool, modeSel, allowlistEl, statusEl) {
+    let t = null;
+    return () => {
+      if (t) clearTimeout(t);
+      if (statusEl && statusEl.current) statusEl.current.textContent = '…';
+      t = setTimeout(() => saveToolAuthorization(tool, modeSel, allowlistEl, statusEl), 350);
+    };
   }
+  const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', shellModeSel, shellAllowlist, shellStatus));
+  const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', fileModeSel, fileAllowlist, fileStatus));
 
   // Advanced: save the raw JSON editor verbatim.
   async function saveRaw() {
@@ -387,12 +393,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-shell-mode' }, 'Shell commands'),
-                h('div', { class: 'settings-project__item-note' }, 'The AI can run terminal commands in this folder.')
+              h('label', { class: 'settings-project__item-title', for: 'sp-shell-mode' }, 'Shell commands'),
+              h('div', { class: 'settings-project__item-note' },
+                'The AI can run terminal commands in this folder. Commands run as your user account. ',
+                h('span', { ref: shellStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
               )
             ),
-            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode', onChange: onShellModeChange },
+            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode', onChange: function (e) { onShellModeChange(); saveShellAuthorization(); } },
               h('option', { value: 'ask' }, 'Ask every time'),
               h('option', { value: 'allowlist' }, 'Allowlist — trusted commands run, others ask'),
               h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
@@ -400,23 +407,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             ),
             h('div', { ref: shellAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
               h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Allowed command patterns'),
-              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command.'),
-              h('textarea', { ref: shellAllowlist, class: 'input settings-project__mono', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$` })
-            ),
-            h('div', { class: 'settings-project__actions' },
-              h('span', { ref: shellStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn btn--primary', type: 'button', onClick: saveShellAuthorization }, 'Save')
-            ),
-            h('p', { class: 'settings-project__warning' }, 'Commands run as your user account.')
+              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command. Auto-saves.'),
+              h('textarea', { ref: shellAllowlist, class: 'input settings-project__mono', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, onInput: function () { saveShellAllowlistDebounced.current(); } })
+            )
           ),
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-file-mode' }, 'File tools'),
-                h('div', { class: 'settings-project__item-note' }, 'The AI can read, search, and edit files in this folder.')
+              h('label', { class: 'settings-project__item-title', for: 'sp-file-mode' }, 'File tools'),
+              h('div', { class: 'settings-project__item-note' },
+                'The AI can read, search, and edit files in this folder. Edits stay inside this project folder. ',
+                h('span', { ref: fileStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
               )
             ),
-            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode', onChange: onFileModeChange },
+            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode', onChange: function (e) { onFileModeChange(); saveFileAuthorization(); } },
               h('option', { value: 'ask' }, 'Ask every time'),
               h('option', { value: 'allowlist' }, 'Allowlist — trusted paths open, others ask'),
               h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
@@ -424,14 +427,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             ),
             h('div', { ref: fileAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
               h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
-              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path.'),
-              h('textarea', { ref: fileAllowlist, class: 'input settings-project__mono', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$` })
-            ),
-            h('div', { class: 'settings-project__actions' },
-              h('span', { ref: fileStatus, class: 'status', 'aria-live': 'polite' }),
-              h('button', { class: 'btn btn--primary', type: 'button', onClick: saveFileAuthorization }, 'Save')
-            ),
-            h('p', { class: 'settings-project__warning' }, 'Edits stay inside this project folder.')
+              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path. Auto-saves.'),
+              h('textarea', { ref: fileAllowlist, class: 'input settings-project__mono', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, onInput: function () { saveFileAllowlistDebounced.current(); } })
+            )
           )
         )
       ),
