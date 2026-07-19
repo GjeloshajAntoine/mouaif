@@ -62,6 +62,11 @@ export function createVirtualList(options) {
   let lastRange = null;
   let rafId = null;
   let destroyed = false;
+  // Optional key fn: when provided, pool nodes keep their identity across
+  // renders keyed by item id, so a mutated item re-renders into the same
+  // DOM node (preserves <img> decode, selection, focus).
+  const keyFn = typeof opts.key === 'function' ? opts.key : null;
+  const nodeByKey = keyFn ? new Map() : null;
 
   // Inner spacer holds the absolutely-positioned rows. The native scrollbar
   // uses the spacer's height, so the user sees the correct scroll metrics
@@ -123,13 +128,45 @@ export function createVirtualList(options) {
     ensurePoolSize(range.end - range.start);
 
     // Use transforms for the row positions — composited, no layout.
+    // With a key fn we first re-map pool nodes by item key so a node that
+    // was previously used for item K is reused for the same K at its new
+    // index; unkeyed falls back to positional reuse.
+    if (keyFn) {
+      const nextPool = new Array(pool.length);
+      const used = new Set();
+      for (let i = 0; i < pool.length; i++) {
+        const dataIndex = range.start + i;
+        const item = data[dataIndex];
+        if (item === undefined) continue;
+        const k = keyFn(item);
+        const existing = nodeByKey.get(k);
+        if (existing && pool.indexOf(existing) >= 0 && !used.has(existing)) {
+          nextPool[i] = existing;
+          used.add(existing);
+        }
+      }
+      for (let i = 0; i < pool.length; i++) {
+        if (nextPool[i]) continue;
+        // Grab any unused pooled node.
+        for (let j = 0; j < pool.length; j++) {
+          const cand = pool[j];
+          if (!used.has(cand)) { nextPool[i] = cand; used.add(cand); break; }
+        }
+      }
+      pool.length = 0;
+      for (const n of nextPool) if (n) pool.push(n);
+      nodeByKey.clear();
+    }
     for (let i = 0; i < pool.length; i++) {
       const node = pool[i];
       const dataIndex = range.start + i;
       const top = range.padTop + i * opts.itemHeight;
       node.style.transform = 'translateY(' + top + 'px)';
       const item = data[dataIndex];
-      if (item !== undefined) opts.render(item, node, dataIndex);
+      if (item !== undefined) {
+        if (keyFn) nodeByKey.set(keyFn(item), node);
+        opts.render(item, node, dataIndex);
+      }
     }
   }
 

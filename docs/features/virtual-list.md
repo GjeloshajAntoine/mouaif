@@ -41,7 +41,7 @@ list.destroy();
 
 | Member | Purpose |
 |--------|---------|
-| `createVirtualList(opts)` | Returns a list driver. `opts`: `scroller` (Element, required), `itemHeight` (px), `overscan` (rows, default 4), `render(item, node, index)`, `data` (Array). |
+| `createVirtualList(opts)` | Returns a list driver. `opts`: `scroller` (Element, required), `itemHeight` (px), `overscan` (rows, default 4), `render(item, node, index)`, `data` (Array), `key(item)` (optional). When `key` is provided, pool nodes keep their identity per item key across renders: a mutated item re-renders into the same DOM node at its new index, preserving decoded `<img>` data, text selection, and focus. Without `key`, nodes are reused positionally. |
 | `list.setData(arr)` | Replace data, reset the range cache, and re-render. |
 | `list.getData()` | Return a shallow copy of the current data. |
 | `list.refresh()` | Force a re-render. |

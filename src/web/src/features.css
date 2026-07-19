@@ -218,6 +218,187 @@
   min-width: 92px;
 }
 
+/* ---- Inspector: page preview -------------------------------------- */
+
+.inspector__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inspector__preview-frame {
+  width: 100%;
+  height: 56dvh;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.inspector__preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* ---- Inspector: console extras ------------------------------------ */
+
+.inspector__row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+.inspector__row--console {
+  align-items: flex-start;
+  padding: 6px 10px;
+}
+.inspector__row-meta {
+  font-size: 0.66rem;
+  color: var(--muted-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector__row--expandable { cursor: pointer; }
+.inspector__row--expandable:active { background: var(--surface-2); }
+.inspector__arg--string { color: var(--fg-soft); }
+.inspector__arg--object,
+.inspector__arg--function { color: var(--accent); }
+
+/* ---- Inspector: network extras ------------------------------------ */
+
+.inspector__row--network {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 10px;
+}
+.inspector__net-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.inspector__net-meta {
+  font-size: 0.66rem;
+  color: var(--muted-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 2px;
+}
+
+/* ---- Inspector: overview metrics ---------------------------------- */
+
+.inspector__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.inspector__metric {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.inspector__metric-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.inspector__metric-key {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 2px;
+}
+@media (min-width: 600px) {
+  .inspector__metrics { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ---- Inspector: detail sheet -------------------------------------- */
+
+.inspector__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  animation: inspector__fade-in 120ms ease-out;
+}
+@keyframes inspector__fade-in { from { opacity: 0; } to { opacity: 1; } }
+.inspector__sheet {
+  width: 100%;
+  max-height: 78dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--fg);
+  border-top: 1px solid var(--border-strong);
+  border-radius: 14px 14px 0 0;
+  padding: 12px 14px calc(var(--safe-bottom, 0px) + 14px);
+  box-shadow: var(--shadow-lg);
+}
+@media (min-width: 720px) {
+  .inspector__overlay { align-items: center; justify-content: center; padding: 32px; }
+  .inspector__sheet { max-width: 640px; border-radius: 14px; border: 1px solid var(--border-strong); max-height: 80vh; }
+}
+.inspector__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.inspector__sheet-title {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__sheet-h {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 12px 0 4px;
+}
+.inspector__kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.inspector__kv dt { color: var(--muted); font-weight: 600; }
+.inspector__kv dd { margin: 0; word-break: break-all; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; }
+.inspector__headers,
+.inspector__body {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 30dvh;
+  overflow-y: auto;
+}
+
 /* ---- Settings: MCP servers --------------------------------------- */
 
 .mcp__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Inspector** tab in the mobile shell ([src/web/src/main.jsx](../../src/web/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and only ships the two panels that fit on a phone: **Console** and **Network**.
+The **Inspector** tab in the mobile shell ([src/web/src/main.jsx](../../src/web/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four sub-tabs: **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics).
 
 The Inspector is the last piece of the spec from [decisions.md §6](../decisions.md) and §9 build-order item 14: a from-scratch mobile-friendly UI that consumes CDP events but never embeds the Chrome panel.
 
@@ -40,23 +40,35 @@ The view is a 3-state machine. State is held in refs (not Preact state) so a CDP
 
 1. **Setup** — input the Chrome debugger URL, save, and discover.
 2. **Targets** — list of discoverable pages / service workers / etc. with title, type chip, URL, and a Connect button per row.
-3. **Inspect** — connected to a specific target, with a **Console** and a **Network** sub-tab. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
+3. **Inspect** — connected to a specific target, with **Preview**, **Console**, **Network**, and **Info** sub-tabs. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
 
 The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
 
+## Preview panel
+
+The Preview panel shows what the attached page actually looks like, live. It polls `Page.captureScreenshot` (JPEG, quality 55) roughly every 1.2 s while the tab is active and paints the result into an `<img>` via an object URL. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects, so an idle inspector never burns CDP cycles. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.
+
 ## Console panel
 
-The Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), and the formatted message text. Arguments are coerced to strings via `argToString` (preferring `value`, then `description`, then the `type`).
+The Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), the formatted message text, and a source link (`file:line`) when a stack trace is attached. Object arguments render as compact inline previews (`{a: 1, b: 2, …}`) built from the CDP `preview` payload rather than a bare `Object` description.
 
-The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 32 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
+Tapping a row opens a **detail sheet**: the full message, the source location, and the complete stack trace for exceptions and traced logs.
+
+The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 52 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
 
 `Runtime.enable` is sent on connection. If the call rejects, the failure shows in the status line and the rest of the view keeps working (we don't tear down on a single failed command).
 
 ## Network panel
 
-The Network panel subscribes to `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, and `Network.loadingFailed`. Entries are keyed by `requestId` so the four events per request collapse into a single row. The row carries the method, the HTTP status (or `···` for pending, `FAIL` for `loadingFailed`), and the URL. Status chips are colored by class: 2xx green, 3xx amber, 4xx/5xx red, pending muted, failed red.
+The Network panel subscribes to `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, and `Network.loadingFailed`. Entries are keyed by `requestId` so the four events per request collapse into a single row. The row carries the method, the HTTP status (or `···` for pending, `FAIL` for `loadingFailed`), the URL, and a metadata line with resource type, MIME type, transferred size, duration, and remote IP. Status chips are colored by class: 2xx green, 3xx amber, 4xx/5xx red, pending muted, failed red.
 
-The panel renders the last **2,000** requests through the same Virtual list primitive with a 48 px row height. There is no auto-scroll on the Network panel — the user keeps their place while events arrive, matching the Chrome panel.
+Tapping a row opens a **detail sheet** with the full URL, timing, remote address, protocol, cache flag, request and response headers, and the response body. The body is fetched lazily via `Network.getResponseBody` on demand (capped at 200 kB in the UI) so the panel doesn't pay for payloads the user never looks at.
+
+The panel renders the last **2,000** requests through the same Virtual list primitive with a 52 px row height. There is no auto-scroll on the Network panel — the user keeps their place while events arrive, matching the Chrome panel.
+
+## Info panel
+
+The Info panel shows live page vitals from `Performance.getMetrics`: open documents, frames, DOM node count, JS event listeners, JS heap usage, layout count, and style-recalc count, plus the number of network requests seen in the session. It polls every 2.5 s while the tab is active and renders the counters as a responsive metric grid (2 columns on a phone, 4 on wider screens).
 
 `Network.enable` is sent on connection.
 
@@ -86,7 +98,8 @@ The WebSocket proxy returns 400 for missing `targetId` / `ws`, 404 for unknown t
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **No new CSS framework.** The Inspector styles live at the bottom of [src/web/src/style.css](../../src/web/src/style.css) under `/* ---- Inspector ---- */`. They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2.
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
-- **Virtualization** — both panels use [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar.
+- **Virtualization** — both list panels use [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
+- **Mutable row updates** — network and console entries carry a `rev` counter that is bumped on every mutation. The virtual-list render functions diff a signature (`id|rev|status|size|duration`) against the node's previous signature and skip DOM writes entirely when nothing changed, so a busy page doesn't force-reflow the list on every CDP event.
 - **Ref-only state.** The CDP client (websocket, command id, pending responses, event listeners, console / network buffers) lives on refs, not Preact state. A CDP message burst updates a ref and pushes rows into the virtual list directly; Preact is only re-rendered on phase / panel / status changes.
 - **Reconnect safety.** Disconnecting rejects pending CDP commands and clears
 	listeners plus the request map. Close/error events from an older socket are
