@@ -2065,6 +2065,168 @@ export function ChatView(props) {
     return String(s).replace(/[^A-Za-z0-9_-]/g, (c) => '\\' + c);
   }
 
+  // Render an "Ask the user" card. The model has paused the chat to
+  // ask a structured question with 2-4 options; the user picks one
+  // and may always add a free-form "extra" note alongside their
+  // pick. The selection + extra text is sent back via the
+  // /api/tools/authorization/decision endpoint, and the auth gate's
+  // `wait()` resolves with the payload so the runner can fold both
+  // into the `tool` message the model sees.
+  function askUserCard(request) {
+    if (!transcript.current) return;
+    const card = document.createElement('div');
+    card.className = 'tool-card tool-card--ask-user';
+    card.dataset.toolId = request.callId || ('ask_' + Math.random().toString(36).slice(2, 10));
+    const head = document.createElement('div');
+    head.className = 'tool-card__head';
+    const role = document.createElement('span');
+    role.className = 'tool-card__role';
+    role.textContent = 'the model is asking';
+    head.appendChild(role);
+    const pill = document.createElement('span');
+    pill.className = 'tool-card__pill';
+    pill.textContent = 'waiting';
+    head.appendChild(pill);
+    card.appendChild(head);
+    const body = document.createElement('div');
+    body.className = 'tool-card__body tool-card__ask-body';
+    const question = document.createElement('p');
+    question.className = 'tool-card__ask-question';
+    question.textContent = request.question || '(no question)';
+    body.appendChild(question);
+    const optionsHost = document.createElement('div');
+    optionsHost.className = 'tool-card__ask-options';
+    body.appendChild(optionsHost);
+    const options = Array.isArray(request.options) ? request.options : [];
+    const multi = !!request.multiSelect;
+    let selectedValues = multi ? new Set() : null;
+    let lastTapped = null;
+    function refreshSelectedUi() {
+      for (const optEl of optionsHost.querySelectorAll('.tool-card__ask-option')) {
+        const v = optEl.dataset.value || '';
+        const on = multi ? selectedValues.has(v) : (v === (lastTapped && lastTapped.value));
+        optEl.classList.toggle('is-selected', !!on);
+        optEl.setAttribute('aria-checked', multi ? (on ? 'true' : 'false') : (on ? 'true' : 'false'));
+      }
+    }
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i] || {};
+      const optEl = document.createElement('button');
+      optEl.type = 'button';
+      optEl.className = 'tool-card__ask-option';
+      optEl.dataset.value = String(opt.value || '');
+      optEl.setAttribute('role', multi ? 'checkbox' : 'radio');
+      optEl.setAttribute('aria-checked', 'false');
+      const label = document.createElement('span');
+      label.className = 'tool-card__ask-option-label';
+      label.textContent = opt.label || opt.value || ('option ' + (i + 1));
+      optEl.appendChild(label);
+      if (opt.description) {
+        const desc = document.createElement('span');
+        desc.className = 'tool-card__ask-option-desc';
+        desc.textContent = opt.description;
+        optEl.appendChild(desc);
+      }
+      optEl.addEventListener('click', () => {
+        if (multi) {
+          if (selectedValues.has(optEl.dataset.value)) selectedValues.delete(optEl.dataset.value);
+          else selectedValues.add(optEl.dataset.value);
+        } else {
+          lastTapped = { value: optEl.dataset.value, label: opt.label || optEl.dataset.value };
+        }
+        refreshSelectedUi();
+      });
+      optionsHost.appendChild(optEl);
+    }
+    const extraLabel = document.createElement('label');
+    extraLabel.className = 'tool-card__ask-extra-label';
+    extraLabel.textContent = 'Add an extra answer (always optional)';
+    body.appendChild(extraLabel);
+    const extra = document.createElement('textarea');
+    extra.className = 'input tool-card__ask-extra';
+    extra.rows = 2;
+    extra.spellcheck = false;
+    extra.maxLength = 1000;
+    extra.placeholder = 'Add context, a follow-up, or just a note for the model.';
+    body.appendChild(extra);
+    const actions = document.createElement('div');
+    actions.className = 'tool-card__actions';
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'btn btn--primary';
+    submit.textContent = 'Send answer';
+    submit.addEventListener('click', async () => {
+      const choice = multi
+        ? Array.from(selectedValues)
+        : (lastTapped ? [lastTapped.value] : []);
+      // No option selected: treat as a dismiss so the model gets a
+      // clean `cancelled: true` result instead of an empty answer.
+      if (!choice.length) {
+        for (const child of actions.querySelectorAll('button')) child.disabled = true;
+        const r = await fetchJson('/api/tools/authorization/decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'deny' })
+        });
+        if (r.status !== 200) {
+          for (const child of actions.querySelectorAll('button')) child.disabled = false;
+          setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
+          return;
+        }
+        card.remove();
+        setChatStatus('question dismissed', 'success');
+        return;
+      }
+      for (const child of actions.querySelectorAll('button')) child.disabled = true;
+      const payload = {
+        choice: multi ? Array.from(selectedValues) : (lastTapped ? lastTapped.value : ''),
+        extra: extra.value || ''
+      };
+      const r = await fetchJson('/api/tools/authorization/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'allow-once', payload })
+      });
+      if (r.status !== 200) {
+        for (const child of actions.querySelectorAll('button')) child.disabled = false;
+        setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
+        return;
+      }
+      card.remove();
+      setChatStatus('answer sent', 'success');
+    });
+    actions.appendChild(submit);
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'btn';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', async () => {
+      for (const child of actions.querySelectorAll('button')) child.disabled = true;
+      const r = await fetchJson('/api/tools/authorization/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'deny' })
+      });
+      if (r.status !== 200) {
+        for (const child of actions.querySelectorAll('button')) child.disabled = false;
+        setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
+        return;
+      }
+      card.remove();
+      setChatStatus('question dismissed', 'success');
+    });
+    actions.appendChild(dismiss);
+    body.appendChild(actions);
+    card.appendChild(body);
+    transcript.current.appendChild(card);
+    afterTranscriptAppend(true);
+    // Mobile-first: scroll the card into view and move keyboard focus
+    // to the first option so the user can answer with the on-screen
+    // keyboard. The `extra` textarea is below the options; tapping
+    // it later is one tap away.
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
+  }
+
   function finalizeLiveMessage(message) {
     if (!transcript.current) return;
     const liveRow = transcript.current.querySelector('[data-live="1"]');
@@ -2464,6 +2626,10 @@ export function ChatView(props) {
         authorizationCard(data);
         return;
       }
+      if (data && data.parentTool === 'subagent' && ev.eventName === 'ask_user_required') {
+        askUserCard(data);
+        return;
+      }
       if (ev.eventName === 'message' && typeof data.delta === 'string') {
         assembled += data.delta;
         counter.add(data.delta);
@@ -2540,6 +2706,7 @@ export function ChatView(props) {
         reasoning = '';
       }
       else if (ev.eventName === 'authorization_required') { authorizationCard(data); }
+      else if (ev.eventName === 'ask_user_required') { askUserCard(data); }
       else if (ev.eventName === 'tool_call') { appendToolCallCard(data); }
       else if (ev.eventName === 'tool_result') { appendToolResultCard(data); }
       else if (ev.eventName === 'error') {

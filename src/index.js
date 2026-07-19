@@ -961,7 +961,8 @@ async function handleChats(req, res, parsed) {
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
       // Collect the tool specs exactly as streamChat does: base shell,
-      // subagent, and file tools are always advertised, plus ready MCP servers.
+      // subagent, ask_user, and file tools are always advertised, plus
+      // ready MCP servers.
       const shellEnabled = true;
       const fileToolsEnabled = true;
       const toolSpecs = [];
@@ -969,6 +970,7 @@ async function handleChats(req, res, parsed) {
         try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
       }
       try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
       if (fileToolsEnabled) {
         try {
           const fileTools = require('./tools/files.js');
@@ -2410,6 +2412,15 @@ async function handleTools(req, res, parsed) {
       });
     } catch { /* subagent module unavailable; omit */ }
     try {
+      const ask = require('./tools/ask.js');
+      tools.push({
+        name: 'ask_user',
+        kind: 'native',
+        source: 'ask_user',
+        description: (ask.SPEC && ask.SPEC.function && ask.SPEC.function.description) || 'Ask the user a structured question with 2-4 options.'
+      });
+    } catch { /* ask_user module unavailable; omit */ }
+    try {
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {
         const spec = ft.SPECS && ft.SPECS[name];
@@ -2918,14 +2929,19 @@ async function handleToolAuthorization(req, res, parsed) {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const { projectDir, chatId, callId, decision } = body || {};
+    const { projectDir, chatId, callId, decision, payload } = body || {};
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
     if (!callId) return sendJSON(res, 400, { error: 'callId is required' });
     if (!decision) return sendJSON(res, 400, { error: 'decision is required' });
     try {
       if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
-      const out = authGate.recordDecision(projectDir, chatId, callId, decision);
+      // `payload` is an optional bag of structured data the chat UI
+      // hands back alongside the decision. Today only the `ask_user`
+      // tool reads it (the user's chosen option + free-form extra
+      // text), but the channel is generic so a future native tool can
+      // attach its own structured answer without a new endpoint.
+      const out = authGate.recordDecision(projectDir, chatId, callId, decision, payload);
       return sendJSON(res, 200, out);
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });

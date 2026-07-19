@@ -41,9 +41,13 @@ function clearGrants(projectDir, chatId) {
   if (projectDir && chatId) sessions.delete(sessionKey(projectDir, chatId));
 }
 
-function normalizeConfig(raw, source, enabled) {
+function normalizeConfig(raw, source, enabled, tool) {
   const value = raw && typeof raw === 'object' ? raw : {};
-  const mode = MODES.has(value.mode) ? value.mode : 'ask';
+  // Binary-mode tools only support { off, ask } — clamp any legacy
+  // allowlist / allow values to `ask` so a hand-edited project file
+  // from a future migration can't bypass the prompt.
+  let mode = MODES.has(value.mode) ? value.mode : 'ask';
+  if (tool && BINARY_MODE_TOOLS.has(tool) && mode !== 'off' && mode !== 'ask') mode = 'ask';
   const maxTimeoutMs = Number.isFinite(value.maxTimeoutMs)
     ? Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.round(value.maxTimeoutMs)))
     : MAX_TIMEOUT_MS;
@@ -64,7 +68,14 @@ function normalizeConfig(raw, source, enabled) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file']);
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user']);
+// Tools that only support a binary `off` / `ask` mode. `ask_user` is
+// the first of its kind: the model can't predict the user's answer,
+// so allowlist / allow make no sense. The authorization module still
+// owns the gate (so the rest of the pipeline — UI cards, the SSE
+// event, the audit log — works the same), but the mode enum is
+// narrowed to { off, ask }.
+const BINARY_MODE_TOOLS = new Set(['ask_user']);
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 const MCP_FILE = '.mcp.json';
 
@@ -108,16 +119,16 @@ function effectiveConfig(projectDir, tool) {
     // use, `allow` runs directly, and `off` explicitly disables execution.
     // Keep accepting legacy `enabled` fields in project files, but do not let
     // a missing/false flag make a base tool disappear from the model.
-    return normalizeConfig(value, source, true);
+    return normalizeConfig(value, source, true, tool);
   }
   if (tool.startsWith('mcp__')) {
     const mcpConfig = getMcpConfig(projectDir);
     const projectValue = (mcpConfig && mcpConfig.authorization) || (project && project.mcp && project.mcp.authorization);
     const appValue = app && app.mcp && app.mcp.authorization;
     const value = projectValue || appValue || {};
-    return normalizeConfig(value, projectValue ? 'project' : (appValue ? 'app' : 'default'), true);
+    return normalizeConfig(value, projectValue ? 'project' : (appValue ? 'app' : 'default'), true, tool);
   }
-  return normalizeConfig({ mode: 'off' }, 'default', false);
+  return normalizeConfig({ mode: 'off' }, 'default', false, tool);
 }
 
 function getAuthorization(projectDir) {
@@ -125,7 +136,8 @@ function getAuthorization(projectDir) {
     tools: {
       shell: effectiveConfig(projectDir, 'shell'),
       subagent: effectiveConfig(projectDir, 'subagent'),
-      file: effectiveConfig(projectDir, 'file')
+      file: effectiveConfig(projectDir, 'file'),
+      ask_user: effectiveConfig(projectDir, 'ask_user')
     },
     mcp: effectiveConfig(projectDir, 'mcp__any__tool')
   };
@@ -275,7 +287,7 @@ function appendAudit(projectDir, chatId, tool, callId, decision) {
   } catch { /* audit failure must not execute or deny a tool */ }
 }
 
-function recordDecision(projectDir, chatId, callId, decision) {
+function recordDecision(projectDir, chatId, callId, decision, payload) {
   if (!DECISIONS.has(decision)) throw typedError('EBADINPUT', 'invalid authorization decision');
   const session = sessions.get(sessionKey(projectDir, chatId));
   const pending = session && session.pending.get(callId);
@@ -309,7 +321,17 @@ function recordDecision(projectDir, chatId, callId, decision) {
 
   appendAudit(projectDir, chatId, pending.tool, callId, decision);
   if (decision === 'deny') pending.reject(typedError('EDENIED', 'user denied'));
-  else pending.resolve({ decision: 'allow' });
+  else {
+    // `ask_user` carries a structured answer alongside the decision
+    // so the runner can hand the user's { choice, extra } to the
+    // model. For every other tool `payload` is undefined and the
+    // wait() resolves to the original { decision: 'allow' } shape.
+    if (payload && typeof payload === 'object') {
+      pending.resolve({ decision: 'allow', payload });
+    } else {
+      pending.resolve({ decision: 'allow' });
+    }
+  }
   return { ok: true };
 }
 

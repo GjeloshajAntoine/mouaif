@@ -1064,12 +1064,17 @@ async function streamChat(opts) {
   // Three sources feed the `tools` field of the outgoing request:
   //   1. The native `shell` tool (src/tools/shell.js), always present.
   //   2. The native `subagent` tool (src/tools/subagent.js), always present.
-  //   3. The native file tools (read_file / list_files / search_files /
+  //   3. The native `ask_user` tool (src/tools/ask.js), always present.
+  //      Lets the model pause and ask the user a structured question
+  //      with 2-4 options. The user always has a free-form "extra"
+  //      textbox alongside their pick, so the answer is never
+  //      constrained to the offered options. See docs/features/ask-user-tool.md.
+  //   4. The native file tools (read_file / list_files / search_files /
   //      write_file, src/tools/files.js), always present. Authorization
   //      decides whether a call prompts, runs, or is rejected. These cover
   //      "read this file / find where X is used / patch a small file"
   //      loop without requiring an MCP server.
-  //   4. MCP-discovered tools (decision §18), which use the
+  //   5. MCP-discovered tools (decision §18), which use the
   //      mcp__<serverSlug>__<toolName> name convention.
   // Tool calling and the multi-turn loop below are wired only for the
   // OpenAI-compatible tool shape (openai-compatible + github-copilot).
@@ -1080,6 +1085,8 @@ async function streamChat(opts) {
   catch { /* shell tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/subagent.js').SPEC); }
   catch { /* subagent tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./tools/ask.js').SPEC); }
+  catch { /* ask_user tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -1212,6 +1219,10 @@ async function streamChat(opts) {
       }
       let exec;
       let callEmitted = false;
+      // Captured when the authorization gate resolves a prompt for an
+      // `ask_user` call. The runner reads it to fold the user's
+      // structured answer into the `tool` message it returns.
+      let callOptsAnswerPayload = null;
       try {
         if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
           const requested = args && (args.toolName || args.name || args.tool);
@@ -1258,19 +1269,72 @@ async function streamChat(opts) {
           timeoutMs: args && args.timeoutMs
         });
 
+        // `ask_user` rides a separate UI card (question + options +
+        // free-form "extra" textbox). The same authorization gate is
+        // reused so the audit log, session grants, and `off` /
+        // `allow-always` semantics work the same as for the other
+        // tools. The dedicated `ask_user_required` event carries the
+        // validated question payload so the chat UI can render the
+        // right component without parsing `args` itself.
+        let askUserPayload = null;
+        if (c.name === 'ask_user') {
+          try {
+            const askMod = require('./tools/ask.js');
+            askUserPayload = askMod.validateArgs(args);
+          } catch (e) {
+            // The model fed us a bad question (too many options,
+            // duplicate value, missing label, ...). Surface the
+            // validation error directly as a tool_result so the
+            // model can self-correct on the next turn; do NOT block
+            // the gate on a user prompt, because the bug is on the
+            // model side, not the user side.
+            const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+            exec = { ok: false, content: JSON.stringify(r), result: r };
+            onEvent('tool_call', { id: c.id || null, name: c.name, args });
+            callEmitted = true;
+            onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
+            convo.push({
+              role: 'tool',
+              tool_call_id: c.id || undefined,
+              name: c.name,
+              content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
+            });
+            return exec;
+          }
+        }
+
         if (authResult.decision === 'prompt') {
-          onEvent('authorization_required', {
-            chatId: opts && opts.chatId,
-            callId: c.id,
-            tool: c.name,
-            cmd: args && args.cmd,
-            path: args && args.path,
-            query: args && args.query,
-            summary,
-            timeoutMs: args && args.timeoutMs,
-            projectDir: opts && opts.projectDir
-          });
-          await authResult.wait;
+          if (c.name === 'ask_user' && askUserPayload) {
+            onEvent('ask_user_required', {
+              chatId: opts && opts.chatId,
+              callId: c.id,
+              tool: c.name,
+              question: askUserPayload.question,
+              options: askUserPayload.options,
+              multiSelect: askUserPayload.multiSelect,
+              projectDir: opts && opts.projectDir
+            });
+          } else {
+            onEvent('authorization_required', {
+              chatId: opts && opts.chatId,
+              callId: c.id,
+              tool: c.name,
+              cmd: args && args.cmd,
+              path: args && args.path,
+              query: args && args.query,
+              summary,
+              timeoutMs: args && args.timeoutMs,
+              projectDir: opts && opts.projectDir
+            });
+          }
+          // Capture the resolved value (allow, payload, ...) so the
+          // `ask_user` runner can read the user's structured answer.
+          // For every other tool the payload is undefined and the
+          // runner ignores it.
+          const authDecision = await authResult.wait;
+          if (c.name === 'ask_user' && authDecision && authDecision.payload) {
+            callOptsAnswerPayload = authDecision.payload;
+          }
         }
         // Only announce a running tool after authorization has completed.
         // Previously the UI showed "tool call — running" while the server
@@ -1279,14 +1343,23 @@ async function streamChat(opts) {
         // appeared permanently stuck on a tool call with no messages.
         onEvent('tool_call', { id: c.id || null, name: c.name, args });
         callEmitted = true;
-        exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
+        exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload }));
         }
       } catch (e) {
         // Denied/disabled/error calls still need a call card immediately
         // before their result so persisted history remains a valid pair.
         if (!callEmitted) onEvent('tool_call', { id: c.id || null, name: c.name, args });
         if (e.code === 'EDENIED') {
-          exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
+          // For `ask_user` we want the runner to produce a
+          // `cancelled: true` result so the model can decide what to
+          // do next (fall back to a free-form chat, stop, ask a
+          // different question, ...). For every other tool a deny
+          // stays a plain EDENIED stub.
+          if (c.name === 'ask_user') {
+            exec = await dispatchTool('ask_user', args, Object.assign({}, opts, { callId: c.id || null, answerPayload: { cancelled: true } }));
+          } else {
+            exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
+          }
         } else if (e.code === 'ETOOL_DISABLED') {
           exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
         } else {
@@ -1594,9 +1667,11 @@ async function streamChat(opts) {
         onEvent: (eventName, data) => {
           nestedEvents.push({ name: eventName, data });
           if (typeof onEvent !== 'function') return;
-          // Authorization still rides the normal event so the parent
-          // chat popup/card handles the nested approval.
-          if (eventName === 'authorization_required') {
+          // Authorization (and ask_user) still ride the normal event
+          // so the parent chat popup/card handles the nested
+          // approval. The `parentTool` tag tells the chat UI to
+          // route the card into the subagent's live container.
+          if (eventName === 'authorization_required' || eventName === 'ask_user_required') {
             onEvent(eventName, Object.assign({}, data, { parentTool: 'subagent' }));
             return;
           }
@@ -1661,6 +1736,38 @@ async function streamChat(opts) {
         ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost || null }
         : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
       return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
+    }
+
+    // Native ask_user tool. The runner is a thin shim: it folds the
+    // user's structured answer (carried on callOpts.answerPayload, set
+    // by the authorization gate above) into a { ok, content, result }
+    // triple the AI client returns to the model. The actual user
+    // interaction rides the `ask_user_required` SSE event; the chat
+    // UI is the only thing that ever sees the question payload.
+    if (name === 'ask_user') {
+      let askMod;
+      try { askMod = require('./tools/ask.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'ask_user tool module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      let validated;
+      try { validated = askMod.validateArgs(args); }
+      catch (e) {
+        const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      const payload = (callOpts && callOpts.answerPayload) || { cancelled: true };
+      const choice = payload && Array.isArray(payload.choice) ? payload.choice.slice() : (payload && typeof payload.choice === 'string' ? payload.choice : '');
+      const extra = askMod.clampExtra(payload && typeof payload.extra === 'string' ? payload.extra : '');
+      const out = askMod.buildResult({
+        choice,
+        extra,
+        options: validated.options,
+        multiSelect: validated.multiSelect,
+        cancelled: !!(payload && payload.cancelled)
+      });
+      return { ok: out.ok, content: out.content, result: out.result };
     }
 
     // Native file tools: read_file, list_files, search_files, write_file,

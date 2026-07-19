@@ -31,6 +31,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const fileModeSel = useRef(null);
   const fileAllowlist = useRef(null);
   const fileAllowlistWrap = useRef(null);
+  // ask_user is binary { off, ask } — no allowlist input. The
+  // `onChange` handler on the mode <select> is enough.
+  const askUserStatus = useRef(null);
+  const askUserModeSel = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
@@ -126,9 +130,16 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       if (fileModeSel.current) fileModeSel.current.value = fileMode;
       syncAllowlistVisibility(fileModeSel.current, fileAllowlistWrap.current);
       if (fileAllowlist.current) fileAllowlist.current.value = file && Array.isArray(file.allowlist) ? file.allowlist.join('\n') : '';
+      // ask_user is a binary { off, ask } tool. The server clamps any
+      // legacy allowlist / allow value to `ask`; here we read what the
+      // server says it is, and fall back to `ask` on the first load.
+      const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
+      const askUserMode = (askUser && askUser.mode === 'off') ? 'off' : 'ask';
+      if (askUserModeSel.current) askUserModeSel.current.value = askUserMode;
     } catch { /* keep ask + empty allowlist */ }
 
     if (fileStatus.current) fileStatus.current.textContent = '';
+    if (askUserStatus.current) askUserStatus.current.textContent = '';
 
     // MCP server count for the card summary.
     try {
@@ -285,6 +296,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
   function saveShellAuthorization() { saveToolAuthorization('shell', shellModeSel, shellAllowlist, shellStatus); }
   function saveFileAuthorization() { saveToolAuthorization('file', fileModeSel, fileAllowlist, fileStatus); }
+  // ask_user is binary: the only valid modes are `ask` (the model
+  // asks, the user always answers) and `off` (calls fail with
+  // ETOOL_DISABLED). The PUT body still carries an allowlist array
+  // because the server's setAuthorization normalizer expects the
+  // same shape; we always send an empty list.
+  async function saveAskUserAuthorization() {
+    const mode = askUserModeSel.current ? askUserModeSel.current.value : 'ask';
+    if (askUserStatus.current) askUserStatus.current.textContent = 'saving…';
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), tools: { ask_user: { mode, allowlist: [] } } })
+    });
+    if (askUserStatus.current) {
+      askUserStatus.current.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
+    }
+  }
   // Debounced allowlist auto-save. Each tool has its own timer so the
   // shell and file lists don't collide.
   function makeAllowlistSaver(tool, modeSel, allowlistEl, statusEl) {
@@ -429,6 +457,26 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
               h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path. Auto-saves.'),
               h('textarea', { ref: fileAllowlist, class: 'input settings-project__mono', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, onInput: function () { saveFileAllowlistDebounced.current(); } })
+            )
+          ),
+          // ask_user is a binary { ask, off } tool. The model can
+          // pause the chat and ask the user a structured question;
+          // the user picks one of 2-4 options and may always add a
+          // free-form "extra" answer. There is no allowlist (the
+          // model can't predict the user's answer) and no
+          // always-allow mode (the user must always be the source
+          // of truth).
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-ask-user-mode' }, 'Ask the user'),
+              h('div', { class: 'settings-project__item-note' },
+                'The model can pause the chat and ask a structured question with 2-4 options. You can always add a free-form note alongside your pick. ',
+                h('span', { ref: askUserStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
+              )
+            ),
+            h('select', { ref: askUserModeSel, class: 'input', id: 'sp-ask-user-mode', onChange: function () { saveAskUserAuthorization(); } },
+              h('option', { value: 'ask' }, 'Ask every time (you always answer)'),
+              h('option', { value: 'off' }, 'Off — model can no longer ask questions')
             )
           )
         )
