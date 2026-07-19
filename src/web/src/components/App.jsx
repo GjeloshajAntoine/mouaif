@@ -14,7 +14,7 @@ import { SettingsPricingView } from './SettingsPricing.jsx';
 import { InspectorView } from './Inspector.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
-import { ChatView } from './Chat.jsx';
+import { ChatView } from './chat/Chat.jsx';
 
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {

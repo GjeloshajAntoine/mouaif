@@ -938,15 +938,26 @@ export function ChatView(props) {
       const discovered = (s.tools && s.tools.length) ? s.tools : null;
       const catalogForServer = bySlug.get(serverSlug) || [];
       const childTools = catalogForServer.length
-        ? catalogForServer.map((t) => t.name)
-        : (discovered ? discovered.map((t) => t.name || t) : []);
+        ? catalogForServer.map((t) => {
+          const prefix = 'mcp__' + serverSlug + '__';
+          const composed = t.name || '';
+          return {
+            name: composed.startsWith(prefix) ? composed.slice(prefix.length) : composed,
+            composed
+          };
+        }).filter((t) => t.name && t.composed)
+        : (discovered ? discovered.map((t) => {
+          const name = (t && t.name) || t;
+          return { name, composed: serverComposed(name) };
+        }).filter((t) => t.name && t.composed) : []);
       if (childTools.length) {
         const sub = document.createElement('ul');
         sub.className = 'chat-view__mcp-tool-list';
         sub.setAttribute('role', 'group');
         sub.setAttribute('aria-label', (s.name || s.id) + ' tools');
-        for (const toolName of childTools) {
-          const composed = serverComposed(toolName);
+        for (const tool of childTools) {
+          const toolName = tool.name;
+          const composed = tool.composed;
           const childLi = document.createElement('li');
           childLi.className = 'chat-view__mcp-tool';
           const childLabel = document.createElement('label');

@@ -1,0 +1,706 @@
+// mouaif web — Chat transcript rendering
+//
+// Everything that draws into the .chat-view__transcript: chat
+// bubbles, tool call/result cards, the system-prompt message, the
+// subagent live + final render, and the per-turn usage meta line.
+// Imperative DOM (not Preact JSX) so the SSE hot path stays as
+// cheap as a textContent assignment and so the visual layout
+// matches the rest of the transcript which is also imperative.
+
+import { renderMarkdown } from '../../markdown.js';
+import { afterTranscriptAppend, scrollToolBodyToBottom } from './scroll.js';
+import {
+  isSubagentTool,
+  normalizeToolName,
+  formatToolArgs,
+  coerceToolResult,
+  formatReadableToolResult
+} from './tools.js';
+import { renderToolResultBody } from './toolRender.js';
+import { cssEscape } from './utils.js';
+import { buildSetupCard, mountToolsCard } from './cards.js';
+import { setPromptSize } from './meta.js';
+import { updateUsageSummary } from './usage.js';
+import { updateJumpButton } from './scroll.js';
+import {
+  renderShellToolResult,
+  renderReadFileToolResult,
+  renderListFilesToolResult,
+  renderSearchFilesToolResult,
+  renderEditFileToolResult,
+  renderWriteFileToolResult
+} from './toolRender.js';
+import { renderUsageMeta } from './usage.js';
+
+// renderSystemPromptMessage(refs, systemPrompt)
+//
+// Render (or refresh) the system prompt as the FIRST message of the
+// transcript — a normal chat bubble with the `system` role, styled
+// like the user/assistant bubbles. The lookup uses
+// [data-sys-prompt] to avoid clobbering any future .chat-msg with
+// role text "system".
+export function renderSystemPromptMessage(refs, systemPrompt) {
+  if (!refs.transcript.current) return;
+  const existing = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
+  if (existing) existing.remove();
+  if (!systemPrompt || !systemPrompt.text) return;
+  const row = document.createElement('div');
+  row.className = 'chat-msg chat-msg--system';
+  row.dataset.sysPrompt = '1';
+  const role = document.createElement('div');
+  role.className = 'chat-msg__role';
+  role.textContent = 'system';
+  const body = document.createElement('div');
+  body.className = 'chat-msg__body';
+  body.textContent = systemPrompt.text;
+  row.appendChild(role);
+  row.appendChild(body);
+  // Insert directly after the setup card if one is still mounted,
+  // so the system message always sits under it on a new chat.
+  const setup = refs.setupCard.current;
+  if (setup && setup.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(row, setup.nextSibling);
+  } else {
+    refs.transcript.current.insertBefore(row, refs.transcript.current.firstChild);
+  }
+}
+
+// renderImageAttachments(host, attachments)
+function renderImageAttachments(host, attachments) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-msg__attachments';
+  for (const a of attachments) {
+    if (!a || !a.dataUrl) continue;
+    const img = document.createElement('img');
+    img.className = 'chat-msg__attachment-img';
+    img.src = a.dataUrl;
+    img.alt = a.name || 'attached image';
+    wrap.appendChild(img);
+  }
+  host.appendChild(wrap);
+}
+
+// renderAssistantBody(body, content, reasoning, final)
+//
+// Render the assistant bubble body. When `reasoning` is present,
+// wrap it in a <details>/<summary> collapsible block. The final
+// pass renders markdown; the streaming pass renders plain text
+// (cheaper, and avoids re-parsing every delta).
+function renderAssistantBody(body, content, reasoning, final) {
+  body.innerHTML = '';
+  if (reasoning) {
+    const details = document.createElement('details');
+    details.className = 'chat-msg__reasoning';
+    if (!final) details.open = true;
+    const summary = document.createElement('summary');
+    summary.textContent = final ? 'Thinking' : 'Thinking…';
+    const thinkBody = document.createElement('div');
+    thinkBody.className = 'chat-msg__reasoning-body' + (final ? '' : ' chat-msg__reasoning-body--raw');
+    if (final) thinkBody.innerHTML = renderMarkdown(reasoning);
+    else thinkBody.textContent = reasoning;
+    details.appendChild(summary);
+    details.appendChild(thinkBody);
+    body.appendChild(details);
+  }
+  const answer = document.createElement('div');
+  answer.className = 'chat-msg__answer';
+  if (final) answer.innerHTML = renderMarkdown(content || '');
+  else answer.textContent = content || '';
+  body.appendChild(answer);
+}
+
+// appendMessageToTranscript(m, isLive, refs, state)
+//
+// Append a chat bubble. `isLive` marks the row as the current
+// streaming target so subsequent deltas find it without rebuilding.
+export function appendMessageToTranscript(m, isLive, refs, state) {
+  if (!refs.transcript.current) return;
+  const empty = refs.transcript.current.querySelector('.chat-view__empty');
+  if (empty) empty.remove();
+  const row = document.createElement('div');
+  row.className = 'chat-msg chat-msg--' + m.role;
+  if (isLive) row.dataset.live = '1';
+  const role = document.createElement('div');
+  role.className = 'chat-msg__role';
+  // For assistant turns, show the model name instead of the bare
+  // "assistant" role label. The modelId is persisted on the
+  // message (decision §14); fall back to the chat's currently
+  // selected model when the message is missing one (e.g. an
+  // older transcript saved before modelId was tracked).
+  if (m.role === 'assistant') {
+    const modelId = m.modelId || (state.chat && state.chat.modelId) || 'assistant';
+    role.textContent = modelId;
+  } else {
+    role.textContent = m.role;
+  }
+  const body = document.createElement('div');
+  body.className = 'chat-msg__body';
+  if (m.role === 'assistant') {
+    renderAssistantBody(body, m.content || '', m.reasoning || '', true);
+  } else {
+    body.textContent = m.content || '';
+    if (m.role === 'user' && Array.isArray(m.attachments) && m.attachments.length) {
+      renderImageAttachments(body, m.attachments);
+    }
+  }
+  // Header line: role label on the left, HH:MM timestamp pushed
+  // to the right edge of the message row.
+  const head = document.createElement('div');
+  head.className = 'chat-msg__head';
+  const ts = document.createElement('span');
+  ts.className = 'chat-msg__ts';
+  if (m.ts) {
+    ts.textContent = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else {
+    ts.hidden = true;
+  }
+  head.appendChild(role);
+  head.appendChild(ts);
+  row.appendChild(head);
+  row.appendChild(body);
+  refs.transcript.current.appendChild(row);
+  if (m.role === 'assistant' && isLive) {
+    row._body = body;
+    row._content = m.content || '';
+    row._reasoning = m.reasoning || '';
+  }
+  // Per-turn meta line (decision §14). Lives directly under the
+  // assistant bubble and shows the model id, token counts, cost,
+  // and live token rate. For non-assistant messages or for
+  // assistant messages without a usage block, the line is hidden
+  // — the typical case is a fresh chat before any AI turn, or a
+  // transcript from before this commit shipped.
+  if (m.role === 'assistant') {
+    const meta = document.createElement('div');
+    meta.className = 'chat-msg__meta';
+    if (isLive) {
+      // Live turns are empty while the user is typing; hide the
+      // meta line so the row doesn't reserve a phantom line of
+      // height before the first delta arrives.
+      meta.hidden = true;
+    } else if (m.usage || m.cost || m.modelId) {
+      renderUsageMeta(meta, m, state);
+    } else {
+      meta.hidden = true;
+    }
+    row.appendChild(meta);
+  }
+  afterTranscriptAppend(refs, true);
+}
+
+// appendDeltaToLive(delta, refs, state)
+//
+// Find the live row and append text to it. Lazily creates the live
+// row if it doesn't exist (the first delta of a turn can arrive
+// after a tool call, in which case no live row is on screen yet).
+export function appendDeltaToLive(delta, refs, state) {
+  if (!refs.transcript.current) return;
+  let liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (!liveRow) {
+    const mid = (state.chat && state.chat.modelId) || '';
+    appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId: mid }, true, refs, state);
+    liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  }
+  if (liveRow) {
+    liveRow._content = (liveRow._content || '') + delta;
+    renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
+    afterTranscriptAppend(refs, false);
+  }
+}
+
+// appendReasoningToLive(delta, refs, state)
+export function appendReasoningToLive(delta, refs, state) {
+  if (!refs.transcript.current) return;
+  let liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (!liveRow) {
+    const mid = (state.chat && state.chat.modelId) || '';
+    appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId: mid }, true, refs, state);
+    liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  }
+  if (liveRow) {
+    liveRow._reasoning = (liveRow._reasoning || '') + delta;
+    renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
+    afterTranscriptAppend(refs, false);
+  }
+}
+
+// buildToolCardHead(toolName, args, pillClass, pillText)
+//
+// The compact header row shared by tool_call and tool_result cards.
+// The whole row is the tap target for expand/collapse.
+function buildToolCardHead(toolName, args, pillClass, pillText) {
+  const head = document.createElement('div');
+  head.className = 'tool-card__head';
+  const name = document.createElement('span');
+  name.className = 'tool-card__name';
+  name.textContent = toolName || 'tool';
+  // `args` may be either a raw arg object or an already-formatted
+  // string (when the caller has the display text already). Pass it
+  // through formatToolArgs either way: passing a string returns
+  // that string unchanged.
+  const argText = args == null ? '' : (typeof args === 'string' ? args : formatToolArgs(args, toolName));
+  const pill = document.createElement('span');
+  pill.className = 'tool-card__pill ' + pillClass;
+  pill.textContent = pillText;
+  head.appendChild(name);
+  if (argText) {
+    const argsEl = document.createElement('pre');
+    argsEl.className = 'tool-card__args';
+    argsEl.textContent = argText;
+    head.appendChild(argsEl);
+  }
+  head.appendChild(pill);
+  head.addEventListener('click', () => {
+    const card = head.closest('.tool-card');
+    if (card) card.classList.toggle('is-expanded');
+  });
+  return head;
+}
+
+// appendToolCallCard(toolCall, refs)
+//
+// Render a tool_call event as a compact card above the live message
+// (or appended if there is no live row). Subagent calls get a live
+// body up front so the user can expand the card while the subagent
+// is still running and watch nested tool activity stream in.
+export function appendToolCallCard(toolCall, refs) {
+  if (!refs.transcript.current) return;
+  const empty = refs.transcript.current.querySelector('.chat-view__empty');
+  if (empty) empty.remove();
+  const id = toolCall.id || ('call_' + Math.random().toString(36).slice(2, 10));
+  const card = document.createElement('div');
+  card.className = 'tool-card tool-card--call';
+  card.dataset.toolId = id;
+  card.dataset.toolName = normalizeToolName(toolCall.name);
+  card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running'));
+  if (isSubagentTool(toolCall.name)) {
+    card.classList.add('tool-card--subagent');
+    const body = document.createElement('div');
+    body.className = 'tool-card__body';
+    const live = document.createElement('div');
+    live.className = 'tool-card__subagent-live';
+    const hint = document.createElement('div');
+    hint.className = 'tool-card__subagent-live-hint';
+    hint.textContent = 'Subagent is working…';
+    live.appendChild(hint);
+    body.appendChild(live);
+    card.appendChild(body);
+    // Expanded by default while running so progress is visible
+    // without a tap; the user can still collapse it.
+    card.classList.add('is-expanded');
+  }
+  refs.transcript.current.appendChild(card);
+  afterTranscriptAppend(refs, true);
+}
+
+// findSubagentCard(refs, parentCallId)
+//
+// Locate the parent subagent card for a nested stream event. Falls
+// back to the most recent subagent card when the id is missing
+// (some providers don't echo tool call ids).
+function findSubagentCard(refs, parentCallId) {
+  if (!refs.transcript.current) return null;
+  if (parentCallId) {
+    const byId = refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(parentCallId) + '"]');
+    if (byId) return byId;
+  }
+  const cards = refs.transcript.current.querySelectorAll('.tool-card--subagent');
+  return cards.length ? cards[cards.length - 1] : null;
+}
+
+// ensureSubagentLive(card)
+function ensureSubagentLive(card) {
+  if (!card) return null;
+  let body = card.querySelector('.tool-card__body');
+  if (!body) {
+    body = document.createElement('div');
+    body.className = 'tool-card__body';
+    card.appendChild(body);
+  }
+  let live = card.querySelector('.tool-card__subagent-live');
+  if (!live) {
+    live = document.createElement('div');
+    live.className = 'tool-card__subagent-live';
+    body.appendChild(live);
+  }
+  return live;
+}
+
+// handleSubagentStreamEvent(ev, data, refs)
+//
+// Fold a nested subagent stream event into the parent subagent
+// card's live container. Returns true when the event was consumed
+// and should not hit the normal handlers.
+export function handleSubagentStreamEvent(ev, data, refs) {
+  if (!refs.transcript.current) return false;
+  const card = findSubagentCard(refs, data && data.parentCallId);
+  if (!card) return false;
+  const live = ensureSubagentLive(card);
+  if (!live) return false;
+  if (ev.eventName === 'message' && typeof data.delta === 'string') {
+    live._text = (live._text || '') + data.delta;
+    let textEl = live.querySelector('.tool-card__subagent-live-text');
+    if (!textEl) {
+      textEl = document.createElement('div');
+      textEl.className = 'tool-card__subagent-live-text';
+      live.appendChild(textEl);
+    }
+    renderAssistantBody(textEl, live._text, '', false);
+    scrollToolBodyToBottom(live);
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
+  if (ev.eventName === 'tool_call') {
+    const hint = live.querySelector('.tool-card__subagent-live-hint');
+    if (hint) hint.remove();
+    const row = document.createElement('div');
+    row.className = 'tool-card__subagent-tool';
+    if (data.id) row.dataset.nestedToolId = data.id;
+    const callName = document.createElement('span');
+    callName.className = 'tool-card__subagent-tool-name';
+    callName.textContent = data.name || 'tool';
+    const callArgs = document.createElement('pre');
+    callArgs.className = 'tool-card__subagent-text';
+    callArgs.textContent = formatToolArgs(data.args, data.name);
+    const status = document.createElement('span');
+    status.className = 'tool-card__pill tool-card__pill--busy';
+    status.textContent = 'running…';
+    row.appendChild(callName); row.appendChild(callArgs); row.appendChild(status);
+    live.appendChild(row);
+    scrollToolBodyToBottom(live);
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
+  if (ev.eventName === 'tool_result') {
+    let row = data.id ? live.querySelector('[data-nested-tool-id="' + cssEscape(data.id) + '"]') : null;
+    if (!row) row = live.querySelector('.tool-card__subagent-tool:last-child');
+    if (row) {
+      const status = row.querySelector('.tool-card__pill');
+      if (status) {
+        status.className = 'tool-card__pill ' + (data.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
+        status.textContent = data.ok ? 'ok' : 'error';
+      }
+      const oldPreview = row.querySelector('.tool-card__subagent-preview');
+      if (oldPreview) oldPreview.remove();
+      renderSubagentToolPreview(row, data.name, data.result);
+    }
+    scrollToolBodyToBottom(live);
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
+  return false;
+}
+
+// appendToolResultCard(toolResult, refs)
+//
+// Render a tool_result event. If a matching tool_call card is on
+// screen, update it; otherwise append a fresh card so the user can
+// see the result regardless of order. Tap the header row to expand.
+export function appendToolResultCard(toolResult, refs) {
+  if (!refs.transcript.current) return;
+  const id = toolResult.id;
+  let card = id ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(id) + '"]') : null;
+  const isSubagent = isSubagentTool(toolResult && toolResult.name);
+  const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
+  const pillText = toolResult.ok ? 'ok' : 'error';
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'tool-card tool-card--result';
+    card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
+    card.dataset.toolName = normalizeToolName(toolResult.name);
+    // No args preview on standalone result cards — the body is the
+    // result. Subagent cards keep the delegated task in the args slot.
+    const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+    card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText));
+    const body = document.createElement('div');
+    body.className = 'tool-card__body';
+    card.appendChild(body);
+    refs.transcript.current.appendChild(card);
+  } else {
+    // The call card becomes a result card. For non-subagent tools
+    // the args preview is dropped (the result body is the more
+    // useful preview). For subagent cards we keep the delegated
+    // task — it is the most useful context for the finished run.
+    card.classList.add('tool-card--result');
+    card.classList.remove('tool-card--call');
+    card.dataset.toolName = normalizeToolName(toolResult.name);
+    const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+    rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText);
+    let body = card.querySelector('.tool-card__body');
+    if (!body) {
+      body = document.createElement('div');
+      body.className = 'tool-card__body';
+      card.appendChild(body);
+    }
+  }
+  if (isSubagent) card.classList.add('tool-card--subagent');
+  const body = card.querySelector('.tool-card__body');
+  if (body) renderToolResultBody(body, toolResult, isSubagentTool);
+  if (isSubagent) renderSubagentChat(card, toolResult);
+  // Expand errors automatically so the user sees what went wrong
+  // without an extra tap. Successful results stay collapsed.
+  if (!toolResult.ok) card.classList.add('is-expanded');
+  afterTranscriptAppend(refs, true);
+}
+
+// rebuildToolCardHead(card, toolName, args, pillClass, pillText)
+function rebuildToolCardHead(card, toolName, args, pillClass, pillText) {
+  const oldHead = card.querySelector(':scope > .tool-card__head');
+  const fresh = buildToolCardHead(toolName, args, pillClass, pillText);
+  if (oldHead && oldHead.parentNode === card) {
+    card.replaceChild(fresh, oldHead);
+  } else {
+    card.insertBefore(fresh, card.firstChild);
+  }
+}
+
+// appendSubagentNestedToolCall(parent, tc)
+function appendSubagentNestedToolCall(parent, tc) {
+  const fn = (tc && tc.function) || tc || {};
+  const call = document.createElement('div');
+  call.className = 'tool-card__subagent-tool';
+  if (tc && tc.id) call.dataset.nestedToolId = tc.id;
+  const callName = document.createElement('span');
+  callName.className = 'tool-card__subagent-tool-name';
+  callName.textContent = fn.name || 'tool';
+  const callArgs = document.createElement('pre');
+  callArgs.className = 'tool-card__subagent-text';
+  const rawArgs = fn.arguments != null ? fn.arguments : (tc && tc.args);
+  let parsedArgs = rawArgs;
+  if (typeof rawArgs === 'string') { try { parsedArgs = JSON.parse(rawArgs); } catch { /* keep raw string */ } }
+  callArgs.textContent = typeof parsedArgs === 'object' && parsedArgs !== null
+    ? formatToolArgs(parsedArgs, fn.name)
+    : String(rawArgs || '');
+  call.appendChild(callName); call.appendChild(callArgs);
+  parent.appendChild(call);
+  return call;
+}
+
+function appendSubagentToolResult(parent, m) {
+  const call = document.createElement('div');
+  call.className = 'tool-card__subagent-tool';
+  const callName = document.createElement('span');
+  callName.className = 'tool-card__subagent-tool-name';
+  callName.textContent = m.name || 'tool';
+  call.appendChild(callName);
+  renderSubagentToolPreview(call, m.name, m.content);
+  parent.appendChild(call);
+}
+
+// renderSubagentToolPreview(parent, name, raw)
+//
+// Use the per-tool preview renderer for the nested tool result.
+function renderSubagentToolPreview(parent, name, raw) {
+  const toolName = normalizeToolName(name);
+  const r = coerceToolResult(raw, toolName);
+  const preview = document.createElement('div');
+  preview.className = 'tool-card__subagent-preview';
+  parent.appendChild(preview);
+  if (toolName === 'shell') return renderShellInPreview(preview, r);
+  if (toolName === 'read_file') return renderReadFileInPreview(preview, r);
+  if (toolName === 'list_files') return renderListFilesInPreview(preview, r);
+  if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
+  if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);
+  if (toolName === 'write_file') return renderWriteFileInPreview(preview, r);
+  if (r && Array.isArray(r.content)) {
+    const lines = [];
+    for (const c of r.content) {
+      if (c && typeof c.text === 'string') lines.push(c.text);
+      else lines.push(String(c && (c.text || c.type) || c));
+    }
+    return renderPreviewInPreview(preview, lines.join('\n'), 'tool-preview__pre');
+  }
+  return renderPreviewInPreview(preview, formatReadableToolResult(r), 'tool-preview__pre');
+}
+
+// Per-tool preview helpers used by renderSubagentToolPreview. They
+// can't import from toolRender.js directly because that module
+// exports renderToolResultBody, which assumes it owns the body
+// element. Here we want to fill an already-created host.
+function renderShellInPreview(host, r) { return renderShellInto(host, r); }
+function renderReadFileInPreview(host, r) { return renderReadFileInto(host, r); }
+function renderListFilesInPreview(host, r) { return renderListFilesInto(host, r); }
+function renderSearchFilesInPreview(host, r) { return renderSearchFilesInto(host, r); }
+function renderEditFileInPreview(host, r) { return renderEditFileInto(host, r); }
+function renderWriteFileInPreview(host, r) { return renderWriteFileInto(host, r); }
+function renderPreviewInPreview(host, text, cls) {
+  const pre = document.createElement('pre');
+  pre.className = cls || 'tool-preview__pre';
+  pre.textContent = text || '';
+  host.appendChild(pre);
+  return pre;
+}
+
+function renderShellInto(host, r) { renderShellToolResult(host, r); }
+function renderReadFileInto(host, r) { renderReadFileToolResult(host, r); }
+function renderListFilesInto(host, r) { renderListFilesToolResult(host, r); }
+function renderSearchFilesInto(host, r) { renderSearchFilesToolResult(host, r); }
+function renderEditFileInto(host, r) { renderEditFileToolResult(host, r); }
+function renderWriteFileInto(host, r) { renderWriteFileToolResult(host, r); }
+
+// renderSubagentChat(card, toolResult)
+//
+// Final render of a subagent's nested conversation as polished chat
+// bubbles inside the parent subagent card. Replaces the streamed
+// live container so the user sees a single coherent view.
+export function renderSubagentChat(card, toolResult) {
+  if (!card) return;
+  // Drop any prior chat render so re-runs don't stack copies.
+  const old = card.querySelector('.tool-card__subagent-chat');
+  if (old) old.remove();
+  const r = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+  const chat = r && Array.isArray(r.chat) ? r.chat : null;
+  if ((!chat || !chat.length) && !(r && typeof r.text === 'string' && r.text)) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-card__subagent-chat';
+  // Don't let taps inside the nested chat bubble up to the parent
+  // card's expand/collapse toggle.
+  wrap.addEventListener('click', (e) => e.stopPropagation());
+  const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
+  for (const m of turns) {
+    const role = m && m.role;
+    if (role === 'tool') {
+      // Tool turns are not chat bubbles — render them as compact
+      // tool rows so the nested transcript shows the full loop
+      // (assistant call → tool result) without breaking the
+      // bubble rhythm for the user/assistant turns around them.
+      const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+      if (toolCalls.length) {
+        for (const tc of toolCalls) appendSubagentNestedToolCall(wrap, tc);
+      } else {
+        appendSubagentToolResult(wrap, m);
+      }
+      continue;
+    }
+    if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
+    const row = document.createElement('div');
+    row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
+    const roleEl = document.createElement('div');
+    roleEl.className = 'chat-msg__role';
+    roleEl.textContent = role;
+    const body = document.createElement('div');
+    body.className = 'chat-msg__body';
+    const content = typeof m.content === 'string' ? m.content : (m.content ? JSON.stringify(m.content, null, 2) : '');
+    if (role === 'assistant') {
+      renderAssistantBody(body, content || '', '', true);
+    } else {
+      body.textContent = content || '';
+    }
+    row.appendChild(roleEl); row.appendChild(body);
+    // Inline any tool calls attached to this assistant turn so the
+    // bubble shows the full assistant→tool→assistant loop.
+    const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+    for (const tc of toolCalls) appendSubagentNestedToolCall(row, tc);
+    wrap.appendChild(row);
+  }
+  // Append inside the card's body so the body's max-height,
+  // overflow, and expand/collapse mask control the nested chat.
+  const body = card.querySelector('.tool-card__body');
+  if (body) body.appendChild(wrap);
+  else card.appendChild(wrap);
+}
+
+// renderTranscript(state, refs)
+//
+// Build / rebuild the entire transcript from state.messages. On a
+// brand-new chat the first child is the setup card, then the
+// system-prompt message, then the tools card, then the empty
+// state. For chats with messages, render every message in order
+// (tool call/result cards and chat bubbles), then pin to the
+// bottom.
+//
+// The setup card is built imperatively here so the change handler
+// can call back into the meta module. The system prompt and tools
+// card are delegated to their own helpers.
+export function renderTranscript(state, refs) {
+  if (!refs.transcript.current) return;
+  refs.transcript.current.innerHTML = '';
+  refs.setupCard.current = null;
+  if (!state.messages.length) {
+    const card = buildSetupCardForMount(refs, state);
+    refs.transcript.current.appendChild(card);
+    refs.setupCard.current = card;
+    const empty = buildEmptyState();
+    refs.transcript.current.appendChild(empty);
+    renderSystemPromptMessage(refs, state.systemPrompt);
+    mountToolsCard(refs, state);
+    return;
+  }
+  renderSystemPromptMessage(refs, state.systemPrompt);
+  mountToolsCard(refs, state);
+  for (const m of state.messages) {
+    if (m.role === 'tool' && m.phase === 'call') {
+      appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
+    } else if (m.role === 'tool' && m.phase === 'result') {
+      appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, result: m.content || '' }, refs);
+    } else {
+      appendMessageToTranscript(m, false, refs, state);
+    }
+  }
+  scrollTranscriptToBottomImpl(refs);
+  updateUsageSummary(state, null, refs);
+}
+
+// buildSetupCardForMount(refs, state)
+//
+// Build the prompt-size selector and wire its onChange to the meta
+// module's setPromptSize.
+function buildSetupCardForMount(refs, state) {
+  const sel = buildSetupCard();
+  sel._onChange = (v) => setPromptSize(v, state, refs);
+  return sel;
+}
+
+// buildEmptyState()
+function buildEmptyState() {
+  const empty = document.createElement('div');
+  empty.className = 'chat-view__empty';
+  const icon = document.createElement('span');
+  icon.className = 'chat-view__empty-icon';
+  icon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M4 4h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-9.586a1.5 1.5 0 0 0-1.06.44l-2.122 2.12A.5.5 0 0 1 6.4 20.146V18H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 5a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H7Z"/></svg>';
+  const title = document.createElement('p');
+  title.className = 'chat-view__empty-title';
+  title.textContent = 'Start the conversation';
+  const text = document.createElement('p');
+  text.className = 'chat-view__empty-text';
+  text.textContent = "Type a message below. The model streams its reply in real time; everything you send is saved to this chat's transcript on disk.";
+  empty.appendChild(icon); empty.appendChild(title); empty.appendChild(text);
+  return empty;
+}
+
+// scrollTranscriptToBottomImpl — local copy used only by
+// renderTranscript. Same semantics as the scroll.js helper, kept
+// inline so renderTranscript doesn't need to import the whole
+// module.
+function scrollTranscriptToBottomImpl(refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  refs.pinnedToBottom.current = true;
+  refs.pendingCount.current = 0;
+  updateJumpButton(refs);
+}
+
+// finalizeLiveMessage(message, refs)
+//
+// Promote the live row to a final state. Renders the assembled
+// content as markdown and removes the data-live marker so the
+// next deltas create a fresh live row.
+export function finalizeLiveMessage(message, refs) {
+  if (!refs.transcript.current) return;
+  const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (liveRow) {
+    delete liveRow.dataset.live;
+    if (liveRow._body && message && typeof message.content === 'string') {
+      // Render the assembled assistant turn as markdown. Non-assistant
+      // roles (and the rare "stream interrupted" sentinel) stay as
+      // plain text so we never inject HTML into error placeholders.
+      const isAssistant = liveRow.classList.contains('chat-msg--assistant');
+      if (isAssistant) {
+        renderAssistantBody(liveRow._body, message.content, message.reasoning || liveRow._reasoning || '', true);
+      } else {
+        liveRow._body.textContent = message.content;
+      }
+    }
+  }
+}
