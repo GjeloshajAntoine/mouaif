@@ -61,12 +61,23 @@
   --pad-x: 10px;
   --pad-y: 6px;
   --gap: 6px;
+  /* Touch targets. --tap is the minimum row/button height — the
+     mobile-first rule is ≥ 44px, and everything interactive that
+     is not a glyph-only accessory keeps it. --tap-sm is the size
+     already used by compact glyph controls (send button, MCP
+     toggles, chip dismiss) that predate this token; it exists so
+     those controls share one size, NOT as a license to shrink
+     44px targets. */
   --tap: 44px;
+  --tap-sm: 32px;
   --tabbar-h: 40px;   /* bottom tab bar height (incl. safe area) */
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --r-sm: 5px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  /* Radius scale — four stops, used everywhere. The codebase used to
+     mix 4/5/6/8/10/12/14/18px one-offs; consolidation keeps cards,
+     bubbles, and sheets visually related. */
+  --r-sm: 6px;    /* chips, inline code, small buttons */
+  --r-md: 10px;   /* inset groups, cards, bubbles */
+  --r-lg: 14px;   /* sheets, hero blocks, picker on phones */
   --r-pill: 999px;
 
   /* Motion: short, transform-only. The reduced-motion media query
@@ -121,7 +132,7 @@ html, body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 
 #app { display: block; }
