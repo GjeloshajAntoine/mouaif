@@ -2,7 +2,8 @@
 
 // Native `ask_user` tool — lets the model pause and ask the user a
 // structured question during a chat. The model provides a question
-// text and 2-4 options; the user picks one and may always add a
+// text and a list of options (2 or more, no upper bound — the UI
+// scrolls long lists); the user picks one and may always add a
 // free-form "extra answer" alongside their pick. The selection +
 // extra text is returned to the model as a single tool result.
 //
@@ -24,7 +25,6 @@
 //   - No new runtime dependencies. The runner is a plain function
 //     that returns the result; the chat UI handles the input side.
 
-const MAX_OPTIONS = 4;
 const MAX_QUESTION_CHARS = 500;
 const MAX_OPTION_CHARS = 120;
 const MAX_EXTRA_CHARS = 1000;
@@ -33,35 +33,27 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'ask_user',
-    description: 'Ask the user a structured question with 2-4 options. The user picks one option and may always add a free-form "extra" note to clarify or elaborate. Use this when a decision is blocking and a free-form chat reply would be too vague. Prefer it over open-ended questions when the answer space is small.',
+    description: 'Ask the user a structured question with options. The user picks one option and may always add a free-form "extra" note to clarify or elaborate.',
     parameters: {
       type: 'object',
       properties: {
-        question: {
-          type: 'string',
-          description: 'The question to ask the user. Keep it short and unambiguous. One sentence is usually enough.'
-        },
+        question: { type: 'string', description: 'The question to ask the user.' },
         options: {
           type: 'array',
-          description: '2-4 answer options. Each option has a label (shown to the user) and a value (returned to the model as the choice). The label is what the user reads; the value is the canonical answer.',
+          description: 'Answer options (2 or more). Label is shown to the user; value is returned as the choice.',
           minItems: 2,
-          maxItems: 4,
           items: {
             type: 'object',
             properties: {
-              label: { type: 'string', description: 'Human-readable label shown to the user.' },
-              value: { type: 'string', description: 'Canonical value returned to the model when the user picks this option.' },
-              description: { type: 'string', description: 'Optional one-line hint shown under the label.' }
+              label: { type: 'string' },
+              value: { type: 'string' },
+              description: { type: 'string', description: 'Optional hint shown under the label.' }
             },
             required: ['label', 'value'],
             additionalProperties: false
           }
         },
-        multiSelect: {
-          type: 'boolean',
-          description: 'When true, the user may pick multiple options. Defaults to false (single choice).',
-          default: false
-        }
+        multiSelect: { type: 'boolean', description: 'When true, the user may pick multiple options.' }
       },
       required: ['question', 'options'],
       additionalProperties: false
@@ -90,9 +82,6 @@ function validateArgs(args) {
   const rawOptions = Array.isArray(args.options) ? args.options : null;
   if (!rawOptions || rawOptions.length < 2) {
     const e = new Error('at least 2 options are required'); e.code = 'EBADINPUT'; throw e;
-  }
-  if (rawOptions.length > MAX_OPTIONS) {
-    const e = new Error('at most ' + MAX_OPTIONS + ' options are allowed'); e.code = 'EBADINPUT'; throw e;
   }
   const seenValues = new Set();
   const options = [];
@@ -148,7 +137,6 @@ module.exports = {
   validateArgs,
   buildResult,
   clampExtra,
-  MAX_OPTIONS,
   MAX_QUESTION_CHARS,
   MAX_OPTION_CHARS,
   MAX_EXTRA_CHARS

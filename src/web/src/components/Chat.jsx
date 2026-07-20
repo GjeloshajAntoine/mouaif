@@ -283,18 +283,18 @@ export function ChatView(props) {
         hasKnownCost = true;
       }
     }
-    el.innerHTML = '';
-    const context = document.createElement('span');
-    context.textContent = 'Context ' + (latestContext == null ? '--' : formatTokens(latestContext));
-    const cost = document.createElement('span');
-    cost.textContent = 'Total ' + (hasKnownCost ? formatCost(totalCost) : '--');
-    el.appendChild(context);
-    el.appendChild(cost);
-    if (providerCreditRef.current) {
-      const credit = document.createElement('span');
-      credit.textContent = providerCreditRef.current;
-      el.appendChild(credit);
-    }
+    // Render the three meta values as a single dot-separated line so
+    // they always stay on one row and never compete with the chat
+    // title for horizontal space (issue: the head used to overflow on
+    // 390px when "Balance" got long, clipping it). A single <span>
+    // text node is also cheaper than three nodes on every streaming
+    // tick where this function fires.
+    const parts = [
+      'Context ' + (latestContext == null ? '--' : formatTokens(latestContext)),
+      'Total ' + (hasKnownCost ? formatCost(totalCost) : '--')
+    ];
+    if (providerCreditRef.current) parts.push(providerCreditRef.current);
+    el.textContent = parts.join(' \u00b7 ');
   }
 
   async function load() {
@@ -2106,10 +2106,10 @@ export function ChatView(props) {
   }
 
   // Render an "Ask the user" card. The model has paused the chat to
-  // ask a structured question with 2-4 options; the user picks one
-  // and may always add a free-form "extra" note alongside their
-  // pick. The selection + extra text is sent back via the
-  // /api/tools/authorization/decision endpoint, and the auth gate's
+  // ask a structured question with a list of options (2+, no cap);
+  // the user picks one and may always add a free-form "extra" note
+  // alongside their pick. The selection + extra text is sent back via
+  // the /api/tools/authorization/decision endpoint, and the auth gate's
   // `wait()` resolves with the payload so the runner can fold both
   // into the `tool` message the model sees.
   function askUserCard(request) {

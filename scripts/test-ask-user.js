@@ -34,9 +34,9 @@ async function main() {
   const params = ask.SPEC.function.parameters;
   check('SPEC has question param', params.properties.question && params.properties.question.type === 'string');
   check('SPEC has options array', params.properties.options && params.properties.options.type === 'array');
-  check('SPEC limits options to 4', params.properties.options.maxItems === 4);
+  check('SPEC has no options cap', params.properties.options.maxItems === undefined);
+  check('SPEC still requires 2+ options', params.properties.options.minItems === 2);
   check('SPEC requires options', Array.isArray(params.required) && params.required.indexOf('options') !== -1);
-  check('exports MAX_OPTIONS', ask.MAX_OPTIONS === 4);
 
   // 2) validateArgs — happy path.
   const ok = ask.validateArgs({
@@ -58,29 +58,21 @@ async function main() {
   });
   check('multiSelect defaults to false', noMs.multiSelect === false);
 
-  // 4) validateArgs — exactly 4 options is allowed.
-  const four = ask.validateArgs({
-    question: 'q',
-    options: [
-      { label: 'a', value: 'a' },
-      { label: 'b', value: 'b' },
-      { label: 'c', value: 'c' },
-      { label: 'd', value: 'd' }
-    ]
-  });
-  check('four options is allowed', four.options.length === 4);
-
-  // 5) validateArgs — rejects 5 options.
-  assert.throws(() => ask.validateArgs({
+  // 4) validateArgs — long lists are allowed (the UI scrolls).
+  const many = ask.validateArgs({
     question: 'q',
     options: [
       { label: 'a', value: 'a' },
       { label: 'b', value: 'b' },
       { label: 'c', value: 'c' },
       { label: 'd', value: 'd' },
-      { label: 'e', value: 'e' }
+      { label: 'e', value: 'e' },
+      { label: 'f', value: 'f' },
+      { label: 'g', value: 'g' },
+      { label: 'h', value: 'h' }
     ]
-  }), { code: 'EBADINPUT' });
+  });
+  check('8 options is allowed', many.options.length === 8);
 
   // 6) validateArgs — rejects 1 option.
   assert.throws(() => ask.validateArgs({

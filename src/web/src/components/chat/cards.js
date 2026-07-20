@@ -760,10 +760,10 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
 // askUserCard(request, projectDir, chatId, refs, setChatStatus)
 //
 // Render an "Ask the user" card. The model has paused the chat to
-// ask a structured question with 2-4 options; the user picks one
-// and may always add a free-form "extra" note alongside their
-// pick. The selection + extra text is sent back via the
-// /api/tools/authorization/decision endpoint, and the auth gate's
+// ask a structured question with a list of options (2+, no cap);
+// the user picks one and may always add a free-form "extra" note
+// alongside their pick. The selection + extra text is sent back via
+// the /api/tools/authorization/decision endpoint, and the auth gate's
 // `wait()` resolves with the payload so the runner can fold both
 // into the `tool` message the model sees.
 export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {

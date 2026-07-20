@@ -541,9 +541,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           ),
           // ask_user is a binary { ask, off } tool. The model can
           // pause the chat and ask the user a structured question;
-          // the user picks one of 2-4 options and may always add a
-          // free-form "extra" answer. There is no allowlist (the
-          // model can't predict the user's answer) and no
+          // the user picks one option (2+, no cap) and may always
+          // add a free-form "extra" answer. There is no allowlist
+          // (the model can't predict the user's answer) and no
           // always-allow mode (the user must always be the source
           // of truth).
           h('li', { class: 'settings-project__tool' },
