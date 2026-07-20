@@ -120,11 +120,43 @@ function normalizeChat(chat) {
   };
 }
 
+// ---- In-memory cache (TTL-based) ---------------------------------------
+const LIST_CACHE_TTL = 2000; // ms
+const COST_CACHE_TTL = 5000; // ms
+const _listCache = new Map(); // projectDir -> { at: ms, data: [...] }
+const _costCache = new Map(); // projectDir::chatId -> { at: ms, data: {...} }
+
+function cacheGet(map, key, ttl) {
+  const entry = map.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > ttl) { map.delete(key); return null; }
+  return entry.data;
+}
+
+function cacheSet(map, key, data) {
+  map.set(key, { at: Date.now(), data });
+}
+
+function invalidateChatListCache(projectDir) {
+  _listCache.delete(projectDir);
+  // Also clear per-chat cost entries for this project since they reference
+  // the same chat list data that may have changed.
+  for (const k of _costCache.keys()) {
+    if (k.startsWith(projectDir + '::')) _costCache.delete(k);
+  }
+}
+
+function invalidateChatCostCache(projectDir, chatId) {
+  _costCache.delete(projectDir + '::' + chatId);
+}
+
 // ---- Public surface ---------------------------------------------------
 
 // List chats for a project. Returns an array (possibly empty). Throws
 // MOUAIF_PROJECT_PARSE_ERROR if the project file is corrupt.
 function listChats(projectDir) {
+  const cached = cacheGet(_listCache, projectDir, LIST_CACHE_TTL);
+  if (cached) return cached;
   const project = readProject(projectDir);
   const raw = Array.isArray(project.chats) ? project.chats : [];
   const out = [];
@@ -132,6 +164,7 @@ function listChats(projectDir) {
     const n = normalizeChat(c);
     if (n) out.push(n);
   }
+  cacheSet(_listCache, projectDir, out);
   return out;
 }
 
@@ -165,6 +198,7 @@ function createChat(projectDir, opts) {
   if (!project.chats) project.chats = [];
   project.chats.push(chat);
   writeProject(projectDir, project);
+  invalidateChatListCache(projectDir);
   return chat;
 }
 
@@ -229,6 +263,8 @@ function updateChat(projectDir, chatId, patch) {
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);
+  invalidateChatListCache(projectDir);
+  invalidateChatCostCache(projectDir, chatId);
   return merged;
 }
 
@@ -241,6 +277,8 @@ function deleteChat(projectDir, chatId) {
   project.chats = project.chats.filter(c => c && c.id !== chatId);
   if (project.chats.length === before) return false;
   writeProject(projectDir, project);
+  invalidateChatListCache(projectDir);
+  invalidateChatCostCache(projectDir, chatId);
   return true;
 }
 
@@ -263,6 +301,7 @@ function titleChatFromPrompt(projectDir, chatId, content) {
   const merged = Object.assign({}, current, { title });
   project.chats[idx] = merged;
   writeProject(projectDir, project);
+  invalidateChatListCache(projectDir);
   return merged;
 }
 
@@ -314,6 +353,9 @@ function clearPromptId(projectDir, promptId) {
 // is the `known` flag, which is set by the streaming layer when the
 // cost was actually computed.
 function chatTotalCost(projectDir, chatId, app) {
+  const cacheKey = projectDir + '::' + chatId;
+  const cached = cacheGet(_costCache, cacheKey, COST_CACHE_TTL);
+  if (cached) return cached;
   const out = { total: 0, known: false, currency: 'USD' };
   if (!projectDir || !chatId) return out;
   let msgs;
@@ -337,11 +379,8 @@ function chatTotalCost(projectDir, chatId, app) {
   }
   out.total = total;
   out.known = any;
-  // app is accepted for API symmetry / future use (e.g. backfilling
-  // cost for messages that landed before pricing was configured);
-  // for now it is intentionally unused. Reference it to keep linters
-  // and IDEs from flagging the unused parameter.
   void app;
+  cacheSet(_costCache, cacheKey, out);
   return out;
 }
 

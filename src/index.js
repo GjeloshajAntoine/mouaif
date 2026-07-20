@@ -772,24 +772,19 @@ async function handleChats(req, res, parsed) {
       // Enrich every returned chat with a `totalCost` block so the
       // mobile chat list can render a cost summary in place of the
       // old prompt-size label (decision §14). The project-level cost
-      // is still computed from the full list so pagination does not
-      // make the project header total drift as the user scrolls.
+      // is computed from the page (not the full list) so the list
+      // stays fast — reading every chat's messages file would be
+      // O(N) sync file reads on every paginated request.
       let app;
       try { app = settings.getApp(); } catch { app = null; }
       let total = 0;
       let hasKnown = false;
-      const pageIds = new Set(page.map((c) => c.id));
-      for (const c of list) {
+      for (const c of page) {
         let totalCost;
         try { totalCost = chats.chatTotalCost(dir, c.id, app); }
         catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
-        if (pageIds.has(c.id)) {
-          c.totalCost = totalCost;
-          // Response-only liveness marker (never persisted), same
-          // contract as GET /api/chats/:id, so the project-card
-          // chat list can show which chats have a run in flight.
-          if (runningChats.has(runningKey(dir, c.id))) c.running = true;
-        }
+        c.totalCost = totalCost;
+        if (runningChats.has(runningKey(dir, c.id))) c.running = true;
         if (totalCost.known && typeof totalCost.total === 'number') {
           total += totalCost.total;
           hasKnown = true;
@@ -1413,6 +1408,15 @@ async function handleChatStream(req, res, chatId) {
     } catch { /* non-fatal */ }
   }
 
+  // Abort the upstream provider call when the browser disconnects
+  // (tab closed, navigation, phone killed the socket). Without this
+  // the server kept a dead stream running against the provider —
+  // burning tokens for nobody and, for providers without their own
+  // idle cutoff, holding the chat's running marker forever so every
+  // reconnect attempt bounced off 409 EALREADY_RUNNING.
+  const clientGone = new AbortController();
+  req.on('close', () => { try { clientGone.abort(new Error('client disconnected')); } catch { /* already settled */ } });
+
   let result;
   try {
     result = await ai.streamChat({
@@ -1420,6 +1424,7 @@ async function handleChatStream(req, res, chatId) {
     messages: upstreamMessages,
     projectDir,
     chatId, // Pass chatId for authorization gate
+    signal: clientGone.signal,
     shellEnabled,
     fileToolsEnabled,
     appSettings,
@@ -2604,7 +2609,7 @@ async function handleTools(req, res, parsed) {
         name: 'ask_user',
         kind: 'native',
         source: 'ask_user',
-        description: (ask.SPEC && ask.SPEC.function && ask.SPEC.function.description) || 'Ask the user a structured question with 2-4 options.'
+        description: (ask.SPEC && ask.SPEC.function && ask.SPEC.function.description) || 'Ask the user a structured question with options.'
       });
     } catch { /* ask_user module unavailable; omit */ }
     try {
