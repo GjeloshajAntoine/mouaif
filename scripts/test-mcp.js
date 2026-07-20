@@ -8,10 +8,12 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-const mcp = require('../src/mcp.js');
-// Use a temp MOUAIF_HOME so the test never touches a real project file.
+// Use a temp MOUAIF_HOME so the test never touches a real app store.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-test-'));
 process.env.MOUAIF_HOME = TMP;
+
+const settings = require('../src/settings.js');
+const mcp = require('../src/mcp.js');
 
 // Use a temp project directory; the test never writes to it other
 // than what the mcp module writes to .mcp.json.
@@ -110,19 +112,25 @@ async function main() {
   check('updateServer stops running session', !mcp._sessions.has(projectDir + '::' + server.id));
 
   // 8b) Tool cache persists after the session is gone. The decorated
-  //     server should still expose the last-known tool list. (The
-  //     rename above re-slugged the entry to "renamed".)
-  check('toolCache persisted to config', updated && Array.isArray(updated.toolCache) && updated.toolCache.length === 2);
+  //     server should still expose the last-known tool list, sourced
+  //     from the app SQLite store — NOT from .mcp.json. (The rename
+  //     above re-slugged the entry to "renamed".)
+  check('config entry has no toolCache', updated && updated.toolCache === undefined);
+  const cacheRow = settings.getMcpToolCache(projectDir, server.id);
+  check('tool cache persisted to app DB', Array.isArray(cacheRow) && cacheRow.length === 2);
+  const rawConfig = JSON.parse(fs.readFileSync(mcp.getMcpPath(projectDir), 'utf8'));
+  check('.mcp.json has no toolCache keys', rawConfig.servers.every(s => !Object.prototype.hasOwnProperty.call(s, 'toolCache')));
   check('tools still visible after stop', updated && Array.isArray(updated.tools) && updated.tools.length === 2);
   const cachedSpecs = mcp.listComposedToolSpecs(projectDir);
   check('listComposedToolSpecs falls back to cache', cachedSpecs.length === 2 && cachedSpecs.every(s => s.serverSlug === 'renamed'));
   check('cached spec names use mcp__ prefix', cachedSpecs.every(s => s.name.startsWith('mcp__renamed__')));
 
-  // 8c) Removing the server clears the cache.
+  // 8c) Removing the server clears the cache (config + app DB row).
   const removed = mcp.removeServer(projectDir, server.id);
   check('removeServer returns true', removed === true);
   const after = mcp.listServers(projectDir);
   check('removeServer clears from list', !after.some(s => s.id === server.id));
+  check('removeServer clears DB cache', settings.getMcpToolCache(projectDir, server.id) === null);
   check('listComposedToolSpecs empty after remove', mcp.listComposedToolSpecs(projectDir).length === 0);
 
   // 10) stopAll is a no-op when nothing is running.
@@ -134,6 +142,28 @@ async function main() {
   const projectMcp = JSON.parse(fs.readFileSync(mcp.getMcpPath(projectDir), 'utf8'));
   check('settings mcp servers empty', Array.isArray(projectMcp.servers) && projectMcp.servers.length === 0);
 
+  // 12) Legacy migration: a .mcp.json that still carries an inline
+  //     toolCache gets migrated into the app DB on read, and stripped
+  //     from the file on the next write.
+  const legacy = mcp.addServer(projectDir, {
+    name: 'Legacy', command: process.execPath, args: [], enabled: true
+  });
+  const legacyTools = [
+    { name: 'lt', description: 'legacy tool', inputSchema: { type: 'object', properties: {} } }
+  ];
+  const cfg = JSON.parse(fs.readFileSync(mcp.getMcpPath(projectDir), 'utf8'));
+  const li = cfg.servers.findIndex(s => s.id === legacy.id);
+  cfg.servers[li].toolCache = legacyTools;
+  fs.writeFileSync(mcp.getMcpPath(projectDir), JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+  const got = mcp.getServer(projectDir, legacy.id);
+  check('legacy toolCache migrated to tools list', Array.isArray(got.tools) && got.tools.length === 1 && got.tools[0].name === 'lt');
+  check('legacy toolCache migrated to app DB', (settings.getMcpToolCache(projectDir, legacy.id) || []).length === 1);
+  mcp.updateServer(projectDir, legacy.id, { name: 'Legacy2' }); // triggers a config write
+  const cfgAfter = JSON.parse(fs.readFileSync(mcp.getMcpPath(projectDir), 'utf8'));
+  check('legacy toolCache stripped from .mcp.json', cfgAfter.servers.every(s => !Object.prototype.hasOwnProperty.call(s, 'toolCache')));
+  mcp.removeServer(projectDir, legacy.id);
+
+  settings.close();
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   // Best-effort cleanup of the project dir; the temp MOUAIF_HOME is
   // also left behind for forensic value if a test failed.

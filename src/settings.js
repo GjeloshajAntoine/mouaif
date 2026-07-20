@@ -29,6 +29,10 @@ const PROJECT_FILE = '.mouaif.json';
 const APP_DB = 'store.sqlite';
 const APP_KV_TABLE = 'app_kv';
 const APP_KEY = 'settings';
+// Per-project MCP tool caches. Keyed by `${projectDir}::${serverId}` so the
+// bulky last-known tool schemas live in the app store instead of the
+// hand-editable, project-committed <projectDir>/.mcp.json.
+const MCP_TOOL_CACHE_TABLE = 'mcp_tool_cache';
 
 // Built-in defaults. These are the floor: anything not set in app or project
 // falls back to these. They are intentionally tiny for the first commit; later
@@ -68,6 +72,15 @@ function openDb(home) {
     `CREATE TABLE IF NOT EXISTS ${APP_KV_TABLE} (
        key   TEXT PRIMARY KEY,
        value TEXT NOT NULL
+     );`
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS ${MCP_TOOL_CACHE_TABLE} (
+       project_dir TEXT NOT NULL,
+       server_id   TEXT NOT NULL,
+       tools       TEXT NOT NULL,
+       updated_at  TEXT NOT NULL,
+       PRIMARY KEY (project_dir, server_id)
      );`
   );
   return db;
@@ -239,6 +252,38 @@ function getResolved(projectDir) {
   return deepMerge(deepMerge(DEFAULTS, app), project);
 }
 
+// ---- MCP tool cache (app DB) -------------------------------------------
+//
+// The last-known tool list of each MCP server, persisted so a stopped
+// server still advertises its surface. Runtime data, not config — that's
+// why it lives here and not in <projectDir>/.mcp.json.
+
+function getMcpToolCache(projectDir, serverId) {
+  const row = db()
+    .prepare(`SELECT tools FROM ${MCP_TOOL_CACHE_TABLE} WHERE project_dir = ? AND server_id = ?`)
+    .get(projectDir, serverId);
+  if (!row) return null;
+  try { return JSON.parse(row.tools); } catch { return null; }
+}
+
+function setMcpToolCache(projectDir, serverId, tools) {
+  if (!Array.isArray(tools)) throw new TypeError('tools must be an array');
+  db()
+    .prepare(
+      `INSERT INTO ${MCP_TOOL_CACHE_TABLE} (project_dir, server_id, tools, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(project_dir, server_id)
+       DO UPDATE SET tools = excluded.tools, updated_at = excluded.updated_at`
+    )
+    .run(projectDir, serverId, JSON.stringify(tools), new Date().toISOString());
+}
+
+function deleteMcpToolCache(projectDir, serverId) {
+  db()
+    .prepare(`DELETE FROM ${MCP_TOOL_CACHE_TABLE} WHERE project_dir = ? AND server_id = ?`)
+    .run(projectDir, serverId);
+}
+
 function close() {
   if (_appDb) {
     _appDb.close();
@@ -265,6 +310,10 @@ module.exports = {
   writeProjectJson,
   // resolution
   getResolved,
+  // MCP tool cache (app DB)
+  getMcpToolCache,
+  setMcpToolCache,
+  deleteMcpToolCache,
   // lifecycle (mostly for tests)
   close
 };

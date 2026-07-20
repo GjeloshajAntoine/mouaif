@@ -26,7 +26,7 @@ The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to
    - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
 4. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 
-The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The child process itself is in-memory only — it restarts on `mouaif` restart — but the discovered tool list is persisted on the entry under `toolCache` so a stopped server still shows what it advertised the last time it ran, and the model keeps its tool surface in a new chat. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
+The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The child process itself is in-memory only — it restarts on `mouaif` restart — and the discovered tool list is cached in the app SQLite store (`~/.mouaif/store.sqlite`, keyed by project directory + server id) so a stopped server still shows what it advertised the last time it ran, and the model keeps its tool surface in a new chat. Keeping the cache out of `.mcp.json` leaves the project file small and hand-editable; older builds that wrote an inline `toolCache` onto the entry are migrated into the store on first read and stripped from the file on the next write. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
 
 ### In a chat
 
@@ -61,25 +61,26 @@ The per-chat `tools` filter is the same field the native-tool chips use, so the 
 
 ### Authorization
 
-Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call**, however, is routed through the project's `mcp.authorize` mode (default `ask`):
+Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call**, however, is routed through the project's shared MCP authorization mode (default `ask`), set from the **MCP tools** segmented control at the top of **Settings → MCP**:
 
 | Mode | Behavior |
 |---|---|
-| `off` | The tool is disabled. Calls return `ETOOL_DISABLED`. |
+| `off` | Every `mcp__*` tool is hidden from the model (no prompt tokens). Calls that still arrive return `ETOOL_DISABLED`. |
 | `ask` | Every call must be approved by the user in the UI before the runner executes. |
-| `allowlist` | Calls whose first string arg matches an allowlist regex run without prompting. The rest fall through to `ask`. |
+| `allowlist` | Calls whose first string arg matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask**. |
 | `allow` | Every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`. |
 
-The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses; the tool name is `<serverSlug>/<toolName>` and the allowlist matches against the first string arg (typically the resource path the user is asking the model to act on).
+The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses; the tool name is `mcp__<serverSlug>__<toolName>` and the allowlist matches against the first string arg (typically the resource path the user is asking the model to act on). The mode is persisted in `.mcp.json` under `authorization` (written by `setAuthorization`), so it can be committed and reviewed alongside the server entries.
 
 ### Lifecycle
 
 | Action | Trigger | Effect |
 |---|---|---|
-| **Start** | Tap Start on a row, or open a chat that references a stopped server | Spawn the child, run the MCP `initialize` handshake, run `tools/list`, cache the result. Status moves to `ready`. |
-| **Stop** | Tap Stop, edit the server, delete it, or `mouaif` shuts down | Close the child, clear the cache. Status moves to `stopped`. |
-| **Refresh tools** | Tap Refresh on a ready server | Re-run `tools/list` without restarting the child. Useful when the server's tool set changes at runtime. |
-| **Restart** | Tap Start on a ready server | Stop, then re-start. The cache is cleared; a fresh `tools/list` runs. |
+| **Start** | Tap Start on a row, or open a chat that references a stopped server | Spawn the child, run the MCP `initialize` handshake, run `tools/list`, cache the result in the app store. Status moves to `ready`. |
+| **Stop** | Tap Stop, edit the server, or `mouaif` shuts down | Close the child. The cached tool list is kept so the surface stays visible. Status moves to `stopped`. |
+| **Delete** | Tap Delete on a row | Close the child and clear the cached tool list with the entry. |
+| **Refresh tools** | Tap Refresh on a ready server | Re-run `tools/list` without restarting the child; the cache is overwritten. Useful when the server's tool set changes at runtime. |
+| **Restart** | Tap Start on a ready server | Stop, then re-start; a fresh `tools/list` runs and overwrites the cache. |
 | **Errored** | Child crashes, JSON-RPC fails, or `initialize` times out | The session marks itself errored; the next call returns `EMCP_NOSESSION`. The Settings UI shows the typed error inline. |
 
 A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of the chat and re-arms on next chat open (the user can tap Start to re-spawn).
@@ -127,7 +128,7 @@ await mcp.stopServer(projectDir, server.id);
 
 - **Server entries are project-scoped.** They live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. Legacy `.mouaif.json` `mcp.servers` is read as a fallback.
 - **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
-- **Discovery is cached on the session *and* persisted on the entry.** A successful `tools/list` lands on the server record's in-memory session and is also written to `toolCache` on the persisted entry. The AI client uses the live session when the server is running; it falls back to the persisted cache when the server is enabled but stopped (e.g. after a mouaif restart, or on a new chat before the auto-start fires). A tool call against a stopped server returns `EMCP_NOSESSION` — the honest signal — but the model still sees the surface and the user can tap Start.
+- **Discovery is cached on the session *and* persisted in the app store.** A successful `tools/list` lands on the server record's in-memory session and is also written to the app SQLite store (`mcp_tool_cache` table, keyed by project directory + server id). The AI client uses the live session when the server is running; it falls back to the persisted cache when the server is enabled but stopped (e.g. after a mouaif restart, or on a new chat before the auto-start fires). A tool call against a stopped server returns `EMCP_NOSESSION` — the honest signal — but the model still sees the surface and the user can tap Start. The cache is runtime state, not config, which is why it does not live in the project file; legacy inline `toolCache` entries are migrated into the store on first read.
 - **Enabled servers auto-start on chat open.** `GET /api/tools/list` (which the chat UI calls on load) runs `ensureEnabledServers(projectDir)`: every enabled server that is not already `ready` / `starting` is spawned and re-discovered before the catalog is returned. Disabled servers stay stopped. A failed start is captured as `errored` on that server only — the rest of the enabled set still starts.
 - **Tool calls ride the same SSE stream as the rest of the chat.** `tool_call` and `tool_result` are first-class events (decision §10). The chat UI renders them inline; the trace file (decision §5) writes them as `tool_call` / `tool_result` lines.
 - **Errors are typed.** Transport failures become `EMCP_TRANSPORT`; JSON-RPC errors become `EMCP_RPC`; timeouts become `EMCP_TIMEOUT`; missing slugs become `EMCP_NOSESSION`; missing tools become `EMCP_NOTFOUND`; disabled servers become `EMCP_DISABLED`. The chat UI can branch on `code` without parsing the message.

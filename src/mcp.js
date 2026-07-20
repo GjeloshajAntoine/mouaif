@@ -13,9 +13,10 @@
 // Scope: one project directory = one MCP session. The set of servers
 // is per-project (in <projectDir>/.mcp.json under servers; legacy
 // <projectDir>/.mouaif.json mcp.servers is read as a fallback).
-// The runtime state (child processes, discovered tool lists) is
-// in-memory only; it restarts on server boot. Servers are stopped on
-// `process.exit`.
+// The runtime state (child processes, live tool lists) is in-memory
+// only; the last-known tool list per server is persisted in the app
+// SQLite store (settings.getMcpToolCache), not in the project file.
+// Servers are stopped on `process.exit`.
 //
 // Public surface:
 //
@@ -194,11 +195,24 @@ function writeProjectConfig(projectDir, mcp) {
   // Merge into the existing file instead of replacing it: .mcp.json also
   // carries the authorization block written by tools/authorization.js
   // (setAuthorization), and a blanket overwrite would silently drop the
-  // user's MCP allow/allowlist policy on every server CRUD or toolCache
-  // persist. A corrupt or missing file falls back to the incoming object.
+  // user's MCP allow/allowlist policy on every server CRUD. A corrupt or
+  // missing file falls back to the incoming object.
   let base = {};
   try { base = readMcpFile(projectDir) || {}; } catch { /* replace corrupt file */ }
-  writeMcpFile(projectDir, Object.assign({}, base, mcp || { servers: [] }));
+  const out = Object.assign({}, base, mcp || { servers: [] });
+  // Strip any legacy inline toolCache keys: the cache lives in the app
+  // SQLite store now, and leaving a copy here would both bloat the
+  // project file and go stale.
+  if (Array.isArray(out.servers)) {
+    out.servers = out.servers.map((s) => {
+      if (!s || typeof s !== 'object') return s;
+      if (!Object.prototype.hasOwnProperty.call(s, 'toolCache')) return s;
+      const clone = Object.assign({}, s);
+      delete clone.toolCache;
+      return clone;
+    });
+  }
+  writeMcpFile(projectDir, out);
 }
 
 function normalizeServerEntry(raw, usedSlugs) {
@@ -222,7 +236,6 @@ function normalizeServerEntry(raw, usedSlugs) {
     ? Object.fromEntries(Object.entries(raw.env).filter(([, v]) => typeof v === 'string' || v == null))
     : {};
   const cwd = typeof raw.cwd === 'string' && raw.cwd.trim() ? raw.cwd.trim() : '';
-  const toolCache = normalizeToolCache(raw.toolCache);
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : newServerId(),
     name,
@@ -232,8 +245,7 @@ function normalizeServerEntry(raw, usedSlugs) {
     env,
     cwd,
     enabled: raw.enabled === true, // default off
-    createdAt: raw.createdAt || new Date().toISOString(),
-    toolCache
+    createdAt: raw.createdAt || new Date().toISOString()
   };
 }
 
@@ -247,13 +259,18 @@ function normalizeAll(rawList) {
   return out;
 }
 
-// The discovered tool list is persisted on the server entry under
-// `toolCache` so a stopped server still shows what it advertised the
-// last time it ran (and the model can still see its surface in the
-// tools catalog). The cache is refreshed on every successful start /
-// tools/list refresh, and cleared when the server is removed. The
-// runtime state (child process, live session) stays in-memory; only
-// the last-known tool descriptors are committed to disk.
+// The discovered tool list is persisted in the app SQLite store (see
+// settings.getMcpToolCache/setMcpToolCache) so a stopped server still
+// shows what it advertised the last time it ran (and the model can
+// still see its surface in the tools catalog). The cache is refreshed
+// on every successful start / tools/list refresh, and cleared when the
+// server is removed. The runtime state (child process, live session)
+// stays in-memory; only the last-known tool descriptors are persisted.
+//
+// Older builds stored the cache inline in .mcp.json under each server
+// entry's `toolCache` key. loadToolCache migrates those rows into the
+// DB on first read and strips the key the next time the config file is
+// written, so the project file shrinks back to just the server config.
 function normalizeToolCache(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -265,13 +282,28 @@ function normalizeToolCache(raw) {
     }));
 }
 
+// Returns the persisted cache for a server. Migration path: if the DB
+// has no row but the raw config entry still carries an inline
+// `toolCache`, move it into the DB (best-effort) and mark the source
+// entry for stripping on the next config write.
+function loadToolCache(projectDir, rawEntry) {
+  if (!rawEntry || !rawEntry.id) return [];
+  const fromDb = settings.getMcpToolCache(projectDir, rawEntry.id);
+  if (Array.isArray(fromDb)) return normalizeToolCache(fromDb);
+  const legacy = normalizeToolCache(rawEntry.toolCache);
+  if (legacy.length) {
+    rawEntry._stripToolCache = true;
+    try { settings.setMcpToolCache(projectDir, rawEntry.id, legacy); } catch { /* ignore */ }
+  }
+  return legacy;
+}
+
 function persistToolCache(projectDir, serverId, tools) {
-  const { list } = readProjectConfig(projectDir);
-  const normalized = normalizeAll(list);
-  const idx = normalized.findIndex(s => s.id === serverId);
-  if (idx < 0) return;
-  normalized[idx].toolCache = normalizeToolCache(tools);
-  writeProjectConfig(projectDir, { servers: normalized });
+  try { settings.setMcpToolCache(projectDir, serverId, normalizeToolCache(tools)); } catch { /* ignore */ }
+}
+
+function clearToolCache(projectDir, serverId) {
+  try { settings.deleteMcpToolCache(projectDir, serverId); } catch { /* ignore */ }
 }
 
 // ---- In-memory runtime state -------------------------------------------
@@ -318,8 +350,9 @@ function findSessionBySlug(projectDir, serverSlug) {
 
 function listServers(projectDir) {
   const { list } = readProjectConfig(projectDir);
+  const rawById = new Map(list.map(s => [s && s.id, s]));
   const normalized = normalizeAll(list);
-  return normalized.map((entry) => decorate(entry, projectDir));
+  return normalized.map((entry) => decorate(entry, projectDir, rawById.get(entry.id)));
 }
 
 function getServer(projectDir, serverId) {
@@ -327,15 +360,16 @@ function getServer(projectDir, serverId) {
   const normalized = normalizeAll(list);
   const entry = normalized.find(s => s.id === serverId) || null;
   if (!entry) return null;
-  return decorate(entry, projectDir);
+  return decorate(entry, projectDir, list.find(s => s && s.id === serverId));
 }
 
-function decorate(entry, projectDir) {
+function decorate(entry, projectDir, rawEntry) {
   const session = getSession(projectDir, entry.id);
   const status = session ? session.status : 'stopped';
-  // Live tools win; the persisted cache is the fallback so a stopped
-  // server still shows what it advertised the last time it ran.
-  const tools = session ? session.tools.slice() : (entry.toolCache || []).slice();
+  // Live tools win; the persisted cache (app DB) is the fallback so a
+  // stopped server still shows what it advertised the last time it ran.
+  const cache = loadToolCache(projectDir, rawEntry || entry);
+  const tools = session ? session.tools.slice() : cache;
   const error = session && session.error ? session.error : null;
   const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), status, tools });
   if (error) decorated.error = error;
@@ -411,6 +445,8 @@ function removeServer(projectDir, serverId) {
   const next = list.filter(s => s && s.id !== serverId);
   if (next.length === before) return false;
   writeProjectConfig(projectDir, { servers: next });
+  // The tool cache is keyed by server id; drop it with the server.
+  clearToolCache(projectDir, serverId);
   return true;
 }
 
@@ -722,10 +758,12 @@ function listComposedToolSpecs(projectDir) {
   //    user starts it again, which is the honest signal.
   try {
     const { list } = readProjectConfig(projectDir);
+    const rawById = new Map(list.map(s => [s && s.id, s]));
     for (const entry of normalizeAll(list)) {
       if (!entry || entry.enabled !== true || seen.has(entry.id)) continue;
-      if (!Array.isArray(entry.toolCache) || !entry.toolCache.length) continue;
-      for (const tool of entry.toolCache) {
+      const cache = loadToolCache(projectDir, rawById.get(entry.id) || entry);
+      if (!cache.length) continue;
+      for (const tool of cache) {
         out.push({
           name: composedToolName(entry.slug, tool.name),
           description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
@@ -779,7 +817,9 @@ module.exports = {
   composedToolNameFor,
   listComposedToolSpecs,
   normalizeToolCache,
+  loadToolCache,
   persistToolCache,
+  clearToolCache,
   // for tests + diagnostics
   _sessions,
   _byProject

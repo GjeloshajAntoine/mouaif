@@ -657,7 +657,7 @@ export async function toggleMcpServer(id, enabled, state, refs, updateChat, setC
     }
     // The PATCH resolved, so the flag is persisted. Show the cached
     // state right away instead of blocking on the server boot: the
-    // freshly-PATCHed server record carries the persisted toolCache
+    // freshly-PATCHed server record carries the persisted tool cache
     // from its last run, which is enough to paint the child tool
     // rows. Merge it into local state and repaint immediately…
     if (r.body && r.body.server) {
