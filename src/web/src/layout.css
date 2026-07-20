@@ -43,12 +43,32 @@
   /* Bounded flex column so the chat view (the section child) can
      own its internal transcript scroll + pinned composer. The
      section below takes the same contract for non-chat views so
-     they can scroll internally instead of overflowing the shell. */
+     they can scroll internally instead of overflowing the shell.
+
+     Deliberately override the base `.app__main { overflow-y: auto; }`
+     with `overflow: visible`. On iOS Safari, an `overflow: hidden`
+     *or* `overflow: auto` ancestor of a nested `overflow-y: auto`
+     descendant silently kills the descendant's touch-scroll
+     gesture: the nested scroll never gets the pan, and a
+     touch-drag is a no-op. The base rule's `overflow-y: auto`
+     on .app__main is correct for non-flush views (chats list,
+     settings, inspector) where the main element itself is the
+     scroll container; on flush views the inner section (or thetoday's
+     chat-view's transcript) is the scroll container, so the
+     outer overflow must go. The chat view's own flex sizing
+     (`flex: 1 1 0; min-height: 0;` on .chat-view, `flex: 1 1
+     auto; min-height: 0;` on .chat-view__transcript) bounds
+     the section to the main region, so the outer overflow is
+     also unnecessary. For non-chat flush views the same trick
+     applies: the section child is a flex item with
+     `flex: 1 1 0; min-height: 0; height: 0;` and `overflow-y:
+     auto` (see the rule below), and the parent no longer
+     needs to clip. */
   padding: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Groups: iOS-style inset lists. A <section class="group"> holds a

@@ -1073,28 +1073,20 @@ textarea#projectEditor {
   /* The chat view fills the main region so the transcript (which
      flexes) scrolls internally and the composer stays pinned to the
      bottom without overlapping the last message. `flex: 1 1 0` +
-     `min-height: 0` + `height: 0` is the standard "flex child owns
-     the scroll" pattern. The `height: 0` is the iOS-Safari bit:
-     when the basis is `auto`, Mobile Safari sizes the box by the
-     content's intrinsic height (which is unbounded) and the
-     transcript's overflow is silently dropped, so a touch-drag
-     on the transcript bubbles up to the page and the user can't
-     scroll. Forcing the basis to 0 and zeroing height makes the
-     flex algorithm use the available space, and touch-scroll on
-     the inner transcript works. The head is the only chrome row
-     now (settings live in a popover). */
+     `min-height: 0` is the standard "flex child owns the scroll"
+     pattern. We deliberately do NOT set `height: 0` and do NOT
+     set `overflow: hidden` here: in iOS Safari, an
+     `overflow:hidden` ancestor of an `overflow-y:auto` descendant
+     silently kills the descendant's touch-scroll gesture — the
+     nested scroll never gets the pan, and a touch-drag is a
+     no-op. The parent .app__main--flush was also `overflow:
+     hidden` for the same defensive reason; that one has been
+     removed in layout.css for the same iOS reason. The chat
+     view's own flex sizing bounds the section to the main
+     region, so the parent overflow layer is unnecessary.
+     `position: relative` anchors the jump-to-bottom FAB. */
   flex: 1 1 0;
   min-height: 0;
-  height: 0;
-  overflow: hidden;
-  /* Claim the vertical pan gesture explicitly. The page-level
-     `touch-action: manipulation` on <html> lets the browser pick
-     pan/zoom; on iOS Safari a nested scroll container sometimes
-     loses the gesture to an ancestor if it doesn't claim it.
-     `pan-y` means "vertical scroll goes to me, horizontal pan
-     goes to the ancestor" which is the chat transcript's
-     intended behaviour. */
-  touch-action: pan-y;
   /* Anchor for the jump-to-bottom FAB, which floats above the
      transcript's lower-right corner. */
   position: relative;
