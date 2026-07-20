@@ -116,12 +116,14 @@ function renderReadFileToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--file');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-  renderToolMeta(body, [
-    r.relPath || r.path,
-    (r.startLine != null && r.endLine != null)
-      ? ('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : ''))
-      : null
-  ]);
+  const meta = [];
+  meta.push(r.relPath || r.path);
+  if (r.size != null) meta.push(r.size + 'B');
+  if (r.startLine != null && r.endLine != null) {
+    meta.push('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : ''));
+  }
+  if (r.truncated) meta.push('truncated');
+  renderToolMeta(body, meta);
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
 }
 
@@ -130,12 +132,15 @@ function renderListFilesToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-  renderToolMeta(body, [
-    r.pattern ? ('pattern ' + r.pattern) : 'all text files',
-    Array.isArray(r.entries) ? (r.entries.length + ' shown') : null,
-    r.skipped ? (r.skipped + ' skipped') : null,
-    r.truncated ? 'capped' : null
-  ]);
+  const meta = [];
+  meta.push(r.pattern ? ('pattern ' + r.pattern) : 'all text files');
+  if (Array.isArray(r.entries)) {
+    meta.push(r.entries.length + ' shown');
+    if (r.total != null && r.total !== r.entries.length) meta.push(r.total + ' total');
+  }
+  if (r.skipped) meta.push(r.skipped + ' skipped');
+  if (r.truncated) meta.push('capped');
+  renderToolMeta(body, meta);
   const lines = Array.isArray(r.entries)
     ? r.entries.map((e) => (e.path || '') + (e.size != null ? '\t' + e.size : ''))
     : String(r.body || '').split('\n');
@@ -147,7 +152,12 @@ function renderSearchFilesToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-  renderToolMeta(body, [r.query ? ('search ' + r.query) : null, Array.isArray(r.matches) ? (r.matches.length + ' matches') : null]);
+  const meta = [];
+  meta.push(r.query ? ('search ' + r.query) : 'no query');
+  if (Array.isArray(r.matches)) meta.push(r.matches.length + ' matches');
+  if (r.filesScanned != null) meta.push(r.filesScanned + ' files');
+  if (r.truncated) meta.push('capped');
+  renderToolMeta(body, meta);
   const lines = Array.isArray(r.matches)
     ? r.matches.map((m) => (m.path || '') + ':' + m.line + ': ' + (m.text || ''))
     : String(r.body || '').split('\n');
@@ -159,7 +169,11 @@ function renderEditFileToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--diff');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-  renderToolMeta(body, [r.relPath || r.path]);
+  const meta = [r.relPath || r.path];
+  if (r.bytesWritten != null) {
+    meta.push('+' + r.bytesWritten + 'B' + (r.replacedBytes != null ? ' / -' + r.replacedBytes + 'B' : ''));
+  }
+  renderToolMeta(body, meta);
   renderDiffPreview(body, r.diff || '(edit applied)');
 }
 
@@ -168,8 +182,23 @@ function renderWriteFileToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--file');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
-  renderToolMeta(body, [r.relPath || r.path]);
+  const writeMeta = [r.relPath || r.path];
+  if (r.bytesWritten != null) writeMeta.push(r.bytesWritten + 'B');
+  else if (r.size != null) writeMeta.push(r.size + 'B');
+  renderToolMeta(body, writeMeta);
   renderPreviewPre(body, 'write complete', 'tool-preview__pre');
+}
+
+// byteLength(str) -> number
+//
+// Cross-browser byte-length helper (no Buffer dependency). Fast path
+// for ASCII, fallback to TextEncoder for multi-byte strings.
+function byteLength(str) {
+  if (!str) return 0;
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) > 127) return new TextEncoder().encode(str).length;
+  }
+  return str.length;
 }
 
 // renderShellToolResult(body, r)
@@ -177,10 +206,14 @@ function renderShellToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--terminal');
   if (typeof r === 'string') r = coerceToolResult(r, 'shell');
   if (!r || r.error) {
-    renderToolMeta(body, [r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null]);
+    renderToolMeta(body, [r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null, r && r.stderr ? (r.stdout ? 'partial output' : null) : null]);
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__terminal');
   }
-  renderToolMeta(body, ['exit ' + (r.exitCode ?? 0), r.durationMs != null ? (r.durationMs + 'ms') : null]);
+  const meta = ['exit ' + (r.exitCode ?? 0)];
+  if (r.durationMs != null) meta.push(r.durationMs + 'ms');
+  if (r.stdout) meta.push(byteLength(r.stdout) + 'B out');
+  if (r.stderr) meta.push(byteLength(r.stderr) + 'B err');
+  renderToolMeta(body, meta);
   const out = [];
   if (r.stdout) out.push(r.stdout);
   if (r.stderr) {
