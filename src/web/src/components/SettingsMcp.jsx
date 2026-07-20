@@ -3,7 +3,7 @@
 // servers here: each server is a stdio child process the AI client
 // connects to and discovers tools from. See docs/features/mcp.md.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
 
@@ -17,8 +17,52 @@ export function SettingsMcpView(props = {}) {
   const statusEl = useRef(null);
   const projectDirEl = useRef(null);
   const loadBtn = useRef(null);
+  // Project-level MCP authorization (one gate for every mcp__* tool).
+  // Same segmented Off/Ask/Allow pattern as the native tools in
+  // SettingsProject; the allowlist is an advanced refinement of Ask.
+  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
 
   let projectDir = projectDirFromProps(props);
+
+  function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
+
+  async function saveMcpAuthorization(mode, allowlist) {
+    setMcpAuthStatusMsg('saving…');
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, mcp: { mode, allowlist } })
+    });
+    setMcpAuthStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+  }
+
+  function pickMcpMode(newMode) {
+    // Tapping Allow clears any allowlist: auto-approve-everything makes
+    // the patterns meaningless, and dropping them keeps .mcp.json honest.
+    const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
+    setMcpAuth({ mode: newMode, allowlist });
+    saveMcpAuthorization(newMode, allowlist);
+  }
+
+  function onMcpAllowlistInput(text) {
+    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const mode = allowlist.length ? 'allowlist' : 'ask';
+    setMcpAuth({ mode, allowlist });
+    saveMcpAuthorization(mode, allowlist);
+  }
+
+  // Debounced so typing a regex doesn't fire a PUT per keystroke.
+  const mcpAuthRef = useRef(mcpAuth);
+  mcpAuthRef.current = mcpAuth;
+  const saveMcpAllowlistDebounced = useRef((() => {
+    let t = null;
+    return (text) => {
+      if (t) clearTimeout(t);
+      setMcpAuthStatusMsg('…');
+      t = setTimeout(() => onMcpAllowlistInput(text), 350);
+    };
+  })());
 
   async function load() {
     const dir = (projectDirEl.current && projectDirEl.current.value || '').trim() || projectDir;
@@ -35,6 +79,16 @@ export function SettingsMcpView(props = {}) {
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
     render(r.body.servers || []);
     setStatus(statusEl, (r.body.servers || []).length + ' configured', 'success');
+    // Project-level MCP authorization block (lives in .mcp.json).
+    try {
+      const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(dir));
+      const mcp = ar.status === 200 && ar.body.mcp;
+      setMcpAuth({
+        mode: (mcp && mcp.mode) || 'ask',
+        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : []
+      });
+      setMcpAuthStatusMsg('');
+    } catch { /* keep ask + empty allowlist */ }
   }
 
   function render(servers) {
@@ -148,6 +202,43 @@ export function SettingsMcpView(props = {}) {
       h('h2', { class: 'view-title' }, 'MCP servers')
     ),
     h('p', { class: 'hint hint--compact' }, 'Connect per-project Model Context Protocol servers. The AI client discovers each server\'s tools and advertises them to the model.'),
+    h('div', { class: 'group' },
+      h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Applies to every MCP server in this project')),
+      h('ul', { class: 'group__list' },
+        h('li', { class: 'settings-project__tool' },
+          h('div', { class: 'settings-project__tool-head' },
+            h('div', { class: 'settings-project__item-title' }, 'MCP tools'),
+            h('div', { class: 'settings-project__item-note' },
+              segMode(mcpAuth.mode) === 'off'
+                ? 'Hidden from the model — costs no tokens. '
+                : 'Calls from any MCP server in this project. ',
+              h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
+            )
+          ),
+          h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'MCP tools' },
+            [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }].map((m) =>
+              h('label', { key: m.value, class: 'seg__item' + (segMode(mcpAuth.mode) === m.value ? ' seg__item--on' : '') },
+                h('input', {
+                  type: 'radio',
+                  name: 'sp-mcp-tools',
+                  value: m.value,
+                  checked: segMode(mcpAuth.mode) === m.value,
+                  onChange: () => pickMcpMode(m.value)
+                }),
+                h('span', { class: 'seg__pill' }, m.label)
+              )
+            )
+          ),
+          segMode(mcpAuth.mode) === 'ask'
+            ? h('details', { class: 'settings-project__allowlist' },
+                h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
+                h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
+              )
+            : null
+        )
+      )
+    ),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'mcp-project-dir' }, 'Project directory'),
       h('div', { class: 'row row--inline' },

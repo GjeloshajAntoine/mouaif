@@ -7,7 +7,7 @@
 
 ## Overview
 
-Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. Base tools (`shell` and the native file tools) are always advertised to the model; the gate controls execution rather than discovery. The user can choose between four modes (`off`, `ask`, `allowlist`, `allow`) per project. The default is `ask`, so first use prompts for approval.
+Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. The user picks one of three primary modes per tool and project — **Off**, **Ask**, **Allow** — from a one-tap segmented control in project settings. An allowlist is an advanced refinement of Ask, not a fourth choice. The default is `ask`, so first use prompts for approval.
 
 ## Usage
 
@@ -15,9 +15,9 @@ Every tool call the model initiates — and every `/shell` slash command the use
 
 | Mode | Behavior |
 |---|---|
-| `off` | The tool is disabled. Calls return `ETOOL_DISABLED` and the runner never runs. |
+| `off` | The tool is hidden from the model (its declaration is dropped from the request, so it costs no prompt tokens). Any call that still arrives — a stale chat filter, a hand-crafted REST call — returns `ETOOL_DISABLED`. |
 | `ask` | Every call must be approved by the user in the UI. The chat shows a prompt with the command, working dir, and the proposed timeout; the user taps **Allow** or **Deny**. |
-| `allowlist` | Calls whose `cmd` matches an allowlist regex run without prompting. Calls that do not match fall through to `ask`. |
+| `allowlist` | Calls whose `cmd` matches an allowlist regex run without prompting. Calls that do not match fall through to `ask`. This is the advanced form of `ask`; in the UI it is reached by entering patterns under the **Auto-approve list** disclosure of the Ask mode. |
 | `allow` | Every call is auto-approved. This project-level choice persists across chats and server restarts. |
 
 The mode is set on the project record (per decision §2) and can be overridden per session by the user without writing the new value to disk:
@@ -70,10 +70,10 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - **Allowlist is regex-matched against the full command.** The match is anchored on the full string (`^...$`); partial matches do not pass. Each untrusted expression runs in an isolated worker that is terminated after 1 ms, so catastrophic backtracking cannot block the HTTP process.
 - **Decisions are session-scoped, not persisted.** An `allow-once` decision resumes exactly one blocked call. An `allow-session` decision is kept in server memory and cleared by `POST /api/chats/:id/touch` when the chat is reopened.
 - **Deny reasons are kept private.** A deny records only the call id in the in-memory session. The upstream receives `{ ok: false, code: 'EDENIED', reason: 'user denied' }`, without the command, project, or chat id.
-- **Base tools are always discoverable.** Legacy `enabled` fields are accepted but no longer hide `shell` or file tools. Set authorization mode to `off` to disable execution while keeping the stable base-tool declaration visible to the model.
+- **`off` hides the tool from the model.** Tools in `off` mode are filtered out of the advertised tool list before each upstream request (saving prompt tokens on every round), and the execution gate still rejects late or forged calls with `ETOOL_DISABLED` as defense-in-depth. File tools resolve through their `file` family name, so one `off` hides all five operations. MCP servers share the single `mcp.authorization` block, so one `off` hides every `mcp__<slug>__<tool>` spec at once.
 - **File operations share one gate.** The model-facing `read_file`, `list_files`, `search_files`, and `write_file` names all resolve through `tools.file`; enabling File tools therefore enables authorization for all four operations instead of returning `ETOOL_DISABLED` for their individual names.
 - **Timeouts are bounded by the project.** A call's effective timeout is `clamp(requestedTimeoutMs || defaultTimeoutMs, 1 ms, maxTimeoutMs)`. Anything above the cap is clamped silently; the UI surfaces the clamped value in the prompt.
-- **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping from `ask` to `off` rejects the next call with `ETOOL_DISABLED` and the model's prior `tool_result` history is left untouched.
+- **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping to `off` drops the tool from the next request's tool list and rejects any in-flight call with `ETOOL_DISABLED`; the model's prior `tool_result` history is left untouched.
 - **Audit log.** Every decision is appended to the per-chat trace file (decision §5) as a `system event` line (`{ type: 'auth_decision', tool, callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 
 ## Implementation notes
@@ -81,7 +81,7 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`.
 - The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
 - The chat touch route clears in-memory grants before updating `lastOpenedAt`; grants never enter `.mouaif.json`.
-- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under a new **Tools** card. The card shows the effective mode per tool with the source (`project`, `app`, `default`) on a small caption line, and links to the per-tool allowlist editor.
+- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under the **Tool permissions** group. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). The allowlist editor is a `<details>` disclosure shown only in ask mode; entering patterns writes `mode: "allowlist"` and clearing them flips back to `ask`, so the persisted file and the UI never disagree. Picking **Allow** clears the stored patterns. `ask_user` stays binary (`off` / `ask`). The same segmented control for the shared MCP gate lives at the top of `src/web/src/components/SettingsMcp.jsx` (it writes the `authorization` block in `.mcp.json` through `PUT /api/tools/authorization` `{ mcp: { mode, allowlist } }`).
 - The Authorization card in the chat composer exposes Allow once, Allow for this session, and Deny as tap-accessible controls with no hover-only affordance.
 
 ## Related

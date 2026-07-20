@@ -23,18 +23,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const chatTraceStatus = useRef(null);
   const exportTraceBtn = useRef(null);
   const exportTraceStatus = useRef(null);
-  const shellStatus = useRef(null);
-  const shellModeSel = useRef(null);
-  const shellAllowlist = useRef(null);
-  const shellAllowlistWrap = useRef(null);
-  const fileStatus = useRef(null);
-  const fileModeSel = useRef(null);
-  const fileAllowlist = useRef(null);
-  const fileAllowlistWrap = useRef(null);
-  // ask_user is binary { off, ask } — no allowlist input. The
-  // `onChange` handler on the mode <select> is enough.
-  const askUserStatus = useRef(null);
-  const askUserModeSel = useRef(null);
+  // Tool permissions live in state (not refs) so the segmented
+  // Off/Ask/Allow control and the allowlist disclosure re-render
+  // together when the user taps a segment.
+  const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [askUserMode, setAskUserMode] = useState('ask');
+  const [shellStatusMsg, setShellStatusMsg] = useState('');
+  const [fileStatusMsg, setFileStatusMsg] = useState('');
+  const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -56,15 +53,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function dir() { return loadedDir.current; }
   function chatId() { return loadedChatId.current; }
 
-  // The allowlist textarea only matters in "allowlist" mode; in every
-  // other mode it is dead weight on the screen. Hide it so the tool
-  // card shows only the controls that actually apply.
-  function syncAllowlistVisibility(modeSel, wrap) {
-    if (!wrap) return;
-    wrap.hidden = !modeSel || modeSel.value !== 'allowlist';
-  }
-  function onShellModeChange() { syncAllowlistVisibility(shellModeSel.current, shellAllowlistWrap.current); }
-  function onFileModeChange() { syncAllowlistVisibility(fileModeSel.current, fileAllowlistWrap.current); }
+  // Tool permission model (see docs/features/tool-authorization.md):
+  // exactly three primary choices per tool — Off (hidden from the
+  // model, zero tokens), Ask on use, Allow (auto-approved). An
+  // allowlist is an advanced refinement of Ask: matching calls run
+  // without prompting, the rest still ask. Entering patterns flips
+  // the server mode to `allowlist`; clearing them flips back to
+  // `ask`. The segmented control never shows "allowlist" as a fourth
+  // option — Ask stays selected — so the row reads as one choice.
+  function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
 
   async function load(seedDir) {
     const d = (seedDir || '').trim();
@@ -119,30 +116,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       chatTraceStatus.current.textContent = 'Open from a chat to edit trace.';
     }
 
-    if (shellStatus.current) shellStatus.current.textContent = '';
+    setShellStatusMsg('');
+    setFileStatusMsg('');
+    setAskUserStatusMsg('');
 
     try {
       const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
       const shell = authz.status === 200 && authz.body.tools && authz.body.tools.shell;
-      const shellMode = (shell && shell.mode) || 'ask';
-      if (shellModeSel.current) shellModeSel.current.value = shellMode;
-      syncAllowlistVisibility(shellModeSel.current, shellAllowlistWrap.current);
-      if (shellAllowlist.current) shellAllowlist.current.value = shell && Array.isArray(shell.allowlist) ? shell.allowlist.join('\n') : '';
+      setShellAuth({
+        mode: (shell && shell.mode) || 'ask',
+        allowlist: shell && Array.isArray(shell.allowlist) ? shell.allowlist : []
+      });
       const file = authz.status === 200 && authz.body.tools && authz.body.tools.file;
-      const fileMode = (file && file.mode) || 'ask';
-      if (fileModeSel.current) fileModeSel.current.value = fileMode;
-      syncAllowlistVisibility(fileModeSel.current, fileAllowlistWrap.current);
-      if (fileAllowlist.current) fileAllowlist.current.value = file && Array.isArray(file.allowlist) ? file.allowlist.join('\n') : '';
+      setFileAuth({
+        mode: (file && file.mode) || 'ask',
+        allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
+      });
       // ask_user is a binary { off, ask } tool. The server clamps any
       // legacy allowlist / allow value to `ask`; here we read what the
       // server says it is, and fall back to `ask` on the first load.
       const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
-      const askUserMode = (askUser && askUser.mode === 'off') ? 'off' : 'ask';
-      if (askUserModeSel.current) askUserModeSel.current.value = askUserMode;
+      setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
     } catch { /* keep ask + empty allowlist */ }
 
-    if (fileStatus.current) fileStatus.current.textContent = '';
-    if (askUserStatus.current) askUserStatus.current.textContent = '';
     if (agentFilesStatus.current) agentFilesStatus.current.textContent = '';
 
     // MCP server count for the card summary.
@@ -291,56 +287,65 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
   }
 
-  // Save tool authorization for one tool (shell / file). The mode
-  // select auto-saves on change; the allowlist auto-saves on a short
-  // debounce, so the row stays one line tall and matches the other
-  // items in the list.
-  async function saveToolAuthorization(tool, modeSel, allowlistEl, statusEl) {
-    const mode = modeSel && modeSel.current ? modeSel.current.value : 'ask';
-    const allowlist = allowlistEl && allowlistEl.current
-      ? allowlistEl.current.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-      : [];
-    if (statusEl && statusEl.current) statusEl.current.textContent = 'saving…';
+  // Save tool authorization for one tool (shell / file). The segmented
+  // control saves immediately on tap; the allowlist textarea saves on
+  // a short debounce. Both write through the same helper.
+  async function saveToolAuthorization(tool, mode, allowlist, setStatusMsg) {
+    setStatusMsg('saving…');
     const r = await fetchJson('/api/tools/authorization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: dir(), tools: { [tool]: { mode, allowlist } } })
     });
-    if (statusEl && statusEl.current) {
-      statusEl.current.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
-    }
+    setStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
   }
-  function saveShellAuthorization() { saveToolAuthorization('shell', shellModeSel, shellAllowlist, shellStatus); }
-  function saveFileAuthorization() { saveToolAuthorization('file', fileModeSel, fileAllowlist, fileStatus); }
-  // ask_user is binary: the only valid modes are `ask` (the model
-  // asks, the user always answers) and `off` (calls fail with
-  // ETOOL_DISABLED). The PUT body still carries an allowlist array
-  // because the server's setAuthorization normalizer expects the
-  // same shape; we always send an empty list.
-  async function saveAskUserAuthorization() {
-    const mode = askUserModeSel.current ? askUserModeSel.current.value : 'ask';
-    if (askUserStatus.current) askUserStatus.current.textContent = 'saving…';
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools: { ask_user: { mode, allowlist: [] } } })
-    });
-    if (askUserStatus.current) {
-      askUserStatus.current.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
-    }
+
+  function pickToolMode(tool, auth, setAuth, setStatusMsg, newMode) {
+    // Tapping Allow clears any allowlist: auto-approve-everything
+    // makes path/command patterns meaningless, and dropping them
+    // keeps .mouaif.json honest about what is actually in force.
+    const allowlist = newMode === 'allow' ? [] : auth.allowlist;
+    setAuth({ mode: newMode, allowlist });
+    saveToolAuthorization(tool, newMode, allowlist, setStatusMsg);
   }
-  // Debounced allowlist auto-save. Each tool has its own timer so the
-  // shell and file lists don't collide.
-  function makeAllowlistSaver(tool, modeSel, allowlistEl, statusEl) {
+  function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
+  function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
+
+  function onAllowlistInput(tool, auth, setAuth, setStatusMsg, text) {
+    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const mode = allowlist.length ? 'allowlist' : 'ask';
+    setAuth({ mode, allowlist });
+    saveToolAuthorization(tool, mode, allowlist, setStatusMsg);
+  }
+  // Debounced so typing a regex doesn't fire a PUT per keystroke.
+  // Each tool has its own timer so the lists don't collide.
+  function makeAllowlistSaver(tool, getAuth, setAuth, setStatusMsg) {
     let t = null;
-    return () => {
+    return (text) => {
       if (t) clearTimeout(t);
-      if (statusEl && statusEl.current) statusEl.current.textContent = '…';
-      t = setTimeout(() => saveToolAuthorization(tool, modeSel, allowlistEl, statusEl), 350);
+      setStatusMsg('…');
+      t = setTimeout(() => onAllowlistInput(tool, getAuth(), setAuth, setStatusMsg, text), 350);
     };
   }
-  const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', shellModeSel, shellAllowlist, shellStatus));
-  const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', fileModeSel, fileAllowlist, fileStatus));
+  const shellAuthRef = useRef(shellAuth);
+  shellAuthRef.current = shellAuth;
+  const fileAuthRef = useRef(fileAuth);
+  fileAuthRef.current = fileAuth;
+  const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', () => shellAuthRef.current, setShellAuth, setShellStatusMsg));
+  const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', () => fileAuthRef.current, setFileAuth, setFileStatusMsg));
+
+  // ask_user is binary: the only valid modes are `ask` (the model
+  // asks, the user always answers) and `off` (the tool is hidden
+  // from the model and calls fail with ETOOL_DISABLED).
+  function pickAskUserMode(newMode) {
+    setAskUserMode(newMode);
+    setAskUserStatusMsg('saving…');
+    fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), tools: { ask_user: { mode: newMode, allowlist: [] } } })
+    }).then((r) => setAskUserStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status)));
+  }
 
   // Agent files: project-level enable/disable and custom file list.
   async function saveAgentFiles() {
@@ -414,6 +419,26 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     else setStatus(statusEl, 'open this from a project card', 'error');
   }, [initialDir]);
 
+  // One-tap segmented control for a tool's permission mode. Segments
+  // are radio inputs so keyboard and screen-reader users get the
+  // same "pick one of N" semantics as the tap targets.
+  function toolModeSegs(name, activeMode, onPick, modes) {
+    return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
+      modes.map((m) =>
+        h('label', { key: m.value, class: 'seg__item' + (activeMode === m.value ? ' seg__item--on' : '') },
+          h('input', {
+            type: 'radio',
+            name: 'sp-' + name.replace(/\s+/g, '-').toLowerCase(),
+            value: m.value,
+            checked: activeMode === m.value,
+            onChange: () => onPick(m.value)
+          }),
+          h('span', { class: 'seg__pill' }, m.label)
+        )
+      )
+    );
+  }
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
@@ -470,43 +495,49 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-shell-mode' }, 'Shell commands'),
+              h('div', { class: 'settings-project__item-title' }, 'Shell commands'),
               h('div', { class: 'settings-project__item-note' },
-                'The AI can run terminal commands in this folder. Commands run as your user account. ',
-                h('span', { ref: shellStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
+                segMode(shellAuth.mode) === 'off'
+                  ? 'Hidden from the model — costs no tokens. '
+                  : 'Run terminal commands here, as your user account. ',
+                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg)
               )
             ),
-            h('select', { ref: shellModeSel, class: 'input', id: 'sp-shell-mode', onChange: function (e) { onShellModeChange(); saveShellAuthorization(); } },
-              h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist — trusted commands run, others ask'),
-              h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
-              h('option', { value: 'off' }, 'Off — requests fail immediately')
-            ),
-            h('div', { ref: shellAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
-              h('label', { class: 'label', for: 'sp-shell-allowlist' }, 'Allowed command patterns'),
-              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the full command. Auto-saves.'),
-              h('textarea', { ref: shellAllowlist, class: 'input settings-project__mono', id: 'sp-shell-allowlist', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, onInput: function () { saveShellAllowlistDebounced.current(); } })
-            )
+            toolModeSegs('Shell commands', segMode(shellAuth.mode), pickShellMode, [
+              { value: 'off', label: 'Off' },
+              { value: 'ask', label: 'Ask' },
+              { value: 'allow', label: 'Allow' }
+            ]),
+            segMode(shellAuth.mode) === 'ask'
+              ? h('details', { class: 'settings-project__allowlist' },
+                  h('summary', null, shellAuth.allowlist.length ? ('Auto-approve list (' + shellAuth.allowlist.length + ')') : 'Auto-approve list'),
+                  h('p', { class: 'settings-project__help' }, 'Commands matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                  h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, value: shellAuth.allowlist.join('\n'), onInput: (e) => saveShellAllowlistDebounced.current(e.target.value) })
+                )
+              : null
           ),
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-file-mode' }, 'File tools'),
+              h('div', { class: 'settings-project__item-title' }, 'File tools'),
               h('div', { class: 'settings-project__item-note' },
-                'The AI can read, search, and edit files in this folder. Edits stay inside this project folder. ',
-                h('span', { ref: fileStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
+                segMode(fileAuth.mode) === 'off'
+                  ? 'Hidden from the model — costs no tokens. '
+                  : 'Read, search, and edit files inside this folder. ',
+                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg)
               )
             ),
-            h('select', { ref: fileModeSel, class: 'input', id: 'sp-file-mode', onChange: function (e) { onFileModeChange(); saveFileAuthorization(); } },
-              h('option', { value: 'ask' }, 'Ask every time'),
-              h('option', { value: 'allowlist' }, 'Allowlist — trusted paths open, others ask'),
-              h('option', { value: 'allow' }, 'Always allow (runs without asking)'),
-              h('option', { value: 'off' }, 'Off — requests fail immediately')
-            ),
-            h('div', { ref: fileAllowlistWrap, class: 'settings-project__allowlist', hidden: true },
-              h('label', { class: 'label', for: 'sp-file-allowlist' }, 'Allowed path patterns'),
-              h('p', { class: 'settings-project__help' }, 'One regular expression per line, matched against the project-relative path. Auto-saves.'),
-              h('textarea', { ref: fileAllowlist, class: 'input settings-project__mono', id: 'sp-file-allowlist', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, onInput: function () { saveFileAllowlistDebounced.current(); } })
-            )
+            toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
+              { value: 'off', label: 'Off' },
+              { value: 'ask', label: 'Ask' },
+              { value: 'allow', label: 'Allow' }
+            ]),
+            segMode(fileAuth.mode) === 'ask'
+              ? h('details', { class: 'settings-project__allowlist' },
+                  h('summary', null, fileAuth.allowlist.length ? ('Auto-approve list (' + fileAuth.allowlist.length + ')') : 'Auto-approve list'),
+                  h('p', { class: 'settings-project__help' }, 'Paths matching one of these regexes open without asking; everything else still asks. One per line, auto-saves.'),
+                  h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, value: fileAuth.allowlist.join('\n'), onInput: (e) => saveFileAllowlistDebounced.current(e.target.value) })
+                )
+              : null
           ),
           // ask_user is a binary { ask, off } tool. The model can
           // pause the chat and ask the user a structured question;
@@ -517,16 +548,18 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           // of truth).
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-ask-user-mode' }, 'Ask the user'),
+              h('div', { class: 'settings-project__item-title' }, 'Ask the user'),
               h('div', { class: 'settings-project__item-note' },
-                'The model can pause the chat and ask a structured question with 2-4 options. You can always add a free-form note alongside your pick. ',
-                h('span', { ref: askUserStatus, class: 'settings-project__item-status', 'aria-live': 'polite' })
+                askUserMode === 'off'
+                  ? 'Hidden from the model — costs no tokens. '
+                  : 'The model may pause and ask a structured question. ',
+                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, askUserStatusMsg)
               )
             ),
-            h('select', { ref: askUserModeSel, class: 'input', id: 'sp-ask-user-mode', onChange: function () { saveAskUserAuthorization(); } },
-              h('option', { value: 'ask' }, 'Ask every time (you always answer)'),
-              h('option', { value: 'off' }, 'Off — model can no longer ask questions')
-            )
+            toolModeSegs('Ask the user', askUserMode, pickAskUserMode, [
+              { value: 'off', label: 'Off' },
+              { value: 'ask', label: 'Ask' }
+            ])
           )
         )
       ),
