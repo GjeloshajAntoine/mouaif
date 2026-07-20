@@ -2303,10 +2303,23 @@ textarea#projectEditor {
 /* System prompt — the first message of the transcript, rendered as a
    normal chat bubble (not a permanent widget). Centered and muted so
    it reads as context the model was given, distinct from the
-   user/assistant turns but visually part of the conversation. */
+   user/assistant turns but visually part of the conversation.
+
+   The bubble has to actually be WIDE — `max-width: 96%` is a ceiling,
+   not a floor. Without `width: 100%` the bubble shrinks to the
+   natural width of its body (the one-line "System prompt · N lines"
+   summary), and the "system" role label ends up in a tiny column
+   floating in the middle of an otherwise full-width transcript. The
+   other transcript cards (setup, tools, agent files, empty state)
+   all span the full inner width, so a 170 px system bubble looks
+   visibly broken on open. The body still gets `align-self: stretch`
+   so the disclosure fills the bubble edge-to-edge; the role label
+   keeps its `width: max-content` (set on `.chat-msg__role` above)
+   so "system" stays tight to its text instead of stretching. */
 .chat-msg--system {
   align-self: center;
-  align-items: center;
+  align-items: stretch;
+  width: 100%;
   max-width: 96%;
 }
 .chat-msg--system .chat-msg__role {
@@ -2314,6 +2327,7 @@ textarea#projectEditor {
   padding: 0 4px;
 }
 .chat-msg--system .chat-msg__body {
+  align-self: stretch;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
