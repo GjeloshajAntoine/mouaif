@@ -1,0 +1,59 @@
+/* Auth panel.
+   Imported by style.css. */
+
+.auth__sub { color: var(--accent); }
+.auth__help p { color: var(--fg-soft); font-size: 0.8rem; margin: 6px 0; line-height: 1.45; }
+.auth__help .row--actions .btn { min-width: 0; }
+.auth__help { margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.auth__help code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85em; background: var(--surface-3); padding: 1px 6px; border-radius: var(--r-sm); word-break: break-all; color: var(--fg); }
+
+/* ---- SSO / reserved-provider UI --------------------------------- */
+
+/* Reserved (SSO-only) providers like GitHub Copilot have a fixed
+   auth method and a fixed base URL. The provider-edit form hides
+   the regular auth <select> and the API base URL row, and shows a
+   static "OAuth (required)" badge in their place. */
+.row__static {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  min-height: var(--tap);
+}
+.row__static .label {
+  margin: 0;
+}
+.row__static-value {
+  color: var(--fg);
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.row__static-note {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.row__static.is-hidden { display: none; }
+
+.notice {
+  margin: 0 10px 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-soft);
+}
+.notice--auth {
+  background: rgba(110, 168, 254, 0.08);
+  border-color: rgba(110, 168, 254, 0.35);
+  color: var(--fg);
+  border-left-width: 3px;
+  border-left-color: var(--accent);
+}

@@ -17,5 +17,9 @@
 @import './base.css';
 @import './layout.css';
 @import './forms.css';
-@import './components.css';
+@import './auth.css';
+@import './settings.css';
+@import './projects.css';
+@import './chat.css';
+@import './file-editor.css';
 @import './features.css';
