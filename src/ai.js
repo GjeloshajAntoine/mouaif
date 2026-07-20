@@ -1084,9 +1084,10 @@ async function streamChat(opts) {
   //   2. The native `subagent` tool (src/tools/subagent.js), always present.
   //   3. The native `ask_user` tool (src/tools/ask.js), always present.
   //      Lets the model pause and ask the user a structured question
-  //      with 2-4 options. The user always has a free-form "extra"
-  //      textbox alongside their pick, so the answer is never
-  //      constrained to the offered options. See docs/features/ask-user-tool.md.
+  //      with a list of options (2+, no cap). The user always has a
+  //      free-form "extra" textbox alongside their pick, so the answer
+  //      is never constrained to the offered options. See
+  //      docs/features/ask-user-tool.md.
   //   4. The native file tools (read_file / list_files / search_files /
   //      write_file, src/tools/files.js), always present. Authorization
   //      decides whether a call prompts, runs, or is rejected. These cover
@@ -1481,23 +1482,58 @@ async function streamChat(opts) {
       builderBody.tools = specs;
     }
   }
+  // Idle watchdog on the upstream request. The provider can accept the
+  // socket and then go silent (dead gateway, stalled network, overloaded
+  // model): without a deadline the server waits forever, the chat shows
+  // "streaming…" permanently, and the running marker wedges the chat
+  // (every retry gets 409 EALREADY_RUNNING). The timer resets on every
+  // streamed byte, so a slow-but-chatty model never trips it — only a
+  // genuinely silent one does. UPSTREAM_IDLE_MS covers the quiet gap
+  // before the first token too (models can "think" for a long time
+  // before emitting anything).
+  const UPSTREAM_IDLE_MS = 180000; // 3 min of total silence = stuck
+  const upstreamCtl = new AbortController();
+  let idleTimer = null;
+  const resetIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      try { upstreamCtl.abort(new Error('provider idle timeout')); } catch { /* already settled */ }
+    }, UPSTREAM_IDLE_MS);
+  };
+  resetIdle();
+  const stopIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+  // An outer signal (client disconnect) aborts the same request.
+  let outerAbort = null;
+  if (signal) {
+    outerAbort = () => { try { upstreamCtl.abort(signal.reason || new Error('client disconnected')); } catch { /* already settled */ } };
+    if (signal.aborted) outerAbort();
+    else signal.addEventListener('abort', outerAbort, { once: true });
+  }
   const upstream = await fetch(req.url, {
     method: 'POST',
     headers: req.headers,
     body: JSON.stringify(req.body),
-    signal
+    signal: upstreamCtl.signal
   }).catch((e) => {
     return { __networkError: e };
   });
 
   if (upstream && upstream.__networkError) {
+    stopIdle();
+    if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
     const e = upstream.__networkError;
     if (e && e.name === 'AbortError') {
+      const idle = upstreamCtl.signal.reason && upstreamCtl.signal.reason.message === 'provider idle timeout';
+      const clientGone = signal && signal.aborted;
+      if (clientGone) return { ok: false, error: { code: 'EABORTED', message: 'aborted' } };
+      if (idle) return { ok: false, error: { code: 'ETIMEOUT', message: 'Provider sent nothing for 3 minutes — the request was cancelled. Try again.' } };
       return { ok: false, error: { code: 'EABORTED', message: 'aborted' } };
     }
     return { ok: false, error: { code: 'ENETWORK', message: e.message || 'network error' } };
   }
   if (!upstream.ok) {
+    stopIdle();
+    if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
     let detail = '';
     try { detail = await upstream.text(); } catch { /* ignore */ }
     return {
@@ -1525,25 +1561,37 @@ async function streamChat(opts) {
   try {
     if (isNDJSON) {
       for await (const obj of readNDJSON(stream)) {
+        resetIdle(); // any upstream byte proves the provider is alive
         for (const ev of parse('', JSON.stringify(obj))) {
           apply(ev);
         }
       }
     } else {
       for await (const ev of readSSE(stream)) {
+        resetIdle(); // any upstream byte proves the provider is alive
         for (const out of parse(ev.eventName, ev.data)) {
           apply(out);
         }
       }
     }
   } catch (e) {
+    stopIdle();
+    if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
     if (e && e.name === 'AbortError') {
-      onEvent('error', { code: 'EABORTED', message: 'aborted' });
+      const idle = upstreamCtl.signal.reason && upstreamCtl.signal.reason.message === 'provider idle timeout';
+      const clientGone = signal && signal.aborted;
+      if (!clientGone && idle) {
+        onEvent('error', { code: 'ETIMEOUT', message: 'Provider went silent mid-stream — the request was cancelled. Try again.' });
+        return { ok: false, error: { code: 'ETIMEOUT', message: 'Provider went silent mid-stream — the request was cancelled. Try again.' } };
+      }
+      if (!clientGone) onEvent('error', { code: 'EABORTED', message: 'aborted' });
       return { ok: false, error: { code: 'EABORTED', message: 'aborted' } };
     }
     onEvent('error', { code: 'EUPSTREAM', message: e.message || 'stream error' });
     return { ok: false, error: { code: 'EUPSTREAM', message: e.message || 'stream error' } };
   }
+  stopIdle();
+  if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
 
   if (sawError) return { ok: false, error: sawError };
 
