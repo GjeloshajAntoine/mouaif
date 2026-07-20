@@ -1124,6 +1124,41 @@ async function streamChat(opts) {
     }
   } catch { /* mcp module not loaded or project dir invalid; fall through without MCP tools */ }
 
+  // Tools in `off` authorization mode are dropped from the advertised
+  // set: a hidden tool costs zero prompt tokens and the model cannot
+  // waste turns calling something that would fail with ETOOL_DISABLED.
+  // authorize() still rejects `off` calls at execution time as
+  // defense-in-depth (e.g. a hand-crafted REST call or a stale spec
+  // name kept in a chat's tool filter). File tools resolve through
+  // their `file` family name; MCP tools share the single
+  // project.mcp.authorization block and hide together.
+  try {
+    if (opts && opts.projectDir) {
+      const authz = require('./tools/authorization.js');
+      const authState = authz.getAuthorization(opts.projectDir);
+      for (const family of ['shell', 'subagent', 'file', 'ask_user']) {
+        const cfg = authState.tools[family];
+        if (cfg && cfg.mode === 'off') {
+          const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
+          for (let i = toolSpecs.length - 1; i >= 0; i--) {
+            const spec = toolSpecs[i];
+            if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
+          }
+        }
+      }
+      // MCP servers share one project-level gate: `off` hides every
+      // mcp__<slug>__<tool> spec, the same zero-token rule as the
+      // native families. Execution still rejects forged calls with
+      // ETOOL_DISABLED through authorize().
+      if (authState.mcp && authState.mcp.mode === 'off') {
+        for (let i = toolSpecs.length - 1; i >= 0; i--) {
+          const spec = toolSpecs[i];
+          if (spec && spec.function && String(spec.function.name).startsWith('mcp__')) toolSpecs.splice(i, 1);
+        }
+      }
+    }
+  } catch { /* authorization state unreadable; keep every tool advertised */ }
+
   // Per-chat tool filter. opts.enabledTools === null / undefined:
   //   legacy behavior — every collected spec is advertised. An array
   //   (even empty): restrict to those names exactly. Unknown names

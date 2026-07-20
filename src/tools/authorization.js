@@ -349,6 +349,7 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
 
 module.exports = {
   MODES,
+  FILE_TOOL_NAMES,
   getAuthorization,
   setAuthorization,
   authorize,
