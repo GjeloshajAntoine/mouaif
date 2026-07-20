@@ -41,6 +41,27 @@ function clearGrants(projectDir, chatId) {
   if (projectDir && chatId) sessions.delete(sessionKey(projectDir, chatId));
 }
 
+// Reject every pending authorization wait for a chat. Called when the
+// SSE client disconnects mid-run: a tool call parked on `await
+// authResult.wait` would otherwise hold the chat's running marker
+// forever (the upstream-abort signal does not fire while the loop is
+// waiting on a user decision, not a fetch), so every retry bounced off
+// 409 EALREADY_RUNNING and the chat looked frozen. Rejecting with
+// EDENIED unwinds the tool loop through its normal error path, which
+// clears the marker and persists the failure.
+function cancelSession(projectDir, chatId) {
+  if (!projectDir || !chatId) return 0;
+  const session = sessions.get(sessionKey(projectDir, chatId));
+  if (!session || !session.pending.size) return 0;
+  let count = 0;
+  for (const [callId, pending] of session.pending) {
+    session.pending.delete(callId);
+    try { pending.reject(typedError('EDENIED', 'client disconnected')); } catch { /* already settled */ }
+    count++;
+  }
+  return count;
+}
+
 function normalizeConfig(raw, source, enabled, tool) {
   const value = raw && typeof raw === 'object' ? raw : {};
   // Binary-mode tools only support { off, ask } — clamp any legacy
@@ -355,6 +376,7 @@ module.exports = {
   authorize,
   recordDecision,
   clearGrants,
+  cancelSession,
   regexMatch,
   matchesAllowlist,
   configToolName,

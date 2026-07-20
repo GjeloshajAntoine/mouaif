@@ -1415,7 +1415,19 @@ async function handleChatStream(req, res, chatId) {
   // idle cutoff, holding the chat's running marker forever so every
   // reconnect attempt bounced off 409 EALREADY_RUNNING.
   const clientGone = new AbortController();
-  req.on('close', () => { try { clientGone.abort(new Error('client disconnected')); } catch { /* already settled */ } });
+  req.on('close', () => {
+    try { clientGone.abort(new Error('client disconnected')); } catch { /* already settled */ }
+    // Also release any tool call parked on an authorization prompt.
+    // The abort signal only interrupts an in-flight upstream fetch; a
+    // loop waiting on `authResult.wait` (user never clicked Allow/Deny
+    // before the tab died) is not in a fetch, so without this the run
+    // never returns, the running marker is never cleared, and every
+    // retry bounces off 409 EALREADY_RUNNING with a frozen transcript.
+    try {
+      const authz = require('./tools/authorization.js');
+      authz.cancelSession(projectDir, chatId);
+    } catch { /* best-effort */ }
+  });
 
   let result;
   try {
