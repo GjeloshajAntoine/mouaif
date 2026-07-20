@@ -2378,23 +2378,20 @@ textarea#projectEditor {
 
    On a 360 px viewport, a typical line is
      gpt-4o-mini • 243 in • 118 out • $0.00011 • 37 tok/s
-   which fits in a single line at 0.78rem / 1.35 line-height.
+   which fits in a single line at 0.62rem / 1.3 line-height.
    The font is mono-ish so the number columns line up. The line
-   uses --fg-soft (was --muted) so the per-turn numbers stay
-   legible at glance distance on a phone without competing with
-   the bubble text above them. The previous 0.62rem + --muted
-   combo was technically legal under WCAG but read as grey
-   smudge on a 6" display, which is the "small text is bad"
-   complaint that drove this revision.
+   is muted (--muted) so it never competes with the bubble text
+   and stays as small as possible — every spare pixel belongs to
+   the bubble on a phone, not the trailing meta line.
 
    `.chat-msg__meta-sep` is the bullet. Slightly softer than the
    labels themselves so the eye groups tokens rather than reading
    each as a separate row. */
 .chat-msg__meta {
-  font-size: 0.78rem;
-  line-height: 1.35;
-  color: var(--fg-soft);
-  padding: 1px 8px 2px;
+  font-size: 0.62rem;
+  line-height: 1.3;
+  color: var(--muted);
+  padding: 0 8px 1px;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -2414,27 +2411,17 @@ textarea#projectEditor {
 
 /* Conversation totals stay visible in the compact head. Context is the
    latest prompt-token count; cost is the sum of known assistant-turn
-   costs. The three values are rendered as a single dot-separated
-   text node (`Context X · Total Y · Balance Z`) so the line never
-   wraps and never competes with the chat title for horizontal space
-   (issue: on a 390px viewport the previous 3-span version clipped
-   "Balance" when its label was long). The font size was bumped
-   from 0.66rem to 0.82rem and the color from --muted to --fg-soft
-   so the totals are actually glanceable on a phone — at 0.66rem
-   the "Context 14.8K · Total $0.04" line was effectively a smudge
-   and users had to squint to see the budget fill up. The title
-   above still clearly outranks it (1.05rem / 700 vs 0.82rem /
-   500). */
+   costs. The line is rendered as small as possible (0.6 rem / --accent)
+   so the totals add context without competing with the chat title for
+   space on a phone. */
 .chat-view__usage-summary {
-  color: var(--fg-soft);
-  font-size: 0.82rem;
-  line-height: 1.35;
-  font-weight: 500;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 6px;
+  color: var(--accent);
+  font-size: 0.6rem;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 /* The live assistant message (data-live="1" on the row) gets a

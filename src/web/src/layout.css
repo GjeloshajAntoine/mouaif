@@ -365,10 +365,10 @@
 .app__tab.is-active .app__tab-icon { background: var(--accent-soft); }
 
 .app__tab-label {
-  font-size: 0.74rem;
+  font-size: 0.66rem;
   font-weight: 500;
   letter-spacing: 0;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 /* ---- View header (back + title) ----------------------------------- */
