@@ -2211,6 +2211,55 @@ textarea#projectEditor {
   color: var(--muted);
   font-size: 0.74rem;
 }
+/* The system prompt body can run to thousands of characters of
+   agent instructions the user never asked to see, so it's hidden
+   behind a one-tap <details> disclosure by default. The summary
+   line is the only thing visible until the user expands it; the
+   <pre> body is rendered with white-space: pre-wrap so the
+   prompt's own line breaks survive. The chevron, rotate-90
+   transition, and open-state chrome match the project-wide
+   disclosure pattern used by .models__add, .settings__advanced,
+   and .picker__create. */
+.chat-msg--system .chat-msg__system-details { margin: 0; padding: 0; }
+.chat-msg--system .chat-msg__system-details > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 5px 8px;
+  color: var(--fg-soft);
+  font-size: 0.74rem;
+  font-weight: 500;
+  border-radius: 10px;
+  transition: background 80ms ease;
+}
+.chat-msg--system .chat-msg__system-details > summary::-webkit-details-marker { display: none; }
+.chat-msg--system .chat-msg__system-details > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 14px;
+  margin-right: 2px;
+  color: var(--muted);
+  font-weight: 600;
+  transition: transform 120ms ease;
+}
+.chat-msg--system .chat-msg__system-details[open] > summary::before { transform: rotate(90deg); }
+.chat-msg--system .chat-msg__system-details[open] > summary {
+  border-radius: 10px 10px 0 0;
+  border-bottom: 1px solid var(--border);
+}
+.chat-msg--system .chat-msg__system-details[open] > summary:hover { background: var(--surface-2); }
+.chat-msg--system .chat-msg__system-body {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  max-height: 50dvh;
+  overflow-y: auto;
+  border-radius: 0 0 10px 10px;
+}
 
 /* Per-turn meta line (decision §14). A flat row of compact
    "•"-separated tokens under the assistant bubble: model id,

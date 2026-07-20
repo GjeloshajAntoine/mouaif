@@ -39,6 +39,15 @@ import { renderUsageMeta } from './usage.js';
 // like the user/assistant bubbles. The lookup uses
 // [data-sys-prompt] to avoid clobbering any future .chat-msg with
 // role text "system".
+//
+// The prompt body is wrapped in a <details> that starts COLLAPSED.
+// The agent's system prompt can run to thousands of characters of
+// instructions the user never asked to see; showing the full text by
+// default pushes the first real turn off-screen on a phone and makes
+// the chat look broken on open. The collapsed default shows a single
+// "System prompt · N lines" summary that the user can expand with
+// one tap. The body uses <pre> with white-space: pre-wrap so the
+// prompt's own line breaks survive unchanged when expanded.
 export function renderSystemPromptMessage(refs, systemPrompt) {
   if (!refs.transcript.current) return;
   const existing = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
@@ -52,7 +61,21 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
   role.textContent = 'system';
   const body = document.createElement('div');
   body.className = 'chat-msg__body';
-  body.textContent = systemPrompt.text;
+  // Count non-empty lines for the summary. The prompt is plain
+  // text; we only render it (as <pre> with pre-wrap) when the user
+  // expands the disclosure, so the line count is the only signal
+  // the user has of how much is behind it.
+  const lineCount = systemPrompt.text.split(/\r?\n/).filter(l => l.length).length;
+  const details = document.createElement('details');
+  details.className = 'chat-msg__system-details';
+  const summary = document.createElement('summary');
+  summary.textContent = 'System prompt · ' + lineCount + ' line' + (lineCount === 1 ? '' : 's');
+  const pre = document.createElement('pre');
+  pre.className = 'chat-msg__system-body';
+  pre.textContent = systemPrompt.text;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  body.appendChild(details);
   row.appendChild(role);
   row.appendChild(body);
   // Insert directly after the setup card if one is still mounted,
