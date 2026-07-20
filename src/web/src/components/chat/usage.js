@@ -103,15 +103,40 @@ export function updateUsageSummary(state, liveInfo, refs) {
     }
   }
   el.innerHTML = '';
-  const context = document.createElement('span');
-  context.textContent = 'Context ' + (latestContext == null ? '--' : formatTokens(latestContext));
-  const cost = document.createElement('span');
-  cost.textContent = 'Total ' + (hasKnownCost ? formatCost(totalCost) : '--');
-  el.appendChild(context);
-  el.appendChild(cost);
+  // Each value is rendered as a pill (label + number) so the head
+  // reads as a row of status chips. The label is a separate span
+  // from the number so the label can be tinted softer than the
+  // number without touching font-size. Helper builds the pill in
+  // one place so the three calls below stay symmetric.
+  const makePill = (label, value, opts) => {
+    const pill = document.createElement('span');
+    if (opts && opts.cls) pill.className = opts.cls;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'chat-view__usage-summary-label';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'chat-view__usage-summary-value';
+    valueEl.textContent = value;
+    pill.appendChild(labelEl);
+    pill.appendChild(valueEl);
+    return pill;
+  };
+  el.appendChild(makePill('Context', latestContext == null ? '--' : formatTokens(latestContext)));
+  el.appendChild(makePill('Total', hasKnownCost ? formatCost(totalCost) : '--'));
   if (state.providerCredit) {
-    const credit = document.createElement('span');
-    credit.textContent = state.providerCredit;
+    // The credit pill is informational, not a budget number, so it
+    // gets the success-palette treatment in CSS instead of the
+    // accent treatment the first two pills get. Keeps the head
+    // from reading as "three identical budget chips".
+    // Provider credit is already shaped like "Balance $3.42" by
+    // updateProviderCredit above; split on the first space so the
+    // label (Balance) and the value ($3.42) each get their own
+    // span.
+    const creditText = state.providerCredit;
+    const space = creditText.indexOf(' ');
+    const creditLabel = space > 0 ? creditText.slice(0, space) : creditText;
+    const creditValue = space > 0 ? creditText.slice(space + 1) : '';
+    const credit = makePill(creditLabel, creditValue, { cls: 'chat-view__usage-summary-credit' });
     el.appendChild(credit);
   }
 }
@@ -157,16 +182,41 @@ export function renderUsageMeta(el, info, state) {
   if (rate == null && info.streamingMs && typeof usage.completionTokens === 'number') {
     rate = info.streamingMs > 0 ? (usage.completionTokens / info.streamingMs) * 1000 : 0;
   }
-  if (rate != null) tokens.push(formatTokPerSecond(rate));
+  if (rate != null) tokens.push({ kind: 'rate', label: formatTokPerSecond(rate) });
   for (let i = 0; i < tokens.length; i++) {
     if (i > 0) {
       const sep = document.createElement('span');
       sep.className = 'chat-msg__meta-sep';
-      sep.textContent = '\u2022';
+      sep.textContent = '\u00b7';
       el.appendChild(sep);
     }
+    const item = tokens[i];
     const span = document.createElement('span');
-    span.textContent = tokens[i];
+    if (typeof item === 'string') {
+      span.textContent = item;
+      if (i === 0) {
+        // First token is always the model id (the row above is
+        // guaranteed to be an assistant message). Tag it so the
+        // CSS can underline it without having to rely on
+        // :first-child matching a sibling that's sometimes a
+        // separator (when the model id is missing, the first
+        // sibling IS a separator).
+        span.dataset.token = 'model';
+      } else if (/^context /.test(item)) {
+        span.dataset.token = 'context';
+      } else if (/^output /.test(item)) {
+        span.dataset.token = 'output';
+      } else if (/^cost /.test(item)) {
+        span.dataset.token = 'cost';
+      }
+      // The "--" fallback (model never reported a cost) is NOT
+      // tagged cost on purpose: it would pick up the accent tint
+      // and read as a real zero, not as "unknown". Leaving it
+      // untagged means it stays in the default --muted color.
+    } else if (item && item.kind === 'rate') {
+      span.textContent = item.label;
+      span.dataset.token = 'rate';
+    }
     el.appendChild(span);
   }
 }

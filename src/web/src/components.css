@@ -2377,12 +2377,20 @@ textarea#projectEditor {
    the user/assistant alignment from .chat-msg.
 
    On a 360 px viewport, a typical line is
-     gpt-4o-mini • 243 in • 118 out • $0.00011 • 37 tok/s
+     gpt-4o-mini · 243 in · 118 out · $0.00011 · 37 tok/s
    which fits in a single line at 0.62rem / 1.3 line-height.
    The font is mono-ish so the number columns line up. The line
    is muted (--muted) so it never competes with the bubble text
    and stays as small as possible — every spare pixel belongs to
    the bubble on a phone, not the trailing meta line.
+
+   Visual treatment: the model id (the first span) gets a thin
+   accent underline so it reads as the *source* of the numbers
+   that follow rather than a peer. The cost span picks up a
+   soft accent tint, and the live rate (the last span) gets a
+   subtle accent-tinted gradient only while the bubble is
+   actually streaming. The bullet is a dim "·" instead of "•"
+   so the eye reads tokens as peers, not list items.
 
    `.chat-msg__meta-sep` is the bullet. Slightly softer than the
    labels themselves so the eye groups tokens rather than reading
@@ -2403,25 +2411,117 @@ textarea#projectEditor {
 }
 .chat-msg__meta::-webkit-scrollbar { display: none; }
 .chat-msg__meta[hidden] { display: none; }
+/* The model id (data-token="model") gets a thin accent
+   underline so it reads as the *source* of the numbers that
+   follow rather than a peer. Slightly brighter color than the
+   surrounding tokens so the id pops without leaving the
+   0.62 rem tier. */
+.chat-msg__meta > span[data-token="model"] {
+  color: var(--fg-soft);
+  border-bottom: 1px solid var(--border-strong);
+  padding-bottom: 1px;
+  margin-right: 2px;
+  /* Letterspacing tightened so the id reads as a single token
+     rather than a word. */
+  letter-spacing: -0.005em;
+}
+/* The cost token (data-token="cost") picks up an accent tint
+   so the number — the thing the user is most likely to glance
+   at — reads as the focal point of the line, without growing
+   the font. */
+.chat-msg__meta > span[data-token="cost"] {
+  color: #9fc4ff;
+  font-weight: 500;
+}
+/* The live tok/s (data-token="rate") gets a soft horizontal
+   gradient only while the bubble is actually streaming
+   (data-live="1" on the row). The gradient text reads as
+   "active" without animating — animating the meta line would
+   make it feel busy on a phone. */
+.chat-msg[data-live="1"] .chat-msg__meta > span[data-token="rate"] {
+  background: linear-gradient(90deg, var(--accent) 0%, #b6d4ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 500;
+}
 .chat-msg__meta-sep {
   color: var(--muted-2);
-  margin: 0 4px;
+  opacity: 0.55;
+  margin: 0 5px;
   user-select: none;
+  /* Slightly smaller so it reads as punctuation, not a token. */
+  font-size: 0.95em;
 }
 
 /* Conversation totals stay visible in the compact head. Context is the
    latest prompt-token count; cost is the sum of known assistant-turn
    costs. The line is rendered as small as possible (0.6 rem / --accent)
    so the totals add context without competing with the chat title for
-   space on a phone. */
+   space on a phone.
+
+   Visual treatment: each value (Context, Total, optional Balance) is
+   wrapped in a soft accent-tinted pill so the head reads as a row of
+   compact status chips instead of a free text line. The pill uses
+   --accent-soft as its background (already used for the active tab icon
+   tile, so the chip and the active tab read as peers) and --accent as
+   its text. The pills don't add vertical space (same 1.2 line-height
+   as before); the padding is symmetric so the chips line up
+   regardless of the value's character count. */
 .chat-view__usage-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px 6px;
-  color: var(--accent);
+  align-items: center;
+  gap: 3px 4px;
   font-size: 0.6rem;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
+}
+.chat-view__usage-summary > span {
+  /* Each pill is one outer span (Context, Total, optional
+     Balance). Inside it, two child spans: a soft-tinted label
+     ("Context", "Total", "Balance") and a brighter value
+     (14.8K, $0.04, $3.42). The pill is the surface; the inner
+     labels handle the type hierarchy. */
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px 2px;
+  white-space: nowrap;
+  /* Subtle inner highlight on the top so the chip looks raised, not
+     flat against the surface. Uses a 1 px box-shadow rather than
+     a gradient so it stays sharp at 1× and 2×. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* Label inside each pill (Context, Total, Balance). Tinted to
+   --fg-soft and slightly transparent so the value below it
+   reads as the focal point of the chip. Same 0.6 rem as the
+   chip so the head doesn't grow. */
+.chat-view__usage-summary-label {
+  color: var(--fg-soft);
+  opacity: 0.78;
+  /* Letterspace the label slightly so the small caps effect
+     reads at 0.6 rem. */
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.chat-view__usage-summary-value {
+  color: inherit;
+  font-weight: 600;
+}
+/* "Balance" pill (the third value, when the provider exposes credit)
+   is informational, not a budget number, so it uses the success
+   palette instead of accent. Keeps the head from looking like all
+   three pills are the same kind of data. The class is set in
+   `updateUsageSummary` in src/components/chat/usage.js. */
+.chat-view__usage-summary > span.chat-view__usage-summary-credit {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--success) 22%, transparent);
 }
 
 /* The live assistant message (data-live="1" on the row) gets a
