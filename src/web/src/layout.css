@@ -338,12 +338,16 @@
   padding: 2px 2px 1px;
   border-radius: 8px;
   text-decoration: none;
-  color: var(--muted);
+  /* Inactive tab label uses --tab-label (--fg-soft) instead of
+     --muted so it stays legible at the 0.66rem / weight 500 size.
+     The active state explicitly downgrades to --fg-soft first, then
+     up to --accent, so the transition path is obvious in the file. */
+  color: var(--tab-label);
   background: transparent;
   border: 0;
   transition: color 80ms ease, background 80ms ease;
 }
-.app__tab:hover        { color: var(--fg-soft); }
+.app__tab:hover        { color: var(--fg); }
 .app__tab:active       { transform: scale(.96); }
 .app__tab.is-active    { color: var(--accent); }
 

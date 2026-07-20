@@ -17,6 +17,14 @@
   --fg-soft:   #b6c0cd;
   --muted:     #7b8694;
   --muted-2:   #5d6675;
+  /* Tab-bar label color. The default --muted (#7b8694) fails WCAG AA
+     against --bg at the tab label's 0.66rem / weight 500 size
+     (≈4.0:1). --tab-label uses --fg-soft (≈9:1) so inactive tab
+     labels stay legible in daylight without competing with the
+     active --accent state. Reserve --muted for tertiary meta text
+     (right-aligned row details, captions) where the lower contrast
+     is correct. */
+  --tab-label: var(--fg-soft);
 
   /* Accent */
   --accent:        #7fb1ff;   /* signature blue, slightly desaturated for dark bg */
