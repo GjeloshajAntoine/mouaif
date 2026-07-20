@@ -1072,13 +1072,29 @@ textarea#projectEditor {
   gap: 0;
   /* The chat view fills the main region so the transcript (which
      flexes) scrolls internally and the composer stays pinned to the
-     bottom without overlapping the last message. `flex: 1` + a zero
-     min-height lets the transcript child scroll instead of pushing
-     the composer off-screen. The head is the only chrome row now
-     (settings live in a popover). */
-  flex: 1 1 auto;
+     bottom without overlapping the last message. `flex: 1 1 0` +
+     `min-height: 0` + `height: 0` is the standard "flex child owns
+     the scroll" pattern. The `height: 0` is the iOS-Safari bit:
+     when the basis is `auto`, Mobile Safari sizes the box by the
+     content's intrinsic height (which is unbounded) and the
+     transcript's overflow is silently dropped, so a touch-drag
+     on the transcript bubbles up to the page and the user can't
+     scroll. Forcing the basis to 0 and zeroing height makes the
+     flex algorithm use the available space, and touch-scroll on
+     the inner transcript works. The head is the only chrome row
+     now (settings live in a popover). */
+  flex: 1 1 0;
   min-height: 0;
+  height: 0;
   overflow: hidden;
+  /* Claim the vertical pan gesture explicitly. The page-level
+     `touch-action: manipulation` on <html> lets the browser pick
+     pan/zoom; on iOS Safari a nested scroll container sometimes
+     loses the gesture to an ancestor if it doesn't claim it.
+     `pan-y` means "vertical scroll goes to me, horizontal pan
+     goes to the ancestor" which is the chat transcript's
+     intended behaviour. */
+  touch-action: pan-y;
   /* Anchor for the jump-to-bottom FAB, which floats above the
      transcript's lower-right corner. */
   position: relative;
@@ -2016,6 +2032,21 @@ textarea#projectEditor {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* iOS Safari touch-scroll: claim the vertical pan, keep the
+     momentum/inertia scrolling that the legacy
+     `-webkit-overflow-scrolling: touch` opt-in gave us, and stop
+     the page from rubber-banding at the transcript's top/bottom.
+     `-webkit-overflow-scrolling: touch` is the iOS-specific
+     hook that brings back momentum scrolling inside a nested
+     overflow:auto container (it was the default pre-iOS 13 and
+     was lost in some 13+ edge cases; the property is still
+     supported and harmless on non-iOS engines, which is why the
+     rule ships unconditionally). `overscroll-behavior: contain`
+     stops the chain-bounce that otherwise scrolls the parent
+     .app__main. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   scrollbar-width: thin;
 }
 .chat-view__transcript::-webkit-scrollbar {

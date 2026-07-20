@@ -15,6 +15,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
 - [Project card](features/project-card.md) — per-project card in the mobile UI: chat list (scrolling inside the card), New chat, options menu (rename / unregister), per-project rename endpoint. Chats persisted in `<projectDir>/.mouaif.json`.
 - [Chat UI](features/chat-ui.md) — Preact + Vite mobile shell with chat, projects, inspector, and settings; provider authentication is integrated into Settings.
+- [Model picker](features/model-picker.md) — chat-head popover for picking `(providerId, modelId)`; per-provider sections, search, ghost row for unavailable active model, and an actionable empty-state card.
 - [PWA](features/pwa.md) — installable mobile shell: manifest, hand-rolled service worker (precache the shell, network-first for navigations, cache-first for fingerprinted assets, bypass `/api/*` and SSE), iOS Add-to-Home-Screen, offline + "new version" banners.
 - [Inspector](features/inspector.md) — from-scratch mobile-friendly DevTools-style UI on top of CDP over WebSocket. Console + Network panels driven by a virtual list; targets list + connect flow. Mobile shell's fourth tab.
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 6 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
@@ -32,6 +33,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Ask the user tool](features/ask-user-tool.md) — built-in `ask_user` tool the model can invoke to pause the chat and ask the user a structured question with 2-4 options. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. Binary authorization mode (`off` / `ask`).
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
 - [Agent skills](features/agent-skills.md) — project-scoped instruction files under `.agents/skills/*/SKILL.md`, injected into the upstream system context at stream time.
+- [iOS touch scroll](features/ios-touch-scroll.md) — make the chat transcript touch-scrollable on iOS Safari (`flex: 1 1 0; height: 0;` on the section, `-webkit-overflow-scrolling: touch` and `touch-action: pan-y` on the transcript).
 
 ## Architectural decisions
 
