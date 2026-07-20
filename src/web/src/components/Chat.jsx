@@ -1887,9 +1887,12 @@ export function ChatView(props) {
     }
     renderToolMeta(body, ['exit ' + (r.exitCode ?? 0), r.durationMs != null ? (r.durationMs + 'ms') : null]);
     const out = [];
-    if (r.stdout) out.push('$ stdout\n' + r.stdout);
-    if (r.stderr) out.push('$ stderr\n' + r.stderr);
-    renderPreviewPre(body, out.length ? out.join('\n\n') : '(no output)', 'tool-preview__terminal');
+    if (r.stdout) out.push(r.stdout);
+    if (r.stderr) {
+      if (r.stdout) out.push('── stderr ──');
+      out.push(r.stderr);
+    }
+    renderPreviewPre(body, out.length ? out.join('\n\n') : '(exit ' + (r.exitCode ?? 0) + ', no output)', 'tool-preview__terminal');
   }
 
   function appendToolText(parent, text) {
