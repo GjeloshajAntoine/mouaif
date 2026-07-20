@@ -577,7 +577,7 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card__body {
+.tool-card:not(.is-expanded):not(.tool-card--authorization) .tool-card__body {
   /* Collapsed cards are a single row: chevron + label/path + state
      dot. The result body appears only after expansion, which avoids
      duplicate path text and keeps tool turns visually cheap. */
@@ -587,12 +587,14 @@
 .tool-card--authorization .tool-card__body {
   /* Expanded: no extra outer panel. The structured preview child
      (diff, terminal, file content, etc.) is the only container, so
-     the card does not read as boxes inside boxes. */
+     the card does not read as boxes inside boxes. No max-height
+     cap — the body flows into the transcript scroller so large
+     results don't trap scroll inside a nested viewport. */
   margin: 0;
   padding: 2px 0 0 17px;
   display: block;
-  overflow: auto;
-  max-height: min(75dvh, 75vh);
+  overflow: visible;
+  max-height: none;
   background: transparent;
   border: 0;
   border-radius: 0;
