@@ -179,13 +179,7 @@ export function renderModelPicker(state, refs) {
   // many models live behind each chip without opening it).
   updatePickerChips(state, refs, all, providerFilter);
   if (!groups.length) {
-    const empty = document.createElement('div');
-    empty.className = 'chat-view__picker-empty';
-    if (q) empty.textContent = 'no matches';
-    else if (!state.providers.length) empty.textContent = 'add a provider in Settings → Providers';
-    else if (providerFilter !== 'all') empty.textContent = 'no ' + providerFilter + ' models — tap ↻';
-    else empty.textContent = 'no models — tap ↻';
-    list.appendChild(empty);
+    renderPickerEmpty(state, refs, list, q, providerFilter);
     return;
   }
   const activeProvider = c && c.providerId ? c.providerId : '';
@@ -241,6 +235,107 @@ export function onPickerSearch(refs, state) {
   if (!refs.modelPickerSearch.current) return;
   state.pickerFilter = { q: refs.modelPickerSearch.current.value || '', provider: state.pickerFilter.provider };
   renderModelPicker(state, refs);
+}
+
+// renderPickerEmpty(state, refs, list, q, providerFilter)
+//
+// Renders the empty state card in place of the list. The card is
+// a centered surface with a small accent-tinted icon tile, a
+// short title, a one-line body, and (when relevant) an inline
+// action that mirrors the head's ↻ button. The previous copy
+// was a single muted line of text; the card makes the next step
+// obvious without making the user hunt for the head button.
+function renderPickerEmpty(state, refs, list, q, providerFilter) {
+  const empty = document.createElement('div');
+  empty.className = 'chat-view__picker-empty';
+  // Title + body come in three flavors depending on the cause:
+  //   - a non-empty query that matched nothing
+  //   - the chat has no providers configured at all (navigate
+  //     to Settings)
+  //   - the active filter is too narrow, or the catalog hasn't
+  //     been fetched yet (refresh in place)
+  let title, body, actionLabel, actionKind;
+  if (q) {
+    title = 'No matches';
+    body = 'No model matches "' + q + '". Try a shorter query, clear the search, or pick a different provider.';
+    actionLabel = 'Clear search';
+    actionKind = 'clear';
+  } else if (!state.providers.length) {
+    title = 'No providers';
+    body = 'Add a provider connection in Settings → Providers, then come back here to pick a model.';
+    actionLabel = 'Open Settings';
+    actionKind = 'settings';
+  } else if (providerFilter !== 'all') {
+    title = 'No ' + providerFilter + ' models';
+    body = 'The ' + providerFilter + ' provider has no models in the current catalog. Refresh to fetch the latest list.';
+    actionLabel = 'Refresh models';
+    actionKind = 'refresh';
+  } else {
+    title = 'No models yet';
+    body = 'The model catalog is empty. Pull the latest list from every configured provider with one tap.';
+    actionLabel = 'Refresh models';
+    actionKind = 'refresh';
+  }
+  // Icon tile. A small magnifying glass for "no matches" and the
+  // provider-gear glyph for everything else. The icon is purely
+  // decorative (`aria-hidden`) so the title still drives the
+  // accessible name.
+  const icon = document.createElement('div');
+  icon.className = 'chat-view__picker-empty-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = q
+    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M10 4a6 6 0 1 0 3.65 10.74l4.5 4.5 1.4-1.42-4.5-4.5A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>';
+  empty.appendChild(icon);
+  const titleEl = document.createElement('p');
+  titleEl.className = 'chat-view__picker-empty-title';
+  titleEl.textContent = title;
+  empty.appendChild(titleEl);
+  const bodyEl = document.createElement('p');
+  bodyEl.className = 'chat-view__picker-empty-text';
+  bodyEl.textContent = body;
+  empty.appendChild(bodyEl);
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'chat-view__picker-empty-action';
+  action.textContent = actionLabel;
+  action.addEventListener('click', async () => {
+    if (actionKind === 'clear') {
+      // Clear the search input + filter and re-render. Reuse the
+      // existing onPickerSearch code path so the input's value
+      // and the renderer's filter stay in sync.
+      if (refs.modelPickerSearch.current) refs.modelPickerSearch.current.value = '';
+      state.pickerFilter = { q: '', provider: state.pickerFilter.provider };
+      renderModelPicker(state, refs);
+      if (refs.modelPickerSearch.current) refs.modelPickerSearch.current.focus();
+    } else if (actionKind === 'settings') {
+      // Close the picker and navigate to the providers tab. The
+      // chat view doesn't own navigation, so it just closes; the
+      // user taps the bottom Settings tab.
+      closeModelPicker(refs);
+      window.location.hash = '#/settings/providers';
+    } else {
+      // Refresh. Reuse the head's ↻ action by reusing the
+      // bound callback if the view exposed it, otherwise call
+      // refreshAllProviders directly.
+      action.disabled = true;
+      try {
+        if (typeof state._onRefreshAllProviders === 'function') {
+          await state._onRefreshAllProviders();
+        } else if (typeof state._refreshAll === 'function') {
+          await state._refreshAll();
+        }
+      } finally {
+        // Re-render unconditionally so the empty card is replaced
+        // by the fresh list (or a new empty card if the refresh
+        // returned no models).
+        renderModelPicker(state, refs);
+        action.disabled = false;
+      }
+    }
+  });
+  empty.appendChild(action);
+  list.appendChild(empty);
 }
 
 // openModelPicker / closeModelPicker

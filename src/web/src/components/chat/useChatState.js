@@ -207,6 +207,11 @@ export function useChatState(props) {
   // elements re-render when updateChat fires.
   state._onChatChanged = () => updateModelTriggerLocal();
   state._openModelPicker = () => openModelPicker(state, refs);
+  // The empty-state card in the picker can fire the same refresh
+  // the head's ↻ button does, but it lives inside the picker
+  // module (which doesn't import the hook), so we expose the
+  // bound callback here.
+  state._onRefreshAllProviders = () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st));
 
   const send = useCallback(() => sendTurn(state, refs, {
     clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
