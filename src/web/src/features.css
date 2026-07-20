@@ -533,6 +533,22 @@
   word-break: break-word;
 }
 
+/* Compact result-summary text in the collapsed card head: shows exit
+   code + duration for shell, byte count for file ops, match count for
+   search, etc. Sits between the args and the status dot, greyed down
+   so the verb/path remains the primary signal. */
+.tool-card__result-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin: 0 2px;
+}
+
 /* Status: a small dot with a11y-friendly text visually hidden. The
    `.tool-card__pill` class names are kept so the streaming code that
    swaps --busy/--ok/--err keeps working unchanged. */

@@ -13,6 +13,7 @@ import {
   isSubagentTool,
   normalizeToolName,
   formatToolArgs,
+  formatResultSummary,
   coerceToolResult,
   formatReadableToolResult
 } from './tools.js';
@@ -302,7 +303,7 @@ function toolCardLabel(toolName) {
   return TOOL_VERBS[name] || name || 'tool';
 }
 
-// buildToolCardHead(toolName, args, pillClass, pillText)
+// buildToolCardHead(toolName, args, pillClass, pillText, resultSummary)
 //
 // The compact header row shared by tool_call and tool_result cards:
 // a chevron, the verb-style tool label, the one-line arg summary,
@@ -310,7 +311,7 @@ function toolCardLabel(toolName) {
 // tap target for expand/collapse. The status element keeps the
 // legacy `.tool-card__pill` classes so subagent code that toggles
 // pill classes keeps working.
-function buildToolCardHead(toolName, args, pillClass, pillText) {
+function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   const head = document.createElement('div');
   head.className = 'tool-card__head';
   head.setAttribute('role', 'button');
@@ -336,6 +337,21 @@ function buildToolCardHead(toolName, args, pillClass, pillText) {
     argsEl.className = 'tool-card__args';
     argsEl.textContent = argText;
     head.appendChild(argsEl);
+  }
+  // Collapsed result-summary: shown only when the card is a finished
+  // result and a short summary string is available (exit code + duration,
+  // byte count, etc.). Visible without tapping.
+  if (resultSummary) {
+    const summaryEl = document.createElement('span');
+    summaryEl.className = 'tool-card__result-summary';
+    summaryEl.textContent = resultSummary;
+    head.appendChild(summaryEl);
+  }
+    if (resultSummary) {
+    const summaryEl = document.createElement('span');
+    summaryEl.className = 'tool-card__result-summary';
+    summaryEl.textContent = resultSummary;
+    head.appendChild(summaryEl);
   }
   head.appendChild(pill);
   head.addEventListener('click', () => {
@@ -491,6 +507,8 @@ export function appendToolResultCard(toolResult, refs) {
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
+  const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+  const summary = toolResult.ok ? formatResultSummary(toolResult && toolResult.name, rawR) : null;
   if (!card) {
     card = document.createElement('div');
     card.className = 'tool-card tool-card--result';
@@ -499,7 +517,7 @@ export function appendToolResultCard(toolResult, refs) {
     // No args preview on standalone result cards — the body is the
     // result. Subagent cards keep the delegated task in the args slot.
     const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
-    card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText));
+    card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary));
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     card.appendChild(body);
@@ -513,7 +531,7 @@ export function appendToolResultCard(toolResult, refs) {
     card.classList.remove('tool-card--call');
     card.dataset.toolName = normalizeToolName(toolResult.name);
     const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
-    rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText);
+    rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText, summary);
     let body = card.querySelector('.tool-card__body');
     if (!body) {
       body = document.createElement('div');
@@ -532,9 +550,9 @@ export function appendToolResultCard(toolResult, refs) {
 }
 
 // rebuildToolCardHead(card, toolName, args, pillClass, pillText)
-function rebuildToolCardHead(card, toolName, args, pillClass, pillText) {
+function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary) {
   const oldHead = card.querySelector(':scope > .tool-card__head');
-  const fresh = buildToolCardHead(toolName, args, pillClass, pillText);
+  const fresh = buildToolCardHead(toolName, args, pillClass, pillText, resultSummary);
   if (oldHead && oldHead.parentNode === card) {
     card.replaceChild(fresh, oldHead);
   } else {

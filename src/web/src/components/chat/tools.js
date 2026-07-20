@@ -65,6 +65,44 @@ export function coerceToolResult(r, name) {
   return r;
 }
 
+// formatResultSummary(name, r) -> string | null
+//
+// Ultra-compact one-line summary shown in the collapsed card head
+// (next to the status dot) so the user sees key info without tapping.
+// Returns null when there's nothing worth adding.
+export function formatResultSummary(name, r) {
+  if (!r || r.error) return null;
+  const n = normalizeToolName(name);
+  if (n === 'shell') {
+    const parts = ['exit ' + (r.exitCode ?? 0)];
+    if (r.durationMs != null) parts.push(r.durationMs + 'ms');
+    return parts.join(' ');
+  }
+  if (n === 'read_file') {
+    if (r.size != null && r.size < 1024) return r.size + 'B';
+    if (r.size != null) return Math.round(r.size / 1024) + 'KB';
+    return null;
+  }
+  if (n === 'list_files') {
+    const count = Array.isArray(r.entries) ? r.entries.length : 0;
+    return count + ' file' + (count === 1 ? '' : 's');
+  }
+  if (n === 'search_files') {
+    const count = Array.isArray(r.matches) ? r.matches.length : 0;
+    return count + ' match' + (count === 1 ? '' : 'es');
+  }
+  if (n === 'edit_file') {
+    if (r.bytesWritten != null) return '+' + r.bytesWritten + 'B';
+    return null;
+  }
+  if (n === 'write_file') {
+    if (r.bytesWritten != null) return r.bytesWritten + 'B';
+    if (r.size != null) return r.size + 'B';
+    return null;
+  }
+  return null;
+}
+
 // formatReadableToolResult(r) -> string
 //
 // Best-effort string view of a structured result. Used when the
