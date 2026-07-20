@@ -344,6 +344,23 @@
           }
         }
       ]
+    },
+    {
+      "id": "chrome-debug",
+      "name": "chrome-debug",
+      "slug": "chrome_debug",
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--channel=stable",
+        "--isolated",
+        "--no-usage-statistics"
+      ],
+      "env": {},
+      "cwd": "",
+      "enabled": true,
+      "createdAt": "2026-07-17T23:45:00.000Z"
     }
   ]
 }
