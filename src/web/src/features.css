@@ -585,16 +585,15 @@
 }
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
-  /* Expanded: no extra outer panel. The structured preview child
-     (diff, terminal, file content, etc.) is the only container, so
-     the card does not read as boxes inside boxes. No max-height
-     cap — the body flows into the transcript scroller so large
-     results don't trap scroll inside a nested viewport. */
+  /* Expanded: the structured preview child (diff, terminal, file
+     content, etc.) is the only container. Capped at 75 % of the
+     viewport height so long command outputs do not dominate the
+     chat view. Internal scroll when content overflows. */
   margin: 0;
   padding: 2px 0 0 17px;
   display: block;
-  overflow: visible;
-  max-height: none;
+  overflow-y: auto;
+  max-height: 75dvh;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -734,12 +733,11 @@
   margin-left: 5px;
   padding: 4px 2px 4px 10px;
 }
-/* Expanded subagent cards use the main transcript scroller. Nested
-   mobile scrollers are hard to enter/exit and trap swipes, especially
-   with tool previews inside the subagent transcript. */
+/* Expanded subagent cards also capped at 75dvh so long nested
+   outputs don't dominate the chat view. */
 .tool-card--subagent.is-expanded .tool-card__body {
-  max-height: none;
-  overflow: visible;
+  max-height: 75dvh;
+  overflow-y: auto;
 }
 .tool-card__subagent-live-text {
   align-self: flex-start;
@@ -952,7 +950,7 @@
   font-size: 0.72rem;
   line-height: 1.42;
 }
-.tool-card.is-expanded .tool-preview__diff { max-height: 60vh; }
+.tool-card.is-expanded .tool-preview__diff { max-height: none; }
 .tool-preview__diff-line {
   display: grid;
   grid-template-columns: 3ch minmax(0, 1fr);
