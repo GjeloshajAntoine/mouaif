@@ -12,6 +12,7 @@ import {
   appendDeltaToLive,
   appendReasoningToLive,
   appendMessageToTranscript,
+  appendErrorCard,
   appendToolCallCard,
   appendToolResultCard,
   finalizeLiveMessage,
@@ -221,15 +222,18 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     });
   } catch (err) {
     setChatStatus(refs, 'network error', 'error');
-    finalizeLiveMessage({ content: '[network error]' }, refs);
+    appendErrorCard('Network error — could not reach the server. Your message was sent to the transcript but the response never started. Try again.', refs, state);
     state.streaming = false;
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
   }
   if (!resp.ok) {
-    const errText = await resp.text();
-    setChatStatus(refs, 'HTTP ' + resp.status, 'error');
-    finalizeLiveMessage({ content: '[error: HTTP ' + resp.status + ']' }, refs);
+    let errText = '';
+    try { errText = await resp.text(); } catch { /* ignore */ }
+    let errMsg = 'HTTP ' + resp.status;
+    try { const j = JSON.parse(errText); if (j && j.error) errMsg = j.error; } catch { /* not JSON */ }
+    setChatStatus(refs, errMsg, 'error');
+    appendErrorCard(errMsg + (resp.status === 409 ? ' (a response is already streaming for this chat — wait for it or reload)' : ''), refs, state);
     state.streaming = false;
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
@@ -379,7 +383,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       // inherit stale tokens from the failed exchange.
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
-      setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || '') + (data.detail ? ' — ' + data.detail : ''), 'error');
+      // Show the failure IN the transcript, not only in the status
+      // pill: the user asked for errors to be visible in the chat,
+      // and a status line is overwritten by the next update while
+      // the bubble stays where the conversation happened.
+      appendErrorCard((data.message || 'Request failed') + (data.detail ? '\n' + String(data.detail).slice(0, 500) : ''), refs, state);
+      setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
     }
   }
   try {

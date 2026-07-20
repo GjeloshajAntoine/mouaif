@@ -46,6 +46,23 @@ const WEB_DIST = path.join(WEB_DIR, 'dist');
 // Store connected SSE clients
 const sseClients = new Set();
 
+// Track every open socket so the graceful-restart path can force-close
+// keep-alive / SSE connections that would otherwise keep server.close()
+// from resolving. Keyed by the socket object; value is always true.
+const openSockets = new Set();
+
+function trackSocket(socket) {
+  openSockets.add(socket);
+  socket.on('close', () => openSockets.delete(socket));
+}
+
+function destroyOpenSockets() {
+  for (const s of openSockets) {
+    try { s.destroy(); } catch (_) { /* best-effort */ }
+  }
+  openSockets.clear();
+}
+
 // Chats with an in-flight streaming run. handleChatStream registers a
 // chat here for the lifetime of its SSE response; GET /api/chats/:id
 // surfaces it as a response-only `running` flag so a client that
@@ -1369,6 +1386,33 @@ async function handleChatStream(req, res, chatId) {
   let appSettings = {};
   try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
 
+  // formatStreamError(err) — one-line, user-facing summary of a
+  // failed turn. Persisted as a system message and shown as the
+  // chat's error bubble, so keep it short: code + message + the
+  // first line of any upstream detail (provider error bodies can
+  // run to a full HTML page — useless in a chat bubble).
+  function formatStreamError(err) {
+    if (!err || typeof err !== 'object') return 'Request failed';
+    const code = err.code ? err.code + ': ' : '';
+    const msg = err.message || 'Request failed';
+    let detail = '';
+    if (typeof err.detail === 'string' && err.detail) {
+      detail = ' — ' + err.detail.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 1).join(' ').slice(0, 300);
+    }
+    return '⚠ ' + code + msg + detail;
+  }
+
+  // persistStreamError(err) — write the failure into the transcript
+  // as a system message so it survives a reload and lands in the
+  // chat history (errors belong in the chat, not just in a transient
+  // status line). Kept best-effort: a read-only transcript must not
+  // mask the original error.
+  function persistStreamError(err) {
+    try {
+      messages.appendMessage(projectDir, chatId, { role: 'system', content: formatStreamError(err) });
+    } catch { /* non-fatal */ }
+  }
+
   let result;
   try {
     result = await ai.streamChat({
@@ -1519,13 +1563,35 @@ async function handleChatStream(req, res, chatId) {
     // marker or the chat would look busy forever after a reload.
     runningChats.delete(runKey);
     if (traceStream) trace.close(traceStream);
-    try { emit('error', { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' }); } catch { /* socket closed */ }
+    const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
+    persistStreamError(errPayload);
+    try { emit('error', errPayload); } catch { /* socket closed */ }
     res.end();
     return;
   }
 
-  if (!result.ok && !assistantContent && !assistantReasoning) {
-    emit('error', Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error));
+  if (!result.ok) {
+    // Always surface the failure — even when the stream produced
+    // partial content before dying. The old guard
+    // (`!assistantContent && !assistantReasoning`) silently dropped
+    // mid-turn failures: the client saw the socket close with no
+    // `done` and no `error`, leaving the chat stuck on "streaming…"
+    // with zero explanation. Persist any partial output first, then
+    // the error itself, so the transcript shows exactly what the
+    // model produced before the failure.
+    const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
+    if (assistantContent || assistantReasoning) {
+      try {
+        messages.appendMessage(projectDir, chatId, {
+          role: 'assistant',
+          content: assistantContent,
+          reasoning: assistantReasoning,
+          modelId: model.id
+        });
+      } catch { /* non-fatal */ }
+    }
+    persistStreamError(errPayload);
+    emit('error', errPayload);
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
@@ -3004,8 +3070,15 @@ async function handleRestart(req, res, parsed, lifecycle = {}) {
     try { process.stdout.write('[mouaif] restart requested: ' + reason + '\n'); } catch (_) {}
     try { await mcp.stopAll(); } catch (_) { /* best-effort */ }
     if (typeof lifecycle.restart === 'function') {
-      try { await lifecycle.restart({ reason }); return; }
-      catch (e) { try { process.stderr.write('[mouaif] restart failed: ' + (e && e.message || e) + '\n'); } catch (_) {} }
+      try {
+        await lifecycle.restart({ reason });
+        lifecycle.restarting = false;
+        return;
+      }
+      catch (e) {
+        try { process.stderr.write('[mouaif] restart failed: ' + (e && e.message || e) + '\n'); } catch (_) {}
+        lifecycle.restarting = false;
+      }
     }
     process.exit(0);
   }, delayMs).unref();
@@ -3141,6 +3214,10 @@ function createServer(port = DEFAULT_PORT, options = {}) {
     // Bind port to the request handler
     handleRequest(req, res, port, sessionToken, lifecycle);
   });
+  // Track connections so the graceful-restart path can force-close
+  // SSE / keep-alive sockets that would otherwise hang server.close().
+  server.on('connection', trackSocket);
+  server.on('secureConnection', trackSocket);
   // WebSocket upgrade routing. Only /api/inspector/proxy is upgraded;
   // any other upgrade is rejected so the rest of the server stays
   // untouched. The noServer WebSocketServer gives us manual
@@ -3186,7 +3263,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   return server;
 }
 
-module.exports = { createServer, broadcast, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats, resolveModel };
+module.exports = { createServer, broadcast, destroyOpenSockets, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats, resolveModel };
 
 // ---- Static /web/ serving -----------------------------------------------
 

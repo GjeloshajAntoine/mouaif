@@ -2407,6 +2407,20 @@ textarea#projectEditor {
   border-radius: 0 0 10px 10px;
 }
 
+/* Inline turn-error bubble. Same system-bubble shell, tinted with
+   the danger color so a failed turn reads as an error at a glance
+   and isn't confused with the collapsed system-prompt card. The
+   border uses the danger color at low alpha so it stays visible in
+   both light and dark schemes. */
+.chat-msg--system.is-error .chat-msg__role { color: var(--danger); }
+.chat-msg--system.is-error .chat-msg__body {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Per-turn meta line (decision §14). A flat row of compact
    "•"-separated tokens under the assistant bubble: model id,
    prompt / completion tokens, cost, and live tok/s. Sits inside
