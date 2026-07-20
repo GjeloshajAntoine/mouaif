@@ -148,8 +148,8 @@
   color: var(--fg-soft);
 }
 .notice--auth {
-  background: rgba(127, 177, 255, 0.08);
-  border-color: rgba(127, 177, 255, 0.35);
+  background: rgba(110, 168, 254, 0.08);
+  border-color: rgba(110, 168, 254, 0.35);
   color: var(--fg);
   border-left-width: 3px;
   border-left-color: var(--accent);
@@ -2481,7 +2481,7 @@ textarea#projectEditor {
    at — reads as the focal point of the line, without growing
    the font. */
 .chat-msg__meta > span[data-token="cost"] {
-  color: #9fc4ff;
+  color: var(--accent-hi);
   font-weight: 500;
 }
 /* The live tok/s (data-token="rate") gets a soft horizontal
@@ -2490,7 +2490,7 @@ textarea#projectEditor {
    "active" without animating — animating the meta line would
    make it feel busy on a phone. */
 .chat-msg[data-live="1"] .chat-msg__meta > span[data-token="rate"] {
-  background: linear-gradient(90deg, var(--accent) 0%, #b6d4ff 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hi-2) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -2631,10 +2631,10 @@ textarea#projectEditor {
   padding: 2px 2px 2px 6px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--r-pill);
   flex: 0 0 auto;
   margin: 6px 10px calc(var(--safe-bottom) + 6px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 /* Composer textarea: single-line when empty, grows up to 120px as the
    user types. The base `textarea.input` rule has its own 64px min-height

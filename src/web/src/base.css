@@ -2,21 +2,27 @@
    Imported first by style.css. */
 
 :root {
-  /* Surfaces (dark, slightly cool) */
-  --bg:           #0c0f14;   /* page background */
-  --surface:     #141921;   /* cards, scrollers */
-  --surface-2:   #1b212b;   /* hovered / pressed rows, deeper panels */
-  --surface-3:   #232b37;   /* popovers, menus, code blocks */
+  /* Surfaces (dark, slightly cool). The steps are deliberately wide —
+     the previous palette (#0c0f14 / #141921 / #1b212b) sat ~4%
+     lightness apart, so cards floated on a near-identical page and the
+     hierarchy read as "flat fog". Each step is now clearly distinct. */
+  --bg:           #0a0d12;   /* page background */
+  --surface:      #131824;   /* cards, scrollers */
+  --surface-2:    #1c2333;   /* hovered / pressed rows, deeper panels */
+  --surface-3:    #273046;   /* popovers, menus, code blocks */
 
-  /* Borders + dividers */
-  --border:        #232a35;
-  --border-strong: #2f3845;
+  /* Borders + dividers. The hairline is an alpha so it recedes at
+     mobile density (a solid #232a35 line on every row felt heavy);
+     --border-strong stays solid for container edges and focus states. */
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-strong: #333d52;
 
-  /* Text */
-  --fg:        #e8edf4;
-  --fg-soft:   #b6c0cd;
-  --muted:     #7b8694;
-  --muted-2:   #5d6675;
+  /* Text — warmed slightly so the cool blue accent reads as an
+     intentional choice, not the default against cold greys. */
+  --fg:        #eceaf1;
+  --fg-soft:   #b6bac9;
+  --muted:     #8b8a98;
+  --muted-2:   #62616e;
   /* Tab-bar label color. The default --muted (#7b8694) fails WCAG AA
      against --bg at the tab label's 0.66rem / weight 500 size
      (≈4.0:1). --tab-label uses --fg-soft (≈9:1) so inactive tab
@@ -26,15 +32,21 @@
      is correct. */
   --tab-label: var(--fg-soft);
 
-  /* Accent */
-  --accent:        #7fb1ff;   /* signature blue, slightly desaturated for dark bg */
-  --accent-soft:   #2a3a55;   /* accent tinted surface for chips/backgrounds */
-  --accent-press:  #6aa1f0;
-  --on-accent:     #08111e;   /* readable text on accent */
+  /* Accent — slightly more saturated than the old #7fb1ff, which read
+     grey-blue on dark surfaces. --accent-soft is an alpha tint (not a
+     solid #2a3a55) so chips adapt to whatever surface they sit on. */
+  --accent:        #6ea8fe;
+  --accent-soft:   rgba(110, 168, 254, 0.16);
+  --accent-press:  #5b93f0;
+  --accent-hi:     #9cc2ff;   /* lighter accent for gradient ends / cost text */
+  --accent-hi-2:   #b9d4ff;
+  --on-accent:     #0a1428;   /* readable text on accent */
 
   /* Semantic */
   --success: #6fd49a;
+  --success-soft: rgba(111, 212, 154, 0.14);
   --warning: #f0c46a;
+  --warning-soft: rgba(240, 196, 106, 0.14);
   --danger:  #ff8a8a;
   --danger-soft: #3a2024;
 
@@ -89,7 +101,7 @@ html, body {
      surfaces, which keeps the hierarchy clear. The vignette is
      kept very faint so the bottom tab bar still feels anchored. */
   background:
-    radial-gradient(900px 420px at 50% 110%, rgba(127,177,255,.04), transparent 60%),
+    radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--fg);

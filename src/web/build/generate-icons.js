@@ -51,7 +51,7 @@ function chunk(type, data) {
 
 // Render the tile. Each pixel is RGBA, 4 bytes. The tile has rounded
 // corners (radius = 22% of the side). The background is a 135deg
-// gradient from #7fb1ff (top-left) to #5b8bff (bottom-right), with a
+// gradient from #6ea8fe (top-left) to #5b93f0 (bottom-right), with a
 // thin inner highlight near the top edge and a subtle shadow toward
 // the bottom-right. The glyph is a simple block "m" drawn from a
 // 5x5 pixel font scaled up to fit.
@@ -103,9 +103,9 @@ function renderTile(size) {
 
   // Colour helpers. sRGB-lerp is fine for the gradient stops; this is
   // not a calibrated sRGB→linear pipeline, it just blends two stops.
-  const TOP = [0x7f, 0xb1, 0xff]; // #7fb1ff
-  const BOT = [0x5b, 0x8b, 0xff]; // #5b8bff
-  const INK = [0x08, 0x11, 0x1e]; // #08111e (on-accent ink)
+  const TOP = [0x6e, 0xa8, 0xfe]; // #6ea8fe (matches --accent in base.css)
+  const BOT = [0x5b, 0x93, 0xf0]; // #5b93f0 (matches --accent-press)
+  const INK = [0x0a, 0x14, 0x28]; // #0a1428 (on-accent ink)
 
   for (let y = 0; y < size; y++) {
     const t = y / (size - 1); // 0..1, top to bottom
