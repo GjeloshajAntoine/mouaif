@@ -81,12 +81,14 @@ formatCost(cost.total); // -> "$0.00011"  (2–5 sig figs, locale-aware)
 - **No token guessing.** If the upstream did not report any `usage` event by the time the stream ends, both the cost and the token/s line show `--`. The chat does not estimate from characters.
 - **Currency is USD only.** The model pricing block is denominated in USD. The format layer respects the user's locale decimal separator; the currency symbol stays `$`. A future `currency` field on the model record could add multi-currency support without breaking the existing shape.
 - **Persisted with the message.** The full `usage` object returned by the AI client is stored on the assistant message record (decision §10) and is also written to the trace file as a `done` event (decision §5). Re-opening a chat shows the same numbers that were visible at the time the message was produced.
+- **Subagents are included.** When the model delegates work to the native `subagent` tool, the nested model call's token usage is added to the parent chat turn's final `usage` block. Provider-reported costs are added too when the parent turn has an authoritative provider cost; otherwise the UI computes cost from the aggregated token usage.
 - **Pricing is informational.** A wrong `pricing` entry causes a wrong number on the cost line; it does not affect what the upstream charges. The Settings UI surfaces a "verify with your provider's pricing page" hint on the pricing fields.
 
 ## Implementation notes
 
 - Source: `src/usage.js` (new module) — `computeCost(model, usage)`, `formatCost(amount)`, `tokPerSecond(samples)`.
 - The AI client already emits `usage_input`, `usage_output`, and `done({ usage })` (see [docs/features/ai-client.md](./ai-client.md)). The new module is purely a derivation layer; it adds no events to the SSE stream.
+- `src/ai.js` keeps parent prompt tokens as last-round-wins for normal tool loops, but tracks delegated subagent usage separately and adds it to the final `done({ usage, providerCost })` payload because subagents are separate upstream requests.
 - The chat UI hooks the existing `onEvent('message')` and `onEvent('done')` callbacks from `/api/chats/:id/messages/stream`; no protocol change is needed.
 - The pricing resolution order is **model.pricing → app.modelPricing[<id>] → built-in defaults → none**. The built-in table lives in `src/usage.js` and is keyed on `model.id`.
 - Mobile-first layout: the cost / token-s line renders as a single row of compact tokens (•-separated) under each user turn, sized for a 360 px viewport with no horizontal scroll. The line collapses to a single dot-summary (`gpt-4o-mini • •`) on very narrow screens if needed; the full row is the default.

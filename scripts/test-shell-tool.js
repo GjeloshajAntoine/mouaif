@@ -37,6 +37,7 @@ async function main() {
     chats: [{ id: chatId, title: 'Shell tool test', trace: false }],
     tools: {
       shell: { enabled: true, mode: 'allow' },
+      subagent: { enabled: true, mode: 'allow' },
       file: { enabled: true, mode: 'allow' }
     }
   });
@@ -152,7 +153,54 @@ async function main() {
   const finalMsg = events.filter(e => e.name === 'message').map(e => e.data.delta).join('');
   check('final assistant text present', /output was captured/.test(finalMsg), finalMsg);
 
-  // ---- Part 3: retry an empty response after a tool result ------------
+  // ---- Part 3: subagent usage is counted in parent totals ------------
+  let subagentRequests = 0;
+  const serverSubagent = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      subagentRequests++;
+      if (subagentRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_sub_1', function: { name: 'subagent', arguments: JSON.stringify({ task: 'answer briefly' }) } }] } }] },
+          { choices: [{ finish_reason: 'tool_calls' }] },
+          { usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.001 } }
+        ]);
+      } else if (subagentRequests === 2) {
+        sse(res, [
+          { choices: [{ delta: { content: 'Nested answer.' } }] },
+          { choices: [{ finish_reason: 'stop' }] },
+          { usage: { prompt_tokens: 30, completion_tokens: 5, cost: 0.0003 } }
+        ]);
+      } else {
+        sse(res, [
+          { choices: [{ delta: { content: 'Parent final.' } }] },
+          { choices: [{ finish_reason: 'stop' }] },
+          { usage: { prompt_tokens: 200, completion_tokens: 20, cost: 0.002 } }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverSubagent.listen(0, '127.0.0.1', resolve));
+  const subagentEvents = [];
+  const subagentResult = await ai.streamChat({
+    model: Object.assign({}, model, { baseUrl: 'http://127.0.0.1:' + serverSubagent.address().port }),
+    messages: [{ role: 'user', content: 'delegate once' }],
+    projectDir,
+    chatId,
+    onEvent: (name, data) => subagentEvents.push({ name, data })
+  });
+  serverSubagent.close();
+  const subagentDone = subagentEvents.find((e) => e.name === 'done');
+  const subagentToolResult = subagentEvents.find((e) => e.name === 'tool_result' && e.data && e.data.name === 'subagent');
+  check('subagent loop returned ok', subagentResult.ok === true && subagentRequests === 3, JSON.stringify(subagentResult));
+  check('subagent tool result carries nested usage', subagentToolResult && subagentToolResult.data.result && subagentToolResult.data.result.usage && subagentToolResult.data.result.usage.promptTokens === 30, JSON.stringify(subagentToolResult && subagentToolResult.data));
+  check('subagent prompt usage added to final done', subagentDone && subagentDone.data.usage.promptTokens === 230, JSON.stringify(subagentDone && subagentDone.data));
+  check('subagent completion usage added to final done', subagentDone && subagentDone.data.usage.completionTokens === 35, JSON.stringify(subagentDone && subagentDone.data));
+  check('subagent provider cost added to final done', subagentDone && subagentDone.data.providerCost === 0.0033, JSON.stringify(subagentDone && subagentDone.data));
+  check('streamChat result includes subagent usage', subagentResult.usage.promptTokens === 230 && subagentResult.usage.completionTokens === 35, JSON.stringify(subagentResult.usage));
+
+  // ---- Part 4: retry an empty response after a tool result ------------
   let emptyReplyRequests = 0;
   let emptyReplySawReminder = false;
   const serverEmptyReply = http.createServer((req, res) => {

@@ -1187,7 +1187,9 @@ async function streamChat(opts) {
   // task is complete; tool use is not cut off after an arbitrary count.
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
+  const delegatedUsage = { promptTokens: 0, completionTokens: 0 };
   let providerCost = null;
+  let delegatedProviderCost = null;
   let completedToolRound = false;
   let emptyPostToolRetries = 0;
   const FINAL_ANSWER_RETRIES = 2;
@@ -1223,9 +1225,14 @@ async function streamChat(opts) {
         });
       }
       // No tool calls this turn -> the assistant is done. Emit the
-      // final `done` with the accumulated usage and return.
-      onEvent('done', { usage, providerCost });
-      return { ok: true, usage, providerCost };
+      // final `done` with the accumulated usage and return. Parent
+      // prompt tokens stay last-round-wins, but delegated subagent
+      // requests are separate upstream calls and must be added so the
+      // chat's total usage/cost matches what providers billed.
+      const finalUsage = usageWithDelegated();
+      const finalProviderCost = totalProviderCost();
+      onEvent('done', { usage: finalUsage, providerCost: finalProviderCost });
+      return { ok: true, usage: finalUsage, providerCost: finalProviderCost };
     }
 
     for (const c of calls) {
@@ -1419,6 +1426,8 @@ async function streamChat(opts) {
           exec = { ok: false, content: JSON.stringify({ ok: false, error: e.message }), result: { ok: false, error: e.message } };
         }
       }
+
+      if (c.name === 'subagent') addDelegatedUsage(exec && exec.result);
 
       onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
 
@@ -1678,6 +1687,36 @@ async function streamChat(opts) {
     }
   }
   } // end runUpstreamTurn
+
+  function usageWithDelegated() {
+    return {
+      promptTokens: (usage.promptTokens || 0) + (delegatedUsage.promptTokens || 0),
+      completionTokens: (usage.completionTokens || 0) + (delegatedUsage.completionTokens || 0)
+    };
+  }
+
+  function totalProviderCost() {
+    const parent = (typeof providerCost === 'number' && isFinite(providerCost) && providerCost >= 0) ? providerCost : null;
+    const delegated = (typeof delegatedProviderCost === 'number' && isFinite(delegatedProviderCost) && delegatedProviderCost >= 0) ? delegatedProviderCost : null;
+    // Only publish an authoritative providerCost when the parent turn
+    // reported one too. If just a delegated call reported cost, leave
+    // providerCost null so src/index.js computes the whole turn from
+    // the aggregated token usage instead of showing only the subagent.
+    if (parent == null) return null;
+    return parent + (delegated || 0);
+  }
+
+  function addDelegatedUsage(result) {
+    if (!result || !result.ok) return;
+    if (result.usage && typeof result.usage === 'object') {
+      const promptTokens = Number(result.usage.promptTokens);
+      const completionTokens = Number(result.usage.completionTokens);
+      if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
+      if (isFinite(completionTokens) && completionTokens > 0) delegatedUsage.completionTokens += completionTokens;
+    }
+    const cost = Number(result.providerCost);
+    if (isFinite(cost) && cost >= 0) delegatedProviderCost = (delegatedProviderCost || 0) + cost;
+  }
 
   function toolResultImageParts(result) {
     if (!result || !Array.isArray(result.content)) return [];
