@@ -1791,6 +1791,11 @@ textarea#projectEditor {
   font-size: 0.66rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  line-height: 1.2;
 }
 
 .chat-view__picker-row {
@@ -1798,7 +1803,11 @@ textarea#projectEditor {
   align-items: baseline;
   gap: 6px;
   width: 100%;
-  padding: 6px 10px;
+  /* Slightly inset the left padding so the accent rail (3px) on
+     the active row doesn't make the row's text shift when the
+     is-active class toggles. The matching negative margin on the
+     active row is in .chat-view__picker-row.is-active below. */
+  padding: 6px 10px 6px 12px;
   font: inherit;
   font-size: 0.82rem;
   color: var(--fg);
@@ -1809,12 +1818,33 @@ textarea#projectEditor {
   cursor: pointer;
   transition: background 80ms ease;
   min-height: var(--tap);
+  position: relative;
 }
 .chat-view__picker-row:hover { background: var(--surface-3); }
 .chat-view__picker-row:active { background: var(--surface-3); }
 .chat-view__picker-row.is-active {
   background: var(--accent-soft);
   color: var(--fg);
+  /* 2px right padding so the row stays the same width as
+     inactive rows (left padding went from 10 to 12, this offsets
+     the 2px increase). */
+  padding: 6px 8px 6px 12px;
+}
+/* Accent rail on the active row. The rail sits flush against the
+   left edge of the row (which is flush against the popover's left
+   padding) so the selection reads instantly on long lists. Drawn
+   as a pseudo-element so the rail color is local to .is-active
+   and we don't have to think about :focus-visible overriding
+   border-left for the same row. */
+.chat-view__picker-row.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
 }
 .chat-view__picker-row-id {
   font-weight: 500;
@@ -1844,11 +1874,90 @@ textarea#projectEditor {
 .chat-view__picker-row.is-ghost .chat-view__picker-row-meta { color: var(--warning); }
 
 .chat-view__picker-empty {
-  padding: 28px 16px;
+  margin: 18px 12px;
+  padding: 18px 14px 16px;
   text-align: center;
-  color: var(--muted);
+  color: var(--fg-soft);
   font-size: 0.84rem;
   line-height: 1.4;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.chat-view__picker-empty-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+.chat-view__picker-empty-icon svg { display: block; }
+.chat-view__picker-empty-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.86rem;
+  margin: 0;
+}
+.chat-view__picker-empty-text { margin: 0; max-width: 36ch; }
+.chat-view__picker-empty-action {
+  margin-top: 4px;
+  /* Compact pill that mirrors the head's picker-refresh button
+     so the user recognizes it as the same action. */
+  height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chat-view__picker-empty-action:hover { background: var(--accent-press); }
+.chat-view__picker-empty-action:active { transform: scale(0.98); }
+.chat-view__picker-empty-action[disabled] { opacity: 0.6; cursor: wait; }
+
+/* Skeleton rows. The picker renders a stack of these when it
+   opens with no live catalog yet (e.g. first-ever chat on a
+   project that has no project-level model IDs). The shimmer is
+   a slow horizontal gradient on a 2px-tall strip; reduced-
+   motion users get a flat fill instead, defined in
+   features.css's reduced-motion media block. */
+.chat-view__picker-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+.chat-view__picker-skel-row {
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface-3) 50%,
+    var(--surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: mouaif-shimmer 1.4s linear infinite;
+}
+.chat-view__picker-skel-row:nth-child(2) { width: 78%; }
+.chat-view__picker-skel-row:nth-child(3) { width: 90%; }
+.chat-view__picker-skel-row:nth-child(4) { width: 64%; }
+@keyframes mouaif-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .chat-view__title-stack { flex: 2 1 96px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -2269,18 +2378,23 @@ textarea#projectEditor {
 
    On a 360 px viewport, a typical line is
      gpt-4o-mini • 243 in • 118 out • $0.00011 • 37 tok/s
-   which fits in a single line at 0.74rem / 0.74 line-height.
+   which fits in a single line at 0.78rem / 1.35 line-height.
    The font is mono-ish so the number columns line up. The line
-   is muted (--muted) so it never competes with the bubble text.
+   uses --fg-soft (was --muted) so the per-turn numbers stay
+   legible at glance distance on a phone without competing with
+   the bubble text above them. The previous 0.62rem + --muted
+   combo was technically legal under WCAG but read as grey
+   smudge on a 6" display, which is the "small text is bad"
+   complaint that drove this revision.
 
    `.chat-msg__meta-sep` is the bullet. Slightly softer than the
    labels themselves so the eye groups tokens rather than reading
    each as a separate row. */
 .chat-msg__meta {
-  font-size: 0.62rem;
-  line-height: 1.3;
-  color: var(--muted);
-  padding: 0 8px 1px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--fg-soft);
+  padding: 1px 8px 2px;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -2299,15 +2413,28 @@ textarea#projectEditor {
 }
 
 /* Conversation totals stay visible in the compact head. Context is the
-   latest prompt-token count; cost is the sum of known assistant-turn costs. */
+   latest prompt-token count; cost is the sum of known assistant-turn
+   costs. The three values are rendered as a single dot-separated
+   text node (`Context X · Total Y · Balance Z`) so the line never
+   wraps and never competes with the chat title for horizontal space
+   (issue: on a 390px viewport the previous 3-span version clipped
+   "Balance" when its label was long). The font size was bumped
+   from 0.66rem to 0.82rem and the color from --muted to --fg-soft
+   so the totals are actually glanceable on a phone — at 0.66rem
+   the "Context 14.8K · Total $0.04" line was effectively a smudge
+   and users had to squint to see the budget fill up. The title
+   above still clearly outranks it (1.05rem / 700 vs 0.82rem /
+   500). */
 .chat-view__usage-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px 6px;
-  color: var(--accent);
-  font-size: 0.6rem;
-  line-height: 1.2;
+  color: var(--fg-soft);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* The live assistant message (data-live="1" on the row) gets a
