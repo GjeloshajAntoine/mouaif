@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { program } = require('commander');
-const { createServer, DEFAULT_PORT } = require('../src/index.js');
+const { createServer, destroyOpenSockets, DEFAULT_PORT } = require('../src/index.js');
 
 const { name, version, description } = require('../package.json');
 
@@ -12,12 +12,17 @@ const WATCH_CHILD_ENV = 'MOUAIF_WATCH_CHILD';
 const WATCH_EXTS = new Set(['.js', '.jsx', '.json', '.css', '.html']);
 
 function closeServer(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!server || !server.listening) return resolve();
-    server.close((err) => {
-      if (err) return reject(err);
+    // Force-close keep-alive / SSE sockets so server.close() can resolve
+    // promptly instead of hanging on connections that never end.
+    server.close(() => {
+      destroyOpenSockets();
       resolve();
     });
+    // Destroy immediately for sockets that are idle but still counted;
+    // server.close() only fires once all connections are gone.
+    destroyOpenSockets();
   });
 }
 
@@ -120,7 +125,6 @@ program
       restarting: false,
       restart: async () => {
         await closeServer(server);
-        lifecycle.restarting = false;
         start();
       }
     };
