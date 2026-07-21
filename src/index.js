@@ -1281,14 +1281,12 @@ async function handleChatStream(req, res, chatId) {
   // Project agent (.mouaif.json agentPreset). When selected on
   // the chat or project, its instructions are injected after global
   // agent files and before the tagged files and custom prompt.
-  // If the agent also defines a tool filter, prompt size, model, or
-  // provider, they override the current chat's settings for this turn.
+  // If the agent also defines overrides, they apply for this turn.
   try {
     const selectedAgent = agents.loadSelected({ chat, projectDir });
     if (selectedAgent) {
       upstreamMessages.push({ role: selectedAgent.role, content: selectedAgent.content });
-      // Tool filter from the agent preset overrides the chat's filter.
-      // The model sees only these tools when the agent is active.
+      // Tool filter from agent preset overrides chat's filter
       if (Array.isArray(selectedAgent.tools) && selectedAgent.tools.length) {
         chat = Object.assign({}, chat, { tools: selectedAgent.tools });
       }
@@ -1297,8 +1295,12 @@ async function handleChatStream(req, res, chatId) {
         resolvedProfileId = selectedAgent.promptSize;
         chat = Object.assign({}, chat, { promptSize: selectedAgent.promptSize });
       }
+      // Agent files toggle from agent preset
+      if (typeof selectedAgent.agentFiles === 'boolean') {
+        chat = Object.assign({}, chat, { agentFiles: selectedAgent.agentFiles });
+      }
       if (traceStream) {
-        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools, promptSize: selectedAgent.promptSize, modelId: selectedAgent.modelId, providerId: selectedAgent.providerId });
+        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools, promptSize: selectedAgent.promptSize, modelId: selectedAgent.modelId, providerId: selectedAgent.providerId, agentFiles: selectedAgent.agentFiles });
       }
     }
   } catch { /* non-fatal; stream proceeds without selected agent */ }

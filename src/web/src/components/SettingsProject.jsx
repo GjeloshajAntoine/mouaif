@@ -708,18 +708,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const promptSizeEl = document.querySelector('[data-agent-prompt-size="' + id + '"]');
     const providerEl = document.querySelector('[data-agent-provider="' + id + '"]');
     const modelEl = document.querySelector('[data-agent-model="' + id + '"]');
+    const agentFilesEl = document.querySelector('[data-agent-files="' + id + '"]');
     const title = titleEl ? titleEl.value.trim() : '';
     const content = contentEl ? contentEl.value : '';
     const promptSize = promptSizeEl ? promptSizeEl.value || undefined : undefined;
     const providerId = providerEl ? providerEl.value.trim() || undefined : undefined;
     const modelId = modelEl ? modelEl.value.trim() || undefined : undefined;
+    const agentFiles = agentFilesEl ? agentFilesEl.checked : undefined;
     const tools = getAgentTools(id);
     const statusEl = document.querySelector('[data-agent-status="' + id + '"]');
     if (statusEl) statusEl.textContent = 'saving…';
     const r = await fetchJson('/api/agents/' + encodeURIComponent(id), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), title, content, promptSize, providerId, modelId, tools })
+      body: JSON.stringify({ projectDir: dir(), title, content, promptSize, providerId, modelId, agentFiles, tools })
     });
     if (statusEl) statusEl.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
     if (r.status === 200) {
@@ -908,6 +910,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   h('label', { class: 'row settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Model'),
                     h('input', { class: 'input', value: a.modelId || '', 'data-agent-model': a.id, placeholder: 'e.g. openai/gpt-4o' })
+                  ),
+                  h('label', { class: 'checkbox-row settings-project__agent-field' },
+                    h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-files': a.id, checked: a.agentFiles === true }),
+                    ' Inject agent files (AGENTS.md, CLAUDE.md)'
                   ),
                   h('div', { class: 'settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Tools'),

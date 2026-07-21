@@ -3,7 +3,7 @@
 // Project agents — named, project-scoped agent presets stored in
 // <projectDir>/.mouaif.json under `agentPresets`.
 //
-// Each preset = { id, title, content, promptSize?, modelId?, providerId?, tools? }
+// Each preset = { id, title, content, promptSize?, modelId?, providerId?, tools?, agentFiles? }
 //   id:         short kebab-case id, unique within the project
 //   title:      human-readable label
 //   content:    the instructions text (system prompt)
@@ -11,6 +11,7 @@
 //   modelId:    optional model slug to use when this agent is active
 //   providerId: optional provider id (e.g. 'openrouter')
 //   tools:      optional array of tool names to enable (overrides chat filter)
+//   agentFiles: optional boolean; when true, inject agent files
 //
 // When a chat selects an agent, all these fields are applied to the chat
 // at selection time (the server copies them onto the chat record).
@@ -38,6 +39,7 @@ function normalizePreset(raw) {
     promptSize: raw.promptSize && VALID_SIZES.has(raw.promptSize) ? raw.promptSize : undefined,
     modelId: typeof raw.modelId === 'string' && raw.modelId.trim() ? raw.modelId.trim() : undefined,
     providerId: typeof raw.providerId === 'string' && raw.providerId.trim() ? raw.providerId.trim() : undefined,
+    agentFiles: typeof raw.agentFiles === 'boolean' ? raw.agentFiles : undefined,
     tools: Array.isArray(raw.tools) ? raw.tools.map(String).filter(Boolean) : undefined,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
@@ -60,6 +62,7 @@ function load(projectDir) {
     promptSize: p.promptSize,
     modelId: p.modelId,
     providerId: p.providerId,
+    agentFiles: p.agentFiles,
     tools: p.tools
   }));
 }
@@ -76,6 +79,7 @@ function loadOne(projectDir, name) {
     promptSize: p.promptSize,
     modelId: p.modelId,
     providerId: p.providerId,
+    agentFiles: p.agentFiles,
     tools: p.tools
   };
 }
@@ -104,6 +108,7 @@ function create(projectDir, opts) {
     promptSize: opts && VALID_SIZES.has(opts.promptSize) ? opts.promptSize : undefined,
     modelId: opts && typeof opts.modelId === 'string' ? opts.modelId.trim() || undefined : undefined,
     providerId: opts && typeof opts.providerId === 'string' ? opts.providerId.trim() || undefined : undefined,
+    agentFiles: typeof opts.agentFiles === 'boolean' ? opts.agentFiles : undefined,
     tools: Array.isArray(opts.tools) ? opts.tools : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

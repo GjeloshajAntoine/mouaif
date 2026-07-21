@@ -99,6 +99,7 @@ function buildAgentCard(state) {
     if (effective.tools && effective.tools.length) bits.push('Tools: ' + effective.tools.join(', '));
     if (effective.promptSize) bits.push('Prompt: ' + effective.promptSize);
     if (effective.modelId) bits.push('Model: ' + effective.modelId);
+    if (typeof effective.agentFiles === 'boolean') bits.push(effective.agentFiles ? 'Agent files: on' : 'Agent files: off');
     if (bits.length) { details.textContent = bits.join(' · '); card.appendChild(details); }
   }
   return card;
