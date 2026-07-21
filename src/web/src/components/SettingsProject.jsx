@@ -30,12 +30,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [askUserMode, setAskUserMode] = useState('ask');
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
   const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
-  const [mcpStatusMsg, setMcpStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
@@ -143,13 +141,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       setSubagentAuth({
         mode: (sub && sub.mode) || 'ask',
         allowlist: sub && Array.isArray(sub.allowlist) ? sub.allowlist : []
-      });
-      const mcp = authz.status === 200 && authz.body.mcp;
-      setMcpAuth({
-        mode: (mcp && mcp.mode) || 'ask',
-        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
-        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
-        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
       });
       // ask_user is a binary { off, ask } tool. The server clamps any
       // legacy allowlist / allow value to `ask`; here we read what the
@@ -350,48 +341,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // The shared MCP fallback gate lives under `mcp.mode` in the
   // authorization payload (not `tools.mcp`), so it gets its own save
   // path. Per-server overrides write `mcp.servers.<slug>` instead.
-  async function saveMcpAuthorization(patch) {
-    setMcpStatusMsg('saving…');
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), mcp: patch })
-    });
-    setMcpStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
-  }
-  function pickMcpMode(newMode) {
-    const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
-    setMcpAuth(Object.assign({}, mcpAuth, { mode: newMode, allowlist }));
-    saveMcpAuthorization({ mode: newMode, allowlist });
-  }
-
-  // Per-server MCP authorization override. 'inherit' clears the entry
-  // so the shared fallback gate applies again.
-  function pickServerAuthMode(slug, value) {
-    const servers = Object.assign({}, mcpAuth.servers);
-    const patch = {};
-    if (value === 'inherit') {
-      delete servers[slug];
-      patch[slug] = null;
-    } else {
-      const entry = { mode: value };
-      if (value === 'allowlist') entry.allowlist = (servers[slug] && servers[slug].allowlist) || [];
-      servers[slug] = entry;
-      patch[slug] = entry;
-    }
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: patch });
-  }
-
-  function onServerAllowlistInput(slug, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!allowlist.length) { pickServerAuthMode(slug, 'inherit'); return; }
-    const servers = Object.assign({}, mcpAuth.servers);
-    servers[slug] = { mode: 'allowlist', allowlist };
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
-  }
-
   function onAllowlistInput(tool, auth, setAuth, setStatusMsg, text) {
     const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const mode = allowlist.length ? 'allowlist' : 'ask';
@@ -414,29 +363,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   fileAuthRef.current = fileAuth;
   const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', () => shellAuthRef.current, setShellAuth, setShellStatusMsg));
   const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', () => fileAuthRef.current, setFileAuth, setFileStatusMsg));
-  // MCP allowlists go through the `mcp` payload key, so they can't
-  // reuse makeAllowlistSaver (which writes tools.<name>).
-  const saveMcpAllowlistDebounced = useRef((() => {
-    let t = null;
-    return (text) => {
-      if (t) clearTimeout(t);
-      setMcpStatusMsg('…');
-      t = setTimeout(() => {
-        const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        const mode = allowlist.length ? 'allowlist' : 'ask';
-        setMcpAuth((prev) => Object.assign({}, prev, { mode, allowlist }));
-        saveMcpAuthorization({ mode, allowlist });
-      }, 350);
-    };
-  })());
-  const saveServerAllowlistDebounced = useRef((() => {
-    const timers = new Map();
-    return (slug, text) => {
-      if (timers.has(slug)) clearTimeout(timers.get(slug));
-      setMcpStatusMsg('…');
-      timers.set(slug, setTimeout(() => onServerAllowlistInput(slug, text), 350));
-    };
-  })());
 
   // ask_user is binary: the only valid modes are `ask` (the model
   // asks, the user always answers) and `off` (the tool is hidden
@@ -674,66 +600,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
-    if (servers.length) {
-      // One authorization row per MCP server (its override wins over
-      // the shared fallback for that server's calls), then the shared
-      // fallback row that covers every server without an override.
-      for (const server of servers) {
-        const slug = server.slug || server.id;
-        const entry = mcpAuth.servers && mcpAuth.servers[slug];
-        const overridden = !!(entry && entry.mode);
-        const effMode = overridden ? entry.mode : mcpAuth.mode;
-        const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
-        groups.push({
-          id: 'mcp-auth-' + slug,
-          name: (server.name || slug) + ' authorization',
-          description: overridden ? ('override: ' + effMode) : ('inherits shared fallback (' + mcpAuth.mode + ')'),
-          checked: segMode(effMode) !== 'off',
-          control: toolModeSegs('mcp server ' + slug, segMode(effMode), (mode) => pickServerAuthMode(slug, mode), [
-            { value: 'off', label: 'Off' },
-            { value: 'ask', label: 'Ask' },
-            { value: 'allow', label: 'Allow' }
-          ]),
-          tools: [],
-          extra: h(Fragment, null,
-            overridden
-              ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerAuthMode(slug, 'inherit') }, 'Use shared fallback')
-              : null,
-            segMode(effMode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                  h('textarea', {
-                    class: 'input settings-project__mono', rows: 3, spellcheck: false,
-                    placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
-                    onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
-                  })
-                )
-              : null
-          )
-        });
-      }
-      const mcpOff = segMode(mcpAuth.mode) === 'off';
-      groups.push({
-        id: 'mcp',
-        name: 'Shared MCP fallback',
-        description: 'gate for MCP servers without an override',
-        checked: !mcpOff,
-        control: toolModeSegs('MCP tools', segMode(mcpAuth.mode), pickMcpMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: [],
-        extra: segMode(mcpAuth.mode) === 'ask'
-          ? h('details', { class: 'settings-project__allowlist' },
-              h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-              h('p', { class: 'settings-project__help' }, 'Calls matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^mcp__.*__search.*$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-            )
-          : (mcpStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpStatusMsg) : null)
-      });
-    }
+    // Per-server MCP authorization (Off/Ask/Allow with allowlist) is
+    // managed in the dedicated MCP settings page (#/settings/mcp).
+    // Here we only show the enable/disable checkbox on the server line.
 
     return groups;
   }
@@ -741,14 +610,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Enable/disable one MCP server, then refresh the server list so
   // the tree picks up the new status + cached tools.
   async function toggleMcpServerEnabled(id, enabled) {
-    setMcpStatusMsg('saving…');
     const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: dir(), enabled })
     });
-    if (r.status !== 200) { setMcpStatusMsg('HTTP ' + r.status); return; }
-    setMcpStatusMsg('saved');
+    if (r.status !== 200) return;
     const mr = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(dir()));
     if (mr.status === 200 && Array.isArray(mr.body.servers)) setMcpServers(mr.body.servers);
   }
@@ -765,7 +632,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     else if (groupId === 'subagent') pickSubagentMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') pickFileMode(mode);
-    else if (groupId === 'mcp') pickMcpMode(mode);
+    // MCP shared fallback authorization is managed in the dedicated
+    // MCP settings page (#/settings/mcp), not here.
   }
 
   return h(Fragment, null,
@@ -830,7 +698,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             ? h(ToolTree, {
                 groups: buildSettingsToolGroups(toolsCatalog, mcpServers),
                 onToggleGroup: toggleSettingsGroup,
-                onToggleTool: (groupId) => toggleSettingsGroup(groupId, true)
+                onToggleTool: (groupId) => toggleSettingsGroup(groupId, true),
+                collapsedByDefault: true
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         )
