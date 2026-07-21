@@ -102,11 +102,19 @@ function truncate(buf, maxBytes) {
 }
 
 // The platform shell: cmd.exe on Windows, $SHELL (or /bin/sh) on POSIX.
+//
+// Windows needs two non-obvious tweaks:
+//   1. The flags must be separate argv elements; passing "/d /s /c" as one
+//      element makes Node quote it ("/d /s /c") and cmd.exe mis-parse it.
+//   2. With /s, cmd.exe strips the first and last quote of the command line,
+//      mangling inner quotes ("node -e \"console.log(1+1)\"" silently
+//      produces no output). Wrapping the whole command in an extra pair of
+//      quotes plus windowsVerbatimArguments preserves it exactly.
 function platformShell() {
   if (process.platform === 'win32') {
-    return { file: process.env.ComSpec || 'cmd.exe', flag: '/d /s /c' };
+    return { file: process.env.ComSpec || 'cmd.exe', flags: ['/d', '/s', '/c'], wrapQuotes: true, verbatim: true };
   }
-  return { file: process.env.SHELL || '/bin/sh', flag: '-c' };
+  return { file: process.env.SHELL || '/bin/sh', flags: ['-c'], wrapQuotes: false, verbatim: false };
 }
 
 // runShell — execute cmd in projectDir, capturing stdout/stderr.
@@ -129,8 +137,8 @@ async function runShell(opts) {
 
   hookExit();
 
-  const { file, flag } = platformShell();
-  const args = process.platform === 'win32' ? flag.split(' ').concat(cmd) : [flag, cmd];
+  const { file, flags, wrapQuotes, verbatim } = platformShell();
+  const args = flags.concat(wrapQuotes ? '"' + cmd + '"' : cmd);
   const startedAt = Date.now();
 
   return await new Promise((resolve) => {
@@ -140,6 +148,7 @@ async function runShell(opts) {
         cwd,
         env: childEnv(),
         windowsHide: true,
+        windowsVerbatimArguments: verbatim,
         stdio: ['ignore', 'pipe', 'pipe']
       });
     } catch (e) {
@@ -170,19 +179,23 @@ async function runShell(opts) {
       killGrace = setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* gone */ }
       }, KILL_GRACE_MS);
+      killGrace.unref && killGrace.unref();
       if (!settled) {
         settled = true;
-        liveChildren.delete(child);
+        // Note: the child may still be alive (waiting out the SIGKILL
+        // grace window). Keep it in liveChildren so the exit hook can
+        // reap it; its late 'close' is a no-op because `settled` is true.
         resolve({
           ok: false,
           error: 'timed out',
           code: 'ETIMEDOUT',
           stdout: truncate(outBuf, maxBytes),
           stderr: truncate(errBuf, maxBytes),
-          durationMs: timeoutMs + KILL_GRACE_MS
+          durationMs: Date.now() - startedAt
         });
       }
     }, timeoutMs);
+    timer.unref && timer.unref();
 
     child.on('error', (e) => {
       if (settled) return;

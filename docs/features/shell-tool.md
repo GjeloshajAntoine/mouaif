@@ -74,16 +74,16 @@ const out = await runShell({
 ## Behavior
 
 - **Working directory.** Commands run in `projectDir`. The runner resolves the path and refuses anything outside the project root (`..` segments, absolute paths, symlinks that point outside) with `EOUTSIDE_PROJECT`. The runner is `path.join`-aware; it does not shell-`cd` for the user.
-- **Shell.** The command is run with the user's login shell (`$SHELL` on POSIX, `cmd.exe` on Windows). It is a single string passed verbatim; there is no command parsing or argument splitting. Pipes, redirects, and `&&` chains are the user's responsibility and are not interpreted by mouaif.
+- **Shell.** The command is run with the user's login shell (`$SHELL` on POSIX, `cmd.exe /d /s /c` on Windows). It is a single string passed verbatim; there is no command parsing or argument splitting. Pipes, redirects, and `&&` chains are the user's responsibility and are not interpreted by mouaif. On Windows the runner passes the flags as separate argv elements and wraps the command in an extra pair of quotes with `windowsVerbatimArguments` so `cmd /s` quote-stripping does not mangle inner quotes (e.g. `node -e "console.log(1+1)"`).
 - **Env.** The child inherits the parent process's environment, minus a small denylist (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`) to prevent trivial tool escape. `PATH` is preserved.
 - **Sandboxing.** The runner does not provide OS-level sandboxing (containers, seccomp, `bwrap`). It is the user's responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.
-- **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: timeoutMs + 5000 }`.
+- **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: <actual elapsed ms> }`. A child that ignores SIGTERM stays tracked for the exit-hook reap; its late `close` is ignored.
 - **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256 KB each, configurable via `app.shellOutputMaxBytes`). Truncation adds a final `\n...[truncated at 256000 bytes]` line; the original exit code is preserved.
 - **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). There is no fixed tool-turn limit; cancellation comes from the user aborting the active request.
 - **No streaming on the wire.** The tool returns a single `tool_result` after the command exits. A future revision may stream stdout/stderr line-by-line; for this commit, a single result is enough to keep the upstream contract simple.
 - **Disabled by default.** A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`).
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.
-- **No new runtime dependencies.** The runner is built on `node:child_process.spawn` and `node:child_process.exec`. No third-party shell wrappers.
+- **No new runtime dependencies.** The runner is built on `node:child_process.spawn` only. No third-party shell wrappers.
 
 ## Implementation notes
 
