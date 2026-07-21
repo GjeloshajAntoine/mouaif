@@ -38,6 +38,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Chat error surfacing](features/chat-error-surfacing.md) — failed turns are emitted over SSE, rendered as inline error bubbles, and persisted as system messages so they survive reloads.
 - [Tool tree](features/tool-tree.md) — compact hierarchical checkbox list for tool visibility, shared across chat view, project settings, and authorization flows. Auto-checks tools used in the current chat.
 - [@-mention autocomplete](features/at-mention.md) — type `@` in the chat composer to search and insert files, tools/actions, or the current agent model.
+- [Agent feature prompt and tool](features/agent-feature-prompt.md) — dynamic system context telling the model which features are enabled, plus a `list_features` tool for the full structured state on demand.
 
 ## Architectural decisions
 

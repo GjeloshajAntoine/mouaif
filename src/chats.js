@@ -371,6 +371,7 @@ function chatTotalCost(projectDir, chatId, app) {
   let any = false;
   for (const m of msgs) {
     if (!m || m.role !== 'assistant' || !m.cost || typeof m.cost !== 'object') continue;
+    if (m.cost.known !== true) continue;
     const t = Number(m.cost.total);
     if (isFinite(t) && t >= 0) {
       total += t;

@@ -84,35 +84,39 @@ async function buildItems(projectDir) {
     } catch { /* ignore */ }
   }
 
-  // 2. Scanned project files via /api/files (works with absolute path)
+  // 2. Recursive file scan via tags/scan (needs project id)
   const cacheKey = projectDir + '|' + (projId || '');
   if (cacheKey !== projectCacheKey) {
     projectCacheKey = cacheKey;
     scanCache = null;
-    try {
-      const r = await fetchJson('/api/files?projectDir=' + encodeURIComponent(projectDir) + '&dir=' + encodeURIComponent(projectDir));
-      if (r.status === 200 && Array.isArray(r.body && r.body.entries)) {
-        scanCache = r.body.entries;
-      }
-    } catch { /* ignore */ }
+    if (projId) {
+      try {
+        const r = await fetchJson('/api/projects/' + encodeURIComponent(projId) + '/tags/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (r.status === 200 && Array.isArray(r.body && r.body.files)) {
+          scanCache = r.body.files;
+        }
+      } catch { /* ignore */ }
+    }
   }
-  const entries = scanCache || [];
+  const scanned = scanCache || [];
   const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.subtitle));
   let fileCount = 0;
-  for (const e of entries) {
+  for (const f of scanned) {
     if (fileCount >= 200) break;
-    if (e.type !== 'file') continue;
-    if (!e.relPath) continue;
-    if (taggedPaths.has(e.relPath)) continue;
-    if (e.binary) continue;
-    const label = e.relPath.split('/').pop();
+    if (!f.path || taggedPaths.has(f.path)) continue;
+    if (f.binary) continue;
+    const label = f.path.split('/').pop();
     out.push({
-      id: 'file:' + e.relPath,
+      id: 'file:' + f.path,
       label,
-      subtitle: e.relPath,
+      subtitle: f.path,
       category: CATEGORY.FILES, icon: 'file',
-      insert: e.relPath,
-      searchText: (label + ' ' + e.relPath).toLowerCase()
+      insert: f.path,
+      searchText: (label + ' ' + f.path).toLowerCase()
     });
     fileCount++;
   }

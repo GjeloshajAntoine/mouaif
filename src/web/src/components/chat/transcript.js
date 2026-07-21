@@ -737,6 +737,9 @@ export function renderTranscript(state, refs) {
   mountToolsCard(refs, state);
   mountAgentFilesCard(refs, state);
   for (const m of state.messages) {
+    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) {
+      continue;
+    }
     if (m.role === 'tool' && m.phase === 'call') {
       appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
     } else if (m.role === 'tool' && m.phase === 'result') {

@@ -1,0 +1,14 @@
+
+> mouaif@1.0.0 build:web
+> vite build --config src/web/vite.config.js ; echo "exit=$?"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+[32m✓[39m 0 modules transformed.
+[31mx[39m Build failed in 19ms
+[31merror during build:
+[31mCould not resolve entry module ";/index.html".[31m
+    at getRollupError (file:///C:/Users/Admin/Documents/mouaif/node_modules/rollup/dist/es/shared/parseAst.js:317:41)
+    at error (file:///C:/Users/Admin/Documents/mouaif/node_modules/rollup/dist/es/shared/parseAst.js:313:42)
+    at ModuleLoader.loadEntryModule (file:///C:/Users/Admin/Documents/mouaif/node_modules/rollup/dist/es/shared/node-entry.js:22188:20)
+    at async Promise.all (index 0)[39m

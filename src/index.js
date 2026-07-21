@@ -19,6 +19,7 @@ const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
 const agentFiles = require('./agentFiles.js');
+const agentFeatures = require('./agentFeatures.js');
 const skills = require('./skills.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
@@ -307,6 +308,13 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
       profiles: promptProfiles.listProfiles(),
       default: promptProfiles.DEFAULT_PROFILE
     });
+  }
+
+  // Agent features — structured state of every mouaif feature for a
+  // project. Returns the same data the `list_features` tool provides.
+  // Requires ?projectDir=<abs>.
+  if (urlPath === '/api/features' && method === 'GET') {
+    return handleFeatures(req, res, parsed);
   }
 
   // OAuth loopback callback (provider redirects here after login)
@@ -1279,6 +1287,22 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without skills */ }
+  // Agent features summary — a terse list of enabled features and their
+  // authorization state in the current project. Tells the model what it
+  // can do without the user having to guess or ask. The `list_features`
+  // tool gives the full structured state.
+  try {
+    // Collect what we need for the feature summary.
+    const project = require('./settings.js').getProject(projectDir);
+    let authz = null;
+    try { authz = require('./tools/authorization.js').getAuthorization(projectDir); } catch { /* safe default */ }
+    let mcpServers = null;
+    try { mcpServers = require('./mcp.js').listServers(projectDir); } catch { /* safe default */ }
+    const featureMsg = agentFeatures.buildFeatureSummary({ chat, projectDir, project, authz, mcpServers });
+    if (featureMsg) {
+      upstreamMessages.push({ role: 'system', content: featureMsg });
+    }
+  } catch { /* non-fatal; stream proceeds without feature summary */ }
   // Tagged files (decisions §15). Injected after the profile but before
   // the custom prompt and the transcript, so they are the deepest
   // context. includeInChat entries ride as `system`; any file the user
@@ -1480,7 +1504,7 @@ async function handleChatStream(req, res, chatId) {
         // render the round's real cost without waiting for reconciliation.
         let segmentCost = null;
         let segmentUsage;
-        if (assistantContent || assistantReasoning) {
+        if (assistantContent.trim() || assistantReasoning.trim()) {
           try {
             segmentCost = computeSegmentCost(pendingRoundUsage);
             segmentUsage = pendingRoundUsage
@@ -1558,7 +1582,7 @@ async function handleChatStream(req, res, chatId) {
         // Persist the assistant message with the same enrichment so
         // a chat that is later reopened renders the same numbers
         // (decision §14 — the usage block rides the message).
-        if (assistantContent || assistantReasoning) {
+        if (assistantContent.trim() || assistantReasoning.trim()) {
           try {
             assistantMsg = messages.appendMessage(projectDir, chatId, {
               role: 'assistant',
@@ -1603,7 +1627,7 @@ async function handleChatStream(req, res, chatId) {
     // the error itself, so the transcript shows exactly what the
     // model produced before the failure.
     const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
-    if (assistantContent || assistantReasoning) {
+    if (assistantContent.trim() || assistantReasoning.trim()) {
       try {
         messages.appendMessage(projectDir, chatId, {
           role: 'assistant',
@@ -2817,6 +2841,31 @@ async function handlePrompts(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'prompts' });
+}
+
+// ---- Agent features API ------------------------------------------------
+// Structured state of every mouaif feature for a project. Returns the
+// same data the `list_features` tool provides, without requiring a chat.
+// Routes:
+//   GET /api/features?projectDir=<abs>        -> { features: { ... } }
+async function handleFeatures(req, res, parsed) {
+  const dir = (parsed.query && parsed.query.projectDir || '').trim();
+  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+  try {
+    const project = require('./settings.js').getProject(dir);
+    let authz = null;
+    try { authz = require('./tools/authorization.js').getAuthorization(dir); } catch { /* safe default */ }
+    let mcpServers = null;
+    try { mcpServers = require('./mcp.js').listServers(dir); } catch { /* safe default */ }
+    const featureContent = agentFeatures.buildFeatureSummary({ projectDir: dir, project, authz, mcpServers });
+    const jsonState = await agentFeatures.dispatchListFeatures({}, { projectDir: dir });
+    sendJSON(res, 200, {
+      features: (jsonState && jsonState.result) || {},
+      summary: featureContent
+    });
+  } catch (e) {
+    sendJSON(res, 500, { error: e.message, code: 'EINTERNAL' });
+  }
 }
 
 // ---- Agent skills API --------------------------------------------------

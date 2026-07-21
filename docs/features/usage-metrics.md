@@ -13,15 +13,15 @@ Every chat turn reports a `usage` block (`{ promptTokens, completionTokens }`) w
 
 ### What the user sees
 
-For every user message in the chat, the UI renders a small status line directly below the assistant reply:
+For every assistant message in the chat, the UI renders a small status line directly below the reply:
 
-```
-gpt-4o-mini  •  243 in  •  118 out  •  $0.00012  •  37 tok/s
+```text
+gpt-4o-mini  •  context 243  •  output 118  •  cost $0.00012  •  37 tok/s
 ```
 
 - `gpt-4o-mini` — the model the user picked for the turn.
-- `in` / `out` — the prompt and completion token counts (the same numbers the upstream reported).
-- `$0.00012` — the cost for this turn, formatted with 2–5 significant figures and the user's locale decimal separator.
+- `context` / `output` — the prompt and completion token counts (the same numbers the upstream reported).
+- `cost $0.00012` — the cost for this turn, formatted with 2–5 fractional digits and the user's locale decimal separator.
 - `37 tok/s` — completion tokens per second, averaged over the streaming window for that turn.
 
 The `tok/s` line updates **live** as the assistant's deltas arrive: it climbs from `0` while the upstream warms up, follows the throughput as tokens flow, and freezes on the final value when `done` is received. If the stream ends in `error` (e.g. `EUPSTREAM`, `EABORTED`, `EENETWORK`), the counter freezes at the last value and the cost line shows `--`.
@@ -71,7 +71,7 @@ const cost = computeCost({
 });
 // -> { input: 0.00003645, output: 0.0000708, total: 0.00010725, currency: 'USD' }
 
-formatCost(cost.total); // -> "$0.00011"  (2–5 sig figs, locale-aware)
+formatCost(cost.total); // -> "$0.00011"  (2–5 fractional digits, locale-aware)
 ```
 
 ## Behavior

@@ -25,9 +25,10 @@ function defaultLocale() {
 // formatCost(amount) -> string
 //
 // Renders `--` when the amount is unknown (NaN / null), `$0.00` for
-// zero, otherwise a USD-formatted number with 2–5 fractional
-// digits. The decimal separator respects the user's locale; the
-// currency symbol is always `$` (decision §14: USD only).
+// zero, otherwise a USD-formatted number with 2–5 fractional digits.
+// Values below 0.000005 round to `$0.00000`. The decimal separator
+// respects the user's locale; the currency symbol is always `$`
+// (decision §14: USD only).
 export function formatCost(amount) {
   const a = Number(amount);
   if (!isFinite(a) || a < 0) return '--';

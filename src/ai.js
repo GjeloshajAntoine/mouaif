@@ -734,11 +734,17 @@ const PARSERS = {
 };
 
 function firstFiniteNumber(...values) {
+  const n = firstFiniteNumberOrNull(...values);
+  return n == null ? 0 : n;
+}
+
+function firstFiniteNumberOrNull(...values) {
   for (const value of values) {
+    if (value === undefined || value === null || value === '') continue;
     const n = Number(value);
     if (isFinite(n) && n >= 0) return n;
   }
-  return 0;
+  return null;
 }
 
 function firstStringField(obj, names) {
@@ -812,7 +818,7 @@ function* parseOpenAISSE(eventName, data) {
       obj.usage.completionTokens,
       obj.usage.outputTokens
     );
-    const providerCost = firstFiniteNumber(
+    const providerCost = firstFiniteNumberOrNull(
       obj.usage.cost,
       obj.usage.total_cost,
       obj.usage.totalCost
@@ -820,14 +826,16 @@ function* parseOpenAISSE(eventName, data) {
     // OpenRouter additionally reports a cost split under cost_details
     // (docs: usage.cost_details.upstream_inference_prompt_cost /
     // completions_cost). Capture it so persisted segments can show a
-    // real input/output cost breakdown instead of a bare total.
+    // real input/output cost breakdown instead of a bare total. Missing
+    // cost fields stay null; otherwise an absent field would look like a
+    // provider-authoritative $0.00 and suppress local pricing fallback.
     const cd = (obj.usage && obj.usage.cost_details) || {};
-    const providerCostInput = firstFiniteNumber(
+    const providerCostInput = firstFiniteNumberOrNull(
       cd.upstream_inference_prompt_cost,
       cd.prompt_cost,
       cd.input_cost
     );
-    const providerCostOutput = firstFiniteNumber(
+    const providerCostOutput = firstFiniteNumberOrNull(
       cd.upstream_inference_completions_cost,
       cd.completion_cost,
       cd.completions_cost,
@@ -1106,6 +1114,8 @@ async function streamChat(opts) {
   catch { /* subagent tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/ask.js').SPEC); }
   catch { /* ask_user tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); }
+  catch { /* list_features tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -1287,7 +1297,20 @@ async function streamChat(opts) {
       // structured answer into the `tool` message it returns.
       let callOptsAnswerPayload = null;
       try {
-        if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
+        // list_features is a read-only metadata tool that bypasses
+        // the authorization gate — it only returns feature state.
+        if (c.name === 'list_features') {
+          let af;
+          try { af = require('./agentFeatures.js'); }
+          catch (e) {
+            exec = { ok: false, content: JSON.stringify({ error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } }), result: { error: { code: 'EMODULE' } } };
+          }
+          if (!exec) {
+            exec = await af.dispatchListFeatures(args, Object.assign({}, opts, { callId: c.id || null }));
+          }
+          onEvent('tool_call', { id: c.id || null, name: c.name, args });
+          callEmitted = true;
+        } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
           const requested = args && (args.toolName || args.name || args.tool);
           const spec = toolSpecs.find(s => s && s.function && s.function.name === requested);
           if (!spec) {
@@ -1970,6 +1993,23 @@ async function streamChat(opts) {
         cancelled: !!(payload && payload.cancelled)
       });
       return { ok: out.ok, content: out.content, result: out.result };
+    }
+
+    // Native list_features tool — returns the full structured feature
+    // state for the current project and chat. Not gated by authorization:
+    // it is read-only metadata, does not execute commands or modify files.
+    if (name === 'list_features') {
+      let af;
+      try { af = require('./agentFeatures.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      return await af.dispatchListFeatures(args, {
+        projectDir: callOpts && callOpts.projectDir,
+        chatId: callOpts && callOpts.chatId,
+        chat: callOpts && callOpts.chat
+      });
     }
 
     // Native file tools: read_file, list_files, search_files, write_file,

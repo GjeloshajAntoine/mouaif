@@ -165,11 +165,10 @@ function num(v) {
 
 // formatCost(amount, { locale } = {}) -> string
 //
-// Format a USD amount with 2–5 significant figures. Anything below
-// 0.00001 renders as `$0.0000X` (the smallest non-zero we emit);
-// $0 renders as `$0.00` so the row is never empty. The decimal
-// separator respects the user's locale; the currency symbol is
-// always `$` because pricing is USD-only (per §14).
+// Format a USD amount with 2–5 fractional digits. Values below
+// 0.000005 round to `$0.00000`; $0 renders as `$0.00` so the row is
+// never empty. The decimal separator respects the user's locale; the
+// currency symbol is always `$` because pricing is USD-only (per §14).
 //
 // We don't use `Intl.NumberFormat`'s `style: 'currency'` because
 // some locales (e.g. en-US) emit `US$` for that formatter, which

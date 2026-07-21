@@ -23,6 +23,7 @@ import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard } from './cards.js';
 import { normalizeToolName } from './tools.js';
+import { queueComposerDraftSave } from './composer.js';
 
 // markToolUsed(state, refs, toolName)
 //
@@ -207,6 +208,14 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
     return;
   }
+  // A turn is already streaming from THIS client. Bail out before the
+  // composer is cleared so the typed text is never lost. (The server
+  // would 409 anyway; this also covers the Enter-key path, which
+  // bypasses the disabled send button.)
+  if (state.streaming) {
+    setChatStatus(refs, 'wait for the current response to finish', 'busy');
+    return;
+  }
   // /shell <cmd> — direct tool invocation, no model.
   if (text.startsWith('/shell ')) {
     const cmd = text.slice('/shell '.length).trim();
@@ -266,8 +275,31 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     try { errText = await resp.text(); } catch { /* ignore */ }
     let errMsg = 'HTTP ' + resp.status;
     try { const j = JSON.parse(errText); if (j && j.error) errMsg = j.error; } catch { /* not JSON */ }
+    if (resp.status === 409) {
+      // Another client (tab/device) is already streaming this chat and
+      // the server rejected BEFORE persisting the user message. Undo the
+      // optimistic append and put the text + attachments back in the
+      // composer so the message is never lost — without this the next
+      // reconcileRunningChat tick rebuilds the transcript from disk and
+      // the bubble silently disappears.
+      state.messages = state.messages.filter((m) => m !== userMsg);
+      // Rolling back the first message leaves state.messages empty, so
+      // this rebuild also restores the creation-time setup card that
+      // send() removed above (renderTranscript mounts it on empty).
+      if (state._renderTranscript) state._renderTranscript();
+      if (refs.promptInput.current) {
+        refs.promptInput.current.value = text;
+        refs._autoresize();
+        queueComposerDraftSave(text, projectDir, chatId, refs, state._updateChat || (() => Promise.resolve()));
+      }
+      setImageAttachments(atts);
+      setChatStatus(refs, 'a response is already streaming — your message is back in the composer', 'busy');
+      state.streaming = false;
+      if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+      return;
+    }
     setChatStatus(refs, errMsg, 'error');
-    appendErrorCard(errMsg + (resp.status === 409 ? ' (a response is already streaming for this chat — wait for it or reload)' : ''), refs, state);
+    appendErrorCard(errMsg, refs, state);
     state.streaming = false;
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
@@ -368,7 +400,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     } else if (ev.eventName === 'assistant_turn_end') {
       const segment = assembled;
       const thoughtSegment = reasoning;
-      if (segment || thoughtSegment) {
+      if (segment.trim() || thoughtSegment.trim()) {
         finalizeLiveMessage({ content: segment, reasoning: thoughtSegment }, refs);
         // The server attaches the round's exact usage + cost to this
         // event (computed from the per-round snapshot, incl. OpenRouter's
@@ -398,8 +430,6 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         // Reset round counters for the next segment.
         roundPromptTokens = 0;
         roundCompletionTokens = 0;
-      } else {
-        finalizeLiveMessage({ content: '', reasoning: '' }, refs);
       }
       assembled = '';
       reasoning = '';
@@ -470,26 +500,32 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   const finalLive = refs.transcript.current
     ? refs.transcript.current.querySelector('[data-live="1"]')
     : null;
-  finalizeLiveMessage({ content: assembled, reasoning }, refs);
-  // Final meta line: the live counter has the authoritative
-  // completionTokens; the cost is already on the `done` event.
-  const finalRate = counter.rate(usage && usage.completionTokens);
-  const persisted = {
-    role: 'assistant',
-    content: assembled,
-    reasoning,
-    ts: new Date().toISOString(),
-    modelId,
-    usage: usage || undefined,
-    cost: cost || undefined,
-    streamingMs: streamingMs || undefined,
-    liveRate: finalRate
-  };
-  state.messages = state.messages.concat([persisted]);
-  updateUsageSummary(state, null, refs);
-  if (finalLive) {
-    const meta = finalLive.querySelector('.chat-msg__meta');
-    if (meta) renderUsageMeta(meta, persisted, state);
+  const hasFinalAssistantText = !!(assembled.trim() || reasoning.trim());
+  if (hasFinalAssistantText) {
+    finalizeLiveMessage({ content: assembled, reasoning }, refs);
+    // Final meta line: the live counter has the authoritative
+    // completionTokens; the cost is already on the `done` event.
+    const finalRate = counter.rate(usage && usage.completionTokens);
+    const persisted = {
+      role: 'assistant',
+      content: assembled,
+      reasoning,
+      ts: new Date().toISOString(),
+      modelId,
+      usage: usage || undefined,
+      cost: cost || undefined,
+      streamingMs: streamingMs || undefined,
+      liveRate: finalRate
+    };
+    state.messages = state.messages.concat([persisted]);
+    updateUsageSummary(state, null, refs);
+    if (finalLive) {
+      const meta = finalLive.querySelector('.chat-msg__meta');
+      if (meta) renderUsageMeta(meta, persisted, state);
+    }
+  } else if (finalLive && finalLive.parentNode) {
+    finalLive.remove();
+    updateUsageSummary(state, null, refs);
   }
   counter.reset();
   // The server transcript is authoritative. Reconcile after the
