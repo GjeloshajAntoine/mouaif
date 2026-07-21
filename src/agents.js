@@ -3,29 +3,27 @@
 // Project agents — named, project-scoped agent presets stored in
 // <projectDir>/.mouaif.json under `agentPresets`.
 //
-// Each preset = { id, title, content, tools? }
-//   id:      short kebab-case id, unique within the project
-//   title:   human-readable label
-//   content: the instructions text (system prompt)
-//   tools:   optional array of tool names to enable when this agent
-//            is selected. When absent/null, the chat's default filter
-//            applies. When present, the chat's filter is overridden.
+// Each preset = { id, title, content, promptSize?, modelId?, providerId?, tools? }
+//   id:         short kebab-case id, unique within the project
+//   title:      human-readable label
+//   content:    the instructions text (system prompt)
+//   promptSize: optional 'very-small' | 'average' | 'extensive'
+//   modelId:    optional model slug to use when this agent is active
+//   providerId: optional provider id (e.g. 'openrouter')
+//   tools:      optional array of tool names to enable (overrides chat filter)
 //
-// A selected chat agent is injected into the upstream system context,
-// and the native `subagent` tool can target one by name.
+// When a chat selects an agent, all these fields are applied to the chat
+// at selection time (the server copies them onto the chat record).
 
 const crypto = require('crypto');
 const settings = require('./settings.js');
 
 const MAX_BYTES = 64 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const VALID_SIZES = new Set(['very-small', 'average', 'extensive']);
 
 function isValidName(name) {
   return typeof name === 'string' && NAME_RE.test(name);
-}
-
-function newAgentId() {
-  return crypto.randomBytes(4).toString('hex');
 }
 
 function normalizePreset(raw) {
@@ -37,6 +35,9 @@ function normalizePreset(raw) {
     title: raw.title.trim(),
     content: typeof raw.content === 'string' ? raw.content : '',
     role: 'system',
+    promptSize: raw.promptSize && VALID_SIZES.has(raw.promptSize) ? raw.promptSize : undefined,
+    modelId: typeof raw.modelId === 'string' && raw.modelId.trim() ? raw.modelId.trim() : undefined,
+    providerId: typeof raw.providerId === 'string' && raw.providerId.trim() ? raw.providerId.trim() : undefined,
     tools: Array.isArray(raw.tools) ? raw.tools.map(String).filter(Boolean) : undefined,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
@@ -50,16 +51,15 @@ function listPresets(projectDir) {
   return raw.map(normalizePreset).filter(Boolean);
 }
 
-function discover(projectDir) {
-  return listPresets(projectDir);
-}
-
 function load(projectDir) {
   return listPresets(projectDir).map(p => ({
     name: p.id,
     title: p.title,
     role: 'system',
     content: 'Project agent "' + p.title + '":\n\n' + (p.content || ''),
+    promptSize: p.promptSize,
+    modelId: p.modelId,
+    providerId: p.providerId,
     tools: p.tools
   }));
 }
@@ -73,6 +73,9 @@ function loadOne(projectDir, name) {
     title: p.title,
     role: 'system',
     content: 'Project agent "' + p.title + '":\n\n' + (p.content || ''),
+    promptSize: p.promptSize,
+    modelId: p.modelId,
+    providerId: p.providerId,
     tools: p.tools
   };
 }
@@ -87,7 +90,6 @@ function create(projectDir, opts) {
   }
   const project = settings.getProject(projectDir);
   const list = Array.isArray(project.agentPresets) ? project.agentPresets.slice() : [];
-  // Unique-ish id from the title (kebab-case + dedup)
   let baseId = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   let id = baseId;
   let counter = 1;
@@ -99,6 +101,9 @@ function create(projectDir, opts) {
     title,
     content: content || '',
     role: 'system',
+    promptSize: opts && VALID_SIZES.has(opts.promptSize) ? opts.promptSize : undefined,
+    modelId: opts && typeof opts.modelId === 'string' ? opts.modelId.trim() || undefined : undefined,
+    providerId: opts && typeof opts.providerId === 'string' ? opts.providerId.trim() || undefined : undefined,
     tools: Array.isArray(opts.tools) ? opts.tools : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -173,7 +178,6 @@ function setDefault(projectDir, name) {
 module.exports = {
   MAX_BYTES,
   NAME_RE,
-  discover,
   load,
   loadOne,
   create,

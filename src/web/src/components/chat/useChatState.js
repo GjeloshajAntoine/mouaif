@@ -338,7 +338,7 @@ export function useChatState(props) {
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
         if (rAgents && rAgents.status === 200) {
-          state.agents = Array.isArray(rAgents.body.agents) ? rAgents.body.agents.map(a => ({ name: a.id, title: a.title, tools: a.tools })) : [];
+          state.agents = Array.isArray(rAgents.body.agents) ? rAgents.body.agents.map(a => ({ name: a.id, title: a.title, tools: a.tools, promptSize: a.promptSize, modelId: a.modelId, providerId: a.providerId })) : [];
           state.defaultAgentId = rAgents.body.defaultAgentId || null;
         }
 

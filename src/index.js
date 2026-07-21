@@ -1281,8 +1281,8 @@ async function handleChatStream(req, res, chatId) {
   // Project agent (.mouaif.json agentPreset). When selected on
   // the chat or project, its instructions are injected after global
   // agent files and before the tagged files and custom prompt.
-  // If the agent also defines a tool filter, it overrides the
-  // current chat's tool filter for this turn.
+  // If the agent also defines a tool filter, prompt size, model, or
+  // provider, they override the current chat's settings for this turn.
   try {
     const selectedAgent = agents.loadSelected({ chat, projectDir });
     if (selectedAgent) {
@@ -1290,12 +1290,15 @@ async function handleChatStream(req, res, chatId) {
       // Tool filter from the agent preset overrides the chat's filter.
       // The model sees only these tools when the agent is active.
       if (Array.isArray(selectedAgent.tools) && selectedAgent.tools.length) {
-        // Override the enabledTools passed to streamChat below.
-        // We store it on chat.tools for this stream only (not persisted).
         chat = Object.assign({}, chat, { tools: selectedAgent.tools });
       }
+      // Prompt size from agent preset overrides chat-level prompt size
+      if (selectedAgent.promptSize) {
+        resolvedProfileId = selectedAgent.promptSize;
+        chat = Object.assign({}, chat, { promptSize: selectedAgent.promptSize });
+      }
       if (traceStream) {
-        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools });
+        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools, promptSize: selectedAgent.promptSize, modelId: selectedAgent.modelId, providerId: selectedAgent.providerId });
       }
     }
   } catch { /* non-fatal; stream proceeds without selected agent */ }

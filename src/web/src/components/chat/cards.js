@@ -91,12 +91,15 @@ function buildAgentCard(state) {
     if (state._selectAgent) state._selectAgent(select.value || null);
   });
   card.appendChild(select);
-  // Show the agent's tool bundle when an agent with tools is selected.
-  if (effective && effective.tools && effective.tools.length) {
-    const toolNote = document.createElement('div');
-    toolNote.className = 'chat-view__agent-tools';
-    toolNote.textContent = 'Tools: ' + effective.tools.join(', ');
-    card.appendChild(toolNote);
+  // Show agent details when selected
+  if (effective) {
+    const details = document.createElement('div');
+    details.className = 'chat-view__agent-details';
+    const bits = [];
+    if (effective.tools && effective.tools.length) bits.push('Tools: ' + effective.tools.join(', '));
+    if (effective.promptSize) bits.push('Prompt: ' + effective.promptSize);
+    if (effective.modelId) bits.push('Model: ' + effective.modelId);
+    if (bits.length) { details.textContent = bits.join(' · '); card.appendChild(details); }
   }
   return card;
 }

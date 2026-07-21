@@ -705,15 +705,21 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   async function saveAgentPreset(id) {
     const titleEl = document.querySelector('[data-agent-title="' + id + '"]');
     const contentEl = document.querySelector('[data-agent-content="' + id + '"]');
+    const promptSizeEl = document.querySelector('[data-agent-prompt-size="' + id + '"]');
+    const providerEl = document.querySelector('[data-agent-provider="' + id + '"]');
+    const modelEl = document.querySelector('[data-agent-model="' + id + '"]');
     const title = titleEl ? titleEl.value.trim() : '';
     const content = contentEl ? contentEl.value : '';
+    const promptSize = promptSizeEl ? promptSizeEl.value || undefined : undefined;
+    const providerId = providerEl ? providerEl.value.trim() || undefined : undefined;
+    const modelId = modelEl ? modelEl.value.trim() || undefined : undefined;
     const tools = getAgentTools(id);
     const statusEl = document.querySelector('[data-agent-status="' + id + '"]');
     if (statusEl) statusEl.textContent = 'saving…';
     const r = await fetchJson('/api/agents/' + encodeURIComponent(id), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), title, content, tools })
+      body: JSON.stringify({ projectDir: dir(), title, content, promptSize, providerId, modelId, tools })
     });
     if (statusEl) statusEl.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
     if (r.status === 200) {
@@ -885,6 +891,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   h('label', { class: 'row settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Instructions ' + (a.content ? a.content.length + ' chars' : '')),
                     h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', 'data-agent-content': a.id, onInput: e => { a._contentDirty = e.target.value; }, placeholder: 'You are an assistant who…' })
+                  ),
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Prompt style'),
+                    h('select', { class: 'input', value: a.promptSize || '', 'data-agent-prompt-size': a.id },
+                      h('option', { value: '' }, 'Inherit'),
+                      h('option', { value: 'very-small' }, 'Very small'),
+                      h('option', { value: 'average' }, 'Average'),
+                      h('option', { value: 'extensive' }, 'Extensive')
+                    )
+                  ),
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Provider'),
+                    h('input', { class: 'input', value: a.providerId || '', 'data-agent-provider': a.id, placeholder: 'e.g. openrouter' })
+                  ),
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Model'),
+                    h('input', { class: 'input', value: a.modelId || '', 'data-agent-model': a.id, placeholder: 'e.g. openai/gpt-4o' })
                   ),
                   h('div', { class: 'settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Tools'),
