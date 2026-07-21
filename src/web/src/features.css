@@ -593,7 +593,7 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card:not(.is-expanded):not(.tool-card--authorization) .tool-card__body {
+.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user)) .tool-card__body {
   /* Collapsed cards are a single row: chevron + label/path + state
      dot. The result body appears only after expansion, which avoids
      duplicate path text and keeps tool turns visually cheap. */
