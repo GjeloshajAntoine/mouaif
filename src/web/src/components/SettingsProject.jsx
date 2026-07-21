@@ -37,6 +37,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
+  const [mcpServerAuth, setMcpServerAuth] = useState({});
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -147,6 +148,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // server says it is, and fall back to `ask` on the first load.
       const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
+      // Per-server MCP authorization: load the servers map from the
+      // MCP authorization block so each server row can show its
+      // Off/Ask/Allow segment. Only the mode (not the allowlist) is
+      // used here — allowlist editing is in the dedicated MCP page.
+      const mcp = authz.status === 200 && authz.body.mcp;
+      const servers = (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {};
+      setMcpServerAuth(servers);
     } catch { /* keep ask + empty allowlist */ }
 
     // Load the tools catalog for the visibility tree. This is the
@@ -337,6 +345,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
   function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
+
+  // Per-server MCP authorization (no allowlist — that's in the
+  // dedicated MCP settings page). The segment writes the mode
+  // directly to mcp.servers.<slug>.
+  function pickServerMcpAuth(slug, newMode) {
+    const patch = {};
+    if (newMode === 'inherit') {
+      patch[slug] = null;
+    } else {
+      patch[slug] = { mode: newMode };
+    }
+    setMcpServerAuth((prev) => {
+      const next = Object.assign({}, prev);
+      if (newMode === 'inherit') delete next[slug];
+      else next[slug] = { mode: newMode };
+      return next;
+    });
+    fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), mcp: { servers: patch } })
+    });
+  }
 
   // The shared MCP fallback gate lives under `mcp.mode` in the
   // authorization payload (not `tools.mcp`), so it gets its own save
@@ -588,21 +619,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         }).filter(Boolean);
       }
       const off = server.enabled === false;
+      const entry = mcpServerAuth[slug];
+      const effMode = (entry && entry.mode) || 'ask';
       groups.push({
         id: 'mcp-' + server.id,
         name: server.name || server.id,
         description: server.status || 'stopped',
         checked: !off,
+        control: toolModeSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMcpAuth(slug, mode), [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
         tools: serverTools.map((t) => {
           const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
           return leaf(t, { name: short, checked: !off, disabled: off });
         })
       });
     }
-
-    // Per-server MCP authorization (Off/Ask/Allow with allowlist) is
-    // managed in the dedicated MCP settings page (#/settings/mcp).
-    // Here we only show the enable/disable checkbox on the server line.
 
     return groups;
   }
