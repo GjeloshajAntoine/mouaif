@@ -90,6 +90,7 @@ A chat with `trace: true` also writes a per-chat NDJSON stream to `<projectDir>/
 - **Models are per-project; providers are app-level.** The chat view reads `/api/ai/models?projectDir=…` for project model IDs. The server resolves credentials from the matching global provider connection only when sending a request.
 - **Auto-scroll.** The transcript auto-scrolls to the bottom on new content. Manual scrolling is not preserved across sends — out of scope.
 - **No optimistic re-render on errors.** A 4xx/5xx on the stream endpoint shows in the status line; the live assistant message is replaced with `[error: HTTP <code>]`.
+- **Sending while a run is in progress never loses the message.** The server rejects a second concurrent stream on the same chat with `409 EALREADY_RUNNING` *before* persisting the user message. The client handles this in two layers: `send()` bails out early (before clearing the composer) when this tab is already streaming — which also covers the `Enter` key, since it bypasses the disabled send button — and on a `409` (another tab/device owns the run) the optimistic bubble is removed and the text plus image attachments are restored into the composer, with the draft re-persisted. Without the restore, the once-per-second transcript poll would rebuild from disk and the message would silently disappear.
 
 ## Per-chat controls
 
@@ -109,6 +110,7 @@ The chat head is intentionally minimal so the message area gets every spare pixe
   - **Prompt** — optional custom prompt for this chat, populated from `GET /api/prompts`. `PATCH` with `{ promptId }`. Layered on top of the profile; the system-prompt card refreshes to show it appended.
   - **Trace to file** — checkbox. `PATCH` with `{ trace: bool }`. The only per-chat control still surfaced on the meta line (`trace on`, or nothing when off), because it has no other on-screen indicator. The trace writer in [src/trace.js](../../src/trace.js) is already gated on `chat.trace`, so flipping this on mid-conversation starts writing `<projectDir>/.mouaif/traces/<chatId>.ndjson` from the next event.
   - **Export trace** — one-shot `POST /api/chats/:id/trace/export`. It exports the stored transcript immediately without changing the toggle.
+- **Tools card** — a collapsible card below the system-prompt message groups every available tool (Shell, Subagent, Ask user, File tools, and one row per MCP server). Each group row carries a visibility checkbox (on the left) and a **Off / Ask / Allow authorization segment** (on the right), matching the same control pattern as the project settings page. The segment writes through `PUT /api/tools/authorization` immediately on tap; the card re-renders in place to reflect the new mode. The per-chat visibility filter (which tools are exposed to the model for this chat) is separate from the project-level authorization mode (who decides whether a call is approved). Both controls live side by side on the same row, with the authorization segment pushed to the right edge via `tool-tree__control`.
 - **✎ Rename** — `prompt()` for a new title, `PATCH /api/chats/:id` with `{ title }`. The visible title updates immediately on success; the chat list in the project card refreshes on next render.
 - **× Delete** — `confirm()` then `DELETE /api/chats/:id?projectDir=…`. Bumps `projectsReload` so the project card refetches, and navigates back to `#/projects`. The on-disk transcript is removed and the project's `.mouaif.json` loses the chat entry. The trace file is deliberately kept because it is an independent, user-owned export per [docs/decisions.md §5](../decisions.md).
 
@@ -131,8 +133,9 @@ SSE stream does not poll over its in-progress rendering.
 Each model tool round-trip has an explicit `assistant_turn_end` SSE boundary.
 Text emitted before a tool call is finalized in its own assistant bubble, the
 tool call and result follow it, and subsequent model text starts a new bubble.
-This preserves the real assistant → tool → assistant order both live and after
-reopening the chat.
+Blank assistant boundaries are skipped, so a tool-only round does not create an
+empty chat bubble. This preserves the real assistant → tool → assistant order
+both live and after reopening the chat.
 
 Tool-card rendering is isolated from the network reader. A malformed or
 unsupported tool payload can fail to render without aborting the remaining SSE
@@ -147,6 +150,13 @@ After a streamed exchange completes, the browser reconciles the rendered turn
 with the server transcript. The persisted transcript is authoritative, so a
 missed or failed live DOM update cannot leave the screen ending on a tool card
 when the post-tool assistant message was successfully stored.
+
+A message sent while the chat is already running is never persisted by the
+server (`409 EALREADY_RUNNING`). The send path in
+[src/web/src/components/chat/stream.js](../../src/web/src/components/chat/stream.js)
+treats that status specially: it drops the optimistic bubble, restores the
+composer (text, attachments, and the debounced draft), and shows a busy status
+instead of an error card, so the same-disk poll cannot wipe the message.
 
 - Build: [src/web/vite.config.js](../../src/web/vite.config.js), `src/web/index.html`, [src/web/src/main.jsx](../../src/web/src/main.jsx), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Vite emits hashed assets under `src/web/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/web/` route prefers `src/web/dist/`, falls back to `src/web/` for dev.
