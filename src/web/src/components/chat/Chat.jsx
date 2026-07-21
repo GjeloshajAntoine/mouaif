@@ -177,9 +177,9 @@ export function ChatView(props) {
           h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
           h('span', null, '×')
         ))
-      ) : null,
-      h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
+      ) : null
     ),
+    h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
     fileEditorOpen ? h(FileEditorView, { projectDir, onClose: () => setFileEditorOpen(false) }) : null
   );
 }
