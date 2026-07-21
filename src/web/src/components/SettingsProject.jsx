@@ -688,15 +688,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item' },
             h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt context size'),
-              h('div', { class: 'settings-project__item-note' }, 'How much project context the model receives.'),
+              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Default prompt style'),
+              h('div', { class: 'settings-project__item-note' }, 'How much tool schema and instruction text new chats get. Smaller = faster, less context used. Per-chat override available.'),
               h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Inherits the app default until changed here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
               h('option', { value: '' }, 'Inherit app default'),
-              h('option', { value: 'very-small' }, 'Very small'),
-              h('option', { value: 'average' }, 'Average (recommended)'),
-              h('option', { value: 'extensive' }, 'Extensive')
+              h('option', { value: 'very-small' }, 'Very small — tool names only, no schemas'),
+              h('option', { value: 'average' }, 'Average — full tools, recommended'),
+              h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
             )
           ),
           h('li', { class: 'settings-project__item settings-project__item--col', hidden: !traceCardVisible },

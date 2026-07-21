@@ -33,13 +33,13 @@ export function SettingsDefaultsView() {
       h('h2', { class: 'view-title' }, 'App defaults')
     ),
     h('section', null,
-      h('p', { class: 'hint hint--compact' }, 'Defaults applied to new chats. Each chat can override these.'),
+      h('p', { class: 'hint hint--compact' }, 'How much tool schema and instruction text the model receives. Smaller = less context used, faster replies. New chats can override this.'),
       h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sd-prompt-size' }, 'Default prompt size'),
+        h('label', { class: 'label', for: 'sd-prompt-size' }, 'Default prompt style'),
         h('select', { ref: promptSize, class: 'input', id: 'sd-prompt-size' },
-          h('option', { value: 'very-small' }, 'very-small'),
-          h('option', { value: 'average' }, 'average'),
-          h('option', { value: 'extensive' }, 'extensive')
+          h('option', { value: 'very-small' }, 'Very small — tool names only, no schemas'),
+          h('option', { value: 'average' }, 'Average — full tools, recommended'),
+          h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
         )
       ),
       h('div', { class: 'row row--actions' },

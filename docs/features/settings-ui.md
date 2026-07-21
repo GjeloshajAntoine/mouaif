@@ -59,7 +59,7 @@ Each card's summary line reflects live state (e.g. `1 connected`, `3 models pric
 | `#/settings/providers` | `SettingsProvidersView` | List of configured providers + an `+ Add provider` entry. |
 | `#/settings/providers/new` | `SettingsProviderEditView` | New provider form. |
 | `#/settings/providers/<id>` | `SettingsProviderEditView` | Edit / delete an existing provider. |
-| `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt size` (select). Save writes to `PUT /api/settings/app`. |
+| `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt style` (select). Save writes to `PUT /api/settings/app`. |
 | `#/settings/project[?projectDir=<abs path>]` | `SettingsProjectView` | Raw `<projectDir>/.mouaif.json` JSON editor + resolved view. Seeds the directory from `?projectDir=` or the active project and auto-loads. |
 | `#/settings/copilot` | — (legacy alias) | Old GitHub Copilot OAuth screen. The `client_id` field now lives in the Copilot provider form; this hash redirects to `#/settings/providers/github-copilot`. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |

@@ -81,7 +81,7 @@ export function SettingsHomeView() {
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Application'),
       h('ul', { class: 'group__list' },
-        cardLi('settings/defaults', 'Chat defaults', { summaryRef: promptSize, summary: 'prompt size' }),
+        cardLi('settings/defaults', 'Chat defaults', { summaryRef: promptSize, summary: 'prompt style (tool verbosity)' }),
         cardLi('settings/pricing', 'Model pricing', { summaryRef: pricingSummary, summary: 'cost per 1K tokens' }),
         cardLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
