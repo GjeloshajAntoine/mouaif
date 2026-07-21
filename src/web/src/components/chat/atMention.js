@@ -1,8 +1,8 @@
 // mouaif web — @-mention autocomplete for the composer
 //
 // Detects when the user types @ in the textarea and shows a popup
-// overlay with matching items: tagged files, project files, actions
-// (tools), and the active agent/model.
+// overlay with matching items: project files, tools/actions, and
+// the active agent/model.
 //
 // The popup appears above the textarea and stays visible until the
 // user dismisses it with Escape, taps outside, or completes a
@@ -10,42 +10,48 @@
 
 import { fetchJson } from '../../api.js';
 
-// ---- Types (category identifiers) --------------------------------------
+// ---- Categories ---------------------------------------------------------
 
-const CATEGORY = {
-  FILES: 'files',
-  ACTIONS: 'actions',
-  AGENT: 'agent'
-};
+const CATEGORY = { FILES: 'files', ACTIONS: 'actions', AGENT: 'agent' };
+const CATEGORY_LABELS = { files: 'Files', actions: 'Actions', agent: 'Agent' };
+const ICON_MAP = { file: '📄', action: '⚡', agent: '🤖' };
 
-const CATEGORY_LABELS = {
-  files: 'Files',
-  actions: 'Actions',
-  agent: 'Agent'
-};
+// ---- Module-level state -------------------------------------------------
 
-const ICON_MAP = {
-  file: '📄',
-  action: '⚡',
-  agent: '🤖'
-};
-
-// ---- Module-level state ------------------------------------------------
-
-// `uiState` holds the Preact mutable state bag (from useChatState) so
-// buildItems can read state.chat, state.tools, etc.
 let uiState = null;
-
 let popup = null;
 let textarea = null;
 let items = [];
 let filtered = [];
 let query = '';
-let range = null; // { start, end } in textarea
+let range = null;
 let selectedIdx = 0;
 let visible = false;
 let scanCache = null;
-let projectDirCache = '';
+let projectCacheKey = '';
+
+// Resolve the registered project id from a projectDir.
+// Tags API uses the short id, not the absolute path.
+let projectIdCache = null;
+let projectDirForId = '';
+
+async function resolveProjectId(projectDir) {
+  if (!projectDir) return null;
+  if (projectDir === projectDirForId && projectIdCache) return projectIdCache;
+  try {
+    const r = await fetchJson('/api/projects/registered');
+    if (r.status === 200 && Array.isArray(r.body && r.body.projects)) {
+      for (const p of r.body.projects) {
+        if (p && p.path === projectDir && p.id) {
+          projectIdCache = p.id;
+          projectDirForId = projectDir;
+          return p.id;
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 // ---- Build the item list ------------------------------------------------
 
@@ -53,57 +59,60 @@ async function buildItems(projectDir) {
   if (!projectDir) return [];
   const out = [];
 
-  // 1. Tagged files
-  try {
-    const r = await fetchJson('/api/projects/' + encodeURIComponent(projectDir) + '/tags');
-    if (r.status === 200 && r.body && r.body.tags) {
-      const tagMap = r.body.tags;
-      for (const relPath of Object.keys(tagMap).sort()) {
-        const entry = tagMap[relPath];
-        const label = relPath.split('/').pop();
-        out.push({
-          id: 'file:' + relPath,
-          label: label,
-          subtitle: relPath,
-          category: CATEGORY.FILES,
-          icon: 'file',
-          insert: relPath,
-          searchText: (label + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
-        });
-      }
-    }
-  } catch { /* ignore */ }
+  // Resolve project id for tags/scan endpoints
+  const projId = await resolveProjectId(projectDir);
 
-  // 2. Scanned project files (up to ~200)
-  if (projectDir !== projectDirCache) {
-    projectDirCache = projectDir;
-    scanCache = null;
+  // 1. Tagged files (only if we have a registered project id)
+  if (projId) {
     try {
-      const r = await fetchJson('/api/projects/' + encodeURIComponent(projectDir) + '/tags/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      if (r.status === 200 && Array.isArray(r.body && r.body.files)) {
-        scanCache = r.body.files;
+      const r = await fetchJson('/api/projects/' + encodeURIComponent(projId) + '/tags');
+      if (r.status === 200 && r.body && r.body.tags) {
+        const tagMap = r.body.tags;
+        for (const relPath of Object.keys(tagMap).sort()) {
+          const entry = tagMap[relPath];
+          const label = relPath.split('/').pop();
+          out.push({
+            id: 'file:' + relPath,
+            label,
+            subtitle: relPath,
+            category: CATEGORY.FILES, icon: 'file',
+            insert: relPath,
+            searchText: (label + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
+          });
+        }
       }
     } catch { /* ignore */ }
   }
-  const files = scanCache || [];
+
+  // 2. Scanned project files via /api/files (works with absolute path)
+  const cacheKey = projectDir + '|' + (projId || '');
+  if (cacheKey !== projectCacheKey) {
+    projectCacheKey = cacheKey;
+    scanCache = null;
+    try {
+      const r = await fetchJson('/api/files?projectDir=' + encodeURIComponent(projectDir) + '&dir=' + encodeURIComponent(projectDir));
+      if (r.status === 200 && Array.isArray(r.body && r.body.entries)) {
+        scanCache = r.body.entries;
+      }
+    } catch { /* ignore */ }
+  }
+  const entries = scanCache || [];
   const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.subtitle));
   let fileCount = 0;
-  for (const f of files) {
+  for (const e of entries) {
     if (fileCount >= 200) break;
-    if (taggedPaths.has(f.path)) continue;
-    const label = f.path.split('/').pop();
+    if (e.type !== 'file') continue;
+    if (!e.relPath) continue;
+    if (taggedPaths.has(e.relPath)) continue;
+    if (e.binary) continue;
+    const label = e.relPath.split('/').pop();
     out.push({
-      id: 'file:' + f.path,
+      id: 'file:' + e.relPath,
       label,
-      subtitle: f.path,
-      category: CATEGORY.FILES,
-      icon: 'file',
-      insert: f.path,
-      searchText: (label + ' ' + f.path).toLowerCase()
+      subtitle: e.relPath,
+      category: CATEGORY.FILES, icon: 'file',
+      insert: e.relPath,
+      searchText: (label + ' ' + e.relPath).toLowerCase()
     });
     fileCount++;
   }
@@ -119,8 +128,7 @@ async function buildItems(projectDir) {
         id: 'action:' + t.name,
         label: t.name,
         subtitle: t.description || 'tool',
-        category: CATEGORY.ACTIONS,
-        icon: 'action',
+        category: CATEGORY.ACTIONS, icon: 'action',
         insert: t.name,
         searchText: (t.name + ' ' + (t.description || '')).toLowerCase()
       });
@@ -134,8 +142,7 @@ async function buildItems(projectDir) {
       id: 'agent:model',
       label: chat.modelId,
       subtitle: chat.providerId || 'model',
-      category: CATEGORY.AGENT,
-      icon: 'agent',
+      category: CATEGORY.AGENT, icon: 'agent',
       insert: chat.modelId,
       searchText: (chat.modelId + ' ' + (chat.providerId || '')).toLowerCase()
     });
@@ -163,11 +170,9 @@ function renderPopup() {
   }
   popup.hidden = false;
 
-  // Clamp selection
   if (selectedIdx >= f.length) selectedIdx = 0;
   if (selectedIdx < 0) selectedIdx = f.length - 1;
 
-  // Build sections
   const sections = [];
   let currentCat = null;
   for (let i = 0; i < f.length; i++) {
@@ -189,7 +194,6 @@ function renderPopup() {
     } else {
       const row = document.createElement('div');
       row.className = 'at-mention__item' + (sec.index === selectedIdx ? ' is-selected' : '');
-      row.dataset.index = String(sec.index);
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', sec.index === selectedIdx ? 'true' : 'false');
 
@@ -221,7 +225,7 @@ function renderPopup() {
   }
 }
 
-// ---- Selection ----------------------------------------------------------
+// ---- Selection ---------------------------------------------------------
 
 function selectItem(idx) {
   const item = filtered[idx];
@@ -231,15 +235,12 @@ function selectItem(idx) {
   const before = ta.value.slice(0, range.start);
   const after = ta.value.slice(range.end);
 
-  // Replace @<query> with @<insert>
   const insert = '@' + item.insert + ' ';
   ta.value = before + insert + after;
 
-  // Move cursor after the inserted text
   const newPos = before.length + insert.length;
   ta.selectionStart = ta.selectionEnd = newPos;
 
-  // Hide and fire input
   hide();
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   ta.focus();
@@ -252,7 +253,7 @@ function hide() {
   if (popup) popup.hidden = true;
 }
 
-// ---- Input detection ----------------------------------------------------
+// ---- Input detection ---------------------------------------------------
 
 function onInput() {
   const ta = textarea;
@@ -261,28 +262,20 @@ function onInput() {
   const pos = ta.selectionStart;
   const val = ta.value;
 
-  // Walk backwards from cursor to find @<word>
   let start = pos - 1;
-  while (start >= 0 && val[start] !== '@') {
-    start--;
-  }
+  while (start >= 0 && val[start] !== '@') start--;
 
-  // No @ before cursor
   if (start < 0 || val[start] !== '@') {
     if (visible) hide();
     return;
   }
 
-  // Check there's a word boundary or line start before the @
   if (start > 0 && !/\s/.test(val[start - 1]) && val[start - 1] !== '(') {
     if (visible) hide();
     return;
   }
 
-  // Extract the query string after @
   const q = val.slice(start + 1, pos).toLowerCase();
-
-  // If query contains whitespace, that ends the mention
   if (/\s/.test(q)) {
     if (visible) hide();
     return;
@@ -292,7 +285,6 @@ function onInput() {
   query = q;
   selectedIdx = 0;
 
-  // Filter
   filtered = items.filter(item => {
     if (!q) return true;
     return item.searchText.indexOf(q) >= 0;
@@ -304,7 +296,6 @@ function onInput() {
 
 function onKeydown(e) {
   if (!visible) return;
-
   const f = filtered;
   if (!f.length) return;
 
@@ -334,8 +325,6 @@ function scrollSelectedIntoView() {
   if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-// ---- Close on outside click --------------------------------------------
-
 function onDocClick(e) {
   if (!visible) return;
   if (!popup || !textarea) return;
@@ -357,12 +346,9 @@ export function mountAtMention(ta, popupEl, preactState) {
   range = null;
   selectedIdx = 0;
 
-  // Load items
   const projectDir = preactState.props && preactState.props.projectDir;
   if (projectDir) {
-    buildItems(projectDir).then(newItems => {
-      items = newItems;
-    }).catch(() => {});
+    buildItems(projectDir).then(newItems => { items = newItems; }).catch(() => {});
   }
 
   textarea.addEventListener('input', onInput);
@@ -383,7 +369,6 @@ export function refreshAtMentionItems() {
   if (projectDir) {
     buildItems(projectDir).then(newItems => {
       items = newItems;
-      // Re-filter if currently visible
       if (visible) {
         const q = query;
         filtered = items.filter(item => {
@@ -396,9 +381,6 @@ export function refreshAtMentionItems() {
   }
 }
 
-// Returns true when the at-mention popup is open. The composer
-// checks this before handling Enter-to-send so the user can press
-// Enter to select a mention instead of accidentally sending.
 export function isAtMentionActive() {
   return visible;
 }
