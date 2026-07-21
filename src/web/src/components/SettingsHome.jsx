@@ -73,6 +73,7 @@ export function SettingsHomeView() {
             cardLi('settings/project' + projectQS, 'Project overrides', { sub: '.mouaif.json for this project' }),
             cardLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'tools for this project' }),
             cardLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
+            cardLi('settings/agents' + projectQS, 'Agents', { sub: 'choose prompt, tools, and skills' }),
             cardLi('settings/presets' + projectQS, 'Agent presets', { sub: 'bundle prompt, tools, and skills' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },

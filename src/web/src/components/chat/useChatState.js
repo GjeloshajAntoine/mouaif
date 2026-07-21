@@ -22,7 +22,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
 } from './transcript.js';
-import { mountToolsCard, mountAgentFilesCard, buildSetupCard, buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles, mountPresetCard, mountSkillsCard, updatePresetCard, updateSkillsCard } from './cards.js';
+import { buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -71,6 +71,7 @@ export function useChatState(props) {
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
+  const agentCard = useRef(null);
   const presetCard = useRef(null);
   const skillsCard = useRef(null);
   const mcpToggleBusy = useRef(new Set());
@@ -128,6 +129,10 @@ export function useChatState(props) {
     set tools(v) { tools.current = v; },
     get agentFiles() { return agentFiles.current; },
     set agentFiles(v) { agentFiles.current = v; },
+    get agents() { return (state._agents || []); },
+    set agents(v) { state._agents = Array.isArray(v) ? v : []; },
+    get defaultAgentId() { return state._defaultAgentId || null; },
+    set defaultAgentId(v) { state._defaultAgentId = v || null; },
     get presets() { return (state._presets || []); },
     set presets(v) { state._presets = Array.isArray(v) ? v : []; },
     get discoveredSkills() { return (state._discoveredSkills || []); },
@@ -157,7 +162,7 @@ export function useChatState(props) {
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
     promptInput, imageInput, draftSaveTimer, sendBtn, status,
-    jumpBtn, toolsCard, agentFilesCard,
+    jumpBtn, toolsCard, agentFilesCard, agentCard, presetCard, skillsCard,
     pinnedToBottom, pendingCount,
     _autoresize: () => autoresize({ promptInput })
   };
@@ -255,6 +260,34 @@ export function useChatState(props) {
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleMcpServer = onToggleMcpServer;
+  state._selectAgent = async (agentId) => {
+    await updateChatBound({ agentId });
+    await refreshSystemPrompt(state, refs);
+    const effectiveSkills = state.systemPrompt && Array.isArray(state.systemPrompt.skills)
+      ? state.systemPrompt.skills.map(skill => skill.name)
+      : [];
+    state.selectedSkills = effectiveSkills.length === state.discoveredSkills.length ? null : effectiveSkills;
+    renderTranscriptBound();
+  };
+  state._selectPreset = async (presetId) => {
+    const preset = state.presets.find(item => item.id === presetId);
+    const selectedSkills = presetId && preset
+      ? (Array.isArray(preset.selectedSkills) ? preset.selectedSkills : null)
+      : null;
+    await updateChatBound({ presetId, selectedSkills });
+    await refreshSystemPrompt(state, refs);
+    const effectiveSkills = state.systemPrompt && Array.isArray(state.systemPrompt.skills)
+      ? state.systemPrompt.skills.map(skill => skill.name)
+      : [];
+    state.selectedSkills = effectiveSkills.length === state.discoveredSkills.length ? null : effectiveSkills;
+    renderTranscriptBound();
+  };
+  state._selectSkills = async (selectedSkills) => {
+    state.selectedSkills = selectedSkills;
+    await updateChatBound({ selectedSkills });
+    await refreshSystemPrompt(state, refs);
+    renderTranscriptBound();
+  };
 
   // Save tool authorization (Off/Ask/Allow) directly to the server.
   // Used by the inline segment control in the chat tools card.
@@ -283,7 +316,7 @@ export function useChatState(props) {
       if (!projectDir || !chatId) return;
       setLoading(true);
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rPresets, rSkills] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rPresets, rSkills, rAgents] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
           loadModels(projectDir),
           fetchJson('/api/ai/models/providers'),
@@ -293,7 +326,8 @@ export function useChatState(props) {
           fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/presets?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/skills?projectDir=' + encodeURIComponent(projectDir))
+          fetchJson('/api/skills?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir))
         ]);
         if (cancelled) return;
         if (rChat.status !== 200) {
@@ -339,9 +373,14 @@ export function useChatState(props) {
         if (rSkills && rSkills.status === 200 && Array.isArray(rSkills.body.skills)) {
           state.discoveredSkills = rSkills.body.skills;
         }
+        if (rAgents && rAgents.status === 200) {
+          state.agents = Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
+          state.defaultAgentId = rAgents.body.defaultAgentId || null;
+        }
         const sys = rSys.status === 200 && rSys.body ? rSys.body : null;
-        if (sys && sys.preset && Array.isArray(sys.preset.resolvedSelectedSkills)) {
-          state.selectedSkills = sys.preset.resolvedSelectedSkills;
+        if (sys && Array.isArray(sys.skills)) {
+          const names = sys.skills.map(skill => skill.name);
+          state.selectedSkills = names.length === state.discoveredSkills.length ? null : names;
         } else if (Array.isArray(c.selectedSkills)) {
           state.selectedSkills = c.selectedSkills;
         } else {

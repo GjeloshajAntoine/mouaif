@@ -24,7 +24,7 @@ Chat-level settings override the preset:
 - If the chat has its own `tools` array, it wins over the preset's tool filter.
 - If the chat has its own `selectedSkills`, it wins over the preset's skill selection.
 
-The preset association (`presetId`) is stored on the chat record. Changes to the preset after it has been applied will take effect only after the user re-applies it or the server is restarted (the preset values are copied at apply-time, not live-linked).
+The preset association (`presetId`) is stored on the chat record. Prompt and tool values are resolved from the referenced preset at turn time. Selecting a preset also copies its current skill selection into the chat so the Skills card can immediately display and edit it.
 
 ### REST API
 

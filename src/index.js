@@ -982,10 +982,27 @@ async function handleChats(req, res, parsed) {
         }
       } catch { /* agent files stay null */ }
       let selectedAgent = null;
+      let agentConfig = null;
       try {
         selectedAgent = agents.loadSelected({ chat, projectDir: dir });
+        agentConfig = agents.resolveConfig({ chat, projectDir: dir });
         if (selectedAgent) parts.push(selectedAgent.content);
       } catch { /* selected agent stays null */ }
+      if (!prompt && agentConfig && agentConfig.promptId) {
+        try {
+          const cp = prompts.getPrompt(dir, agentConfig.promptId);
+          if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
+        } catch { /* agent prompt stays null */ }
+      }
+      if (!prompt) {
+        try {
+          const resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat });
+          if (resolved && resolved.promptId) {
+            const cp = prompts.getPrompt(dir, resolved.promptId);
+            if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
+          }
+        } catch { /* preset prompt stays null */ }
+      }
       let skillsList = null;
       try {
         if (skills.resolveEnabled({ chat, projectDir: dir })) {
@@ -993,7 +1010,11 @@ async function handleChats(req, res, parsed) {
           // Apply preset/chat selectedSkills filter.
           let resolved = null;
           try { resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat }); } catch {}
-          const selectedNames = (resolved && resolved.selectedSkills);
+          const selectedNames = chat.selectedSkills === null || Array.isArray(chat.selectedSkills)
+            ? chat.selectedSkills
+            : agentConfig && Array.isArray(agentConfig.selectedSkills)
+              ? agentConfig.selectedSkills
+              : (resolved && resolved.selectedSkills);
           skillsList = selectedNames ? allSkills.filter(s => selectedNames.includes(s.name)) : allSkills;
           for (const s of skillsList) parts.push(s.content);
         }
@@ -1310,8 +1331,10 @@ async function handleChatStream(req, res, chatId) {
   // Project agent (.agents/agents/<name>/AGENT.md). When selected on
   // the chat or project, its instructions are injected after global
   // agent files and before skills.
+  let agentConfig = null;
   try {
     const selectedAgent = agents.loadSelected({ chat, projectDir });
+    agentConfig = agents.resolveConfig({ chat, projectDir });
     if (selectedAgent) {
       upstreamMessages.push({ role: selectedAgent.role, content: selectedAgent.content });
       if (traceStream) {
@@ -1325,7 +1348,7 @@ async function handleChatStream(req, res, chatId) {
   // values take precedence over preset values.
   let resolvedPreset = null;
   try {
-    if (chat.presetId || chat.selectedSkills) {
+    if (chat.presetId || chat.selectedSkills === null || Array.isArray(chat.selectedSkills)) {
       resolvedPreset = agentPresets.resolvePresetFields({ projectDir, chat });
     }
   } catch { /* non-fatal; stream proceeds without preset resolution */ }
@@ -1341,7 +1364,11 @@ async function handleChatStream(req, res, chatId) {
   try {
     if (skills.resolveEnabled({ chat, projectDir })) {
       const allSkills = skills.load(projectDir);
-      const selectedNames = (resolvedPreset && resolvedPreset.selectedSkills);
+      const selectedNames = chat.selectedSkills === null || Array.isArray(chat.selectedSkills)
+        ? chat.selectedSkills
+        : agentConfig && Array.isArray(agentConfig.selectedSkills)
+          ? agentConfig.selectedSkills
+          : (resolvedPreset && resolvedPreset.selectedSkills);
       injectedSkills = selectedNames
         ? allSkills.filter(s => selectedNames.includes(s.name))
         : allSkills;
@@ -1386,7 +1413,7 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without tagged files */ }
-  const effectivePromptId = (resolvedPreset && resolvedPreset.promptId) || chat.promptId;
+  const effectivePromptId = chat.promptId || (agentConfig && agentConfig.promptId) || (resolvedPreset && resolvedPreset.promptId);
   if (effectivePromptId) {
     try {
       const prompt = prompts.getPrompt(projectDir, effectivePromptId);
@@ -1542,9 +1569,13 @@ async function handleChatStream(req, res, chatId) {
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
-    // When a preset resolves enabledTools, it takes effect unless the
-    // chat has its own explicit tools array.
-    enabledTools: (resolvedPreset && resolvedPreset.enabledTools) || (chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null)),
+    // Chat tool filter wins; otherwise the selected agent config can
+    // provide a tool filter, then presets, then all project tools.
+    enabledTools: Array.isArray(chat.tools)
+      ? chat.tools
+      : (agentConfig && Array.isArray(agentConfig.tools))
+        ? agentConfig.tools
+        : ((resolvedPreset && resolvedPreset.enabledTools) || null),
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.
@@ -2950,40 +2981,72 @@ async function handleFeatures(req, res, parsed) {
 // Project-scoped agents discovered from <projectDir>/.agents/agents/*/AGENT.md.
 // Read-only: the server never creates, edits, or deletes agent files.
 // Routes:
-//   GET /api/agents?projectDir=<abs>          -> { agents: [{ name, title, size }] }
-//   GET /api/agents/:name?projectDir=<abs>    -> { agent: { name, title, content } }
+//   GET /api/agents?projectDir=<abs>          -> { agents: [{ name, title, size, config }] }
+//   GET /api/agents/:name?projectDir=<abs>    -> { agent: { name, title, content, config } }
+//   PUT /api/agents/:name/config              -> { config }
 
-function handleAgents(req, res, parsed) {
+async function handleAgents(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
 
-  if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
+  if (method !== 'GET' && method !== 'PUT') return sendJSON(res, 405, { error: 'Method not allowed' });
 
   const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
   if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 
   if (urlPath === '/api/agents') {
+    if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
     try {
       const loaded = agents.load(dir);
       const byName = new Map(loaded.map(a => [a.name, a]));
       const list = agents.discover(dir).map(a => {
         const found = byName.get(a.name);
-        return { name: a.name, title: found ? found.title : a.name, size: a.size };
+        return { name: a.name, title: found ? found.title : a.name, size: a.size, config: agents.getConfig(dir, a.name) };
       });
-      return sendJSON(res, 200, { agents: list });
+      return sendJSON(res, 200, { agents: list, defaultAgentId: agents.getDefault(dir) });
     } catch (e) {
       return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  const getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
+  if (urlPath === '/api/agents/default' && method === 'PUT') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    try {
+      const agentId = body && typeof body.agentId === 'string' && body.agentId ? body.agentId : null;
+      if (!agents.setDefault(dir, agentId)) return sendJSON(res, 400, { error: 'Unknown agent', agentId });
+      return sendJSON(res, 200, { defaultAgentId: agents.getDefault(dir) });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  let getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
   if (getMatch) {
+    if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
     const name = decodeURIComponent(getMatch[1]);
     try {
       const loaded = agents.loadOne(dir, name);
       if (!loaded) return sendJSON(res, 404, { error: 'Agent not found', name });
+      loaded.config = agents.getConfig(dir, name);
       return sendJSON(res, 200, { agent: loaded });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  getMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/config$/);
+  if (getMatch && method === 'PUT') {
+    const name = decodeURIComponent(getMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    try {
+      const config = agents.setConfig(dir, name, body || {});
+      if (!config) return sendJSON(res, 404, { error: 'Agent not found', name });
+      return sendJSON(res, 200, { config });
     } catch (e) {
       return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
     }

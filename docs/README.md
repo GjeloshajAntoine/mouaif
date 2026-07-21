@@ -22,7 +22,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
 - [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API key or PKCE sign-in (`https://openrouter.ai/auth`); the issued key is stored in the `openrouter` keyring namespace.
-- [Custom prompts](features/custom-prompts.md) — user-authored system/role prompts stored per project, with per-chat prompt selector.
+- [Custom prompts](features/custom-prompts.md) — user-authored system prompts stored per project and assignable to agents, with direct per-chat API override.
 - [MCP](features/mcp.md) — Model Context Protocol servers as user tools. Per-project stdio server registry, tool discovery, in-chat tool_call/tool_result cards.
 - [Chrome Debug MCP](features/chrome-debug-mcp.md) — preset `chrome-debug` MCP entry pairing the model with the same Chrome instance the Inspector tab talks to (port 9222).
 - [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.
@@ -32,7 +32,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
 - [Ask the user tool](features/ask-user-tool.md) — built-in `ask_user` tool the model can invoke to pause the chat and ask the user a structured question with 2-4 options. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. Binary authorization mode (`off` / `ask`).
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
-- [Agents](features/agents.md) — named project personas under `.agents/agents/*/AGENT.md`, selectable per chat and usable by delegated subagents.
+- [Agents](features/agents.md) — named project personas with a project default, per-chat selection, custom prompt, and skill configuration.
 - [Agent skills](features/agent-skills.md) — project-scoped instruction files under `.agents/skills/*/SKILL.md`, injected into the upstream system context at stream time.
 - [iOS touch scroll](features/ios-touch-scroll.md) — make the chat transcript touch-scrollable on iOS Safari by removing every overflow layer between the transcript and the document (no `overflow: hidden` on `.app__main--flush` or `.chat-view`); the transcript is the only scroll container in the tree.
 - [Markdown renderer](features/markdown-renderer.md) — zero-dependency CommonMark renderer for assistant bubbles: tables, task lists, auto-links, backslash escapes, horizontal rules.

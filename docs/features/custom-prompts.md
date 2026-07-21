@@ -23,10 +23,12 @@ Existing prompts can be opened, edited, or deleted from the same screen. Deletin
 
 ### Using a prompt in a chat
 
-1. Open a chat.
-2. Tap the **gear icon** (chat settings popover).
-3. In the **Prompt** dropdown, select the desired custom prompt (or `(none)` to disable).
-4. The selection is saved to the chat record and is injected on every stream turn.
+1. Open **Settings → Agents**.
+2. Choose a custom prompt on an agent and save its configuration.
+3. Select that agent as the project default or from the chat **Agent** card.
+4. The prompt is resolved from the selected agent and injected on every stream turn.
+
+The REST API can still set `chat.promptId` directly for a chat-specific override. Its precedence is higher than the selected agent's prompt.
 
 The prompt is not visible in the transcript — it is prepended server-side when building the upstream message array.
 
@@ -70,6 +72,6 @@ When the server processes `POST /api/chats/:id/messages/stream`, if the chat rec
 - Chat schema: [src/chats.js](../../src/chats.js) — `promptId` field on the chat, allowed in `updateChat`. `normalizeChat` coerces empty / non-string values to `null`.
 - Stream injection: [src/index.js](../../src/index.js) `handleChatStream()` — prepends the prompt message before the transcript.
 - Frontend: [src/web/src/components/SettingsPrompts.jsx](../../src/web/src/components/SettingsPrompts.jsx) — list and edit views, project-scoped via the `activeProject` signal.
-- Chat UI: [src/web/src/components/Chat.jsx](../../src/web/src/components/Chat.jsx) — prompt selector in the settings popover.
+- Chat UI: the Agent card summarizes the effective prompt; agent configuration lives in [src/web/src/components/SettingsAgents.jsx](../../src/web/src/components/SettingsAgents.jsx).
 - Prompts are per-project. Each project owns its own list. There is no app-level prompt library.
 - Deleting a prompt cascade-clears `promptId` on every chat in the project; the response includes a `clearedChats` count.

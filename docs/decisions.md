@@ -208,3 +208,11 @@ provider:credHash so a key rotation invalidates the entry.
 - The question + options ride a dedicated `ask_user_required` SSE event. The chat UI (`src/web/src/components/Chat.jsx`) listens for the event and renders a **the model is asking** card with the question, the options as 44 px-min tap targets, the always-on extra textarea, and **Send answer** / **Dismiss** actions. A nested `subagent` that calls `ask_user` routes the card into the subagent's live container (the `parentTool: 'subagent'` tag does the routing; no UI code change required to add a new wrapping tool).
 - The decision is still recorded through the existing `/api/tools/authorization/decision` endpoint, extended to carry an optional structured `payload` (`{ choice, extra }`). The payload is generic - any future native tool can attach its own structured answer without a new endpoint. For every other tool the `payload` is undefined and the existing `allow-once` / `allow-session` / `allow-always` / `deny` semantics are unchanged.
 - New module: [src/tools/ask.js](../src/tools/ask.js). New test: [scripts/test-ask-user.js](../scripts/test-ask-user.js) (40 assertions, covers the spec shape, validation rules, result-builder paths, the binary-mode gate, the `off` denial, the `ask` -> payload round trip via `recordDecision`, and the `getAuthorization` listing). Docs: [docs/features/ask-user-tool.md](../features/ask-user-tool.md).
+
+## 23. Agent selection and configuration
+
+- Named agents are read-only personas in `.agents/agents/<name>/AGENT.md`. The project stores only selection and configuration metadata in `.mouaif.json`; it never rewrites `AGENT.md` or `SKILL.md` files.
+- `project.agentId` is the default agent. `chat.agentId` overrides it for one chat. Missing or removed names resolve to no agent instead of injecting stale configuration.
+- Each `agentConfigs[agentName]` can reference one project `promptId` and either all skills (`selectedSkills: null`) or an explicit skill list (`[]` means none).
+- Effective precedence is: explicit chat value → selected-agent configuration → referenced preset → default behavior. The same order is used by streaming and the system-prompt preview.
+- Settings owns project-default and agent configuration. The chat Agent card owns per-chat selection; the Skills card owns the explicit per-chat skill override.

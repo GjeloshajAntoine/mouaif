@@ -476,7 +476,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const seed = (initialDir && initialDir.trim())
       || (activeProject.value && activeProject.value.dir)
       || '';
-    if (seed) load(seed).catch((e) => setStatus(statusEl, 'load failed: ' + e.message, 'error'));
+    if (seed) load(seed).catch((err) => setStatus(statusEl, 'load failed: ' + err.message, 'error'));
     else setStatus(statusEl, 'open this from a project card', 'error');
   }, [initialDir]);
 

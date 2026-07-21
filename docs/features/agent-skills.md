@@ -38,6 +38,8 @@ Check for style, correctness, and test coverage. Prefer small, focused commits.
 
 Skills are injected automatically when the chat streams. The server reads the current working-tree version of each `SKILL.md` at message-send time, so edits take effect immediately without restarting the server.
 
+Open **Settings → Agents** to associate all skills or a selected subset with an agent. The chat **Skills** card can override that selection for one chat. `null` means all discovered skills and `[]` means none.
+
 ### Per-chat toggle
 
 Each chat carries an optional `skills` boolean:
@@ -71,7 +73,7 @@ The API is read-only; the server never creates, modifies, or deletes skill files
 - Source: `src/skills.js` (new module) — `discover(projectDir)`, `load(projectDir)`, `resolveEnabled({chat, projectDir})`.
 - Injection happens in `src/index.js` → `handleChatStream`, after agent files and before tagged files and the custom prompt.
 - The per-chat toggle is persisted in `<projectDir>/.mouaif.json` under `chats[].skills` (see `src/chats.js`).
-- Mobile-first: no new UI surface is required; the existing system-prompt preview and chat settings toggle cover the interaction.
+- Mobile-first: agent configuration uses 44 px touch rows in Settings, while the chat Skills card persists per-chat overrides.
 
 ## Related
 

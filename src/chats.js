@@ -268,6 +268,18 @@ function updateChat(projectDir, chatId, patch) {
       ? undefined
       : patch.skills === true;
   }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'presetId')) {
+    merged.presetId = (patch.presetId === null || patch.presetId === '') ? null : String(patch.presetId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'selectedSkills')) {
+    if (patch.selectedSkills === null) {
+      merged.selectedSkills = null;
+    } else if (Array.isArray(patch.selectedSkills)) {
+      merged.selectedSkills = patch.selectedSkills.map((name) => String(name)).filter(Boolean);
+    } else {
+      merged.selectedSkills = undefined;
+    }
+  }
   project.chats[idx] = merged;
   writeProject(projectDir, project);
   invalidateChatListCache(projectDir);

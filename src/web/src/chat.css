@@ -72,6 +72,14 @@
 .chat-view__tools-tree {
   min-width: 0;
 }
+.chat-view__agent-summary {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+.chat-view__skills-list .checkbox-row {
+  min-height: var(--tap);
+}
 
 /* ---- Agent files card -------------------------------------------- */
 
@@ -133,7 +141,7 @@
 }
 .chat-view__agent-files-toggle {
   align-self: flex-start;
-  min-height: 24px;
+  min-height: var(--tap);
   padding: 0 10px;
   font: inherit;
   font-size: 0.72rem;

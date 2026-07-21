@@ -31,6 +31,11 @@ function parseHash() {
   // the user opened a chat or visited Settings → Project) is the
   // source of truth. The route hash can override it for testing
   // (e.g. settings/prompts?projectDir=...).
+  if (h === 'settings/agents' || h.startsWith('settings/agents?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsAgents', projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/prompts' || h.startsWith('settings/prompts?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);

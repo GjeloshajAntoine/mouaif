@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings.js');
+const prompts = require('./prompts.js');
 
 const AGENTS_DIR = path.join('.agents', 'agents');
 const AGENT_FILE = 'AGENT.md';
@@ -71,12 +72,12 @@ function loadOne(projectDir, name) {
 }
 
 function resolveSelected({ chat, projectDir } = {}) {
-  if (chat && typeof chat.agentId === 'string' && chat.agentId) return chat.agentId;
+  if (chat && typeof chat.agentId === 'string' && chat.agentId && loadOne(projectDir, chat.agentId)) return chat.agentId;
   if (projectDir) {
     try {
       const project = settings.getProject(projectDir);
       const value = project && (project.agentId || project.defaultAgentId);
-      if (typeof value === 'string' && value) return value;
+      if (typeof value === 'string' && value && loadOne(projectDir, value)) return value;
     } catch { /* fall through */ }
   }
   return null;
@@ -85,6 +86,66 @@ function resolveSelected({ chat, projectDir } = {}) {
 function loadSelected({ chat, projectDir } = {}) {
   const name = resolveSelected({ chat, projectDir });
   return name ? loadOne(projectDir, name) : null;
+}
+
+function normalizeConfig(raw) {
+  const out = raw && typeof raw === 'object' ? raw : {};
+  return {
+    promptId: typeof out.promptId === 'string' && out.promptId ? out.promptId : null,
+    tools: out.tools === null ? null : (Array.isArray(out.tools) ? out.tools.map(String).filter(Boolean) : null),
+    selectedSkills: out.selectedSkills === null ? null : (Array.isArray(out.selectedSkills) ? out.selectedSkills.map(String).filter(Boolean) : null)
+  };
+}
+
+function getConfig(projectDir, name) {
+  if (!isValidName(name)) return null;
+  const agent = loadOne(projectDir, name);
+  if (!agent) return null;
+  let project;
+  try { project = settings.getProject(projectDir); } catch { project = {}; }
+  const all = project && project.agentConfigs && typeof project.agentConfigs === 'object' ? project.agentConfigs : {};
+  return normalizeConfig(all[name]);
+}
+
+function setConfig(projectDir, name, patch) {
+  if (!isValidName(name) || !loadOne(projectDir, name)) return null;
+  const project = settings.getProject(projectDir);
+  const all = project && project.agentConfigs && typeof project.agentConfigs === 'object' ? Object.assign({}, project.agentConfigs) : {};
+  const current = normalizeConfig(all[name]);
+  const next = Object.assign({}, current);
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
+    next.promptId = typeof patch.promptId === 'string' && patch.promptId ? patch.promptId : null;
+    if (next.promptId && !prompts.getPrompt(projectDir, next.promptId)) next.promptId = null;
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
+    next.tools = patch.tools === null ? null : (Array.isArray(patch.tools) ? patch.tools.map(String).filter(Boolean) : null);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'selectedSkills')) {
+    next.selectedSkills = patch.selectedSkills === null ? null : (Array.isArray(patch.selectedSkills) ? patch.selectedSkills.map(String).filter(Boolean) : null);
+  }
+  all[name] = next;
+  settings.setProject(projectDir, { agentConfigs: all });
+  return next;
+}
+
+function getDefault(projectDir) {
+  if (!projectDir) return null;
+  let project;
+  try { project = settings.getProject(projectDir); } catch { return null; }
+  const name = project && (project.agentId || project.defaultAgentId);
+  return typeof name === 'string' && loadOne(projectDir, name) ? name : null;
+}
+
+function setDefault(projectDir, name) {
+  const next = typeof name === 'string' && name ? name : null;
+  if (next && (!isValidName(next) || !loadOne(projectDir, next))) return false;
+  settings.setProject(projectDir, { agentId: next });
+  return true;
+}
+
+function resolveConfig({ chat, projectDir } = {}) {
+  const name = resolveSelected({ chat, projectDir });
+  return name ? getConfig(projectDir, name) : null;
 }
 
 module.exports = {
@@ -97,5 +158,11 @@ module.exports = {
   loadOne,
   loadSelected,
   resolveSelected,
+  normalizeConfig,
+  getConfig,
+  setConfig,
+  getDefault,
+  setDefault,
+  resolveConfig,
   isValidName
 };

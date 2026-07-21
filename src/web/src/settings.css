@@ -32,6 +32,21 @@
 .prompt-row__chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
 .prompts__textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
 
+/* ---- Settings: agents -------------------------------------------- */
+
+.settings-agents { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.settings-agents__intro { margin-inline: 10px; }
+.settings-agents__default { margin-block: 12px; }
+.settings-agents__list { display: flex; flex-direction: column; gap: 10px; margin: 0 10px; }
+.agent-editor { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 0 4px; }
+.agent-editor__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 0 10px 8px; }
+.agent-editor__title { margin: 0; padding: 0; border: 0; font-size: 0.95rem; }
+.agent-editor__id { color: var(--muted); font-size: 0.7rem; }
+.agent-editor__skills { display: flex; flex-direction: column; margin: 0 10px 6px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.agent-editor__skill { display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.82rem; }
+.agent-editor__skill:first-child { border-top: 0; }
+.agent-editor__actions { margin: 0; }
+
 /* ---- Settings: details disclosure pattern ------------------------- */
 
 .models__add {

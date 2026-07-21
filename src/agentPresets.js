@@ -162,7 +162,6 @@ function applyPreset({ projectDir, presetId, chat } = {}) {
   if (Array.isArray(out.selectedSkills) && out.selectedSkills.length) {
     const known = new Set(skills.discover(projectDir).map(s => s.name));
     out.selectedSkills = out.selectedSkills.filter(n => known.has(n));
-    if (!out.selectedSkills.length) out.selectedSkills = null;
   }
   return out;
 }
@@ -199,7 +198,9 @@ function resolvePresetFields({ projectDir, chat } = {}) {
   if (Array.isArray(chat.enabledTools)) {
     out.enabledTools = chat.enabledTools.map(String).filter(Boolean);
   }
-  if (Array.isArray(chat.selectedSkills)) {
+  if (chat.selectedSkills === null) {
+    out.selectedSkills = null;
+  } else if (Array.isArray(chat.selectedSkills)) {
     out.selectedSkills = chat.selectedSkills.map(String).filter(Boolean);
   }
 

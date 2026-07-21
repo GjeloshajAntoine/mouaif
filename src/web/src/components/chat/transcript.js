@@ -19,7 +19,7 @@ import {
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
 import { cssEscape } from './utils.js';
-import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountPresetCard, mountSkillsCard } from './cards.js';
+import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountAgentCard, mountPresetCard, mountSkillsCard } from './cards.js';
 import { setPromptSize } from './meta.js';
 import { updateUsageSummary } from './usage.js';
 import { updateJumpButton } from './scroll.js';
@@ -729,6 +729,7 @@ export function renderTranscript(state, refs) {
     const empty = buildEmptyState();
     refs.transcript.current.appendChild(empty);
     renderSystemPromptMessage(refs, state.systemPrompt);
+    mountAgentCard(refs, state);
     mountToolsCard(refs, state);
     mountAgentFilesCard(refs, state);
     mountPresetCard(refs, state);
@@ -736,6 +737,7 @@ export function renderTranscript(state, refs) {
     return;
   }
   renderSystemPromptMessage(refs, state.systemPrompt);
+  mountAgentCard(refs, state);
   mountToolsCard(refs, state);
   mountAgentFilesCard(refs, state);
   mountPresetCard(refs, state);

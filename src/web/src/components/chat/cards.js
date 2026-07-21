@@ -42,6 +42,71 @@ function buildSetupCard() {
   return sel;
 }
 
+function buildAgentCard(state) {
+  const agents = state.agents || [];
+  const chatAgentId = state.chat && state.chat.agentId || '';
+  const defaultAgentId = state.defaultAgentId || '';
+  const effectiveId = chatAgentId || defaultAgentId;
+  const effective = agents.find(agent => agent.name === effectiveId) || null;
+  const config = effective && effective.config || {};
+  const card = document.createElement('div');
+  card.className = 'chat-view__tools-card';
+  card.dataset.agentCard = '1';
+
+  const head = document.createElement('div');
+  head.className = 'chat-view__tools-card-head';
+  const title = document.createElement('span');
+  title.className = 'chat-view__tools-card-title';
+  title.textContent = 'Agent';
+  const note = document.createElement('span');
+  note.className = 'chat-view__tools-card-note';
+  note.textContent = effective ? (chatAgentId ? 'chat override' : 'project default') : 'none';
+  head.appendChild(title);
+  head.appendChild(note);
+  card.appendChild(head);
+
+  if (!agents.length) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-view__tools-empty';
+    empty.textContent = 'No agents. Add .agents/agents/<name>/AGENT.md, then configure it in Settings → Agents.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  const select = document.createElement('select');
+  select.className = 'input';
+  select.setAttribute('aria-label', 'Agent for this chat');
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = defaultAgentId ? 'Project default' : '— no agent —';
+  if (!chatAgentId) defaultOption.selected = true;
+  select.appendChild(defaultOption);
+  for (const agent of agents) {
+    const option = document.createElement('option');
+    option.value = agent.name;
+    option.textContent = agent.title || agent.name;
+    if (chatAgentId === agent.name) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener('change', () => {
+    if (state._selectAgent) state._selectAgent(select.value || null);
+  });
+  card.appendChild(select);
+
+  if (effective) {
+    const summary = document.createElement('div');
+    summary.className = 'chat-view__agent-summary';
+    const prompt = (state.prompts || []).find(item => item.id === config.promptId);
+    const skillCount = Array.isArray(config.selectedSkills) ? config.selectedSkills.length : null;
+    summary.textContent = [
+      prompt ? 'Prompt: ' + (prompt.title || prompt.id) : 'No custom prompt',
+      skillCount === null ? 'all skills' : skillCount + ' skill' + (skillCount === 1 ? '' : 's')
+    ].join(' · ');
+    card.appendChild(summary);
+  }
+  return card;
+}
+
 // buildPresetCard(state)
 //
 // A popover-style card for selecting an agent preset. Shows the current
@@ -88,7 +153,7 @@ function buildPresetCard(state) {
     sel.appendChild(o);
   }
   sel.addEventListener('change', () => {
-    if (sel._onChange) sel._onChange(sel.value || null);
+    if (state._selectPreset) state._selectPreset(sel.value || null);
   });
   card.appendChild(sel);
   return card;
@@ -138,7 +203,7 @@ function buildSkillsCard(state) {
   allCheckbox.addEventListener('change', () => {
     if (allCheckbox.checked) {
       // Select all = clear the chat's selectedSkills (null = all)
-      if (list._onSkillChange) list._onSkillChange(null);
+      if (state._selectSkills) state._selectSkills(null);
     }
   });
   allRow.appendChild(allCheckbox);
@@ -155,7 +220,7 @@ function buildSkillsCard(state) {
     cb.type = 'checkbox';
     cb.checked = selectedSkills ? selectedSkills.includes(s.name) : true;
     cb.addEventListener('change', () => {
-      if (list._onSkillChange) {
+      if (state._selectSkills) {
         // Collect all checked names
         const checked = [];
         for (const r of list.querySelectorAll('.checkbox-row')) {
@@ -165,7 +230,7 @@ function buildSkillsCard(state) {
             checked.push(labelSpan.textContent);
           }
         }
-        list._onSkillChange(checked.length === discoveredSkills.length ? null : checked);
+        state._selectSkills(checked.length === discoveredSkills.length ? null : checked);
       }
     });
     row.appendChild(cb);
@@ -299,6 +364,20 @@ export function mountPresetCard(refs, state) {
   if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
     refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
   } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
+  } else {
+    refs.transcript.current.appendChild(card);
+  }
+}
+
+export function mountAgentCard(refs, state) {
+  if (!refs.transcript.current) return;
+  const existing = refs.transcript.current.querySelector('[data-agent-card="1"]');
+  if (existing) existing.remove();
+  const card = buildAgentCard(state);
+  refs.agentCard.current = card;
+  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
+  if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
     refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
   } else {
     refs.transcript.current.appendChild(card);
@@ -863,4 +942,4 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   await updateChat({ tools: nextFilter == null ? null : nextFilter });
 }
 
-export { buildSetupCard, buildToolsCard, buildPresetCard, buildSkillsCard, mountPresetCard, updatePresetCard, mountSkillsCard, updateSkillsCard };
+export { buildSetupCard, buildToolsCard, buildAgentCard, buildPresetCard, buildSkillsCard };
