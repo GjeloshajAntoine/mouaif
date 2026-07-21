@@ -267,6 +267,77 @@ function normalizeAll(rawList) {
 // server is removed. The runtime state (child process, live session)
 // stays in-memory; only the last-known tool descriptors are persisted.
 //
+// ── Schema shrinking ────────────────────────────────────────────────────
+// MCP server inputSchema definitions are often extremely verbose: full
+// property descriptions, $defs blocks, examples, titles, etc. These get
+// serialized into the `tools` array on every upstream API turn, costing
+// 10 K – 50 K+ prompt tokens per request. We shrink aggressively:
+// keep property names, types, enums, required, items, and simple numeric
+// constraints; drop descriptions, $defs, examples, titles, and defaults.
+function shrinkMcpSchema(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  // Recursion guard – deep but not infinite; stop at 8 levels.
+  const _shrink = (node, depth) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return node;
+    if (depth > 8) return { type: typeof node.type === 'string' ? node.type : 'object' };
+
+    const out = {};
+
+    // Always preserve type.
+    if (typeof node.type === 'string') out.type = node.type;
+
+    // Preserve enum — the model needs the exact values.
+    if (Array.isArray(node.enum) && node.enum.length) out.enum = node.enum;
+
+    // Preserve const — same reason.
+    if (node.const !== undefined) out.const = node.const;
+
+    // Preserve required (list of property names).
+    if (Array.isArray(node.required) && node.required.length) out.required = node.required;
+
+    // Preserve simple numeric/string constraints — they guide the model.
+    for (const k of ['minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern']) {
+      if (node[k] !== undefined) out[k] = node[k];
+    }
+
+    // Recurse into properties, dropping descriptions.
+    if (node.properties && typeof node.properties === 'object' && !Array.isArray(node.properties)) {
+      out.properties = {};
+      for (const [key, val] of Object.entries(node.properties)) {
+        out.properties[key] = _shrink(val, depth + 1);
+      }
+    }
+
+    // Recurse into items (array element schema).
+    if (node.items && typeof node.items === 'object') {
+      out.items = _shrink(node.items, depth + 1);
+    }
+
+    // Recurse into additionalProperties — keep only the bool/object form.
+    if (node.additionalProperties === true || node.additionalProperties === false) {
+      out.additionalProperties = node.additionalProperties;
+    } else if (node.additionalProperties && typeof node.additionalProperties === 'object' && !Array.isArray(node.additionalProperties)) {
+      out.additionalProperties = _shrink(node.additionalProperties, depth + 1);
+    }
+
+    // Keep oneOf / anyOf — common pattern in MCP schemas — recursed.
+    for (const comb of ['oneOf', 'anyOf']) {
+      if (Array.isArray(node[comb])) {
+        out[comb] = node[comb].map((item) => _shrink(item, depth + 1));
+      }
+    }
+
+    // Preserve allOf if present.
+    if (Array.isArray(node.allOf)) {
+      out.allOf = node.allOf.map((item) => _shrink(item, depth + 1));
+    }
+
+    return out;
+  };
+
+  return _shrink(schema || {}, 0);
+}
+
 // Older builds stored the cache inline in .mcp.json under each server
 // entry's `toolCache` key. loadToolCache migrates those rows into the
 // DB on first read and strips the key the next time the config file is
@@ -278,7 +349,9 @@ function normalizeToolCache(raw) {
     .map(t => ({
       name: t.name,
       description: typeof t.description === 'string' ? t.description : '',
-      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} }
+      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object')
+        ? shrinkMcpSchema(t.inputSchema)
+        : { type: 'object', properties: {} }
     }));
 }
 
@@ -746,7 +819,7 @@ function listComposedToolSpecs(projectDir) {
       out.push({
         name: composedToolName(entry.slug, tool.name),
         description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
-        parameters: tool.inputSchema || { type: 'object', properties: {} },
+        parameters: shrinkMcpSchema(tool.inputSchema) || { type: 'object', properties: {} },
         serverSlug: entry.slug,
         toolName: tool.name
       });
