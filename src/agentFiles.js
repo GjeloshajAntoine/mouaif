@@ -129,17 +129,27 @@ function isEnabledForChat(chat) {
 
 // resolveEnabled({ chat, projectDir }) -> boolean
 //
-// Full resolution: per-chat override -> project-level setting -> profile
-// default. The project-level setting is `project.agentFiles` (boolean).
-// The profile default is the same as isEnabledForChat.
+// Full resolution: project-level gate -> per-chat override -> profile default.
+// The project-level setting is the master switch: if it is explicitly `false`
+// agent files are disabled regardless of the per-chat toggle. The per-chat
+// toggle can only *disable* (set to false) when the project has it on.
+// If neither is explicitly set the profile default applies.
 function resolveEnabled({ chat, projectDir }) {
-  if (chat && typeof chat.agentFiles === 'boolean') return chat.agentFiles;
+  // 1. Project-level master switch
   if (projectDir) {
     try {
       const project = settings.getProject(projectDir);
-      if (project && typeof project.agentFiles === 'boolean') return project.agentFiles;
-    } catch { /* fall through to profile default */ }
+      if (project && typeof project.agentFiles === 'boolean') {
+        if (project.agentFiles === false) return false;       // locked off
+        // project is true — per-chat can still override to false
+        if (chat && chat.agentFiles === false) return false;
+        return true;
+      }
+    } catch { /* fall through */ }
   }
+  // 2. Per-chat explicit (no project-level setting)
+  if (chat && typeof chat.agentFiles === 'boolean') return chat.agentFiles;
+  // 3. Profile default
   return isEnabledForChat(chat);
 }
 

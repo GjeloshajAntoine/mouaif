@@ -437,8 +437,8 @@ export function InspectorView() {
 
   function onWsOpen(target) {
     if (statusEl.current) statusEl.current.textContent = 'connected to ' + (target.title || target.url || target.id);
-    cdpSend('Runtime.enable').catch((e) => { if (statusEl.current) statusEl.current.textContent = 'Runtime.enable failed: ' + e.message; });
-    cdpSend('Network.enable').catch((e) => { if (statusEl.current) statusEl.current.textContent = 'Network.enable failed: ' + e.message; });
+    cdpSend('Runtime.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Runtime.enable failed: ' + err.message; });
+    cdpSend('Network.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Network.enable failed: ' + err.message; });
     // Page + Performance power the Preview and Overview tabs. Failures are
     // non-fatal — the console / network panels keep working.
     cdpSend('Page.enable').catch(() => { /* preview unavailable */ });

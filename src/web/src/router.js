@@ -47,14 +47,6 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
   }
-  // settings/presets is project-scoped. The active project is the source
-  // of truth; the route hash can override it via ?projectDir=... for
-  // deep links and tests.
-  if (h === 'settings/presets' || h.startsWith('settings/presets?')) {
-    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-    const params = new URLSearchParams(qs);
-    return { name: 'settingsPresets', projectDir: params.get('projectDir') || '' };
-  }
   // settings/mcp is project-scoped. The active project is the source
   // of truth; the route hash can override it via ?projectDir=... for
   // deep links and tests.

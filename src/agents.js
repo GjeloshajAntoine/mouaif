@@ -1,19 +1,22 @@
 'use strict';
 
-// Project agents — named, project-scoped agent personas under
-// `<projectDir>/.agents/agents/<name>/AGENT.md`.
+// Project agents — named, project-scoped agent presets stored in
+// <projectDir>/.mouaif.json under `agentPresets`.
 //
-// Agents are read-only Markdown instruction files. A selected chat agent is
-// injected into the upstream system context, and the native `subagent` tool can
-// target one by name for focused delegated work.
+// Each preset = { id, title, content, tools? }
+//   id:      short kebab-case id, unique within the project
+//   title:   human-readable label
+//   content: the instructions text (system prompt)
+//   tools:   optional array of tool names to enable when this agent
+//            is selected. When absent/null, the chat's default filter
+//            applies. When present, the chat's filter is overridden.
+//
+// A selected chat agent is injected into the upstream system context,
+// and the native `subagent` tool can target one by name.
 
-const fs = require('fs');
-const path = require('path');
+const crypto = require('crypto');
 const settings = require('./settings.js');
-const prompts = require('./prompts.js');
 
-const AGENTS_DIR = path.join('.agents', 'agents');
-const AGENT_FILE = 'AGENT.md';
 const MAX_BYTES = 64 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -21,78 +24,118 @@ function isValidName(name) {
   return typeof name === 'string' && NAME_RE.test(name);
 }
 
-function discover(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return [];
-  const root = path.join(projectDir, AGENTS_DIR);
-  let entries;
-  try { entries = fs.readdirSync(root, { withFileTypes: true }); }
-  catch { return []; }
-  const out = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (!NAME_RE.test(entry.name)) continue;
-    const dir = path.join(root, entry.name);
-    const file = path.join(dir, AGENT_FILE);
-    try {
-      const st = fs.statSync(file);
-      if (st.isFile()) out.push({ name: entry.name, dir, file, size: st.size });
-    } catch { /* missing or unreadable AGENT.md — skip */ }
-  }
-  out.sort((a, b) => a.name.localeCompare(b.name));
-  return out;
+function newAgentId() {
+  return crypto.randomBytes(4).toString('hex');
 }
 
-function readAgent(entry) {
-  let text;
-  try {
-    const buf = fs.readFileSync(entry.file);
-    text = buf.length > MAX_BYTES
-      ? buf.slice(0, MAX_BYTES).toString('utf8') + '\n\n[... truncated at ' + MAX_BYTES + ' bytes ...]'
-      : buf.toString('utf8');
-  } catch { return null; }
-  if (!text.trim()) return null;
-  const firstHeading = text.match(/^#\s+(.+)$/m);
-  const title = firstHeading ? firstHeading[1].trim() : entry.name;
+function normalizePreset(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.id !== 'string' || !raw.id) return null;
+  if (typeof raw.title !== 'string' || !raw.title.trim()) return null;
   return {
-    name: entry.name,
-    title,
+    id: raw.id,
+    title: raw.title.trim(),
+    content: typeof raw.content === 'string' ? raw.content : '',
     role: 'system',
-    content: 'Project agent "' + title + '" from ' + path.join(AGENTS_DIR, entry.name, AGENT_FILE) + ':\n\n' + text
+    tools: Array.isArray(raw.tools) ? raw.tools.map(String).filter(Boolean) : undefined,
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
 }
 
+function listPresets(projectDir) {
+  if (!projectDir) return [];
+  const project = settings.getProject(projectDir);
+  const raw = Array.isArray(project.agentPresets) ? project.agentPresets : [];
+  return raw.map(normalizePreset).filter(Boolean);
+}
+
+function discover(projectDir) {
+  return listPresets(projectDir);
+}
+
 function load(projectDir) {
-  return discover(projectDir).map(readAgent).filter(Boolean);
+  return listPresets(projectDir).map(p => ({
+    name: p.id,
+    title: p.title,
+    role: 'system',
+    content: 'Project agent "' + p.title + '":\n\n' + (p.content || ''),
+    tools: p.tools
+  }));
 }
 
 function loadOne(projectDir, name) {
   if (!isValidName(name)) return null;
-  const entry = discover(projectDir).find(a => a.name === name);
-  return entry ? readAgent(entry) : null;
+  const p = listPresets(projectDir).find(a => a.id === name);
+  if (!p) return null;
+  return {
+    name: p.id,
+    title: p.title,
+    role: 'system',
+    content: 'Project agent "' + p.title + '":\n\n' + (p.content || ''),
+    tools: p.tools
+  };
 }
 
 function create(projectDir, opts) {
-  const name = opts && typeof opts.name === 'string' ? opts.name.trim() : '';
+  const title = opts && typeof opts.title === 'string' ? opts.title.trim() : '';
   const content = opts && typeof opts.content === 'string' ? opts.content.trim() : '';
-  if (!isValidName(name)) {
-    const error = new Error('Agent name must use letters, numbers, dots, underscores, or hyphens');
+  if (!title) {
+    const error = new Error('Agent title is required');
     error.code = 'EBADINPUT';
     throw error;
   }
-  if (!content) {
-    const error = new Error('Agent instructions are required');
+  const project = settings.getProject(projectDir);
+  const list = Array.isArray(project.agentPresets) ? project.agentPresets.slice() : [];
+  // Unique-ish id from the title (kebab-case + dedup)
+  let baseId = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
+  let id = baseId;
+  let counter = 1;
+  while (list.some(p => p && p.id === id)) {
+    id = baseId + '-' + (counter++);
+  }
+  const preset = normalizePreset({
+    id,
+    title,
+    content: content || '',
+    role: 'system',
+    tools: Array.isArray(opts.tools) ? opts.tools : undefined,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  if (!preset) {
+    const error = new Error('Failed to normalize agent');
     error.code = 'EBADINPUT';
     throw error;
   }
-  if (loadOne(projectDir, name)) {
-    const error = new Error('Agent already exists');
-    error.code = 'EEXISTS';
-    throw error;
-  }
-  const dir = path.join(projectDir, AGENTS_DIR, name);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, AGENT_FILE), content + '\n', { encoding: 'utf8', flag: 'wx' });
-  return loadOne(projectDir, name);
+  list.push(preset);
+  settings.setProject(projectDir, { agentPresets: list });
+  return loadOne(projectDir, id);
+}
+
+function updatePreset(projectDir, id, patch) {
+  if (!id || !isValidName(id)) return null;
+  const project = settings.getProject(projectDir);
+  const list = Array.isArray(project.agentPresets) ? project.agentPresets.slice() : [];
+  const idx = list.findIndex(p => p && p.id === id);
+  if (idx < 0) return null;
+  const current = normalizePreset(list[idx]);
+  if (!current) return null;
+  const merged = Object.assign({}, current, patch, { id: current.id, updatedAt: new Date().toISOString() });
+  list[idx] = normalizePreset(merged) || merged;
+  settings.setProject(projectDir, { agentPresets: list });
+  return loadOne(projectDir, id);
+}
+
+function deletePreset(projectDir, id) {
+  if (!id) return false;
+  const project = settings.getProject(projectDir);
+  const list = Array.isArray(project.agentPresets) ? project.agentPresets.slice() : [];
+  const idx = list.findIndex(p => p && p.id === id);
+  if (idx < 0) return false;
+  list.splice(idx, 1);
+  settings.setProject(projectDir, { agentPresets: list });
+  return true;
 }
 
 function resolveSelected({ chat, projectDir } = {}) {
@@ -112,46 +155,6 @@ function loadSelected({ chat, projectDir } = {}) {
   return name ? loadOne(projectDir, name) : null;
 }
 
-function normalizeConfig(raw) {
-  const out = raw && typeof raw === 'object' ? raw : {};
-  return {
-    promptId: typeof out.promptId === 'string' && out.promptId ? out.promptId : null,
-    tools: out.tools === null ? null : (Array.isArray(out.tools) ? out.tools.map(String).filter(Boolean) : null),
-    selectedSkills: out.selectedSkills === null ? null : (Array.isArray(out.selectedSkills) ? out.selectedSkills.map(String).filter(Boolean) : null)
-  };
-}
-
-function getConfig(projectDir, name) {
-  if (!isValidName(name)) return null;
-  const agent = loadOne(projectDir, name);
-  if (!agent) return null;
-  let project;
-  try { project = settings.getProject(projectDir); } catch { project = {}; }
-  const all = project && project.agentConfigs && typeof project.agentConfigs === 'object' ? project.agentConfigs : {};
-  return normalizeConfig(all[name]);
-}
-
-function setConfig(projectDir, name, patch) {
-  if (!isValidName(name) || !loadOne(projectDir, name)) return null;
-  const project = settings.getProject(projectDir);
-  const all = project && project.agentConfigs && typeof project.agentConfigs === 'object' ? Object.assign({}, project.agentConfigs) : {};
-  const current = normalizeConfig(all[name]);
-  const next = Object.assign({}, current);
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
-    next.promptId = typeof patch.promptId === 'string' && patch.promptId ? patch.promptId : null;
-    if (next.promptId && !prompts.getPrompt(projectDir, next.promptId)) next.promptId = null;
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
-    next.tools = patch.tools === null ? null : (Array.isArray(patch.tools) ? patch.tools.map(String).filter(Boolean) : null);
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'selectedSkills')) {
-    next.selectedSkills = patch.selectedSkills === null ? null : (Array.isArray(patch.selectedSkills) ? patch.selectedSkills.map(String).filter(Boolean) : null);
-  }
-  all[name] = next;
-  settings.setProject(projectDir, { agentConfigs: all });
-  return next;
-}
-
 function getDefault(projectDir) {
   if (!projectDir) return null;
   let project;
@@ -162,32 +165,25 @@ function getDefault(projectDir) {
 
 function setDefault(projectDir, name) {
   const next = typeof name === 'string' && name ? name : null;
-  if (next && (!isValidName(next) || !loadOne(projectDir, next))) return false;
+  if (next && !loadOne(projectDir, next)) return false;
   settings.setProject(projectDir, { agentId: next });
   return true;
 }
 
-function resolveConfig({ chat, projectDir } = {}) {
-  const name = resolveSelected({ chat, projectDir });
-  return name ? getConfig(projectDir, name) : null;
-}
-
 module.exports = {
-  AGENTS_DIR,
-  AGENT_FILE,
   MAX_BYTES,
   NAME_RE,
   discover,
   load,
   loadOne,
   create,
+  updatePreset,
+  deletePreset,
   loadSelected,
   resolveSelected,
-  normalizeConfig,
-  getConfig,
-  setConfig,
   getDefault,
   setDefault,
-  resolveConfig,
-  isValidName
+  isValidName,
+  normalizePreset,
+  listPresets
 };

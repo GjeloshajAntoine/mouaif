@@ -48,7 +48,6 @@ function buildAgentCard(state) {
   const defaultAgentId = state.defaultAgentId || '';
   const effectiveId = chatAgentId || defaultAgentId;
   const effective = agents.find(agent => agent.name === effectiveId) || null;
-  const config = effective && effective.config || {};
   const card = document.createElement('div');
   card.className = 'chat-view__tools-card';
   card.dataset.agentCard = '1';
@@ -68,7 +67,7 @@ function buildAgentCard(state) {
   if (!agents.length) {
     const empty = document.createElement('div');
     empty.className = 'chat-view__tools-empty';
-    empty.textContent = 'No agents. Add .agents/agents/<name>/AGENT.md, then configure it in Settings → Agents.';
+    empty.textContent = 'No agents. Create one in Settings → Project → Agents.';
     card.appendChild(empty);
     return card;
   }
@@ -92,155 +91,13 @@ function buildAgentCard(state) {
     if (state._selectAgent) state._selectAgent(select.value || null);
   });
   card.appendChild(select);
-
-  if (effective) {
-    const summary = document.createElement('div');
-    summary.className = 'chat-view__agent-summary';
-    const prompt = (state.prompts || []).find(item => item.id === config.promptId);
-    const skillCount = Array.isArray(config.selectedSkills) ? config.selectedSkills.length : null;
-    summary.textContent = [
-      prompt ? 'Prompt: ' + (prompt.title || prompt.id) : 'No custom prompt',
-      skillCount === null ? 'all skills' : skillCount + ' skill' + (skillCount === 1 ? '' : 's')
-    ].join(' · ');
-    card.appendChild(summary);
+  // Show the agent's tool bundle when an agent with tools is selected.
+  if (effective && effective.tools && effective.tools.length) {
+    const toolNote = document.createElement('div');
+    toolNote.className = 'chat-view__agent-tools';
+    toolNote.textContent = 'Tools: ' + effective.tools.join(', ');
+    card.appendChild(toolNote);
   }
-  return card;
-}
-
-// buildPresetCard(state)
-//
-// A popover-style card for selecting an agent preset. Shows the current
-// preset name (or "— none —") and a dropdown to pick/change it.
-// The preset applies on the next turn (like the tool filter card).
-function buildPresetCard(state) {
-  const presets = state.presets || [];
-  const currentPresetId = state.chat && state.chat.presetId;
-  const card = document.createElement('div');
-  card.className = 'chat-view__tools-card';
-  card.dataset.presetCard = '1';
-
-  const head = document.createElement('div');
-  head.className = 'chat-view__tools-card-head';
-  const title = document.createElement('span');
-  title.className = 'chat-view__tools-card-title';
-  title.textContent = 'Preset';
-  const note = document.createElement('span');
-  note.className = 'chat-view__tools-card-note';
-  note.textContent = currentPresetId ? 'tap to change' : 'none';
-  head.appendChild(title); head.appendChild(note);
-  card.appendChild(head);
-
-  if (!presets.length) {
-    const empty = document.createElement('div');
-    empty.className = 'chat-view__tools-empty';
-    empty.textContent = 'No presets. Create one in Settings → Agent presets.';
-    card.appendChild(empty);
-    return card;
-  }
-
-  const sel = document.createElement('select');
-  sel.className = 'input';
-  sel.setAttribute('aria-label', 'Agent preset');
-  const noneOpt = document.createElement('option');
-  noneOpt.value = '';
-  noneOpt.textContent = '— none —';
-  sel.appendChild(noneOpt);
-  for (const p of presets) {
-    const o = document.createElement('option');
-    o.value = p.id;
-    o.textContent = p.title || p.id;
-    if (p.id === currentPresetId) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', () => {
-    if (state._selectPreset) state._selectPreset(sel.value || null);
-  });
-  card.appendChild(sel);
-  return card;
-}
-
-// buildSkillsCard(state)
-//
-// A card listing discovered skills with per-skill toggle checkboxes.
-// The chat's selectedSkills (from the preset or direct) control which
-// skills are injected into the upstream context.
-function buildSkillsCard(state) {
-  const discoveredSkills = state.discoveredSkills || [];
-  const selectedSkills = state.selectedSkills || null; // null = all
-  const card = document.createElement('div');
-  card.className = 'chat-view__tools-card';
-  card.dataset.skillsCard = '1';
-
-  const head = document.createElement('div');
-  head.className = 'chat-view__tools-card-head';
-  const title = document.createElement('span');
-  title.className = 'chat-view__tools-card-title';
-  title.textContent = 'Skills';
-  const note = document.createElement('span');
-  note.className = 'chat-view__tools-card-note';
-  note.textContent = selectedSkills ? selectedSkills.length + ' selected' : 'all';
-  head.appendChild(title); head.appendChild(note);
-  card.appendChild(head);
-
-  if (!discoveredSkills.length) {
-    const empty = document.createElement('div');
-    empty.className = 'chat-view__tools-empty';
-    empty.textContent = 'No skills discovered. Add .agents/skills/<name>/SKILL.md files.';
-    card.appendChild(empty);
-    return card;
-  }
-
-  const list = document.createElement('div');
-  list.className = 'chat-view__skills-list';
-
-  // "All skills" toggle at the top
-  const allRow = document.createElement('label');
-  allRow.className = 'checkbox-row';
-  allRow.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:0.9rem;margin-bottom:4px;';
-  const allCheckbox = document.createElement('input');
-  allCheckbox.type = 'checkbox';
-  allCheckbox.checked = !selectedSkills;
-  allCheckbox.addEventListener('change', () => {
-    if (allCheckbox.checked) {
-      // Select all = clear the chat's selectedSkills (null = all)
-      if (state._selectSkills) state._selectSkills(null);
-    }
-  });
-  allRow.appendChild(allCheckbox);
-  const allLabel = document.createElement('span');
-  allLabel.textContent = 'All skills';
-  allRow.appendChild(allLabel);
-  list.appendChild(allRow);
-
-  for (const s of discoveredSkills) {
-    const row = document.createElement('label');
-    row.className = 'checkbox-row';
-    row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:0.9rem;padding-left:12px;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = selectedSkills ? selectedSkills.includes(s.name) : true;
-    cb.addEventListener('change', () => {
-      if (state._selectSkills) {
-        // Collect all checked names
-        const checked = [];
-        for (const r of list.querySelectorAll('.checkbox-row')) {
-          const inp = r.querySelector('input[type="checkbox"]');
-          const labelSpan = r.querySelector('span');
-          if (inp && inp.checked && labelSpan && labelSpan.textContent !== 'All skills') {
-            checked.push(labelSpan.textContent);
-          }
-        }
-        state._selectSkills(checked.length === discoveredSkills.length ? null : checked);
-      }
-    });
-    row.appendChild(cb);
-    const labelSpan = document.createElement('span');
-    labelSpan.textContent = s.name;
-    row.appendChild(labelSpan);
-    list.appendChild(row);
-  }
-
-  card.appendChild(list);
   return card;
 }
 
@@ -352,24 +209,6 @@ function buildToolsCard(state) {
   return card;
 }
 
-export function mountPresetCard(refs, state) {
-  if (!refs.transcript.current) return;
-  const existing = refs.transcript.current.querySelector('[data-preset-card="1"]');
-  if (existing) existing.remove();
-  const card = buildPresetCard(state);
-  refs.presetCard.current = card;
-  // Insert after the tools card or system prompt.
-  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
-  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
-}
-
 export function mountAgentCard(refs, state) {
   if (!refs.transcript.current) return;
   const existing = refs.transcript.current.querySelector('[data-agent-card="1"]');
@@ -382,40 +221,6 @@ export function mountAgentCard(refs, state) {
   } else {
     refs.transcript.current.appendChild(card);
   }
-}
-
-export function updatePresetCard(refs, state) {
-  if (!refs.presetCard.current || !refs.presetCard.current.parentNode) return;
-  const fresh = buildPresetCard(state);
-  refs.presetCard.current.parentNode.replaceChild(fresh, refs.presetCard.current);
-  refs.presetCard.current = fresh;
-}
-
-export function mountSkillsCard(refs, state) {
-  if (!refs.transcript.current) return;
-  const existing = refs.transcript.current.querySelector('[data-skills-card="1"]');
-  if (existing) existing.remove();
-  const card = buildSkillsCard(state);
-  refs.skillsCard.current = card;
-  // Insert after the preset card or tools card.
-  const presetCard = refs.transcript.current.querySelector('[data-preset-card="1"]');
-  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
-  const target = presetCard || toolsCard;
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  if (target && target.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, target.nextSibling);
-  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
-}
-
-export function updateSkillsCard(refs, state) {
-  if (!refs.skillsCard.current || !refs.skillsCard.current.parentNode) return;
-  const fresh = buildSkillsCard(state);
-  refs.skillsCard.current.parentNode.replaceChild(fresh, refs.skillsCard.current);
-  refs.skillsCard.current = fresh;
 }
 
 // mountToolsCard(refs, state)
@@ -452,8 +257,10 @@ export function mountToolsCard(refs, state) {
 // toggle flips the per-chat `agentFiles` boolean; the default
 // (no explicit choice) follows the prompt-size profile:
 // very-small = OFF, average/extensive = ON.
+// When `projectLocked` is true, the project has the master switch off
+// and the per-chat toggle is disabled.
 function buildAgentFilesCard(state) {
-  const af = state.agentFiles || { files: [], enabled: true, explicit: false };
+  const af = state.agentFiles || { files: [], enabled: true, explicit: false, projectLocked: false };
   const card = document.createElement('div');
   card.className = 'chat-view__agent-files-card';
   card.dataset.agentFilesCard = '1';
@@ -465,9 +272,13 @@ function buildAgentFilesCard(state) {
   title.textContent = 'Agent files';
   const note = document.createElement('span');
   note.className = 'chat-view__agent-files-note';
-  note.textContent = af.explicit
-    ? (af.enabled ? 'on — applies next turn' : 'off — applies next turn')
-    : (af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable');
+  if (af.projectLocked) {
+    note.textContent = 'off (locked by project setting) — enable in Settings → Project';
+  } else if (af.explicit) {
+    note.textContent = af.enabled ? 'on — applies next turn' : 'off — applies next turn';
+  } else {
+    note.textContent = af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable';
+  }
   head.appendChild(title); head.appendChild(note);
   card.appendChild(head);
 
@@ -495,9 +306,15 @@ function buildAgentFilesCard(state) {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'chat-view__agent-files-toggle';
-  toggle.setAttribute('aria-pressed', af.enabled ? 'true' : 'false');
-  toggle.textContent = af.enabled ? 'Disable' : 'Enable';
-  toggle.addEventListener('click', () => state._toggleAgentFiles && state._toggleAgentFiles(!af.enabled));
+  if (af.projectLocked) {
+    toggle.disabled = true;
+    toggle.setAttribute('aria-disabled', 'true');
+    toggle.textContent = 'Locked';
+  } else {
+    toggle.setAttribute('aria-pressed', af.enabled ? 'true' : 'false');
+    toggle.textContent = af.enabled ? 'Disable' : 'Enable';
+    toggle.addEventListener('click', () => state._toggleAgentFiles && state._toggleAgentFiles(!af.enabled));
+  }
   card.appendChild(toggle);
 
   return card;
@@ -942,4 +759,4 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   await updateChat({ tools: nextFilter == null ? null : nextFilter });
 }
 
-export { buildSetupCard, buildToolsCard, buildAgentCard, buildPresetCard, buildSkillsCard };
+export { buildSetupCard, buildToolsCard, buildAgentCard };

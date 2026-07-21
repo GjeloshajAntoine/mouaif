@@ -45,6 +45,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
   const mcpSummary = useRef(null);
+  // Agent presets — inline editor
+  const [agentPresets, setAgentPresets] = useState([]);
+  const [agentPresetsOpened, setAgentPresetsOpened] = useState({}); // { [id]: true } for expanded editors
+  const agentPresetsStatus = useRef(null);
   // Advanced (raw JSON + resolved)
   const editor = useRef(null);
   const saveBtn = useRef(null);
@@ -196,6 +200,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         } else { promptsSummary.current.textContent = '—'; }
       }
     } catch { if (promptsSummary.current) promptsSummary.current.textContent = '—'; }
+
+    // Agent presets.
+    try {
+      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(d));
+      if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
+    } catch { /* keep empty list */ }
 
     // Agent files: project-level enable + file list.
     if (agentFilesToggle.current) {
@@ -670,6 +680,74 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     // MCP settings page (#/settings/mcp), not here.
   }
 
+  // ---- Agent preset handlers -----------------------------------------
+
+  function getAgentTools(id) {
+    const el = document.querySelector('[data-agent-tool="' + id + '"]');
+    if (!el) return null;
+    const checkboxes = document.querySelectorAll('[data-agent-tool="' + id + '"]');
+    const tools = [];
+    for (const cb of checkboxes) {
+      if (cb.checked) {
+        const tool = cb.getAttribute('data-tool');
+        if (tool) tools.push(tool);
+      }
+    }
+    return tools;
+  }
+
+  function toggleAgentTool(e) {
+    // No-op: state is read from DOM at save time. This just triggers
+    // a re-render if needed (but we don't need it for Preact).
+    void e;
+  }
+
+  async function saveAgentPreset(id) {
+    const titleEl = document.querySelector('[data-agent-title="' + id + '"]');
+    const contentEl = document.querySelector('[data-agent-content="' + id + '"]');
+    const title = titleEl ? titleEl.value.trim() : '';
+    const content = contentEl ? contentEl.value : '';
+    const tools = getAgentTools(id);
+    const statusEl = document.querySelector('[data-agent-status="' + id + '"]');
+    if (statusEl) statusEl.textContent = 'saving…';
+    const r = await fetchJson('/api/agents/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), title, content, tools })
+    });
+    if (statusEl) statusEl.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
+    if (r.status === 200) {
+      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
+      if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
+    }
+  }
+
+  async function addAgentPreset() {
+    const r = await fetchJson('/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), title: 'New agent', content: '' })
+    });
+    if (r.status === 201) {
+      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
+      if (ar.status === 200) {
+        const list = Array.isArray(ar.body.agents) ? ar.body.agents : [];
+        setAgentPresets(list);
+        const id = r.body.agent && r.body.agent.id;
+        if (id) setAgentPresetsOpened(p => Object.assign({}, p, { [id]: true }));
+      }
+    }
+  }
+
+  async function deleteAgentPreset(id) {
+    if (!confirm('Delete agent "' + id + '"?')) return;
+    const r = await fetchJson('/api/agents/' + encodeURIComponent(id) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
+    if (r.status === 200) {
+      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
+      if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
+    }
+  }
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
@@ -780,6 +858,64 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               onInput: function () { saveAgentFilesDebounced.current(); }
             })
           )
+        )
+      ),
+
+      // ---- Agent presets ----------------------------------------------
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Agents', h('span', { class: 'group__title-note' }, 'Prompt + tool presets')),
+        h('div', { class: 'settings-project__agents' },
+          agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
+            agentPresets.map(a => {
+              const open = !!agentPresetsOpened[a.id];
+              return h('li', { key: a.id, class: 'settings-project__agent-row' },
+                h('div', { class: 'settings-project__agent-head' },
+                  h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.id]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
+                  h('span', { class: 'settings-project__agent-title' }, a.title || a.id),
+                  a.tools && a.tools.length > 0
+                    ? h('span', { class: 'settings-project__agent-tools-badge' }, a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))
+                    : h('span', { class: 'settings-project__agent-tools-badge' }, 'all tools'),
+                  h('button', { type: 'button', class: 'btn btn--danger btn--sm settings-project__agent-del', onClick: () => deleteAgentPreset(a.id), 'aria-label': 'Delete' }, '×')
+                ),
+                open && h('div', { class: 'settings-project__agent-body' },
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Title'),
+                    h('input', { class: 'input', value: a.title || '', 'data-agent-title': a.id, onInput: e => { a._titleDirty = e.target.value; } })
+                  ),
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Instructions ' + (a.content ? a.content.length + ' chars' : '')),
+                    h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', 'data-agent-content': a.id, onInput: e => { a._contentDirty = e.target.value; }, placeholder: 'You are an assistant who…' })
+                  ),
+                  h('div', { class: 'settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Tools'),
+                    h('div', { class: 'settings-project__agent-tools' },
+                      ['shell', 'subagent', 'ask_user', 'list_features'].map(name =>
+                        h('label', { key: name, class: 'checkbox-row' },
+                          h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': name, checked: !a.tools || a.tools.includes(name), onChange: toggleAgentTool }),
+                          ' ' + name
+                        )
+                      ),
+                      h('label', { class: 'checkbox-row' },
+                        h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': 'file_tools', checked: !a.tools || a.tools.includes('file_tools'), onChange: toggleAgentTool }),
+                        ' file tools'
+                      ),
+                      mcpServers.filter(s => s && s.id).map(s =>
+                        h('label', { key: 'mcp-' + s.id, class: 'checkbox-row' },
+                          h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': 'mcp__' + (s.slug || s.id), checked: !a.tools || a.tools.includes('mcp__' + (s.slug || s.id)), onChange: toggleAgentTool }),
+                          ' MCP: ' + (s.name || s.id)
+                        )
+                      )
+                    )
+                  ),
+                  h('div', { class: 'row row--actions' },
+                    h('button', { type: 'button', class: 'btn btn--primary btn--sm', onClick: () => saveAgentPreset(a.id) }, 'Save'),
+                    h('span', { 'data-agent-status': a.id, class: 'status' })
+                  )
+                )
+              );
+            })
+          ),
+          h('button', { type: 'button', class: 'btn btn--primary settings-project__add-agent', onClick: addAgentPreset }, '+ Add agent')
         )
       ),
 

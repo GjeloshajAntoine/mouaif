@@ -423,7 +423,7 @@ export async function refreshAllProviders(state, refs, setChatStatus) {
   }
   const results = await Promise.all(
     providers.map((p) => fetchLiveForProvider(p, state)
-      .catch((e) => ({ provider: p, ok: false, body: { error: String(e), code: 'ELIVE' }, status: 0 })))
+      .catch((err) => ({ provider: p, ok: false, body: { error: String(err), code: 'ELIVE' }, status: 0 })))
   );
   let total = 0, failed = 0, primary = null;
   for (const r of results) {

@@ -94,22 +94,12 @@ function buildFeatureSummary(opts) {
   // --- Project agents ---
   try {
     const agents = require('./agents.js');
-    const discovered = agents.discover(projectDir);
+    const list = agents.listPresets(projectDir);
     const selected = agents.resolveSelected({ chat, projectDir });
-    if (discovered.length) {
-      feat.push('[agents] ' + discovered.length + ' available' + (selected ? ' — selected ' + selected : ''));
+    if (list.length) {
+      feat.push('[agents] ' + list.length + ' available' + (selected ? ' — selected ' + selected : ''));
     }
   } catch { /* safe default */ }
-
-  // --- Agent skills ---
-  let skillsEnabled = false;
-  try {
-    const skills = require('./skills.js');
-    skillsEnabled = skills.resolveEnabled({ chat, projectDir });
-  } catch { /* safe default */ }
-  if (skillsEnabled) {
-    feat.push('[agent skills] enabled — .agents/skills/*/SKILL.md');
-  }
 
   // --- File tagging ---
   // Tagged files are always injected when the project has tag entries.
@@ -123,19 +113,6 @@ function buildFeatureSummary(opts) {
   if (tagsExist) {
     feat.push('[file tagging] active — tags found in project');
   }
-
-  // --- Agent presets ---
-  try {
-    const presets = require('./agentPresets.js');
-    const list = presets.listPresets(projectDir);
-    if (list.length) {
-      const selected = chat && chat.presetId ? ' — selected ' + chat.presetId : '';
-      feat.push('[presets] ' + list.length + ' available' + selected);
-    }
-    if (Array.isArray(chat && chat.selectedSkills)) {
-      feat.push('[selected skills] ' + chat.selectedSkills.length + ' skill(s) selected');
-    }
-  } catch { /* safe default */ }
 
   // --- Trace ---
   const traceOn = chat && chat.trace === true;
@@ -234,34 +211,10 @@ async function dispatchListFeatures(args, opts) {
     const agents = require('./agents.js');
     state.agents = {
       selected: agents.resolveSelected({ chat, projectDir }),
-      discovered: agents.load(projectDir).map(a => ({ name: a.name, title: a.title }))
+      discovered: agents.listPresets(projectDir).map(a => ({ name: a.id, title: a.title }))
     };
   } catch (e) {
     state.agents = { _error: e.message };
-  }
-
-  // Agent skills
-  try {
-    const skills = require('./skills.js');
-    state.agentSkills = {
-      enabled: skills.resolveEnabled({ chat, projectDir }),
-      discovered: skills.discover(projectDir).map(s => ({ name: s.name, title: s.title }))
-    };
-  } catch (e) {
-    state.agentSkills = { _error: e.message };
-  }
-
-  // Agent presets
-  try {
-    const presets = require('./agentPresets.js');
-    const list = presets.listPresets(projectDir);
-    state.agentPresets = {
-      available: list.map(p => ({ id: p.id, title: p.title, promptId: p.promptId, enabledTools: p.enabledTools, selectedSkills: p.selectedSkills })),
-      selected: (chat && chat.presetId) || null,
-      selectedSkills: (chat && chat.selectedSkills) || null
-    };
-  } catch (e) {
-    state.agentPresets = { _error: e.message };
   }
 
   // File tagging

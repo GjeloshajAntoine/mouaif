@@ -18,7 +18,7 @@ const SPEC = {
       properties: {
         task: { type: 'string', description: 'The focused task or question for the subagent.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
-        agent: { type: 'string', description: 'Optional project agent name from .agents/agents/<name>/AGENT.md to use for this delegation.' }
+        agent: { type: 'string', description: 'Optional project agent name (from Settings → Project → Agents) to use for this delegation.' }
       },
       required: ['task'],
       additionalProperties: false

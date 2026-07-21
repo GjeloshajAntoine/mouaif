@@ -21,8 +21,6 @@ const tags = require('./tags.js');
 const agentFiles = require('./agentFiles.js');
 const agentFeatures = require('./agentFeatures.js');
 const agents = require('./agents.js');
-const skills = require('./skills.js');
-const agentPresets = require('./agentPresets.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
@@ -345,16 +343,6 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // Project agents (project-scoped Markdown definitions + configuration)
   if (urlPath === '/api/agents' || urlPath.startsWith('/api/agents/')) {
     return handleAgents(req, res, parsed);
-  }
-
-  // Agent skills (project-scoped, read-only)
-  if (urlPath === '/api/skills' || urlPath.startsWith('/api/skills/')) {
-    return handleSkills(req, res, parsed);
-  }
-
-  // Agent presets (project-scoped, CRUD)
-  if (urlPath === '/api/presets' || urlPath.startsWith('/api/presets/')) {
-    return handlePresets(req, res, parsed);
   }
 
   // Tool Authorization API
@@ -982,62 +970,24 @@ async function handleChats(req, res, parsed) {
         }
       } catch { /* agent files stay null */ }
       let selectedAgent = null;
-      let agentConfig = null;
       try {
         selectedAgent = agents.loadSelected({ chat, projectDir: dir });
-        agentConfig = agents.resolveConfig({ chat, projectDir: dir });
         if (selectedAgent) parts.push(selectedAgent.content);
       } catch { /* selected agent stays null */ }
-      if (!prompt && agentConfig && agentConfig.promptId) {
-        try {
-          const cp = prompts.getPrompt(dir, agentConfig.promptId);
-          if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
-        } catch { /* agent prompt stays null */ }
-      }
-      if (!prompt) {
-        try {
-          const resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat });
-          if (resolved && resolved.promptId) {
-            const cp = prompts.getPrompt(dir, resolved.promptId);
-            if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
-          }
-        } catch { /* preset prompt stays null */ }
-      }
-      let skillsList = null;
-      try {
-        if (skills.resolveEnabled({ chat, projectDir: dir })) {
-          const allSkills = skills.load(dir);
-          // Apply preset/chat selectedSkills filter.
-          let resolved = null;
-          try { resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat }); } catch {}
-          const selectedNames = chat.selectedSkills === null || Array.isArray(chat.selectedSkills)
-            ? chat.selectedSkills
-            : agentConfig && Array.isArray(agentConfig.selectedSkills)
-              ? agentConfig.selectedSkills
-              : (resolved && resolved.selectedSkills);
-          skillsList = selectedNames ? allSkills.filter(s => selectedNames.includes(s.name)) : allSkills;
-          for (const s of skillsList) parts.push(s.content);
-        }
-      } catch { /* skills stay null */ }
       if (prompt && prompt.content) parts.push(prompt.content);
-      // Include preset info in the system-prompt response.
-      let presetInfo = null;
+      // Also expose the project-level gate so the UI can render the
+      // per-chat toggle as locked off when the project has it disabled.
+      let projectAgentFiles = null;
       try {
-        const resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat });
-        presetInfo = {
-          presetId: chat && chat.presetId || null,
-          resolvedPromptId: resolved && resolved.promptId,
-          resolvedEnabledTools: resolved && resolved.enabledTools,
-          resolvedSelectedSkills: resolved && resolved.selectedSkills
-        };
-      } catch { /* preset info stays null */ }
+        const project = require('./settings.js').getProject(dir);
+        if (project && typeof project.agentFiles === 'boolean') projectAgentFiles = project.agentFiles;
+      } catch { /* null */ }
       return sendJSON(res, 200, {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        projectAgentFiles,
         agent: selectedAgent ? { name: selectedAgent.name, title: selectedAgent.title } : null,
-        skills: skillsList ? skillsList.map(s => ({ name: s.name, title: s.title })) : null,
         prompt,
-        preset: presetInfo,
         text: parts.join('\n\n')
       });
     } catch (e) {
@@ -1328,58 +1278,28 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without agent files */ }
-  // Project agent (.agents/agents/<name>/AGENT.md). When selected on
+  // Project agent (.mouaif.json agentPreset). When selected on
   // the chat or project, its instructions are injected after global
-  // agent files and before skills.
-  let agentConfig = null;
+  // agent files and before the tagged files and custom prompt.
+  // If the agent also defines a tool filter, it overrides the
+  // current chat's tool filter for this turn.
   try {
     const selectedAgent = agents.loadSelected({ chat, projectDir });
-    agentConfig = agents.resolveConfig({ chat, projectDir });
     if (selectedAgent) {
       upstreamMessages.push({ role: selectedAgent.role, content: selectedAgent.content });
+      // Tool filter from the agent preset overrides the chat's filter.
+      // The model sees only these tools when the agent is active.
+      if (Array.isArray(selectedAgent.tools) && selectedAgent.tools.length) {
+        // Override the enabledTools passed to streamChat below.
+        // We store it on chat.tools for this stream only (not persisted).
+        chat = Object.assign({}, chat, { tools: selectedAgent.tools });
+      }
       if (traceStream) {
-        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title });
+        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools });
       }
     }
   } catch { /* non-fatal; stream proceeds without selected agent */ }
 
-  // Resolve preset fields if the chat references a preset. The preset
-  // can override promptId, enabledTools, and selectedSkills. Chat-level
-  // values take precedence over preset values.
-  let resolvedPreset = null;
-  try {
-    if (chat.presetId || chat.selectedSkills === null || Array.isArray(chat.selectedSkills)) {
-      resolvedPreset = agentPresets.resolvePresetFields({ projectDir, chat });
-    }
-  } catch { /* non-fatal; stream proceeds without preset resolution */ }
-
-  // Agent skills (projectDir/.agents/skills/*/SKILL.md). Discovered
-  // read-only from the canonical skills directory, injected after the
-  // agent files and before the tagged files and custom prompt, so
-  // they sit close to the agent-instruction context. Each skill rides
-  // as its own system message. A trace line records what was injected.
-  // When a preset or chat has selectedSkills, only those named skills
-  // are injected; null means all discovered skills.
-  let injectedSkills = [];
-  try {
-    if (skills.resolveEnabled({ chat, projectDir })) {
-      const allSkills = skills.load(projectDir);
-      const selectedNames = chat.selectedSkills === null || Array.isArray(chat.selectedSkills)
-        ? chat.selectedSkills
-        : agentConfig && Array.isArray(agentConfig.selectedSkills)
-          ? agentConfig.selectedSkills
-          : (resolvedPreset && resolvedPreset.selectedSkills);
-      injectedSkills = selectedNames
-        ? allSkills.filter(s => selectedNames.includes(s.name))
-        : allSkills;
-      for (const s of injectedSkills) upstreamMessages.push({ role: s.role, content: s.content });
-      if (traceStream && injectedSkills.length) {
-        trace.write(traceStream, 'skills', {
-          skills: injectedSkills.map(s => ({ name: s.name, title: s.title }))
-        });
-      }
-    }
-  } catch { /* non-fatal; stream proceeds without skills */ }
   // Agent features summary — a terse list of enabled features and their
   // authorization state in the current project. Tells the model what it
   // can do without the user having to guess or ask. The `list_features`
@@ -1413,7 +1333,7 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without tagged files */ }
-  const effectivePromptId = chat.promptId || (agentConfig && agentConfig.promptId) || (resolvedPreset && resolvedPreset.promptId);
+  const effectivePromptId = chat.promptId || null;
   if (effectivePromptId) {
     try {
       const prompt = prompts.getPrompt(projectDir, effectivePromptId);
@@ -1569,13 +1489,8 @@ async function handleChatStream(req, res, chatId) {
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
-    // Chat tool filter wins; otherwise the selected agent config can
-    // provide a tool filter, then presets, then all project tools.
-    enabledTools: Array.isArray(chat.tools)
-      ? chat.tools
-      : (agentConfig && Array.isArray(agentConfig.tools))
-        ? agentConfig.tools
-        : ((resolvedPreset && resolvedPreset.enabledTools) || null),
+    // Chat tool filter wins; otherwise all project tools are offered.
+    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.
@@ -2978,273 +2893,120 @@ async function handleFeatures(req, res, parsed) {
 }
 
 // ---- Project agents API -----------------------------------------------
-// Project-scoped agents discovered from <projectDir>/.agents/agents/*/AGENT.md.
-// Read-only: the server never creates, edits, or deletes agent files.
+// Project-scoped agent presets stored in .mouaif.json under `agentPresets`.
+// Each preset = { id, title, content, tools? }.
 // Routes:
-//   GET /api/agents?projectDir=<abs>          -> { agents: [{ name, title, size, config }] }
-//   GET /api/agents/:name?projectDir=<abs>    -> { agent: { name, title, content, config } }
-//   PUT /api/agents/:name/config              -> { config }
+//   GET    /api/agents?projectDir=<abs>          -> { agents, defaultAgentId }
+//   POST   /api/agents  body: { projectDir, title?, content?, tools? }
+//   PATCH  /api/agents/:id  body: { title?, content?, tools? }
+//   DELETE /api/agents/:id?projectDir=<abs>
+//   PUT    /api/agents/default  body: { projectDir, agentId? }
 
 async function handleAgents(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
 
-  if (method !== 'GET' && method !== 'POST' && method !== 'PUT') return sendJSON(res, 405, { error: 'Method not allowed' });
-
-  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-
-  if (urlPath === '/api/agents') {
-    if (method === 'POST') {
-      let body;
-      try { body = await readJsonBody(req); }
-      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-      try {
-        const agent = agents.create(dir, body || {});
-        return sendJSON(res, 201, { agent: Object.assign({}, agent, { config: agents.getConfig(dir, agent.name) }) });
-      } catch (e) {
-        const status = e.code === 'EBADINPUT' ? 400 : e.code === 'EEXISTS' ? 409 : 500;
-        return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
-      }
-    }
-    if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
-    try {
-      const loaded = agents.load(dir);
-      const byName = new Map(loaded.map(a => [a.name, a]));
-      const list = agents.discover(dir).map(a => {
-        const found = byName.get(a.name);
-        return { name: a.name, title: found ? found.title : a.name, size: a.size, config: agents.getConfig(dir, a.name) };
-      });
-      return sendJSON(res, 200, { agents: list, defaultAgentId: agents.getDefault(dir) });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  if (urlPath === '/api/agents/default' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    try {
-      const agentId = body && typeof body.agentId === 'string' && body.agentId ? body.agentId : null;
-      if (!agents.setDefault(dir, agentId)) return sendJSON(res, 400, { error: 'Unknown agent', agentId });
-      return sendJSON(res, 200, { defaultAgentId: agents.getDefault(dir) });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  let getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
-  if (getMatch) {
-    if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
-    const name = decodeURIComponent(getMatch[1]);
-    try {
-      const loaded = agents.loadOne(dir, name);
-      if (!loaded) return sendJSON(res, 404, { error: 'Agent not found', name });
-      loaded.config = agents.getConfig(dir, name);
-      return sendJSON(res, 200, { agent: loaded });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  getMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/config$/);
-  if (getMatch && method === 'PUT') {
-    const name = decodeURIComponent(getMatch[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    try {
-      const config = agents.setConfig(dir, name, body || {});
-      if (!config) return sendJSON(res, 404, { error: 'Agent not found', name });
-      return sendJSON(res, 200, { config });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  return sendJSON(res, 404, { error: 'Not found', scope: 'agents' });
-}
-
-// ---- Agent skills API --------------------------------------------------
-// Project-scoped skills discovered from <projectDir>/.agents/skills/*/SKILL.md.
-// Read-only: the server never creates, edits, or deletes skill files.
-// Routes:
-//   GET /api/skills?projectDir=<abs>          -> { skills: [{ name, title, size }] }
-//   GET /api/skills/:name?projectDir=<abs>    -> { skill: { name, title, content } }
-
-async function handleSkills(req, res, parsed) {
-  const urlPath = parsed.pathname;
-  const method = req.method;
-  const q = parsed.query || {};
-
-  if (method !== 'GET' && method !== 'POST') return sendJSON(res, 405, { error: 'Method not allowed' });
-
-  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-
-  // GET /api/skills?projectDir=<abs>
-  if (urlPath === '/api/skills') {
-    if (method === 'POST') {
-      let body;
-      try { body = await readJsonBody(req); }
-      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-      try {
-        const skill = skills.create(dir, body || {});
-        return sendJSON(res, 201, { skill });
-      } catch (e) {
-        const status = e.code === 'EBADINPUT' ? 400 : e.code === 'EEXISTS' ? 409 : 500;
-        return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
-      }
-    }
-    try {
-      const list = skills.discover(dir).map(s => ({
-        name: s.name,
-        title: s.name,
-        size: s.size
-      }));
-      // Enrich titles from load() so the UI shows the first heading.
-      const loaded = skills.load(dir);
-      for (const item of list) {
-        const found = loaded.find(l => l.name === item.name);
-        if (found) item.title = found.title;
-      }
-      return sendJSON(res, 200, { skills: list });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  // GET /api/skills/:name?projectDir=<abs>
-  const getMatch = urlPath.match(/^\/api\/skills\/([^/]+)$/);
-  if (getMatch) {
-    const name = decodeURIComponent(getMatch[1]);
-    try {
-      const loaded = skills.load(dir).find(s => s.name === name);
-      if (!loaded) return sendJSON(res, 404, { error: 'Skill not found', name });
-      return sendJSON(res, 200, { skill: loaded });
-    } catch (e) {
-      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  return sendJSON(res, 404, { error: 'Not found', scope: 'skills' });
-}
-
-// ---- Agent Presets API ---------------------------------------------------
-// Per-project agent presets: named bundles that combine a custom prompt,
-// tool filter, and skill selection. CRUD endpoints match the prompts API
-// pattern. The preset itself is also applied via the chat PATCH endpoint.
-//
-// Endpoints:
-//   GET    /api/presets?projectDir=<abs>          -> { presets: [...] }
-//   GET    /api/presets/:id?projectDir=<abs>      -> { preset } | 404
-//   POST   /api/presets                           { projectDir, title, promptId?, enabledTools?, selectedSkills? }
-//   PATCH  /api/presets/:id                       { projectDir, title?, promptId?, enabledTools?, selectedSkills? }
-//   DELETE /api/presets/:id?projectDir=<abs>      -> { ok, removed }
-
-async function handlePresets(req, res, parsed) {
-  const urlPath = parsed.pathname;
-  const method = req.method;
-  const q = parsed.query || {};
-
-  function presetError(e) {
-    if (e && e.code === 'EBADINPUT') return 400;
-    return 500;
-  }
-
-  function dirFromQueryOrBody(body) {
+  function agentDirFrom(body) {
     const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
     const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     return fromQuery || fromBody;
   }
 
-  // GET /api/presets?projectDir=<abs>
-  if (urlPath === '/api/presets' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+  function agentError(e) {
+    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
+    if (e && e.code === 'EBADINPUT') return 400;
+    return 500;
+  }
+
+  if (method !== 'GET' && method !== 'POST' && method !== 'PATCH' && method !== 'PUT' && method !== 'DELETE') {
+    return sendJSON(res, 405, { error: 'Method not allowed' });
+  }
+
+  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+
+  // GET /api/agents?projectDir=...
+  if (urlPath === '/api/agents' && method === 'GET') {
     try {
-      return sendJSON(res, 200, { presets: agentPresets.listPresets(dir) });
+      const list = agents.listPresets(dir);
+      return sendJSON(res, 200, { agents: list, defaultAgentId: agents.getDefault(dir) });
     } catch (e) {
-      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // GET /api/presets/:id?projectDir=<abs>
-  let getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
-  if (getMatch && method === 'GET') {
-    const id = decodeURIComponent(getMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-    try {
-      const preset = agentPresets.getPreset(dir, id);
-      if (!preset) return sendJSON(res, 404, { error: 'Preset not found', id });
-      return sendJSON(res, 200, { preset });
-    } catch (e) {
-      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  // POST /api/presets   body: { projectDir, title, promptId?, enabledTools?, selectedSkills? }
-  if (urlPath === '/api/presets' && method === 'POST') {
+  // POST /api/agents  body: { projectDir, title?, content?, tools? }
+  if (urlPath === '/api/agents' && method === 'POST') {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const dir = dirFromQueryOrBody(body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const projectDir = agentDirFrom(body);
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const preset = agentPresets.createPreset(dir, body);
-      return sendJSON(res, 201, { preset });
+      const agent = agents.create(projectDir, body || {});
+      return sendJSON(res, 201, { agent });
     } catch (e) {
-      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'EBADINPUT' });
+      const status = e.code === 'EBADINPUT' ? 400 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // PATCH /api/presets/:id   body: { projectDir, title?, promptId?, enabledTools?, selectedSkills? }
-  getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
-  if (getMatch && method === 'PATCH') {
-    const id = decodeURIComponent(getMatch[1]);
+  // PUT /api/agents/default  body: { projectDir, agentId? }
+  if (urlPath === '/api/agents/default' && method === 'PUT') {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const dir = dirFromQueryOrBody(body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const projectDir = agentDirFrom(body);
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const preset = agentPresets.updatePreset(dir, id, body);
-      if (!preset) return sendJSON(res, 404, { error: 'Preset not found', id });
-      return sendJSON(res, 200, { preset });
+      const agentId = body && typeof body.agentId === 'string' && body.agentId ? body.agentId : null;
+      if (!agents.setDefault(projectDir, agentId)) return sendJSON(res, 400, { error: 'Unknown agent', agentId });
+      return sendJSON(res, 200, { defaultAgentId: agents.getDefault(projectDir) });
     } catch (e) {
-      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'EBADINPUT' });
+      return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // DELETE /api/presets/:id?projectDir=<abs>
-  getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
-  if (getMatch && method === 'DELETE') {
+  // PATCH /api/agents/:id  body: { title?, content?, tools? }
+  // DELETE /api/agents/:id?projectDir=...
+  let getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
+  if (getMatch) {
     const id = decodeURIComponent(getMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-    try {
-      const removed = agentPresets.deletePreset(dir, id, {
-        onRemoved: (presetId) => {
-          // Cascade-clear presetId on every chat in the project.
-          const all = chats.listChats(dir);
-          for (const c of all) {
-            if (c && c.presetId === presetId) {
-              chats.updateChat(dir, c.id, { presetId: null });
-            }
-          }
-        }
-      });
-      if (!removed) return sendJSON(res, 404, { error: 'Preset not found', id });
-      return sendJSON(res, 200, { ok: true, removed: id });
-    } catch (e) {
-      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    if (method === 'GET') {
+      try {
+        const agent = agents.loadOne(dir, id);
+        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', id });
+        return sendJSON(res, 200, { agent });
+      } catch (e) {
+        return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      }
     }
+    if (method === 'PATCH') {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+      try {
+        const agent = agents.updatePreset(dir, id, body || {});
+        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', id });
+        return sendJSON(res, 200, { agent });
+      } catch (e) {
+        return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
+    if (method === 'DELETE') {
+      try {
+        const ok = agents.deletePreset(dir, id);
+        if (!ok) return sendJSON(res, 404, { error: 'Agent not found', id });
+        return sendJSON(res, 200, { ok: true, removed: id });
+      } catch (e) {
+        return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
+    return sendJSON(res, 405, { error: 'Method not allowed' });
   }
 
-  return sendJSON(res, 404, { error: 'Not found', scope: 'presets' });
+  return sendJSON(res, 404, { error: 'Not found', scope: 'agents' });
 }
 
 // ---- MCP API ------------------------------------------------------------

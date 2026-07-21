@@ -117,10 +117,7 @@ function normalizeChat(chat) {
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
     agentId: typeof chat.agentId === 'string' && chat.agentId ? chat.agentId : null,
-    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined,
-    skills: typeof chat.skills === 'boolean' ? chat.skills : undefined,
-    presetId: typeof chat.presetId === 'string' && chat.presetId ? chat.presetId : null,
-    selectedSkills: chat.selectedSkills === null ? null : (Array.isArray(chat.selectedSkills) ? chat.selectedSkills.map((n) => String(n)).filter(Boolean) : undefined)
+    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined
   };
 }
 
@@ -260,25 +257,6 @@ function updateChat(projectDir, chatId, patch) {
     merged.agentFiles = (patch.agentFiles === null || patch.agentFiles === undefined)
       ? undefined
       : patch.agentFiles === true;
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
-    // `undefined` / `null` means "use the profile default"; a boolean
-    // pins the chat to an explicit choice.
-    merged.skills = (patch.skills === null || patch.skills === undefined)
-      ? undefined
-      : patch.skills === true;
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'presetId')) {
-    merged.presetId = (patch.presetId === null || patch.presetId === '') ? null : String(patch.presetId);
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'selectedSkills')) {
-    if (patch.selectedSkills === null) {
-      merged.selectedSkills = null;
-    } else if (Array.isArray(patch.selectedSkills)) {
-      merged.selectedSkills = patch.selectedSkills.map((name) => String(name)).filter(Boolean);
-    } else {
-      merged.selectedSkills = undefined;
-    }
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);
