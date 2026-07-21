@@ -2901,11 +2901,13 @@ async function handleAgents(req, res, parsed) {
     return sendJSON(res, 405, { error: 'Method not allowed' });
   }
 
+  // GET/DELETE carry projectDir in the query string; POST/PATCH carry
+  // it in the JSON body. Only the query-string routes can 400 up front.
   const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
-  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 
   // GET /api/agents?projectDir=...
   if (urlPath === '/api/agents' && method === 'GET') {
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, { agents: agents.list(dir) });
     } catch (e) {
@@ -2934,6 +2936,7 @@ async function handleAgents(req, res, parsed) {
   if (getMatch) {
     const name = decodeURIComponent(getMatch[1]);
     if (method === 'GET') {
+      if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
       try {
         const agent = agents.get(dir, name);
         if (!agent) return sendJSON(res, 404, { error: 'Agent not found', name });
@@ -2946,8 +2949,10 @@ async function handleAgents(req, res, parsed) {
       let body;
       try { body = await readJsonBody(req); }
       catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+      const patchDir = dir || (body && typeof body.projectDir === 'string' ? body.projectDir : '');
+      if (!patchDir) return sendJSON(res, 400, { error: 'projectDir is required' });
       try {
-        const agent = agents.update(dir, name, body || {});
+        const agent = agents.update(patchDir, name, body || {});
         if (!agent) return sendJSON(res, 404, { error: 'Agent not found', name });
         return sendJSON(res, 200, { agent });
       } catch (e) {
@@ -2955,6 +2960,7 @@ async function handleAgents(req, res, parsed) {
       }
     }
     if (method === 'DELETE') {
+      if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
       try {
         const ok = agents.remove(dir, name);
         if (!ok) return sendJSON(res, 404, { error: 'Agent not found', name });
