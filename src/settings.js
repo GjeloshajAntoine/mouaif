@@ -33,6 +33,7 @@ const APP_KEY = 'settings';
 // bulky last-known tool schemas live in the app store instead of the
 // hand-editable, project-committed <projectDir>/.mcp.json.
 const MCP_TOOL_CACHE_TABLE = 'mcp_tool_cache';
+const MIGRATIONS_TABLE = '_migrations';
 
 // Built-in defaults. These are the floor: anything not set in app or project
 // falls back to these. They are intentionally tiny for the first commit; later
@@ -83,7 +84,56 @@ function openDb(home) {
        PRIMARY KEY (project_dir, server_id)
      );`
   );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+       name       TEXT PRIMARY KEY,
+       run_at     TEXT NOT NULL
+     );`
+  );
   return db;
+}
+
+// ---- Migrations ----------------------------------------------------------
+//
+// Each migration is an idempotent function keyed by name. The `_migrations`
+// table tracks which have run. New migrations are appended to the list;
+// never modify or remove an existing entry.
+
+const MIGRATIONS = [
+  {
+    name: '2025-07-17-persist-project-total-cost',
+    description: 'Persist totalCost field on every registered project\'s .mouaif.json',
+    async run() {
+      const projects = require('./projects.js').listProjects();
+      const chats = require('./chats.js');
+      for (const p of projects) {
+        if (!p || !p.path) continue;
+        try {
+          chats.recomputeProjectTotalCost(p.path);
+        } catch (e) {
+          // Non-fatal — a corrupt project file shouldn't block the whole
+          // migration. The field will be set on the next stream/delete.
+          console.error('  [migration] cost total failed for ' + p.path + ': ' + e.message);
+        }
+      }
+    }
+  }
+];
+
+function runMigrations() {
+  const d = db();
+  const ran = new Set();
+  for (const row of d.prepare(`SELECT name FROM ${MIGRATIONS_TABLE}`).iterate()) {
+    ran.add(row.name);
+  }
+  const insert = d.prepare(`INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (name, run_at) VALUES (?, ?)`);
+  for (const m of MIGRATIONS) {
+    if (ran.has(m.name)) continue;
+    console.log('[migration] ' + m.name + ' — ' + m.description);
+    m.run();
+    insert.run(m.name, new Date().toISOString());
+    console.log('[migration] ' + m.name + ' done');
+  }
 }
 
 function readJsonFile(filePath) {
@@ -314,6 +364,8 @@ module.exports = {
   getMcpToolCache,
   setMcpToolCache,
   deleteMcpToolCache,
+  // migrations
+  runMigrations,
   // lifecycle (mostly for tests)
   close
 };

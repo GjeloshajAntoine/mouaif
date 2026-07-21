@@ -70,7 +70,7 @@
      44px targets. */
   --tap: 44px;
   --tap-sm: 32px;
-  --tabbar-h: 40px;   /* bottom tab bar height (incl. safe area) */
+  --tabbar-h: 50px;   /* bottom tab bar height (incl. safe area, min 50px for 44px touch targets) */
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   /* Radius scale — four stops, used everywhere. The codebase used to
      mix 4/5/6/8/10/12/14/18px one-offs; consolidation keeps cards,

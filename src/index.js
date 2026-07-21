@@ -772,30 +772,32 @@ async function handleChats(req, res, parsed) {
       // Enrich every returned chat with a `totalCost` block so the
       // mobile chat list can render a cost summary in place of the
       // old prompt-size label (decision §14). The project-level cost
-      // is computed from the page (not the full list) so the list
-      // stays fast — reading every chat's messages file would be
-      // O(N) sync file reads on every paginated request.
+      // is read from the persisted `totalCost` field on the project
+      // record (maintained by recomputeProjectTotalCost which is
+      // called after every stream, chat delete, or message delete).
       let app;
       try { app = settings.getApp(); } catch { app = null; }
-      let total = 0;
-      let hasKnown = false;
       for (const c of page) {
         let totalCost;
         try { totalCost = chats.chatTotalCost(dir, c.id, app); }
         catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
         c.totalCost = totalCost;
         if (runningChats.has(runningKey(dir, c.id))) c.running = true;
-        if (totalCost.known && typeof totalCost.total === 'number') {
-          total += totalCost.total;
-          hasKnown = true;
-        }
       }
+      // Read persisted project total cost instead of re-summing.
+      let projectTotalCost = { total: 0, known: false, currency: 'USD' };
+      try {
+        const project = settings.getProject(dir);
+        if (project && project.totalCost && typeof project.totalCost.total === 'number') {
+          projectTotalCost = project.totalCost;
+        }
+      } catch { /* fall through to default */ }
       return sendJSON(res, 200, {
         chats: page,
         total: list.length,
         offset,
         limit: limit || list.length,
-        projectTotalCost: { total, known: hasKnown, currency: 'USD' }
+        projectTotalCost
       });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -894,6 +896,8 @@ async function handleChats(req, res, parsed) {
       // file so it can remain committed with the project (decision §5).
       try { fs.rmSync(messages.messagesFilePath(dir, id), { force: true }); }
       catch { /* best-effort cleanup after the chat record is gone */ }
+      // Refresh the persisted project total cost.
+      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -1091,6 +1095,8 @@ async function handleChats(req, res, parsed) {
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const removed = messages.clearMessages(dir, id);
+      // Refresh the persisted project total cost after messages are cleared.
+      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
@@ -1612,6 +1618,8 @@ async function handleChatStream(req, res, chatId) {
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
+  // Refresh the persisted project total cost after a stream completes.
+  try { chats.recomputeProjectTotalCost(projectDir); } catch { /* non-fatal */ }
   res.end();
 }
 
@@ -1695,6 +1703,8 @@ async function handleProjects(req, res, parsed) {
           return sendJSON(res, 400, { error: 'dir is required' });
         }
         const row = projects.registerProject(body.dir);
+        // Seed the persisted project total cost.
+        try { chats.recomputeProjectTotalCost(body.dir); } catch { /* non-fatal */ }
         return sendJSON(res, 200, { project: row });
       }
       return sendJSON(res, 400, { error: 'Unknown action', action });
@@ -3216,6 +3226,8 @@ async function handleToolAuthorization(req, res, parsed) {
 }
 
 function createServer(port = DEFAULT_PORT, options = {}) {
+  // Run any pending database migrations before serving requests.
+  try { settings.runMigrations(); } catch (e) { console.warn('[mouaif] migrations failed:', e.message); }
   // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
   // are never consumed and would otherwise accumulate PKCE verifiers in the
   // app store forever. Best-effort: a failure here must not stop the server.

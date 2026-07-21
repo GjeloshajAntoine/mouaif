@@ -384,6 +384,31 @@ function chatTotalCost(projectDir, chatId, app) {
   return out;
 }
 
+// Recompute the project's total cost by summing every chat's per-message
+// cost, then persist the result to the project file so GET /api/chats can
+// read it without re-scanning every messages file. Returns the same shape
+// as chatTotalCost: { total, known, currency }.
+function recomputeProjectTotalCost(projectDir) {
+  const project = readProject(projectDir);
+  const chats = Array.isArray(project.chats) ? project.chats : [];
+  let total = 0;
+  let hasKnown = false;
+  for (const c of chats) {
+    if (!c || !c.id) continue;
+    let tc;
+    try { tc = chatTotalCost(projectDir, c.id, null); }
+    catch { tc = { total: 0, known: false, currency: 'USD' }; }
+    if (tc.known && typeof tc.total === 'number' && tc.total >= 0) {
+      total += tc.total;
+      hasKnown = true;
+    }
+  }
+  const out = { total, known: hasKnown, currency: 'USD' };
+  project.totalCost = out;
+  writeProject(projectDir, project);
+  return out;
+}
+
 module.exports = {
   // introspection
   PROJECT_FILE,
@@ -398,5 +423,6 @@ module.exports = {
   titleChatFromPrompt,
   clearPromptId,
   // metrics
-  chatTotalCost
+  chatTotalCost,
+  recomputeProjectTotalCost
 };

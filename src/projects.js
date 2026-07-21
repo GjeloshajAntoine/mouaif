@@ -140,7 +140,23 @@ function writeProjects(list) {
   settings.setApp({ projects: list });
 }
 
-function listProjects() { return readProjects(); }
+function listProjects() {
+  const list = readProjects();
+  // Enrich each project with its persisted totalCost from the project file.
+  for (const p of list) {
+    try {
+      const raw = settings.getProject(p.path);
+      if (raw && raw.totalCost && typeof raw.totalCost.total === 'number') {
+        p.totalCost = raw.totalCost;
+      } else {
+        p.totalCost = { total: 0, known: false, currency: 'USD' };
+      }
+    } catch {
+      p.totalCost = { total: 0, known: false, currency: 'USD' };
+    }
+  }
+  return list;
+}
 
 function getProject(pid) {
   return readProjects().find(p => p.id === pid) || null;

@@ -64,7 +64,9 @@ export function ProjectsView() {
     head.appendChild(name);
     const costEl = document.createElement('span');
     costEl.className = 'project-card__cost';
-    costEl.textContent = '--';
+    // Use the persisted project total cost from the registered list.
+    const costBits = project.totalCost || { total: 0, known: false, currency: 'USD' };
+    costEl.textContent = costBits.known ? formatCost(costBits.total) : '--';
     head.appendChild(costEl);
     head.appendChild(renderProjectMenu(project));
     frag.appendChild(head);
@@ -146,11 +148,10 @@ export function ProjectsView() {
     ul.dataset.total = '0';
     let r;
     try { r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE); }
-    catch (err) { renderChatList(ul, [], project, { total: 0 }); updateProjectCost(card, null); return; }
-    if (r.status !== 200) { renderChatList(ul, [], project, { total: 0 }); updateProjectCost(card, null); return; }
+    catch (err) { renderChatList(ul, [], project, { total: 0 }); return; }
+    if (r.status !== 200) { renderChatList(ul, [], project, { total: 0 }); return; }
     const chats = r.body.chats || [];
     renderChatList(ul, chats, project, { total: r.body.total || chats.length, append: false });
-    updateProjectCost(card, r.body.projectTotalCost || chats);
   }
 
   async function loadMoreProjectChats(ul, project) {
@@ -167,26 +168,6 @@ export function ProjectsView() {
     if (r.status !== 200) { ul.dataset.loading = '0'; return; }
     const chats = r.body.chats || [];
     renderChatList(ul, chats, project, { total: r.body.total || total || (offset + chats.length), append: true });
-  }
-
-  function updateProjectCost(card, chatsOrTotalCost) {
-    const costEl = card.querySelector('.project-card__cost');
-    if (!costEl) return;
-    if (chatsOrTotalCost && !Array.isArray(chatsOrTotalCost) && chatsOrTotalCost.known) {
-      costEl.textContent = formatCost(chatsOrTotalCost.total);
-      return;
-    }
-    const chats = Array.isArray(chatsOrTotalCost) ? chatsOrTotalCost : [];
-    let total = 0;
-    let hasKnown = false;
-    for (const c of chats) {
-      const cb = c.totalCost || {};
-      if (cb.known && typeof cb.total === 'number') {
-        total += cb.total;
-        hasKnown = true;
-      }
-    }
-    costEl.textContent = hasKnown ? formatCost(total) : '--';
   }
 
   function renderChatList(ul, chats, project, opts = {}) {
