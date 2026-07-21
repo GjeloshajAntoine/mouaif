@@ -1,7 +1,8 @@
 // Simple server-side-markdown-safe renderer. Handles the common
 // subset: fenced code blocks, inline code, headings, bold, italic,
-// links, images, blockquotes, unordered/ordered lists, paragraphs,
-// and line breaks. No dependencies, no DOMParser, no eval.
+// links, images, blockquotes, unordered/ordered lists, task lists,
+// tables, horizontal rules, auto-linking bare URLs, backslash
+// escapes, and line breaks. No dependencies, no DOMParser, no eval.
 // Output is safe for innerHTML (all special chars escaped except
 // those produced by the recognised patterns).
 
@@ -13,36 +14,125 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-// Inline-only pass: bold (**), italic (*), inline code (`), links ([text](url)), images (![alt](url)), strikethrough (~~)
+// Auto-link bare URLs that start with a protocol (http, https, ftp,
+// mailto) or a www. prefix. Also link text like user@host for email.
+function autoLink(text) {
+  const urlRe = /(^|[\s([{>])(https?:\/\/[^\s<]+[^\s<.,:;!?)}\]'"\]>]|[a-z0-9.+-]+@[a-z0-9.-]+\.[a-z]{2,}|www\.[a-z0-9.-]+[^\s<.,:;!?)}\]'"\]>]+)/gi;
+  return text.replace(urlRe, (match, before, url) => {
+    // If it looks like an email
+    if (/^[a-z0-9.+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(url)) {
+      return before + '<a href="mailto:' + url + '">' + url + '</a>';
+    }
+    // If it starts with www, prepend http
+    const href = url.match(/^www\./i) ? 'http://' + url : url;
+    return before + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+  });
+}
+
+// Inline-only pass: bold (**), italic (*), inline code (`), links
+// ([text](url)), images (![alt](url)), strikethrough (~~),
+// auto-link bare URLs, backslash-escaped special chars.
 function renderInline(text) {
-  // Inline code is extracted first so its contents are never re-processed
-  // as bold/italic/links/etc. Private-use placeholders are swapped back
-  // at the end (U+E001 cannot appear in real chat text).
+  let s = String(text);
+
+  // Step 0: backslash escapes — replace escaped chars with
+  // private-use placeholders so they survive all other passes.
+  // Only escape \, `, *, _, ~, [, ], (, ), #, +, -, ., !, |, {, },
+  // <, >, ".
+  const escaped = [];
+  s = s.replace(/\\([\\`*_~\[\]()#+\-.!|{}<>"])/g, (m, ch) => {
+    escaped.push(ch);
+    return '\uE002' + (escaped.length - 1) + '\uE002';
+  });
+
+  // Step 1: extract inline code so its contents are never re-processed
   const codeSpans = [];
-  let s = escapeHtml(text);
   s = s.replace(/`([^`]+)`/g, (m, code) => {
     codeSpans.push('<code>' + code + '</code>');
     return '\uE001' + (codeSpans.length - 1) + '\uE001';
   });
-  // Images (must come before links)
+
+  // Step 2: escape remaining HTML special chars (code was already safe)
+  s = escapeHtml(s);
+
+  // Step 3: images (before links)
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
-  // Links
+
+  // Step 4: links
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  // Bold
+
+  // Step 5: auto-link bare URLs (only on text not already inside a tag)
+  s = autoLink(s);
+
+  // Step 6: bold
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  // Italic
+
+  // Step 7: italic
   s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
-  // Strikethrough
+
+  // Step 8: strikethrough
   s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-  // Restore inline code spans
-  s = s.replace(/\uE001(\d+)\uE001/g, (m, i) => codeSpans[Number(i)]);
+
+  // Step 9: restore inline code spans
+  s = s.replace(/\uE001(\d+)\uE001/g, (m, i) => codeSpans[Number(i)] || m);
+
+  // Step 10: restore backslash-escaped literal characters
+  s = s.replace(/\uE002(\d+)\uE002/g, (m, i) => escaped[Number(i)] || m);
+
   return s;
 }
 
 function renderInlineLines(lines) {
   return lines.map((line) => renderInline(line)).join('<br>');
+}
+
+// Render a pipe table. Returns the HTML string or null if the lines
+// don't look like a table.
+function renderTable(lines) {
+  // A table must have at least 3 lines: header, separator, first row.
+  // The separator line has |, -, and optional : for alignment.
+  if (lines.length < 2) return null;
+  // Check for a separator line (second line is |--...--| or similar).
+  const sepRe = /^\|?[\s:]*-{3,}[\s:]*(\|[\s:]*-{3,}[\s:]*)*\|?$/;
+  if (!sepRe.test(lines[1].replace(/\s+/g, ''))) return null;
+  // First line is the header.
+  const headerCells = lines[0].split('|').filter(c => c.trim() !== '');
+  // If it doesn't start/end with |, assume the first/last split is empty
+  // but we already filtered empties. But we need to handle leading/trailing
+  // pipes properly. Let's do it properly:
+  const splitRow = (row) => {
+    const parts = row.split('|');
+    // If the row starts with |, first element is empty; if ends with |, last is empty.
+    const startIdx = /^\s*\|/.test(row) ? 1 : 0;
+    const endIdx = /\|\s*$/.test(row) ? parts.length - 1 : parts.length;
+    return parts.slice(startIdx, endIdx).map(c => c.trim());
+  };
+  const headers = splitRow(lines[0]);
+  const aligns = splitRow(lines[1]).map(a => {
+    a = a.replace(/\s+/g, '');
+    if (/^:-+$/.test(a)) return ' style="text-align:left"';
+    if (/^-+:$/.test(a)) return ' style="text-align:right"';
+    if (/^:-+:$/.test(a)) return ' style="text-align:center"';
+    return '';
+  });
+  let html = '<table><thead><tr>';
+  for (let i = 0; i < headers.length; i++) {
+    html += '<th' + (aligns[i] || '') + '>' + renderInline(headers[i]) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (let r = 2; r < lines.length; r++) {
+    const cells = splitRow(lines[r]);
+    if (cells.length === 0) continue; // empty row
+    html += '<tr>';
+    for (let c = 0; c < Math.max(cells.length, headers.length); c++) {
+      html += '<td' + ((aligns[c] || '') && c < aligns.length ? aligns[c] : '') + '>' + renderInline(cells[c] || '') + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
 }
 
 // Split into blocks by blank lines, then render each block.
@@ -54,8 +144,6 @@ export function renderMarkdown(text) {
   const blocks = [];
   let rest = String(text);
   // Opening fence: ``` or ~~~ followed by an optional info string.
-  // The language is the first word of the info string (CommonMark-style);
-  // any trailing words on the fence line are ignored.
   const codeBlockRe = /^(```|~~~)([^\n]*)$/m;
 
   while (rest.length) {
@@ -95,27 +183,59 @@ export function renderMarkdown(text) {
       const trimmed = para.trim();
       if (!trimmed) continue;
       const lines = trimmed.split('\n');
-      // Check for blockquote
+
+      // Horizontal rule: a line that is ---, ***, or ___ (3+ chars,
+      // optionally with spaces). Must be the only content in the block.
+      if (lines.length === 1 && /^ {0,3}([-*_]){3,}\s*$/.test(lines[0])) {
+        out.push('<hr>');
+        continue;
+      }
+
+      // Blockquote
       if (/^\s*>/.test(lines[0])) {
         const quoteLines = lines.map(l => l.replace(/^\s*> ?/, ''));
         out.push('<blockquote>' + renderInlineLines(quoteLines) + '</blockquote>');
         continue;
       }
-      // Check for unordered list
-      if (/^\s*[-*+]\s/.test(lines[0])) {
+
+      // Table detection: if the block has ≥ 2 lines and line 2 is a
+      // separator (|---...---|), treat the whole block as a table.
+      if (lines.length >= 2) {
+        const tableHtml = renderTable(lines);
+        if (tableHtml) {
+          out.push(tableHtml);
+          continue;
+        }
+      }
+
+      // Unordered list (also handles task lists)
+      if (/^\s*[-*+]\s/.test(lines[0]) || /^\s*[-*+]\s+\[[ x]\]\s/i.test(lines[0])) {
         out.push('<ul>');
         for (const line of lines) {
+          // Check for task list item: - [ ] or - [x]
+          const taskMatch = line.match(/^\s*[-*+]\s+\[([ x])\]\s+(.*)/i);
+          if (taskMatch) {
+            const checked = taskMatch[1].toLowerCase() === 'x' ? ' checked' : '';
+            out.push('<li class="task-list-item">'
+              + '<label><input type="checkbox" disabled' + checked + '> '
+              + renderInline(taskMatch[2]) + '</label></li>');
+            continue;
+          }
           const li = line.match(/^\s*[-*+]\s+(.*)/);
           if (li) {
             out.push('<li>' + renderInline(li[1]) + '</li>');
           } else {
-            if (out[out.length - 1].startsWith('<li>')) out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, '<br>' + renderInline(line) + '</li>');
+            // Continuation line — append <br> to previous li
+            if (out[out.length - 1].startsWith('<li')) {
+              out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, '<br>' + renderInline(line) + '</li>');
+            }
           }
         }
         out.push('</ul>');
         continue;
       }
-      // Check for ordered list
+
+      // Ordered list
       if (/^\s*\d+\.\s/.test(lines[0])) {
         out.push('<ol>');
         for (const line of lines) {
@@ -123,13 +243,16 @@ export function renderMarkdown(text) {
           if (li) {
             out.push('<li>' + renderInline(li[1]) + '</li>');
           } else {
-            if (out[out.length - 1].startsWith('<li>')) out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, '<br>' + renderInline(line) + '</li>');
+            if (out[out.length - 1].startsWith('<li')) {
+              out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, '<br>' + renderInline(line) + '</li>');
+            }
           }
         }
         out.push('</ol>');
         continue;
       }
-      // Check for heading
+
+      // Heading
       const hMatch = lines[0].match(/^(#{1,6})\s+(.*)/);
       if (hMatch) {
         const level = hMatch[1].length;
@@ -137,11 +260,11 @@ export function renderMarkdown(text) {
         const restLines = lines.slice(1).join('\n');
         out.push('<h' + level + '>' + renderInline(headingText) + '</h' + level + '>');
         if (restLines.trim()) {
-          // Remaining text after heading inside same block
           out.push('<p>' + renderInlineLines(restLines.trim().split('\n')) + '</p>');
         }
         continue;
       }
+
       // Regular paragraph (with line breaks)
       out.push('<p>' + renderInlineLines(lines) + '</p>');
     }

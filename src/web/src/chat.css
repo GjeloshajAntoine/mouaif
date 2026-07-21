@@ -885,6 +885,53 @@
 .chat-msg--assistant .chat-msg__body del,
 .chat-msg--system .chat-msg__body del { color: var(--muted); }
 
+/* ---- Tables ------------------------------------------------------ */
+.chat-msg--assistant .chat-msg__body table,
+.chat-msg--system .chat-msg__body table {
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 0.75rem;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+.chat-msg--assistant .chat-msg__body th,
+.chat-msg--system .chat-msg__body th {
+  background: var(--surface-2);
+  font-weight: 700;
+  text-align: left;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+}
+.chat-msg--assistant .chat-msg__body td,
+.chat-msg--system .chat-msg__body td {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+}
+.chat-msg--assistant .chat-msg__body tr:nth-child(even),
+.chat-msg--system .chat-msg__body tr:nth-child(even) {
+  background: var(--surface);
+}
+
+/* ---- Task lists -------------------------------------------------- */
+.chat-msg--assistant .chat-msg__body ul .task-list-item,
+.chat-msg--system .chat-msg__body ul .task-list-item {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.chat-msg--assistant .chat-msg__body ul .task-list-item label,
+.chat-msg--system .chat-msg__body ul .task-list-item label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  cursor: default;
+}
+.chat-msg--assistant .chat-msg__body ul .task-list-item input[type="checkbox"],
+.chat-msg--system .chat-msg__body ul .task-list-item input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* ---- Message head + timestamp ------------------------------------ */
 
 .chat-msg__head {
