@@ -1110,7 +1110,16 @@ async function streamChat(opts) {
   const toolSpecs = [];
   try { toolSpecs.push(require('./tools/shell.js').SPEC); }
   catch { /* shell tool module unavailable; skip */ }
-  try { toolSpecs.push(require('./tools/subagent.js').SPEC); }
+  try {
+    const sub = require('./tools/subagent.js');
+    // Enumerate the project's agent names in the `agent` parameter
+    // description so the model knows exactly what it can delegate to.
+    let agentNames = [];
+    try {
+      if (opts && opts.projectDir) agentNames = require('./agents.js').list(opts.projectDir).map((a) => a.name);
+    } catch { /* no agents */ }
+    toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames) : sub.SPEC);
+  }
   catch { /* subagent tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/ask.js').SPEC); }
   catch { /* ask_user tool module unavailable; skip */ }
@@ -1856,19 +1865,36 @@ async function streamChat(opts) {
         const r = { error: { code: 'EBADINPUT', message: 'task is required' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      const nestedMessages = [
-        {
-          role: 'system',
-          content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
+      // Resolve the requested agent persona (if any). Agents are
+      // named subagent personas from .mouaif.json — an unknown name is
+      // a hard, typed error so the model can retry with a valid one
+      // instead of silently delegating to a generic subagent.
+      let agentTools = null;
+      const nestedMessages = [];
+      if (agentName) {
+        if (!callOpts || !callOpts.projectDir) {
+          const r = { error: { code: 'EUNKNOWN_AGENT', message: 'No project context to resolve agent "' + agentName + '"', available: [] } };
+          return { ok: false, content: JSON.stringify(r), result: r };
         }
-      ];
-      if (agentName && callOpts && callOpts.projectDir) {
+        let agent = null;
+        let available = [];
         try {
           const agentMod = require('./agents.js');
-          const selected = agentMod.loadOne(callOpts.projectDir, agentName);
-          if (selected) nestedMessages.push({ role: selected.role, content: selected.content });
-          else nestedMessages.push({ role: 'system', content: 'Requested project agent "' + agentName + '" was not found; continue as a focused subagent.' });
-        } catch { /* continue without project agent */ }
+          const all = agentMod.list(callOpts.projectDir);
+          available = all.map((a) => a.name);
+          agent = all.find((a) => a.name === agentName) || null;
+        } catch { /* fall through to typed error */ }
+        if (!agent) {
+          const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
+          return { ok: false, content: JSON.stringify(r), result: r };
+        }
+        nestedMessages.push({ role: 'system', content: agent.content });
+        agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
+      } else {
+        nestedMessages.push({
+          role: 'system',
+          content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
+        });
       }
       nestedMessages.push({
         role: 'user',
@@ -1876,11 +1902,16 @@ async function streamChat(opts) {
       });
       const nestedEvents = [];
       const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
-      const nestedEnabled = parentEnabled
+      let nestedEnabled = parentEnabled
         ? parentEnabled.filter((toolName) => toolName !== 'subagent')
         : visibleToolSpecs
             .map((spec) => spec && spec.function && spec.function.name)
             .filter((toolName) => toolName && toolName !== 'subagent');
+      // An agent's tool allowlist restricts the nested call's surface.
+      if (agentTools) {
+        const allow = new Set(agentTools);
+        nestedEnabled = nestedEnabled.filter((toolName) => allow.has(toolName));
+      }
       const nested = await streamChat({
         model,
         messages: nestedMessages,

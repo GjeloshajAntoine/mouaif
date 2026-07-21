@@ -91,13 +91,12 @@ function buildFeatureSummary(opts) {
     feat.push('[agent files] enabled — AGENTS.md / CLAUDE.md / .github/copilot-instructions.md');
   }
 
-  // --- Project agents ---
+  // --- Project agents (subagent delegation targets) ---
   try {
     const agents = require('./agents.js');
-    const list = agents.listPresets(projectDir);
-    const selected = agents.resolveSelected({ chat, projectDir });
+    const list = agents.list(projectDir);
     if (list.length) {
-      feat.push('[agents] ' + list.length + ' available' + (selected ? ' — selected ' + selected : ''));
+      feat.push('[agents] ' + list.length + ' available — subagent delegation targets');
     }
   } catch { /* safe default */ }
 
@@ -206,12 +205,11 @@ async function dispatchListFeatures(args, opts) {
     state.agentFiles = { _error: e.message };
   }
 
-  // Project agents
+  // Project agents (subagent delegation targets)
   try {
     const agents = require('./agents.js');
     state.agents = {
-      selected: agents.resolveSelected({ chat, projectDir }),
-      discovered: agents.listPresets(projectDir).map(a => ({ name: a.id, title: a.title }))
+      discovered: agents.list(projectDir).map(a => ({ name: a.name }))
     };
   } catch (e) {
     state.agents = { _error: e.message };

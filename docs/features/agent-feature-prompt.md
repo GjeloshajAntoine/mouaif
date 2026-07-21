@@ -12,13 +12,12 @@ Together they solve the problem of "the model doesn't know what it can do": with
 
 ### Feature injection
 
-The feature summary is assembled server-side and injected as its own `system` message in the upstream message array, after agent skills and before tagged files. It lists:
+The feature summary is assembled server-side and injected as its own `system` message in the upstream message array, after agent files and before tagged files. It lists:
 
 - **Built-in tools** — shell, subagent, ask_user, file tools — showing their authorization mode (`off` / `ask` / `allowlist` / `allow`).
 - **MCP servers** — how many are running and stopped.
 - **Agent files** — whether AGENTS.md / CLAUDE.md etc. are injected.
-- **Agents** — discovered `.agents/agents/*/AGENT.md` personas and the selected agent, if any.
-- **Agent skills** — whether `.agents/skills/*/SKILL.md` files are injected.
+- **Agents** — how many named subagent personas are defined in the project.
 - **File tagging** — whether tags are configured in the project.
 - **Trace** — whether trace-to-file is on for this chat.
 - **Prompt profile** — the active profile id (`very-small`, `average`, or `extensive`).
@@ -34,8 +33,7 @@ The model has a `list_features` tool available in every chat. It takes no argume
 | `tools` | `object` | Each built-in tool family (`shell`, `subagent`, `file`, `ask_user`) with `mode`, `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. |
 | `mcp` | `array` | Each MCP server with `name`, `slug`, `status`, `tools`, `authorization`. |
 | `agentFiles` | `object` | `enabled` (boolean), `fileNames` (the names looked for), `discovered` (files actually found with size). |
-| `agents` | `object` | `selected` (agent name or `null`) and `discovered` (agents found with name and title). |
-| `agentSkills` | `object` | `enabled` (boolean), `discovered` (skills found with name and title). |
+| `agents` | `object` | `discovered` (named subagent personas found, by name). |
 | `fileTagging` | `object` | `active` (boolean), `count` (number of tags). |
 | `trace` | `boolean` | Whether trace-to-file is on for this chat. |
 | `promptProfile` | `object` | `id` and `label` of the active prompt profile. |
@@ -63,7 +61,7 @@ The REST endpoint returns the same structured state the `list_features` tool ret
   - `buildFeatureSummary({ chat, projectDir, project, authz, mcpServers })` → string or null
   - `LIST_FEATURES_SPEC` — tool spec object
   - `dispatchListFeatures(args, opts)` → `{ ok, content, result }`
-- Injection happens in `src/index.js` `handleChatStream`, after agent skills and before tagged files. The call collects the project record, authorization state, and MCP server list, then passes them to `buildFeatureSummary`.
+- Injection happens in `src/index.js` `handleChatStream`, after agent files and before tagged files. The call collects the project record, authorization state, and MCP server list, then passes them to `buildFeatureSummary`.
 - Tool registration in `src/ai.js`:
   - `LIST_FEATURES_SPEC` is pushed into the `toolSpecs` array alongside `shell`, `subagent`, `ask_user`, and file tools.
   - In `runOneCall`, `list_features` is handled before the authorization gate (alongside `discover_tool`) so it never triggers an authorization prompt.
@@ -74,7 +72,7 @@ The REST endpoint returns the same structured state the `list_features` tool ret
 
 - [docs/features/prompt-profiles.md](./prompt-profiles.md) — the tool works best with `very-small` profile where other tool specs are hidden behind `discover_tool`.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — the auth state that the feature summary and tool report.
-- [docs/features/agent-skills.md](./agent-skills.md) — the skills state reported by the feature system.
+- [docs/features/agents.md](./agents.md) — the agent state reported by the feature system.
 - [docs/features/file-tagging.md](./file-tagging.md) — the tagging state reported by the feature system.
 - [docs/features/file-tools.md](./file-tools.md) — file tool authorization state reported.
 - Source: `src/agentFeatures.js`, `src/index.js`, `src/ai.js`.

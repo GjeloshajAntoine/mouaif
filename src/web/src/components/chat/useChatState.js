@@ -71,7 +71,6 @@ export function useChatState(props) {
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
-  const agentCard = useRef(null);
   const mcpToggleBusy = useRef(new Set());
 
   // ---- High-frequency mutable state (refs, not useState) -----
@@ -127,10 +126,6 @@ export function useChatState(props) {
     set tools(v) { tools.current = v; },
     get agentFiles() { return agentFiles.current; },
     set agentFiles(v) { agentFiles.current = v; },
-    get agents() { return (state._agents || []); },
-    set agents(v) { state._agents = Array.isArray(v) ? v : []; },
-    get defaultAgentId() { return state._defaultAgentId || null; },
-    set defaultAgentId(v) { state._defaultAgentId = v || null; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
     get usedTools() { return usedTools.current; },
@@ -154,7 +149,7 @@ export function useChatState(props) {
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
     promptInput, imageInput, draftSaveTimer, sendBtn, status,
-    jumpBtn, toolsCard, agentFilesCard, agentCard,
+    jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
     _autoresize: () => autoresize({ promptInput })
   };
@@ -252,11 +247,6 @@ export function useChatState(props) {
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleMcpServer = onToggleMcpServer;
-  state._selectAgent = async (agentId) => {
-    await updateChatBound({ agentId });
-    await refreshSystemPrompt(state, refs);
-    renderTranscriptBound();
-  };
 
   // Save tool authorization (Off/Ask/Allow) directly to the server.
   // Used by the inline segment control in the chat tools card.
@@ -285,7 +275,7 @@ export function useChatState(props) {
       if (!projectDir || !chatId) return;
       setLoading(true);
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rAgents] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
           loadModels(projectDir),
           fetchJson('/api/ai/models/providers'),
@@ -293,8 +283,7 @@ export function useChatState(props) {
           fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir))
+          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
         ]);
         if (cancelled) return;
         if (rChat.status !== 200) {
@@ -337,10 +326,6 @@ export function useChatState(props) {
           projectLocked: projectGate === false  // project has it off → toggle locked
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
-        if (rAgents && rAgents.status === 200) {
-          state.agents = Array.isArray(rAgents.body.agents) ? rAgents.body.agents.map(a => ({ name: a.id, title: a.title, tools: a.tools, promptSize: a.promptSize, modelId: a.modelId, providerId: a.providerId, agentFiles: a.agentFiles })) : [];
-          state.defaultAgentId = rAgents.body.defaultAgentId || null;
-        }
 
         // Fetch tool authorization settings for the tools card segments.
         try {

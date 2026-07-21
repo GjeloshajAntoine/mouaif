@@ -42,69 +42,6 @@ function buildSetupCard() {
   return sel;
 }
 
-function buildAgentCard(state) {
-  const agents = state.agents || [];
-  const chatAgentId = state.chat && state.chat.agentId || '';
-  const defaultAgentId = state.defaultAgentId || '';
-  const effectiveId = chatAgentId || defaultAgentId;
-  const effective = agents.find(agent => agent.name === effectiveId) || null;
-  const card = document.createElement('div');
-  card.className = 'chat-view__tools-card';
-  card.dataset.agentCard = '1';
-
-  const head = document.createElement('div');
-  head.className = 'chat-view__tools-card-head';
-  const title = document.createElement('span');
-  title.className = 'chat-view__tools-card-title';
-  title.textContent = 'Agent';
-  const note = document.createElement('span');
-  note.className = 'chat-view__tools-card-note';
-  note.textContent = effective ? (chatAgentId ? 'chat override' : 'project default') : 'none';
-  head.appendChild(title);
-  head.appendChild(note);
-  card.appendChild(head);
-
-  if (!agents.length) {
-    const empty = document.createElement('div');
-    empty.className = 'chat-view__tools-empty';
-    empty.textContent = 'No agents. Create one in Settings → Project → Agents.';
-    card.appendChild(empty);
-    return card;
-  }
-
-  const select = document.createElement('select');
-  select.className = 'input';
-  select.setAttribute('aria-label', 'Agent for this chat');
-  const defaultOption = document.createElement('option');
-  defaultOption.value = '';
-  defaultOption.textContent = defaultAgentId ? 'Project default' : '— no agent —';
-  if (!chatAgentId) defaultOption.selected = true;
-  select.appendChild(defaultOption);
-  for (const agent of agents) {
-    const option = document.createElement('option');
-    option.value = agent.name;
-    option.textContent = agent.title || agent.name;
-    if (chatAgentId === agent.name) option.selected = true;
-    select.appendChild(option);
-  }
-  select.addEventListener('change', () => {
-    if (state._selectAgent) state._selectAgent(select.value || null);
-  });
-  card.appendChild(select);
-  // Show agent details when selected
-  if (effective) {
-    const details = document.createElement('div');
-    details.className = 'chat-view__agent-details';
-    const bits = [];
-    if (effective.tools && effective.tools.length) bits.push('Tools: ' + effective.tools.join(', '));
-    if (effective.promptSize) bits.push('Prompt: ' + effective.promptSize);
-    if (effective.modelId) bits.push('Model: ' + effective.modelId);
-    if (typeof effective.agentFiles === 'boolean') bits.push(effective.agentFiles ? 'Agent files: on' : 'Agent files: off');
-    if (bits.length) { details.textContent = bits.join(' · '); card.appendChild(details); }
-  }
-  return card;
-}
-
 // buildToolsCard(state)
 //
 // Build / rebuild the per-chat tool toggle card. Sits below the
@@ -211,20 +148,6 @@ function buildToolsCard(state) {
   card.appendChild(treeHost);
 
   return card;
-}
-
-export function mountAgentCard(refs, state) {
-  if (!refs.transcript.current) return;
-  const existing = refs.transcript.current.querySelector('[data-agent-card="1"]');
-  if (existing) existing.remove();
-  const card = buildAgentCard(state);
-  refs.agentCard.current = card;
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
 }
 
 // mountToolsCard(refs, state)
@@ -763,4 +686,4 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   await updateChat({ tools: nextFilter == null ? null : nextFilter });
 }
 
-export { buildSetupCard, buildToolsCard, buildAgentCard };
+export { buildSetupCard, buildToolsCard };

@@ -969,11 +969,8 @@ async function handleChats(req, res, parsed) {
           for (const af of agentFilesList) parts.push(af.content);
         }
       } catch { /* agent files stay null */ }
-      let selectedAgent = null;
-      try {
-        selectedAgent = agents.loadSelected({ chat, projectDir: dir });
-        if (selectedAgent) parts.push(selectedAgent.content);
-      } catch { /* selected agent stays null */ }
+      // Agents are subagent delegation targets only — never part of
+      // the chat's system prompt.
       if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
       // per-chat toggle as locked off when the project has it disabled.
@@ -986,7 +983,6 @@ async function handleChats(req, res, parsed) {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
         projectAgentFiles,
-        agent: selectedAgent ? { name: selectedAgent.name, title: selectedAgent.title } : null,
         prompt,
         text: parts.join('\n\n')
       });
@@ -1278,32 +1274,8 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without agent files */ }
-  // Project agent (.mouaif.json agentPreset). When selected on
-  // the chat or project, its instructions are injected after global
-  // agent files and before the tagged files and custom prompt.
-  // If the agent also defines overrides, they apply for this turn.
-  try {
-    const selectedAgent = agents.loadSelected({ chat, projectDir });
-    if (selectedAgent) {
-      upstreamMessages.push({ role: selectedAgent.role, content: selectedAgent.content });
-      // Tool filter from agent preset overrides chat's filter
-      if (Array.isArray(selectedAgent.tools) && selectedAgent.tools.length) {
-        chat = Object.assign({}, chat, { tools: selectedAgent.tools });
-      }
-      // Prompt size from agent preset overrides chat-level prompt size
-      if (selectedAgent.promptSize) {
-        resolvedProfileId = selectedAgent.promptSize;
-        chat = Object.assign({}, chat, { promptSize: selectedAgent.promptSize });
-      }
-      // Agent files toggle from agent preset
-      if (typeof selectedAgent.agentFiles === 'boolean') {
-        chat = Object.assign({}, chat, { agentFiles: selectedAgent.agentFiles });
-      }
-      if (traceStream) {
-        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title, tools: selectedAgent.tools, promptSize: selectedAgent.promptSize, modelId: selectedAgent.modelId, providerId: selectedAgent.providerId, agentFiles: selectedAgent.agentFiles });
-      }
-    }
-  } catch { /* non-fatal; stream proceeds without selected agent */ }
+  // Agents are delegation targets for the `subagent` tool only — they
+  // are never injected into the main chat stream (docs/features/agents.md).
 
   // Agent features summary — a terse list of enabled features and their
   // authorization state in the current project. Tells the model what it
@@ -2898,14 +2870,15 @@ async function handleFeatures(req, res, parsed) {
 }
 
 // ---- Project agents API -----------------------------------------------
-// Project-scoped agent presets stored in .mouaif.json under `agentPresets`.
-// Each preset = { id, title, content, tools? }.
+// Project-scoped named personas stored in .mouaif.json under `agents`.
+// Each agent = { name, content, tools? } — a delegation target for the
+// native `subagent` tool, nothing else. See docs/features/agents.md.
 // Routes:
-//   GET    /api/agents?projectDir=<abs>          -> { agents, defaultAgentId }
-//   POST   /api/agents  body: { projectDir, title?, content?, tools? }
-//   PATCH  /api/agents/:id  body: { title?, content?, tools? }
-//   DELETE /api/agents/:id?projectDir=<abs>
-//   PUT    /api/agents/default  body: { projectDir, agentId? }
+//   GET    /api/agents?projectDir=<abs>          -> { agents }
+//   POST   /api/agents  body: { projectDir, name, content, tools? }
+//   GET    /api/agents/:name?projectDir=<abs>    -> { agent } | 404
+//   PATCH  /api/agents/:name  body: { projectDir, content?, tools? }
+//   DELETE /api/agents/:name?projectDir=<abs>
 
 async function handleAgents(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -2924,7 +2897,7 @@ async function handleAgents(req, res, parsed) {
     return 500;
   }
 
-  if (method !== 'GET' && method !== 'POST' && method !== 'PATCH' && method !== 'PUT' && method !== 'DELETE') {
+  if (method !== 'GET' && method !== 'POST' && method !== 'PATCH' && method !== 'DELETE') {
     return sendJSON(res, 405, { error: 'Method not allowed' });
   }
 
@@ -2934,14 +2907,13 @@ async function handleAgents(req, res, parsed) {
   // GET /api/agents?projectDir=...
   if (urlPath === '/api/agents' && method === 'GET') {
     try {
-      const list = agents.listPresets(dir);
-      return sendJSON(res, 200, { agents: list, defaultAgentId: agents.getDefault(dir) });
+      return sendJSON(res, 200, { agents: agents.list(dir) });
     } catch (e) {
       return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // POST /api/agents  body: { projectDir, title?, content?, tools? }
+  // POST /api/agents  body: { projectDir, name, content, tools? }
   if (urlPath === '/api/agents' && method === 'POST') {
     let body;
     try { body = await readJsonBody(req); }
@@ -2957,31 +2929,14 @@ async function handleAgents(req, res, parsed) {
     }
   }
 
-  // PUT /api/agents/default  body: { projectDir, agentId? }
-  if (urlPath === '/api/agents/default' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const projectDir = agentDirFrom(body);
-    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
-    try {
-      const agentId = body && typeof body.agentId === 'string' && body.agentId ? body.agentId : null;
-      if (!agents.setDefault(projectDir, agentId)) return sendJSON(res, 400, { error: 'Unknown agent', agentId });
-      return sendJSON(res, 200, { defaultAgentId: agents.getDefault(projectDir) });
-    } catch (e) {
-      return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
-
-  // PATCH /api/agents/:id  body: { title?, content?, tools? }
-  // DELETE /api/agents/:id?projectDir=...
+  // GET|PATCH|DELETE /api/agents/:name
   let getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
   if (getMatch) {
-    const id = decodeURIComponent(getMatch[1]);
+    const name = decodeURIComponent(getMatch[1]);
     if (method === 'GET') {
       try {
-        const agent = agents.loadOne(dir, id);
-        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', id });
+        const agent = agents.get(dir, name);
+        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', name });
         return sendJSON(res, 200, { agent });
       } catch (e) {
         return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -2992,8 +2947,8 @@ async function handleAgents(req, res, parsed) {
       try { body = await readJsonBody(req); }
       catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
       try {
-        const agent = agents.updatePreset(dir, id, body || {});
-        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', id });
+        const agent = agents.update(dir, name, body || {});
+        if (!agent) return sendJSON(res, 404, { error: 'Agent not found', name });
         return sendJSON(res, 200, { agent });
       } catch (e) {
         return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -3001,9 +2956,9 @@ async function handleAgents(req, res, parsed) {
     }
     if (method === 'DELETE') {
       try {
-        const ok = agents.deletePreset(dir, id);
-        if (!ok) return sendJSON(res, 404, { error: 'Agent not found', id });
-        return sendJSON(res, 200, { ok: true, removed: id });
+        const ok = agents.remove(dir, name);
+        if (!ok) return sendJSON(res, 404, { error: 'Agent not found', name });
+        return sendJSON(res, 200, { ok: true, removed: name });
       } catch (e) {
         return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
       }

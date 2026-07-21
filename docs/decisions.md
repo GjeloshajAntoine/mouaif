@@ -209,10 +209,15 @@ provider:credHash so a key rotation invalidates the entry.
 - The decision is still recorded through the existing `/api/tools/authorization/decision` endpoint, extended to carry an optional structured `payload` (`{ choice, extra }`). The payload is generic - any future native tool can attach its own structured answer without a new endpoint. For every other tool the `payload` is undefined and the existing `allow-once` / `allow-session` / `allow-always` / `deny` semantics are unchanged.
 - New module: [src/tools/ask.js](../src/tools/ask.js). New test: [scripts/test-ask-user.js](../scripts/test-ask-user.js) (40 assertions, covers the spec shape, validation rules, result-builder paths, the binary-mode gate, the `off` denial, the `ask` -> payload round trip via `recordDecision`, and the `getAuthorization` listing). Docs: [docs/features/ask-user-tool.md](../features/ask-user-tool.md).
 
-## 23. Agent selection and configuration
+## 23. Agents — subagent delegation personas
 
-- Named agents are read-only personas in `.agents/agents/<name>/AGENT.md`. The project stores only selection and configuration metadata in `.mouaif.json`; it never rewrites `AGENT.md` or `SKILL.md` files.
-- `project.agentId` is the default agent. `chat.agentId` overrides it for one chat. Missing or removed names resolve to no agent instead of injecting stale configuration.
-- Each `agentConfigs[agentName]` can reference one project `promptId` and either all skills (`selectedSkills: null`) or an explicit skill list (`[]` means none).
-- Effective precedence is: explicit chat value → selected-agent configuration → referenced preset → default behavior. The same order is used by streaming and the system-prompt preview.
-- Settings owns project-default and agent configuration. The chat Agent card owns per-chat selection; the Skills card owns the explicit per-chat skill override.
+- An **agent** is a named persona (`{ name, content, tools? }`) stored in `.mouaif.json` under `agents` and used **exclusively as a delegation target for the `subagent` tool**. Agents are not chat personas — a chat-level persona is what custom prompts (§15) are for. Nothing in the chat stream, chat record, or project record references an agent.
+- Three settings only: **name** (user-defined, unique per project, `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`, immutable), **instructions** (the nested call's system message, 64 KiB cap), and an optional **tools** allowlist (unset = inherit the parent's full surface). Model, provider, and prompt size are never configurable on an agent — the nested call always uses the chat's.
+- `subagent({ task, agent })` matches `agent` against stored names. The `agent` parameter description is built per request and enumerates the current names. An unknown name returns a typed `EUNKNOWN_AGENT` result listing the available names — no silent fallback to a generic subagent.
+- Management UI lives only in **Settings → Project → Agents** (list + auto-saving editor + delete). No chat card, no picker, no project default.
+- This supersedes the earlier file-based personas (`.agents/agents/*/AGENT.md`), the skills system (`.agents/skills/*/SKILL.md`, `selectedSkills`), the preset bundle layer (`src/agentPresets.js`), the `agentConfigs` map, and all chat/project agent-selection machinery (`chat.agentId`, `project.agentId`, the chat Agent card). Those were removed: chat selection duplicated custom prompts, and the extra fields were chat configuration, not persona.
+
+## 24. Correction — the `e890096` preset conflation
+
+- Commit `e890096` ("replace file-system agents with UI-defined presets") conflated *agents* and *presets* into a single settings blob and, in doing so, both dropped the delegation-target focus and bolted chat-configuration fields (`promptSize`, `modelId`, `providerId`, `agentFiles`) onto the persona. It also left §23 and the feature docs describing a file-based model the code no longer implemented.
+- §23 (rewritten above) is the resolution: agents are JSON-defined subagent personas with exactly three settings; chat-level personas remain custom prompts. Docs (`docs/features/agents.md`) and code were updated in the same commit as this note.

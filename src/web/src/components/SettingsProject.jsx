@@ -680,79 +680,106 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     // MCP settings page (#/settings/mcp), not here.
   }
 
-  // ---- Agent preset handlers -----------------------------------------
+  // ---- Agent handlers -------------------------------------------------
 
-  function getAgentTools(id) {
-    const el = document.querySelector('[data-agent-tool="' + id + '"]');
-    if (!el) return null;
-    const checkboxes = document.querySelectorAll('[data-agent-tool="' + id + '"]');
-    const tools = [];
-    for (const cb of checkboxes) {
-      if (cb.checked) {
-        const tool = cb.getAttribute('data-tool');
-        if (tool) tools.push(tool);
-      }
-    }
-    return tools;
+  // The tool allowlist choices shown on an agent's editor. Native tools
+  // plus one entry per configured MCP server.
+  const AGENT_TOOL_CHOICES = [
+    { value: 'shell', label: 'shell' },
+    { value: 'subagent', label: 'subagent' },
+    { value: 'ask_user', label: 'ask_user' },
+    { value: 'list_features', label: 'list_features' },
+    { value: 'read_file', label: 'read_file' },
+    { value: 'list_files', label: 'list_files' },
+    { value: 'search_files', label: 'search_files' },
+    { value: 'write_file', label: 'write_file' }
+  ].concat(
+    mcpServers.filter(s => s && s.id).map(s => ({
+      value: 'mcp__' + (s.slug || s.id),
+      label: 'MCP: ' + (s.name || s.id)
+    }))
+  );
+
+  // Agents are subagent delegation personas: name + instructions +
+  // an optional tool allowlist. All edits auto-save (same pattern as
+  // the other settings on this page). Name is immutable after create.
+
+  // Debounced per-agent saver for the instructions textarea.
+  const agentSaveTimers = useRef({});
+  function saveAgentSoon(name, patch, delay) {
+    const timers = agentSaveTimers.current;
+    if (timers[name]) clearTimeout(timers[name]);
+    setAgentStatus(name, '…');
+    timers[name] = setTimeout(() => saveAgent(name, patch), delay == null ? 350 : delay);
   }
-
-  function toggleAgentTool(e) {
-    // No-op: state is read from DOM at save time. This just triggers
-    // a re-render if needed (but we don't need it for Preact).
-    void e;
+  function setAgentStatus(name, msg) {
+    const el = document.querySelector('[data-agent-status="' + name + '"]');
+    if (el) el.textContent = msg;
   }
-
-  async function saveAgentPreset(id) {
-    const titleEl = document.querySelector('[data-agent-title="' + id + '"]');
-    const contentEl = document.querySelector('[data-agent-content="' + id + '"]');
-    const promptSizeEl = document.querySelector('[data-agent-prompt-size="' + id + '"]');
-    const providerEl = document.querySelector('[data-agent-provider="' + id + '"]');
-    const modelEl = document.querySelector('[data-agent-model="' + id + '"]');
-    const agentFilesEl = document.querySelector('[data-agent-files="' + id + '"]');
-    const title = titleEl ? titleEl.value.trim() : '';
-    const content = contentEl ? contentEl.value : '';
-    const promptSize = promptSizeEl ? promptSizeEl.value || undefined : undefined;
-    const providerId = providerEl ? providerEl.value.trim() || undefined : undefined;
-    const modelId = modelEl ? modelEl.value.trim() || undefined : undefined;
-    const agentFiles = agentFilesEl ? agentFilesEl.checked : undefined;
-    const tools = getAgentTools(id);
-    const statusEl = document.querySelector('[data-agent-status="' + id + '"]');
-    if (statusEl) statusEl.textContent = 'saving…';
-    const r = await fetchJson('/api/agents/' + encodeURIComponent(id), {
+  async function saveAgent(name, patch) {
+    setAgentStatus(name, 'saving…');
+    const r = await fetchJson('/api/agents/' + encodeURIComponent(name), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), title, content, promptSize, providerId, modelId, agentFiles, tools })
+      body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
     });
-    if (statusEl) statusEl.textContent = r.status === 200 ? 'saved' : ('HTTP ' + r.status);
+    setAgentStatus(name, r.status === 200 ? 'saved' : ('HTTP ' + r.status));
     if (r.status === 200) {
-      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
-      if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
+      setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, r.body.agent || patch) : a));
     }
+  }
+
+  function onAgentContentInput(name, value) {
+    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { content: value }) : a));
+    saveAgentSoon(name, { content: value });
+  }
+
+  function onAgentToolToggle(name, tool, checked) {
+    const agent = agentPresets.find((a) => a.name === name);
+    if (!agent) return;
+    const current = Array.isArray(agent.tools) ? agent.tools.slice() : null;
+    let next;
+    if (current == null) {
+      // Was inheriting all tools; unchecking one builds an explicit list.
+      const all = AGENT_TOOL_CHOICES.map((c) => c.value);
+      next = checked ? all : all.filter((t) => t !== tool);
+    } else {
+      next = checked ? current.concat(tool) : current.filter((t) => t !== tool);
+    }
+    // De-dupe, and collapse back to "inherit" when everything is on.
+    next = Array.from(new Set(next));
+    const full = next.length >= AGENT_TOOL_CHOICES.length;
+    const tools = full ? [] : next;
+    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: tools.length ? tools : undefined }) : a));
+    saveAgent(name, { tools });
   }
 
   async function addAgentPreset() {
+    const name = (prompt('Agent name (letters, digits, . _ -):') || '').trim();
+    if (!name) return;
     const r = await fetchJson('/api/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), title: 'New agent', content: '' })
+      body: JSON.stringify({ projectDir: dir(), name, content: '' })
     });
-    if (r.status === 201) {
-      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
-      if (ar.status === 200) {
-        const list = Array.isArray(ar.body.agents) ? ar.body.agents : [];
-        setAgentPresets(list);
-        const id = r.body.agent && r.body.agent.id;
-        if (id) setAgentPresetsOpened(p => Object.assign({}, p, { [id]: true }));
-      }
+    if (r.status !== 201) {
+      alert(r.body && r.body.error ? r.body.error : 'Create failed: HTTP ' + r.status);
+      return;
+    }
+    const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
+    if (ar.status === 200) {
+      const list = Array.isArray(ar.body.agents) ? ar.body.agents : [];
+      setAgentPresets(list);
+      const created = r.body.agent && r.body.agent.name;
+      if (created) setAgentPresetsOpened(p => Object.assign({}, p, { [created]: true }));
     }
   }
 
-  async function deleteAgentPreset(id) {
-    if (!confirm('Delete agent "' + id + '"?')) return;
-    const r = await fetchJson('/api/agents/' + encodeURIComponent(id) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
+  async function deleteAgentPreset(name) {
+    if (!confirm('Delete agent "' + name + '"?')) return;
+    const r = await fetchJson('/api/agents/' + encodeURIComponent(name) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
     if (r.status === 200) {
-      const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
-      if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
+      setAgentPresets((prev) => prev.filter((a) => a.name !== name));
     }
   }
 
@@ -869,76 +896,46 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         )
       ),
 
-      // ---- Agent presets ----------------------------------------------
+      // ---- Agents -----------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Agents', h('span', { class: 'group__title-note' }, 'Prompt + tool presets')),
+        h('div', { class: 'group__title' }, 'Agents', h('span', { class: 'group__title-note' }, 'Subagent delegation personas')),
+        h('p', { class: 'settings-project__help' }, 'Named personas the subagent tool can delegate to. Changes save automatically.'),
         h('div', { class: 'settings-project__agents' },
           agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
             agentPresets.map(a => {
-              const open = !!agentPresetsOpened[a.id];
-              return h('li', { key: a.id, class: 'settings-project__agent-row' },
+              const open = !!agentPresetsOpened[a.name];
+              const restricted = Array.isArray(a.tools) && a.tools.length > 0;
+              return h('li', { key: a.name, class: 'settings-project__agent-row' },
                 h('div', { class: 'settings-project__agent-head' },
-                  h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.id]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
-                  h('span', { class: 'settings-project__agent-title' }, a.title || a.id),
-                  a.tools && a.tools.length > 0
+                  h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.name]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
+                  h('span', { class: 'settings-project__agent-title' }, a.name),
+                  restricted
                     ? h('span', { class: 'settings-project__agent-tools-badge' }, a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))
                     : h('span', { class: 'settings-project__agent-tools-badge' }, 'all tools'),
-                  h('button', { type: 'button', class: 'btn btn--danger btn--sm settings-project__agent-del', onClick: () => deleteAgentPreset(a.id), 'aria-label': 'Delete' }, '×')
+                  h('button', { type: 'button', class: 'btn btn--danger btn--sm settings-project__agent-del', onClick: () => deleteAgentPreset(a.name), 'aria-label': 'Delete' }, '×')
                 ),
                 open && h('div', { class: 'settings-project__agent-body' },
                   h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Title'),
-                    h('input', { class: 'input', value: a.title || '', 'data-agent-title': a.id, onInput: e => { a._titleDirty = e.target.value; } })
+                    h('span', { class: 'label' }, 'Name'),
+                    h('input', { class: 'input', value: a.name, disabled: true, 'aria-readonly': 'true' })
                   ),
                   h('label', { class: 'row settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Instructions ' + (a.content ? a.content.length + ' chars' : '')),
-                    h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', 'data-agent-content': a.id, onInput: e => { a._contentDirty = e.target.value; }, placeholder: 'You are an assistant who…' })
-                  ),
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Prompt style'),
-                    h('select', { class: 'input', value: a.promptSize || '', 'data-agent-prompt-size': a.id },
-                      h('option', { value: '' }, 'Inherit'),
-                      h('option', { value: 'very-small' }, 'Very small'),
-                      h('option', { value: 'average' }, 'Average'),
-                      h('option', { value: 'extensive' }, 'Extensive')
-                    )
-                  ),
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Provider'),
-                    h('input', { class: 'input', value: a.providerId || '', 'data-agent-provider': a.id, placeholder: 'e.g. openrouter' })
-                  ),
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Model'),
-                    h('input', { class: 'input', value: a.modelId || '', 'data-agent-model': a.id, placeholder: 'e.g. openai/gpt-4o' })
-                  ),
-                  h('label', { class: 'checkbox-row settings-project__agent-field' },
-                    h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-files': a.id, checked: a.agentFiles === true }),
-                    ' Inject agent files (AGENTS.md, CLAUDE.md)'
+                    h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', onInput: e => onAgentContentInput(a.name, e.target.value), placeholder: 'You are an assistant who…' })
                   ),
                   h('div', { class: 'settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Tools'),
                     h('div', { class: 'settings-project__agent-tools' },
-                      ['shell', 'subagent', 'ask_user', 'list_features'].map(name =>
-                        h('label', { key: name, class: 'checkbox-row' },
-                          h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': name, checked: !a.tools || a.tools.includes(name), onChange: toggleAgentTool }),
-                          ' ' + name
-                        )
-                      ),
-                      h('label', { class: 'checkbox-row' },
-                        h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': 'file_tools', checked: !a.tools || a.tools.includes('file_tools'), onChange: toggleAgentTool }),
-                        ' file tools'
-                      ),
-                      mcpServers.filter(s => s && s.id).map(s =>
-                        h('label', { key: 'mcp-' + s.id, class: 'checkbox-row' },
-                          h('input', { type: 'checkbox', class: 'checkbox', 'data-agent-tool': a.id, 'data-tool': 'mcp__' + (s.slug || s.id), checked: !a.tools || a.tools.includes('mcp__' + (s.slug || s.id)), onChange: toggleAgentTool }),
-                          ' MCP: ' + (s.name || s.id)
+                      AGENT_TOOL_CHOICES.map(choice =>
+                        h('label', { key: choice.value, class: 'checkbox-row' },
+                          h('input', { type: 'checkbox', class: 'checkbox', checked: !restricted || a.tools.includes(choice.value), onChange: e => onAgentToolToggle(a.name, choice.value, e.target.checked) }),
+                          ' ' + choice.label
                         )
                       )
                     )
                   ),
                   h('div', { class: 'row row--actions' },
-                    h('button', { type: 'button', class: 'btn btn--primary btn--sm', onClick: () => saveAgentPreset(a.id) }, 'Save'),
-                    h('span', { 'data-agent-status': a.id, class: 'status' })
+                    h('span', { 'data-agent-status': a.name, class: 'status' })
                   )
                 )
               );
