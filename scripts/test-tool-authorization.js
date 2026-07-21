@@ -105,7 +105,84 @@ async function main() {
     { code: 'ETOOL_DISABLED' }
   );
 
-  console.log('tool authorization: 21 assertions passed');
+  // ---- Layered MCP authorization (per-tool > per-server > shared) ----
+  // A dedicated chat session keeps the MCP assertions hermetic —
+  // earlier shell grants must not leak into MCP decisions.
+  const mcpChat = 'mcp00001';
+  settings.setProject(projectDir, {
+    chats: [
+      { id: 'a1b2c3d4', title: 'Auth test', trace: false },
+      { id: mcpChat, title: 'MCP auth test', trace: false }
+    ],
+    tools: { shell: { mode: 'off' } }
+  });
+
+  // Shared fallback: ask.
+  authz.setAuthorization(projectDir, { mcp: { mode: 'ask', allowlist: [] } });
+  const mcpAsk = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_ask', tool: 'mcp__fs__read_file', summary: 'mcp__fs__read_file README.md'
+  });
+  assert.equal(mcpAsk.decision, 'prompt', 'shared MCP gate asks by default');
+  authz.recordDecision(projectDir, mcpChat, 'call_mcp_ask', 'deny');
+  await assert.rejects(mcpAsk.wait, { code: 'EDENIED' });
+
+  // Per-server override: allow for one server, other servers still ask.
+  authz.setAuthorization(projectDir, { mcp: { servers: { fs: { mode: 'allow' } } } });
+  const mcpServerAllow = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_srv', tool: 'mcp__fs__read_file', summary: 'mcp__fs__read_file README.md'
+  });
+  assert.equal(mcpServerAllow.decision, 'allow', 'server override wins over the shared gate');
+  const mcpOtherServer = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_other', tool: 'mcp__db__query', summary: 'mcp__db__query select 1'
+  });
+  assert.equal(mcpOtherServer.decision, 'prompt', 'other servers still use the shared gate');
+  authz.recordDecision(projectDir, mcpChat, 'call_mcp_other', 'deny');
+  await assert.rejects(mcpOtherServer.wait, { code: 'EDENIED' });
+
+  // Per-tool override: off for one tool on an allowed server.
+  authz.setAuthorization(projectDir, { mcp: { tools: { mcp__fs__write_file: { mode: 'off' } } } });
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: mcpChat, callId: 'call_mcp_tool_off', tool: 'mcp__fs__write_file', summary: 'mcp__fs__write_file a.txt' }),
+    { code: 'ETOOL_DISABLED' },
+    'tool override off beats the server allow'
+  );
+  // Removing the override (null) falls back to the server allow.
+  authz.setAuthorization(projectDir, { mcp: { tools: { mcp__fs__write_file: null } } });
+  const mcpToolInherit = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_tool_inh', tool: 'mcp__fs__write_file', summary: 'mcp__fs__write_file a.txt'
+  });
+  assert.equal(mcpToolInherit.decision, 'allow', 'cleared tool override falls back to the server gate');
+
+  // "Always allow" on an MCP call pins THAT tool, not the shared gate.
+  // Use a server with no override so the only way the call resolves is
+  // through the shared ask gate.
+  const mcpAlways = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_always', tool: 'mcp__db__query', summary: 'mcp__db__query delete from t'
+  });
+  assert.equal(mcpAlways.decision, 'prompt');
+  authz.recordDecision(projectDir, mcpChat, 'call_mcp_always', 'allow-always');
+  await mcpAlways.wait;
+  const mcpCfg = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
+  assert.equal(mcpCfg.authorization.tools.mcp__db__query.mode, 'allow', 'allow-always pins the called tool');
+  assert.equal(mcpCfg.authorization.mode, 'ask', 'allow-always does NOT flip the shared gate');
+  assert.equal(mcpCfg.authorization.servers.fs.mode, 'allow', 'server override preserved');
+
+  // Shared off rejects everything MCP at the gate (defense-in-depth).
+  // Use a tool with no per-tool override (allow-always pinned
+  // mcp__db__query above, and the per-tool layer must win over off).
+  authz.setAuthorization(projectDir, { mcp: { mode: 'off' } });
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: mcpChat, callId: 'call_mcp_off', tool: 'mcp__db__list_tables', summary: 'mcp__db__list_tables' }),
+    { code: 'ETOOL_DISABLED' },
+    'shared off rejects every MCP call'
+  );
+  // A per-tool allow beats the shared off.
+  authz.setAuthorization(projectDir, { mcp: { tools: { mcp__db__list_tables: { mode: 'allow' } } } });
+  const mcpToolBeatsOff = await authz.authorize({
+    projectDir, chatId: mcpChat, callId: 'call_mcp_beat', tool: 'mcp__db__list_tables', summary: 'mcp__db__list_tables'
+  });
+  assert.equal(mcpToolBeatsOff.decision, 'allow', 'per-tool allow overrides the shared off');
+  console.log('tool authorization: 32 assertions passed');
 }
 
 main().finally(() => {

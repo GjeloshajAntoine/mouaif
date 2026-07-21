@@ -1131,8 +1131,8 @@ async function streamChat(opts) {
   // authorize() still rejects `off` calls at execution time as
   // defense-in-depth (e.g. a hand-crafted REST call or a stale spec
   // name kept in a chat's tool filter). File tools resolve through
-  // their `file` family name; MCP tools share the single
-  // project.mcp.authorization block and hide together.
+  // their `file` family name; MCP tools resolve per tool / per server
+  // through the layered .mcp.json authorization block.
   try {
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
@@ -1147,15 +1147,17 @@ async function streamChat(opts) {
           }
         }
       }
-      // MCP servers share one project-level gate: `off` hides every
-      // mcp__<slug>__<tool> spec, the same zero-token rule as the
-      // native families. Execution still rejects forged calls with
-      // ETOOL_DISABLED through authorize().
-      if (authState.mcp && authState.mcp.mode === 'off') {
-        for (let i = toolSpecs.length - 1; i >= 0; i--) {
-          const spec = toolSpecs[i];
-          if (spec && spec.function && String(spec.function.name).startsWith('mcp__')) toolSpecs.splice(i, 1);
-        }
+      // MCP tools resolve through the layered gate (per-tool →
+      // per-server → shared, see authorization.mcpLayeredConfig): an
+      // `off` at any level hides exactly the mcp__<slug>__<tool> specs
+      // it covers — one server, or one tool — at zero prompt-token
+      // cost. Execution still rejects forged calls with ETOOL_DISABLED
+      // through authorize().
+      for (let i = toolSpecs.length - 1; i >= 0; i--) {
+        const spec = toolSpecs[i];
+        if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
+        const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name);
+        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
       }
     }
   } catch { /* authorization state unreadable; keep every tool advertised */ }
@@ -1317,6 +1319,13 @@ async function streamChat(opts) {
         else if (c.name === 'subagent') summary = (args && args.task) || '';
         else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
           summary = (args && (args.path || args.file)) || (args && args.query) || '';
+        } else if (String(c.name).startsWith('mcp__')) {
+          // MCP allowlists (shared or per-server/per-tool) match
+          // against "<composedName> <firstStringArg>" so a pattern
+          // can pin either the tool itself (^mcp__fs__read_file$)
+          // or the resource it touches (^mcp__fs__read_file src/).
+          const first = firstStringArgument(args);
+          summary = first ? (c.name + ' ' + first) : c.name;
         } else {
           summary = firstStringArgument(args);
         }

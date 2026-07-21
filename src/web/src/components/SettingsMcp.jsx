@@ -17,22 +17,27 @@ export function SettingsMcpView(props = {}) {
   const statusEl = useRef(null);
   const projectDirEl = useRef(null);
   const loadBtn = useRef(null);
-  // Project-level MCP authorization (one gate for every mcp__* tool).
-  // Same segmented Off/Ask/Allow pattern as the native tools in
-  // SettingsProject; the allowlist is an advanced refinement of Ask.
-  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [] });
+  // MCP authorization is layered (decisions §18): a per-server entry
+  // under mcp.authorization.servers.<slug> overrides the shared
+  // fallback gate; a per-tool entry under mcp.authorization.tools.
+  // <composedName> overrides both. The state below mirrors the
+  // persisted maps so each row is its own segmented control.
+  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
+  const [serversList, setServersList] = useState([]);
 
   let projectDir = projectDirFromProps(props);
 
   function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
 
-  async function saveMcpAuthorization(mode, allowlist) {
+  // One PUT path for every MCP authorization change. The patch body
+  // carries { mode?, servers?, tools? } — see setAuthorization.
+  async function saveMcpAuthorization(patch) {
     setMcpAuthStatusMsg('saving…');
     const r = await fetchJson('/api/tools/authorization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, mcp: { mode, allowlist } })
+      body: JSON.stringify({ projectDir, mcp: patch })
     });
     setMcpAuthStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
   }
@@ -41,26 +46,61 @@ export function SettingsMcpView(props = {}) {
     // Tapping Allow clears any allowlist: auto-approve-everything makes
     // the patterns meaningless, and dropping them keeps .mcp.json honest.
     const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
-    setMcpAuth({ mode: newMode, allowlist });
-    saveMcpAuthorization(newMode, allowlist);
+    setMcpAuth(Object.assign({}, mcpAuth, { mode: newMode, allowlist }));
+    saveMcpAuthorization({ mode: newMode, allowlist });
   }
 
   function onMcpAllowlistInput(text) {
     const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const mode = allowlist.length ? 'allowlist' : 'ask';
-    setMcpAuth({ mode, allowlist });
-    saveMcpAuthorization(mode, allowlist);
+    setMcpAuth(Object.assign({}, mcpAuth, { mode, allowlist }));
+    saveMcpAuthorization({ mode, allowlist });
+  }
+
+  // Per-server override. 'inherit' clears the entry (a null patch);
+  // anything else persists { mode } (+ allowlist for mode 'allowlist').
+  function pickServerMode(slug, value) {
+    const servers = Object.assign({}, mcpAuth.servers);
+    const patch = {};
+    if (value === 'inherit') {
+      delete servers[slug];
+      patch[slug] = null;
+    } else {
+      const entry = { mode: value };
+      if (value === 'allowlist') entry.allowlist = (servers[slug] && servers[slug].allowlist) || [];
+      servers[slug] = entry;
+      patch[slug] = entry;
+    }
+    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+    saveMcpAuthorization({ servers: patch });
+  }
+
+  function onServerAllowlistInput(slug, text) {
+    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    // An empty pattern list under Ask means "no override" — clear the
+    // entry so the shared fallback stays in charge.
+    if (!allowlist.length) { pickServerMode(slug, 'inherit'); return; }
+    const servers = Object.assign({}, mcpAuth.servers);
+    servers[slug] = { mode: 'allowlist', allowlist };
+    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
   }
 
   // Debounced so typing a regex doesn't fire a PUT per keystroke.
-  const mcpAuthRef = useRef(mcpAuth);
-  mcpAuthRef.current = mcpAuth;
   const saveMcpAllowlistDebounced = useRef((() => {
     let t = null;
     return (text) => {
       if (t) clearTimeout(t);
       setMcpAuthStatusMsg('…');
       t = setTimeout(() => onMcpAllowlistInput(text), 350);
+    };
+  })());
+  const saveServerAllowlistDebounced = useRef((() => {
+    const timers = new Map();
+    return (slug, text) => {
+      if (timers.has(slug)) clearTimeout(timers.get(slug));
+      setMcpAuthStatusMsg('…');
+      timers.set(slug, setTimeout(() => onServerAllowlistInput(slug, text), 350));
     };
   })());
 
@@ -78,19 +118,43 @@ export function SettingsMcpView(props = {}) {
     if (loadBtn.current) loadBtn.current.disabled = false;
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
     render(r.body.servers || []);
+    setServersList(r.body.servers || []);
     setStatus(statusEl, (r.body.servers || []).length + ' configured', 'success');
-    // Project-level MCP authorization block (lives in .mcp.json).
+    // Layered MCP authorization (shared fallback + per-server map,
+    // lives in .mcp.json). Per-tool overrides are edited on the
+    // server's edit view, not here.
     try {
       const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(dir));
       const mcp = ar.status === 200 && ar.body.mcp;
       setMcpAuth({
         mode: (mcp && mcp.mode) || 'ask',
-        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : []
+        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
+        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
+        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
       });
       setMcpAuthStatusMsg('');
-    } catch { /* keep ask + empty allowlist */ }
+    } catch { /* keep ask + empty maps */ }
   }
 
+  // One segmented Off/Ask/Allow control. `name` must be unique per
+  // row so the radio inputs don't cross-select between servers.
+  function authSegs(name, activeMode, onPick) {
+    const modes = [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }];
+    return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
+      modes.map((m) =>
+        h('label', { key: m.value, class: 'seg__item' + (activeMode === m.value ? ' seg__item--on' : '') },
+          h('input', {
+            type: 'radio',
+            name: 'sp-' + name.replace(/\s+/g, '-').toLowerCase(),
+            value: m.value,
+            checked: activeMode === m.value,
+            onChange: () => onPick(m.value)
+          }),
+          h('span', { class: 'seg__pill' }, m.label)
+        )
+      )
+    );
+  }
   function render(servers) {
     if (!listEl.current) return;
     listEl.current.innerHTML = '';
@@ -203,32 +267,49 @@ export function SettingsMcpView(props = {}) {
     ),
     h('p', { class: 'hint hint--compact' }, 'Connect per-project Model Context Protocol servers. The AI client discovers each server\'s tools and advertises them to the model.'),
     h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Applies to every MCP server in this project')),
+      h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, with a shared fallback')),
       h('ul', { class: 'group__list' },
+        serversList.map((s) => {
+          const slug = s.slug || s.id;
+          const entry = mcpAuth.servers && mcpAuth.servers[slug];
+          const overridden = !!(entry && entry.mode);
+          const effMode = overridden ? entry.mode : mcpAuth.mode;
+          const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
+          return h('li', { key: s.id, class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('div', { class: 'settings-project__item-title' }, s.name || slug),
+              h('div', { class: 'settings-project__item-note' },
+                overridden ? ('Override: ' + effMode + '. ') : ('Inherits the shared fallback (' + mcpAuth.mode + '). '),
+                segMode(effMode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null,
+                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
+              )
+            ),
+            authSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMode(slug, mode)),
+            overridden
+              ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use shared fallback')
+              : null,
+            segMode(effMode) === 'ask'
+              ? h('details', { class: 'settings-project__allowlist' },
+                  h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
+                  h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                  h('textarea', {
+                    class: 'input settings-project__mono', rows: 3, spellcheck: false,
+                    placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
+                    onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
+                  })
+                )
+              : null
+          );
+        }),
         h('li', { class: 'settings-project__tool' },
           h('div', { class: 'settings-project__tool-head' },
-            h('div', { class: 'settings-project__item-title' }, 'MCP tools'),
+            h('div', { class: 'settings-project__item-title' }, 'Shared fallback (all MCP servers)'),
             h('div', { class: 'settings-project__item-note' },
-              segMode(mcpAuth.mode) === 'off'
-                ? 'Hidden from the model — costs no tokens. '
-                : 'Calls from any MCP server in this project. ',
-              h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
+              'Applies to every server without an override. ',
+              segMode(mcpAuth.mode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null
             )
           ),
-          h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'MCP tools' },
-            [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }].map((m) =>
-              h('label', { key: m.value, class: 'seg__item' + (segMode(mcpAuth.mode) === m.value ? ' seg__item--on' : '') },
-                h('input', {
-                  type: 'radio',
-                  name: 'sp-mcp-tools',
-                  value: m.value,
-                  checked: segMode(mcpAuth.mode) === m.value,
-                  onChange: () => pickMcpMode(m.value)
-                }),
-                h('span', { class: 'seg__pill' }, m.label)
-              )
-            )
-          ),
+          authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
           segMode(mcpAuth.mode) === 'ask'
             ? h('details', { class: 'settings-project__allowlist' },
                 h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
@@ -271,9 +352,11 @@ export function SettingsMcpEditView(props) {
   const statusEl = useRef(null);
   const saveBtn = useRef(null);
   const deleteBtn = useRef(null);
-  const toolsListEl = useRef(null);
 
   let current = null;
+  const [toolAuths, setToolAuths] = useState({});
+  const [toolsState, setToolsState] = useState([]);
+  const [toolAuthMsg, setToolAuthMsg] = useState('');
 
   async function load() {
     if (!projectDir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
@@ -295,37 +378,72 @@ export function SettingsMcpEditView(props) {
       if (cwdEl.current) cwdEl.current.value = current.cwd || '';
       if (enabledEl.current) enabledEl.current.checked = current.enabled === true;
       if (deleteBtn.current) deleteBtn.current.hidden = false;
-      renderTools(current);
+      setToolsState(current.tools || []);
+      // Per-tool overrides for THIS server's tools live under
+      // mcp.authorization.tools.<composedName>. Load the map once so
+      // each row's select can default to "inherit".
+      try {
+        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
+        const mcp = ar.status === 200 && ar.body.mcp;
+        const map = (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {};
+        setToolAuths(map);
+      } catch { /* keep empty map */ }
     } else {
       if (deleteBtn.current) deleteBtn.current.hidden = true;
     }
     setStatus(statusEl, '');
   }
 
-  function renderTools(s) {
-    if (!toolsListEl.current) return;
-    toolsListEl.current.innerHTML = '';
-    if (!s || !s.tools || !s.tools.length) {
-      const li = document.createElement('li');
-      li.className = 'mcp__tools-empty';
-      li.textContent = s && s.status === 'ready' ? 'No tools reported by this server.' : 'Start the server to see its tools.';
-      toolsListEl.current.appendChild(li);
-      return;
-    }
-    for (const t of s.tools) {
-      const li = document.createElement('li');
-      li.className = 'mcp__tools-row';
-      const name = document.createElement('div');
-      name.className = 'mcp__tools-name';
-      name.textContent = 'mcp__' + s.slug + '__' + t.name;
-      const desc = document.createElement('div');
-      desc.className = 'mcp__tools-desc';
-      desc.textContent = t.description || '';
-      li.appendChild(name); li.appendChild(desc);
-      toolsListEl.current.appendChild(li);
+  async function saveToolAuth(composedName, value) {
+    setToolAuthMsg('saving…');
+    const patch = {};
+    if (value === 'inherit') patch[composedName] = null;
+    else patch[composedName] = { mode: value };
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, mcp: { tools: patch } })
+    });
+    if (r.status === 200) {
+      setToolAuthMsg('saved');
+      setToolAuths((prev) => {
+        const next = Object.assign({}, prev);
+        if (value === 'inherit') delete next[composedName];
+        else next[composedName] = { mode: value };
+        return next;
+      });
+    } else {
+      setToolAuthMsg('HTTP ' + r.status);
     }
   }
 
+  function renderToolsList() {
+    if (!toolsState.length) {
+      return h('li', { class: 'mcp__tools-empty' }, (current && current.status === 'ready') ? 'No tools reported by this server.' : 'Start the server to see its tools.');
+    }
+    return toolsState.map((t) => {
+      const composed = 'mcp__' + (current.slug || '') + '__' + t.name;
+      const entry = toolAuths[composed];
+      const value = (entry && entry.mode) || 'inherit';
+      return h('li', { key: composed, class: 'mcp__tools-row' },
+        h('div', { class: 'mcp__tools-name' }, composed),
+        t.description ? h('div', { class: 'mcp__tools-desc' }, t.description) : null,
+        h('div', { class: 'row row--inline' },
+          h('label', { class: 'label' }, 'Authorization'),
+          h('select', {
+            class: 'input',
+            value,
+            onChange: (e) => saveToolAuth(composed, e.target.value)
+          },
+            h('option', { value: 'inherit' }, 'Inherit (shared / server)'),
+            h('option', { value: 'off' }, 'Off'),
+            h('option', { value: 'ask' }, 'Ask'),
+            h('option', { value: 'allow' }, 'Allow')
+          )
+        )
+      );
+    });
+  }
   function parseArgs(text) {
     if (!text || !text.trim()) return [];
     // Whitespace-separated tokens. We deliberately do not run a shell
@@ -424,7 +542,13 @@ export function SettingsMcpEditView(props) {
     ),
     id ? h('div', { class: 'row' },
       h('h3', { class: 'mcp__tools-h' }, 'Discovered tools'),
-      h('ul', { ref: toolsListEl, class: 'mcp__tools-list' })
+      h('p', { class: 'hint hint--compact' },
+        'Per-tool authorization overrides. "Inherit" uses the server-level or shared fallback gate; a tool override wins for that call. ',
+        h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolAuthMsg)
+      ),
+      h('ul', { class: 'mcp__tools-list' },
+        renderToolsList()
+      )
     ) : null,
     h('div', { class: 'row row--actions' },
       h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),

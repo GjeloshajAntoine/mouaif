@@ -35,6 +35,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Agent skills](features/agent-skills.md) — project-scoped instruction files under `.agents/skills/*/SKILL.md`, injected into the upstream system context at stream time.
 - [iOS touch scroll](features/ios-touch-scroll.md) — make the chat transcript touch-scrollable on iOS Safari by removing every overflow layer between the transcript and the document (no `overflow: hidden` on `.app__main--flush` or `.chat-view`); the transcript is the only scroll container in the tree.
 - [Chat error surfacing](features/chat-error-surfacing.md) — failed turns are emitted over SSE, rendered as inline error bubbles, and persisted as system messages so they survive reloads.
+- [Tool tree](features/tool-tree.md) — compact hierarchical checkbox list for tool visibility, shared across chat view, project settings, and authorization flows. Auto-checks tools used in the current chat.
 
 ## Architectural decisions
 

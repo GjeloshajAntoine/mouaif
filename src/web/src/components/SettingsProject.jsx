@@ -11,6 +11,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject, projectsReload } from '../api.js';
 import { nav } from '../router.js';
+import { ToolTree, shortDesc } from './ToolTree.jsx';
 
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId } = {}) {
   const statusEl = useRef(null);
@@ -28,10 +29,16 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // together when the user taps a segment.
   const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [askUserMode, setAskUserMode] = useState('ask');
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
+  const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
+  const [mcpStatusMsg, setMcpStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
+  const [toolsCatalog, setToolsCatalog] = useState([]);
+  const [mcpServers, setMcpServers] = useState([]);
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -132,12 +139,40 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         mode: (file && file.mode) || 'ask',
         allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
       });
+      const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
+      setSubagentAuth({
+        mode: (sub && sub.mode) || 'ask',
+        allowlist: sub && Array.isArray(sub.allowlist) ? sub.allowlist : []
+      });
+      const mcp = authz.status === 200 && authz.body.mcp;
+      setMcpAuth({
+        mode: (mcp && mcp.mode) || 'ask',
+        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
+        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
+        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
+      });
       // ask_user is a binary { off, ask } tool. The server clamps any
       // legacy allowlist / allow value to `ask`; here we read what the
       // server says it is, and fall back to `ask` on the first load.
       const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
     } catch { /* keep ask + empty allowlist */ }
+
+    // Load the tools catalog for the visibility tree. This is the
+    // same data the chat view uses, so the settings page shows the
+    // same hierarchical checkbox list.
+    try {
+      const [toolsRes, mcpRes] = await Promise.all([
+        fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(d)),
+        fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(d))
+      ]);
+      if (toolsRes.status === 200 && Array.isArray(toolsRes.body.tools)) {
+        setToolsCatalog(toolsRes.body.tools);
+      }
+      if (mcpRes.status === 200 && Array.isArray(mcpRes.body.servers)) {
+        setMcpServers(mcpRes.body.servers);
+      }
+    } catch { /* keep empty catalog */ }
 
     if (agentFilesStatus.current) agentFilesStatus.current.textContent = '';
 
@@ -310,6 +345,52 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
   function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
   function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
+  function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
+
+  // The shared MCP fallback gate lives under `mcp.mode` in the
+  // authorization payload (not `tools.mcp`), so it gets its own save
+  // path. Per-server overrides write `mcp.servers.<slug>` instead.
+  async function saveMcpAuthorization(patch) {
+    setMcpStatusMsg('saving…');
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), mcp: patch })
+    });
+    setMcpStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+  }
+  function pickMcpMode(newMode) {
+    const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
+    setMcpAuth(Object.assign({}, mcpAuth, { mode: newMode, allowlist }));
+    saveMcpAuthorization({ mode: newMode, allowlist });
+  }
+
+  // Per-server MCP authorization override. 'inherit' clears the entry
+  // so the shared fallback gate applies again.
+  function pickServerAuthMode(slug, value) {
+    const servers = Object.assign({}, mcpAuth.servers);
+    const patch = {};
+    if (value === 'inherit') {
+      delete servers[slug];
+      patch[slug] = null;
+    } else {
+      const entry = { mode: value };
+      if (value === 'allowlist') entry.allowlist = (servers[slug] && servers[slug].allowlist) || [];
+      servers[slug] = entry;
+      patch[slug] = entry;
+    }
+    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+    saveMcpAuthorization({ servers: patch });
+  }
+
+  function onServerAllowlistInput(slug, text) {
+    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!allowlist.length) { pickServerAuthMode(slug, 'inherit'); return; }
+    const servers = Object.assign({}, mcpAuth.servers);
+    servers[slug] = { mode: 'allowlist', allowlist };
+    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
+  }
 
   function onAllowlistInput(tool, auth, setAuth, setStatusMsg, text) {
     const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -333,6 +414,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   fileAuthRef.current = fileAuth;
   const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', () => shellAuthRef.current, setShellAuth, setShellStatusMsg));
   const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', () => fileAuthRef.current, setFileAuth, setFileStatusMsg));
+  // MCP allowlists go through the `mcp` payload key, so they can't
+  // reuse makeAllowlistSaver (which writes tools.<name>).
+  const saveMcpAllowlistDebounced = useRef((() => {
+    let t = null;
+    return (text) => {
+      if (t) clearTimeout(t);
+      setMcpStatusMsg('…');
+      t = setTimeout(() => {
+        const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const mode = allowlist.length ? 'allowlist' : 'ask';
+        setMcpAuth((prev) => Object.assign({}, prev, { mode, allowlist }));
+        saveMcpAuthorization({ mode, allowlist });
+      }, 350);
+    };
+  })());
+  const saveServerAllowlistDebounced = useRef((() => {
+    const timers = new Map();
+    return (slug, text) => {
+      if (timers.has(slug)) clearTimeout(timers.get(slug));
+      setMcpStatusMsg('…');
+      timers.set(slug, setTimeout(() => onServerAllowlistInput(slug, text), 350));
+    };
+  })());
 
   // ask_user is binary: the only valid modes are `ask` (the model
   // asks, the user always answers) and `off` (the tool is hidden
@@ -439,6 +543,231 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     );
   }
 
+  // Build tool groups for the settings tree. Each group row carries
+  // its authorization segment as an inline control on the same
+  // line; the parent checkbox is a shortcut for Off ↔ Ask (the
+  // "disabled / enabled" toggle). Full Off/Ask/Allow still lives in
+  // the segment — the checkbox never blocks it.
+  function buildSettingsToolGroups(catalog, mcpServers) {
+    const groups = [];
+    const isOn = (mode) => mode !== 'off';
+    const leaf = (t, extra) => Object.assign({
+      id: t.name,
+      name: t.name,
+      description: shortDesc(t.description),
+      title: t.description || ''
+    }, extra || {});
+
+    const shellTool = catalog.find((t) => t.name === 'shell');
+    if (shellTool) {
+      groups.push({
+        id: 'shell',
+        name: 'Shell',
+        description: shortDesc(shellTool.description),
+        title: shellTool.description || '',
+        checked: isOn(shellAuth.mode),
+        control: toolModeSegs('Shell commands', segMode(shellAuth.mode), pickShellMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [leaf(shellTool, { checked: isOn(shellAuth.mode) })],
+        extra: segMode(shellAuth.mode) === 'ask'
+          ? h('details', { class: 'settings-project__allowlist' },
+              h('summary', null, shellAuth.allowlist.length ? ('Auto-approve list (' + shellAuth.allowlist.length + ')') : 'Auto-approve list'),
+              h('p', { class: 'settings-project__help' }, 'Commands matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, value: shellAuth.allowlist.join('\n'), onInput: (e) => saveShellAllowlistDebounced.current(e.target.value) })
+            )
+          : (shellStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg) : null)
+      });
+    }
+
+    const subTool = catalog.find((t) => t.name === 'subagent');
+    if (subTool) {
+      groups.push({
+        id: 'subagent',
+        name: 'Subagent',
+        description: shortDesc(subTool.description),
+        title: subTool.description || '',
+        checked: isOn(subagentAuth.mode),
+        control: toolModeSegs('Subagent', segMode(subagentAuth.mode), pickSubagentMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [leaf(subTool, { checked: isOn(subagentAuth.mode) })],
+        extra: subagentStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, subagentStatusMsg) : null
+      });
+    }
+
+    const askTool = catalog.find((t) => t.name === 'ask_user');
+    if (askTool) {
+      groups.push({
+        id: 'ask_user',
+        name: 'Ask user',
+        description: shortDesc(askTool.description),
+        title: askTool.description || '',
+        checked: isOn(askUserMode),
+        control: toolModeSegs('Ask the user', askUserMode, pickAskUserMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' }
+        ]),
+        tools: [leaf(askTool, { checked: isOn(askUserMode) })],
+        extra: askUserStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, askUserStatusMsg) : null
+      });
+    }
+
+    const fileTools = catalog.filter((t) => t.kind === 'native' && t.source === 'files');
+    if (fileTools.length) {
+      groups.push({
+        id: 'files',
+        name: 'File tools',
+        description: 'read, list, search, write, edit',
+        checked: isOn(fileAuth.mode),
+        control: toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: fileTools.map((t) => leaf(t, { checked: isOn(fileAuth.mode) })),
+        extra: segMode(fileAuth.mode) === 'ask'
+          ? h('details', { class: 'settings-project__allowlist' },
+              h('summary', null, fileAuth.allowlist.length ? ('Auto-approve list (' + fileAuth.allowlist.length + ')') : 'Auto-approve list'),
+              h('p', { class: 'settings-project__help' }, 'Paths matching one of these regexes open without asking; everything else still asks. One per line, auto-saves.'),
+              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, value: fileAuth.allowlist.join('\n'), onInput: (e) => saveFileAllowlistDebounced.current(e.target.value) })
+            )
+          : (fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null)
+      });
+    }
+
+    // One group per configured MCP server (enable checkbox), then
+    // the shared MCP authorization gate. Servers render even when
+    // stopped — the catalog only lists running servers, so fall
+    // back to the cached tool list on the server record.
+    const servers = (mcpServers || []).filter((s) => s && s.id);
+    for (const server of servers) {
+      const slug = server.slug || server.id;
+      const prefix = 'mcp__' + slug + '__';
+      let serverTools = catalog.filter((t) => t.kind === 'mcp' && t.source === slug);
+      if (!serverTools.length && Array.isArray(server.tools)) {
+        serverTools = server.tools.map((t) => {
+          const name = typeof t === 'string' ? t : (t && t.name);
+          if (!name) return null;
+          return {
+            name: name.startsWith(prefix) ? name : prefix + name,
+            kind: 'mcp',
+            source: slug,
+            description: (t && t.description) || ''
+          };
+        }).filter(Boolean);
+      }
+      const off = server.enabled === false;
+      groups.push({
+        id: 'mcp-' + server.id,
+        name: server.name || server.id,
+        description: server.status || 'stopped',
+        checked: !off,
+        tools: serverTools.map((t) => {
+          const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
+          return leaf(t, { name: short, checked: !off, disabled: off });
+        })
+      });
+    }
+
+    if (servers.length) {
+      // One authorization row per MCP server (its override wins over
+      // the shared fallback for that server's calls), then the shared
+      // fallback row that covers every server without an override.
+      for (const server of servers) {
+        const slug = server.slug || server.id;
+        const entry = mcpAuth.servers && mcpAuth.servers[slug];
+        const overridden = !!(entry && entry.mode);
+        const effMode = overridden ? entry.mode : mcpAuth.mode;
+        const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
+        groups.push({
+          id: 'mcp-auth-' + slug,
+          name: (server.name || slug) + ' authorization',
+          description: overridden ? ('override: ' + effMode) : ('inherits shared fallback (' + mcpAuth.mode + ')'),
+          checked: segMode(effMode) !== 'off',
+          control: toolModeSegs('mcp server ' + slug, segMode(effMode), (mode) => pickServerAuthMode(slug, mode), [
+            { value: 'off', label: 'Off' },
+            { value: 'ask', label: 'Ask' },
+            { value: 'allow', label: 'Allow' }
+          ]),
+          tools: [],
+          extra: h(Fragment, null,
+            overridden
+              ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerAuthMode(slug, 'inherit') }, 'Use shared fallback')
+              : null,
+            segMode(effMode) === 'ask'
+              ? h('details', { class: 'settings-project__allowlist' },
+                  h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
+                  h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                  h('textarea', {
+                    class: 'input settings-project__mono', rows: 3, spellcheck: false,
+                    placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
+                    onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
+                  })
+                )
+              : null
+          )
+        });
+      }
+      const mcpOff = segMode(mcpAuth.mode) === 'off';
+      groups.push({
+        id: 'mcp',
+        name: 'Shared MCP fallback',
+        description: 'gate for MCP servers without an override',
+        checked: !mcpOff,
+        control: toolModeSegs('MCP tools', segMode(mcpAuth.mode), pickMcpMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [],
+        extra: segMode(mcpAuth.mode) === 'ask'
+          ? h('details', { class: 'settings-project__allowlist' },
+              h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
+              h('p', { class: 'settings-project__help' }, 'Calls matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^mcp__.*__search.*$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
+            )
+          : (mcpStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpStatusMsg) : null)
+      });
+    }
+
+    return groups;
+  }
+
+  // Enable/disable one MCP server, then refresh the server list so
+  // the tree picks up the new status + cached tools.
+  async function toggleMcpServerEnabled(id, enabled) {
+    setMcpStatusMsg('saving…');
+    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), enabled })
+    });
+    if (r.status !== 200) { setMcpStatusMsg('HTTP ' + r.status); return; }
+    setMcpStatusMsg('saved');
+    const mr = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(dir()));
+    if (mr.status === 200 && Array.isArray(mr.body.servers)) setMcpServers(mr.body.servers);
+  }
+
+  // Checkbox on a settings group = enabled/disabled shortcut:
+  //   uncheck -> save mode 'off'
+  //   check   -> save mode 'ask' (the safe default)
+  // The segment remains the only way to pick 'allow'. MCP server
+  // groups enable/disable the server itself instead.
+  function toggleSettingsGroup(groupId, checked) {
+    if (groupId.startsWith('mcp-')) { toggleMcpServerEnabled(groupId.slice(4), checked); return; }
+    const mode = checked ? 'ask' : 'off';
+    if (groupId === 'shell') pickShellMode(mode);
+    else if (groupId === 'subagent') pickSubagentMode(mode);
+    else if (groupId === 'ask_user') pickAskUserMode(mode);
+    else if (groupId === 'files') pickFileMode(mode);
+    else if (groupId === 'mcp') pickMcpMode(mode);
+  }
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
@@ -490,77 +819,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
 
       // ---- Tools ------------------------------------------------------
+      // One tree, same look as the chat view: each group row carries
+      // its enable checkbox AND its Off/Ask/Allow authorization
+      // segment on the same line. Only the checkbox / segment are
+      // click targets; the row text is inert.
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per project')),
-        h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-title' }, 'Shell commands'),
-              h('div', { class: 'settings-project__item-note' },
-                segMode(shellAuth.mode) === 'off'
-                  ? 'Hidden from the model — costs no tokens. '
-                  : 'Run terminal commands here, as your user account. ',
-                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg)
-              )
-            ),
-            toolModeSegs('Shell commands', segMode(shellAuth.mode), pickShellMode, [
-              { value: 'off', label: 'Off' },
-              { value: 'ask', label: 'Ask' },
-              { value: 'allow', label: 'Allow' }
-            ]),
-            segMode(shellAuth.mode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, shellAuth.allowlist.length ? ('Auto-approve list (' + shellAuth.allowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Commands matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                  h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, value: shellAuth.allowlist.join('\n'), onInput: (e) => saveShellAllowlistDebounced.current(e.target.value) })
-                )
-              : null
-          ),
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-title' }, 'File tools'),
-              h('div', { class: 'settings-project__item-note' },
-                segMode(fileAuth.mode) === 'off'
-                  ? 'Hidden from the model — costs no tokens. '
-                  : 'Read, search, and edit files inside this folder. ',
-                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg)
-              )
-            ),
-            toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
-              { value: 'off', label: 'Off' },
-              { value: 'ask', label: 'Ask' },
-              { value: 'allow', label: 'Allow' }
-            ]),
-            segMode(fileAuth.mode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, fileAuth.allowlist.length ? ('Auto-approve list (' + fileAuth.allowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Paths matching one of these regexes open without asking; everything else still asks. One per line, auto-saves.'),
-                  h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, value: fileAuth.allowlist.join('\n'), onInput: (e) => saveFileAllowlistDebounced.current(e.target.value) })
-                )
-              : null
-          ),
-          // ask_user is a binary { ask, off } tool. The model can
-          // pause the chat and ask the user a structured question;
-          // the user picks one option (2+, no cap) and may always
-          // add a free-form "extra" answer. There is no allowlist
-          // (the model can't predict the user's answer) and no
-          // always-allow mode (the user must always be the source
-          // of truth).
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-title' }, 'Ask the user'),
-              h('div', { class: 'settings-project__item-note' },
-                askUserMode === 'off'
-                  ? 'Hidden from the model — costs no tokens. '
-                  : 'The model may pause and ask a structured question. ',
-                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, askUserStatusMsg)
-              )
-            ),
-            toolModeSegs('Ask the user', askUserMode, pickAskUserMode, [
-              { value: 'off', label: 'Off' },
-              { value: 'ask', label: 'Ask' }
-            ])
-          )
+        h('div', { class: 'group__title' }, 'Tools', h('span', { class: 'group__title-note' }, 'Visibility + authorization per project')),
+        h('div', { class: 'settings-project__tools-tree' },
+          toolsCatalog.length
+            ? h(ToolTree, {
+                groups: buildSettingsToolGroups(toolsCatalog, mcpServers),
+                onToggleGroup: toggleSettingsGroup,
+                onToggleTool: (groupId) => toggleSettingsGroup(groupId, true)
+              })
+            : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         )
       ),
 

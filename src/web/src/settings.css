@@ -415,6 +415,15 @@
   white-space: nowrap;
 }
 
+/* Tools visibility tree in settings — matches the chat view tree */
+.settings-project__tools-tree {
+  padding: 4px 12px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  margin: 4px 12px 8px;
+}
+
 .settings-project__allowlist {
   flex: 0 0 100%;
   padding-top: 2px;

@@ -125,6 +125,57 @@ function configToolName(tool) {
   return FILE_TOOL_NAMES.has(tool) ? 'file' : tool;
 }
 
+// Split `mcp__<serverSlug>__<toolName>` into its parts. Returns null for
+// anything that is not a well-formed MCP tool name.
+function parseMcpName(tool) {
+  if (typeof tool !== 'string' || !tool.startsWith('mcp__')) return null;
+  const rest = tool.slice('mcp__'.length);
+  const sep = rest.indexOf('__');
+  if (sep <= 0 || sep === rest.length - 2) return null;
+  return { slug: rest.slice(0, sep), toolName: rest.slice(sep + 2) };
+}
+
+// True when an authorization entry actually carries a decision
+// (anything with a mode counts, including `mode: 'ask'`).
+function hasMcpOverride(entry) {
+  return !!(entry && typeof entry === 'object' && typeof entry.mode === 'string' && entry.mode);
+}
+
+// MCP authorization is layered, most specific first (decisions §18):
+//   1. authorization.tools.<composedName>   — one tool on one server
+//   2. authorization.servers.<serverSlug>   — every tool on that server
+//   3. authorization                        — the project-wide MCP gate
+//   4. app.mcp.authorization                — app-level default
+// The per-server / per-tool maps only apply to the project layer: the
+// app store has no server registry, so it keeps the single shared gate.
+function mcpLayeredConfig(projectDir, project, app, tool) {
+  const mcpConfig = getMcpConfig(projectDir);
+  const auth = (mcpConfig && mcpConfig.authorization) || (project && project.mcp && project.mcp.authorization) || {};
+  const parsed = parseMcpName(tool);
+  if (parsed) {
+    const toolValue = auth.tools && auth.tools[tool];
+    if (hasMcpOverride(toolValue)) return { value: toolValue, source: 'project-tool' };
+    const serverValue = auth.servers && auth.servers[parsed.slug];
+    if (hasMcpOverride(serverValue)) return { value: serverValue, source: 'project-server' };
+  }
+  if (hasMcpOverride(auth)) return { value: auth, source: 'project' };
+  const appValue = app && app.mcp && app.mcp.authorization;
+  if (appValue && typeof appValue === 'object') return { value: appValue, source: 'app' };
+  return { value: {}, source: 'default' };
+}
+
+// The persisted per-server / per-tool maps for a project's MCP
+// authorization. Used by getAuthorization so the REST surface (and the
+// Settings UI) can render every override, including ones whose tool is
+// not currently advertised.
+function mcpOverrideMaps(projectDir) {
+  const mcpConfig = getMcpConfig(projectDir);
+  const auth = (mcpConfig && mcpConfig.authorization) || {};
+  const servers = (auth.servers && typeof auth.servers === 'object' && !Array.isArray(auth.servers)) ? auth.servers : {};
+  const tools = (auth.tools && typeof auth.tools === 'object' && !Array.isArray(auth.tools)) ? auth.tools : {};
+  return { auth, servers, tools };
+}
+
 function effectiveConfig(projectDir, tool) {
   tool = configToolName(tool);
   const resolved = settings.getResolved(projectDir);
@@ -143,16 +194,20 @@ function effectiveConfig(projectDir, tool) {
     return normalizeConfig(value, source, true, tool);
   }
   if (tool.startsWith('mcp__')) {
-    const mcpConfig = getMcpConfig(projectDir);
-    const projectValue = (mcpConfig && mcpConfig.authorization) || (project && project.mcp && project.mcp.authorization);
-    const appValue = app && app.mcp && app.mcp.authorization;
-    const value = projectValue || appValue || {};
-    return normalizeConfig(value, projectValue ? 'project' : (appValue ? 'app' : 'default'), true, tool);
+    const { value, source } = mcpLayeredConfig(projectDir, project, app, tool);
+    return normalizeConfig(value, source, true, tool);
   }
   return normalizeConfig({ mode: 'off' }, 'default', false, tool);
 }
 
 function getAuthorization(projectDir) {
+  // mcp.servers / mcp.tools mirror the persisted override maps (not the
+  // layered result) so the Settings UI can render every configured
+  // override, including ones whose tool or server is currently stopped.
+  const { servers, tools: toolOverrides } = mcpOverrideMaps(projectDir);
+  const mcp = effectiveConfig(projectDir, 'mcp__any__tool');
+  mcp.servers = servers;
+  mcp.tools = toolOverrides;
   return {
     tools: {
       shell: effectiveConfig(projectDir, 'shell'),
@@ -160,8 +215,18 @@ function getAuthorization(projectDir) {
       file: effectiveConfig(projectDir, 'file'),
       ask_user: effectiveConfig(projectDir, 'ask_user')
     },
-    mcp: effectiveConfig(projectDir, 'mcp__any__tool')
+    mcp
   };
+}
+
+// Shape a normalized MCP auth entry for persistence. `off` / `allow` /
+// `ask` write only { mode }; `allowlist` also writes the pattern list.
+// Everything else (timeouts) is dropped — the shared gate's timeouts
+// still apply to every MCP call.
+function mcpPersistShape(cfg) {
+  const out = { mode: cfg.mode };
+  if (cfg.mode === 'allowlist') out.allowlist = cfg.allowlist;
+  return out;
 }
 
 function setAuthorization(projectDir, patch) {
@@ -187,16 +252,42 @@ function setAuthorization(projectDir, patch) {
     }
   }
   if (patch.mcp) {
-    const mcpAuth = normalizeConfig(patch.mcp, 'project', true);
+    const p = patch.mcp;
+    const hasShape = (typeof p.mode === 'string' && p.mode)
+      || (p.servers && typeof p.servers === 'object' && !Array.isArray(p.servers))
+      || (p.tools && typeof p.tools === 'object' && !Array.isArray(p.tools));
+    if (!hasShape) throw typedError('EBADINPUT', 'mcp authorization must set mode, servers, or tools');
     const mcpConfig = getMcpConfig(projectDir);
-    writeMcpConfig(projectDir, Object.assign({}, mcpConfig, {
-      authorization: {
-        mode: mcpAuth.mode,
-        allowlist: mcpAuth.allowlist,
-        defaultTimeoutMs: mcpAuth.defaultTimeoutMs,
-        maxTimeoutMs: mcpAuth.maxTimeoutMs
+    const auth = (mcpConfig && mcpConfig.authorization && typeof mcpConfig.authorization === 'object')
+      ? Object.assign({}, mcpConfig.authorization)
+      : {};
+    if (typeof p.mode === 'string' && p.mode) {
+      // The shared gate. Tighten the persisted shape the same way the
+      // overrides are stored (off/allow/ask write only { mode }).
+      const mcpAuth = normalizeConfig(p, 'project', true);
+      const shaped = mcpPersistShape(mcpAuth);
+      shaped.defaultTimeoutMs = mcpAuth.defaultTimeoutMs;
+      shaped.maxTimeoutMs = mcpAuth.maxTimeoutMs;
+      auth.mode = shaped.mode;
+      if (Object.prototype.hasOwnProperty.call(shaped, 'allowlist')) auth.allowlist = shaped.allowlist;
+      else delete auth.allowlist;
+      auth.defaultTimeoutMs = shaped.defaultTimeoutMs;
+      auth.maxTimeoutMs = shaped.maxTimeoutMs;
+    }
+    for (const key of ['servers', 'tools']) {
+      const map = p[key];
+      if (!map || typeof map !== 'object' || Array.isArray(map)) continue;
+      if (!auth[key] || typeof auth[key] !== 'object' || Array.isArray(auth[key])) auth[key] = {};
+      for (const [name, entry] of Object.entries(map)) {
+        if (typeof name !== 'string' || !name) continue;
+        if (entry == null) { delete auth[key][name]; continue; }
+        const cfg = normalizeConfig(entry, 'project', true);
+        auth[key][name] = mcpPersistShape(cfg);
       }
-    }));
+      // Drop empty maps so .mcp.json stays small and honest.
+      if (!Object.keys(auth[key]).length) delete auth[key];
+    }
+    writeMcpConfig(projectDir, Object.assign({}, mcpConfig, { authorization: auth }));
   }
   if (!Object.keys(next).length && !patch.mcp) throw typedError('EBADINPUT', 'tools.shell, tools.file, or mcp authorization is required');
   if (Object.keys(next).length) settings.setProject(projectDir, next);
@@ -339,13 +430,12 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
         maxTimeoutMs: current.maxTimeoutMs
       } } });
     } else if (family.startsWith('mcp__')) {
-      const current = effectiveConfig(projectDir, family);
-      setAuthorization(projectDir, { mcp: {
-        mode: 'allow',
-        allowlist: current.allowlist,
-        defaultTimeoutMs: current.defaultTimeoutMs,
-        maxTimeoutMs: current.maxTimeoutMs
-      } });
+      // "Always allow" on an MCP call pins THAT tool (and nothing else)
+      // to mode 'allow'. Writing the shared gate to 'allow' would
+      // silently auto-approve every other server and tool in the
+      // project — the opposite of the per-MCP, per-tool granularity the
+      // gate now exposes.
+      setAuthorization(projectDir, { mcp: { tools: { [pending.tool]: { mode: 'allow' } } } });
     }
     session.grants.add(pending.tool);
   }
@@ -380,5 +470,6 @@ module.exports = {
   regexMatch,
   matchesAllowlist,
   configToolName,
+  parseMcpName,
   _sessions: sessions
 };

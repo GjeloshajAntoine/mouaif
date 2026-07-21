@@ -22,7 +22,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
 } from './transcript.js';
-import { mountToolsCard, mountAgentFilesCard, buildSetupCard, toggleMcpServer, toggleTool, toggleAgentFiles } from './cards.js';
+import { mountToolsCard, mountAgentFilesCard, buildSetupCard, buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -87,19 +87,9 @@ export function useChatState(props) {
   const tools = useRef({ catalog: [], filter: null });
   const agentFiles = useRef({ files: [], enabled: true, explicit: false });
   const mcpServers = useRef([]);
-  // Per-MCP collapsed state for the tool list inside the chat
-  // tools card. Each MCP server has its own close toggle on its
-  // parent row (see buildMcpServerToggles in cards.js), so we
-  // track the set of collapsed server IDs rather than a single
-  // global boolean.
-  //
-  // Default is "collapse everything that hasn't been explicitly
-  // expanded". We model that with a `null` Set — the cards.js
-  // applyMcpCollapsed helper interprets `null` as "all collapsed"
-  // until the user opens a specific server, after which the Set
-  // becomes a concrete set of explicitly-collapsed server IDs.
-  // Reset on chat switch so each new chat starts collapsed again.
-  const mcpCollapsed = useRef(null);
+  // Track which tools have been called in this chat session.
+  // Used to auto-check tools in the visibility tree.
+  const usedTools = useRef(new Set());
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
   const watchingRun = useRef(false);
   const chatCurrent = useRef(null);
@@ -135,16 +125,8 @@ export function useChatState(props) {
     set agentFiles(v) { agentFiles.current = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
-    // `mcpCollapsed` is either `null` (the default — "everything
-    // is collapsed until explicitly expanded") or a Set of server
-    // IDs that the user has explicitly collapsed. Anything not in
-    // the Set is considered open. See `applyMcpCollapsed` in
-    // chat/cards.js for the consumer side.
-    get mcpCollapsed() { return mcpCollapsed.current; },
-    set mcpCollapsed(v) {
-      if (v == null) mcpCollapsed.current = null;
-      else mcpCollapsed.current = (v instanceof Set) ? v : new Set(v);
-    },
+    get usedTools() { return usedTools.current; },
+    set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
     get transcriptSignature() { return transcriptSignature.current; },
     set transcriptSignature(v) { transcriptSignature.current = v; },
     get streaming() { return streaming.current; },
@@ -212,6 +194,17 @@ export function useChatState(props) {
   // module (which doesn't import the hook), so we expose the
   // bound callback here.
   state._onRefreshAllProviders = () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st));
+  // Re-render the tools card when a tool is marked as used (called
+  // from the SSE stream handler). This swaps the DOM subtree in
+  // place so the "used" badge appears without a full transcript
+  // rebuild.
+  state._updateToolsCard = () => {
+    if (refs.toolsCard.current && refs.toolsCard.current.parentNode) {
+      const fresh = buildToolsCard(state);
+      refs.toolsCard.current.parentNode.replaceChild(fresh, refs.toolsCard.current);
+      refs.toolsCard.current = fresh;
+    }
+  };
 
   const send = useCallback(() => sendTurn(state, refs, {
     clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
@@ -219,6 +212,7 @@ export function useChatState(props) {
   }), [projectDir, chatId, chat, providers, imageAttachments]);
 
   const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
+  const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
   const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound), [chat]);
   const onToggleMcpServer = useCallback((id, enabled) => toggleMcpServer(id, enabled, state, refs, updateChatBound, (txt, st) => setChatStatus(refs, txt, st), projectDir, chatId), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
@@ -245,6 +239,7 @@ export function useChatState(props) {
   state._renderTranscript = renderTranscriptBound;
   state._updateSetupVisibility = () => updateSetupVisibility(state, refs);
   state._toggleTool = onToggleTool;
+  state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleMcpServer = onToggleMcpServer;
 
@@ -389,7 +384,7 @@ export function useChatState(props) {
     return () => el.removeEventListener('scroll', onScroll);
   }, [projectDir, chatId]);
 
-  useEffect(() => { mcpCollapsed.current = null; }, [chatId]);
+  useEffect(() => { usedTools.current = new Set(); }, [chatId]);
   useEffect(() => () => stopStreamRecovery(state, refs), [projectDir, chatId]);
 
   useEffect(() => {

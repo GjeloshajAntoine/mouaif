@@ -1,0 +1,141 @@
+/* ToolTree: thin hierarchical tool rows, shared by chat + settings.
+   One line per row: [chevron] [checkbox] name desc… [control]
+   Only the checkbox / chevron / control are clickable. */
+
+.tool-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.tool-tree--empty {
+  color: var(--muted);
+  padding: 2px;
+}
+
+.tool-tree__group { display: flex; flex-direction: column; }
+
+.tool-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 1px 2px;
+  min-width: 0;
+  color: var(--fg);
+}
+
+.tool-tree__row--leaf {
+  min-height: 24px;
+  color: var(--fg-soft);
+}
+
+.tool-tree__row--leaf.is-used { color: var(--fg); }
+
+/* Chevron (group collapse) — the only collapse click target. */
+.tool-tree__chev {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.tool-tree__chev:hover { color: var(--fg); background: var(--surface-3); }
+.tool-tree__chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool-tree__chev svg { display: block; transition: transform 120ms ease; }
+.tool-tree__chev.is-collapsed svg { transform: rotate(-90deg); }
+
+/* Spacer for single-tool groups (no chevron). */
+.tool-tree__chew { flex: 0 0 auto; width: 18px; height: 18px; }
+
+/* Text runs: name then desc on the SAME line, space separated. */
+.tool-tree__name {
+  flex: 0 0 auto;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46%;
+}
+.tool-tree__name--group { font-weight: 600; color: var(--fg); }
+
+.tool-tree__desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A real space between name and description even when the desc
+   node is empty, so the name never hugs the count/control. */
+.tool-tree__desc::before { content: " "; }
+
+.tool-tree__count {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  color: var(--muted);
+  padding: 0 5px;
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  text-align: center;
+}
+
+.tool-tree__used {
+  flex: 0 0 auto;
+  font-size: 0.5rem;
+  color: var(--accent);
+}
+
+/* Right-aligned inline control (auth segment, switch, …). It is
+   its own click target; pointer events are scoped to the control
+   itself so row taps never reach it accidentally. */
+.tool-tree__control {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The Off/Ask/Allow segment shrinks to fit the tree row. */
+.tool-tree__control .seg { padding: 1px; gap: 1px; }
+.tool-tree__control .seg__pill {
+  min-height: 20px;
+  padding: 0 8px;
+  font-size: 0.64rem;
+  font-weight: 500;
+}
+
+/* Child list */
+.tool-tree__children {
+  list-style: none;
+  margin: 0 0 1px 9px;
+  padding: 0 0 1px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-left: 1px solid var(--border);
+}
+
+.tool-tree__item { display: flex; min-height: 0; }
+.tool-tree__item .tool-tree__row { flex: 1 1 auto; }
+
+/* Disabled */
+.tool-tree__row:has(.checkbox:disabled) { opacity: 0.55; }
+.checkbox--sm:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

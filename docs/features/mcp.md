@@ -61,16 +61,24 @@ The per-chat `tools` filter is the same field the native-tool chips use, so the 
 
 ### Authorization
 
-Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call**, however, is routed through the project's shared MCP authorization mode (default `ask`), set from the **MCP tools** segmented control at the top of **Settings → MCP**:
+Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call** is routed through the MCP authorization gate (default `ask`), which is layered per project — most specific first:
+
+1. **Per tool** — an entry under `authorization.tools.<composedName>` (e.g. `mcp__filesystem__write_file`) gates that one tool.
+2. **Per server** — an entry under `authorization.servers.<serverSlug>` gates every tool on that server.
+3. **Shared fallback** — the top-level `authorization` mode gates every MCP call that has no more specific override.
+
+The first layer with a `mode` wins; `ask` counts as a decision, so a per-server `ask` can tighten a shared `allow`. Every layer accepts the same modes:
 
 | Mode | Behavior |
 |---|---|
-| `off` | Every `mcp__*` tool is hidden from the model (no prompt tokens). Calls that still arrive return `ETOOL_DISABLED`. |
+| `off` | The covered specs are hidden from the model (no prompt tokens) — one tool, one server, or every `mcp__*` spec. Calls that still arrive return `ETOOL_DISABLED`. |
 | `ask` | Every call must be approved by the user in the UI before the runner executes. |
-| `allowlist` | Calls whose first string arg matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask**. |
-| `allow` | Every call in the session is auto-approved until the chat is reopened or the user flips back to `ask`. |
+| `allowlist` | Calls whose summary matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask**. |
+| `allow` | Every covered call is auto-approved until the user flips the mode back. |
 
-The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses; the tool name is `mcp__<serverSlug>__<toolName>` and the allowlist matches against the first string arg (typically the resource path the user is asking the model to act on). The mode is persisted in `.mcp.json` under `authorization` (written by `setAuthorization`), so it can be committed and reviewed alongside the server entries.
+The Settings UI mirrors the layering: **Settings → MCP** shows one **Off / Ask / Allow** row per configured server (with a **Use shared fallback** button when an override is set) plus a **Shared fallback** row; the per-server editor adds an **Inherit / Off / Ask / Allow** select under each discovered tool. All write through `PUT /api/tools/authorization` with `{ mcp: { mode?, servers?, tools? } }` — a `null` value clears that override so the next layer up applies.
+
+The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses. The allowlist matches against the summary `"<composedName> <firstStringArg>"` (e.g. `mcp__filesystem__read_file src/index.js`), so a pattern can pin either the tool (`^mcp__fs__read_file$`) or the resource it touches (`^mcp__fs__read_file src/.*`). Choosing **Always allow** on an MCP prompt pins only that one tool to `mode: "allow"` under `authorization.tools` — it never flips the shared gate. Everything is persisted in `.mcp.json` under `authorization` (written by `setAuthorization`), so it can be committed and reviewed alongside the server entries.
 
 ### Lifecycle
 

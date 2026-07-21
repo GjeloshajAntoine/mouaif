@@ -22,6 +22,40 @@ import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard } from './cards.js';
+import { normalizeToolName } from './tools.js';
+
+// markToolUsed(state, refs, toolName)
+//
+// Record that a tool was called in this chat session. Two effects:
+//   1. If the tool is currently unchecked in the per-chat filter,
+//      checking it happens automatically ("tools are started when
+//      used") — the model clearly has it, so the filter should
+//      reflect reality. Persisted via the normal toggle path.
+//   2. The tool gets the "used" dot badge in the tree.
+function markToolUsed(state, refs, toolName) {
+  if (!state || !toolName) return;
+  const name = normalizeToolName(toolName);
+  if (!name) return;
+
+  // Auto-check: if the filter is an explicit array and this tool is
+  // missing, enable it. (filter === null already means "all on".)
+  const t = state.tools || { catalog: [], filter: null };
+  if (Array.isArray(t.filter) && t.filter.indexOf(name) < 0
+      && (t.catalog || []).some((x) => x && x.name === name)) {
+    if (typeof state._toggleTool === 'function') state._toggleTool(name, true);
+  }
+
+  const current = state.usedTools || new Set();
+  if (!current.has(name)) {
+    const next = new Set(current);
+    next.add(name);
+    state.usedTools = next;
+  }
+  // Re-render the tools card so the badge/check appears without
+  // waiting for the next user interaction. toggleTool already
+  // re-renders, so this is a no-op in that path.
+  if (state._updateToolsCard) state._updateToolsCard();
+}
 
 // runShellCommand(cmd, state, refs, appendToolResultCardFn)
 //
@@ -374,6 +408,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     } else if (ev.eventName === 'ask_user_required') {
       askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
     } else if (ev.eventName === 'tool_call') {
+      markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);
     } else if (ev.eventName === 'tool_result') {
       appendToolResultCard(data, refs);

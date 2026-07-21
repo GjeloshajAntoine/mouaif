@@ -41,6 +41,34 @@ The mode is set on the project record (per decision §2) and can be overridden p
 
 A project with no authorization mode falls back to the app-level value, then to `ask`. The independent Shell enable switch remains off by default, so both conditions must pass before a command runs.
 
+### MCP tools — layered, per-server and per-tool
+
+MCP calls resolve through a three-level gate persisted in `<projectDir>/.mcp.json` under `authorization`, most specific first:
+
+1. `authorization.tools.<composedName>` — one tool on one server (`mcp__filesystem__write_file`).
+2. `authorization.servers.<serverSlug>` — every tool on that server.
+3. `authorization` (mode + allowlist) — the shared fallback for every MCP call.
+
+The first entry with a `mode` wins; `ask` counts as a decision (so a per-server `ask` can tighten a shared `allow`). A `null` value in a PUT patch deletes the entry, restoring inheritance. `off` at any level hides exactly the specs it covers — one tool, one server, or every `mcp__*` spec — at zero prompt-token cost.
+
+```jsonc
+// <projectDir>/.mcp.json
+{
+  "authorization": {
+    "mode": "ask",
+    "servers": {
+      "filesystem": { "mode": "allow" },
+      "playwright": { "mode": "allowlist", "allowlist": ["^mcp__playwright__navigate"] }
+    },
+    "tools": {
+      "mcp__filesystem__write_file": { "mode": "off" }
+    }
+  }
+}
+```
+
+MCP allowlists match against the summary `"<composedName> <firstStringArg>"` (e.g. `mcp__filesystem__read_file src/index.js`), so a pattern can pin either the tool itself (`^mcp__fs__read_file$`) or the resource it touches (`^mcp__fs__read_file src/.*`). Choosing **Always allow** on an MCP prompt pins only that one tool to `mode: "allow"` — it never flips the shared gate.
+
 ### Approval flow
 
 When the gate is `ask` and the model initiates a call, the chat pauses the stream and renders an **Authorization required** card. The card shows:
@@ -58,9 +86,11 @@ The composer `/shell` slash command uses the same gate. A `/shell` invocation in
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `GET`  | `/api/tools/authorization?projectDir=<abs>` | — | `{ tools: { shell: { mode, allowlist, defaultTimeoutMs, maxTimeoutMs, source: 'project' | 'app' | 'default' } } }` |
-| `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... } }` | `{ tools: { ... } }` (echo) |
+| `GET`  | `/api/tools/authorization?projectDir=<abs>` | — | `{ tools: { shell: { mode, allowlist, defaultTimeoutMs, maxTimeoutMs, source: 'project' | 'app' | 'default' }, ... }, mcp: { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composedName>: { mode, allowlist? } } } }` |
+| `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... }, mcp: { mode?, servers?, tools? } }` | `{ tools: { ... }, mcp: { ... } }` (echo) |
 | `POST` | `/api/tools/authorization/decision` | `{ chatId, callId, decision: 'allow-once' | 'allow-session' | 'deny' }` | `{ ok: true }` |
+
+The `PUT` `mcp` key accepts any combination of `mode` (the shared fallback), `servers` (a map of slug → `{ mode, allowlist? }` or `null` to clear), and `tools` (a map of composed tool name → `{ mode, allowlist? }` or `null` to clear). Entries are merged; a `null` value deletes the override.
 
 The `decision` endpoint is the only path the UI uses to answer a pending prompt. It validates the chat and project ownership before recording the decision. Direct REST calls retry with the same opaque `callId` after approval; model calls remain blocked on their SSE stream.
 
@@ -70,7 +100,7 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - **Allowlist is regex-matched against the full command.** The match is anchored on the full string (`^...$`); partial matches do not pass. Each untrusted expression runs in an isolated worker that is terminated after 1 ms, so catastrophic backtracking cannot block the HTTP process.
 - **Decisions are session-scoped, not persisted.** An `allow-once` decision resumes exactly one blocked call. An `allow-session` decision is kept in server memory and cleared by `POST /api/chats/:id/touch` when the chat is reopened.
 - **Deny reasons are kept private.** A deny records only the call id in the in-memory session. The upstream receives `{ ok: false, code: 'EDENIED', reason: 'user denied' }`, without the command, project, or chat id.
-- **`off` hides the tool from the model.** Tools in `off` mode are filtered out of the advertised tool list before each upstream request (saving prompt tokens on every round), and the execution gate still rejects late or forged calls with `ETOOL_DISABLED` as defense-in-depth. File tools resolve through their `file` family name, so one `off` hides all five operations. MCP servers share the single `mcp.authorization` block, so one `off` hides every `mcp__<slug>__<tool>` spec at once.
+- **`off` hides the tool from the model.** Tools in `off` mode are filtered out of the advertised tool list before each upstream request (saving prompt tokens on every round), and the execution gate still rejects late or forged calls with `ETOOL_DISABLED` as defense-in-depth. File tools resolve through their `file` family name, so one `off` hides all five operations. MCP tools resolve through the layered `.mcp.json` authorization block (per-tool → per-server → shared fallback), so an `off` at any level hides exactly the specs it covers — one tool, one server, or every `mcp__<slug>__<tool>` spec at once.
 - **File operations share one gate.** The model-facing `read_file`, `list_files`, `search_files`, and `write_file` names all resolve through `tools.file`; enabling File tools therefore enables authorization for all four operations instead of returning `ETOOL_DISABLED` for their individual names.
 - **Timeouts are bounded by the project.** A call's effective timeout is `clamp(requestedTimeoutMs || defaultTimeoutMs, 1 ms, maxTimeoutMs)`. Anything above the cap is clamped silently; the UI surfaces the clamped value in the prompt.
 - **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping to `off` drops the tool from the next request's tool list and rejects any in-flight call with `ETOOL_DISABLED`; the model's prior `tool_result` history is left untouched.
@@ -81,7 +111,7 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`.
 - The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
 - The chat touch route clears in-memory grants before updating `lastOpenedAt`; grants never enter `.mouaif.json`.
-- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under the **Tool permissions** group. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). The allowlist editor is a `<details>` disclosure shown only in ask mode; entering patterns writes `mode: "allowlist"` and clearing them flips back to `ask`, so the persisted file and the UI never disagree. Picking **Allow** clears the stored patterns. `ask_user` stays binary (`off` / `ask`). The same segmented control for the shared MCP gate lives at the top of `src/web/src/components/SettingsMcp.jsx` (it writes the `authorization` block in `.mcp.json` through `PUT /api/tools/authorization` `{ mcp: { mode, allowlist } }`).
+- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under the **Tools** tree. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). The allowlist editor is a `<details>` disclosure shown only in ask mode; entering patterns writes `mode: "allowlist"` and clearing them flips back to `ask`, so the persisted file and the UI never disagree. Picking **Allow** clears the stored patterns. `ask_user` stays binary (`off` / `ask`). The MCP surface is layered: `src/web/src/components/SettingsMcp.jsx` renders one **Off / Ask / Allow** row per configured server (its override wins over the shared fallback) plus a **Shared fallback** row, and the server edit view (`SettingsMcpEditView`) adds a per-tool **Inherit / Off / Ask / Allow** select under "Discovered tools". All write through `PUT /api/tools/authorization` with `{ mcp: { mode?, servers?, tools? } }`.
 - The Authorization card in the chat composer exposes Allow once, Allow for this session, and Deny as tap-accessible controls with no hover-only affordance.
 
 ## Related
