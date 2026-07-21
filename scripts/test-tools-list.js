@@ -80,19 +80,19 @@ server.listen(0, '127.0.0.1', () => {
       }
       console.log('PATCH tools=[] ->', JSON.stringify(r5.body.chat.tools));
 
-      // 6. Null (should become [] per normalize policy).
+      // 6. Null means "all tools" (no restriction), so it round-trips as null.
       const r6 = await req('PATCH', '/api/chats/' + chatId, { projectDir: projDir, tools: null });
       if (r6.status !== 200) throw new Error('null patch failed: HTTP ' + r6.status);
-      if (JSON.stringify(r6.body.chat.tools) !== JSON.stringify([])) {
-        throw new Error('null should round-trip as [] per normalize');
+      if (r6.body.chat.tools !== null) {
+        throw new Error('null should round-trip as null (all tools)');
       }
       console.log('PATCH tools=null ->', JSON.stringify(r6.body.chat.tools));
 
-      // 7. Bad shape must preserve previous value.
+      // 7. Bad shape must preserve previous value (which is null from step 6).
       const r7 = await req('PATCH', '/api/chats/' + chatId, { projectDir: projDir, tools: 'shell' });
       if (r7.status !== 200) throw new Error('bad-shape patch should not 500: HTTP ' + r7.status);
-      if (JSON.stringify(r7.body.chat.tools) !== JSON.stringify([])) {
-        throw new Error('bad shape should preserve previous tools');
+      if (r7.body.chat.tools !== null) {
+        throw new Error('bad shape should preserve previous tools (null)');
       }
       console.log('PATCH bad shape preserved previous ->', JSON.stringify(r7.body.chat.tools));
 

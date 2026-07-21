@@ -16,9 +16,19 @@ delete require.cache[authRealPath];
 const stubObj = (() => {
   const store = new Map();
   const refresherByProvider = new Map();
+  const AI_TO_AUTH_PROVIDER = Object.freeze({ 'anthropic': 'anthropic' });
+  function authProviderFor(model) {
+    if (!model || !model.provider) return null;
+    if (Object.prototype.hasOwnProperty.call(AI_TO_AUTH_PROVIDER, model.provider)) {
+      return AI_TO_AUTH_PROVIDER[model.provider];
+    }
+    return model.provider;
+  }
   return {
     SUPPORTED_PROVIDERS: ['anthropic'],
     SERVICE_PREFIX: 'mouaif',
+    AI_TO_AUTH_PROVIDER,
+    authProviderFor,
     setToken: async (provider, account, blob) => { store.set(provider + '/' + account, blob); },
     getToken: (provider, account) => store.get(provider + '/' + account) || null,
     deleteToken: (provider, account) => { store.delete(provider + '/' + account); },
