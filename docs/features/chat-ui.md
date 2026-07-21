@@ -118,7 +118,7 @@ All `PATCH`-style controls share a single `updateChat(patch)` helper. On success
 
 The chat view is a full-height flex column: the head and composer are fixed-height (`flex: 0 0 auto`) and the transcript in between flexes (`flex: 1 1 auto; min-height: 0`) and scrolls internally. This keeps the composer pinned to the bottom and stops the last message from being hidden behind it — the transcript scrolls, not the page. The shell (`.app__shell`) is bounded to `100dvh` and the drill-in main region (`.app__main--flush`) is a bounded flex column so the internal scroll works.
 
-The composer is a single horizontal row: an auto-growing `<textarea>` + a 44 × 44 px square send button + a status line below. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `auto` on every `input` event, then set to `Math.min(140, Math.max(44, scrollHeight))`. After a send it collapses back to its 44 px single-line height.
+The composer is a floating pill (rounded, `--surface-2` background, `margin: 6px 10px calc(var(--safe-bottom) + 6px)`) holding a single horizontal row: a files button, an image button, an auto-growing `<textarea>`, and a 32 × 32 px round send button, with a status line below that wraps to its own row. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `auto` on every `input` event, then set to `Math.min(120, Math.max(32, scrollHeight))`. After a send it collapses back to its 32 px single-line height.
 
 ## Implementation notes
 

@@ -1289,6 +1289,11 @@
 
 /* ---- Composer ----------------------------------------------------- */
 
+/* Composer: a single horizontal row — textarea + send button — with
+   the status line wrapping to the next line. The previous design had
+   a separate Model <select> on top and a label row on top of the
+   textarea; both are gone (the model lives in the head row, the label
+   is replaced by a placeholder). */
 .chat-view__composer {
   display: flex;
   flex-direction: row;
@@ -1296,11 +1301,19 @@
   align-items: flex-end;
   gap: 4px;
   padding: 2px 2px 2px 6px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
   flex: 0 0 auto;
+  margin: 6px 10px calc(var(--safe-bottom) + 6px);
+  box-shadow: var(--shadow-sm);
+  overscroll-behavior: contain;
 }
+/* Composer textarea: single-line when empty, grows up to 120px as the
+   user types. The base `textarea.input` rule has its own 64px min-height
+   (for settings forms) so the :where() :not() selector above excludes
+   this class — the chat composer owns its own sizing. 32px matches the
+   --tap touch target so the row lines up with the send button. */
 .chat-view__textarea {
   flex: 1 1 0;
   min-width: 0;
@@ -1359,6 +1372,9 @@
   line-height: 15px;
 }
 .chat-view__send {
+  /* 32px square: matches the --tap touch target used everywhere
+     else in the app, and matches the textarea's min-height so the
+     row stays a single line when the composer is at rest. */
   width: 32px;
   height: 32px;
   padding: 0;
@@ -1370,10 +1386,44 @@
 .chat-view__send svg { display: block; margin-left: -1px; }
 .chat-view__status {
   margin: 0;
+  /* Sits on its own line under the input so a long streaming
+     status does not crowd the textarea. The row is built with
+     `flex-wrap`, so the status wraps to the next line because its
+     `flex-basis: 100%` is wider than the available width on the
+     current line. We must NOT use flex-grow: 1 here, otherwise it
+     would also steal space from the textarea on the same line. */
   flex: 0 0 100%;
   font-size: 0.7rem;
+  /* Hide the status row when it has no text so the composer
+     collapses to just the textarea + send button. Without this,
+     the empty status line still reserves its line-height of
+     vertical space below the textbox, creating a visible gap
+     between the input and the bottom of the composer pill. */
 }
 .chat-view__status:empty { display: none; }
+
+/* Icon button on the chat composer that opens the file editor.
+   Sized to match the send button so the row stays a single line
+   when the composer is at rest. */
+.chat-view__files-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  min-height: 32px;
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__files-btn:hover { background: var(--surface-3); color: var(--fg); }
+.chat-view__files-btn:active { background: var(--surface); }
 
 /* ---- Jump to bottom ---------------------------------------------- */
 
