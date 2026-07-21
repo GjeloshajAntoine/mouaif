@@ -11,7 +11,6 @@ import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.j
 import { SettingsMcpView, SettingsMcpEditView } from './SettingsMcp.jsx';
 import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
-import { SettingsAgentsView } from './SettingsAgents.jsx';
 import { InspectorView } from './Inspector.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
@@ -84,7 +83,6 @@ export function App() {
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
-  else if (view.name === 'settingsAgents') body = h(SettingsAgentsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
   else if (view.name === 'settingsMcpEdit') body = h(SettingsMcpEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });

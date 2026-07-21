@@ -45,9 +45,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
   const mcpSummary = useRef(null);
-  // Agent presets — inline editor
+  // Agents — subagent delegation personas (name + instructions + tools)
   const [agentPresets, setAgentPresets] = useState([]);
-  const [agentPresetsOpened, setAgentPresetsOpened] = useState({}); // { [id]: true } for expanded editors
+  const [agentPresetsOpened, setAgentPresetsOpened] = useState({}); // { [name]: true } for expanded editors
+  const [agentCreating, setAgentCreating] = useState(false); // inline new-agent form visible
+  const [agentCreateStatus, setAgentCreateStatus] = useState('');
+  const newAgentName = useRef(null);
   const agentPresetsStatus = useRef(null);
   // Advanced (raw JSON + resolved)
   const editor = useRef(null);
@@ -754,25 +757,35 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveAgent(name, { tools });
   }
 
+  function openAgentCreator() {
+    setAgentCreateStatus('');
+    setAgentCreating(true);
+    // Focus the name field after the form mounts.
+    setTimeout(() => { if (newAgentName.current) newAgentName.current.focus(); }, 0);
+  }
+
   async function addAgentPreset() {
-    const name = (prompt('Agent name (letters, digits, . _ -):') || '').trim();
-    if (!name) return;
+    const name = (newAgentName.current && newAgentName.current.value || '').trim();
+    if (!name) { setAgentCreateStatus('Name is required'); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+      setAgentCreateStatus('Letters, digits, . _ - only; must start with a letter or digit');
+      return;
+    }
+    setAgentCreateStatus('creating…');
     const r = await fetchJson('/api/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: dir(), name, content: '' })
     });
     if (r.status !== 201) {
-      alert(r.body && r.body.error ? r.body.error : 'Create failed: HTTP ' + r.status);
+      setAgentCreateStatus(r.body && r.body.error ? r.body.error : ('Create failed: HTTP ' + r.status));
       return;
     }
-    const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(dir()));
-    if (ar.status === 200) {
-      const list = Array.isArray(ar.body.agents) ? ar.body.agents : [];
-      setAgentPresets(list);
-      const created = r.body.agent && r.body.agent.name;
-      if (created) setAgentPresetsOpened(p => Object.assign({}, p, { [created]: true }));
-    }
+    const created = r.body.agent && r.body.agent.name;
+    setAgentCreating(false);
+    setAgentCreateStatus('');
+    setAgentPresets((prev) => prev.concat(r.body.agent));
+    if (created) setAgentPresetsOpened(p => Object.assign({}, p, { [created]: true }));
   }
 
   async function deleteAgentPreset(name) {
@@ -941,7 +954,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               );
             })
           ),
-          h('button', { type: 'button', class: 'btn btn--primary settings-project__add-agent', onClick: addAgentPreset }, '+ Add agent')
+          !agentCreating
+            ? h('button', { type: 'button', class: 'btn btn--primary settings-project__add-agent', onClick: openAgentCreator }, '+ Add agent')
+            : h('div', { class: 'settings-project__agent-create' },
+                h('label', { class: 'row settings-project__agent-field' },
+                  h('span', { class: 'label' }, 'Name'),
+                  h('input', {
+                    ref: newAgentName,
+                    class: 'input',
+                    placeholder: 'reviewer',
+                    onKeyDown: (e) => { if (e.key === 'Enter') addAgentPreset(); if (e.key === 'Escape') setAgentCreating(false); }
+                  })
+                ),
+                h('div', { class: 'row row--actions' },
+                  h('button', { type: 'button', class: 'btn', onClick: () => setAgentCreating(false) }, 'Cancel'),
+                  h('button', { type: 'button', class: 'btn btn--primary', onClick: addAgentPreset }, 'Create'),
+                  h('span', { class: 'status', 'aria-live': 'polite' }, agentCreateStatus)
+                )
+              )
         )
       ),
 
