@@ -389,9 +389,8 @@ export function appendToolCallCard(toolCall, refs) {
     live.appendChild(hint);
     body.appendChild(live);
     card.appendChild(body);
-    // Expanded by default while running so progress is visible
-    // without a tap; the user can still collapse it.
-    card.classList.add('is-expanded');
+    // Keep subagent calls collapsed by default like every other
+    // tool card; tapping the standard header reveals live progress.
   }
   refs.transcript.current.appendChild(card);
   afterTranscriptAppend(refs, true);

@@ -466,7 +466,6 @@
 }
 .tool-card--call .tool-card__name { color: var(--fg-soft); }
 .tool-card--result { cursor: default; }
-.tool-card--call.tool-card--subagent { cursor: default; }
 .tool-card--subagent { border-color: transparent; }
 .tool-card--authorization { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, transparent); }
 
@@ -849,7 +848,7 @@
   align-self: stretch;
   min-width: 0;
   margin: 1px 0;
-  padding: 3px 6px;
+  padding: 2px 6px 2px 4px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 2px 6px;
@@ -860,8 +859,9 @@
 .tool-card__subagent-tool-name {
   grid-column: 1;
   color: var(--fg-soft);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  line-height: 1.25;
   font-weight: 600;
   word-break: break-all;
 }
