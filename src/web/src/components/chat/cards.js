@@ -86,6 +86,44 @@ function buildToolsCard(state) {
     state.usedTools || new Set()
   );
 
+  // Inject Off/Ask/Allow authorization segments on each known group
+  // row, exactly like the project settings page. The segment calls
+  // state._saveToolAuth on tap.
+  const auth = state.toolAuth || {};
+  function segMode(m) { return m === 'allowlist' ? 'ask' : m; }
+  function makeSegVNode(toolName, _groupId) {
+    const cur = auth[toolName] || { mode: 'ask' };
+    const active = segMode(cur.mode);
+    const modes = toolName === 'ask_user'
+      ? [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }]
+      : [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }];
+    return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': toolName + ' authorization' },
+      modes.map((m) =>
+        h('label', { key: m.value, class: 'seg__item' + (active === m.value ? ' seg__item--on' : '') },
+          h('input', {
+            type: 'radio',
+            name: 'chat-auth-' + toolName,
+            value: m.value,
+            checked: active === m.value,
+            onChange: () => {
+              if (state._saveToolAuth) {
+                const allowlist = m.value === 'allow' ? [] : (Array.isArray(cur.allowlist) ? cur.allowlist : []);
+                state._saveToolAuth(toolName, m.value, allowlist);
+              }
+            }
+          }),
+          h('span', { class: 'seg__pill' }, m.label)
+        )
+      )
+    );
+  }
+  for (const g of groups) {
+    if (g.id === 'shell') g.control = makeSegVNode('shell', g.id);
+    else if (g.id === 'subagent') g.control = makeSegVNode('subagent', g.id);
+    else if (g.id === 'ask_user') g.control = makeSegVNode('ask_user', g.id);
+    else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
+  }
+
   // Render the Preact ToolTree into a container div.
   const treeHost = document.createElement('div');
   treeHost.className = 'chat-view__tools-tree';

@@ -87,6 +87,9 @@ export function useChatState(props) {
   const tools = useRef({ catalog: [], filter: null });
   const agentFiles = useRef({ files: [], enabled: true, explicit: false });
   const mcpServers = useRef([]);
+  // Tool authorization state — same shape as SettingsProject shellAuth etc.
+  // { shell: { mode, allowlist }, file: { mode, allowlist }, subagent: { mode, allowlist }, ask_user: { mode } }
+  const toolAuth = useRef({});
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -136,7 +139,9 @@ export function useChatState(props) {
     set watchingRun(v) { watchingRun.current = v; },
     mcpToggleBusy: mcpToggleBusy.current,
     get providerCredit() { return providerCredit.current; },
-    set providerCredit(v) { providerCredit.current = v; }
+    set providerCredit(v) { providerCredit.current = v; },
+    get toolAuth() { return toolAuth.current; },
+    set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; }
   };
 
   const refs = {
@@ -243,6 +248,26 @@ export function useChatState(props) {
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleMcpServer = onToggleMcpServer;
 
+  // Save tool authorization (Off/Ask/Allow) directly to the server.
+  // Used by the inline segment control in the chat tools card.
+  // On success, re-render the tools card so the segment reflects the new mode.
+  state._saveToolAuth = async (tool, mode, allowlist) => {
+    const d = projectDir;
+    if (!d) return;
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: d, tools: { [tool]: { mode, allowlist: allowlist || [] } } })
+    });
+    if (r.status === 200) {
+      // Sync local auth state.
+      const prev = toolAuth.current;
+      toolAuth.current = Object.assign({}, prev, { [tool]: { mode, allowlist: allowlist || [] } });
+      // Re-render the tools card so the segment reflects the new mode.
+      if (state._updateToolsCard) state._updateToolsCard();
+    }
+  };
+
   // ---- Initial load ----------------------------------------
   useEffect(() => {
     let cancelled = false;
@@ -297,6 +322,20 @@ export function useChatState(props) {
           explicit: typeof c.agentFiles === 'boolean'
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
+
+        // Fetch tool authorization settings for the tools card segments.
+        try {
+          const authRes = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
+          if (authRes.status === 200 && authRes.body && authRes.body.tools) {
+            const t = authRes.body.tools;
+            const auth = {};
+            if (t.shell) auth.shell = { mode: t.shell.mode || 'ask', allowlist: Array.isArray(t.shell.allowlist) ? t.shell.allowlist : [] };
+            if (t.file) auth.file = { mode: t.file.mode || 'ask', allowlist: Array.isArray(t.file.allowlist) ? t.file.allowlist : [] };
+            if (t.subagent) auth.subagent = { mode: t.subagent.mode || 'ask', allowlist: Array.isArray(t.subagent.allowlist) ? t.subagent.allowlist : [] };
+            if (t.ask_user) auth.ask_user = { mode: t.ask_user.mode === 'off' ? 'off' : 'ask' };
+            toolAuth.current = auth;
+          }
+        } catch { /* keep empty auth */ }
 
         if (promptInput.current && !promptInput.current.value && typeof c.draft === 'string' && c.draft) {
           promptInput.current.value = c.draft;
