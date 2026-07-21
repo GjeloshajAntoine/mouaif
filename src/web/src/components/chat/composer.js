@@ -52,13 +52,16 @@ export function onComposerInput(refs, projectDir, chatId, updateChat) {
   autoresize(refs);
 }
 
+import { isAtMentionActive } from './atMention.js';
+
 // onComposerKey(e, send)
 //
 // Enter sends; Shift-Enter inserts a newline. `isComposing` is
 // checked so the IME's own Enter (which is also `key: Enter`)
-// doesn't fire send mid-composition.
+// doesn't fire send mid-composition. When the @-mention popup is
+// open, Enter is consumed by that popup and does not send.
 export function onComposerKey(e, send) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isAtMentionActive()) {
     e.preventDefault();
     send();
   }

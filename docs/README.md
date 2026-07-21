@@ -37,6 +37,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Markdown renderer](features/markdown-renderer.md) — zero-dependency CommonMark renderer for assistant bubbles: tables, task lists, auto-links, backslash escapes, horizontal rules.
 - [Chat error surfacing](features/chat-error-surfacing.md) — failed turns are emitted over SSE, rendered as inline error bubbles, and persisted as system messages so they survive reloads.
 - [Tool tree](features/tool-tree.md) — compact hierarchical checkbox list for tool visibility, shared across chat view, project settings, and authorization flows. Auto-checks tools used in the current chat.
+- [@-mention autocomplete](features/at-mention.md) — type `@` in the chat composer to search and insert files, tools/actions, or the current agent model.
 
 ## Architectural decisions
 

@@ -6,8 +6,10 @@
 // file's only job is to wire props, return the JSX, and forward
 // the action callbacks to the right elements.
 import { h } from 'preact';
+import { useRef, useEffect } from 'preact/hooks';
 import { FileEditorView } from '../FileEditor.jsx';
 import { useChatState } from './useChatState.js';
+import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -22,6 +24,23 @@ export function ChatView(props) {
   } = s;
 
   const { projectDir, chatId } = props;
+
+  const atMentionRef = useRef(null);
+  useEffect(() => {
+    // Mount the at-mention popup on the composer textarea
+    if (!refs.promptInput.current || !atMentionRef.current) return;
+    const cleanup = mountAtMention(
+      refs.promptInput.current,
+      atMentionRef.current,
+      s.state
+    );
+    // Refresh items periodically so new files / tools show up
+    const timer = setInterval(() => refreshAtMentionItems(), 5000);
+    return () => {
+      cleanup();
+      clearInterval(timer);
+    };
+  }, [refs.promptInput, refs.promptInput.current, s.state.props && s.state.props.projectDir]);
 
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
@@ -117,6 +136,7 @@ export function ChatView(props) {
       h('span', { class: 'chat-view__jump-count' }, '')
     ),
     h('div', { class: 'chat-view__composer' },
+      h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
       h('button', {
         class: 'chat-view__iconbtn chat-view__files-btn',
         type: 'button',
