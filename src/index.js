@@ -342,7 +342,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handlePrompts(req, res, parsed);
   }
 
-  // Project agents (project-scoped, read-only)
+  // Project agents (project-scoped Markdown definitions + configuration)
   if (urlPath === '/api/agents' || urlPath.startsWith('/api/agents/')) {
     return handleAgents(req, res, parsed);
   }
@@ -2990,12 +2990,24 @@ async function handleAgents(req, res, parsed) {
   const method = req.method;
   const q = parsed.query || {};
 
-  if (method !== 'GET' && method !== 'PUT') return sendJSON(res, 405, { error: 'Method not allowed' });
+  if (method !== 'GET' && method !== 'POST' && method !== 'PUT') return sendJSON(res, 405, { error: 'Method not allowed' });
 
   const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
   if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 
   if (urlPath === '/api/agents') {
+    if (method === 'POST') {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+      try {
+        const agent = agents.create(dir, body || {});
+        return sendJSON(res, 201, { agent: Object.assign({}, agent, { config: agents.getConfig(dir, agent.name) }) });
+      } catch (e) {
+        const status = e.code === 'EBADINPUT' ? 400 : e.code === 'EEXISTS' ? 409 : 500;
+        return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
     if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
     try {
       const loaded = agents.load(dir);
@@ -3062,18 +3074,30 @@ async function handleAgents(req, res, parsed) {
 //   GET /api/skills?projectDir=<abs>          -> { skills: [{ name, title, size }] }
 //   GET /api/skills/:name?projectDir=<abs>    -> { skill: { name, title, content } }
 
-function handleSkills(req, res, parsed) {
+async function handleSkills(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
 
-  if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
+  if (method !== 'GET' && method !== 'POST') return sendJSON(res, 405, { error: 'Method not allowed' });
 
   const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
   if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 
   // GET /api/skills?projectDir=<abs>
   if (urlPath === '/api/skills') {
+    if (method === 'POST') {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+      try {
+        const skill = skills.create(dir, body || {});
+        return sendJSON(res, 201, { skill });
+      } catch (e) {
+        const status = e.code === 'EBADINPUT' ? 400 : e.code === 'EEXISTS' ? 409 : 500;
+        return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
     try {
       const list = skills.discover(dir).map(s => ({
         name: s.name,

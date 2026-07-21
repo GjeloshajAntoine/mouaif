@@ -121,11 +121,36 @@ function load(projectDir) {
   return out;
 }
 
+function create(projectDir, opts) {
+  const name = opts && typeof opts.name === 'string' ? opts.name.trim() : '';
+  const content = opts && typeof opts.content === 'string' ? opts.content.trim() : '';
+  if (!NAME_RE.test(name)) {
+    const error = new Error('Skill name must use letters, numbers, dots, underscores, or hyphens');
+    error.code = 'EBADINPUT';
+    throw error;
+  }
+  if (!content) {
+    const error = new Error('Skill instructions are required');
+    error.code = 'EBADINPUT';
+    throw error;
+  }
+  if (discover(projectDir).some(skill => skill.name === name)) {
+    const error = new Error('Skill already exists');
+    error.code = 'EEXISTS';
+    throw error;
+  }
+  const dir = path.join(projectDir, SKILLS_DIR, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), content + '\n', { encoding: 'utf8', flag: 'wx' });
+  return load(projectDir).find(skill => skill.name === name) || null;
+}
+
 module.exports = {
   SKILLS_DIR,
   MAX_BYTES,
   NAME_RE,
   discover,
   load,
+  create,
   resolveEnabled
 };

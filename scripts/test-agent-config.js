@@ -22,9 +22,13 @@ function writeInstruction(kind, name, filename, content) {
 }
 
 try {
-  writeInstruction('agents', 'reviewer', 'AGENT.md', '# Reviewer\n\nReview carefully.');
+  const createdAgent = agents.create(projectDir, { name: 'reviewer', content: '# Reviewer\n\nReview carefully.' });
+  assert.equal(createdAgent.title, 'Reviewer');
+  assert.throws(() => agents.create(projectDir, { name: '../bad', content: 'bad' }), { code: 'EBADINPUT' });
+  assert.throws(() => agents.create(projectDir, { name: 'reviewer', content: 'duplicate' }), { code: 'EEXISTS' });
   writeInstruction('agents', 'builder', 'AGENT.md', '# Builder\n\nImplement carefully.');
-  writeInstruction('skills', 'testing', 'SKILL.md', '# Testing\n\nRun focused tests.');
+  const createdSkill = require('../src/skills.js').create(projectDir, { name: 'testing', content: '# Testing\n\nRun focused tests.' });
+  assert.equal(createdSkill.title, 'Testing');
   writeInstruction('skills', 'security', 'SKILL.md', '# Security\n\nCheck trust boundaries.');
 
   assert.deepEqual(agents.discover(projectDir).map(agent => agent.name), ['builder', 'reviewer']);

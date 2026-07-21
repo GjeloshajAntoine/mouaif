@@ -10,7 +10,7 @@ Agent skills are named, project-scoped instruction files stored under `<projectD
 
 ### Directory layout
 
-Create a subdirectory for each skill and put a `SKILL.md` inside it:
+Open **Settings → Agents** and tap **New skill**, or create a subdirectory for each skill and put a `SKILL.md` inside it:
 
 ```text
 my-project/
@@ -56,8 +56,9 @@ The project-level `.mouaif.json` can also set `skills: true|false` to override t
 |--------|------|-------|----------|
 | `GET` | `/api/skills` | `?projectDir=<abs>` | `{ skills: [{ name, title, size }] }` |
 | `GET` | `/api/skills/:name` | `?projectDir=<abs>` | `{ skill: { name, title, role, content } }` |
+| `POST` | `/api/skills` | `?projectDir=<abs>` with `{ name, content }` | `{ skill }` |
 
-The API is read-only; the server never creates, modifies, or deletes skill files.
+The API can create a new skill without overwriting existing files. Reading remains live from disk; editing and deletion stay manual.
 
 ## Behavior
 

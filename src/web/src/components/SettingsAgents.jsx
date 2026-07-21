@@ -85,6 +85,11 @@ export function SettingsAgentsView(props) {
   const [skills, setSkills] = useState([]);
   const [defaultAgentId, setDefaultAgentId] = useState('');
   const [status, setStatusText] = useState('');
+  const [creator, setCreator] = useState(null);
+  const [newName, setNewName] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [newInstructions, setNewInstructions] = useState('');
+  const [createStatus, setCreateStatus] = useState('');
 
   async function load() {
     if (!projectDir) { setStatusText('open a chat to pick a project first'); return; }
@@ -120,6 +125,37 @@ export function SettingsAgentsView(props) {
     setAgents(current => current.map(agent => agent.name === name ? Object.assign({}, agent, { config }) : agent));
   }
 
+  function openCreator(kind) {
+    setCreator(kind);
+    setNewName('');
+    setNewTitle('');
+    setNewInstructions('');
+    setCreateStatus('');
+  }
+
+  async function createDefinition(event) {
+    event.preventDefault();
+    const name = newName.trim();
+    const instructions = newInstructions.trim();
+    if (!name || !instructions) { setCreateStatus('Name and instructions are required.'); return; }
+    const title = newTitle.trim() || name;
+    const content = '# ' + title + '\n\n' + instructions;
+    const endpoint = creator === 'skill' ? '/api/skills' : '/api/agents';
+    setCreateStatus('creating…');
+    const r = await fetchJson(endpoint + '?projectDir=' + encodeURIComponent(projectDir), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, content })
+    });
+    if (r.status !== 201) {
+      setCreateStatus(r.body && r.body.error ? r.body.error : 'Create failed: HTTP ' + r.status);
+      return;
+    }
+    setCreator(null);
+    await load();
+    setStatusText(creator === 'skill' ? 'skill created' : 'agent created');
+  }
+
   useEffect(() => { load().catch(() => setStatusText('load failed')); }, [projectDir]);
 
   if (!projectDir) {
@@ -139,6 +175,10 @@ export function SettingsAgentsView(props) {
       h('span', { class: 'status', 'aria-live': 'polite' }, status)
     ),
     h('p', { class: 'hint hint--compact settings-agents__intro' }, 'Choose the project default, then attach a prompt and skills to each persona. Chats can override the default.'),
+    h('div', { class: 'settings-agents__create-actions' },
+      h('button', { type: 'button', class: 'btn btn--primary', onClick: () => openCreator('agent') }, '+ New agent'),
+      h('button', { type: 'button', class: 'btn', onClick: () => openCreator('skill') }, '+ New skill')
+    ),
     agents.length > 0 && h('label', { class: 'row settings-agents__default' },
       h('span', { class: 'label' }, 'Project default agent'),
       h('select', { class: 'input', onChange: event => saveDefault(event.currentTarget.value) },
@@ -147,9 +187,38 @@ export function SettingsAgentsView(props) {
       )
     ),
     !agents.length
-      ? h('p', { class: 'hint' }, 'No agents found. Add .agents/agents/<name>/AGENT.md to this project.')
+      ? h('div', { class: 'settings-agents__empty' },
+          h('h3', null, 'Create the first agent'),
+          h('p', { class: 'hint hint--compact' }, 'An agent is a reusable project persona. Add its instructions here, then attach prompts and skills without editing JSON or folders manually.'),
+          h('button', { type: 'button', class: 'btn btn--primary', onClick: () => openCreator('agent') }, 'Create agent')
+        )
       : h('div', { class: 'settings-agents__list' }, agents.map(agent =>
           h(AgentEditor, { key: agent.name, agent, prompts, skills, onSaved: onAgentSaved })
-        ))
+        )),
+    creator && h('div', { class: 'settings-agents__overlay', role: 'presentation', onClick: event => { if (event.target === event.currentTarget) setCreator(null); } },
+      h('form', { class: 'settings-agents__sheet', onSubmit: createDefinition },
+        h('div', { class: 'settings-agents__sheet-head' },
+          h('h3', null, creator === 'skill' ? 'New skill' : 'New agent'),
+          h('button', { type: 'button', class: 'btn btn--ghost settings-agents__close', onClick: () => setCreator(null), 'aria-label': 'Close' }, '×')
+        ),
+        h('label', { class: 'row' },
+          h('span', { class: 'label' }, 'Name'),
+          h('input', { class: 'input', value: newName, onInput: event => setNewName(event.currentTarget.value), placeholder: creator === 'skill' ? 'testing' : 'reviewer', required: true, pattern: '[A-Za-z0-9][A-Za-z0-9._-]{0,63}' })
+        ),
+        h('label', { class: 'row' },
+          h('span', { class: 'label' }, 'Display title'),
+          h('input', { class: 'input', value: newTitle, onInput: event => setNewTitle(event.currentTarget.value), placeholder: creator === 'skill' ? 'Testing' : 'Code reviewer' })
+        ),
+        h('label', { class: 'row' },
+          h('span', { class: 'label' }, 'Instructions'),
+          h('textarea', { class: 'input settings-agents__instructions', value: newInstructions, onInput: event => setNewInstructions(event.currentTarget.value), placeholder: creator === 'skill' ? 'Explain when and how the model should apply this skill.' : 'Describe the persona, priorities, constraints, and expected response style.', required: true })
+        ),
+        h('div', { class: 'row row--actions' },
+          h('button', { type: 'button', class: 'btn', onClick: () => setCreator(null) }, 'Cancel'),
+          h('button', { type: 'submit', class: 'btn btn--primary' }, 'Create'),
+          h('span', { class: 'status', 'aria-live': 'polite' }, createStatus)
+        )
+      )
+    )
   );
 }

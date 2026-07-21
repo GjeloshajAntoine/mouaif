@@ -71,6 +71,30 @@ function loadOne(projectDir, name) {
   return entry ? readAgent(entry) : null;
 }
 
+function create(projectDir, opts) {
+  const name = opts && typeof opts.name === 'string' ? opts.name.trim() : '';
+  const content = opts && typeof opts.content === 'string' ? opts.content.trim() : '';
+  if (!isValidName(name)) {
+    const error = new Error('Agent name must use letters, numbers, dots, underscores, or hyphens');
+    error.code = 'EBADINPUT';
+    throw error;
+  }
+  if (!content) {
+    const error = new Error('Agent instructions are required');
+    error.code = 'EBADINPUT';
+    throw error;
+  }
+  if (loadOne(projectDir, name)) {
+    const error = new Error('Agent already exists');
+    error.code = 'EEXISTS';
+    throw error;
+  }
+  const dir = path.join(projectDir, AGENTS_DIR, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, AGENT_FILE), content + '\n', { encoding: 'utf8', flag: 'wx' });
+  return loadOne(projectDir, name);
+}
+
 function resolveSelected({ chat, projectDir } = {}) {
   if (chat && typeof chat.agentId === 'string' && chat.agentId && loadOne(projectDir, chat.agentId)) return chat.agentId;
   if (projectDir) {
@@ -156,6 +180,7 @@ module.exports = {
   discover,
   load,
   loadOne,
+  create,
   loadSelected,
   resolveSelected,
   normalizeConfig,

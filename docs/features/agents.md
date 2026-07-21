@@ -8,7 +8,9 @@ Agents are named project personas stored as Markdown under `.agents/agents/<name
 
 ### Create an agent
 
-Create a directory below `.agents/agents/` and add an `AGENT.md` file:
+Open **Settings → Agents** and tap **New agent**. Enter a filesystem-safe name, a display title, and the instructions. mouaif writes the project file at `.agents/agents/<name>/AGENT.md`, so it can be committed with the project.
+
+You can also create the directory and `AGENT.md` manually:
 
 ```text
 .agents/
@@ -63,6 +65,15 @@ Configuration is stored in `.mouaif.json` under `agentConfigs` keyed by agent na
 GET /api/agents?projectDir=/path/to/project
 ```
 
+Create an agent:
+
+```http
+POST /api/agents?projectDir=/path/to/project
+Content-Type: application/json
+
+{ "name": "reviewer", "content": "# Reviewer\n\nReview carefully." }
+```
+
 Response:
 
 ```json
@@ -113,7 +124,7 @@ When present, mouaif injects that agent's `AGENT.md` into the nested model call 
 
 ## Implementation notes
 
-- Agent discovery is read-only. mouaif does not create, edit, or delete agent files.
+- Agent discovery and chat loading are read-only. The Settings creation action can create a new `AGENT.md`; existing files are never overwritten.
 - Each `AGENT.md` is capped at 64 KiB before injection and gets a truncation note when capped.
 - The first Markdown H1 becomes the display title; otherwise the directory name is used.
 - Selected agents are injected after root agent files (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`) and before agent skills.
