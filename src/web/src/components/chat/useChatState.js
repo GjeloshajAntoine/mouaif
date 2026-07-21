@@ -22,7 +22,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
 } from './transcript.js';
-import { mountToolsCard, mountAgentFilesCard, buildSetupCard, buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
+import { mountToolsCard, mountAgentFilesCard, buildSetupCard, buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles, mountPresetCard, mountSkillsCard, updatePresetCard, updateSkillsCard } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -71,6 +71,8 @@ export function useChatState(props) {
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
+  const presetCard = useRef(null);
+  const skillsCard = useRef(null);
   const mcpToggleBusy = useRef(new Set());
 
   // ---- High-frequency mutable state (refs, not useState) -----
@@ -126,6 +128,12 @@ export function useChatState(props) {
     set tools(v) { tools.current = v; },
     get agentFiles() { return agentFiles.current; },
     set agentFiles(v) { agentFiles.current = v; },
+    get presets() { return (state._presets || []); },
+    set presets(v) { state._presets = Array.isArray(v) ? v : []; },
+    get discoveredSkills() { return (state._discoveredSkills || []); },
+    set discoveredSkills(v) { state._discoveredSkills = Array.isArray(v) ? v : []; },
+    get selectedSkills() { return (state._selectedSkills !== undefined ? state._selectedSkills : null); },
+    set selectedSkills(v) { state._selectedSkills = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
     get usedTools() { return usedTools.current; },
@@ -275,7 +283,7 @@ export function useChatState(props) {
       if (!projectDir || !chatId) return;
       setLoading(true);
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rPresets, rSkills] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
           loadModels(projectDir),
           fetchJson('/api/ai/models/providers'),
@@ -283,7 +291,9 @@ export function useChatState(props) {
           fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
+          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/presets?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/skills?projectDir=' + encodeURIComponent(projectDir))
         ]);
         if (cancelled) return;
         if (rChat.status !== 200) {
@@ -322,6 +332,21 @@ export function useChatState(props) {
           explicit: typeof c.agentFiles === 'boolean'
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
+        // Seed presets and discovered skills.
+        if (rPresets && rPresets.status === 200 && Array.isArray(rPresets.body.presets)) {
+          state.presets = rPresets.body.presets;
+        }
+        if (rSkills && rSkills.status === 200 && Array.isArray(rSkills.body.skills)) {
+          state.discoveredSkills = rSkills.body.skills;
+        }
+        const sys = rSys.status === 200 && rSys.body ? rSys.body : null;
+        if (sys && sys.preset && Array.isArray(sys.preset.resolvedSelectedSkills)) {
+          state.selectedSkills = sys.preset.resolvedSelectedSkills;
+        } else if (Array.isArray(c.selectedSkills)) {
+          state.selectedSkills = c.selectedSkills;
+        } else {
+          state.selectedSkills = null;
+        }
 
         // Fetch tool authorization settings for the tools card segments.
         try {

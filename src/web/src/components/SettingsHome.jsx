@@ -72,7 +72,8 @@ export function SettingsHomeView() {
         ? h('ul', { class: 'group__list' },
             cardLi('settings/project' + projectQS, 'Project overrides', { sub: '.mouaif.json for this project' }),
             cardLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'tools for this project' }),
-            cardLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' })
+            cardLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
+            cardLi('settings/presets' + projectQS, 'Agent presets', { sub: 'bundle prompt, tools, and skills' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
             'Open a chat or pick a project first, then per-project settings (overrides, MCP servers, custom prompts) show up here.')

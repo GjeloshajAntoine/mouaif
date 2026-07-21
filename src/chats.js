@@ -30,6 +30,7 @@
 //     modelId:      null,                 // selected project/live model slug
 //     draft:        '',                   // unsent composer text
 //     tools:        undefined | null | [name], // per-chat tool filter; absent/null = all
+//     agentId:      null,                 // optional; selected .agents/agents/<name>/AGENT.md
 //     agentFiles:   undefined | true | false   // per-chat agent-file toggle; absent = profile default
 //     skills:       undefined | true | false   // per-chat skill toggle; absent = profile default
 //   }
@@ -115,8 +116,11 @@ function normalizeChat(chat) {
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
+    agentId: typeof chat.agentId === 'string' && chat.agentId ? chat.agentId : null,
     agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined,
-    skills: typeof chat.skills === 'boolean' ? chat.skills : undefined
+    skills: typeof chat.skills === 'boolean' ? chat.skills : undefined,
+    presetId: typeof chat.presetId === 'string' && chat.presetId ? chat.presetId : null,
+    selectedSkills: chat.selectedSkills === null ? null : (Array.isArray(chat.selectedSkills) ? chat.selectedSkills.map((n) => String(n)).filter(Boolean) : undefined)
   };
 }
 
@@ -229,6 +233,9 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
     merged.draft = typeof patch.draft === 'string' ? patch.draft : '';
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+    merged.agentId = (patch.agentId === null || patch.agentId === '') ? null : String(patch.agentId);
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
     // `null` means "all tools"; `[]` means "advertise no tools".

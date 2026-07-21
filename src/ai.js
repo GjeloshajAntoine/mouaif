@@ -1851,6 +1851,7 @@ async function streamChat(opts) {
     if (name === 'subagent') {
       const task = args && typeof args.task === 'string' ? args.task.trim() : '';
       const context = args && typeof args.context === 'string' ? args.context.trim() : '';
+      const agentName = args && typeof args.agent === 'string' ? args.agent.trim() : '';
       if (!task) {
         const r = { error: { code: 'EBADINPUT', message: 'task is required' } };
         return { ok: false, content: JSON.stringify(r), result: r };
@@ -1859,12 +1860,20 @@ async function streamChat(opts) {
         {
           role: 'system',
           content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
-        },
-        {
-          role: 'user',
-          content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
         }
       ];
+      if (agentName && callOpts && callOpts.projectDir) {
+        try {
+          const agentMod = require('./agents.js');
+          const selected = agentMod.loadOne(callOpts.projectDir, agentName);
+          if (selected) nestedMessages.push({ role: selected.role, content: selected.content });
+          else nestedMessages.push({ role: 'system', content: 'Requested project agent "' + agentName + '" was not found; continue as a focused subagent.' });
+        } catch { /* continue without project agent */ }
+      }
+      nestedMessages.push({
+        role: 'user',
+        content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
+      });
       const nestedEvents = [];
       const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
       const nestedEnabled = parentEnabled

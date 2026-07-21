@@ -17,6 +17,7 @@ The feature summary is assembled server-side and injected as its own `system` me
 - **Built-in tools** — shell, subagent, ask_user, file tools — showing their authorization mode (`off` / `ask` / `allowlist` / `allow`).
 - **MCP servers** — how many are running and stopped.
 - **Agent files** — whether AGENTS.md / CLAUDE.md etc. are injected.
+- **Agents** — discovered `.agents/agents/*/AGENT.md` personas and the selected agent, if any.
 - **Agent skills** — whether `.agents/skills/*/SKILL.md` files are injected.
 - **File tagging** — whether tags are configured in the project.
 - **Trace** — whether trace-to-file is on for this chat.
@@ -33,6 +34,7 @@ The model has a `list_features` tool available in every chat. It takes no argume
 | `tools` | `object` | Each built-in tool family (`shell`, `subagent`, `file`, `ask_user`) with `mode`, `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. |
 | `mcp` | `array` | Each MCP server with `name`, `slug`, `status`, `tools`, `authorization`. |
 | `agentFiles` | `object` | `enabled` (boolean), `fileNames` (the names looked for), `discovered` (files actually found with size). |
+| `agents` | `object` | `selected` (agent name or `null`) and `discovered` (agents found with name and title). |
 | `agentSkills` | `object` | `enabled` (boolean), `discovered` (skills found with name and title). |
 | `fileTagging` | `object` | `active` (boolean), `count` (number of tags). |
 | `trace` | `boolean` | Whether trace-to-file is on for this chat. |

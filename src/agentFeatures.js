@@ -91,6 +91,16 @@ function buildFeatureSummary(opts) {
     feat.push('[agent files] enabled — AGENTS.md / CLAUDE.md / .github/copilot-instructions.md');
   }
 
+  // --- Project agents ---
+  try {
+    const agents = require('./agents.js');
+    const discovered = agents.discover(projectDir);
+    const selected = agents.resolveSelected({ chat, projectDir });
+    if (discovered.length) {
+      feat.push('[agents] ' + discovered.length + ' available' + (selected ? ' — selected ' + selected : ''));
+    }
+  } catch { /* safe default */ }
+
   // --- Agent skills ---
   let skillsEnabled = false;
   try {
@@ -113,6 +123,19 @@ function buildFeatureSummary(opts) {
   if (tagsExist) {
     feat.push('[file tagging] active — tags found in project');
   }
+
+  // --- Agent presets ---
+  try {
+    const presets = require('./agentPresets.js');
+    const list = presets.listPresets(projectDir);
+    if (list.length) {
+      const selected = chat && chat.presetId ? ' — selected ' + chat.presetId : '';
+      feat.push('[presets] ' + list.length + ' available' + selected);
+    }
+    if (Array.isArray(chat && chat.selectedSkills)) {
+      feat.push('[selected skills] ' + chat.selectedSkills.length + ' skill(s) selected');
+    }
+  } catch { /* safe default */ }
 
   // --- Trace ---
   const traceOn = chat && chat.trace === true;
@@ -181,7 +204,7 @@ async function dispatchListFeatures(args, opts) {
   // MCP servers
   try {
     const mcpMod = require('./mcp.js');
-    const serverList = mcpMod.listComposedToolSpecs ? mcpMod.listMcpServers(projectDir) : [];
+    const serverList = typeof mcpMod.listServers === 'function' ? mcpMod.listServers(projectDir) : [];
     if (Array.isArray(serverList)) {
       state.mcp = [];
       for (const s of serverList) {
@@ -206,6 +229,17 @@ async function dispatchListFeatures(args, opts) {
     state.agentFiles = { _error: e.message };
   }
 
+  // Project agents
+  try {
+    const agents = require('./agents.js');
+    state.agents = {
+      selected: agents.resolveSelected({ chat, projectDir }),
+      discovered: agents.load(projectDir).map(a => ({ name: a.name, title: a.title }))
+    };
+  } catch (e) {
+    state.agents = { _error: e.message };
+  }
+
   // Agent skills
   try {
     const skills = require('./skills.js');
@@ -215,6 +249,19 @@ async function dispatchListFeatures(args, opts) {
     };
   } catch (e) {
     state.agentSkills = { _error: e.message };
+  }
+
+  // Agent presets
+  try {
+    const presets = require('./agentPresets.js');
+    const list = presets.listPresets(projectDir);
+    state.agentPresets = {
+      available: list.map(p => ({ id: p.id, title: p.title, promptId: p.promptId, enabledTools: p.enabledTools, selectedSkills: p.selectedSkills })),
+      selected: (chat && chat.presetId) || null,
+      selectedSkills: (chat && chat.selectedSkills) || null
+    };
+  } catch (e) {
+    state.agentPresets = { _error: e.message };
   }
 
   // File tagging

@@ -32,6 +32,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
 - [Ask the user tool](features/ask-user-tool.md) — built-in `ask_user` tool the model can invoke to pause the chat and ask the user a structured question with 2-4 options. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. Binary authorization mode (`off` / `ask`).
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
+- [Agents](features/agents.md) — named project personas under `.agents/agents/*/AGENT.md`, selectable per chat and usable by delegated subagents.
 - [Agent skills](features/agent-skills.md) — project-scoped instruction files under `.agents/skills/*/SKILL.md`, injected into the upstream system context at stream time.
 - [iOS touch scroll](features/ios-touch-scroll.md) — make the chat transcript touch-scrollable on iOS Safari by removing every overflow layer between the transcript and the document (no `overflow: hidden` on `.app__main--flush` or `.chat-view`); the transcript is the only scroll container in the tree.
 - [Markdown renderer](features/markdown-renderer.md) — zero-dependency CommonMark renderer for assistant bubbles: tables, task lists, auto-links, backslash escapes, horizontal rules.
@@ -39,6 +40,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Tool tree](features/tool-tree.md) — compact hierarchical checkbox list for tool visibility, shared across chat view, project settings, and authorization flows. Auto-checks tools used in the current chat.
 - [@-mention autocomplete](features/at-mention.md) — type `@` in the chat composer to search and insert files, tools/actions, or the current agent model.
 - [Agent feature prompt and tool](features/agent-feature-prompt.md) — dynamic system context telling the model which features are enabled, plus a `list_features` tool for the full structured state on demand.
+- [Agent presets](features/agent-presets.md) — named bundles that combine a custom prompt, a tool filter, and per-skill selection into a reusable profile.
 
 ## Architectural decisions
 

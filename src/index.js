@@ -20,7 +20,9 @@ const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
 const agentFiles = require('./agentFiles.js');
 const agentFeatures = require('./agentFeatures.js');
+const agents = require('./agents.js');
 const skills = require('./skills.js');
+const agentPresets = require('./agentPresets.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
 const shellTool = require('./tools/shell.js');
@@ -340,9 +342,19 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handlePrompts(req, res, parsed);
   }
 
+  // Project agents (project-scoped, read-only)
+  if (urlPath === '/api/agents' || urlPath.startsWith('/api/agents/')) {
+    return handleAgents(req, res, parsed);
+  }
+
   // Agent skills (project-scoped, read-only)
   if (urlPath === '/api/skills' || urlPath.startsWith('/api/skills/')) {
     return handleSkills(req, res, parsed);
+  }
+
+  // Agent presets (project-scoped, CRUD)
+  if (urlPath === '/api/presets' || urlPath.startsWith('/api/presets/')) {
+    return handlePresets(req, res, parsed);
   }
 
   // Tool Authorization API
@@ -957,8 +969,8 @@ async function handleChats(req, res, parsed) {
         } catch { /* custom prompt stays null */ }
       }
       // The combined text mirrors the order handleChatStream uses:
-      // profile system message first, then agent files, then the custom
-      // prompt.
+      // profile system message first, then agent files, selected agent,
+      // skills, then the custom prompt.
       const parts = [];
       if (profile && profile.systemMessage) parts.push(profile.systemMessage);
       let agentFilesList = null;
@@ -969,19 +981,42 @@ async function handleChats(req, res, parsed) {
           for (const af of agentFilesList) parts.push(af.content);
         }
       } catch { /* agent files stay null */ }
+      let selectedAgent = null;
+      try {
+        selectedAgent = agents.loadSelected({ chat, projectDir: dir });
+        if (selectedAgent) parts.push(selectedAgent.content);
+      } catch { /* selected agent stays null */ }
       let skillsList = null;
       try {
         if (skills.resolveEnabled({ chat, projectDir: dir })) {
-          skillsList = skills.load(dir);
+          const allSkills = skills.load(dir);
+          // Apply preset/chat selectedSkills filter.
+          let resolved = null;
+          try { resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat }); } catch {}
+          const selectedNames = (resolved && resolved.selectedSkills);
+          skillsList = selectedNames ? allSkills.filter(s => selectedNames.includes(s.name)) : allSkills;
           for (const s of skillsList) parts.push(s.content);
         }
       } catch { /* skills stay null */ }
       if (prompt && prompt.content) parts.push(prompt.content);
+      // Include preset info in the system-prompt response.
+      let presetInfo = null;
+      try {
+        const resolved = agentPresets.resolvePresetFields({ projectDir: dir, chat });
+        presetInfo = {
+          presetId: chat && chat.presetId || null,
+          resolvedPromptId: resolved && resolved.promptId,
+          resolvedEnabledTools: resolved && resolved.enabledTools,
+          resolvedSelectedSkills: resolved && resolved.selectedSkills
+        };
+      } catch { /* preset info stays null */ }
       return sendJSON(res, 200, {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        agent: selectedAgent ? { name: selectedAgent.name, title: selectedAgent.title } : null,
         skills: skillsList ? skillsList.map(s => ({ name: s.name, title: s.title })) : null,
         prompt,
+        preset: presetInfo,
         text: parts.join('\n\n')
       });
     } catch (e) {
@@ -1025,6 +1060,7 @@ async function handleChats(req, res, parsed) {
       }
       try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
       if (fileToolsEnabled) {
         try {
           const fileTools = require('./tools/files.js');
@@ -1271,18 +1307,48 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without agent files */ }
+  // Project agent (.agents/agents/<name>/AGENT.md). When selected on
+  // the chat or project, its instructions are injected after global
+  // agent files and before skills.
+  try {
+    const selectedAgent = agents.loadSelected({ chat, projectDir });
+    if (selectedAgent) {
+      upstreamMessages.push({ role: selectedAgent.role, content: selectedAgent.content });
+      if (traceStream) {
+        trace.write(traceStream, 'agent', { name: selectedAgent.name, title: selectedAgent.title });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without selected agent */ }
+
+  // Resolve preset fields if the chat references a preset. The preset
+  // can override promptId, enabledTools, and selectedSkills. Chat-level
+  // values take precedence over preset values.
+  let resolvedPreset = null;
+  try {
+    if (chat.presetId || chat.selectedSkills) {
+      resolvedPreset = agentPresets.resolvePresetFields({ projectDir, chat });
+    }
+  } catch { /* non-fatal; stream proceeds without preset resolution */ }
+
   // Agent skills (projectDir/.agents/skills/*/SKILL.md). Discovered
   // read-only from the canonical skills directory, injected after the
   // agent files and before the tagged files and custom prompt, so
   // they sit close to the agent-instruction context. Each skill rides
   // as its own system message. A trace line records what was injected.
+  // When a preset or chat has selectedSkills, only those named skills
+  // are injected; null means all discovered skills.
+  let injectedSkills = [];
   try {
-    const injected = skills.resolveEnabled({ chat, projectDir }) ? skills.load(projectDir) : [];
-    if (injected.length) {
-      for (const s of injected) upstreamMessages.push({ role: s.role, content: s.content });
-      if (traceStream) {
+    if (skills.resolveEnabled({ chat, projectDir })) {
+      const allSkills = skills.load(projectDir);
+      const selectedNames = (resolvedPreset && resolvedPreset.selectedSkills);
+      injectedSkills = selectedNames
+        ? allSkills.filter(s => selectedNames.includes(s.name))
+        : allSkills;
+      for (const s of injectedSkills) upstreamMessages.push({ role: s.role, content: s.content });
+      if (traceStream && injectedSkills.length) {
         trace.write(traceStream, 'skills', {
-          skills: injected.map(s => ({ name: s.name, title: s.title }))
+          skills: injectedSkills.map(s => ({ name: s.name, title: s.title }))
         });
       }
     }
@@ -1320,9 +1386,10 @@ async function handleChatStream(req, res, chatId) {
       }
     }
   } catch { /* non-fatal; stream proceeds without tagged files */ }
-  if (chat.promptId) {
+  const effectivePromptId = (resolvedPreset && resolvedPreset.promptId) || chat.promptId;
+  if (effectivePromptId) {
     try {
-      const prompt = prompts.getPrompt(projectDir, chat.promptId);
+      const prompt = prompts.getPrompt(projectDir, effectivePromptId);
       if (prompt && prompt.content) {
         upstreamMessages.push({ role: prompt.role, content: prompt.content });
       }
@@ -1475,7 +1542,9 @@ async function handleChatStream(req, res, chatId) {
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
-    enabledTools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null),
+    // When a preset resolves enabledTools, it takes effect unless the
+    // chat has its own explicit tools array.
+    enabledTools: (resolvedPreset && resolvedPreset.enabledTools) || (chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools : null)),
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.
@@ -2650,6 +2719,15 @@ async function handleTools(req, res, parsed) {
       });
     } catch { /* subagent module unavailable; omit */ }
     try {
+      const af = require('./agentFeatures.js');
+      tools.push({
+        name: 'list_features',
+        kind: 'native',
+        source: 'features',
+        description: (af.LIST_FEATURES_SPEC && af.LIST_FEATURES_SPEC.function && af.LIST_FEATURES_SPEC.function.description) || 'Describe mouaif feature state.'
+      });
+    } catch { /* feature module unavailable; omit */ }
+    try {
       const ask = require('./tools/ask.js');
       tools.push({
         name: 'ask_user',
@@ -2868,6 +2946,52 @@ async function handleFeatures(req, res, parsed) {
   }
 }
 
+// ---- Project agents API -----------------------------------------------
+// Project-scoped agents discovered from <projectDir>/.agents/agents/*/AGENT.md.
+// Read-only: the server never creates, edits, or deletes agent files.
+// Routes:
+//   GET /api/agents?projectDir=<abs>          -> { agents: [{ name, title, size }] }
+//   GET /api/agents/:name?projectDir=<abs>    -> { agent: { name, title, content } }
+
+function handleAgents(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
+
+  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+  if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+
+  if (urlPath === '/api/agents') {
+    try {
+      const loaded = agents.load(dir);
+      const byName = new Map(loaded.map(a => [a.name, a]));
+      const list = agents.discover(dir).map(a => {
+        const found = byName.get(a.name);
+        return { name: a.name, title: found ? found.title : a.name, size: a.size };
+      });
+      return sendJSON(res, 200, { agents: list });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  const getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
+  if (getMatch) {
+    const name = decodeURIComponent(getMatch[1]);
+    try {
+      const loaded = agents.loadOne(dir, name);
+      if (!loaded) return sendJSON(res, 404, { error: 'Agent not found', name });
+      return sendJSON(res, 200, { agent: loaded });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'agents' });
+}
+
 // ---- Agent skills API --------------------------------------------------
 // Project-scoped skills discovered from <projectDir>/.agents/skills/*/SKILL.md.
 // Read-only: the server never creates, edits, or deletes skill files.
@@ -2919,6 +3043,121 @@ function handleSkills(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'skills' });
+}
+
+// ---- Agent Presets API ---------------------------------------------------
+// Per-project agent presets: named bundles that combine a custom prompt,
+// tool filter, and skill selection. CRUD endpoints match the prompts API
+// pattern. The preset itself is also applied via the chat PATCH endpoint.
+//
+// Endpoints:
+//   GET    /api/presets?projectDir=<abs>          -> { presets: [...] }
+//   GET    /api/presets/:id?projectDir=<abs>      -> { preset } | 404
+//   POST   /api/presets                           { projectDir, title, promptId?, enabledTools?, selectedSkills? }
+//   PATCH  /api/presets/:id                       { projectDir, title?, promptId?, enabledTools?, selectedSkills? }
+//   DELETE /api/presets/:id?projectDir=<abs>      -> { ok, removed }
+
+async function handlePresets(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  function presetError(e) {
+    if (e && e.code === 'EBADINPUT') return 400;
+    return 500;
+  }
+
+  function dirFromQueryOrBody(body) {
+    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    return fromQuery || fromBody;
+  }
+
+  // GET /api/presets?projectDir=<abs>
+  if (urlPath === '/api/presets' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { presets: agentPresets.listPresets(dir) });
+    } catch (e) {
+      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/presets/:id?projectDir=<abs>
+  let getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
+  if (getMatch && method === 'GET') {
+    const id = decodeURIComponent(getMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const preset = agentPresets.getPreset(dir, id);
+      if (!preset) return sendJSON(res, 404, { error: 'Preset not found', id });
+      return sendJSON(res, 200, { preset });
+    } catch (e) {
+      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/presets   body: { projectDir, title, promptId?, enabledTools?, selectedSkills? }
+  if (urlPath === '/api/presets' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = dirFromQueryOrBody(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const preset = agentPresets.createPreset(dir, body);
+      return sendJSON(res, 201, { preset });
+    } catch (e) {
+      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'EBADINPUT' });
+    }
+  }
+
+  // PATCH /api/presets/:id   body: { projectDir, title?, promptId?, enabledTools?, selectedSkills? }
+  getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
+  if (getMatch && method === 'PATCH') {
+    const id = decodeURIComponent(getMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = dirFromQueryOrBody(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const preset = agentPresets.updatePreset(dir, id, body);
+      if (!preset) return sendJSON(res, 404, { error: 'Preset not found', id });
+      return sendJSON(res, 200, { preset });
+    } catch (e) {
+      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'EBADINPUT' });
+    }
+  }
+
+  // DELETE /api/presets/:id?projectDir=<abs>
+  getMatch = urlPath.match(/^\/api\/presets\/([^/]+)$/);
+  if (getMatch && method === 'DELETE') {
+    const id = decodeURIComponent(getMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const removed = agentPresets.deletePreset(dir, id, {
+        onRemoved: (presetId) => {
+          // Cascade-clear presetId on every chat in the project.
+          const all = chats.listChats(dir);
+          for (const c of all) {
+            if (c && c.presetId === presetId) {
+              chats.updateChat(dir, c.id, { presetId: null });
+            }
+          }
+        }
+      });
+      if (!removed) return sendJSON(res, 404, { error: 'Preset not found', id });
+      return sendJSON(res, 200, { ok: true, removed: id });
+    } catch (e) {
+      return sendJSON(res, presetError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'presets' });
 }
 
 // ---- MCP API ------------------------------------------------------------
