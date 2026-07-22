@@ -14,7 +14,7 @@ The picker code lives in [src/web/src/components/chat/modelPicker.js](../../src/
    - On wider screens it floats below the head with `left: 6px; right: 6px`.
 3. Type in the search input to filter by `id` or upstream `label` (case-insensitive substring).
 4. Tap a provider chip (`All`, `openrouter`, `anthropic`, …) to scope the list. The chip's count is the unfiltered model count, so a chip showing `0` means that provider has no known models regardless of the current search.
-5. Tap a row to pick. The head trigger label updates, the popover closes, and `PATCH /api/chats/:id` writes `{ providerId, modelId }`.
+5. Tap a row to pick. On touch screens the picker handles touch / pointer down before iOS can consume the first tap as "hide keyboard", so a visible row is selectable even while the search keyboard is open. The head trigger label updates, the popover closes, and `PATCH /api/chats/:id` writes `{ providerId, modelId }`.
 6. Tap the head's ↻ button (or the action inside the empty-state card) to pull the live catalog from every configured provider in parallel; the status line shows `refreshing models…` then `models: N` on success.
 
 `Escape` closes the popover and returns focus to the trigger button. The picker is fully usable with a single tap; the row is a native `<button>` so a desktop keyboard user can also `Tab` between rows and press `Enter` to pick. (Arrow-key navigation across rows is a follow-up.)

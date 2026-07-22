@@ -217,10 +217,29 @@ export function renderModelPicker(state, refs) {
       meta.className = 'chat-view__picker-row-meta';
       meta.textContent = m.ghost ? 'unavailable' : m.provider;
       row.appendChild(meta);
-      row.addEventListener('click', () => {
+      let picked = false;
+      const pick = () => {
+        if (picked) return;
+        picked = true;
         if (state._onPickerPick) state._onPickerPick(m.provider, m.id);
         else onPickerPick(state, refs, m.provider, m.id, state._updateChat);
+      };
+      row.addEventListener('pointerdown', (ev) => {
+        // On iOS Safari, tapping a button while the search input owns
+        // the keyboard can be swallowed as "dismiss keyboard" instead
+        // of activating the row. Pick on touch/pencil down so the first
+        // tap selects the model, including rows near the keyboard.
+        if (ev.pointerType === 'mouse') return;
+        ev.preventDefault();
+        pick();
       });
+      row.addEventListener('touchstart', (ev) => {
+        // Fallback for older Safari builds without Pointer Events.
+        if (window.PointerEvent) return;
+        ev.preventDefault();
+        pick();
+      }, { passive: false });
+      row.addEventListener('click', pick);
       section.appendChild(row);
     }
     list.appendChild(section);
