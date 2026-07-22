@@ -347,10 +347,12 @@ function syncKeyboardInset(pop) {
   const vv = window.visualViewport;
   if (!vv) {
     pop.style.removeProperty('--model-picker-keyboard-inset');
+    pop.style.removeProperty('--model-picker-viewport-top');
     return;
   }
   const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
   pop.style.setProperty('--model-picker-keyboard-inset', inset.toFixed(0) + 'px');
+  pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
 }
 
 function bindKeyboardInset(pop) {
@@ -374,6 +376,7 @@ function unbindKeyboardInset(pop) {
   if (!pop) return;
   if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
   pop.style.removeProperty('--model-picker-keyboard-inset');
+  pop.style.removeProperty('--model-picker-viewport-top');
 }
 
 // openModelPicker / closeModelPicker

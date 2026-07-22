@@ -309,7 +309,7 @@
 @media (max-width: 480px) {
   .chat-view__picker {
     position: fixed;
-    top: calc(48px + var(--safe-top, 0px));
+    top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));
     left: 0;
     right: 0;
     bottom: var(--model-picker-keyboard-inset, 0px);
