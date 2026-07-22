@@ -65,12 +65,12 @@ function markToolUsed(state, refs, toolName) {
 // tool_result card.
 export async function runShellCommand(cmd, state, refs) {
   const { projectDir, chatId } = state.props;
+  const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   refs.promptInput.current.value = '';
   refs._autoresize();
   appendToolCallCard({ id: callId, name: 'shell', args: { cmd } }, refs);
   setChatStatus(refs, 'running shell…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
-  const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   async function requestShell() {
     return fetchJson('/api/tools/shell', {
       method: 'POST',
