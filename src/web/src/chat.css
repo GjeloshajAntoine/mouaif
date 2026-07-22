@@ -312,9 +312,9 @@
     top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));
     left: 0;
     right: 0;
-    bottom: var(--model-picker-keyboard-inset, 0px);
+    bottom: auto;
     max-height: none;
-    height: auto;
+    height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
   }
@@ -425,9 +425,11 @@
   color: var(--on-accent);
 }
 .chat-view__picker-list {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 4px 0 calc(4px + var(--safe-bottom, 0px));
   scrollbar-width: thin;
 }

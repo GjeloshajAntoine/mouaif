@@ -217,29 +217,10 @@ export function renderModelPicker(state, refs) {
       meta.className = 'chat-view__picker-row-meta';
       meta.textContent = m.ghost ? 'unavailable' : m.provider;
       row.appendChild(meta);
-      let picked = false;
-      const pick = () => {
-        if (picked) return;
-        picked = true;
+      row.addEventListener('click', () => {
         if (state._onPickerPick) state._onPickerPick(m.provider, m.id);
         else onPickerPick(state, refs, m.provider, m.id, state._updateChat);
-      };
-      row.addEventListener('pointerdown', (ev) => {
-        // On iOS Safari, tapping a button while the search input owns
-        // the keyboard can be swallowed as "dismiss keyboard" instead
-        // of activating the row. Pick on touch/pencil down so the first
-        // tap selects the model, including rows near the keyboard.
-        if (ev.pointerType === 'mouse') return;
-        ev.preventDefault();
-        pick();
       });
-      row.addEventListener('touchstart', (ev) => {
-        // Fallback for older Safari builds without Pointer Events.
-        if (window.PointerEvent) return;
-        ev.preventDefault();
-        pick();
-      }, { passive: false });
-      row.addEventListener('click', pick);
       section.appendChild(row);
     }
     list.appendChild(section);
@@ -357,20 +338,19 @@ function renderPickerEmpty(state, refs, list, q, providerFilter) {
   list.appendChild(empty);
 }
 
-// iOS keeps `position: fixed; bottom: 0` pinned to the layout
-// viewport while the on-screen keyboard shrinks the visual viewport.
-// Track that shrink as a CSS var so the sheet ends above the keyboard
-// and the last model rows remain tappable while search is focused.
+// iOS keeps fixed-position sheets sized to the layout viewport while
+// the on-screen keyboard shrinks the visual viewport. Size this sheet
+// from visualViewport.height instead, so its own list is the only
+// scroll container and bottom rows can be reached with the keyboard up.
 function syncKeyboardInset(pop) {
   if (!pop) return;
   const vv = window.visualViewport;
   if (!vv) {
-    pop.style.removeProperty('--model-picker-keyboard-inset');
+    pop.style.removeProperty('--model-picker-viewport-height');
     pop.style.removeProperty('--model-picker-viewport-top');
     return;
   }
-  const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  pop.style.setProperty('--model-picker-keyboard-inset', inset.toFixed(0) + 'px');
+  pop.style.setProperty('--model-picker-viewport-height', vv.height.toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
 }
 
@@ -394,7 +374,7 @@ function bindKeyboardInset(pop) {
 function unbindKeyboardInset(pop) {
   if (!pop) return;
   if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
-  pop.style.removeProperty('--model-picker-keyboard-inset');
+  pop.style.removeProperty('--model-picker-viewport-height');
   pop.style.removeProperty('--model-picker-viewport-top');
 }
 
