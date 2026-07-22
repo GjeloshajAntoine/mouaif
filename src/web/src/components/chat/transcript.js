@@ -300,7 +300,18 @@ const TOOL_VERBS = {
 
 function toolCardLabel(toolName) {
   const name = normalizeToolName(toolName);
-  return TOOL_VERBS[name] || name || 'tool';
+  if (TOOL_VERBS[name]) return TOOL_VERBS[name];
+  if (name && name.startsWith('mcp__')) {
+    const parts = name.split('__').filter(Boolean);
+    return parts[parts.length - 1] || name;
+  }
+  return name || 'tool';
+}
+
+function shortToolText(text, max) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!s || s.length <= max) return s;
+  return s.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
 }
 
 // buildToolCardHead(toolName, args, pillClass, pillText, resultSummary)
@@ -335,7 +346,8 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   if (argText) {
     const argsEl = document.createElement('pre');
     argsEl.className = 'tool-card__args';
-    argsEl.textContent = argText;
+    argsEl.textContent = shortToolText(argText, 220);
+    if (argsEl.textContent !== argText) argsEl.title = argText;
     head.appendChild(argsEl);
   }
   // Collapsed result-summary: shown only when the card is a finished
@@ -456,9 +468,11 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     const callName = document.createElement('span');
     callName.className = 'tool-card__subagent-tool-name';
     callName.textContent = toolCardLabel(data.name);
+    const callArgsText = formatToolArgs(data.args, data.name);
     const callArgs = document.createElement('pre');
     callArgs.className = 'tool-card__subagent-text';
-    callArgs.textContent = formatToolArgs(data.args, data.name);
+    callArgs.textContent = shortToolText(callArgsText, 160);
+    if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
     const status = document.createElement('span');
     status.className = 'tool-card__pill tool-card__pill--busy';
     status.textContent = 'running…';
@@ -573,9 +587,11 @@ function appendSubagentNestedToolCall(parent, tc) {
   const rawArgs = fn.arguments != null ? fn.arguments : (tc && tc.args);
   let parsedArgs = rawArgs;
   if (typeof rawArgs === 'string') { try { parsedArgs = JSON.parse(rawArgs); } catch { /* keep raw string */ } }
-  callArgs.textContent = typeof parsedArgs === 'object' && parsedArgs !== null
+  const callArgsText = typeof parsedArgs === 'object' && parsedArgs !== null
     ? formatToolArgs(parsedArgs, fn.name)
     : String(rawArgs || '');
+  callArgs.textContent = shortToolText(callArgsText, 160);
+  if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
   call.appendChild(callName); call.appendChild(callArgs);
   parent.appendChild(call);
   return call;
