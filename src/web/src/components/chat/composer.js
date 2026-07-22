@@ -9,15 +9,15 @@
 
 // autoresize(refs)
 //
-// 36px floor matches the CSS min-height on .chat-view__textarea.
-// It leaves enough vertical slack for iOS Safari so descenders are not
-// clipped in the bottom composer. 120px ceiling is the max multi-line
-// height before the textarea scrolls.
+// 32px floor matches the CSS min-height on .chat-view__textarea
+// and the send button's 32px square, so the single-line composer
+// row lines up. 120px ceiling is the max multi-line height
+// before the textarea scrolls.
 export function autoresize(refs) {
   const el = refs.promptInput.current;
   if (!el) return;
   el.style.height = 'auto';
-  const next = Math.min(120, Math.max(36, el.scrollHeight));
+  const next = Math.min(120, Math.max(32, el.scrollHeight));
   el.style.height = next + 'px';
   // overflow-y is `hidden` in CSS so no scrollbar ever overlaps the
   // text while the box exactly fits the content. Once the content
