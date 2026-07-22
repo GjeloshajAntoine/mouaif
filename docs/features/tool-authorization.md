@@ -43,13 +43,14 @@ A project with no authorization mode falls back to the app-level value, then to 
 
 ### MCP tools — layered, per-server and per-tool
 
-MCP calls resolve through a three-level gate persisted in `<projectDir>/.mcp.json` under `authorization`, most specific first:
+MCP calls resolve through a four-level gate, most specific first:
 
-1. `authorization.tools.<composedName>` — one tool on one server (`mcp__filesystem__write_file`).
-2. `authorization.servers.<serverSlug>` — every tool on that server.
-3. `authorization` (mode + allowlist) — the shared fallback for every MCP call.
+1. `authorization.tools.<composedName>` — one tool on one server (`mcp__filesystem__write_file`). *(project `.mcp.json`)*
+2. `authorization.servers.<serverSlug>` — every tool on that server. *(project `.mcp.json`)*
+3. `authorization` (mode + allowlist) — the project's default for every MCP call. *(project `.mcp.json`)*
+4. `mcp.authorization` (mode + allowlist) — the app-level default, the fallback for every project that has no project default. *(app SQLite store)*
 
-The first entry with a `mode` wins; `ask` counts as a decision (so a per-server `ask` can tighten a shared `allow`). A `null` value in a PUT patch deletes the entry, restoring inheritance. `off` at any level hides exactly the specs it covers — one tool, one server, or every `mcp__*` spec — at zero prompt-token cost.
+The first entry with a `mode` wins; `ask` counts as a decision (so a per-server `ask` can tighten a project `allow`, and a project default can tighten the app default). A `null` value in a PUT patch deletes a project entry, restoring inheritance. `off` at any level hides exactly the specs it covers — one tool, one server, or every `mcp__*` spec — at zero prompt-token cost. The app layer carries only the single shared gate (mode + allowlist); per-server / per-tool maps are project-scoped, because the app store has no server registry.
 
 ```jsonc
 // <projectDir>/.mcp.json
@@ -87,7 +88,9 @@ The composer `/shell` slash command uses the same gate. A `/shell` invocation in
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
 | `GET`  | `/api/tools/authorization?projectDir=<abs>` | — | `{ tools: { shell: { mode, allowlist, defaultTimeoutMs, maxTimeoutMs, source: 'project' | 'app' | 'default' }, ... }, mcp: { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composedName>: { mode, allowlist? } } } }` |
+| `GET`  | `/api/tools/authorization?scope=app` | — | `{ mcp: { mode, allowlist, servers: {}, tools: {} } }` — the app-level MCP gate only (server/tool maps are always empty at the app layer) |
 | `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... }, mcp: { mode?, servers?, tools? } }` | `{ tools: { ... }, mcp: { ... } }` (echo) |
+| `PUT`  | `/api/tools/authorization` | `{ scope: 'app', mcp: { mode?, allowlist? } }` | `{ mcp: { ... } }` — writes the app-level MCP gate; no `projectDir`, and `servers` / `tools` are rejected |
 | `GET`  | `/api/tools/authorization/pending?projectDir=<abs>&chatId=<id>` | — | `{ pending: [{ callId, tool, cmd?, path?, query?, summary?, timeoutMs?, projectDir }] }` |
 | `POST` | `/api/tools/authorization/cancel` | `{ projectDir, chatId }` | `{ ok: true, cancelled: <number>, running: <boolean> }` |
 | `POST` | `/api/tools/authorization/decision` | `{ chatId, callId, decision: 'allow-once' | 'allow-session' | 'deny' }` | `{ ok: true }` |
@@ -110,10 +113,10 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 
 ## Implementation notes
 
-- Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`.
+- Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`. `getAppMcpAuthorization()` / `setAppMcpAuthorization(patch)` read and write the app-level MCP gate (`mcp.authorization` in the app store), which `mcpLayeredConfig` already consumes as layer 4.
 - The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
 - The chat touch route clears in-memory grants before updating `lastOpenedAt`; grants never enter `.mouaif.json`.
-- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under the **Tools** tree. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). The allowlist editor is a `<details>` disclosure shown only in ask mode; entering patterns writes `mode: "allowlist"` and clearing them flips back to `ask`, so the persisted file and the UI never disagree. Picking **Allow** clears the stored patterns. `ask_user` stays binary (`off` / `ask`). The MCP surface is layered: `src/web/src/components/SettingsMcp.jsx` renders one **Off / Ask / Allow** row per configured server (its override wins over the shared fallback) plus a **Shared fallback** row, and the server edit view (`SettingsMcpEditView`) adds a per-tool **Inherit / Off / Ask / Allow** select under "Discovered tools". All write through `PUT /api/tools/authorization` with `{ mcp: { mode?, servers?, tools? } }`.
+- The Settings UI lives in `src/web/src/components/SettingsProject.jsx` under the **Tools** tree. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). The allowlist editor is a `<details>` disclosure shown only in ask mode; entering patterns writes `mode: "allowlist"` and clearing them flips back to `ask`, so the persisted file and the UI never disagree. Picking **Allow** clears the stored patterns. `ask_user` stays binary (`off` / `ask`). The MCP surface is layered: `src/web/src/components/SettingsMcp.jsx` renders, on the project page, one **Off / Ask / Allow** row per configured server (its override wins over the project default) plus a **This project's default** row, and the server edit view (`SettingsMcpEditView`) adds a per-tool **Inherit / Off / Ask / Allow** select under "Discovered tools"; on the app page it renders a single **Default permission** row (the app-level gate). Project rows write `{ projectDir, mcp: { mode?, servers?, tools? } }`; the app row writes `{ scope: 'app', mcp: { mode?, allowlist? } }`.
 - The Authorization card in the chat composer exposes Allow once, Allow for this session, and Deny as tap-accessible controls with no hover-only affordance.
 
 ## Related

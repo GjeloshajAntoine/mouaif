@@ -278,7 +278,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     if (r.status === 200) {
       currentProject = r.body.project || {};
       if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
-      if (promptSizeStatus.current) promptSizeStatus.current.textContent = 'inheriting app default';
+      if (promptSizeStatus.current) promptSizeStatus.current.textContent = 'following the app default';
     } else if (promptSizeStatus.current) {
       promptSizeStatus.current.textContent = 'HTTP ' + r.status;
     }
@@ -805,18 +805,21 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       h('div', { class: 'settings-project__hero' },
         h('div', { class: 'settings-project__eyebrow' }, 'This project'),
         h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
-        h('p', { class: 'settings-project__lede' }, 'Saved in ', h('code', null, '.mouaif.json'), '. These choices override app defaults for this folder only.'),
+        h('p', { class: 'settings-project__lede' }, 'Saved in ', h('code', null, '.mouaif.json'), ', committed with the project. Anything left on its default here follows the app-level setting.'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
-      // ---- Project ----------------------------------------------------
+      // ---- Project overrides ------------------------------------------
+      // Settings that live in .mouaif.json and win over the app-level
+      // value for this folder only (decisions §2). The select's "Inherit
+      // app default" option is the visible end of the resolution chain.
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Project defaults', h('span', { class: 'group__title-note' }, 'Overrides app defaults')),
+        h('div', { class: 'group__title' }, 'Chat defaults', h('span', { class: 'group__title-note' }, 'For chats in this project')),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item' },
             h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Default prompt style'),
-              h('div', { class: 'settings-project__item-note' }, 'How much tool schema and instruction text new chats get. Smaller = faster, less context used. Per-chat override available.'),
-              h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Inherits the app default until changed here')
+              h('div', { class: 'settings-project__item-note' }, 'How much tool schema and instruction text new chats get. Smaller = faster, less context used. A single chat can still pick its own.'),
+              h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Following the app default until you change it here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
               h('option', { value: '' }, 'Inherit app default'),
@@ -824,8 +827,18 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('option', { value: 'average' }, 'Average — full tools, recommended'),
               h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
             )
-          ),
-          h('li', { class: 'settings-project__item settings-project__item--col', hidden: !traceCardVisible },
+          )
+        )
+      ),
+
+      // ---- This chat --------------------------------------------------
+      // Actions that apply to the chat the user came from (?chatId=…),
+      // not to the project. Split out of the overrides group so the two
+      // scopes are not confused. Hidden when there is no chat in context.
+      h('div', { class: 'group', hidden: !traceCardVisible },
+        h('div', { class: 'group__title' }, 'This chat', h('span', { class: 'group__title-note' }, 'Only the chat you came from')),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
             h('div', { class: 'settings-project__item-row' },
               h('div', { class: 'settings-project__item-main' },
                 h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
@@ -982,29 +995,25 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('li', null,
             h('a', {
               ref: mcpCard,
-              class: 'card',
+              class: 'group__row',
               'aria-label': 'MCP servers',
               href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir.current || '')
             },
-              h('div', { class: 'card__main' },
-                h('div', { class: 'card__title' }, 'MCP servers'),
-                h('div', { ref: mcpSummary, class: 'card__summary' }, '—')
-              ),
-              h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+              h('span', { class: 'group__row-label' }, 'MCP servers'),
+              h('span', { ref: mcpSummary, class: 'group__row-detail' }, '—'),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
           ),
           h('li', null,
             h('a', {
               ref: promptsCard,
-              class: 'card',
+              class: 'group__row',
               'aria-label': 'Custom prompts',
               href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
             },
-              h('div', { class: 'card__main' },
-                h('div', { class: 'card__title' }, 'Custom prompts'),
-                h('div', { ref: promptsSummary, class: 'card__summary' }, '—')
-              ),
-              h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+              h('span', { class: 'group__row-label' }, 'Custom prompts'),
+              h('span', { ref: promptsSummary, class: 'group__row-detail' }, '—'),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
           )
         )

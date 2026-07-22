@@ -7,9 +7,9 @@
 
 ## Overview
 
-`mouaif` ships an **MCP client** that talks to any [Model Context Protocol](https://modelcontextprotocol.io/) server the user configures. MCP servers are the third-party tool ecosystem — Filesystem, Git, Postgres, Playwright, custom internal tools — they speak a single JSON-RPC-over-stdio protocol and advertise their tools. Once a server is configured for a project, the AI client surfaces its `tools/list` as part of the model's tool set, intercepts `tool_call` events, dispatches them to the running MCP server, and feeds the result back as a `tool` message.
+`mouaif` ships an **MCP client** that talks to any [Model Context Protocol](https://modelcontextprotocol.io/) server the user configures. MCP servers are the third-party tool ecosystem — Filesystem, Git, Postgres, Playwright, custom internal tools — they speak JSON-RPC over stdio or Streamable HTTP and advertise their tools. Once a server is configured for a project, the AI client surfaces its `tools/list` as part of the model's tool set, intercepts `tool_call` events, dispatches them to the running MCP server, and feeds the result back as a `tool` message.
 
-The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to a single module ([src/mcp.js](../../src/mcp.js)) so adding the next transport (HTTP, WebSocket) is a localized change.
+The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to a single module ([src/mcp.js](../../src/mcp.js)) so MCP transport handling stays localized.
 
 ## Usage
 
@@ -24,8 +24,8 @@ A project sees the **union** of both scopes; a project entry whose slug matches 
 
 The two scopes have two homes in Settings, each its own page (no tabs):
 
-- **Settings → Application → MCP servers** (`#/settings/mcp`) — the app-wide list. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). A **Project servers** row at the bottom deep-links into a project's list by path.
-- **Settings → Active project → MCP servers** (`#/settings/mcp?projectDir=…`) — the merged view for that project: app entries first, each marked with an **app** / **project** badge, plus the per-server **Tool permissions** rows and the shared fallback gate (project-scoped, since the authorization maps live in `.mcp.json`).
+- **Settings → App defaults → MCP servers** (`#/settings/mcp`) — the app-wide list, available in every project. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). It also carries the single **Default permission** row (the app-level gate). A **Project servers** row at the bottom deep-links into a project's list by path.
+- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) — the merged view for that project: app entries first, each marked with an **app** / **project** badge, plus the per-server **Tool permissions** rows and the project default gate (per-server / per-tool maps live in `.mcp.json`; the project default falls through to the app default).
 
 ### Adding a server
 
@@ -33,10 +33,13 @@ The two scopes have two homes in Settings, each its own page (no tabs):
 2. Tap **+** to add a server. Fill in:
    - **Scope** — *App (all projects)* or *This project*. Fixed at creation; delete and re-add to move a server.
    - **Name** — a short label (e.g. `filesystem`).
-   - **Command** — the executable to spawn (e.g. `node`).
-   - **Arguments** — whitespace-separated arg list (e.g. `path/to/server.js --port 8080`).
-   - **Environment** — one `KEY=value` per line. Denylisted keys (`LD_PRELOAD`, `NODE_OPTIONS`, ...) are stripped from the parent env first, then your overrides are applied on top.
-   - **Working directory** — optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`. For an app-wide server started without a project context, a relative cwd resolves against the `mouaif` process cwd.
+   - **Transport** — `Stdio` for a local child process, or `HTTP` for an MCP Streamable HTTP endpoint.
+   - **Command** — stdio only; the executable to spawn (e.g. `node`).
+   - **Arguments** — stdio only; whitespace-separated arg list (e.g. `path/to/server.js --port 8080`).
+   - **Environment** — stdio only; one `KEY=value` per line. Denylisted keys (`LD_PRELOAD`, `NODE_OPTIONS`, ...) are stripped from the parent env first, then your overrides are applied on top.
+   - **HTTP URL** — HTTP only; the Streamable HTTP endpoint (for example `https://example.com/mcp`).
+   - **HTTP headers** — HTTP only; one `Name: value` or `Name=value` per line. Values are write-only in the API and UI so bearer tokens are not echoed back.
+   - **Working directory** — stdio only; optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`. For an app-wide server started without a project context, a relative cwd resolves against the `mouaif` process cwd.
    - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
 3. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 
@@ -75,13 +78,14 @@ The per-chat `tools` filter is the same field the native-tool chips use, so the 
 
 ### Authorization
 
-Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call** is routed through the MCP authorization gate (default `ask`), which is layered per project — most specific first:
+Server **startup is not gated** — adding a server is the user's explicit "I trust this binary" decision. Every **tool call** is routed through the MCP authorization gate (default `ask`), which is layered — most specific first:
 
-1. **Per tool** — an entry under `authorization.tools.<composedName>` (e.g. `mcp__filesystem__write_file`) gates that one tool.
-2. **Per server** — an entry under `authorization.servers.<serverSlug>` gates every tool on that server.
-3. **Shared fallback** — the top-level `authorization` mode gates every MCP call that has no more specific override.
+1. **Per tool** — an entry under the project's `authorization.tools.<composedName>` (e.g. `mcp__filesystem__write_file`) gates that one tool.
+2. **Per server** — an entry under the project's `authorization.servers.<serverSlug>` gates every tool on that server.
+3. **Project default** — the project's top-level `authorization` mode (in `.mcp.json`) gates every MCP call with no more specific override.
+4. **App default** — the app store's `mcp.authorization` mode is the fallback for every project that has not set its own project default. This is what **Settings → App defaults → MCP servers** edits.
 
-The first layer with a `mode` wins; `ask` counts as a decision, so a per-server `ask` can tighten a shared `allow`. Every layer accepts the same modes:
+The app store has no server registry, so the app layer carries only the single shared gate (mode + allowlist); per-server and per-tool rules are project-scoped. The first layer with a `mode` wins; `ask` counts as a decision, so a per-server `ask` can tighten a project `allow`, and a project default can tighten the app default. Every layer accepts the same modes:
 
 | Mode | Behavior |
 |---|---|
@@ -90,9 +94,14 @@ The first layer with a `mode` wins; `ask` counts as a decision, so a per-server 
 | `allowlist` | Calls whose summary matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask**. |
 | `allow` | Every covered call is auto-approved until the user flips the mode back. |
 
-The Settings UI mirrors the layering: **Settings → MCP** shows one **Off / Ask / Allow** row per configured server (with a **Use shared fallback** button when an override is set) plus a **Shared fallback** row; the per-server editor adds an **Inherit / Off / Ask / Allow** select under each discovered tool. All write through `PUT /api/tools/authorization` with `{ mcp: { mode?, servers?, tools? } }` — a `null` value clears that override so the next layer up applies.
+The Settings UI mirrors the layering:
 
-The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses. The allowlist matches against the summary `"<composedName> <firstStringArg>"` (e.g. `mcp__filesystem__read_file src/index.js`), so a pattern can pin either the tool (`^mcp__fs__read_file$`) or the resource it touches (`^mcp__fs__read_file src/.*`). Choosing **Always allow** on an MCP prompt pins only that one tool to `mode: "allow"` under `authorization.tools` — it never flips the shared gate. Everything is persisted in `.mcp.json` under `authorization` (written by `setAuthorization`), so it can be committed and reviewed alongside the server entries.
+- **Settings → App defaults → MCP servers** (`#/settings/mcp`) shows a single **Default permission** row — one **Off / Ask / Allow** control (plus its Auto-approve list) that writes the app-level gate. It has no per-server rows because the app store has no server registry.
+- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) shows one **Off / Ask / Allow** row per configured server (with a **Use project default** button when an override is set) plus a **This project's default (all MCP servers)** row; the per-server editor adds an **Inherit / Off / Ask / Allow** select under each discovered tool. Leaving the project default on **Ask** falls through to the app default.
+
+The project rows write through `PUT /api/tools/authorization` with `{ projectDir, mcp: { mode?, servers?, tools? } }`; the app row writes `{ scope: 'app', mcp: { mode?, allowlist? } }`. A `null` value in a `servers` / `tools` map clears that override so the next layer up applies. `GET /api/tools/authorization?scope=app` reads the app-level gate on its own.
+
+The authorization module ([docs/features/tool-authorization.md](./tool-authorization.md)) is the same gate every tool uses. The allowlist matches against the summary `"<composedName> <firstStringArg>"` (e.g. `mcp__filesystem__read_file src/index.js`), so a pattern can pin either the tool (`^mcp__fs__read_file$`) or the resource it touches (`^mcp__fs__read_file src/.*`). Choosing **Always allow** on an MCP prompt pins only that one tool to `mode: "allow"` under `authorization.tools` — it never flips the shared gate. Project rules are persisted in `.mcp.json` under `authorization` (written by `setAuthorization`), so they can be committed and reviewed alongside the server entries; the app default is persisted in the app SQLite store under `mcp.authorization` (written by `setAppMcpAuthorization`).
 
 ### Lifecycle
 
@@ -111,9 +120,9 @@ A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of th
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `GET`    | `/api/mcp/servers?projectDir=<abs>` | `projectDir` optional — without it only app-scoped servers; with it the merged app + project view | `{ servers: [{ id, name, slug, command, args, env, cwd, enabled, scope, status, tools? }] }` |
-| `POST`   | `/api/mcp/servers` | `{ projectDir?, scope?, name, command, args?, env?, cwd?, enabled? }` — `scope` is `'project'` (default, requires `projectDir`) or `'app'` | `{ server }` (201) |
-| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir?, name?, command?, args?, env?, cwd?, enabled? }` — `scope` is fixed at creation and ignored in patches | `{ server }` (stops running session) |
+| `GET`    | `/api/mcp/servers?projectDir=<abs>` | `projectDir` optional — without it only app-scoped servers; with it the merged app + project view | `{ servers: [{ id, name, slug, transport, command, url, args, env, headers, cwd, enabled, scope, status, tools? }] }` |
+| `POST`   | `/api/mcp/servers` | `{ projectDir?, scope?, transport?, name, command?, url?, headers?, args?, env?, cwd?, enabled? }` — `transport` is `'stdio'` (default) or `'http'`; `scope` is `'project'` (default, requires `projectDir`) or `'app'` | `{ server }` (201) |
+| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir?, transport?, name?, command?, url?, headers?, args?, env?, cwd?, enabled? }` — `scope` is fixed at creation and ignored in patches | `{ server }` (stops running session) |
 | `DELETE` | `/api/mcp/servers/:id?projectDir=<abs>` | `projectDir` optional | `{ ok, removed }` (stops running session) |
 | `POST`   | `/api/mcp/servers/:id/start` | `{ projectDir? }` | `{ server }` (status reflects the new state) |
 | `POST`   | `/api/mcp/servers/:id/stop` | `{ projectDir? }` | `{ ok }` |
@@ -156,6 +165,7 @@ await mcp.stopServer(projectDir, server.id);
 - **Enabled servers auto-start on chat open.** `GET /api/tools/list` (which the chat UI calls on load) runs `ensureEnabledServers(projectDir)`: every enabled server that is not already `ready` / `starting` is spawned and re-discovered before the catalog is returned. Disabled servers stay stopped. A failed start is captured as `errored` on that server only — the rest of the enabled set still starts.
 - **Tool calls ride the same SSE stream as the rest of the chat.** `tool_call` and `tool_result` are first-class events (decision §10). The chat UI renders them inline; the trace file (decision §5) writes them as `tool_call` / `tool_result` lines.
 - **Errors are typed.** Transport failures become `EMCP_TRANSPORT`; JSON-RPC errors become `EMCP_RPC`; timeouts become `EMCP_TIMEOUT`; missing slugs become `EMCP_NOSESSION`; missing tools become `EMCP_NOTFOUND`; disabled servers become `EMCP_DISABLED`. The chat UI can branch on `code` without parsing the message.
+- **HTTP MCP uses Streamable HTTP.** Set `transport: "http"` and `url` to a Streamable HTTP MCP endpoint. Optional headers are sent with every transport request and are redacted in API responses.
 - **Server args are not shell-parsed.** The `args` field is a whitespace-separated token list. Quoted multi-word args are not yet supported; a future revision can add a real `shlex`-style splitter.
 - **Env denylist is enforced.** `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`, `NODE_DEBUG`, and a few related vars are stripped from the inherited env before the per-server env map is applied. The denylist does not strip keys the user explicitly set in the per-server env — the user can opt in to those if they want.
 - **Server cwd must be inside the project.** Anything outside the project root is rejected with `EOUTSIDE_PROJECT`. The same rule decision §16 uses for `shell`.
@@ -164,7 +174,7 @@ await mcp.stopServer(projectDir, server.id);
 
 ## Implementation notes
 
-- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`, `resolveMerged`. The merged app + project view comes from `resolveMerged(projectDir)`; scope-aware writes route through `findServerAnyScope` so a shadowed app entry stays editable.
+- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`, `resolveMerged`. The merged app + project view comes from `resolveMerged(projectDir)`; scope-aware writes route through `findServerAnyScope` so a shadowed app entry stays editable. `startServer()` picks `StdioClientTransport` or `StreamableHTTPClientTransport` from the SDK based on `entry.transport`.
 - Server wiring: [src/ai.js](../../src/ai.js) → `streamChat()`. After the upstream finishes streaming, accumulated `tool_call` deltas are dispatched through `mcp.callTool()`. Tool results are surfaced as `tool_result` SSE events, not fed back into the same stream.
 - HTTP wiring: [src/index.js](../../src/index.js) → `handleMcp()`. The Settings UI hits the REST surface; the AI client never goes through HTTP.
 - SDK isolation: the `@modelcontextprotocol/sdk` is loaded lazily in `getSdk()`. A failure to load the SDK (e.g. a fresh checkout with no `node_modules`) surfaces as `EMODULE` on every server action — the rest of the server boots cleanly without MCP.

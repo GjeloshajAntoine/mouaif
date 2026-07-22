@@ -33,7 +33,8 @@ export function SettingsDefaultsView() {
       h('h2', { class: 'view-title' }, 'App defaults')
     ),
     h('section', null,
-      h('p', { class: 'hint hint--compact' }, 'How much tool schema and instruction text the model receives. Smaller = less context used, faster replies. New chats can override this.'),
+      h('p', { class: 'hint hint--compact' }, 'How much tool schema and instruction text the model receives. Smaller = less context used, faster replies.'),
+      h('p', { class: 'hint hint--compact' }, 'This applies to every project. A project or a single chat can pick a different style for itself.'),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sd-prompt-size' }, 'Default prompt style'),
         h('select', { ref: promptSize, class: 'input', id: 'sd-prompt-size' },

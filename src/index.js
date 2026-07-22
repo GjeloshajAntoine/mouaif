@@ -3265,7 +3265,15 @@ async function handleToolAuthorization(req, res, parsed) {
   const authGate = require('./tools/authorization.js');
 
   // GET /api/tools/authorization?projectDir=<abs>
+  // GET /api/tools/authorization?scope=app  -> the app-level MCP gate only.
   if (urlPath === '/api/tools/authorization' && method === 'GET') {
+    if (q.scope === 'app') {
+      try {
+        return sendJSON(res, 200, authGate.getAppMcpAuthorization());
+      } catch (e) {
+        return sendJSON(res, 500, { error: e.message });
+      }
+    }
     const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -3276,11 +3284,22 @@ async function handleToolAuthorization(req, res, parsed) {
   }
 
   // PUT /api/tools/authorization
+  // With { scope: 'app', mcp } the app-level shared MCP gate is written
+  // (no projectDir). Otherwise projectDir is required and the project
+  // tools + MCP authorization are written as before.
   if (urlPath === '/api/tools/authorization' && method === 'PUT') {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
-    const { projectDir, tools, mcp: mcpAuthorization } = body || {};
+    const { projectDir, scope, tools, mcp: mcpAuthorization } = body || {};
+    if (scope === 'app') {
+      try {
+        const next = authGate.setAppMcpAuthorization({ mcp: mcpAuthorization });
+        return sendJSON(res, 200, next);
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+    }
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }

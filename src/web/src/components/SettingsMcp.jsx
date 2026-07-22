@@ -22,9 +22,9 @@ export function SettingsMcpView(props = {}) {
   // project card, so #/settings/mcp is always the app-wide list even
   // when an active project exists.
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
-  const scope = projectDir ? 'project' : 'app';
 
-  const loadBtn = useRef(null);
+  const openBtn = useRef(null);
+  const refreshBtn = useRef(null);
   const [dirInput, setDirInput] = useState('');
   // MCP authorization is layered (decisions §18): a per-server entry
   // under mcp.authorization.servers.<slug> overrides the shared
@@ -37,17 +37,24 @@ export function SettingsMcpView(props = {}) {
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [serversList, setServersList] = useState([]);
   const [listStatus, setListStatus] = useState({ text: '', kind: '' });
+  const [busyIds, setBusyIds] = useState(new Set()); // server ids being acted on
 
   function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
 
   // One PUT path for every MCP authorization change. The patch body
-  // carries { mode?, servers?, tools? } — see setAuthorization.
+  // carries { mode?, servers?, tools? } — see setAuthorization. On the
+  // app list there is no projectDir, so we write the app-level shared
+  // gate with scope: 'app' (the server rejects server/tool maps there —
+  // the app store has no server registry, decisions §18).
   async function saveMcpAuthorization(patch) {
     setMcpAuthStatusMsg('saving…');
+    const body = projectDir
+      ? { projectDir, mcp: patch }
+      : { scope: 'app', mcp: patch };
     const r = await fetchJson('/api/tools/authorization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, mcp: patch })
+      body: JSON.stringify(body)
     });
     setMcpAuthStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
   }
@@ -115,7 +122,7 @@ export function SettingsMcpView(props = {}) {
   })());
 
   async function load() {
-    if (loadBtn.current) loadBtn.current.disabled = true;
+    if (openBtn.current) openBtn.current.disabled = true;
     setListStatus({ text: 'loading…', kind: 'busy' });
     // Without projectDir the REST surface returns app-scoped servers
     // only; with it the merged app + project view.
@@ -125,31 +132,34 @@ export function SettingsMcpView(props = {}) {
       r = await fetchJson('/api/mcp/servers' + qs);
     } catch (e) {
       setListStatus({ text: 'network error', kind: 'error' });
-      if (loadBtn.current) loadBtn.current.disabled = false;
+      if (openBtn.current) openBtn.current.disabled = false;
       return;
     }
-    if (loadBtn.current) loadBtn.current.disabled = false;
+    if (openBtn.current) openBtn.current.disabled = false;
     if (r.status !== 200) {
       setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
       return;
     }
     setServersList(r.body.servers || []);
     setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
-    // Layered MCP authorization (shared fallback + per-server map,
-    // lives in .mcp.json) is project-scoped — the app list skips it.
-    if (projectDir) {
-      try {
-        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
-        const mcp = ar.status === 200 && ar.body.mcp;
-        setMcpAuth({
-          mode: (mcp && mcp.mode) || 'ask',
-          allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
-          servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
-          tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
-        });
-        setMcpAuthStatusMsg('');
-      } catch { /* keep ask + empty maps */ }
-    }
+    // MCP authorization is layered (decisions §18). Both scopes expose the
+    // shared gate (mode + allowlist); per-server / per-tool overrides are
+    // project-only, so the app list loads the gate with scope=app and
+    // leaves the server/tool maps empty.
+    try {
+      const authUrl = projectDir
+        ? '/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir)
+        : '/api/tools/authorization?scope=app';
+      const ar = await fetchJson(authUrl);
+      const mcp = ar.status === 200 && ar.body.mcp;
+      setMcpAuth({
+        mode: (mcp && mcp.mode) || 'ask',
+        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
+        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
+        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
+      });
+      setMcpAuthStatusMsg('');
+    } catch { /* keep ask + empty maps */ }
   }
 
   // App list convenience: jump into a project's list without going back
@@ -193,6 +203,7 @@ export function SettingsMcpView(props = {}) {
     const status = s.status || 'stopped';
     const enabledBit = s.enabled === false ? 'disabled' : 'enabled';
     const toolBit = (s.tools && s.tools.length) ? s.tools.length + ' tool' + (s.tools.length === 1 ? '' : 's') : 'no tools';
+    const isBusy = busyIds.has(s.id);
     // The editor link carries the list's own context: the app list
     // links projectDir-less, the project list links with projectDir and
     // the row's scope so an edit returns to the same list.
@@ -200,34 +211,44 @@ export function SettingsMcpView(props = {}) {
       ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project')
       : '?scope=app';
     const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
-    return h('li', { key: s.id, class: 'mcp__row' },
+    return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'mcp__row-main', href },
         h('div', { class: 'mcp__row-name' }, s.name, ' ', scopeBadge(s)),
-        h('div', { class: 'mcp__row-sub' }, status + ' · ' + enabledBit + ' · ' + toolBit),
-        (s.status === 'errored' && s.error)
-          ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
-          : null,
+        h('div', { class: 'mcp__row-sub' }, (s.transport === 'http' ? 'http · ' : '') + status + ' · ' + enabledBit + ' · ' + toolBit),
         h('div', { class: 'mcp__row-chev' }, '›')
       ),
+      (s.status === 'errored' && s.error)
+        ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
+        : null,
       // Quick-action row: Start / Stop / Refresh. Inline so the user
       // does not have to open the editor just to control the lifecycle.
       h('div', { class: 'mcp__row-actions' },
         h('button', {
           class: 'btn btn--small', type: 'button',
-          disabled: s.enabled === false,
+          disabled: s.enabled === false || status === 'starting' || isBusy,
           onClick: () => callLifecycle('start', s.id)
         }, status === 'ready' ? 'Restart' : 'Start'),
         (status === 'ready' || status === 'errored' || status === 'starting')
-          ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => callLifecycle('stop', s.id) }, 'Stop')
+          ? h('button', {
+              class: 'btn btn--small', type: 'button',
+              disabled: isBusy,
+              onClick: () => callLifecycle('stop', s.id)
+            }, 'Stop')
           : null,
         status === 'ready'
-          ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => refreshTools(s.id) }, 'Refresh tools')
+          ? h('button', {
+              class: 'btn btn--small', type: 'button',
+              disabled: isBusy,
+              onClick: () => refreshTools(s.id)
+            }, 'Refresh tools')
           : null
       )
     );
   }
 
   async function callLifecycle(action, id) {
+    if (busyIds.has(id)) return;
+    setBusyIds(prev => new Set(prev).add(id));
     setListStatus({ text: action + '…', kind: 'busy' });
     let r;
     try {
@@ -236,26 +257,32 @@ export function SettingsMcpView(props = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectDir })
       });
-    } catch (e) { setListStatus({ text: 'network error', kind: 'error' }); return; }
+    } catch (e) { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; }); setListStatus({ text: 'network error', kind: 'error' }); return; }
     if (r.status !== 200) {
+      setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
       return;
     }
+    setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     setListStatus({ text: action + 'ed', kind: 'success' });
     load();
   }
 
   async function refreshTools(id) {
+    if (busyIds.has(id)) return;
+    setBusyIds(prev => new Set(prev).add(id));
     setListStatus({ text: 'refreshing tools…', kind: 'busy' });
     const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
     try {
       r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/tools' + qs);
-    } catch (e) { setListStatus({ text: 'network error', kind: 'error' }); return; }
+    } catch (e) { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; }); setListStatus({ text: 'network error', kind: 'error' }); return; }
     if (r.status !== 200) {
+      setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
       return;
     }
+    setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     setListStatus({ text: (r.body.tools || []).length + ' tools', kind: 'success' });
     load();
   }
@@ -267,17 +294,46 @@ export function SettingsMcpView(props = {}) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '‹'),
-      h('h2', { class: 'view-title' }, projectDir ? 'Project MCP servers' : 'App MCP servers')
+      h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '←'),
+      h('h2', { class: 'view-title' }, projectDir ? 'MCP servers · this project' : 'MCP servers · app defaults')
     ),
     h('p', { class: 'hint hint--compact' },
       projectDir
-        ? 'Servers available to this project: app-wide servers (app badge) plus servers committed to this project\'s .mcp.json. A project server with the same name shadows the app-wide one.'
-        : 'App-wide Model Context Protocol servers, visible to every project. The AI client discovers each server\'s tools and advertises them to the model.'),
+        ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
+        : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
+    // ---- App-level permission default (app list only) -------------------
+    // The app store has no server registry, so the app list shows only
+    // the single shared gate. This is the default every project starts
+    // from; a project can set its own gate or per-server rules on top.
+    !projectDir
+      ? h('div', { class: 'group' },
+          h('div', { class: 'group__title' }, 'Default permission', h('span', { class: 'group__title-note' }, 'Starting point for every project')),
+          h('ul', { class: 'group__list' },
+            h('li', { class: 'settings-project__tool' },
+              h('div', { class: 'settings-project__tool-head' },
+                h('div', { class: 'settings-project__item-title' }, 'All MCP tools'),
+                h('div', { class: 'settings-project__item-note' },
+                  'How MCP tool calls are handled by default, in every project. A project can change this or set per-server rules from its own MCP page. ',
+                  segMode(mcpAuth.mode) === 'off' ? 'Off means MCP tools are hidden from the model and cost no tokens. ' : null,
+                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
+                )
+              ),
+              authSegs('mcp-app-default', segMode(mcpAuth.mode), pickMcpMode),
+              segMode(mcpAuth.mode) === 'ask'
+                ? h('details', { class: 'settings-project__allowlist' },
+                    h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
+                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
+                  )
+                : null
+            )
+          )
+        )
+      : null,
     // ---- Tool permissions (project list only) ---------------------------
     projectDir
       ? h('div', { class: 'group' },
-          h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, with a shared fallback')),
+          h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, falls back to the app default')),
           h('ul', { class: 'group__list' },
             serversList.map((s) => {
               const slug = s.slug || s.id;
@@ -289,14 +345,14 @@ export function SettingsMcpView(props = {}) {
                 h('div', { class: 'settings-project__tool-head' },
                   h('div', { class: 'settings-project__item-title' }, s.name || slug, ' ', scopeBadge(s)),
                   h('div', { class: 'settings-project__item-note' },
-                    overridden ? ('Override: ' + effMode + '. ') : ('Inherits the shared fallback (' + mcpAuth.mode + '). '),
+                    overridden ? ('Set to ' + effMode + ' for this server. ') : ('Using this project\'s default (' + mcpAuth.mode + '). '),
                     segMode(effMode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null,
                     h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
                   )
                 ),
                 authSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMode(slug, mode)),
                 overridden
-                  ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use shared fallback')
+                  ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use project default')
                   : null,
                 segMode(effMode) === 'ask'
                   ? h('details', { class: 'settings-project__allowlist' },
@@ -313,10 +369,10 @@ export function SettingsMcpView(props = {}) {
             }),
             h('li', { class: 'settings-project__tool' },
               h('div', { class: 'settings-project__tool-head' },
-                h('div', { class: 'settings-project__item-title' }, 'Shared fallback (all MCP servers)'),
+                h('div', { class: 'settings-project__item-title' }, 'This project\'s default (all MCP servers)'),
                 h('div', { class: 'settings-project__item-note' },
-                  'Applies to every server without an override. ',
-                  segMode(mcpAuth.mode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null
+                  'Applies to every server above without its own rule. Leave it on Ask to fall back to the app-wide default. ',
+                  segMode(mcpAuth.mode) === 'off' ? 'Off hides MCP tools from the model — costs no tokens. ' : null
                 )
               ),
               authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
@@ -337,8 +393,8 @@ export function SettingsMcpView(props = {}) {
         ? serversList.map(serverRow)
         : h('li', { class: 'mcp__empty' },
             projectDir
-              ? 'No MCP servers for this project yet. Tap "+" to add one, or manage app-wide servers from Settings → Application.'
-              : 'No app-wide MCP servers yet. Tap "+" to add one — it will be visible to every project.')
+              ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
+              : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
     ),
     // App list only: deep-link into a project's list.
     !projectDir
@@ -351,7 +407,7 @@ export function SettingsMcpView(props = {}) {
               onInput: (e) => setDirInput(e.target.value),
               onKeyDown: (e) => { if (e.key === 'Enter') openProject(); }
             }),
-            h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
+            h('button', { ref: openBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
           ),
           h('span', { class: 'hint hint--compact' }, 'Project servers live with the project (committed to .mcp.json). Open a project to manage them.')
         )
@@ -361,6 +417,11 @@ export function SettingsMcpView(props = {}) {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
         'aria-live': 'polite'
       }, listStatus.text),
+      h('button', {
+        ref: refreshBtn, class: 'btn btn--small', type: 'button',
+        'aria-label': 'Refresh servers',
+        onClick: () => load()
+      }, '↻'),
       h('a', { href: newHref, class: 'page-bar__add', 'aria-label': 'Add MCP server' }, '+')
     )
   );
@@ -368,29 +429,44 @@ export function SettingsMcpView(props = {}) {
 
 export function SettingsMcpEditView(props) {
   const id = props.id || '';
-  const projectDir = props.projectDir || (activeProject.value && activeProject.value.dir) || '';
+  // projectDir comes from the route first. For *add* mode only, fall
+  // back to the active project (so the "+" button on the project list
+  // pre-fills the context). For *edit* mode, the route's projectDir is
+  // the only source of truth — the active project may be different.
+  const routeProjectDir = props.projectDir || '';
+  const activeDir = (activeProject.value && activeProject.value.dir) || '';
+  const projectDir = id ? routeProjectDir : (routeProjectDir || activeDir);
   // The scope an add creates in, pre-selected from the list the user
   // came from; an edit always reflects the server's actual scope
   // (scope is fixed at creation — delete + re-add to move).
   const [addScope, setAddScope] = useState(
-    props.scope === 'app' ? 'app' : (props.scope === 'project' ? 'project' : (projectDir ? 'project' : 'app'))
+    props.scope === 'app' ? 'app' : (props.scope === 'project' ? 'project' : (routeProjectDir ? 'project' : 'app'))
   );
   const [currentScope, setCurrentScope] = useState(props.scope === 'app' ? 'app' : 'project');
 
   const nameEl = useRef(null);
+  const [transport, setTransport] = useState('stdio');
   const commandEl = useRef(null);
+  const urlEl = useRef(null);
   const argsEl = useRef(null);
   const envEl = useRef(null);
+  const headersEl = useRef(null);
   const cwdEl = useRef(null);
   const enabledEl = useRef(null);
   const statusEl = useRef(null);
   const saveBtn = useRef(null);
   const deleteBtn = useRef(null);
 
-  let current = null;
+  const [currentServer, setCurrentServer] = useState(null);
   const [toolAuths, setToolAuths] = useState({});
   const [toolsState, setToolsState] = useState([]);
   const [toolAuthMsg, setToolAuthMsg] = useState('');
+  // Write-only env/headers: the server returns only key names (values
+  // are redacted). We store the key list so the UI can show hints.
+  const [configuredEnvKeys, setConfiguredEnvKeys] = useState([]);
+  const [configuredHeaderKeys, setConfiguredHeaderKeys] = useState([]);
+  const [clearEnv, setClearEnv] = useState(false);
+  const [clearHeaders, setClearHeaders] = useState(false);
 
   async function load() {
     if (id) {
@@ -405,14 +481,34 @@ export function SettingsMcpEditView(props) {
         r = await fetchJson('/api/mcp/servers' + qs);
       } catch (e) { setStatus(statusEl, 'network error', 'error'); return; }
       if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
-      current = (r.body.servers || []).find(s => s.id === id) || null;
+      const current = (r.body.servers || []).find(s => s.id === id) || null;
       if (!current) { setStatus(statusEl, 'Server not found', 'error'); return; }
+      setCurrentServer(current);
       setCurrentScope(current.scope === 'app' ? 'app' : 'project');
       if (nameEl.current) nameEl.current.value = current.name || '';
+      setTransport(current.transport === 'http' ? 'http' : 'stdio');
       if (commandEl.current) commandEl.current.value = current.command || '';
+      if (urlEl.current) urlEl.current.value = current.url || '';
       if (argsEl.current) argsEl.current.value = (current.args || []).join(' ');
       // Secret values are write-only. The server only returns key names.
-      if (envEl.current) envEl.current.value = '';
+      // Show the key names as a placeholder hint so the user knows what's
+      // configured without losing the write-only semantics.
+      if (envEl.current) {
+        envEl.current.value = '';
+        const envKeys = Object.keys(current.env || {}).filter(k => current.env[k] && current.env[k].configured);
+        setConfiguredEnvKeys(envKeys);
+        envEl.current.placeholder = envKeys.length
+          ? 'Already configured: ' + envKeys.join(', ') + '. Enter new values or leave blank to keep.'
+          : 'API_TOKEN=...\nLOG_LEVEL=info';
+      }
+      if (headersEl.current) {
+        headersEl.current.value = '';
+        const headerKeys = Object.keys(current.headers || {}).filter(k => current.headers[k] && current.headers[k].configured);
+        setConfiguredHeaderKeys(headerKeys);
+        headersEl.current.placeholder = headerKeys.length
+          ? 'Already configured: ' + headerKeys.join(', ') + '. Enter new values or leave blank to keep.'
+          : 'Authorization: Bearer ...';
+      }
       if (cwdEl.current) cwdEl.current.value = current.cwd || '';
       if (enabledEl.current) enabledEl.current.checked = current.enabled === true;
       if (deleteBtn.current) deleteBtn.current.hidden = false;
@@ -460,10 +556,10 @@ export function SettingsMcpEditView(props) {
 
   function renderToolsList() {
     if (!toolsState.length) {
-      return h('li', { class: 'mcp__tools-empty' }, (current && current.status === 'ready') ? 'No tools reported by this server.' : 'Start the server to see its tools.');
+      return h('li', { class: 'mcp__tools-empty' }, (currentServer && currentServer.status === 'ready') ? 'No tools reported by this server.' : 'Start the server to see its tools.');
     }
     return toolsState.map((t) => {
-      const composed = 'mcp__' + (current.slug || '') + '__' + t.name;
+      const composed = 'mcp__' + (currentServer && currentServer.slug || '') + '__' + t.name;
       const entry = toolAuths[composed];
       const value = (entry && entry.mode) || 'inherit';
       return h('li', { key: composed, class: 'mcp__tools-row' },
@@ -505,6 +601,17 @@ export function SettingsMcpEditView(props) {
     return out;
   }
 
+  function parseHeaders(text) {
+    if (!text || !text.trim()) return {};
+    const out = {};
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^([^:=\s][^:=]*?)\s*[:=]\s*(.*)$/);
+      if (!m) continue;
+      out[m[1].trim()] = m[2];
+    }
+    return out;
+  }
+
   async function save() {
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
@@ -517,16 +624,26 @@ export function SettingsMcpEditView(props) {
     const body = {
       projectDir,
       scope,
+      transport,
       name: (nameEl.current.value || '').trim(),
-      command: (commandEl.current.value || '').trim(),
-      args: parseArgs(argsEl.current.value),
-      cwd: (cwdEl.current.value || '').trim(),
+      command: transport === 'stdio' ? (commandEl.current.value || '').trim() : '',
+      url: transport === 'http' ? (urlEl.current.value || '').trim() : '',
+      args: transport === 'stdio' ? parseArgs(argsEl.current.value) : [],
+      cwd: transport === 'stdio' ? (cwdEl.current.value || '').trim() : '',
       enabled: enabledEl.current.checked !== false
     };
     const envText = envEl.current.value || '';
-    if (!id || envText.trim()) body.env = parseEnv(envText);
+    const headersText = headersEl.current.value || '';
+    // Preserve existing env/headers when the textarea is empty (the
+    // values are write-only, so the user can't round-trip them).
+    // To clear, the user must tap the "Clear" button next to the field.
+    if (clearEnv) body.env = {};
+    else if (envText.trim()) body.env = parseEnv(envText);
+    if (clearHeaders) body.headers = {};
+    else if (headersText.trim()) body.headers = parseHeaders(headersText);
     if (!body.name) { setStatus(statusEl, 'name is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
-    if (!body.command) { setStatus(statusEl, 'command is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    if (transport === 'stdio' && !body.command) { setStatus(statusEl, 'command is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    if (transport === 'http' && !body.url) { setStatus(statusEl, 'URL is required', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
     let r;
     try {
       r = await fetchJson(id ? ('/api/mcp/servers/' + encodeURIComponent(id)) : '/api/mcp/servers', {
@@ -558,10 +675,16 @@ export function SettingsMcpEditView(props) {
   useEffect(() => { load(); }, [id]);
 
   const title = id ? 'Edit MCP server' : 'Add MCP server';
+  // Back button: always go to the list the user came from. If the route
+  // carries a projectDir, go back to the project list; otherwise go to
+  // the app-wide list. The edit view's own projectDir is the route's
+  // value, not the active project fallback.
+  const backQSPath = id ? routeProjectDir : projectDir;
+  const backHref = '#/settings/mcp' + projectQS(backQSPath);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/mcp' + projectQS(projectDir), class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
+      h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, title)
     ),
     // ---- Scope (add only; fixed at creation) ----------------------------
@@ -594,21 +717,68 @@ export function SettingsMcpEditView(props) {
       h('input', { ref: nameEl, class: 'input', id: 'mcp-name', type: 'text', placeholder: 'e.g. filesystem' })
     ),
     h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'mcp-command' }, 'Command'),
-      h('input', { ref: commandEl, class: 'input', id: 'mcp-command', type: 'text', placeholder: 'node' })
+      h('label', { class: 'label' }, 'Transport'),
+      h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'MCP transport' },
+        [{ value: 'stdio', label: 'Stdio' }, { value: 'http', label: 'HTTP' }].map((m) =>
+          h('label', { key: m.value, class: 'seg__item' + (transport === m.value ? ' seg__item--on' : '') },
+            h('input', {
+              type: 'radio', name: 'mcp-transport', value: m.value,
+              checked: transport === m.value,
+              onChange: () => setTransport(m.value)
+            }),
+            h('span', { class: 'seg__pill' }, m.label)
+          )
+        )
+      )
     ),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'mcp-args' }, 'Arguments (whitespace-separated)'),
-      h('input', { ref: argsEl, class: 'input', id: 'mcp-args', type: 'text', placeholder: 'path/to/server.js' })
-    ),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'mcp-env' }, 'Environment (one KEY=value per line)'),
-      h('textarea', { ref: envEl, class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: 'API_TOKEN=...\nLOG_LEVEL=info', 'aria-describedby': 'mcp-env-hint' }),
-      h('span', { id: 'mcp-env-hint', class: 'hint hint--compact' }, 'Values are write-only and are never returned by the API. Leave blank to preserve existing values when editing.')
-    ),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'mcp-cwd' }, 'Working directory (optional, relative to project)'),
-      h('input', { ref: cwdEl, class: 'input', id: 'mcp-cwd', type: 'text', placeholder: 'tools/my-mcp' })
+    transport === 'stdio' ? h(Fragment, null,
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-command' }, 'Command'),
+        h('input', { ref: commandEl, class: 'input', id: 'mcp-command', type: 'text', placeholder: 'node' })
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-args' }, 'Arguments (whitespace-separated)'),
+        h('input', { ref: argsEl, class: 'input', id: 'mcp-args', type: 'text', placeholder: 'path/to/server.js' })
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-env' }, 'Environment (one KEY=value per line)'),
+        h('textarea', { ref: envEl, class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: 'API_TOKEN=...\nLOG_LEVEL=info', 'aria-describedby': 'mcp-env-hint' }),
+        h('span', { id: 'mcp-env-hint', class: 'hint hint--compact' }, 'Values are write-only and are never returned by the API. Leave blank to preserve existing values.'),
+        id && configuredEnvKeys.length
+          ? h('div', { class: 'row row--inline', style: 'margin-top:4px' },
+              h('span', { class: 'hint', style: 'font-size:0.72rem;color:var(--muted);flex:1' }, 'Configured keys: ' + configuredEnvKeys.join(', ')),
+              h('button', {
+                class: 'btn btn--small', type: 'button',
+                style: 'color:var(--danger);border-color:var(--danger)',
+                onClick: () => { setClearEnv(true); if (envEl.current) { envEl.current.value = ''; envEl.current.placeholder = ''; } }
+              }, 'Clear all')
+            )
+          : null
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-cwd' }, 'Working directory (optional, relative to project)'),
+        h('input', { ref: cwdEl, class: 'input', id: 'mcp-cwd', type: 'text', placeholder: 'tools/my-mcp' })
+      )
+    ) : h(Fragment, null,
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-url' }, 'HTTP URL'),
+        h('input', { ref: urlEl, class: 'input', id: 'mcp-url', type: 'url', placeholder: 'https://example.com/mcp' })
+      ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'mcp-headers' }, 'HTTP headers (one Name: value per line)'),
+        h('textarea', { ref: headersEl, class: 'input', id: 'mcp-headers', rows: 4, spellcheck: false, placeholder: 'Authorization: Bearer ...', 'aria-describedby': 'mcp-headers-hint' }),
+        h('span', { id: 'mcp-headers-hint', class: 'hint hint--compact' }, 'Header values are write-only and are never returned by the API. Leave blank to preserve existing values.'),
+        id && configuredHeaderKeys.length
+          ? h('div', { class: 'row row--inline', style: 'margin-top:4px' },
+              h('span', { class: 'hint', style: 'font-size:0.72rem;color:var(--muted);flex:1' }, 'Configured keys: ' + configuredHeaderKeys.join(', ')),
+              h('button', {
+                class: 'btn btn--small', type: 'button',
+                style: 'color:var(--danger);border-color:var(--danger)',
+                onClick: () => { setClearHeaders(true); if (headersEl.current) { headersEl.current.value = ''; headersEl.current.placeholder = ''; } }
+              }, 'Clear all')
+            )
+          : null
+      )
     ),
     h('div', { class: 'row row--inline' },
       h('input', { ref: enabledEl, class: 'checkbox', id: 'mcp-enabled', type: 'checkbox' }),

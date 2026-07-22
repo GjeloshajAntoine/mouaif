@@ -229,6 +229,41 @@ function getAuthorization(projectDir) {
   };
 }
 
+// App-level MCP authorization gate. This is layer 4 of `mcpLayeredConfig`
+// (app.mcp.authorization) — the shared fallback for every project that has
+// not set its own MCP gate. The app store has no server registry, so it
+// carries only the single shared gate (mode + allowlist); per-server and
+// per-tool overrides remain project-scoped by design (decisions §18).
+function getAppMcpAuthorization() {
+  const app = settings.getApp();
+  const value = (app && app.mcp && app.mcp.authorization) || {};
+  const cfg = normalizeConfig(value, 'app', true);
+  // Match the project MCP shape so the UI can share one renderer, but the
+  // app layer intentionally exposes no server/tool maps.
+  return { mcp: { mode: cfg.mode, allowlist: cfg.allowlist, servers: {}, tools: {} } };
+}
+
+// Write the app-level MCP shared gate. Accepts { mode?, allowlist? }; the
+// off / allow / ask modes persist only { mode }, allowlist persists the
+// pattern list. Returns the re-read app authorization view.
+function setAppMcpAuthorization(patch) {
+  if (!patch || typeof patch !== 'object') throw typedError('EBADINPUT', 'authorization patch is required');
+  const p = patch.mcp || patch;
+  if (typeof p.mode !== 'string' || !p.mode) throw typedError('EBADINPUT', 'app mcp authorization must set mode');
+  const app = settings.getApp();
+  const auth = (app && app.mcp && app.mcp.authorization && typeof app.mcp.authorization === 'object')
+    ? Object.assign({}, app.mcp.authorization)
+    : {};
+  const cfg = normalizeConfig(p, 'app', true);
+  const shaped = mcpPersistShape(cfg);
+  auth.mode = shaped.mode;
+  if (Object.prototype.hasOwnProperty.call(shaped, 'allowlist')) auth.allowlist = shaped.allowlist;
+  else delete auth.allowlist;
+  const mcp = Object.assign({}, app && app.mcp, { authorization: auth });
+  settings.setApp({ mcp });
+  return getAppMcpAuthorization();
+}
+
 // Shape a normalized MCP auth entry for persistence. `off` / `allow` /
 // `ask` write only { mode }; `allowlist` also writes the pattern list.
 // Everything else (timeouts) is dropped — the shared gate's timeouts
@@ -485,6 +520,8 @@ module.exports = {
   FILE_TOOL_NAMES,
   getAuthorization,
   setAuthorization,
+  getAppMcpAuthorization,
+  setAppMcpAuthorization,
   authorize,
   recordDecision,
   clearGrants,

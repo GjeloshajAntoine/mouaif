@@ -1,5 +1,5 @@
 // mouaif web — Settings home view
-import { h, Fragment } from 'preact';
+import { h } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { loadApp, appProviders, activeProject } from '../api.js';
 
@@ -7,7 +7,7 @@ export function SettingsHomeView() {
   const providerSummary = useRef(null);
   const promptSize = useRef(null);
   const pricingSummary = useRef(null);
-  // Cards that only make sense against a project. Their href picks up the
+  // Rows that only make sense against a project. Their href picks up the
   // active project (if any) so the user does not have to re-enter the path.
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
   const projectName = (activeProject.value && activeProject.value.name) || '';
@@ -34,59 +34,63 @@ export function SettingsHomeView() {
   useEffect(() => { load(); }, []);
 
   // No page-level "Settings" heading — the tab bar already labels the page.
-  // Group titles stay short to match the iOS-style inset lists. The card
-  // rows are the <li> elements of each .group__list (no double wrap). A
-  // `summary` is the static fallback shown before load() resolves, so the
-  // list never flashes a bare "—".
-  function cardLi(to, title, opts = {}) {
-    const { summaryRef = null, summary = null, sub = null } = opts;
+  // Group titles stay short to match the iOS-style inset lists. The rows
+  // use the standard .group__row pattern from layout.css (same as every
+  // other drill-in settings list).
+  function rowLi(to, label, opts = {}) {
+    const { detailRef = null, detail = null, sub = null } = opts;
     return h('li', null,
-      h('a', { href: '#/' + to, class: 'card', 'aria-label': title },
-        h('div', { class: 'card__main' },
-          h('div', { class: 'card__title' }, title),
-          sub && !summaryRef && !summary
-            ? h('div', { class: 'card__summary' }, sub)
-            : h('div', { ref: summaryRef, class: 'card__summary' }, summary || sub || '')
-        ),
-        h('div', { class: 'card__chev', 'aria-hidden': 'true' }, '›')
+      h('a', { href: '#/' + to, class: 'group__row', 'aria-label': label },
+        h('span', { class: 'group__row-label' }, label),
+        sub && !detailRef && !detail
+          ? h('span', { class: 'group__row-detail' }, sub)
+          : h('span', { ref: detailRef, class: 'group__row-detail' }, detail || sub || ''),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
       )
     );
   }
 
   return h('section', { class: 'settings-home' },
-    // ---- Models & providers: everything you connect to. -----------------
+    // ---- Providers: account-level connections, not layered. -------------
     h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Models & providers'),
+      h('div', { class: 'group__title' }, 'Providers'),
       h('ul', { class: 'group__list' },
-        cardLi('settings/providers', 'Providers', { summaryRef: providerSummary, summary: 'API keys & sign-ins' })
+        rowLi('settings/providers', 'Providers', { detailRef: providerSummary, detail: 'API keys & sign-ins' })
       )
     ),
-    // ---- Active project: per-project settings. Header shows which project
-    // these cards apply to so "project overrides" is not abstract. --------
+    // ---- App defaults: settings that apply everywhere unless a project
+    // changes them. Rows describe what the setting is, not the layering —
+    // the one-line footer explains "a project can change these" once. ----
+    h('div', { class: 'group' },
+      h('div', { class: 'group__title' }, 'App defaults', h('span', { class: 'group__title-note' }, 'Apply to every project')),
+      h('ul', { class: 'group__list' },
+        rowLi('settings/defaults', 'Chat defaults', { detailRef: promptSize, detail: 'prompt style' }),
+        rowLi('settings/mcp', 'MCP servers', { sub: 'servers & default permission' }),
+        rowLi('settings/pricing', 'Model pricing', { detailRef: pricingSummary, detail: 'cost table' }),
+        rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
+      )
+    ),
+    // ---- This project: settings stored with the project. Header names the
+    // project so the scope is concrete. Rows describe the setting; the
+    // project page itself explains how each one relates to the app layer.
     h('div', { class: 'group' },
       h('div', { class: 'group__title' },
-        'Active project',
+        'This project',
         h('span', { class: 'group__title-note' }, projectName || projectDir || 'none selected')
       ),
       projectDir
         ? h('ul', { class: 'group__list' },
-            cardLi('settings/project' + projectQS, 'Project overrides', { sub: '.mouaif.json for this project' }),
-            cardLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'this project (+ app-wide in effect)' }),
-            cardLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
-            cardLi('settings/project' + projectQS, 'Agents', { sub: 'project personas — in Project overrides' })
+            rowLi('settings/project' + projectQS, 'Project settings', { sub: 'prompt style, tools, agents' }),
+            rowLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'app servers + this project\'s own' }),
+            rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
+            rowLi('settings/tags' + projectQS, 'File tags', { sub: 'inject project files into chats' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
-            'Open a chat or pick a project first, then per-project settings (overrides, MCP servers, custom prompts) show up here.')
+            'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts, file tags) show up here.')
     ),
-    // ---- Application: global, not tied to a project. --------------------
-    h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Application'),
-      h('ul', { class: 'group__list' },
-        cardLi('settings/mcp', 'MCP servers', { sub: 'app-wide, every project' }),
-        cardLi('settings/defaults', 'Chat defaults', { summaryRef: promptSize, summary: 'prompt style (tool verbosity)' }),
-        cardLi('settings/pricing', 'Model pricing', { summaryRef: pricingSummary, summary: 'cost per 1K tokens' }),
-        cardLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
-      )
-    )
+    // ---- One-line footer: explains the layering once, plainly, instead of
+    // repeating "overrides / wins / shadows" on every row above. ---------
+    h('p', { class: 'hint hint--compact settings-home__resolution' },
+      'App defaults apply everywhere. A project can change any of them for its own folder.')
   );
 }
