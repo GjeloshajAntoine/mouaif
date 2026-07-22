@@ -1286,19 +1286,15 @@
   /* No CSS `height`: autoresize() sets the box height inline. A CSS
      height would fight the inline style (inline wins, but only after
      the first input event — before that the two could disagree). */
-  min-height: 32px;
+  min-height: 36px;
   max-height: 120px;
-  /* line-height = the full content-box height (32px - 12px padding),
-     so the single line's box IS the content box and the glyph
-     half-leading can only center it. iOS Safari distributes textarea
-     padding unevenly with tight line-heights (the line box sits
-     against the bottom padding edge, so text renders ~2px low);
-     matching line-height to the content box removes that wiggle
-     room entirely. */
-  line-height: 20px;
+  /* iOS Safari can clip the descenders in textareas when the line box
+     exactly matches the content box. Keep a little vertical slack so
+     the bottom of typed text stays visible in the bottom composer. */
+  line-height: 1.35;
   /* More side padding so the typed text does not press against the
      rounded pill edge or the neighbour buttons. */
-  padding: 6px 4px;
+  padding: 7px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
