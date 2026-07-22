@@ -307,8 +307,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     const cmd = text.slice('/shell '.length).trim();
     if (cmd) return runShellCommand(cmd, state, refs);
   }
-  // @<toolname> <args? — direct tool invocation via @-mention syntax.
-  // Parsed here instead of in atMention.js so the Enter key fires it.
+  // @<toolname> <args?> — direct tool invocation via @-mention syntax.
+  // Only fires when the text starts with @ and names a directly-invocable
+  // tool (shell or mcp__...). Native tools (read_file, write_file, etc.)
+  // and file references fall through to the normal model send — the popup
+  // inserts @path for file refs too, and we don't want to silently drop
+  // those when the user hits Enter.
   const atMatch = text.match(/^@(\S+)\s*(.*)$/);
   if (atMatch) {
     const toolName = atMatch[1];
@@ -319,17 +323,19 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       if (String(toolName).startsWith('mcp__')) {
         // MCP tool — parse server slug + tool name
         const parts = String(toolName).split('__');
-        if (parts.length >= 3) {
+        if (parts.length >= 3 && rest) {
           const serverSlug = parts[1];
           const mcpTool = parts.slice(2).join('__');
           let args = {};
-          if (rest) { try { args = JSON.parse(rest); } catch { args = { cmd: rest }; } }
+          try { args = JSON.parse(rest); } catch { args = { cmd: rest }; }
           return runMcpCommand(serverSlug, mcpTool, toolName, state, refs, args);
         }
-      } else if (toolName === 'shell') {
+      } else if (toolName === 'shell' && rest) {
         return runShellCommand(rest, state, refs);
       }
     }
+    // Not a directly-invocable tool (native file tool, or empty-arg shell,
+    // or plain file path). Fall through to normal model send.
   }
   if (!modelId || !providerId) {
     // If the chat has no provider+model yet, open the picker so

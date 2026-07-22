@@ -29,7 +29,6 @@ let selectedIdx = 0;
 let visible = false;
 let scanCache = null;
 let projectCacheKey = '';
-let onAction = null; // callback(mcpToolName, item) for direct MCP invocation
 
 // Resolve the registered project id from a projectDir.
 // Tags API uses the short id, not the absolute path.
@@ -129,25 +128,13 @@ async function buildItems(projectDir) {
     for (const t of tools.catalog) {
       if (!t || !t.name || toolNames.has(t.name)) continue;
       toolNames.add(t.name);
-      // MCP tools are named mcp__<serverSlug>__<toolName>
-      let mcpServer = null;
-      let mcpToolName = t.name;
-      if (String(t.name).startsWith('mcp__')) {
-        const parts = String(t.name).split('__');
-        if (parts.length >= 3) {
-          mcpServer = parts[1];
-          mcpToolName = parts.slice(2).join('__');
-        }
-      }
       out.push({
         id: 'action:' + t.name,
         label: t.name,
         subtitle: t.description || 'tool',
         category: CATEGORY.ACTIONS, icon: 'action',
         insert: t.name,
-        searchText: (t.name + ' ' + (t.description || '')).toLowerCase(),
-        mcpServer,
-        mcpToolName
+        searchText: (t.name + ' ' + (t.description || '')).toLowerCase()
       });
     }
   }
@@ -247,20 +234,6 @@ function renderPopup() {
 function selectItem(idx) {
   const item = filtered[idx];
   if (!item || !textarea || !range) return;
-
-  // Action tool: invoke directly instead of inserting text
-  if (item.category === CATEGORY.ACTIONS && typeof onAction === 'function') {
-    hide();
-    textarea.value = '';
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    textarea.focus();
-    if (item.mcpServer) {
-      onAction(item.mcpServer, item.mcpToolName, item.label, {});
-    } else if (item.label === 'shell') {
-      onAction('*native*', 'shell', item.label, { cmd: '' });
-    }
-    return;
-  }
 
   const ta = textarea;
   const before = ta.value.slice(0, range.start);
@@ -369,11 +342,10 @@ function onDocClick(e) {
 
 // ---- Public API ---------------------------------------------------------
 
-export function mountAtMention(ta, popupEl, preactState, actionCallback) {
+export function mountAtMention(ta, popupEl, preactState) {
   textarea = ta;
   popup = popupEl;
   uiState = preactState;
-  onAction = actionCallback || null;
   visible = false;
   items = [];
   filtered = [];
