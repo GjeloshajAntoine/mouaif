@@ -399,13 +399,7 @@
   color: var(--fg-soft);
 }
 
-/* Segmented control variants used by the MCP scope switcher: button
-   items (no hidden radio) and a full-width block layout. */
-.seg--block { display: flex; width: 100%; margin-bottom: 8px; }
-.seg--block .seg__item { flex: 1; }
-.seg--block .seg__pill { width: 100%; min-height: var(--tap); }
-.seg__item--btn { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; color: inherit; }
-.seg__item--btn .seg__pill { display: flex; }
+
 
 /* ---- File tags (decisions §15) ----------------------------------- */
 

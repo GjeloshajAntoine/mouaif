@@ -71,18 +71,18 @@ export function SettingsHomeView() {
       projectDir
         ? h('ul', { class: 'group__list' },
             cardLi('settings/project' + projectQS, 'Project overrides', { sub: '.mouaif.json for this project' }),
-            cardLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'app + this project' }),
+            cardLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'this project (+ app-wide in effect)' }),
             cardLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
             cardLi('settings/project' + projectQS, 'Agents', { sub: 'project personas — in Project overrides' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
-            'Open a chat or pick a project first, then per-project settings (overrides, custom prompts) show up here. MCP servers live under Application — they can be app-wide or per project.')
+            'Open a chat or pick a project first, then per-project settings (overrides, MCP servers, custom prompts) show up here.')
     ),
     // ---- Application: global, not tied to a project. --------------------
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Application'),
       h('ul', { class: 'group__list' },
-        cardLi('settings/mcp', 'MCP servers', { sub: 'app-wide + per-project tool servers' }),
+        cardLi('settings/mcp', 'MCP servers', { sub: 'app-wide, every project' }),
         cardLi('settings/defaults', 'Chat defaults', { summaryRef: promptSize, summary: 'prompt style (tool verbosity)' }),
         cardLi('settings/pricing', 'Model pricing', { summaryRef: pricingSummary, summary: 'cost per 1K tokens' }),
         cardLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })

@@ -1,36 +1,38 @@
 // mouaif web — SettingsMcpView (MCP server list) + SettingsMcpEditView
 // MCP = Model Context Protocol. Servers can be configured app-wide
 // (visible to every project) or per project (committed to
-// <projectDir>/.mcp.json). The list view has an App / Project scope
-// switcher; a project entry with the same slug shadows the app entry.
+// <projectDir>/.mcp.json). The two scopes have two homes in Settings:
+// Application → MCP servers is the app-wide list (#/settings/mcp), and
+// Active project → MCP servers is the project's merged list
+// (#/settings/mcp?projectDir=...) with the per-server authorization
+// rows. A project entry with the same slug shadows the app entry.
 // See docs/features/mcp.md.
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
 
-function projectDirFromProps(props = {}) {
-  // The route can override the active project (testing + deep links).
-  return props.projectDir || (activeProject.value && activeProject.value.dir) || '';
-}
-
 function projectQS(projectDir) {
   return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
 }
 
 export function SettingsMcpView(props = {}) {
-  const statusEl = useRef(null);
+  // Scope comes from the URL, never from local tab state: the route
+  // carries projectDir only when the user arrived from the Active
+  // project card, so #/settings/mcp is always the app-wide list even
+  // when an active project exists.
+  const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+  const scope = projectDir ? 'project' : 'app';
+
   const loadBtn = useRef(null);
-  // Scope: 'project' shows the merged app + project view for the active
-  // project (with per-server authorization rows); 'app' shows only the
-  // app-wide entries (no project needed, no per-project authorization).
-  const [scope, setScope] = useState(() => (projectDirFromProps(props) ? 'project' : 'app'));
-  const [projectDir, setProjectDir] = useState(projectDirFromProps(props));
+  const [dirInput, setDirInput] = useState('');
   // MCP authorization is layered (decisions §18): a per-server entry
   // under mcp.authorization.servers.<slug> overrides the shared
   // fallback gate; a per-tool entry under mcp.authorization.tools.
   // <composedName> overrides both. The state below mirrors the
-  // persisted maps so each row is its own segmented control.
+  // persisted maps so each row is its own segmented control. The maps
+  // live in the project's .mcp.json, so they render on the project
+  // list only.
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [serversList, setServersList] = useState([]);
@@ -112,19 +114,12 @@ export function SettingsMcpView(props = {}) {
     };
   })());
 
-  async function load(override) {
-    const dir = (override && Object.prototype.hasOwnProperty.call(override, 'projectDir'))
-      ? override.projectDir
-      : projectDir;
-    const sc = (override && override.scope) || scope;
-    if (sc === 'project' && !dir) {
-      setServersList([]);
-      setListStatus({ text: 'pick a project directory first', kind: 'error' });
-      return;
-    }
+  async function load() {
     if (loadBtn.current) loadBtn.current.disabled = true;
     setListStatus({ text: 'loading…', kind: 'busy' });
-    const qs = dir ? '?projectDir=' + encodeURIComponent(dir) : '';
+    // Without projectDir the REST surface returns app-scoped servers
+    // only; with it the merged app + project view.
+    const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
     try {
       r = await fetchJson('/api/mcp/servers' + qs);
@@ -141,10 +136,10 @@ export function SettingsMcpView(props = {}) {
     setServersList(r.body.servers || []);
     setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
     // Layered MCP authorization (shared fallback + per-server map,
-    // lives in .mcp.json) is project-scoped — skip it on the App tab.
-    if (sc === 'project' && dir) {
+    // lives in .mcp.json) is project-scoped — the app list skips it.
+    if (projectDir) {
       try {
-        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(dir));
+        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
         const mcp = ar.status === 200 && ar.body.mcp;
         setMcpAuth({
           mode: (mcp && mcp.mode) || 'ask',
@@ -157,17 +152,13 @@ export function SettingsMcpView(props = {}) {
     }
   }
 
-  function pickScope(next) {
-    setScope(next);
-    if (next === 'app') load({ scope: 'app' });
-    else load({ scope: 'project' });
-  }
-
-  function applyProjectDirInput(value) {
-    const dir = (value || '').trim();
-    setProjectDir(dir);
-    if (dir) setActiveProject(dir, '');
-    if (scope === 'project') load({ scope: 'project', projectDir: dir });
+  // App list convenience: jump into a project's list without going back
+  // through the chat first.
+  function openProject() {
+    const dir = (dirInput || '').trim();
+    if (!dir) { setListStatus({ text: 'type a project directory first', kind: 'error' }); return; }
+    setActiveProject(dir, '');
+    nav('settings/mcp' + projectQS(dir));
   }
 
   // One segmented Off/Ask/Allow control. `name` must be unique per
@@ -202,8 +193,13 @@ export function SettingsMcpView(props = {}) {
     const status = s.status || 'stopped';
     const enabledBit = s.enabled === false ? 'disabled' : 'enabled';
     const toolBit = (s.tools && s.tools.length) ? s.tools.length + ' tool' + (s.tools.length === 1 ? '' : 's') : 'no tools';
-    const href = '#/settings/mcp/' + encodeURIComponent(s.id) + projectQS(projectDir)
-      + (projectDir ? '&' : '?') + 'scope=' + encodeURIComponent(s.scope || scope);
+    // The editor link carries the list's own context: the app list
+    // links projectDir-less, the project list links with projectDir and
+    // the row's scope so an edit returns to the same list.
+    const qs = projectDir
+      ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project')
+      : '?scope=app';
+    const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     return h('li', { key: s.id, class: 'mcp__row' },
       h('a', { class: 'mcp__row-main', href },
         h('div', { class: 'mcp__row-name' }, s.name, ' ', scopeBadge(s)),
@@ -264,51 +260,22 @@ export function SettingsMcpView(props = {}) {
     load();
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectDir]);
 
-  const newHref = '#/settings/mcp/new' + projectQS(projectDir) + (projectDir ? '&' : '?') + 'scope=' + scope;
+  const newHref = '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app');
+  const backHref = projectDir ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir)) : '#/settings';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', {
-        href: (scope === 'project' && projectDir)
-          ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir))
-          : '#/settings',
-        class: 'view-back',
-        'aria-label': 'Back'
-      }, '‹'),
-      h('h2', { class: 'view-title' }, 'MCP servers')
+      h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '‹'),
+      h('h2', { class: 'view-title' }, projectDir ? 'Project MCP servers' : 'App MCP servers')
     ),
     h('p', { class: 'hint hint--compact' },
-      'Connect Model Context Protocol servers. App-wide servers are visible to every project; project servers are committed to that project\'s .mcp.json. The AI client discovers each server\'s tools and advertises them to the model.'),
-    // ---- Scope switcher -------------------------------------------------
-    h('div', { class: 'seg seg--block', role: 'tablist', 'aria-label': 'Configuration scope' },
-      h('button', {
-        type: 'button', role: 'tab', 'aria-selected': scope === 'app',
-        class: 'seg__item seg__item--btn' + (scope === 'app' ? ' seg__item--on' : ''),
-        onClick: () => pickScope('app')
-      }, h('span', { class: 'seg__pill' }, 'App')),
-      h('button', {
-        type: 'button', role: 'tab', 'aria-selected': scope === 'project',
-        class: 'seg__item seg__item--btn' + (scope === 'project' ? ' seg__item--on' : ''),
-        onClick: () => pickScope('project')
-      }, h('span', { class: 'seg__pill' }, 'Project'))
-    ),
-    scope === 'project'
-      ? h('div', { class: 'row' },
-          h('label', { class: 'label', for: 'mcp-project-dir' }, 'Project directory'),
-          h('div', { class: 'row row--inline' },
-            h('input', {
-              class: 'input', id: 'mcp-project-dir', type: 'text',
-              placeholder: 'C:/path/to/project', value: projectDir,
-              onInput: (e) => setProjectDir(e.target.value)
-            }),
-            h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: () => applyProjectDirInput(projectDir) }, 'Load')
-          )
-        )
-      : null,
-    // ---- Tool permissions (project scope only) --------------------------
-    scope === 'project' && projectDir
+      projectDir
+        ? 'Servers available to this project: app-wide servers (app badge) plus servers committed to this project\'s .mcp.json. A project server with the same name shadows the app-wide one.'
+        : 'App-wide Model Context Protocol servers, visible to every project. The AI client discovers each server\'s tools and advertises them to the model.'),
+    // ---- Tool permissions (project list only) ---------------------------
+    projectDir
       ? h('div', { class: 'group' },
           h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, with a shared fallback')),
           h('ul', { class: 'group__list' },
@@ -369,10 +336,26 @@ export function SettingsMcpView(props = {}) {
       serversList.length
         ? serversList.map(serverRow)
         : h('li', { class: 'mcp__empty' },
-            scope === 'app'
-              ? 'No app-wide MCP servers yet. Tap "+" to add one — it will be visible to every project.'
-              : 'No MCP servers for this project yet. Tap "+" to add one, or check the App tab for app-wide servers.')
+            projectDir
+              ? 'No MCP servers for this project yet. Tap "+" to add one, or manage app-wide servers from Settings → Application.'
+              : 'No app-wide MCP servers yet. Tap "+" to add one — it will be visible to every project.')
     ),
+    // App list only: deep-link into a project's list.
+    !projectDir
+      ? h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'mcp-open-project' }, 'Project servers'),
+          h('div', { class: 'row row--inline' },
+            h('input', {
+              class: 'input', id: 'mcp-open-project', type: 'text',
+              placeholder: 'C:/path/to/project', value: dirInput,
+              onInput: (e) => setDirInput(e.target.value),
+              onKeyDown: (e) => { if (e.key === 'Enter') openProject(); }
+            }),
+            h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
+          ),
+          h('span', { class: 'hint hint--compact' }, 'Project servers live with the project (committed to .mcp.json). Open a project to manage them.')
+        )
+      : null,
     h('div', { class: 'page-bar' },
       h('span', {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
@@ -386,9 +369,12 @@ export function SettingsMcpView(props = {}) {
 export function SettingsMcpEditView(props) {
   const id = props.id || '';
   const projectDir = props.projectDir || (activeProject.value && activeProject.value.dir) || '';
-  // The scope an add creates in; an edit always reflects the server's
-  // actual scope (scope is fixed at creation — delete + re-add to move).
-  const [addScope, setAddScope] = useState(props.scope === 'app' ? 'app' : (projectDir ? 'project' : 'app'));
+  // The scope an add creates in, pre-selected from the list the user
+  // came from; an edit always reflects the server's actual scope
+  // (scope is fixed at creation — delete + re-add to move).
+  const [addScope, setAddScope] = useState(
+    props.scope === 'app' ? 'app' : (props.scope === 'project' ? 'project' : (projectDir ? 'project' : 'app'))
+  );
   const [currentScope, setCurrentScope] = useState(props.scope === 'app' ? 'app' : 'project');
 
   const nameEl = useRef(null);
@@ -410,9 +396,9 @@ export function SettingsMcpEditView(props) {
     if (id) {
       // List and find by id; the dedicated /api/mcp/servers/:id route
       // is reserved for a future revision (a `getServer` REST shape).
-      // The list is the merged app + project view, so a server of either
-      // scope is found; scope on the record tells the editor which file
-      // the save lands in.
+      // With projectDir the list is the merged app + project view;
+      // without it the app-wide list. Either way the record's scope
+      // tells the editor which file the save lands in.
       const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
       let r;
       try {
@@ -572,11 +558,10 @@ export function SettingsMcpEditView(props) {
   useEffect(() => { load(); }, [id]);
 
   const title = id ? 'Edit MCP server' : 'Add MCP server';
-  const backQs = projectQS(projectDir);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/mcp' + backQs, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
+      h('a', { href: '#/settings/mcp' + projectQS(projectDir), class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, title)
     ),
     // ---- Scope (add only; fixed at creation) ----------------------------

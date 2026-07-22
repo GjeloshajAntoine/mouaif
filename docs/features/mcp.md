@@ -20,16 +20,16 @@ Every MCP server is configured in exactly one of two scopes:
 - **App** — stored in the app SQLite store (`~/.mouaif/store.sqlite`) under `mcp.servers`. The server is visible to every project: its tools are advertised in any chat, and its child process runs per context (each project gets its own spawn).
 - **Project** — committed to `<projectDir>/.mcp.json` under `servers`, so it can be reviewed and shared with the repo.
 
-A project sees the **union** of both scopes; a project entry whose slug matches an app entry shadows it (the settings resolution order, decisions §2). The shadowed app entry still exists in the app store — the **App** tab of the MCP settings lists it and can edit, start, or delete it — but the chat in that project only sees the project entry.
+A project sees the **union** of both scopes; a project entry whose slug matches an app entry shadows it (the settings resolution order, decisions §2). The shadowed app entry still exists in the app store — the app-wide MCP settings list can edit, start, or delete it — but the chat in that project only sees the project entry.
 
-**Settings → MCP servers** (under *Application*) opens the list with an **App / Project** scope switcher:
+The two scopes have two homes in Settings, each its own page (no tabs):
 
-- The **App** tab lists only app-wide servers. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat).
-- The **Project** tab lists the merged view for the active project — app entries first, each marked with an **app** / **project** badge — plus the per-server **Tool permissions** rows and the shared fallback gate (project-scoped, since the authorization maps live in `.mcp.json`).
+- **Settings → Application → MCP servers** (`#/settings/mcp`) — the app-wide list. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). A **Project servers** row at the bottom deep-links into a project's list by path.
+- **Settings → Active project → MCP servers** (`#/settings/mcp?projectDir=…`) — the merged view for that project: app entries first, each marked with an **app** / **project** badge, plus the per-server **Tool permissions** rows and the shared fallback gate (project-scoped, since the authorization maps live in `.mcp.json`).
 
 ### Adding a server
 
-1. Open **Settings → MCP servers** and pick a scope tab (the **+** button creates in the tab you are on; the editor also shows an **App / This project** segmented control).
+1. Open the MCP servers page for the scope you want (the **+** button creates in that scope; the editor also shows an **App / This project** segmented control).
 2. Tap **+** to add a server. Fill in:
    - **Scope** — *App (all projects)* or *This project*. Fixed at creation; delete and re-add to move a server.
    - **Name** — a short label (e.g. `filesystem`).
@@ -150,7 +150,7 @@ await mcp.stopServer(projectDir, server.id);
 
 ## Behavior
 
-- **Server entries are scoped — app or project.** Project entries live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. App entries live in the app SQLite store under `mcp.servers` and are visible to every project. A project entry shadows an app entry with the same slug; the app entry stays editable from the App tab. Legacy `.mouaif.json` `mcp.servers` is read as a fallback. Runtime sessions are keyed by context (project dir, or the shared `app` context for project-less starts), so a chat dispatches to its own child and an App-tab-started server is reachable from every chat.
+- **Server entries are scoped — app or project.** Project entries live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. App entries live in the app SQLite store under `mcp.servers` and are visible to every project. A project entry shadows an app entry with the same slug; the app entry stays editable from the app-wide list. Legacy `.mouaif.json` `mcp.servers` is read as a fallback. Runtime sessions are keyed by context (project dir, or the shared `app` context for project-less starts), so a chat dispatches to its own child and a server started from the app-wide list is reachable from every chat.
 - **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
 - **Discovery is cached on the session *and* persisted in the app store.** A successful `tools/list` lands on the server record's in-memory session and is also written to the app SQLite store (`mcp_tool_cache` table, keyed by project directory + server id). The AI client uses the live session when the server is running; it falls back to the persisted cache when the server is enabled but stopped (e.g. after a mouaif restart, or on a new chat before the auto-start fires). A tool call against a stopped server returns `EMCP_NOSESSION` — the honest signal — but the model still sees the surface and the user can tap Start. The cache is runtime state, not config, which is why it does not live in the project file; legacy inline `toolCache` entries are migrated into the store on first read.
 - **Enabled servers auto-start on chat open.** `GET /api/tools/list` (which the chat UI calls on load) runs `ensureEnabledServers(projectDir)`: every enabled server that is not already `ready` / `starting` is spawned and re-discovered before the catalog is returned. Disabled servers stay stopped. A failed start is captured as `errored` on that server only — the rest of the enabled set still starts.
