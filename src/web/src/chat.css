@@ -1288,11 +1288,14 @@
      the first input event — before that the two could disagree). */
   min-height: 32px;
   max-height: 120px;
-  /* 1.25 (20px line box) exactly fills the 32px - 12px content box, so
-     the single-line text sits vertically centered. 1.35 made the line
-     21.6px tall — taller than the 20px content box — which pushed the
-     text down and made autoresize measure scrollHeight ≈ 34px. */
-  line-height: 1.25;
+  /* line-height = the full content-box height (32px - 12px padding),
+     so the single line's box IS the content box and the glyph
+     half-leading can only center it. iOS Safari distributes textarea
+     padding unevenly with tight line-heights (the line box sits
+     against the bottom padding edge, so text renders ~2px low);
+     matching line-height to the content box removes that wiggle
+     room entirely. */
+  line-height: 20px;
   /* More side padding so the typed text does not press against the
      rounded pill edge or the neighbour buttons. */
   padding: 6px 4px;
