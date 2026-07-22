@@ -121,7 +121,11 @@ All `PATCH`-style controls share a single `updateChat(patch)` helper. On success
 
 The chat view is a full-height flex column: the head and composer are fixed-height (`flex: 0 0 auto`) and the transcript in between flexes (`flex: 1 1 auto; min-height: 0`) and scrolls internally. This keeps the composer pinned to the bottom and stops the last message from being hidden behind it — the transcript scrolls, not the page. The shell (`.app__shell`) is bounded to `100dvh` and the drill-in main region (`.app__main--flush`) is a bounded flex column so the internal scroll works.
 
-The composer is a floating pill (rounded, `--surface-2` background, `margin: 6px 10px calc(var(--safe-bottom) + 6px)`) holding a single horizontal row: a files button, an image button, an auto-growing `<textarea>`, and a 32 × 32 px round send button, with a status line below that wraps to its own row. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `auto` on every `input` event, then set to `Math.min(120, Math.max(32, scrollHeight))`. After a send it collapses back to its 32 px single-line height.
+The composer is a floating pill (rounded, `--surface-2` background, `margin: 6px 10px 0`) holding a single horizontal row: a files button, an image button, an auto-growing `<textarea>`, and a 32 × 32 px round send button. The status line lives **below** the pill, outside it. `Enter` sends; `Shift+Enter` inserts a newline. The textarea's height is reset to `auto` on every `input` event, then set to `Math.min(120, Math.max(32, scrollHeight))`. After a send it collapses back to its 32 px single-line height. The textarea's font size is `1rem` (16 px) so iOS Safari does not auto-zoom on focus.
+
+The status line carries the bottom safe-area inset via **padding** (`padding: 2px 0 calc(var(--safe-bottom) + 6px)`), not margin, so the space is reserved even when the status is empty — keeping the composer flush with the bottom of the view instead of floating above the home-indicator area with a gap. When the status is empty the text collapses (`font-size: 0`) but the safe-area padding remains.
+
+On narrow phones the composer keeps its 10 px side margin and the textarea has a little more internal side padding (4 px) so typed text does not press against the rounded pill edge.
 
 ## Implementation notes
 

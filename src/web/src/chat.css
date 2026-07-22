@@ -1262,6 +1262,8 @@
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   flex: 0 0 auto;
+  /* Sits right at the bottom of the screen — the safe-area inset is
+     on .chat-view__status below, not here. */
   margin: 6px 10px 0;
   box-shadow: var(--shadow-sm);
   overscroll-behavior: contain;
@@ -1280,11 +1282,14 @@
   box-shadow: none;
   resize: none;
   font-family: inherit;
+  font-size: 1rem; /* ≥ 16px so iOS Safari does not zoom on focus */
   height: 32px;
   min-height: 32px;
   max-height: 120px;
   line-height: 1.35;
-  padding: 6px 2px;
+  /* More side padding so the typed text does not press against the
+     rounded pill edge or the neighbour buttons. */
+  padding: 6px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
@@ -1343,15 +1348,30 @@
   align-self: flex-end;
 }
 .chat-view__send svg { display: block; margin-left: -1px; }
+/* Status line below the composer. It carries the safe-area inset via
+   its padding (not margin) so the space is always reserved — even when
+   the status is empty and `display: none` collapses it, the composer
+   above still ends flush with the bottom of the view (the padding lives
+   on the status element which is the last child of the flex column;
+   when it's hidden the composer simply abuts the view's bottom edge,
+   which is the shell — already safe-area-aware via body padding). */
 .chat-view__status {
-  margin: 0 10px calc(var(--safe-bottom) + 6px);
+  margin: 0 10px;
+  padding: 2px 0 calc(var(--safe-bottom) + 6px);
   font-size: 0.7rem;
   text-align: center;
   color: var(--muted);
   line-height: 1.3;
   min-height: 0;
 }
-.chat-view__status:empty { display: none; }
+/* When there is no status text the row collapses but the safe-area
+   padding must remain so the composer does not slide down into the
+   home-indicator area on phones with a bottom inset. */
+.chat-view__status:empty {
+  padding: 0 0 calc(var(--safe-bottom) + 4px);
+  font-size: 0;
+  line-height: 0;
+}
 
 /* Icon button on the chat composer that opens the file editor.
    Sized to match the send button so the row stays a single line
