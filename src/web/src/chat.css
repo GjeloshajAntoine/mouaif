@@ -271,6 +271,7 @@
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
+  height: 60vh;
   min-height: 280px;
   max-height: 60vh;
   overflow: hidden;
