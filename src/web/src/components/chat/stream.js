@@ -103,6 +103,43 @@ export async function runShellCommand(cmd, state, refs) {
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 
+// runMcpCommand(serverSlug, toolName, label, state, refs)
+//
+// runMcpCommand(serverSlug, toolName, label, state, refs, args)
+//
+// Direct MCP tool invocation from the @-mention popup.
+// Calls POST /api/mcp/call and renders a tool_call + tool_result card.
+export async function runMcpCommand(serverSlug, toolName, label, state, refs, args) {
+  const { projectDir, chatId } = state.props;
+  if (!projectDir) return;
+  const callArgs = args || {};
+  const callId = 'mcp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  refs.promptInput.current.value = '';
+  refs._autoresize();
+  appendToolCallCard({ id: callId, name: label || toolName, args: callArgs }, refs);
+  setChatStatus(refs, 'calling MCP ' + (label || toolName) + '…', 'busy');
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
+  let r;
+  try {
+    r = await fetchJson('/api/mcp/call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, serverId: serverSlug, toolName, args: callArgs })
+    });
+  } catch (err) {
+    appendToolResultCard({ id: null, name: label || toolName, args: callArgs, ok: false, result: { error: String(err) } }, refs);
+    setChatStatus(refs, 'MCP error', 'error');
+    if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    return;
+  }
+  const body = r.body || {};
+  appendToolResultCard({ id: callId, name: label || toolName, ok: !!body.ok, result: body }, refs);
+  if (r.status === 403) setChatStatus(refs, 'MCP tool is disabled', 'error');
+  else if (r.status !== 200) setChatStatus(refs, 'MCP failed: ' + (body.error || body.code || 'HTTP ' + r.status), 'error');
+  else setChatStatus(refs, 'MCP ' + (label || toolName) + ' done', 'success');
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+}
+
 // startStreamRecovery / scheduleRecoveryTick / runRecoveryTick /
 // finishStreamRecovery / stopStreamRecovery
 //
@@ -269,6 +306,30 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   if (text.startsWith('/shell ')) {
     const cmd = text.slice('/shell '.length).trim();
     if (cmd) return runShellCommand(cmd, state, refs);
+  }
+  // @<toolname> <args? — direct tool invocation via @-mention syntax.
+  // Parsed here instead of in atMention.js so the Enter key fires it.
+  const atMatch = text.match(/^@(\S+)\s*(.*)$/);
+  if (atMatch) {
+    const toolName = atMatch[1];
+    const rest = atMatch[2].trim();
+    const t = state.tools || { catalog: [] };
+    const toolSpec = (t.catalog || []).find(x => x && x.name === toolName);
+    if (toolSpec) {
+      if (String(toolName).startsWith('mcp__')) {
+        // MCP tool — parse server slug + tool name
+        const parts = String(toolName).split('__');
+        if (parts.length >= 3) {
+          const serverSlug = parts[1];
+          const mcpTool = parts.slice(2).join('__');
+          let args = {};
+          if (rest) { try { args = JSON.parse(rest); } catch { args = { cmd: rest }; } }
+          return runMcpCommand(serverSlug, mcpTool, toolName, state, refs, args);
+        }
+      } else if (toolName === 'shell') {
+        return runShellCommand(rest, state, refs);
+      }
+    }
   }
   if (!modelId || !providerId) {
     // If the chat has no provider+model yet, open the picker so

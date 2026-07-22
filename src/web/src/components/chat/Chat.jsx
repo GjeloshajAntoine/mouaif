@@ -9,6 +9,7 @@ import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
+import { runMcpCommand, runShellCommand } from './stream.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -43,7 +44,14 @@ export function ChatView(props) {
     const cleanup = mountAtMention(
       refs.promptInput.current,
       atMentionRef.current,
-      s.state
+      s.state,
+      (serverSlug, toolName, label, args) => {
+        if (serverSlug === '*native*' && toolName === 'shell') {
+          runShellCommand((args && args.cmd) || '', s.state, refs);
+        } else {
+          runMcpCommand(serverSlug, toolName, label, s.state, refs, args);
+        }
+      }
     );
     // Refresh items periodically so new files / tools show up
     const timer = setInterval(() => refreshAtMentionItems(), 5000);
