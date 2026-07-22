@@ -542,9 +542,10 @@ export function appendToolResultCard(toolResult, refs) {
   const body = card.querySelector('.tool-card__body');
   if (body) renderToolResultBody(body, toolResult, isSubagentTool);
   if (isSubagent) renderSubagentChat(card, toolResult);
-  // Expand errors automatically so the user sees what went wrong
-  // without an extra tap. Successful results stay collapsed.
-  if (!toolResult.ok) card.classList.add('is-expanded');
+  // Expand shell results inline so the user sees terminal output
+  // without an extra tap. Errors always expand too.
+  const toolName = normalizeToolName(toolResult && toolResult.name);
+  if (!toolResult.ok || toolName === 'shell') card.classList.add('is-expanded');
   afterTranscriptAppend(refs, true);
 }
 
