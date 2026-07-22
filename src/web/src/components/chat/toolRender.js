@@ -5,8 +5,6 @@
 // as a textContent assignment. The subagent tool gets a separate
 // chat-style render via renderSubagentChat in transcript.js.
 
-import { RangeSetBuilder } from '@codemirror/state';
-import { Decoration } from '@codemirror/view';
 import {
   coerceToolResult,
   formatReadableToolResult,
@@ -33,28 +31,6 @@ function renderPreviewPre(parent, text, className) {
   pre.textContent = text || '';
   parent.appendChild(pre);
   return pre;
-}
-
-// diffDecorations(view)
-//
-// Build a CodeMirror RangeSet that color-codes the +/-/@@ lines
-// of a unified diff. Used by the edit_file preview when the file
-// is opened in the chat's file editor.
-function diffDecorations(view) {
-  const builder = new RangeSetBuilder();
-  for (let i = 1; i <= view.state.doc.lines; i++) {
-    const line = view.state.doc.line(i);
-    const text = line.text;
-    const cls = text.startsWith('+') && !text.startsWith('+++')
-      ? 'cm-diff-added'
-      : text.startsWith('-') && !text.startsWith('---')
-        ? 'cm-diff-removed'
-        : text.startsWith('@@')
-          ? 'cm-diff-hunk'
-          : '';
-    if (cls) builder.add(line.from, line.from, Decoration.line({ class: cls }));
-  }
-  return builder.finish();
 }
 
 // renderDiffPreview(parent, text)
@@ -298,7 +274,6 @@ export function formatToolResult(toolResult) {
 }
 
 export {
-  diffDecorations,
   imageBlockToElement,
   renderShellToolResult,
   renderReadFileToolResult,

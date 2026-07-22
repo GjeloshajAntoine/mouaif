@@ -42,7 +42,7 @@ const TEXT_EXTS = new Set([
   '.cpp', '.hpp', '.css', '.scss', '.sass', '.less', '.html', '.htm',
   '.yml', '.yaml', '.toml', '.sh', '.bash', '.zsh', '.fish',
   '.xml', '.svg', '.ini', '.cfg', '.conf', '.env', '.gitignore',
-  '.editorconfig', '.dockerignore', '.lua', '.pl', '.r',
+  '.editorconfig', '.dockerignore', '.ps1', '.psm1', '.psd1', '.lua', '.pl', '.r',
   '.sql', '.csv', '.tsv', '.vue', '.svelte'
 ]);
 

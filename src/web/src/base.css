@@ -158,3 +158,65 @@ html {
 }
 
 #app { display: block; }
+
+/* ---- Utility classes (reduce CSS bloat) ------------------------- */
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-btn {
+  flex: 0 0 auto;
+  width: var(--tap-sm);
+  min-width: var(--tap-sm);
+  height: var(--tap-sm);
+  min-height: var(--tap-sm);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, color 80ms ease;
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--fg); }
+.icon-btn:active { background: var(--surface-3); }
+.icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon-btn--danger { color: var(--danger); }
+.icon-btn--danger:hover { background: var(--danger-soft); }
+.shimmer {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-3) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: mouaif-shimmer 1.4s linear infinite;
+}
+.flex-1 { flex: 1; min-width: 0; }
+.flex-row { display: flex; flex-direction: row; }
+.flex-col { display: flex; flex-direction: column; }
+.tap-min { min-height: var(--tap); }
+.pill-dot {
+  width: 8px; height: 8px; padding: 0; border-radius: 50%; border: 0;
+  overflow: hidden; white-space: nowrap; text-indent: 200%;
+  font-size: 0; line-height: 0; color: transparent;
+}
+.scroll-y {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.scroll-y::-webkit-scrollbar { width: 6px; }
+.scroll-y::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-sm); }
+.empty-icon {
+  width: 28px; height: 28px; border-radius: var(--r-sm);
+  background: var(--accent-soft); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 2px;
+}
+.empty-icon svg { display: block; }

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import cssnano from 'cssnano';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,30 @@ export default defineConfig({
   // paths declared in the manifest itself.
   publicDir: 'public',
   plugins: [preact(), mouaifServiceWorkerPlugin()],
+  css: {
+    devSourcemap: false,
+    postcss: {
+      plugins: [
+        cssnano({
+          preset: [
+            'default',
+            {
+              // Safe: don't merge @font-face rules, don't drop
+              // z-index values, don't autoprefix — we only target
+              // modern browsers.
+              discardComments: { removeAll: true },
+              normalizeWhitespace: true,
+              minifyFontValues: { removeQuotes: false },
+              mergeRules: true,
+              mergeIdents: false,
+              reduceIdents: false,
+              zindex: false,
+            }
+          ]
+        })
+      ]
+    }
+  },
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,

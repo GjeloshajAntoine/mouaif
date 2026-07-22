@@ -189,29 +189,6 @@
 .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
 .chat-view__back:active { background: var(--surface-3); }
 
-.chat-view__iconbtn {
-  font: inherit;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  padding: 0;
-  min-height: var(--tap-sm);
-  min-width: var(--tap-sm);
-  font-size: 0.9rem;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  transition: background 80ms ease, color 80ms ease;
-}
-.chat-view__iconbtn:hover { background: var(--surface-2); color: var(--fg); }
-.chat-view__iconbtn--danger { color: var(--danger); }
-.chat-view__iconbtn--danger:hover { background: var(--danger-soft); }
-.chat-view__iconbtn:disabled { opacity: 0.5; cursor: not-allowed; }
-
 /* ---- Model row + picker ------------------------------------------ */
 
 .chat-view__model-row {
@@ -257,18 +234,10 @@
 .chat-view__model-id {
   font-size: 0.8rem;
   font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chat-view__model-provider {
   font-size: 0.62rem;
   color: var(--muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chat-view__model-trigger.is-empty .chat-view__model-id { color: var(--muted); font-weight: 400; font-style: italic; }
 .chat-view__model-trigger.no-providers .chat-view__model-id { color: var(--warning); font-style: italic; }
@@ -508,20 +477,12 @@
 }
 .chat-view__picker-row-id {
   font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   flex: 1 1 auto;
 }
 .chat-view__picker-row.is-active .chat-view__picker-row-id { color: var(--accent); }
 .chat-view__picker-row-label {
   font-size: 0.72rem;
   color: var(--fg-soft);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   flex: 0 1 45%;
 }
 .chat-view__picker-row-meta {
@@ -548,18 +509,6 @@
   align-items: center;
   gap: 6px;
 }
-.chat-view__picker-empty-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 2px;
-}
-.chat-view__picker-empty-icon svg { display: block; }
 .chat-view__picker-empty-title {
   color: var(--fg);
   font-weight: 600;
@@ -595,17 +544,10 @@
 .chat-view__picker-skel-row {
   height: 36px;
   border-radius: var(--r-sm);
-  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-3) 50%, var(--surface) 100%);
-  background-size: 200% 100%;
-  animation: mouaif-shimmer 1.4s linear infinite;
 }
 .chat-view__picker-skel-row:nth-child(2) { width: 78%; }
 .chat-view__picker-skel-row:nth-child(3) { width: 90%; }
 .chat-view__picker-skel-row:nth-child(4) { width: 64%; }
-@keyframes mouaif-shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
 
 /* ---- Title / meta / settings pop --------------------------------- */
 
@@ -613,10 +555,6 @@
 .chat-view__name {
   font-weight: 600;
   font-size: 0.9rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
 .chat-view__name:hover { color: var(--accent); }
@@ -738,15 +676,12 @@
 
 /* ---- Markdown-rendered content ----------------------------------- */
 
-.chat-msg--assistant .chat-msg__body,
-.chat-msg--system .chat-msg__body {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body {
   white-space: normal;
   padding: 5px 8px;
 }
-.chat-msg--assistant .chat-msg__body > :first-child,
-.chat-msg--system .chat-msg__body > :first-child { margin-top: 0; }
-.chat-msg--assistant .chat-msg__body > :last-child,
-.chat-msg--system .chat-msg__body > :last-child { margin-bottom: 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body > :first-child { margin-top: 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body > :last-child { margin-bottom: 0; }
 
 .chat-msg__reasoning {
   margin: 0 0 4px 0;
@@ -797,58 +732,30 @@
 }
 .chat-msg__reasoning-body pre code { padding: 0; border: 0; background: transparent; font-size: inherit; }
 
-.chat-msg--assistant .chat-msg__body p,
-.chat-msg--system .chat-msg__body p { margin: 0 0 3px 0; }
-.chat-msg--assistant .chat-msg__body p:last-child,
-.chat-msg--system .chat-msg__body p:last-child { margin-bottom: 0; }
-.chat-msg--assistant .chat-msg__body h1,
-.chat-msg--assistant .chat-msg__body h2,
-.chat-msg--assistant .chat-msg__body h3,
-.chat-msg--assistant .chat-msg__body h4,
-.chat-msg--assistant .chat-msg__body h5,
-.chat-msg--assistant .chat-msg__body h6,
-.chat-msg--system .chat-msg__body h1,
-.chat-msg--system .chat-msg__body h2,
-.chat-msg--system .chat-msg__body h3,
-.chat-msg--system .chat-msg__body h4,
-.chat-msg--system .chat-msg__body h5,
-.chat-msg--system .chat-msg__body h6 {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body p { margin: 0 0 3px 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body p:last-child { margin-bottom: 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body :is(h1,h2,h3,h4,h5,h6) {
   margin: 4px 0 2px 0;
   font-weight: 600;
   line-height: 1.2;
 }
-.chat-msg--assistant .chat-msg__body h1,
-.chat-msg--system .chat-msg__body h1 { font-size: 0.96rem; }
-.chat-msg--assistant .chat-msg__body h2,
-.chat-msg--system .chat-msg__body h2 { font-size: 0.9rem; }
-.chat-msg--assistant .chat-msg__body h3,
-.chat-msg--system .chat-msg__body h3 { font-size: 0.88rem; }
-.chat-msg--assistant .chat-msg__body h4,
-.chat-msg--assistant .chat-msg__body h5,
-.chat-msg--assistant .chat-msg__body h6,
-.chat-msg--system .chat-msg__body h4,
-.chat-msg--system .chat-msg__body h5,
-.chat-msg--system .chat-msg__body h6 { font-size: 0.8rem; }
-.chat-msg--assistant .chat-msg__body ul,
-.chat-msg--assistant .chat-msg__body ol,
-.chat-msg--system .chat-msg__body ul,
-.chat-msg--system .chat-msg__body ol {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body h1 { font-size: 0.96rem; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body h2 { font-size: 0.9rem; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body h3 { font-size: 0.88rem; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body :is(h4,h5,h6) { font-size: 0.8rem; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body :is(ul,ol) {
   margin: 0 0 3px 0;
   padding-left: 1.1em;
 }
-.chat-msg--assistant .chat-msg__body li,
-.chat-msg--system .chat-msg__body li { margin: 1px 0; }
-.chat-msg--assistant .chat-msg__body li > p,
-.chat-msg--system .chat-msg__body li > p { margin: 0; }
-.chat-msg--assistant .chat-msg__body blockquote,
-.chat-msg--system .chat-msg__body blockquote {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body li { margin: 1px 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body li > p { margin: 0; }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body blockquote {
   margin: 2px 0 3px 0;
   padding: 1px 6px;
   border-left: 3px solid var(--border-strong);
   color: var(--muted);
 }
-.chat-msg--assistant .chat-msg__body pre,
-.chat-msg--system .chat-msg__body pre {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body pre {
   margin: 2px 0 3px 0;
   padding: 4px 6px;
   background: var(--surface);
@@ -860,8 +767,7 @@
   line-height: 1.3;
   white-space: pre;
 }
-.chat-msg--assistant .chat-msg__body code,
-.chat-msg--system .chat-msg__body code {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body code {
   font-family: var(--font-mono);
   font-size: 0.82em;
   padding: 0 3px;
@@ -869,39 +775,32 @@
   background: var(--surface);
   border: 1px solid var(--border);
 }
-.chat-msg--assistant .chat-msg__body pre code,
-.chat-msg--system .chat-msg__body pre code {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body pre code {
   padding: 0;
   border: 0;
   background: transparent;
   font-size: inherit;
 }
-.chat-msg--assistant .chat-msg__body a,
-.chat-msg--system .chat-msg__body a {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body a {
   color: var(--accent);
   text-decoration: underline;
   word-break: break-word;
 }
-.chat-msg--assistant .chat-msg__body a:hover,
-.chat-msg--system .chat-msg__body a:hover { color: var(--fg); }
-.chat-msg--assistant .chat-msg__body img,
-.chat-msg--system .chat-msg__body img {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body a:hover { color: var(--fg); }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body img {
   max-width: 100%;
   height: auto;
   border-radius: var(--r-sm);
 }
-.chat-msg--assistant .chat-msg__body hr,
-.chat-msg--system .chat-msg__body hr {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body hr {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 4px 0;
 }
-.chat-msg--assistant .chat-msg__body del,
-.chat-msg--system .chat-msg__body del { color: var(--muted); }
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body del { color: var(--muted); }
 
 /* ---- Tables ------------------------------------------------------ */
-.chat-msg--assistant .chat-msg__body table,
-.chat-msg--system .chat-msg__body table {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body table {
   border-collapse: collapse;
   margin: 4px 0;
   font-size: 0.75rem;
@@ -909,39 +808,33 @@
   overflow-x: auto;
   display: block;
 }
-.chat-msg--assistant .chat-msg__body th,
-.chat-msg--system .chat-msg__body th {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body th {
   background: var(--surface-2);
   font-weight: 700;
   text-align: left;
   padding: 3px 6px;
   border: 1px solid var(--border);
 }
-.chat-msg--assistant .chat-msg__body td,
-.chat-msg--system .chat-msg__body td {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body td {
   padding: 3px 6px;
   border: 1px solid var(--border);
 }
-.chat-msg--assistant .chat-msg__body tr:nth-child(even),
-.chat-msg--system .chat-msg__body tr:nth-child(even) {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body tr:nth-child(even) {
   background: var(--surface);
 }
 
 /* ---- Task lists -------------------------------------------------- */
-.chat-msg--assistant .chat-msg__body ul .task-list-item,
-.chat-msg--system .chat-msg__body ul .task-list-item {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body ul .task-list-item {
   list-style: none;
   margin-left: -1.2em;
 }
-.chat-msg--assistant .chat-msg__body ul .task-list-item label,
-.chat-msg--system .chat-msg__body ul .task-list-item label {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body ul .task-list-item label {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
   cursor: default;
 }
-.chat-msg--assistant .chat-msg__body ul .task-list-item input[type="checkbox"],
-.chat-msg--system .chat-msg__body ul .task-list-item input[type="checkbox"] {
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body ul .task-list-item input[type="checkbox"] {
   margin: 0;
   accent-color: var(--accent);
 }
@@ -1143,18 +1036,6 @@
   align-items: center;
   gap: 4px;
 }
-.chat-view__empty-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 2px;
-}
-.chat-view__empty-icon svg { display: block; }
 .chat-view__empty-title {
   color: var(--fg);
   font-weight: 600;
@@ -1234,29 +1115,15 @@
   font-weight: 600;
   color: var(--fg);
   line-height: 1.15;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-
 .at-mention__subtitle {
   font-size: 0.65rem;
   color: var(--muted);
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- Composer ----------------------------------------------------- */
 
-/* Composer: a single horizontal row — textarea + send button — with
-   the files/image icon buttons on the left. The status line now lives
-   BELOW the composer (not inside it), so the pill stays compact.
-   All direct children (buttons, textarea) align-self: flex-end so
-   nothing jumps when the textarea grows multi-line.
-   flex-wrap: wrap allows the image preview row to break to its own
-   line below the input row. */
 .chat-view__composer {
   display: flex;
   flex-direction: row;
@@ -1268,18 +1135,11 @@
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   flex: 0 0 auto;
-  /* Sits right at the bottom of the screen — the safe-area inset is
-     on .chat-view__status below, not here. */
   margin: 6px 10px 0;
   box-shadow: var(--shadow-sm);
   overscroll-behavior: contain;
   position: relative;
 }
-/* Composer textarea: single-line when empty, grows up to 120px as the
-   user types. The base `textarea.input` rule has its own 64px min-height
-   (for settings forms) so the :where() :not() selector above excludes
-   this class — the chat composer owns its own sizing. 32px matches the
-   --tap touch target so the row lines up with the send button. */
 .chat-view__textarea {
   flex: 1 1 0;
   min-width: 0;
@@ -1288,34 +1148,15 @@
   box-shadow: none;
   resize: none;
   font-family: inherit;
-  font-size: 1rem; /* ≥ 16px so iOS Safari does not zoom on focus */
-  /* No CSS `height`: autoresize() sets the box height inline. A CSS
-     height would fight the inline style (inline wins, but only after
-     the first input event — before that the two could disagree). */
+  font-size: 1rem;
   min-height: 32px;
   max-height: 120px;
-  /* line-height = the full content-box height (32px - 12px padding),
-     so the single line's box IS the content box and the glyph
-     half-leading can only center it. iOS Safari distributes textarea
-     padding unevenly with tight line-heights (the line box sits
-     against the bottom padding edge, so text renders ~2px low);
-     matching line-height to the content box removes that wiggle
-     room entirely. */
   line-height: 20px;
-  /* More side padding so the typed text does not press against the
-     rounded pill edge or the neighbour buttons. */
   padding: 6px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
   outline: none;
-  /* hidden, not auto: with auto, sub-pixel scrollHeight (e.g. 32.4px)
-     makes autoresize round the box up to 33px — the 20px line then
-     sits 1px low in a 21px content box — and the browser overlays a
-     scrollbar on the right edge of the text. The box is sized exactly
-     to the content by autoresize(), so nothing ever needs to scroll
-     until the 120px ceiling, and overflow-y goes back to auto there
-     via max-height clipping. */
   overflow-y: hidden;
   scrollbar-width: none;
 }
@@ -1359,9 +1200,6 @@
   line-height: 15px;
 }
 .chat-view__send {
-  /* 32px square: matches the --tap touch target used everywhere
-     else in the app, and matches the textarea's min-height so the
-     row stays a single line when the composer is at rest. */
   width: 32px;
   height: 32px;
   padding: 0;
@@ -1372,13 +1210,6 @@
   align-self: flex-end;
 }
 .chat-view__send svg { display: block; margin-left: -1px; }
-/* Status line below the composer. It carries the safe-area inset via
-   its padding (not margin) so the space is always reserved — even when
-   the status is empty and `display: none` collapses it, the composer
-   above still ends flush with the bottom of the view (the padding lives
-   on the status element which is the last child of the flex column;
-   when it's hidden the composer simply abuts the view's bottom edge,
-   which is the shell — already safe-area-aware via body padding). */
 .chat-view__status {
   display: block;
   flex: 0 0 auto;
@@ -1390,9 +1221,6 @@
   line-height: 1.3;
   min-height: 0;
 }
-/* When there is no status text the row collapses but the safe-area
-   padding must remain so the composer does not slide down into the
-   home-indicator area on phones with a bottom inset. */
 .chat-view__status:empty {
   display: block;
   padding: 0 0 calc(var(--safe-bottom) + 14px);
@@ -1401,49 +1229,17 @@
   line-height: 0;
 }
 
-/* Icon button on the chat composer that opens the file editor.
-   Sized to match the send button so the row stays a single line
-   when the composer is at rest. */
 .chat-view__files-btn,
 .chat-view__image-btn {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  min-height: 32px;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
+  width: 32px; height: 32px; padding: 0; min-height: 32px;
+  flex: 0 0 auto; align-self: flex-start;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
 }
 .chat-view__files-btn:hover,
 .chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
 .chat-view__files-btn:active,
-.chat-view__image-btn:active { background: var(--surface); }
-.chat-view__image-btn {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  min-height: 32px;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-.chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
 .chat-view__image-btn:active { background: var(--surface); }
 
 /* ---- Jump to bottom ---------------------------------------------- */

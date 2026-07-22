@@ -24,7 +24,7 @@
 // below); see the CSS.
 
 import { h, Fragment } from 'preact';
-import { useRef, useEffect, useState, useCallback } from 'preact/hooks';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
@@ -196,8 +196,12 @@ export function FileEditorView(props) {
     setOpenFile(file);
     setDirty(false);
     setEditorStatus(file.size + ' bytes');
-    mountEditor(file);
   }, [projectDir, confirmDiscardIfDirty]);
+
+  useLayoutEffect(() => {
+    if (!openFile) return;
+    mountEditor(openFile);
+  }, [openFile]);
 
   // ---- CodeMirror mount / reconfigure ---------------------------------
 
@@ -253,6 +257,10 @@ export function FileEditorView(props) {
       extensions
     });
     viewRef.current = new EditorView({ state, parent: editorHostRef.current });
+    requestAnimationFrame(() => {
+      if (!viewRef.current) return;
+      viewRef.current.requestMeasure();
+    });
   }
 
   // When the popup unmounts (e.g. onClose), destroy the view so we

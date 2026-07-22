@@ -57,6 +57,8 @@
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
+    "cssnano": "^8.0.2",
+    "postcss": "^8.5.22",
     "vite": "^5.4.21"
   }
 }

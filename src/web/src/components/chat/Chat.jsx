@@ -6,8 +6,7 @@
 // file's only job is to wire props, return the JSX, and forward
 // the action callbacks to the right elements.
 import { h } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
-import { FileEditorView } from '../FileEditor.jsx';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 
@@ -24,6 +23,18 @@ export function ChatView(props) {
   } = s;
 
   const { projectDir, chatId } = props;
+  const [FileEditor, setFileEditor] = useState(null);
+
+  useEffect(() => {
+    if (!fileEditorOpen || FileEditor) return;
+    let cancelled = false;
+    import('../FileEditor.jsx').then((mod) => {
+      if (!cancelled) setFileEditor(() => mod.FileEditorView);
+    }).catch(() => {
+      if (!cancelled) setFileEditor(null);
+    });
+    return () => { cancelled = true; };
+  }, [fileEditorOpen, FileEditor]);
 
   const atMentionRef = useRef(null);
   useEffect(() => {
@@ -200,6 +211,8 @@ export function ChatView(props) {
       ) : null
     ),
     h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
-    fileEditorOpen ? h(FileEditorView, { projectDir, onClose: () => setFileEditorOpen(false) }) : null
+    fileEditorOpen && FileEditor
+      ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
+      : null
   );
 }

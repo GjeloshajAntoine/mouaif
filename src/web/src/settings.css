@@ -15,7 +15,7 @@
   gap: 3px;
 }
 .models__row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.models__id { font-weight: 600; font-size: 0.8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models__id { font-weight: 600; font-size: 0.8rem; }
 .models__actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 .models__actions .btn { min-height: var(--tap); padding: 0 6px; font-size: 0.72rem; }
 .models__meta { color: var(--muted); font-size: 0.7rem; line-height: 1.3; word-break: break-all; }
@@ -28,9 +28,9 @@
 .prompt-row__main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
 .prompt-row__main:active { background: var(--surface-2); }
 .prompt-row__title { font-weight: 600; font-size: 0.8rem; }
-.prompt-row__meta { font-size: 0.76rem; color: var(--fg-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-row__meta { font-size: 0.76rem; color: var(--fg-soft); }
 .prompt-row__chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
-.prompts__textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+.prompts__textarea { min-height: 80px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
 
 /* ---- Settings: agents -------------------------------------------- */
 
@@ -104,10 +104,6 @@
 .settings__advanced[open] > summary::before { transform: rotate(90deg); }
 .models__add[open] > .row:last-of-type { margin-bottom: 4px; }
 
-/* The "Add a model" form has two fields that must be visible only for
-   one of the auth modes (apiKey for apikey, oauthAccount for oauth).
-   A tiny script toggles `.is-hidden` on the row that does not match the
-   current auth select value. */
 .models__add .row.is-hidden { display: none; }
 .row.is-hidden { display: none; }
 
@@ -161,7 +157,6 @@
 .card:active { background: var(--surface-3); }
 .card__main {
   flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: row;
   align-items: baseline;
@@ -171,18 +166,10 @@
   font-weight: 500;
   font-size: 0.9rem;
   letter-spacing: -0.005em;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .card__summary {
   color: var(--muted);
   font-size: 0.8rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: right;
   margin-left: auto;
 }
@@ -234,17 +221,10 @@
 .provider-row:first-child .provider-row__main { border-top: 0; }
 .provider-row__main:hover  { background: var(--surface-2); }
 .provider-row__main:active { background: var(--surface-3); }
-.provider-row__main > div:first-child {
-  flex: 1;
-  min-width: 0;
-}
+.provider-row__main > div:first-child { flex: 1; }
 .provider-row__name {
   font-weight: 500;
   font-size: 0.9rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .provider-row__meta {
   color: var(--muted);
@@ -287,7 +267,7 @@
   border-radius: var(--r-md);
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   line-height: 1.45;
   max-height: 220px;
@@ -300,20 +280,10 @@
 .settings-project { padding-bottom: 12px; }
 
 .settings-project .group { margin-top: 16px; }
-.settings-project .group__list {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-}
-.settings-project .group .input {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-}
+.settings-project .group__list { background: var(--surface); border: 1px solid var(--border-strong); }
+.settings-project .group .input { background: var(--surface-2); border: 1px solid var(--border-strong); }
 .settings-project .group .input:hover,
-.settings-project .group .input:focus {
-  background: var(--surface-3);
-  border-color: var(--accent);
-  box-shadow: none;
-}
+.settings-project .group .input:focus { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
 
 .settings-project__hero {
   position: relative;
@@ -342,7 +312,7 @@
 }
 .settings-project__path code,
 .settings-project__code {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .settings-project__path code {
   display: block;
@@ -373,7 +343,6 @@
 .settings-project__tool {
   flex-wrap: wrap;
   align-items: flex-start;
-  min-height: var(--tap);
 }
 .settings-project__item--col { flex-direction: column; align-items: stretch; }
 .settings-project__item-row {
@@ -381,7 +350,7 @@
   align-items: center;
   gap: 8px;
 }
-.settings-project__item-main { flex: 1; min-width: 0; }
+.settings-project__item-main { flex: 1; }
 .settings-project__item-title {
   color: var(--fg);
   font-size: 0.9rem;
@@ -437,7 +406,6 @@
 
 .settings-project__tool-head {
   flex: 1 1 50%;
-  min-width: 0;
   overflow: hidden;
 }
 .settings-project__tool-head .settings-project__item-note {
@@ -446,7 +414,6 @@
   white-space: nowrap;
 }
 
-/* Tools visibility tree in settings — matches the chat view tree */
 .settings-project__tools-tree {
   padding: 4px 12px 8px;
   background: var(--surface-2);
@@ -516,7 +483,7 @@
 }
 .seg__item:not(.seg__item--on):active .seg__pill { color: var(--fg); }
 .settings-project__mono {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   padding: 5px 8px;
   min-height: 30px;
@@ -621,7 +588,7 @@
 .settings-project__agent-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--surface); }
 .settings-project__agent-chev { background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 0 2px; transition: transform 0.15s; width: 18px; text-align: center; }
 .settings-project__agent-chev.is-open { transform: rotate(90deg); }
-.settings-project__agent-title { flex: 1; font-size: 0.92rem; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-project__agent-title { flex: 1; font-size: 0.92rem; font-weight: 500; }
 .settings-project__agent-tools-badge { font-size: 0.72rem; color: var(--muted); background: var(--bg); border-radius: var(--r-sm); padding: 1px 6px; white-space: nowrap; }
 .settings-project__agent-del { flex-shrink: 0; width: 24px; height: 24px; font-size: 1.1rem; line-height: 1; padding: 0; border: none; }
 .settings-project__agent-body { padding: 6px 8px 8px; border-top: 1px solid var(--border); }
@@ -633,7 +600,7 @@
 .settings-project__add-agent { margin-top: 8px; width: 100%; }
 
 .code-inline {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.86em;
   background: var(--surface-3);
   border: 1px solid var(--border);
@@ -644,7 +611,7 @@
 }
 
 textarea#projectEditor {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   line-height: 1.45;
   min-height: 160px;

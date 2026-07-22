@@ -1,0 +1,8 @@
+🚀 mouaif server running at http://0.0.0.0:5732
+   Web:    /             — mobile UI
+   Web:    /web/         — mobile UI
+   REST:   GET  /data    — get data
+   REST:   POST /data    — update data
+   SSE:    GET  /events  — subscribe to events
+   CDP:    /api/inspector/  + WS /api/inspector/proxy
+   Press Ctrl+C to stop

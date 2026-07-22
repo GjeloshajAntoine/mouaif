@@ -1429,14 +1429,14 @@ async function handleChatStream(req, res, chatId) {
     } catch { /* non-fatal */ }
   }
 
-  // Abort the upstream provider call when the browser disconnects
-  // (tab closed, navigation, phone killed the socket). Without this
-  // the server kept a dead stream running against the provider —
-  // burning tokens for nobody and, for providers without their own
-  // idle cutoff, holding the chat's running marker forever so every
-  // reconnect attempt bounced off 409 EALREADY_RUNNING.
+  // Abort the upstream provider call when the SSE response disconnects
+  // (tab closed, navigation, phone killed the socket). This must listen
+  // to `res.close`, not only `req.close`: for POST+SSE the request body is
+  // already consumed before streaming begins, so `req.close` can miss the
+  // later response-side disconnect. Missing that event leaves the in-memory
+  // running marker wedged and every retry bounces off EALREADY_RUNNING.
   const clientGone = new AbortController();
-  req.on('close', () => {
+  function cancelClientRun() {
     try { clientGone.abort(new Error('client disconnected')); } catch { /* already settled */ }
     // Also release any tool call parked on an authorization prompt.
     // The abort signal only interrupts an in-flight upstream fetch; a
@@ -1448,7 +1448,9 @@ async function handleChatStream(req, res, chatId) {
       const authz = require('./tools/authorization.js');
       authz.cancelSession(projectDir, chatId);
     } catch { /* best-effort */ }
-  });
+  }
+  req.on('aborted', cancelClientRun);
+  res.on('close', cancelClientRun);
 
   let result;
   try {

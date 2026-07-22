@@ -4,7 +4,6 @@
 
 /* ---- Inspector ------------------------------------------------------ */
 
-/* Sub-tab strip inside the connected inspector: Console | Network. */
 .inspector__subtabs {
   display: flex;
   gap: 2px;
@@ -36,21 +35,12 @@
   box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 2px 8px rgba(110,168,254,.2);
 }
 
-.inspector__title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+.inspector__title { flex: 1; }
 .inspector__status {
   margin-bottom: 10px;
   font-size: 0.8rem;
 }
 
-/* The scroller is a virtual list. The list manages its own inner
-   spacer; all we style here is the scroller itself. */
 .inspector__scroller {
   position: relative;
   width: 100%;
@@ -61,21 +51,18 @@
   border-radius: var(--r-md);
   scrollbar-width: thin;
 }
-.inspector__scroller::-webkit-scrollbar {
-  width: 6px;
-}
+.inspector__scroller::-webkit-scrollbar { width: 6px; }
 .inspector__scroller::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: var(--r-sm);
 }
 
-/* Each virtual-list row. */
 .inspector__row {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.76rem;
   line-height: 1.35;
   white-space: nowrap;
@@ -83,10 +70,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* Console row: timestamp, level chip, message. */
-.inspector__row--console {
-  align-items: center;
-}
+.inspector__row--console { align-items: center; }
 .inspector__row-time {
   color: var(--muted-2);
   font-size: 0.62rem;
@@ -108,20 +92,11 @@
 .inspector__row--exception .inspector__row-level { color: var(--danger); border-color: rgba(255,138,138,.3); background: var(--danger-soft); }
 .inspector__row--warning .inspector__row-level { color: var(--warning); border-color: rgba(240,196,106,.3); }
 .inspector__row--info .inspector__row-level { color: var(--accent); border-color: rgba(110,168,254,.3); }
-.inspector__row-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--fg-soft);
-}
+.inspector__row-text { flex: 1; }
 .inspector__row--error .inspector__row-text,
 .inspector__row--exception .inspector__row-text { color: var(--danger); }
 
-/* Network row: method, status chip, URL. */
-.inspector__row--network {
-  align-items: center;
-}
+.inspector__row--network { align-items: center; }
 .inspector__row-method {
   font-size: 0.7rem;
   font-weight: 700;
@@ -151,7 +126,6 @@
 .inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
 .inspector__row-status--pending { color: var(--muted); }
 
-/* Target picker (phase 2). */
 .inspector__targets {
   list-style: none;
   margin: 0;
@@ -189,10 +163,6 @@
   font-weight: 600;
   font-size: 0.95rem;
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .inspector__target-type {
   font-size: 0.7rem;
@@ -207,16 +177,13 @@
   flex-shrink: 0;
 }
 .inspector__target-url {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--muted);
   word-break: break-all;
   line-height: 1.4;
 }
-.inspector__target-btn {
-  align-self: flex-start;
-  min-width: 92px;
-}
+.inspector__target-btn { align-self: flex-start; min-width: 92px; }
 
 /* ---- Inspector: page preview -------------------------------------- */
 
@@ -245,18 +212,8 @@
 
 /* ---- Inspector: console extras ------------------------------------ */
 
-.inspector__row-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
-}
-.inspector__row--console {
-  align-items: flex-start;
-  padding: 6px 10px;
-}
+.inspector__row-body { flex: 1; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.inspector__row--console { align-items: flex-start; padding: 6px 10px; }
 .inspector__row-meta {
   font-size: 0.62rem;
   color: var(--muted-2);
@@ -282,7 +239,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
 }
 .inspector__net-meta {
   font-size: 0.62rem;
@@ -382,7 +338,7 @@
   font-size: 0.8rem;
 }
 .inspector__kv dt { color: var(--muted); font-weight: 600; }
-.inspector__kv dd { margin: 0; word-break: break-all; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; }
+.inspector__kv dd { margin: 0; word-break: break-all; font-family: var(--font-mono); font-size: 0.76rem; }
 .inspector__headers,
 .inspector__body {
   margin: 0;
@@ -390,7 +346,7 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -416,7 +372,7 @@
 .mcp__tools-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .mcp__tools-empty { color: var(--muted); font-size: 0.8rem; padding: 6px 10px; }
 .mcp__tools-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 8px; }
-.mcp__tools-name { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; color: var(--accent); word-break: break-all; }
+.mcp__tools-name { font-family: var(--font-mono); font-size: 0.76rem; color: var(--accent); word-break: break-all; }
 .mcp__tools-desc { font-size: 0.76rem; color: var(--fg-soft); margin-top: 1px; }
 
 /* ---- File tags (decisions §15) ----------------------------------- */
@@ -429,7 +385,7 @@
 .tags__row.is-tagged { border-color: var(--accent-soft); }
 .tags__row.is-binary { opacity: 0.6; }
 .tags__row-head { display: flex; align-items: center; gap: 6px; }
-.tags__row-path { flex: 1 1 auto; font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.76rem; color: var(--fg); word-break: break-all; }
+.tags__row-path { flex: 1 1 auto; font-family: var(--font-mono); font-size: 0.76rem; color: var(--fg); word-break: break-all; }
 .tags__badge { flex: 0 0 auto; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 5px; }
 .tags__badge--missing { color: var(--warning); border-color: var(--warning); }
 .tags__chips { display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; overflow-x: auto; min-height: var(--tap); }
@@ -444,17 +400,11 @@
 .tags__excerpt-num { width: 52px; min-height: var(--tap); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--fg); font-size: 0.72rem; padding: 0 5px; text-align: center; }
 .tags__controls .btn { margin-left: auto; min-height: var(--tap); padding: 0 8px; font-size: 0.72rem; }
 
-/* ---- Chat: tool_call / tool_result cards -------------------------
-   Vibe-tool style: a compact, low-contrast row with a chevron, a
-   verb-style label ("Read index.ts"), and a small status dot on the
-   right. Collapsed cards have no border and sit directly in the
-   flow like a log line; expanding opens a bordered panel with a
-   tinted header underneath. The whole header row is the tap target. */
+/* ---- Chat: tool_call / tool_result cards ------------------------- */
 
 .tool-card {
   align-self: stretch;
   max-width: 100%;
-  min-width: 0;
   margin: 1px 0;
   padding: 2px 6px 2px 4px;
   display: flex;
@@ -470,8 +420,6 @@
 .tool-card--subagent { border-color: transparent; }
 .tool-card--authorization { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, transparent); }
 
-/* Expanded keeps the same lightweight row; only the preview appears
-   underneath. Avoid an extra card panel around the preview. */
 .tool-card.is-expanded {
   background: transparent;
   border-color: transparent;
@@ -483,15 +431,12 @@
   border-bottom: 0;
 }
 
-/* The header is one row: chevron + verb label + arg hint + status
-   dot. Tapping it expands the card. */
 .tool-card__head {
   display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
   max-width: 100%;
-  min-width: 0;
   overflow: hidden;
   cursor: pointer;
   user-select: none;
@@ -510,20 +455,13 @@
 .tool-card__name {
   flex: 0 0 auto;
   max-width: min(40%, 14rem);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--fg-soft);
 }
 .tool-card__args {
-  /* Inline arg preview when collapsed: single-line ellipsis. Expands
-     into the full multi-line block under the head when expanded. */
   flex: 1 1 auto;
-  min-width: 0;
   margin: 0;
   padding: 0;
   font-family: var(--font-mono);
@@ -534,44 +472,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tool-card.is-expanded .tool-card__args {
-  white-space: nowrap;
-  word-break: normal;
-}
+.tool-card.is-expanded .tool-card__args { white-space: nowrap; }
 
-/* Compact result-summary text in the collapsed card head: shows exit
-   code + duration for shell, byte count for file ops, match count for
-   search, etc. Sits between the args and the status dot, greyed down
-   so the verb/path remains the primary signal. */
 .tool-card__result-summary {
   flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.62rem;
   color: var(--muted);
   margin: 0 2px;
 }
-
-/* Status: a small dot with a11y-friendly text visually hidden. The
-   `.tool-card__pill` class names are kept so the streaming code that
-   swaps --busy/--ok/--err keeps working unchanged. */
 .tool-card__pill {
   flex: 0 0 auto;
   align-self: center;
-  width: 8px;
-  height: 8px;
-  padding: 0;
-  border-radius: 50%;
-  border: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-indent: 200%;
-  font-size: 0;
-  line-height: 0;
-  color: transparent;
+  width: 8px; height: 8px; padding: 0; border-radius: 50%; border: 0;
+  overflow: hidden; white-space: nowrap; text-indent: 200%;
+  font-size: 0; line-height: 0; color: transparent;
   background: var(--muted-2);
 }
 .tool-card__pill--busy {
@@ -585,7 +500,6 @@
   50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); opacity: .65; }
 }
 
-/* A tiny spinner used in the subagent "working…" hint. */
 .tool-card__spinner {
   display: inline-block;
   width: 10px;
@@ -599,18 +513,9 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user)) .tool-card__body {
-  /* Collapsed cards are a single row: chevron + label/path + state
-     dot. The result body appears only after expansion, which avoids
-     duplicate path text and keeps tool turns visually cheap. */
-  display: none;
-}
+.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user)) .tool-card__body { display: none; }
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
-  /* Expanded: the structured preview child (diff, terminal, file
-     content, etc.) is the only container. Capped at 75 % of the
-     viewport height so long command outputs do not dominate the
-     chat view. Internal scroll when content overflows. */
   margin: 0;
   padding: 2px 0 0 17px;
   display: block;
@@ -629,28 +534,17 @@
   -webkit-touch-callout: default;
 }
 
-/* Subtle hover/active affordance on the header row. */
 .tool-card__head:hover .tool-card__name { color: var(--fg); }
 .tool-card__head:hover .tool-card__chev { color: var(--fg-soft); }
 .tool-card__head:active { background: var(--surface-3); border-radius: var(--r-sm); }
 
-/* ---- ask_user tool card --------------------------------------------
-   The model has paused the chat to ask the user a structured
-   question with a list of options (2+, no cap). The user always has
-   a free-form "extra" textarea alongside their pick, so the answer
-   is never constrained to the offered options. The card stays open
-   by default (the body is the form itself) and uses an accent border
-   so it reads as a question that needs an answer, not a tool that
-   needs approval. */
+/* ---- ask_user tool card -------------------------------------------- */
+
 .tool-card--ask-user {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent-soft) 22%, transparent);
 }
 .tool-card--ask-user .tool-card__body {
-  /* Body is the form; always visible. The default `.tool-card__body`
-     is `display: none` until the card is expanded, so we override
-     that here. The form is short (4 options + an extra textarea)
-     and the user needs to see it immediately. */
   display: block;
   background: transparent;
   border: 0;
@@ -672,18 +566,11 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* The model can send any number of options (2+, no cap). Cap the
-     visible list at roughly 4.5 options and let the rest scroll, so a
-     long list never pushes the extra-answer textarea + Send button off
-     screen on a phone. */
   max-height: 13.5rem;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 .tool-card__ask-option {
-  /* Each option is a 44px-min tap target (mobile-first). The whole
-     option card is the clickable element; the description wraps
-     inside without breaking the tap target. */
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -725,8 +612,6 @@
   margin: 1px 0 0;
 }
 .tool-card__ask-extra {
-  /* Mobile-first: the extra textarea is always available so the
-     user can attach a free-form note to their pick. */
   min-height: 40px;
   font-family: var(--font-sans);
   font-size: 0.8rem;
@@ -740,6 +625,9 @@
   margin-top: 3px;
 }
 .tool-card--ask-user .tool-card__actions .btn { min-height: 36px; }
+
+/* ---- Subagent tool card -------------------------------------------- */
+
 .tool-card__subagent-live {
   display: flex;
   flex-direction: column;
@@ -755,8 +643,6 @@
   margin-left: 5px;
   padding: 4px 2px 4px 10px;
 }
-/* Expanded subagent cards also capped at 75dvh so long nested
-   outputs don't dominate the chat view. */
 .tool-card--subagent.is-expanded .tool-card__body {
   max-height: 75dvh;
   overflow-y: auto;
@@ -764,7 +650,6 @@
 .tool-card__subagent-live-text {
   align-self: flex-start;
   max-width: 92%;
-  min-width: 0;
 }
 .tool-card__subagent-live-text > .chat-msg__answer {
   background: var(--surface-2);
@@ -793,8 +678,6 @@
   font-size: 0.62rem;
   font-style: normal;
 }
-/* Nested subagent chat: mirror the main chat bubble rhythm at a
-   smaller scale instead of forcing every turn into full-width blocks. */
 .tool-card__subagent-chat {
   display: flex;
   flex-direction: column;
@@ -803,45 +686,30 @@
   background: transparent;
   border: 0;
   font-family: inherit;
-  min-width: 0;
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;
 }
 .tool-card__subagent-chat > .tool-card__subagent-msg {
   max-width: 92%;
-  min-width: 0;
   align-self: flex-start;
-  align-items: flex-start;
   font-size: 0.72rem;
   animation: none;
 }
-.tool-card__subagent-chat > .chat-msg--user {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-.tool-card__subagent-chat > .chat-msg--system {
-  align-self: center;
-  align-items: center;
-}
-.tool-card__subagent-chat > .tool-card__subagent-msg .chat-msg__role {
-  /* Match the raised meta floor (0.62rem) used by .chat-msg__role. */
-  font-size: 0.62rem;
-}
+.tool-card__subagent-chat > .chat-msg--user { align-self: flex-end; }
+.tool-card__subagent-chat > .chat-msg--system { align-self: center; }
+.tool-card__subagent-chat > .tool-card__subagent-msg .chat-msg__role { font-size: 0.62rem; }
 .tool-card__subagent-chat > .chat-msg--assistant .chat-msg__role { padding: 0 3px 0 8px; }
 .tool-card__subagent-chat > .chat-msg--user .chat-msg__role { padding: 0 8px 0 3px; }
 .tool-card__subagent-chat > .tool-card__subagent-msg .chat-msg__body {
   max-width: 100%;
-  min-width: 0;
   font-size: 0.72rem;
   line-height: 1.35;
   font-family: inherit;
   padding: 5px 8px;
   border-radius: var(--r-md) var(--r-md) var(--r-md) var(--r-sm);
 }
-.tool-card__subagent-chat > .chat-msg--user .chat-msg__body {
-  border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-md);
-}
+.tool-card__subagent-chat > .chat-msg--user .chat-msg__body { border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-md); }
 .tool-card__subagent-chat .chat-msg__answer { font-size: 0.72rem; }
 .tool-card__subagent-chat .chat-msg__answer p { margin: 0 0 2px 0; }
 .tool-card__subagent-chat .chat-msg__answer p:last-child { margin-bottom: 0; }
@@ -853,7 +721,6 @@
 }
 .tool-card__subagent-tool {
   align-self: stretch;
-  min-width: 0;
   max-width: 100%;
   margin: 1px 0;
   padding: 2px 6px 2px 4px;
@@ -869,29 +736,17 @@
 .tool-card__subagent-tool-name {
   grid-column: 1;
   max-width: min(36vw, 12rem);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--fg-soft);
   font-family: var(--font-sans);
   font-size: 0.72rem;
   line-height: 1.25;
   font-weight: 600;
 }
-.tool-card__subagent-tool .tool-card__pill {
-  grid-column: 3;
-  grid-row: 1;
-  margin: 0;
-}
+.tool-card__subagent-tool .tool-card__pill { grid-column: 3; grid-row: 1; margin: 0; }
 .tool-card__subagent-text {
   grid-column: 2;
   margin: 0;
   max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.62rem;
   color: var(--muted);
@@ -903,9 +758,6 @@
   grid-column: 1 / -1;
   margin: 0;
   max-width: 100%;
-  min-width: 0;
-}
-.tool-card__subagent-preview {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -928,14 +780,15 @@
   background: var(--surface-2);
 }
 .tool-card.is-expanded .tool-card__image { max-height: none; }
+
+/* ---- Tool previews ------------------------------------------------- */
+
 .tool-preview {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.tool-preview__meta {
-  display: none;
-}
+.tool-preview__meta { display: none; }
 .tool-preview__pre,
 .tool-preview__terminal {
   margin: 0;
@@ -946,9 +799,7 @@
   word-break: break-word;
   tab-size: 2;
 }
-.tool-preview__pre {
-  color: var(--fg-soft);
-}
+.tool-preview__pre { color: var(--fg-soft); }
 .tool-preview__pre--content,
 .tool-preview__pre--list {
   color: var(--fg);
@@ -1003,9 +854,7 @@
 .tool-preview__diff-line--meta .tool-preview__diff-code { color: var(--muted); }
 .tool-preview__terminal {
   display: block;
-  background:
-    radial-gradient(560px 160px at 50% 0%, rgba(111, 212, 154, 0.07), transparent 70%),
-    #05070a;
+  background: radial-gradient(560px 160px at 50% 0%, rgba(111, 212, 154, 0.07), transparent 70%), #05070a;
   color: #d8f8dc;
   border: 1px solid #1f3227;
   border-radius: var(--r-sm);
@@ -1021,7 +870,7 @@
 /* ---- Model pricing page ------------------------------------------ */
 
 .pricing__editor {
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   min-height: 160px;
   resize: vertical;
@@ -1047,7 +896,7 @@
   padding: 4px 0;
 }
 .pricing__ids code {
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--fg);
   word-break: break-all;
@@ -1057,13 +906,6 @@
 
 /* ---- PWA banners ------------------------------------------------- */
 
-/* Thin strips pinned to the top of the app shell. They sit between
-   the header and the main content so they don't push the bottom tab
-   bar around, and they use the same surface palette as everything
-   else. The animation slides them down from -16px so they enter from
-   the chrome rather than from the middle of the screen. Multiple
-   banners stack vertically: the offline banner sits at the top, the
-   update banner immediately below it. */
 .pwa-banner {
   display: flex;
   align-items: center;
@@ -1088,12 +930,7 @@
   background: var(--surface-3);
   color: var(--fg);
 }
-.pwa-banner__text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.pwa-banner__text { flex: 1; }
 .pwa-banner__btn {
   font: inherit;
   font-size: 0.8rem;
@@ -1123,9 +960,6 @@
 /* ---- Reduce motion ----------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  /* The caret on a live assistant message: kill the animation (the
-     content:none rule from components.css already hides the pseudo,
-     but some browsers may still animate a zero-size box). */
   .chat-msg[data-live="1"] .chat-msg__body::after { animation: none; }
   .pwa-banner { animation: none; }
 }
