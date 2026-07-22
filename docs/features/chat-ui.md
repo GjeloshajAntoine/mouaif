@@ -133,7 +133,9 @@ When a chat page is reloaded while an agent run is still active on the
 server, the replacement page polls the persisted transcript once per second.
 New assistant segments, tool calls, and tool results therefore appear as they
 are saved, without requiring another manual reload. A tab that owns the live
-SSE stream does not poll over its in-progress rendering.
+SSE stream does not poll over its in-progress rendering. The server-side run is
+not cancelled just because the browser's SSE connection closes; stream writes
+are best-effort and the persisted transcript remains authoritative.
 
 Each model tool round-trip has an explicit `assistant_turn_end` SSE boundary.
 Text emitted before a tool call is finalized in its own assistant bubble, the

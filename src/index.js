@@ -1429,28 +1429,11 @@ async function handleChatStream(req, res, chatId) {
     } catch { /* non-fatal */ }
   }
 
-  // Abort the upstream provider call when the SSE response disconnects
-  // (tab closed, navigation, phone killed the socket). This must listen
-  // to `res.close`, not only `req.close`: for POST+SSE the request body is
-  // already consumed before streaming begins, so `req.close` can miss the
-  // later response-side disconnect. Missing that event leaves the in-memory
-  // running marker wedged and every retry bounces off EALREADY_RUNNING.
-  const clientGone = new AbortController();
-  function cancelClientRun() {
-    try { clientGone.abort(new Error('client disconnected')); } catch { /* already settled */ }
-    // Also release any tool call parked on an authorization prompt.
-    // The abort signal only interrupts an in-flight upstream fetch; a
-    // loop waiting on `authResult.wait` (user never clicked Allow/Deny
-    // before the tab died) is not in a fetch, so without this the run
-    // never returns, the running marker is never cleared, and every
-    // retry bounces off 409 EALREADY_RUNNING with a frozen transcript.
-    try {
-      const authz = require('./tools/authorization.js');
-      authz.cancelSession(projectDir, chatId);
-    } catch { /* best-effort */ }
-  }
-  req.on('aborted', cancelClientRun);
-  res.on('close', cancelClientRun);
+  // Keep the server-side chat run alive even if the browser tab or SSE
+  // connection disappears. All stream writes are best-effort and the
+  // transcript remains authoritative, so a reloaded client can catch up by
+  // polling persisted messages instead of causing an upstream abort with
+  // "client disconnected".
 
   let result;
   try {
@@ -1459,7 +1442,6 @@ async function handleChatStream(req, res, chatId) {
     messages: upstreamMessages,
     projectDir,
     chatId, // Pass chatId for authorization gate
-    signal: clientGone.signal,
     shellEnabled,
     fileToolsEnabled,
     appSettings,
