@@ -4,7 +4,7 @@
 
 The chat view's **model picker** is the popover that opens from the head's `Pick model` trigger. It is the single screen the user spends the most time in inside the chat view (every new chat needs a model, every switch costs a tap), so its empty / loading / active states need to read at a glance on a phone. This doc covers the picker's behavior, the three states (loaded, empty, ghost), and the mobile-first layout rules that govern it.
 
-The picker code lives in [src/web/src/components/chat/modelPicker.js](../../src/web/src/components/chat/modelPicker.js). The head's trigger button and the popover shell are declared in [src/web/src/components/chat/Chat.jsx](../../src/web/src/components/chat/Chat.jsx). Styles are in [src/web/src/components.css](../../src/web/src/components.css) under the `chat-view__picker*` selectors.
+The picker code lives in [src/web/src/components/chat/modelPicker.js](../../src/web/src/components/chat/modelPicker.js). The head's trigger button and the popover shell are declared in [src/web/src/components/chat/Chat.jsx](../../src/web/src/components/chat/Chat.jsx). Styles are in [src/web/src/chat.css](../../src/web/src/chat.css) under the `chat-view__picker*` selectors.
 
 ## Usage
 
@@ -39,7 +39,7 @@ The picker code lives in [src/web/src/components/chat/modelPicker.js](../../src/
 - `state._onRefreshAllProviders` is bound in [src/web/src/components/chat/useChatState.js](../../src/web/src/components/chat/useChatState.js) so the empty-state card can call the same refresh path as the head's ↻ button without re-implementing it.
 - The empty-state card markup lives in `renderPickerEmpty()` in [src/web/src/components/chat/modelPicker.js](../../src/web/src/components/chat/modelPicker.js). The icon, title, body, and action are constructed imperatively (not via Preact JSX) to match the rest of the picker which is also imperative — the SSE hot path stays as cheap as a `textContent` assignment.
 - The accent rail on the active row is a `::before` pseudo on `.chat-view__picker-row.is-active`. The right padding is reduced by 2 px on the active row so the row's text doesn't shift when the `is-active` class toggles. This matters on a phone where a small horizontal shift in a long row is enough to make the user wonder if their tap landed.
-- Mobile-first: the popover is `position: fixed; top: calc(48px + var(--safe-top)); bottom: 0;` at `max-width: 480px` so it fills the screen with the head still visible. Above 480 px it falls back to a floating popover anchored to the head (`position: absolute; top: calc(100% + 4px); left: 6px; right: 6px;`).
+- Mobile-first: the popover is `position: fixed; top: calc(48px + var(--safe-top)); bottom: var(--model-picker-keyboard-inset, 0px);` at `max-width: 480px` so it fills the screen with the head still visible. While the search input is focused, `visualViewport` resize / scroll events update `--model-picker-keyboard-inset` on iOS so the sheet ends above the on-screen keyboard and the bottom rows remain selectable. Above 480 px it falls back to a floating popover anchored to the head (`position: absolute; top: calc(100% + 4px); left: 6px; right: 6px;`).
 - Section header counts are a pill (1 px border, `--border` color, 999 px radius) instead of plain text so the count reads as a discrete chip, not part of the section title.
 
 ## Related

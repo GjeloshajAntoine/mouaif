@@ -312,7 +312,7 @@
     top: calc(48px + var(--safe-top, 0px));
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--model-picker-keyboard-inset, 0px);
     max-height: none;
     height: auto;
     border-radius: var(--r-lg) var(--r-lg) 0 0;

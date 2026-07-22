@@ -338,17 +338,57 @@ function renderPickerEmpty(state, refs, list, q, providerFilter) {
   list.appendChild(empty);
 }
 
+// iOS keeps `position: fixed; bottom: 0` pinned to the layout
+// viewport while the on-screen keyboard shrinks the visual viewport.
+// Track that shrink as a CSS var so the sheet ends above the keyboard
+// and the last model rows remain tappable while search is focused.
+function syncKeyboardInset(pop) {
+  if (!pop) return;
+  const vv = window.visualViewport;
+  if (!vv) {
+    pop.style.removeProperty('--model-picker-keyboard-inset');
+    return;
+  }
+  const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  pop.style.setProperty('--model-picker-keyboard-inset', inset.toFixed(0) + 'px');
+}
+
+function bindKeyboardInset(pop) {
+  if (!pop || pop._modelPickerKeyboardCleanup) return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const update = () => syncKeyboardInset(pop);
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  window.addEventListener('orientationchange', update);
+  pop._modelPickerKeyboardCleanup = () => {
+    vv.removeEventListener('resize', update);
+    vv.removeEventListener('scroll', update);
+    window.removeEventListener('orientationchange', update);
+    pop._modelPickerKeyboardCleanup = null;
+  };
+  update();
+}
+
+function unbindKeyboardInset(pop) {
+  if (!pop) return;
+  if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
+  pop.style.removeProperty('--model-picker-keyboard-inset');
+}
+
 // openModelPicker / closeModelPicker
 export function openModelPicker(state, refs) {
   const pop = refs.modelPickerPop.current;
   const trig = refs.modelPickerTrigger.current;
   if (!pop || !trig) return;
   pop.hidden = false;
+  bindKeyboardInset(pop);
   trig.setAttribute('aria-expanded', 'true');
   renderModelPicker(state, refs);
   if (refs.modelPickerSearch.current) {
     refs.modelPickerSearch.current.value = state.pickerFilter.q || '';
     refs.modelPickerSearch.current.focus();
+    syncKeyboardInset(pop);
     // Move the caret to the end so a previously typed query is
     // easy to extend (vs overwriting the first char).
     const v = refs.modelPickerSearch.current.value;
@@ -361,6 +401,7 @@ export function closeModelPicker(refs) {
   const trig = refs.modelPickerTrigger.current;
   if (!pop || pop.hidden) return;
   pop.hidden = true;
+  unbindKeyboardInset(pop);
   if (trig) trig.setAttribute('aria-expanded', 'false');
   if (refs.modelPickerSearch.current && refs.modelPickerSearch.current === document.activeElement) {
     refs.modelPickerSearch.current.blur();
