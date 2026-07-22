@@ -348,10 +348,13 @@ function syncKeyboardInset(pop) {
   if (!vv) {
     pop.style.removeProperty('--model-picker-viewport-height');
     pop.style.removeProperty('--model-picker-viewport-top');
+    pop.style.removeProperty('--model-picker-keyboard-inset');
     return;
   }
+  const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
   pop.style.setProperty('--model-picker-viewport-height', vv.height.toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
+  pop.style.setProperty('--model-picker-keyboard-inset', keyboardInset.toFixed(0) + 'px');
 }
 
 function bindKeyboardInset(pop) {
@@ -376,6 +379,7 @@ function unbindKeyboardInset(pop) {
   if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
   pop.style.removeProperty('--model-picker-viewport-height');
   pop.style.removeProperty('--model-picker-viewport-top');
+  pop.style.removeProperty('--model-picker-keyboard-inset');
 }
 
 function bindPickerScrollLock(pop, list) {

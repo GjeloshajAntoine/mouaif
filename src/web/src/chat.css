@@ -434,7 +434,7 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior: contain;
-  padding: 4px 0 calc(4px + var(--safe-bottom, 0px));
+  padding: 4px 0 calc(4px + var(--safe-bottom, 0px) + var(--model-picker-keyboard-inset, 0px));
   scrollbar-width: thin;
 }
 .chat-view__picker-list::-webkit-scrollbar { width: 6px; }
