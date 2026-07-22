@@ -20,11 +20,11 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
   "type": "function",
   "function": {
     "name": "shell",
-    "description": "Run a shell command in the project directory. Returns stdout, stderr, and exit code.",
+    "description": "Run a shell command in the project directory. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.",
     "parameters": {
       "type": "object",
       "properties": {
-        "cmd":       { "type": "string", "description": "The command to run, as a single string." },
+        "cmd":       { "type": "string", "description": "The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts)." },
         "timeoutMs": { "type": "integer", "description": "Optional per-call timeout, 1 ms - 10 min. Default 30 000." }
       },
       "required": ["cmd"],
@@ -80,6 +80,8 @@ const out = await runShell({
 - **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: <actual elapsed ms> }`. A child that ignores SIGTERM stays tracked for the exit-hook reap; its late `close` is ignored.
 - **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256 KB each, configurable via `app.shellOutputMaxBytes`). Truncation adds a final `\n...[truncated at 256000 bytes]` line; the original exit code is preserved.
 - **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). There is no fixed tool-turn limit; cancellation comes from the user aborting the active request.
+- **Non-interactive only.** The child runs with no stdin (`stdio: ['ignore', 'pipe', 'pipe']`), so REPLs and commands that read stdin (bare `node`, `cmd` builtins, `npm init`, ...) fail or exit immediately — e.g. `Input redirection is not supported, exiting the process immediately.` on Windows. The tool spec declares this constraint; use one-shot forms (`node -e "..."`, `npm test`, flags) instead.
+- **Identical-call circuit breaker.** The tool loop has no turn limit, so a model retrying the exact same failing call (same tool + same arguments) would spin forever. After 3 consecutive identical calls the server refuses the 4th+ with an `ELOOP` tool error telling the model to vary the command or answer in plain text. Any different call resets the streak.
 - **No streaming on the wire.** The tool returns a single `tool_result` after the command exits. A future revision may stream stdout/stderr line-by-line; for this commit, a single result is enough to keep the upstream contract simple.
 - **Disabled by default.** A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`).
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.

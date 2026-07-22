@@ -53,11 +53,11 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'shell',
-    description: 'Run a shell command in the project directory. Returns stdout, stderr, and exit code.',
+    description: 'Run a shell command in the project directory. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
     parameters: {
       type: 'object',
       properties: {
-        cmd: { type: 'string', description: 'The command to run, as a single string.' },
+        cmd: { type: 'string', description: 'The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts).' },
         timeoutMs: { type: 'integer', description: 'Optional per-call timeout, 1 ms - 10 min. Default 30000.' }
       },
       required: ['cmd'],

@@ -1215,6 +1215,13 @@ async function streamChat(opts) {
   let completedToolRound = false;
   let emptyPostToolRetries = 0;
   const FINAL_ANSWER_RETRIES = 2;
+  // Identical-call circuit breaker state (enforced in runOneCall below).
+  // The loop has no fixed turn limit, so a model retrying the exact
+  // same failing call (e.g. an interactive command that exits
+  // immediately) would otherwise spin forever.
+  let lastToolCallKey = null;
+  let repeatedToolCallCount = 0;
+  const REPEATED_TOOL_CALL_LIMIT = 3;
 
   while (true) {
     let effectiveToolSpecs = visibleToolSpecs;
@@ -1305,6 +1312,39 @@ async function streamChat(opts) {
       // `ask_user` call. The runner reads it to fold the user's
       // structured answer into the `tool` message it returns.
       let callOptsAnswerPayload = null;
+      // Identical-call circuit breaker. A model retrying the exact same
+      // call with the exact same arguments (typically after a tool
+      // error) never converges — enforce that the returned result is
+      // identical, so nothing was learned from the retry. Refuse it
+      // with an explanatory tool error so the model is forced to vary
+      // the command or answer in plain text. Counts per consecutive
+      // identical call; any different call resets the streak.
+      const callKey = c.name + '\n' + (c.arguments || '');
+      if (callKey === lastToolCallKey) {
+        repeatedToolCallCount++;
+      } else {
+        lastToolCallKey = callKey;
+        repeatedToolCallCount = 0;
+      }
+      if (repeatedToolCallCount >= REPEATED_TOOL_CALL_LIMIT) {
+        const r = {
+          error: {
+            code: 'ELOOP',
+            message: 'You have called ' + c.name + ' with identical arguments ' + (repeatedToolCallCount + 1) + ' times in a row with identical results. The call was refused. Do not retry it — change the command/arguments or answer the user in plain text instead.'
+          }
+        };
+        exec = { ok: false, content: JSON.stringify(r), result: r };
+        onEvent('tool_call', { id: c.id || null, name: c.name, args });
+        callEmitted = true;
+        onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
+        convo.push({
+          role: 'tool',
+          tool_call_id: c.id || undefined,
+          name: c.name,
+          content: exec.content
+        });
+        return exec;
+      }
       try {
         // list_features is a read-only metadata tool that bypasses
         // the authorization gate — it only returns feature state.
