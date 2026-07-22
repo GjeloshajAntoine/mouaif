@@ -19,6 +19,11 @@ export function autoresize(refs) {
   el.style.height = 'auto';
   const next = Math.min(120, Math.max(32, el.scrollHeight));
   el.style.height = next + 'px';
+  // overflow-y is `hidden` in CSS so no scrollbar ever overlaps the
+  // text while the box exactly fits the content. Once the content
+  // exceeds the 120px ceiling the box stops growing, so scrolling
+  // must come back or the tail of a long draft would be unreachable.
+  el.style.overflowY = el.scrollHeight > 120 ? 'auto' : '';
 }
 
 // queueComposerDraftSave(value, projectDir, chatId, refs, updateChat)

@@ -1283,7 +1283,9 @@
   resize: none;
   font-family: inherit;
   font-size: 1rem; /* ≥ 16px so iOS Safari does not zoom on focus */
-  height: 32px;
+  /* No CSS `height`: autoresize() sets the box height inline. A CSS
+     height would fight the inline style (inline wins, but only after
+     the first input event — before that the two could disagree). */
   min-height: 32px;
   max-height: 120px;
   /* 1.25 (20px line box) exactly fills the 32px - 12px content box, so
@@ -1298,8 +1300,17 @@
   color: var(--fg);
   border-radius: 0;
   outline: none;
-  overflow-y: auto;
+  /* hidden, not auto: with auto, sub-pixel scrollHeight (e.g. 32.4px)
+     makes autoresize round the box up to 33px — the 20px line then
+     sits 1px low in a 21px content box — and the browser overlays a
+     scrollbar on the right edge of the text. The box is sized exactly
+     to the content by autoresize(), so nothing ever needs to scroll
+     until the 120px ceiling, and overflow-y goes back to auto there
+     via max-height clipping. */
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.chat-view__textarea::-webkit-scrollbar { display: none; }
 .chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
 .chat-view__image-input { display: none; }
 .chat-view__image-preview {
