@@ -378,6 +378,40 @@ function unbindKeyboardInset(pop) {
   pop.style.removeProperty('--model-picker-viewport-top');
 }
 
+function bindPickerScrollLock(pop, list) {
+  if (!pop || pop._modelPickerScrollCleanup) return;
+  let startY = 0;
+  const onTouchStart = (ev) => {
+    if (ev.touches && ev.touches.length === 1) startY = ev.touches[0].clientY;
+  };
+  const onTouchMove = (ev) => {
+    if (!ev.touches || ev.touches.length !== 1) return;
+    const scroller = list && list.contains(ev.target) ? list : null;
+    if (!scroller) {
+      ev.preventDefault();
+      return;
+    }
+    const dy = ev.touches[0].clientY - startY;
+    const atTop = scroller.scrollTop <= 0;
+    const atBottom = Math.ceil(scroller.scrollTop + scroller.clientHeight) >= scroller.scrollHeight;
+    if (scroller.scrollHeight <= scroller.clientHeight || (atTop && dy > 0) || (atBottom && dy < 0)) {
+      ev.preventDefault();
+    }
+  };
+  pop.addEventListener('touchstart', onTouchStart, { passive: true });
+  pop.addEventListener('touchmove', onTouchMove, { passive: false });
+  pop._modelPickerScrollCleanup = () => {
+    pop.removeEventListener('touchstart', onTouchStart);
+    pop.removeEventListener('touchmove', onTouchMove);
+    pop._modelPickerScrollCleanup = null;
+  };
+}
+
+function unbindPickerScrollLock(pop) {
+  if (!pop) return;
+  if (pop._modelPickerScrollCleanup) pop._modelPickerScrollCleanup();
+}
+
 // openModelPicker / closeModelPicker
 export function openModelPicker(state, refs) {
   const pop = refs.modelPickerPop.current;
@@ -385,6 +419,7 @@ export function openModelPicker(state, refs) {
   if (!pop || !trig) return;
   pop.hidden = false;
   bindKeyboardInset(pop);
+  bindPickerScrollLock(pop, refs.modelPickerList.current);
   trig.setAttribute('aria-expanded', 'true');
   renderModelPicker(state, refs);
   if (refs.modelPickerSearch.current) {
@@ -404,6 +439,7 @@ export function closeModelPicker(refs) {
   if (!pop || pop.hidden) return;
   pop.hidden = true;
   unbindKeyboardInset(pop);
+  unbindPickerScrollLock(pop);
   if (trig) trig.setAttribute('aria-expanded', 'false');
   if (refs.modelPickerSearch.current && refs.modelPickerSearch.current === document.activeElement) {
     refs.modelPickerSearch.current.blur();

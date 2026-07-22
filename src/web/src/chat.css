@@ -315,6 +315,9 @@
     bottom: auto;
     max-height: none;
     height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
+    overflow: hidden;
+    touch-action: none;
+    overscroll-behavior: none;
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
   }
@@ -429,6 +432,7 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   overscroll-behavior: contain;
   padding: 4px 0 calc(4px + var(--safe-bottom, 0px));
   scrollbar-width: thin;
