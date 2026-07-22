@@ -67,7 +67,7 @@ export async function runShellCommand(cmd, state, refs) {
   const { projectDir, chatId } = state.props;
   refs.promptInput.current.value = '';
   refs._autoresize();
-  appendToolCallCard({ id: null, name: 'shell', args: { cmd } }, refs);
+  appendToolCallCard({ id: callId, name: 'shell', args: { cmd } }, refs);
   setChatStatus(refs, 'running shell…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -91,13 +91,13 @@ export async function runShellCommand(cmd, state, refs) {
       }
     }
   } catch (err) {
-    appendToolResultCard({ id: null, name: 'shell', ok: false, result: { error: String(err) } }, refs);
+    appendToolResultCard({ id: null, name: 'shell', args: { cmd }, ok: false, result: { error: String(err) } }, refs);
     setChatStatus(refs, 'shell error', 'error');
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
   }
   const body = r.body || {};
-  appendToolResultCard({ id: null, name: 'shell', ok: !!body.ok, result: body }, refs);
+  appendToolResultCard({ id: callId, name: 'shell', ok: !!body.ok, result: body }, refs);
   if (r.status === 403) setChatStatus(refs, 'shell tool is disabled for this project', 'error');
   else setChatStatus(refs, body.ok ? ('shell exit ' + (body.exitCode ?? 0)) : ('shell failed: ' + (body.error || body.code || '')), body.ok ? 'success' : 'error');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;

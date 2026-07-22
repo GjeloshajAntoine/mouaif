@@ -347,12 +347,6 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
     summaryEl.textContent = resultSummary;
     head.appendChild(summaryEl);
   }
-    if (resultSummary) {
-    const summaryEl = document.createElement('span');
-    summaryEl.className = 'tool-card__result-summary';
-    summaryEl.textContent = resultSummary;
-    head.appendChild(summaryEl);
-  }
   head.appendChild(pill);
   head.addEventListener('click', () => {
     const card = head.closest('.tool-card');
@@ -513,23 +507,29 @@ export function appendToolResultCard(toolResult, refs) {
     card.className = 'tool-card tool-card--result';
     card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
     card.dataset.toolName = normalizeToolName(toolResult.name);
-    // No args preview on standalone result cards — the body is the
-    // result. Subagent cards keep the delegated task in the args slot.
-    const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+    // Show the command/args in the collapsed header for shell
+    // (and any tool that carries args on the result event).
+    const name = normalizeToolName(toolResult.name);
+    const headArgs = (isSubagent || name === 'shell' || (toolResult.args && toolResult.args.cmd))
+      ? formatToolArgs(toolResult.args, toolResult.name)
+      : null;
     card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary));
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     card.appendChild(body);
     refs.transcript.current.appendChild(card);
   } else {
-    // The call card becomes a result card. For non-subagent tools
-    // the args preview is dropped (the result body is the more
-    // useful preview). For subagent cards we keep the delegated
-    // task — it is the most useful context for the finished run.
+    // The call card becomes a result card. Preserve the command text
+    // from the old call card header so the collapsed view still shows
+    // the cmd (especially for shell results). Subagent cards keep the
+    // delegated task from the result payload.
     card.classList.add('tool-card--result');
     card.classList.remove('tool-card--call');
     card.dataset.toolName = normalizeToolName(toolResult.name);
-    const headArgs = isSubagent ? formatToolArgs(toolResult.args, toolResult.name) : null;
+    const oldArgs = card.querySelector('.tool-card__args');
+    const headArgs = isSubagent
+      ? formatToolArgs(toolResult.args, toolResult.name)
+      : (oldArgs ? oldArgs.textContent : null);
     rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText, summary);
     let body = card.querySelector('.tool-card__body');
     if (!body) {
