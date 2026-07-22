@@ -1133,6 +1133,23 @@ async function handleChats(req, res, parsed) {
     }
   }
 
+  // POST /api/chats/import  body: { projectDir, skipExisting?: bool }
+  // Re-import chat metadata and messages from JSON files into the DB.
+  if (urlPath === '/api/chats/import' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chatdb = require('./chatdb.js');
+      const result = chatdb.importFromJson(dir, { skipExisting: !!body.skipExisting });
+      return sendJSON(res, 200, { ok: true, imported: result });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // POST /api/chats/:id/messages/stream  body: { projectDir, modelId, content }
   // Appends the user message, calls ai.streamChat, streams the
   // response back as SSE, appends the assistant message on done, and

@@ -4,28 +4,13 @@
 //
 // Each chat (identified by its project directory + chat id) owns a
 // transcript of user / assistant / system / tool messages. Messages
-// are persisted in a per-chat file:
+// are persisted in one of two backends:
+//   - 'db'  (default) → SQLite via src/chatdb.js
+//   - 'json'          → per-chat file: <projectDir>/.mouaif.messages.<chatId>.json
 //
-//   <projectDir>/.mouaif.messages.<chatId>.json
-//
-// One file per chat (rather than a `messages` array on the chat
-// record in <projectDir>/.mouaif.json) keeps each project file small
-// and avoids an unbounded array growing inside the JSON file. The
-// file is rewritten in full on every write — messages are append-mostly
-// in practice, and a rewrite is cheap for the expected transcript
-// sizes (hundreds of messages, not millions).
-//
-// Schema:
-//
-//   {
-//     messages: [
-//       { role: 'user' | 'assistant' | 'system' | 'tool',
-//         content: 'string',
-//         attachments?: [{ type: 'image', mimeType, dataUrl, name? }],
-//         ts: '2026-07-14T12:34:00.000Z' },
-//       ...
-//     ]
-//   }
+// Schema (per message):
+//   { role, content, ts, attachments?, reasoning?, usage?, cost?,
+//     streamingMs?, modelId?, toolCallId?, name?, args?, ok?, phase? }
 
 const path = require('path');
 const settings = require('./settings.js');
@@ -85,11 +70,6 @@ function normalizeMessage(m) {
     const attachments = normalizeAttachments(m.attachments);
     if (attachments.length) out.attachments = attachments;
   }
-  // The assistant message is the only one that carries usage + cost
-  // (decision §14). We persist them on the message itself so a chat
-  // reopened later shows the same numbers that were on screen when
-  // the message was produced. The cost block is optional and may be
-  // absent on older transcripts.
   if (m.role === 'assistant') {
     if (typeof m.reasoning === 'string') out.reasoning = m.reasoning;
     if (m.usage && typeof m.usage === 'object') out.usage = m.usage;
@@ -107,10 +87,8 @@ function normalizeMessage(m) {
   return out;
 }
 
-// Read/write the per-chat messages file through the shared helpers in
-// settings.js so the on-disk format (2-space JSON + trailing LF) and the
-// corrupt-file contract (MOUAIF_PROJECT_PARSE_ERROR) match the rest of the
-// project files. A missing transcript resolves to { messages: [] }.
+// ---- File-based helpers (legacy) ------------------------------------------
+
 function readRaw(projectDir, chatId) {
   const file = messagesFilePath(projectDir, chatId);
   return settings.readProjectJson(file, { messages: [] });
@@ -121,7 +99,27 @@ function writeRaw(projectDir, chatId, obj) {
   settings.writeProjectJson(file, obj);
 }
 
+// ---- Storage backend selection --------------------------------------------
+
+function useDb(projectDir) {
+  try {
+    const resolved = settings.getResolved(projectDir);
+    return resolved.chatStorage === 'db';
+  } catch {
+    return false;
+  }
+}
+
+function getChatDb() {
+  return require('./chatdb.js');
+}
+
+// ---- Public surface -------------------------------------------------------
+
 function listMessages(projectDir, chatId) {
+  if (useDb(projectDir)) {
+    return getChatDb().listMessages(projectDir, chatId);
+  }
   const raw = readRaw(projectDir, chatId);
   const list = Array.isArray(raw.messages) ? raw.messages : [];
   const out = [];
@@ -147,12 +145,14 @@ function appendMessage(projectDir, chatId, msg) {
   if (typeof msg.content !== 'string') {
     throw new TypeError('msg.content must be a string');
   }
+
+  if (useDb(projectDir)) {
+    return getChatDb().appendMessage(projectDir, chatId, msg);
+  }
+
   const stored = listMessages(projectDir, chatId);
   const ts = typeof msg.ts === 'string' ? msg.ts : new Date().toISOString();
   const normalized = { role: msg.role, content: msg.content, ts };
-  // Same enrichment as normalizeMessage. The setter path and the
-  // loader path share the same shape so a chat that is appended to
-  // and then re-loaded never loses its cost / usage fields.
   if (msg.role === 'user') {
     const attachments = normalizeAttachments(msg.attachments);
     if (attachments.length) normalized.attachments = attachments;
@@ -177,6 +177,9 @@ function appendMessage(projectDir, chatId, msg) {
 
 function replaceMessages(projectDir, chatId, list) {
   if (!Array.isArray(list)) throw new TypeError('list must be an array');
+  if (useDb(projectDir)) {
+    return getChatDb().replaceMessages(projectDir, chatId, list);
+  }
   const out = [];
   for (const m of list) {
     const n = normalizeMessage(m);
@@ -187,22 +190,16 @@ function replaceMessages(projectDir, chatId, list) {
 }
 
 function clearMessages(projectDir, chatId) {
+  if (useDb(projectDir)) {
+    return getChatDb().clearMessages(projectDir, chatId);
+  }
   const before = listMessages(projectDir, chatId).length;
   writeRaw(projectDir, chatId, { messages: [] });
   return before;
 }
 
-// Convert the persisted transcript into the OpenAI-shaped history used by
-// the provider clients. Tool records are written as adjacent call/result
-// pairs. A process stop, aborted request, or closed browser can leave the
-// final call without its result; forwarding that orphan makes strict
-// OpenAI-compatible providers reject the next user turn with HTTP 400.
-//
-// Only complete adjacent pairs are reconstructed. Historical call ids are
-// also canonicalized when missing, duplicated, or unusually long. The ids
-// are conversation-local correlation keys, so replacing one on both sides
-// of a stored pair preserves its meaning while keeping the next request
-// portable across OpenAI-shaped providers.
+// ---- Reconstruct upstream history (unchanged) -----------------------------
+
 function reconstructUpstreamHistory(list, contentForMessage, options) {
   const source = Array.isArray(list) ? list : [];
   const contentOf = typeof contentForMessage === 'function'
@@ -219,7 +216,7 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
 
     if (m.role === 'tool') {
       if (!includeTools) continue;
-      if (m.phase !== 'call') continue; // orphan result or unknown phase
+      if (m.phase !== 'call') continue;
       const result = source[i + 1];
       if (!result || result.role !== 'tool' || result.phase !== 'result') continue;
 
@@ -252,15 +249,11 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
         name,
         content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content || {})
       });
-      i++; // consume the paired result
+      i++;
       continue;
     }
 
     const content = contentOf(m);
-    // A reasoning-only or interrupted assistant segment can be persisted with
-    // an empty visible content string. It has no value in the reconstructed
-    // conversation, and strict providers such as Moonshot reject it with
-    // "message ... with role 'assistant' must not be empty" (HTTP 400).
     if (m.role === 'assistant' && (content == null || (typeof content === 'string' && !content.trim()))) {
       continue;
     }
@@ -273,6 +266,7 @@ module.exports = {
   VALID_ROLES,
   CHAT_ID_RE,
   normalizeAttachments,
+  normalizeMessage,
   assertChatId,
   messagesFilePath,
   listMessages,

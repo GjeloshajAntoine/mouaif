@@ -5,6 +5,7 @@ import { loadApp, saveApp, setStatus } from '../api.js';
 
 export function SettingsDefaultsView() {
   const promptSize = useRef(null);
+  const chatStorage = useRef(null);
   const saveBtn = useRef(null);
   const statusEl = useRef(null);
 
@@ -12,6 +13,7 @@ export function SettingsDefaultsView() {
     try {
       const app = await loadApp({ force: true });
       if (promptSize.current) promptSize.current.value = (app.app && app.app.promptSize) || 'average';
+      if (chatStorage.current) chatStorage.current.value = (app.app && app.app.chatStorage) || 'db';
     } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); }
   }
 
@@ -19,7 +21,7 @@ export function SettingsDefaultsView() {
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
     try {
-      await saveApp({ promptSize: promptSize.current.value });
+      await saveApp({ promptSize: promptSize.current.value, chatStorage: chatStorage.current.value });
       setStatus(statusEl, 'saved.', 'success');
     } catch (e) { setStatus(statusEl, 'save failed: ' + e.message, 'error'); }
     if (saveBtn.current) saveBtn.current.disabled = false;
@@ -43,6 +45,14 @@ export function SettingsDefaultsView() {
           h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
         )
       ),
+      h('div', { class: 'row' },
+        h('label', { class: 'label', for: 'sd-chat-storage' }, 'Chat storage'),
+        h('select', { ref: chatStorage, class: 'input', id: 'sd-chat-storage' },
+          h('option', { value: 'db' }, 'Database (SQLite) — default, fast'),
+          h('option', { value: 'json' }, 'JSON files — legacy, hand-editable')
+        )
+      ),
+      h('p', { class: 'hint hint--compact' }, '"Database" stores chats and messages in the app SQLite store. "JSON files" keeps the legacy per-chat .mouaif.messages.*.json files. Changing this does not migrate existing data; use the Import tool to reimport JSON files into the DB.'),
       h('div', { class: 'row row--actions' },
         h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })

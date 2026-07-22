@@ -56,6 +56,10 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
+  // Chat storage backend: 'db' (SQLite, default) or 'json' (file-based, legacy).
+  // When 'db', chat metadata and messages live in ~/.mouaif/store.sqlite.
+  // When 'json', they live in <projectDir>/.mouaif.json and .mouaif.messages.*.json.
+  chatStorage: 'db',
   // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).
   flags: {}
 });
@@ -114,6 +118,29 @@ const MIGRATIONS = [
           // Non-fatal — a corrupt project file shouldn't block the whole
           // migration. The field will be set on the next stream/delete.
           console.error('  [migration] cost total failed for ' + p.path + ': ' + e.message);
+        }
+      }
+    }
+  },
+  {
+    name: '2025-07-23-import-chats-to-db',
+    description: 'Import existing JSON chat transcripts into the SQLite store',
+    async run() {
+      const projects = require('./projects.js').listProjects();
+      const chatdb = require('./chatdb.js');
+      for (const p of projects) {
+        if (!p || !p.path) continue;
+        try {
+          const result = chatdb.importFromJson(p.path, { skipExisting: true });
+          if (result.chats > 0 || result.messages > 0) {
+            console.log('  [migration] imported ' + result.chats + ' chats, ' + result.messages + ' messages from ' + p.path);
+          }
+          if (result.errors.length) {
+            for (const e of result.errors) console.error('  [migration] warning: ' + e);
+          }
+        } catch (e) {
+          // Non-fatal — a project with no JSON chats is fine.
+          console.error('  [migration] import failed for ' + p.path + ': ' + e.message);
         }
       }
     }
@@ -189,6 +216,14 @@ let _appDb = null;
 function db() {
   if (!_appDb) _appDb = openDb(MOUAIF_HOME);
   return _appDb;
+}
+
+// Expose the shared DB handle so chatdb.js can reuse the same connection.
+// Tables are created lazily by both modules; the IF NOT EXISTS clause
+// makes the second CREATE a no-op. The chat/message tables are created
+// in chatdb.js so this module doesn't need to know about them.
+function getDb() {
+  return db();
 }
 
 function getAppRaw() {
@@ -360,6 +395,8 @@ module.exports = {
   writeProjectJson,
   // resolution
   getResolved,
+  // shared SQLite DB handle (used by chatdb.js)
+  getDb,
   // MCP tool cache (app DB)
   getMcpToolCache,
   setMcpToolCache,

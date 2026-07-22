@@ -122,6 +122,15 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - The scan endpoint is a one-pass directory walk honoring the same home-allowlist rules as the folder picker (decision §4). Binary files are filtered by extension; the default extension allowlist is text-friendly (`.js .jsx .ts .tsx .mjs .cjs .json .md .txt .py .rb .go .rs .java .kt .swift .c .h .cpp .hpp .css .html .yml .yaml .toml .sh`).
 - New module: `src/tags.js`. New REST surface: `GET/PUT /api/projects/<id>/tags`, `POST /api/projects/<id>/tags/scan`, `DELETE /api/projects/<id>/tags/files/*`. The injection happens in `src/index.js → handleChatStream` immediately before the existing `promptId` block.
 
+## 22. Chat storage — SQLite by default, JSON files as a legacy option
+
+- Chat metadata and messages are stored in the same app-level SQLite store (`~/.mouaif/store.sqlite`) used for settings, in two new tables: `chat_store` and `message_store`.
+- File-based storage (`.mouaif.messages.*.json` files) is still available via the `chatStorage` app setting (`'db'` | `'json'`, default `'db'`). Switching back to JSON does not migrate existing DB data.
+- A migration (`2025-07-23-import-chats-to-db`) runs on every `mouaif serve` start and imports any existing JSON files into the DB. Idempotent: already-imported chats are skipped.
+- A manual import is available via `POST /api/chats/import`, the `mouaif import-chats` CLI command, and a "Import chats" button in project settings.
+- Messages are stored with a composite PK `(project_dir, chat_id, seq)` so the same project-chat ordering is preserved across backends. The `seq` column is auto-incremented per chat.
+- The `chatStorage` toggle is resolved per-project via `settings.getResolved(projectDir)` so individual projects could theoretically opt back to JSON while others use the DB. In practice the setting is app-wide, but the resolution chain supports per-project override.
+
 ## 16. Shell tool — let the model run commands in the project
 
 - `mouaif` ships a built-in `shell` tool the model can invoke. The tool runs a command in `projectDir` via `node:child_process.spawn`, captures stdout / stderr / exit code / duration, and returns the result to the model. The model-facing tool spec uses the OpenAI-compatible function-call shape; the runner is invoked on the server and is the only path that actually executes.

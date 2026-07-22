@@ -163,4 +163,27 @@ program
     console.log(`   Default port: ${DEFAULT_PORT}`);
   });
 
+program
+  .command('import-chats')
+  .description('Import chat transcripts from JSON files into the SQLite store')
+  .argument('<projectDir>', 'Absolute path to the project directory')
+  .option('--skip-existing', 'Skip chats already imported (only import missing messages)')
+  .action((projectDir, options) => {
+    const abs = path.resolve(projectDir);
+    if (!fs.existsSync(abs)) {
+      console.error('❌ Project directory does not exist:', abs);
+      process.exit(1);
+    }
+    const chatdb = require('../src/chatdb.js');
+    console.log(`📦 Importing chats from ${abs}...`);
+    const result = chatdb.importFromJson(abs, { skipExisting: !!options.skipExisting });
+    console.log(`   ✅ ${result.chats} chats, ${result.messages} messages imported`);
+    if (result.errors.length) {
+      for (const e of result.errors) console.error('   ⚠️  ' + e);
+    }
+    if (result.chats === 0 && result.messages === 0) {
+      console.log('   Nothing to import.');
+    }
+  });
+
 program.parse(process.argv);
