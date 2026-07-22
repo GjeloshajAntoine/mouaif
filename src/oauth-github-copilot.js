@@ -249,6 +249,24 @@ async function exchangeCopilotToken({ githubToken, fetchImpl = globalThis.fetch 
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* not JSON */ }
     const message = (parsed && parsed.message) ? parsed.message : ('HTTP ' + res.status);
+
+    // Detect SAML/SSO required by an organization. GitHub returns 403 with
+    // a `X-GitHub-SSO` header when the OAuth token needs SSO authorization.
+    // The header value is "required; url=<sso_authorization_url>".
+    const ssoHeader = res.headers && res.headers.get ? res.headers.get('X-GitHub-SSO') : null;
+    if (ssoHeader && ssoHeader.startsWith('required;')) {
+      const ssoUrlMatch = ssoHeader.match(/url=(\S+)/);
+      const ssoUrl = ssoUrlMatch ? ssoUrlMatch[1] : null;
+      const e = new Error('GitHub Copilot token exchange failed: ' + message
+        + (ssoUrl ? '\n\nYour organization requires SAML/SSO authorization.\nAuthorize the OAuth app here: ' + ssoUrl : ''));
+      e.code = 'ESSO_REQUIRED';
+      e.status = res.status;
+      e.body = text.slice(0, 2000);
+      e.ssoUrl = ssoUrl;
+      e.suggestion = 'The organization requires SAML/SSO authorization. Visit the URL below to authorize the OAuth app for your org, then try again.';
+      throw e;
+    }
+
     const e = new Error('Copilot token exchange failed: ' + message);
     e.code = 'EUPSTREAM';
     e.status = res.status;

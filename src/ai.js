@@ -562,7 +562,8 @@ async function exchangeCopilotTokenIfNeeded(model, parsedBlob) {
   try {
     out = await oauthCopilot.exchangeCopilotToken({ githubToken });
   } catch (e) {
-    // Re-throw with the typed code preserved (ENOCOPILOT, EUPSTREAM, EPARSE, ETOKEN).
+    // Re-throw with the typed code preserved (ESSO_REQUIRED, ENOCOPILOT,
+    // EUPSTREAM, EPARSE, ETOKEN).
     throw e;
   }
   if (!out || !out.token) {
