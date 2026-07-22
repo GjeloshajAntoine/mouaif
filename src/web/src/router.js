@@ -52,6 +52,18 @@ function parseHash() {
     const params = new URLSearchParams(qs);
     return { name: 'settingsMcp', projectDir: params.get('projectDir') || '' };
   }
+  // "New" must be checked before the generic /:id match so that
+  // #/settings/mcp/new?scope=... does not look up a server with id
+  // "new" and fail with "Server not found".
+  if (h === 'settings/mcp/new' || h.startsWith('settings/mcp/new?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return {
+      name: 'settingsMcpEdit', id: '',
+      projectDir: params.get('projectDir') || '',
+      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : '')
+    };
+  }
   if (h.startsWith('settings/mcp/')) {
     const rest = h.slice('settings/mcp/'.length);
     const [id, qs] = rest.split('?');
