@@ -97,7 +97,18 @@ html {
   touch-action: manipulation;
 }
 
-html, body {
+html {
+  margin: 0;
+  padding: 0;
+  /* The background lives on html too (not only body): with the
+     safe-area padding now on html, the inset strips at the top/bottom
+     of the screen would otherwise show the default white canvas. */
+  background:
+    radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
+    var(--bg);
+}
+
+body {
   margin: 0;
   padding: 0;
   /* Subtle accent-tinted glow at the top so the page does not feel
@@ -120,9 +131,20 @@ html, body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  /* Safe-area padding lives on html, NOT here: body (and .app__shell)
+     size themselves with 100dvh, which is viewport-relative. If the
+     padding were on body it would sit OUTSIDE the 100dvh box — the
+     app's bottom edge would drop below the viewport by the whole top
+     inset, leaving the chat composer and its status line rendered
+     under the home indicator ("text too low" on iOS Safari PWAs).
+     On html the padding shrinks the layout viewport instead, so
+     100dvh still fills exactly the visible area. */
+  min-height: 100dvh;
+}
+
+html {
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
-  min-height: 100dvh;
 }
 
 ::selection { background: var(--accent-soft); color: var(--fg); }
