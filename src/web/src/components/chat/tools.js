@@ -33,22 +33,61 @@ export function parseToolArgs(text) {
   // 1. Raw JSON
   try { return JSON.parse(s); } catch { /* not JSON */ }
 
-  // 2. key=value pairs (supports double and single quoted values)
-  const kvRe = /(\w[\w.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  // 2. key=value pairs (no regex – O(n) char walker, no backtracking).
+  //
+  // Accepts: key=val key="quoted val" key='quoted val'  (escape: \")
+  // Rejects input with any non-kv=value token (e.g. plain words).
+  // Capped at 2048 chars to avoid pathological inputs.
+  const len = Math.min(s.length, 2048);
+  const isNameChar = (ch) => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+    || (ch >= '0' && ch <= '9') || ch === '_' || ch === '.' || ch === '-';
+
+  // Phase 1+2: single pass O(n) walker — respects quotes, no regex.
+  // Rejects any token that isn't a valid key=value pair.
   const pairs = {};
-  let count = 0;
-  let match;
-  while ((match = kvRe.exec(s)) !== null) {
-    pairs[match[1]] = match[2] != null ? match[2] : (match[3] != null ? match[3] : match[4]);
-    count++;
-  }
-  if (count > 0) {
-    // Verify every non-whitespace token was consumed
-    const leftover = s.replace(kvRe, ' ').trim();
-    if (!leftover) return pairs;
+  let i = 0;
+  while (i < len) {
+    // skip whitespace
+    while (i < len && s[i] === ' ') i++;
+    if (i >= len) break;
+
+    // read name
+    const nameStart = i;
+    while (i < len && isNameChar(s[i])) i++;
+    if (i === nameStart) return null; // non-name char where name expected
+    const name = s.slice(nameStart, i);
+
+    // expect =
+    if (i >= len || s[i] !== '=') return null;
+    i++; // skip =
+
+    // read value
+    if (i >= len) return null; // key without value
+
+    let value;
+    if (s[i] === '"' || s[i] === "'") {
+      const quote = s[i];
+      i++; // skip opening quote
+      const valStart = i;
+      while (i < len && s[i] !== quote) {
+        if (s[i] === '\\' && i + 1 < len) i += 2;
+        else i++;
+      }
+      if (i >= len) return null; // unclosed quote
+      value = s.slice(valStart, i).replace(/\\(.)/g, '$1');
+      i++; // skip closing quote
+    } else {
+      // unquoted — read until space or end
+      const valStart = i;
+      while (i < len && s[i] !== ' ') i++;
+      value = s.slice(valStart, i);
+      if (!value) return null;
+    }
+
+    pairs[name] = value;
   }
 
-  return null;
+  return Object.keys(pairs).length > 0 ? pairs : null;
 }
 
 // isSubagentTool(name) -> bool

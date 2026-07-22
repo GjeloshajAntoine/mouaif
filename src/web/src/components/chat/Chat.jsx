@@ -191,7 +191,7 @@ export function ChatView(props) {
         onPaste: onComposerPaste,
         onInput: onComposerInput
       }),
-      h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', style: 'display: none;' }),
+      h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
       h('button', {
         ref: refs.sendBtn,
         class: 'btn btn--primary chat-view__send',
