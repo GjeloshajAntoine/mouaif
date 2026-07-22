@@ -88,11 +88,13 @@ The composer `/shell` slash command uses the same gate. A `/shell` invocation in
 |--------|------|--------------|----------|
 | `GET`  | `/api/tools/authorization?projectDir=<abs>` | — | `{ tools: { shell: { mode, allowlist, defaultTimeoutMs, maxTimeoutMs, source: 'project' | 'app' | 'default' }, ... }, mcp: { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composedName>: { mode, allowlist? } } } }` |
 | `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... }, mcp: { mode?, servers?, tools? } }` | `{ tools: { ... }, mcp: { ... } }` (echo) |
+| `GET`  | `/api/tools/authorization/pending?projectDir=<abs>&chatId=<id>` | — | `{ pending: [{ callId, tool, cmd?, path?, query?, summary?, timeoutMs?, projectDir }] }` |
+| `POST` | `/api/tools/authorization/cancel` | `{ projectDir, chatId }` | `{ ok: true, cancelled: <number>, running: <boolean> }` |
 | `POST` | `/api/tools/authorization/decision` | `{ chatId, callId, decision: 'allow-once' | 'allow-session' | 'deny' }` | `{ ok: true }` |
 
 The `PUT` `mcp` key accepts any combination of `mode` (the shared fallback), `servers` (a map of slug → `{ mode, allowlist? }` or `null` to clear), and `tools` (a map of composed tool name → `{ mode, allowlist? }` or `null` to clear). Entries are merged; a `null` value deletes the override.
 
-The `decision` endpoint is the only path the UI uses to answer a pending prompt. It validates the chat and project ownership before recording the decision. Direct REST calls retry with the same opaque `callId` after approval; model calls remain blocked on their SSE stream.
+The `decision` endpoint is the only path the UI uses to answer a pending prompt. It validates the chat and project ownership before recording the decision. Direct REST calls retry with the same opaque `callId` after approval; model calls remain blocked on their SSE stream. Reopening a chat calls the pending endpoint so authorization and ask-user cards can be shown again after navigation. The cancel endpoint denies pending prompts and aborts the active chat run when possible, which gives the mobile UI a visible escape hatch for a wedged stream.
 
 ## Behavior
 

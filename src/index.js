@@ -71,6 +71,7 @@ function destroyOpenSockets() {
 // showing the transcript frozen. In-memory (not persisted): a process
 // restart ends every run anyway, so nothing survives to clear.
 const runningChats = new Set();
+const runningChatCancels = new Map();
 function runningKey(projectDir, chatId) {
   return String(projectDir) + '::' + String(chatId);
 }
@@ -1202,7 +1203,9 @@ async function handleChatStream(req, res, chatId) {
   // rejected (above). Registered only after every failable setup step
   // (model resolution, message append) so an early 4xx cannot leak the
   // marker; cleared at every exit below (normal, error, and throw).
+  const runController = new AbortController();
   runningChats.add(runKey);
+  runningChatCancels.set(runKey, runController);
 
   // Open SSE.
   res.writeHead(200, {
@@ -1446,6 +1449,7 @@ async function handleChatStream(req, res, chatId) {
     fileToolsEnabled,
     appSettings,
     promptSize: resolvedProfileId,
+    signal: runController.signal,
     // Per-chat tool filter (decisions: chat.tools). null/undefined
     // means "all tools available to the project"; an array (even an
     // empty one) means "restrict to exactly these tool names". The
@@ -1585,6 +1589,7 @@ async function handleChatStream(req, res, chatId) {
     // A throw out of the streaming layer must still clear the running
     // marker or the chat would look busy forever after a reload.
     runningChats.delete(runKey);
+    runningChatCancels.delete(runKey);
     if (traceStream) trace.close(traceStream);
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
@@ -1618,6 +1623,7 @@ async function handleChatStream(req, res, chatId) {
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
+  runningChatCancels.delete(runKey);
   // Refresh the persisted project total cost after a stream completes.
   try { chats.recomputeProjectTotalCost(projectDir); } catch { /* non-fatal */ }
   res.end();
@@ -2960,17 +2966,20 @@ async function handleAgents(req, res, parsed) {
 }
 
 // ---- MCP API ------------------------------------------------------------
-// Per-project MCP server registry + lifecycle + tool dispatch
-// (docs/decisions.md §18). The server entries live in
-// <projectDir>/.mcp.json under servers; legacy .mouaif.json
-// mcp.servers is read as a fallback. Runtime state is
-// in-memory. The AI client dispatches through the in-process mcp
-// module, so these endpoints are for the Settings UI and for tests.
+// MCP server registry + lifecycle + tool dispatch (docs/decisions.md §18).
+// Server entries live in one of two scopes:
+//   - project: <projectDir>/.mcp.json under servers (legacy .mouaif.json
+//     mcp.servers is read as a fallback);
+//   - app: the app SQLite store under mcp.servers.
+// A project sees the union; project entries win on a slug collision.
+// Runtime state is in-memory. The AI client dispatches through the
+// in-process mcp module, so these endpoints are for the Settings UI and
+// for tests.
 //
-// All routes need a `projectDir` (query string for GET/DELETE, JSON
-// body for POST/PATCH). The path is the canonical CRUD surface, the
-// per-server action endpoints, and a generic /api/mcp/call that the
-// AI client also uses for direct dispatch in tests.
+// Routes that touch the *merged* view (list, patch, delete, lifecycle)
+// take an optional `projectDir` — without one only app-scoped servers
+// are visible. POST /api/mcp/servers takes an explicit `scope`
+// ('project' | 'app'); project scope requires `projectDir`.
 
 function mcpErrorStatus(err) {
   switch (err && err.code) {
@@ -3001,32 +3010,35 @@ async function handleMcp(req, res, parsed) {
   const q = parsed.query || {};
 
   // GET /api/mcp/servers?projectDir=...  -> { servers: [...] }
+  // projectDir is optional: without it only app-scoped servers are
+  // returned (the Settings "App" tab); with it the response is the
+  // merged app + project view.
   if (urlPath === '/api/mcp/servers' && method === 'GET') {
     const dir = readMcpProjectDir(q);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      return sendJSON(res, 200, { servers: mcp.listServers(dir) });
+      return sendJSON(res, 200, { servers: mcp.listServers(dir || null) });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // POST /api/mcp/servers  body: { projectDir, name, command, args?, env?, cwd?, enabled? }
+  // POST /api/mcp/servers  body: { projectDir?, scope?, name, command, args?, env?, cwd?, enabled? }
   if (urlPath === '/api/mcp/servers' && method === 'POST') {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     const dir = readMcpProjectDir(q, body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const scope = body && body.scope === mcp.APP_SCOPE ? mcp.APP_SCOPE : mcp.PROJECT_SCOPE;
+    if (scope === mcp.PROJECT_SCOPE && !dir) return sendJSON(res, 400, { error: 'projectDir is required for a project-scoped server' });
     try {
-      const server = mcp.addServer(dir, body);
+      const server = mcp.addServer(dir || null, Object.assign({}, body, { scope }));
       return sendJSON(res, 201, { server });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // PATCH /api/mcp/servers/:id  body: { projectDir, ...patch }
+  // PATCH /api/mcp/servers/:id  body: { projectDir?, ...patch }
   let m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const id = decodeURIComponent(m[1]);
@@ -3034,9 +3046,8 @@ async function handleMcp(req, res, parsed) {
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     const dir = readMcpProjectDir(q, body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const server = mcp.updateServer(dir, id, body || {});
+      const server = mcp.updateServer(dir || null, id, body || {});
       if (!server) return sendJSON(res, 404, { error: 'Server not found', id });
       return sendJSON(res, 200, { server });
     } catch (e) {
@@ -3048,9 +3059,8 @@ async function handleMcp(req, res, parsed) {
   if (m && method === 'DELETE') {
     const id = decodeURIComponent(m[1]);
     const dir = readMcpProjectDir(q);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const ok = mcp.removeServer(dir, id);
+      const ok = mcp.removeServer(dir || null, id);
       if (!ok) return sendJSON(res, 404, { error: 'Server not found', id });
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
@@ -3058,32 +3068,30 @@ async function handleMcp(req, res, parsed) {
     }
   }
 
-  // POST /api/mcp/servers/:id/start  body: { projectDir }
+  // POST /api/mcp/servers/:id/start  body: { projectDir? }
   m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/start$/);
   if (m && method === 'POST') {
     const id = decodeURIComponent(m[1]);
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
     const dir = readMcpProjectDir(q, body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const server = await mcp.startServer(dir, id);
+      const server = await mcp.startServer(dir || null, id);
       return sendJSON(res, 200, { server });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // POST /api/mcp/servers/:id/stop  body: { projectDir }
+  // POST /api/mcp/servers/:id/stop  body: { projectDir? }
   m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/stop$/);
   if (m && method === 'POST') {
     const id = decodeURIComponent(m[1]);
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
     const dir = readMcpProjectDir(q, body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const ok = await mcp.stopServer(dir, id);
+      const ok = await mcp.stopServer(dir || null, id);
       return sendJSON(res, 200, { ok, removed: ok });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -3095,9 +3103,8 @@ async function handleMcp(req, res, parsed) {
   if (m && method === 'GET') {
     const id = decodeURIComponent(m[1]);
     const dir = readMcpProjectDir(q);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
-      const tools = await mcp.listDiscoveredTools(dir, id);
+      const tools = await mcp.listDiscoveredTools(dir || null, id);
       return sendJSON(res, 200, { tools });
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -3280,6 +3287,41 @@ async function handleToolAuthorization(req, res, parsed) {
     try {
       const next = authGate.setAuthorization(projectDir, { tools, mcp: mcpAuthorization });
       return sendJSON(res, 200, next);
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // GET /api/tools/authorization/pending?projectDir=<abs>&chatId=<id>
+  if (urlPath === '/api/tools/authorization/pending' && method === 'GET') {
+    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const chatId = typeof q.chatId === 'string' ? q.chatId : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    if (!chatId) return sendJSON(res, 400, { error: 'chatId query param is required' });
+    try {
+      if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
+      return sendJSON(res, 200, { pending: authGate.listPending(projectDir, chatId) });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // POST /api/tools/authorization/cancel
+  if (urlPath === '/api/tools/authorization/cancel' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const { projectDir, chatId } = body || {};
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
+    try {
+      if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
+      const key = runningKey(projectDir, chatId);
+      const controller = runningChatCancels.get(key);
+      if (controller) {
+        try { controller.abort(new Error('user cancelled chat')); } catch { /* already settled */ }
+      }
+      return sendJSON(res, 200, { ok: true, cancelled: authGate.cancelSession(projectDir, chatId), running: runningChats.has(key) });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }

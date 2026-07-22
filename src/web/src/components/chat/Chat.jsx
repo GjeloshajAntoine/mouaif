@@ -14,12 +14,12 @@ export function ChatView(props) {
   const s = useChatState(props);
   const {
     refs,
-    imageAttachments, fileEditorOpen,
+    imageAttachments, fileEditorOpen, runningVisible,
     setFileEditorOpen,
     send, onPickerSearch,
     onRefreshAllProviders, onOpenModelPicker, onCloseModelPicker,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, onJumpToBottom, onBack
+    onRemoveImage, onJumpToBottom, onCancelRunning, onBack
   } = s;
 
   const { projectDir, chatId } = props;
@@ -210,7 +210,15 @@ export function ChatView(props) {
         ))
       ) : null
     ),
-    h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
+    h('div', { class: 'chat-view__status-row' },
+      h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
+      runningVisible ? h('button', {
+        class: 'btn btn--danger chat-view__cancel-run',
+        type: 'button',
+        onClick: onCancelRunning,
+        'aria-label': 'Cancel running chat'
+      }, 'Cancel') : null
+    ),
     fileEditorOpen && FileEditor
       ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
       : null

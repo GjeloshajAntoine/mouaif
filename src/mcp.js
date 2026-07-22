@@ -10,9 +10,14 @@
 // JSON-RPC and Node, with the @modelcontextprotocol/sdk scoped to this
 // module.
 //
-// Scope: one project directory = one MCP session. The set of servers
-// is per-project (in <projectDir>/.mcp.json under servers; legacy
-// <projectDir>/.mouaif.json mcp.servers is read as a fallback).
+// Scope: MCP servers can be configured per project (in
+// <projectDir>/.mcp.json under servers; legacy <projectDir>/.mouaif.json
+// mcp.servers is read as a fallback) or app-wide (in the app SQLite
+// store under mcp.servers). A project sees the union — app entries
+// first, then project entries — with project entries winning on
+// duplicate slugs (the settings resolution order, decisions §2).
+// App-scoped entries carry scope: 'app' in API responses; project
+// entries are scope: 'project'.
 // The runtime state (child processes, live tool lists) is in-memory
 // only; the last-known tool list per server is persisted in the app
 // SQLite store (settings.getMcpToolCache), not in the project file.
@@ -20,9 +25,9 @@
 //
 // Public surface:
 //
-//   listServers(projectDir)         -> [{ id, name, command, args, env, cwd, enabled, status, tools? }]
+//   listServers(projectDir)         -> [{ id, name, command, args, env, cwd, enabled, scope, status, tools? }]
 //   getServer(projectDir, serverId) -> the server record or null
-//   addServer(projectDir, opts)     -> the new server record
+//   addServer(projectDir, opts)     -> the new server record (opts.scope: 'project'|'app')
 //   updateServer(projectDir, id, patch) -> the updated record or null
 //   removeServer(projectDir, serverId) -> boolean
 //
@@ -144,9 +149,11 @@ function buildChildEnv(perServerEnv) {
   return env;
 }
 
-// ---- Project-level registry --------------------------------------------
+// ---- Project + app registry ---------------------------------------------
 
 const MCP_FILE = '.mcp.json';
+const APP_SCOPE = 'app';
+const PROJECT_SCOPE = 'project';
 
 function getMcpPath(projectDir) {
   if (!projectDir || typeof projectDir !== 'string') {
@@ -213,6 +220,77 @@ function writeProjectConfig(projectDir, mcp) {
     });
   }
   writeMcpFile(projectDir, out);
+}
+
+// ---- App-level registry ---------------------------------------------------
+// App-scoped servers live in the app SQLite store (settings.setApp) under
+// `mcp.servers` — same entry shape as project entries. They are visible to
+// every project (the project entries win on a slug collision, matching the
+// settings resolution order in decisions §2). A project can shadow an app
+// entry with a same-named project entry; there is no other per-project
+// filtering of app entries.
+
+function readAppConfig() {
+  let app = {};
+  try { app = settings.getApp() || {}; } catch { app = {}; }
+  const mcp = (app.mcp && typeof app.mcp === 'object' && !Array.isArray(app.mcp)) ? app.mcp : {};
+  const list = Array.isArray(mcp.servers) ? mcp.servers : [];
+  return { mcp, list, source: APP_SCOPE };
+}
+
+function writeAppConfig(mcp) {
+  // Merge into the existing app.mcp block: it also carries the app-level
+  // authorization fallback (tools/authorization.js), and a blanket
+  // overwrite would drop the user's MCP policy on every server CRUD.
+  let app = {};
+  try { app = settings.getApp() || {}; } catch { app = {}; }
+  const base = (app.mcp && typeof app.mcp === 'object' && !Array.isArray(app.mcp)) ? app.mcp : {};
+  const out = Object.assign({}, base, mcp || { servers: [] });
+  if (Array.isArray(out.servers)) {
+    out.servers = out.servers.map((s) => {
+      if (!s || typeof s !== 'object') return s;
+      if (!Object.prototype.hasOwnProperty.call(s, 'toolCache')) return s;
+      const clone = Object.assign({}, s);
+      delete clone.toolCache;
+      return clone;
+    });
+  }
+  settings.setApp({ mcp: out });
+}
+
+// readAllConfigs(projectDir) -> { entries: [{ scope, raw }], byId: Map }
+//
+// The merged view every read path uses. Entries are the raw config objects
+// (not normalized) so the write-back for update/remove can land on the
+// right file. Project entries override app entries on slug collision — the
+// project file is the user's most specific intent.
+function readAllConfigs(projectDir) {
+  // App entries are always in scope, with or without a project — a null
+  // projectDir means "app-only view" (the Settings App tab), not "no
+  // config at all".
+  const appCfg = readAppConfig();
+  let projectList = [];
+  if (projectDir) {
+    try { projectList = readProjectConfig(projectDir).list; } catch (e) { throw e; }
+  }
+  const entries = [];
+  for (const raw of appCfg.list) {
+    if (raw && typeof raw === 'object') entries.push({ scope: APP_SCOPE, raw });
+  }
+  for (const raw of projectList) {
+    if (raw && typeof raw === 'object') entries.push({ scope: PROJECT_SCOPE, raw });
+  }
+  return { entries };
+}
+
+// Write back the full server list for one scope. `scope` is APP_SCOPE or
+// PROJECT_SCOPE; `servers` is the normalized entry list to persist.
+function writeConfigForScope(projectDir, scope, servers) {
+  if (scope === APP_SCOPE) {
+    writeAppConfig({ servers });
+  } else {
+    writeProjectConfig(projectDir, { servers });
+  }
 }
 
 function normalizeServerEntry(raw, usedSlugs) {
@@ -386,22 +464,32 @@ function clearToolCache(projectDir, serverId) {
 // `${projectDir}::${serverId}`. We also keep a projectDir -> serverId
 // index for quick fan-out (e.g. "all sessions for a project").
 const _sessions = new Map();
-const _byProject = new Map(); // projectDir -> Set<serverId>
+const _byProject = new Map(); // scopeKey -> Set<serverId>
 
-function keyOf(projectDir, serverId) { return projectDir + '::' + serverId; }
+// Sessions are keyed by the *context* the server runs in: a project dir
+// when there is one, the string 'app' when the server was started without
+// a project (app-scope start from the Settings UI). The same app-scoped
+// server started from two different projects gets two sessions — each
+// project's chat dispatches to its own child.
+function scopeKey(projectDir) {
+  return (projectDir && typeof projectDir === 'string' && projectDir.trim()) ? projectDir : 'app';
+}
+
+function keyOf(projectDir, serverId) { return scopeKey(projectDir) + '::' + serverId; }
 
 function trackSession(projectDir, serverId, session) {
   _sessions.set(keyOf(projectDir, serverId), session);
-  if (!_byProject.has(projectDir)) _byProject.set(projectDir, new Set());
-  _byProject.get(projectDir).add(serverId);
+  const key = scopeKey(projectDir);
+  if (!_byProject.has(key)) _byProject.set(key, new Set());
+  _byProject.get(key).add(serverId);
 }
 
 function untrackSession(projectDir, serverId) {
   _sessions.delete(keyOf(projectDir, serverId));
-  const set = _byProject.get(projectDir);
+  const set = _byProject.get(scopeKey(projectDir));
   if (set) {
     set.delete(serverId);
-    if (set.size === 0) _byProject.delete(projectDir);
+    if (set.size === 0) _byProject.delete(scopeKey(projectDir));
   }
 }
 
@@ -409,31 +497,57 @@ function getSession(projectDir, serverId) {
   return _sessions.get(keyOf(projectDir, serverId)) || null;
 }
 
+// findSessionBySlug checks the project context first, then the 'app'
+// context: an app-scoped server started from the Settings UI (no project)
+// is still reachable from a chat in any project.
 function findSessionBySlug(projectDir, serverSlug) {
-  const set = _byProject.get(projectDir);
-  if (!set) return null;
-  for (const id of set) {
-    const s = _sessions.get(keyOf(projectDir, id));
-    if (s && s.entry && s.entry.slug === serverSlug) return { id, session: s };
+  for (const key of [scopeKey(projectDir), 'app']) {
+    const set = _byProject.get(key);
+    if (!set) continue;
+    for (const id of set) {
+      const s = _sessions.get(key + '::' + id);
+      if (s && s.entry && s.entry.slug === serverSlug) return { id, session: s };
+    }
   }
   return null;
 }
 
 // ---- CRUD ---------------------------------------------------------------
 
+// resolveMerged(projectDir) -> [{ entry, scope, raw }]
+//
+// The single read path every public surface uses. App entries come first,
+// project entries second; a project entry with the same slug as an app
+// entry shadows it (the app entry is dropped from the merged view).
+// Normalization assigns ids + unique slugs, so the merged list is stable
+// across calls within a boot.
+function resolveMerged(projectDir) {
+  const { entries } = readAllConfigs(projectDir);
+  const appRaw = entries.filter(e => e.scope === APP_SCOPE).map(e => e.raw);
+  const projectRaw = entries.filter(e => e.scope === PROJECT_SCOPE).map(e => e.raw);
+  const appNorm = normalizeAll(appRaw);
+  const projectNorm = normalizeAll(projectRaw);
+  const projectSlugs = new Set(projectNorm.map(s => s.slug));
+  const out = [];
+  for (let i = 0; i < appNorm.length; i++) {
+    if (projectSlugs.has(appNorm[i].slug)) continue; // project wins
+    out.push({ entry: appNorm[i], scope: APP_SCOPE, raw: appRaw[i] });
+  }
+  for (let i = 0; i < projectNorm.length; i++) {
+    out.push({ entry: projectNorm[i], scope: PROJECT_SCOPE, raw: projectRaw[i] });
+  }
+  return out;
+}
+
 function listServers(projectDir) {
-  const { list } = readProjectConfig(projectDir);
-  const rawById = new Map(list.map(s => [s && s.id, s]));
-  const normalized = normalizeAll(list);
-  return normalized.map((entry) => decorate(entry, projectDir, rawById.get(entry.id)));
+  return resolveMerged(projectDir).map(({ entry, scope, raw }) =>
+    decorate(Object.assign({}, entry, { scope }), projectDir, raw));
 }
 
 function getServer(projectDir, serverId) {
-  const { list } = readProjectConfig(projectDir);
-  const normalized = normalizeAll(list);
-  const entry = normalized.find(s => s.id === serverId) || null;
-  if (!entry) return null;
-  return decorate(entry, projectDir, list.find(s => s && s.id === serverId));
+  const found = resolveMerged(projectDir).find(r => r.entry.id === serverId);
+  if (!found) return null;
+  return decorate(Object.assign({}, found.entry, { scope: found.scope }), projectDir, found.raw);
 }
 
 function decorate(entry, projectDir, rawEntry) {
@@ -461,23 +575,57 @@ function addServer(projectDir, opts) {
   if (!opts || typeof opts !== 'object') throw err('EBADINPUT', 'opts required');
   if (typeof opts.name !== 'string' || !opts.name.trim()) throw err('EBADINPUT', 'name is required');
   if (typeof opts.command !== 'string' || !opts.command.trim()) throw err('EBADINPUT', 'command is required');
-  const { list } = readProjectConfig(projectDir);
-  const usedIds = new Set(list.map(s => s && s.id));
+  const scope = opts.scope === APP_SCOPE ? APP_SCOPE : PROJECT_SCOPE;
+  if (scope === PROJECT_SCOPE && (!projectDir || typeof projectDir !== 'string' || !projectDir.trim())) {
+    throw err('EBADINPUT', 'projectDir is required for a project-scoped server');
+  }
+  // Uniqueness is scope-local: an app entry and a project entry may share
+  // a slug (the project one shadows the app one at merge time), but two
+  // entries inside the same scope never collide.
+  const scopeList = scope === APP_SCOPE ? readAppConfig().list : readProjectConfig(projectDir).list;
+  const usedIds = new Set(scopeList.map(s => s && s.id));
   let id = newServerId();
   while (usedIds.has(id)) id = newServerId();
-  const entry = normalizeServerEntry(Object.assign({}, opts, { id }), new Set());
+  const usedSlugs = new Set(normalizeAll(scopeList).map(s => s.slug));
+  const entry = normalizeServerEntry(Object.assign({}, opts, { id }), usedSlugs);
   if (!entry) throw err('EBADINPUT', 'invalid server entry');
-  const next = list.concat([entry]);
-  writeProjectConfig(projectDir, { servers: next });
-  return decorate(entry, projectDir);
+  const next = scopeList.concat([entry]);
+  writeConfigForScope(projectDir, scope, next);
+  return decorate(Object.assign({}, entry, { scope }), projectDir, entry);
+}
+
+// findInScope(projectDir, scope, serverId) -> { list, normalized, idx, scope } | null
+//
+// Update/remove must search each scope's *own* list, not the merged view:
+// the merged view drops a shadowed app entry, but the entry still exists in
+// the app store and the user can legitimately want to edit or delete it
+// (the Settings App tab shows exactly that un-merged list).
+function findInScope(projectDir, scope, serverId) {
+  const list = scope === APP_SCOPE ? readAppConfig().list : readProjectConfig(projectDir).list;
+  const normalized = normalizeAll(list);
+  const idx = normalized.findIndex(s => s.id === serverId);
+  if (idx < 0) return null;
+  return { list, normalized, idx, scope };
+}
+
+function findServerAnyScope(projectDir, serverId) {
+  // Project scope first: for a chat-facing lookup the project entry is
+  // the one the model can actually see (it shadows an app entry on a
+  // slug collision).
+  if (projectDir) {
+    const p = findInScope(projectDir, PROJECT_SCOPE, serverId);
+    if (p) return p;
+  }
+  return findInScope(projectDir, APP_SCOPE, serverId);
 }
 
 function updateServer(projectDir, serverId, patch) {
   if (!serverId) return null;
-  const { list } = readProjectConfig(projectDir);
-  const normalized = normalizeAll(list);
-  const idx = normalized.findIndex(s => s.id === serverId);
-  if (idx < 0) return null;
+  const found = findServerAnyScope(projectDir, serverId);
+  if (!found) return null;
+  const scope = found.scope;
+  const normalized = found.normalized;
+  const idx = found.idx;
   // Stop the running session synchronously (don't await — the caller
   // wants a fast PATCH) so the next start reflects the new config.
   // untrackSession runs inside stopServer, so the entry is removed
@@ -491,6 +639,8 @@ function updateServer(projectDir, serverId, patch) {
     untrackSession(projectDir, serverId);
   }
   const cleanPatch = Object.assign({}, patch || {});
+  delete cleanPatch.scope; // scope is fixed at creation; use delete+add to move
+  delete cleanPatch.projectDir; // transport detail, never persisted
   if (!Object.prototype.hasOwnProperty.call(cleanPatch, 'env')) cleanPatch.env = normalized[idx].env;
   const merged = Object.assign({}, normalized[idx], cleanPatch, { id: serverId });
   // Re-slug only if the name changed and the user did not pin a slug.
@@ -506,18 +656,20 @@ function updateServer(projectDir, serverId, patch) {
   const renormalized = normalizeServerEntry(merged, new Set(normalized.filter((_, i) => i !== idx).map(o => o.slug)));
   if (!renormalized) return null;
   normalized[idx] = renormalized;
-  writeProjectConfig(projectDir, { servers: normalized });
-  return decorate(renormalized, projectDir);
+  writeConfigForScope(projectDir, scope, normalized);
+  return decorate(Object.assign({}, renormalized, { scope }), projectDir, renormalized);
 }
 
 function removeServer(projectDir, serverId) {
   if (!serverId) return false;
   stopServer(projectDir, serverId).catch(() => {});
-  const { list } = readProjectConfig(projectDir);
-  const before = list.length;
-  const next = list.filter(s => s && s.id !== serverId);
+  const found = findServerAnyScope(projectDir, serverId);
+  if (!found) return false;
+  const scopeList = found.list;
+  const before = scopeList.length;
+  const next = scopeList.filter(s => s && s.id !== serverId);
   if (next.length === before) return false;
-  writeProjectConfig(projectDir, { servers: next });
+  writeConfigForScope(projectDir, found.scope, next);
   // The tool cache is keyed by server id; drop it with the server.
   clearToolCache(projectDir, serverId);
   return true;
@@ -530,9 +682,11 @@ function removeServer(projectDir, serverId) {
 // the session. Returns the decorated server record. Throws on any
 // failure with a typed code so the HTTP layer can branch.
 async function startServer(projectDir, serverId) {
-  const { list } = readProjectConfig(projectDir);
-  const entry = normalizeAll(list).find(s => s.id === serverId);
-  if (!entry) throw err('EMCP_NOTFOUND', 'Server not found', { serverId });
+  // Per-scope lookup (not the merged view) so a shadowed app entry can
+  // still be started from the Settings App tab.
+  const found = findServerAnyScope(projectDir, serverId);
+  if (!found) throw err('EMCP_NOTFOUND', 'Server not found', { serverId });
+  const entry = found.normalized[found.idx];
   if (entry.enabled === false) throw err('EMCP_DISABLED', 'Server is disabled', { serverId });
 
   // Reject overlapping starts.
@@ -547,16 +701,24 @@ async function startServer(projectDir, serverId) {
   }
 
   const { Client, StdioClientTransport } = getSdk();
+  // cwd anchor: relative entry.cwd resolves against the chat's projectDir.
+  // Without a project context (app-scope start from the Settings UI) a
+  // relative cwd has no anchor — fall back to the process cwd; absolute
+  // cwd values still work. The project-containment check only applies
+  // when there is a project to be contained in.
+  const hasProject = !!(projectDir && typeof projectDir === 'string' && projectDir.trim());
   const cwd = entry.cwd
-    ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(projectDir, entry.cwd))
-    : projectDir;
-  // Sanity check: cwd must be inside projectDir (decision §4's
-  // "outside project" rule, applied to the spawn directory).
+    ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(hasProject ? projectDir : process.cwd(), entry.cwd))
+    : (hasProject ? projectDir : process.cwd());
   const cwdResolved = path.resolve(cwd);
-  const projectResolved = path.resolve(projectDir);
-  const rel = path.relative(projectResolved, cwdResolved);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw err('EOUTSIDE_PROJECT', 'Server cwd must be inside the project directory', { cwd: cwdResolved });
+  if (hasProject) {
+    // Sanity check: cwd must be inside projectDir (decision §4's
+    // "outside project" rule, applied to the spawn directory).
+    const projectResolved = path.resolve(projectDir);
+    const rel = path.relative(projectResolved, cwdResolved);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw err('EOUTSIDE_PROJECT', 'Server cwd must be inside the project directory', { cwd: cwdResolved });
+    }
   }
   const env = buildChildEnv(entry.env);
 
@@ -656,7 +818,7 @@ async function startServer(projectDir, serverId) {
   } catch { /* transport may not expose onclose */ }
 
   session.status = 'ready';
-  return decorate(entry, projectDir);
+  return decorate(Object.assign({}, entry, { scope: found.scope }), projectDir);
 }
 
 async function stopServer(projectDir, serverId) {
@@ -771,21 +933,19 @@ function composedToolNameFor(serverEntry, tool) {
 // surfaced in the Settings UI; the rest of the enabled set still
 // starts.
 async function ensureEnabledServers(projectDir) {
-  const { list } = readProjectConfig(projectDir);
-  const normalized = normalizeAll(list);
-  const enabled = normalized.filter(s => s && s.enabled === true);
+  const enabled = resolveMerged(projectDir).filter(r => r.entry && r.entry.enabled === true);
   if (!enabled.length) return [];
   const results = [];
-  for (const entry of enabled) {
+  for (const { entry, scope } of enabled) {
     const existing = getSession(projectDir, entry.id);
     if (existing && existing.status === 'ready') {
-      results.push(decorate(entry, projectDir));
+      results.push(decorate(Object.assign({}, entry, { scope }), projectDir));
       continue;
     }
     if (existing && existing.status === 'starting') {
       // Another request is already spawning it; report the current
       // state without double-starting. The caller re-polls later.
-      results.push(decorate(entry, projectDir));
+      results.push(decorate(Object.assign({}, entry, { scope }), projectDir));
       continue;
     }
     try {
@@ -793,6 +953,7 @@ async function ensureEnabledServers(projectDir) {
       results.push(started);
     } catch (e) {
       results.push(Object.assign({}, entry, {
+        scope,
         env: redactEnv(entry.env),
         status: 'errored',
         tools: [],
@@ -810,19 +971,25 @@ function listComposedToolSpecs(projectDir) {
   const out = [];
   const seen = new Set();
   // 1) Live sessions first — the running process is the source of truth.
-  for (const serverId of (_byProject.get(projectDir) || new Set())) {
-    const session = _sessions.get(keyOf(projectDir, serverId));
-    if (!session || session.status !== 'ready' || !session.entry.enabled) continue;
-    seen.add(serverId);
-    const entry = session.entry;
-    for (const tool of session.tools) {
-      out.push({
-        name: composedToolName(entry.slug, tool.name),
-        description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
-        parameters: shrinkMcpSchema(tool.inputSchema) || { type: 'object', properties: {} },
-        serverSlug: entry.slug,
-        toolName: tool.name
-      });
+  //    Both the project context and the 'app' context are scanned so an
+  //    app-scoped server started from Settings (no project) still
+  //    advertises its tools to a chat.
+  for (const ctxKey of [scopeKey(projectDir), 'app']) {
+    for (const serverId of (_byProject.get(ctxKey) || new Set())) {
+      if (seen.has(serverId)) continue;
+      const session = _sessions.get(ctxKey + '::' + serverId);
+      if (!session || session.status !== 'ready' || !session.entry.enabled) continue;
+      seen.add(serverId);
+      const entry = session.entry;
+      for (const tool of session.tools) {
+        out.push({
+          name: composedToolName(entry.slug, tool.name),
+          description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
+          parameters: shrinkMcpSchema(tool.inputSchema) || { type: 'object', properties: {} },
+          serverSlug: entry.slug,
+          toolName: tool.name
+        });
+      }
     }
   }
   // 2) Enabled-but-stopped servers fall back to the persisted tool
@@ -830,11 +997,9 @@ function listComposedToolSpecs(projectDir) {
   //    the server ran; a call will surface EMCP_NOSESSION until the
   //    user starts it again, which is the honest signal.
   try {
-    const { list } = readProjectConfig(projectDir);
-    const rawById = new Map(list.map(s => [s && s.id, s]));
-    for (const entry of normalizeAll(list)) {
+    for (const { entry, raw } of resolveMerged(projectDir)) {
       if (!entry || entry.enabled !== true || seen.has(entry.id)) continue;
-      const cache = loadToolCache(projectDir, rawById.get(entry.id) || entry);
+      const cache = loadToolCache(projectDir, raw || entry);
       if (!cache.length) continue;
       for (const tool of cache) {
         out.push({
@@ -866,6 +1031,8 @@ module.exports = {
   // constants
   ENV_DENYLIST,
   MCP_FILE,
+  APP_SCOPE,
+  PROJECT_SCOPE,
   getMcpPath,
   // helpers (exported for tests)
   slugify,
@@ -878,6 +1045,7 @@ module.exports = {
   addServer,
   updateServer,
   removeServer,
+  resolveMerged,
   // lifecycle
   startServer,
   stopServer,

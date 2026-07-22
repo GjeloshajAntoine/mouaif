@@ -375,6 +375,38 @@
 .mcp__tools-name { font-family: var(--font-mono); font-size: 0.76rem; color: var(--accent); word-break: break-all; }
 .mcp__tools-desc { font-size: 0.76rem; color: var(--fg-soft); margin-top: 1px; }
 
+/* Scope badge: marks a server row as app-wide vs project-committed. */
+.mcp__scope {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 6px;
+  margin-left: 4px;
+  border-radius: var(--r-pill);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+.mcp__scope--app {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.mcp__scope--project {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--fg-soft);
+}
+
+/* Segmented control variants used by the MCP scope switcher: button
+   items (no hidden radio) and a full-width block layout. */
+.seg--block { display: flex; width: 100%; margin-bottom: 8px; }
+.seg--block .seg__item { flex: 1; }
+.seg--block .seg__pill { width: 100%; min-height: var(--tap); }
+.seg__item--btn { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; color: inherit; }
+.seg__item--btn .seg__pill { display: flex; }
+
 /* ---- File tags (decisions §15) ----------------------------------- */
 
 .tags__list { position: relative; margin: 0 0 6px; padding: 0; height: min(62dvh, 34rem); min-height: 15rem; overflow-y: auto; overscroll-behavior: contain; }

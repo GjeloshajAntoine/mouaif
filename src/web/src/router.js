@@ -42,9 +42,11 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
   }
-  // settings/mcp is project-scoped. The active project is the source
-  // of truth; the route hash can override it via ?projectDir=... for
-  // deep links and tests.
+  // settings/mcp lists servers in both scopes (app-wide + per project).
+  // The active project is the source of truth for the Project tab; the
+  // route hash can override it via ?projectDir=... for deep links and
+  // tests. ?scope=app|project on the editor route pre-selects the scope
+  // an add creates in (and tells an edit which list it came from).
   if (h === 'settings/mcp' || h.startsWith('settings/mcp?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
@@ -54,7 +56,11 @@ function parseHash() {
     const rest = h.slice('settings/mcp/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsMcpEdit', id, projectDir: params.get('projectDir') || '' };
+    return {
+      name: 'settingsMcpEdit', id,
+      projectDir: params.get('projectDir') || '',
+      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : '')
+    };
   }
   // settings/tags is project-scoped (file tagging, decisions §15). It
   // needs the registered project id for the REST surface plus the path

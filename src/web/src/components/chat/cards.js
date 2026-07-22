@@ -427,11 +427,19 @@ export async function toggleMcpServer(id, enabled, state, refs, updateChat, setC
 // resolve with the user's decision. The chat's runner pauses until
 // the user picks; `resume()` is called for any non-deny decision so
 // the original tool call can be retried with the same callId.
+export function removePendingAuthorizationCards(refs) {
+  if (!refs || !refs.transcript || !refs.transcript.current) return;
+  for (const card of refs.transcript.current.querySelectorAll('.tool-card--authorization[data-auth-call-id]')) {
+    card.remove();
+  }
+}
+
 export function authorizationCard(request, projectDir, chatId, refs, resume) {
   return new Promise((resolve) => {
     if (!refs.transcript.current) return resolve('deny');
     const card = document.createElement('div');
     card.className = 'tool-card tool-card--authorization';
+    if (request.callId) card.dataset.authCallId = request.callId;
     const head = document.createElement('div');
     head.className = 'tool-card__head';
     const chev = document.createElement('span');
@@ -502,6 +510,7 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   const card = document.createElement('div');
   card.className = 'tool-card tool-card--ask-user';
   card.dataset.toolId = request.callId || ('ask_' + Math.random().toString(36).slice(2, 10));
+  if (request.callId) card.dataset.authCallId = request.callId;
   const head = document.createElement('div');
   head.className = 'tool-card__head';
   const chev = document.createElement('span');

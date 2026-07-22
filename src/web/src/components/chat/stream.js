@@ -21,7 +21,7 @@ import {
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
-import { authorizationCard, askUserCard } from './cards.js';
+import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
 
@@ -118,6 +118,7 @@ export function startStreamRecovery(state, refs, partialText) {
   st.stopped = false;
   st.partialText = partialText || '';
   state.streaming = true; // still "in a turn" for the poller
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
   setChatStatus(refs, 'connection lost — reconnecting…', 'busy');
   scheduleRecoveryTick(state, refs, 0);
 }
@@ -180,6 +181,7 @@ function finishStreamRecovery(state, refs, message, failed) {
   if (st.timer) { clearTimeout(st.timer); st.timer = null; }
   st.active = false;
   state.streaming = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
   if (message) setChatStatus(refs, message, failed ? 'error' : 'success');
   else setChatStatus(refs, 'reconnected', 'success');
@@ -190,6 +192,53 @@ export function stopStreamRecovery(state, refs) {
   st.stopped = true;
   if (st.timer) { clearTimeout(st.timer); st.timer = null; }
   st.active = false;
+}
+
+export async function loadPendingAuthorization(state, refs) {
+  const { projectDir, chatId } = state.props;
+  if (!projectDir || !chatId || !refs.transcript.current) return;
+  let r;
+  try {
+    r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
+  } catch { return; }
+  if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return;
+  for (const request of r.body.pending) {
+    if (!request || !request.callId) continue;
+    if (refs.transcript.current.querySelector('[data-auth-call-id="' + String(request.callId).replace(/"/g, '\\"') + '"]')) continue;
+    if (request.tool === 'ask_user' && request.args) {
+      askUserCard(Object.assign({}, request.args, { callId: request.callId, tool: request.tool }), projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+    } else {
+      authorizationCard(request, projectDir, chatId, refs);
+    }
+  }
+}
+
+export async function cancelRunningChat(state, refs) {
+  const { projectDir, chatId } = state.props;
+  if (!projectDir || !chatId) return;
+  setChatStatus(refs, 'cancelling…', 'busy');
+  let r;
+  try {
+    r = await fetchJson('/api/tools/authorization/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, chatId })
+    });
+  } catch {
+    setChatStatus(refs, 'cancel failed — server unreachable', 'error');
+    return;
+  }
+  if (r.status !== 200) {
+    setChatStatus(refs, 'cancel failed: HTTP ' + r.status, 'error');
+    return;
+  }
+  removePendingAuthorizationCards(refs);
+  state.streaming = false;
+  state.watchingRun = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+  await reconcileRunningChat(state, refs);
+  setChatStatus(refs, 'cancel requested', 'success');
 }
 
 // send(state, refs, options)
@@ -236,6 +285,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
 
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   state.streaming = true;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
   setChatStatus(refs, 'streaming…', 'busy');
   if (refs.promptInput.current) refs.promptInput.current.value = '';
   await clearComposerDraft();
@@ -267,6 +317,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     setChatStatus(refs, 'network error', 'error');
     appendErrorCard('Network error — could not reach the server. Your message was sent to the transcript but the response never started. Try again.', refs, state);
     state.streaming = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
   }
@@ -295,12 +346,14 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       setImageAttachments(atts);
       setChatStatus(refs, 'a response is already streaming — your message is back in the composer', 'busy');
       state.streaming = false;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
       return;
     }
     setChatStatus(refs, errMsg, 'error');
     appendErrorCard(errMsg, refs, state);
     state.streaming = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
   }
@@ -554,6 +607,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   }
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
   state.streaming = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
 }
 
 // reconcileRunningChat — one tick of the "another tab is running
@@ -580,10 +634,15 @@ export async function reconcileRunningChat(state, refs) {
 
     if (running) {
       state.watchingRun = true;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
       setChatStatus(refs, 'streaming…', 'busy');
+      loadPendingAuthorization(state, refs);
     } else if (state.watchingRun) {
       state.watchingRun = false;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       setChatStatus(refs, 'done', 'success');
+    } else if (typeof state._setRunningVisible === 'function') {
+      state._setRunningVisible(false);
     }
   } catch { /* the next tick retries */ }
 }

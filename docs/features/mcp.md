@@ -13,20 +13,34 @@ The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to
 
 ## Usage
 
+### Scope: app-wide or per project
+
+Every MCP server is configured in exactly one of two scopes:
+
+- **App** — stored in the app SQLite store (`~/.mouaif/store.sqlite`) under `mcp.servers`. The server is visible to every project: its tools are advertised in any chat, and its child process runs per context (each project gets its own spawn).
+- **Project** — committed to `<projectDir>/.mcp.json` under `servers`, so it can be reviewed and shared with the repo.
+
+A project sees the **union** of both scopes; a project entry whose slug matches an app entry shadows it (the settings resolution order, decisions §2). The shadowed app entry still exists in the app store — the **App** tab of the MCP settings lists it and can edit, start, or delete it — but the chat in that project only sees the project entry.
+
+**Settings → MCP servers** (under *Application*) opens the list with an **App / Project** scope switcher:
+
+- The **App** tab lists only app-wide servers. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat).
+- The **Project** tab lists the merged view for the active project — app entries first, each marked with an **app** / **project** badge — plus the per-server **Tool permissions** rows and the shared fallback gate (project-scoped, since the authorization maps live in `.mcp.json`).
+
 ### Adding a server
 
-1. Open a chat in the project you want to configure (or visit **Settings → Project overrides** and load a project directory).
-2. From **Settings → Project features → MCP servers**, the project is already in scope — no path to type.
-3. Tap **+** to add a server. Fill in:
+1. Open **Settings → MCP servers** and pick a scope tab (the **+** button creates in the tab you are on; the editor also shows an **App / This project** segmented control).
+2. Tap **+** to add a server. Fill in:
+   - **Scope** — *App (all projects)* or *This project*. Fixed at creation; delete and re-add to move a server.
    - **Name** — a short label (e.g. `filesystem`).
    - **Command** — the executable to spawn (e.g. `node`).
    - **Arguments** — whitespace-separated arg list (e.g. `path/to/server.js --port 8080`).
    - **Environment** — one `KEY=value` per line. Denylisted keys (`LD_PRELOAD`, `NODE_OPTIONS`, ...) are stripped from the parent env first, then your overrides are applied on top.
-   - **Working directory** — optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`.
+   - **Working directory** — optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`. For an app-wide server started without a project context, a relative cwd resolves against the `mouaif` process cwd.
    - **Enabled** — on by default. Disabled servers do not start and are not advertised to the model.
-4. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
+3. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 
-The server entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. The child process itself is in-memory only — it restarts on `mouaif` restart — and the discovered tool list is cached in the app SQLite store (`~/.mouaif/store.sqlite`, keyed by project directory + server id) so a stopped server still shows what it advertised the last time it ran, and the model keeps its tool surface in a new chat. Keeping the cache out of `.mcp.json` leaves the project file small and hand-editable; older builds that wrote an inline `toolCache` onto the entry are migrated into the store on first read and stripped from the file on the next write. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
+A project-scoped entry is committed to `<projectDir>/.mcp.json` under `servers`. Legacy `<projectDir>/.mouaif.json` `mcp.servers` entries are still read as a fallback until the editor saves MCP config. An app-scoped entry never touches a project file. The child process itself is in-memory only — it restarts on `mouaif` restart — and the discovered tool list is cached in the app SQLite store (`~/.mouaif/store.sqlite`, keyed by project directory + server id) so a stopped server still shows what it advertised the last time it ran, and the model keeps its tool surface in a new chat. Keeping the cache out of `.mcp.json` leaves the project file small and hand-editable; older builds that wrote an inline `toolCache` onto the entry are migrated into the store on first read and stripped from the file on the next write. Servers are stopped on `SIGINT`, `SIGTERM`, and `process.exit`.
 
 ### In a chat
 
@@ -97,14 +111,16 @@ A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of th
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `GET`    | `/api/mcp/servers?projectDir=<abs>` | — | `{ servers: [{ id, name, slug, command, args, env, cwd, enabled, status, tools? }] }` |
-| `POST`   | `/api/mcp/servers` | `{ projectDir, name, command, args?, env?, cwd?, enabled? }` | `{ server }` (201) |
-| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir, name?, command?, args?, env?, cwd?, enabled? }` | `{ server }` (stops running session) |
-| `DELETE` | `/api/mcp/servers/:id?projectDir=<abs>` | — | `{ ok, removed }` (stops running session) |
-| `POST`   | `/api/mcp/servers/:id/start` | `{ projectDir }` | `{ server }` (status reflects the new state) |
-| `POST`   | `/api/mcp/servers/:id/stop` | `{ projectDir }` | `{ ok }` |
-| `GET`    | `/api/mcp/servers/:id/tools?projectDir=<abs>` | — | `{ tools: [{ name, description, inputSchema }] }` (forces a re-discovery) |
+| `GET`    | `/api/mcp/servers?projectDir=<abs>` | `projectDir` optional — without it only app-scoped servers; with it the merged app + project view | `{ servers: [{ id, name, slug, command, args, env, cwd, enabled, scope, status, tools? }] }` |
+| `POST`   | `/api/mcp/servers` | `{ projectDir?, scope?, name, command, args?, env?, cwd?, enabled? }` — `scope` is `'project'` (default, requires `projectDir`) or `'app'` | `{ server }` (201) |
+| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir?, name?, command?, args?, env?, cwd?, enabled? }` — `scope` is fixed at creation and ignored in patches | `{ server }` (stops running session) |
+| `DELETE` | `/api/mcp/servers/:id?projectDir=<abs>` | `projectDir` optional | `{ ok, removed }` (stops running session) |
+| `POST`   | `/api/mcp/servers/:id/start` | `{ projectDir? }` | `{ server }` (status reflects the new state) |
+| `POST`   | `/api/mcp/servers/:id/stop` | `{ projectDir? }` | `{ ok }` |
+| `GET`    | `/api/mcp/servers/:id/tools?projectDir=<abs>` | `projectDir` optional | `{ tools: [{ name, description, inputSchema }] }` (forces a re-discovery) |
 | `POST`   | `/api/mcp/call` | `{ projectDir, serverId, toolName, args }` | `{ ok, content: [...], isError? }` |
+
+Every server record carries `scope: 'app' | 'project'` so the UI can badge rows and route edits to the right file. `/api/mcp/call` still requires `projectDir` — it runs through the project's chat + authorization context.
 
 The AI client dispatches through the in-process `mcp` module; it does not round-trip through HTTP. The REST endpoints are for the Settings UI and for tests.
 
@@ -134,7 +150,7 @@ await mcp.stopServer(projectDir, server.id);
 
 ## Behavior
 
-- **Server entries are project-scoped.** They live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. Legacy `.mouaif.json` `mcp.servers` is read as a fallback.
+- **Server entries are scoped — app or project.** Project entries live in `<projectDir>/.mcp.json` under `servers`, so they can be committed to the repo and reviewed by collaborators. App entries live in the app SQLite store under `mcp.servers` and are visible to every project. A project entry shadows an app entry with the same slug; the app entry stays editable from the App tab. Legacy `.mouaif.json` `mcp.servers` is read as a fallback. Runtime sessions are keyed by context (project dir, or the shared `app` context for project-less starts), so a chat dispatches to its own child and an App-tab-started server is reachable from every chat.
 - **Tool names are namespaced.** The model sees `mcp__<serverSlug>__<toolName>` (the standard MCP convention). Built-in tools (`shell`, future) use their own prefixes. The AI client routes `mcp__…` names through `mcp.callTool` and leaves the rest alone.
 - **Discovery is cached on the session *and* persisted in the app store.** A successful `tools/list` lands on the server record's in-memory session and is also written to the app SQLite store (`mcp_tool_cache` table, keyed by project directory + server id). The AI client uses the live session when the server is running; it falls back to the persisted cache when the server is enabled but stopped (e.g. after a mouaif restart, or on a new chat before the auto-start fires). A tool call against a stopped server returns `EMCP_NOSESSION` — the honest signal — but the model still sees the surface and the user can tap Start. The cache is runtime state, not config, which is why it does not live in the project file; legacy inline `toolCache` entries are migrated into the store on first read.
 - **Enabled servers auto-start on chat open.** `GET /api/tools/list` (which the chat UI calls on load) runs `ensureEnabledServers(projectDir)`: every enabled server that is not already `ready` / `starting` is spawned and re-discovered before the catalog is returned. Disabled servers stay stopped. A failed start is captured as `errored` on that server only — the rest of the enabled set still starts.
@@ -148,7 +164,7 @@ await mcp.stopServer(projectDir, server.id);
 
 ## Implementation notes
 
-- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`.
+- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`, `resolveMerged`. The merged app + project view comes from `resolveMerged(projectDir)`; scope-aware writes route through `findServerAnyScope` so a shadowed app entry stays editable.
 - Server wiring: [src/ai.js](../../src/ai.js) → `streamChat()`. After the upstream finishes streaming, accumulated `tool_call` deltas are dispatched through `mcp.callTool()`. Tool results are surfaced as `tool_result` SSE events, not fed back into the same stream.
 - HTTP wiring: [src/index.js](../../src/index.js) → `handleMcp()`. The Settings UI hits the REST surface; the AI client never goes through HTTP.
 - SDK isolation: the `@modelcontextprotocol/sdk` is loaded lazily in `getSdk()`. A failure to load the SDK (e.g. a fresh checkout with no `node_modules`) surfaces as `EMODULE` on every server action — the rest of the server boots cleanly without MCP.

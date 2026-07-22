@@ -1407,8 +1407,11 @@ async function streamChat(opts) {
           tool: c.name,
           callId: c.id,
           cmd: args && args.cmd,
+          path: args && args.path,
+          query: args && args.query,
           summary,
-          timeoutMs: args && args.timeoutMs
+          timeoutMs: args && args.timeoutMs,
+          args
         });
 
         // `ask_user` rides a separate UI card (question + options +

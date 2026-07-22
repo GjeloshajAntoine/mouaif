@@ -23,7 +23,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
 - [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API key or PKCE sign-in (`https://openrouter.ai/auth`); the issued key is stored in the `openrouter` keyring namespace.
 - [Custom prompts](features/custom-prompts.md) — user-authored system prompts stored per project, with direct per-chat API override.
-- [MCP](features/mcp.md) — Model Context Protocol servers as user tools. Per-project stdio server registry, tool discovery, in-chat tool_call/tool_result cards.
+- [MCP](features/mcp.md) — Model Context Protocol servers as user tools. App-wide or per-project stdio server registry, tool discovery, in-chat tool_call/tool_result cards.
 - [Chrome Debug MCP](features/chrome-debug-mcp.md) — preset `chrome-debug` MCP entry pairing the model with the same Chrome instance the Inspector tab talks to (port 9222).
 - [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.
 - [File tagging](features/file-tagging.md) — annotate project files with tags, pin excerpts, and auto-inject them into new chat messages; tags live in the project's `.mouaif.json`.

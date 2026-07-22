@@ -1,7 +1,9 @@
 // mouaif web — SettingsMcpView (MCP server list) + SettingsMcpEditView
-// MCP = Model Context Protocol. The user configures per-project MCP
-// servers here: each server is a stdio child process the AI client
-// connects to and discovers tools from. See docs/features/mcp.md.
+// MCP = Model Context Protocol. Servers can be configured app-wide
+// (visible to every project) or per project (committed to
+// <projectDir>/.mcp.json). The list view has an App / Project scope
+// switcher; a project entry with the same slug shadows the app entry.
+// See docs/features/mcp.md.
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
@@ -12,11 +14,18 @@ function projectDirFromProps(props = {}) {
   return props.projectDir || (activeProject.value && activeProject.value.dir) || '';
 }
 
+function projectQS(projectDir) {
+  return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
+}
+
 export function SettingsMcpView(props = {}) {
-  const listEl = useRef(null);
   const statusEl = useRef(null);
-  const projectDirEl = useRef(null);
   const loadBtn = useRef(null);
+  // Scope: 'project' shows the merged app + project view for the active
+  // project (with per-server authorization rows); 'app' shows only the
+  // app-wide entries (no project needed, no per-project authorization).
+  const [scope, setScope] = useState(() => (projectDirFromProps(props) ? 'project' : 'app'));
+  const [projectDir, setProjectDir] = useState(projectDirFromProps(props));
   // MCP authorization is layered (decisions §18): a per-server entry
   // under mcp.authorization.servers.<slug> overrides the shared
   // fallback gate; a per-tool entry under mcp.authorization.tools.
@@ -25,8 +34,7 @@ export function SettingsMcpView(props = {}) {
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [serversList, setServersList] = useState([]);
-
-  let projectDir = projectDirFromProps(props);
+  const [listStatus, setListStatus] = useState({ text: '', kind: '' });
 
   function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
 
@@ -104,36 +112,62 @@ export function SettingsMcpView(props = {}) {
     };
   })());
 
-  async function load() {
-    const dir = (projectDirEl.current && projectDirEl.current.value || '').trim() || projectDir;
-    if (!dir) { setStatus(statusEl, 'pick a project directory first', 'error'); return; }
-    projectDir = dir;
-    setActiveProject(dir, '');
+  async function load(override) {
+    const dir = (override && Object.prototype.hasOwnProperty.call(override, 'projectDir'))
+      ? override.projectDir
+      : projectDir;
+    const sc = (override && override.scope) || scope;
+    if (sc === 'project' && !dir) {
+      setServersList([]);
+      setListStatus({ text: 'pick a project directory first', kind: 'error' });
+      return;
+    }
     if (loadBtn.current) loadBtn.current.disabled = true;
-    setStatus(statusEl, 'loading…', 'busy');
+    setListStatus({ text: 'loading…', kind: 'busy' });
+    const qs = dir ? '?projectDir=' + encodeURIComponent(dir) : '';
     let r;
     try {
-      r = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(dir));
-    } catch (e) { setStatus(statusEl, 'network error', 'error'); if (loadBtn.current) loadBtn.current.disabled = false; return; }
+      r = await fetchJson('/api/mcp/servers' + qs);
+    } catch (e) {
+      setListStatus({ text: 'network error', kind: 'error' });
+      if (loadBtn.current) loadBtn.current.disabled = false;
+      return;
+    }
     if (loadBtn.current) loadBtn.current.disabled = false;
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    render(r.body.servers || []);
+    if (r.status !== 200) {
+      setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
+      return;
+    }
     setServersList(r.body.servers || []);
-    setStatus(statusEl, (r.body.servers || []).length + ' configured', 'success');
+    setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
     // Layered MCP authorization (shared fallback + per-server map,
-    // lives in .mcp.json). Per-tool overrides are edited on the
-    // server's edit view, not here.
-    try {
-      const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(dir));
-      const mcp = ar.status === 200 && ar.body.mcp;
-      setMcpAuth({
-        mode: (mcp && mcp.mode) || 'ask',
-        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
-        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
-        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
-      });
-      setMcpAuthStatusMsg('');
-    } catch { /* keep ask + empty maps */ }
+    // lives in .mcp.json) is project-scoped — skip it on the App tab.
+    if (sc === 'project' && dir) {
+      try {
+        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(dir));
+        const mcp = ar.status === 200 && ar.body.mcp;
+        setMcpAuth({
+          mode: (mcp && mcp.mode) || 'ask',
+          allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
+          servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
+          tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
+        });
+        setMcpAuthStatusMsg('');
+      } catch { /* keep ask + empty maps */ }
+    }
+  }
+
+  function pickScope(next) {
+    setScope(next);
+    if (next === 'app') load({ scope: 'app' });
+    else load({ scope: 'project' });
+  }
+
+  function applyProjectDirInput(value) {
+    const dir = (value || '').trim();
+    setProjectDir(dir);
+    if (dir) setActiveProject(dir, '');
+    if (scope === 'project') load({ scope: 'project', projectDir: dir });
   }
 
   // One segmented Off/Ask/Allow control. `name` must be unique per
@@ -155,81 +189,50 @@ export function SettingsMcpView(props = {}) {
       )
     );
   }
-  function render(servers) {
-    if (!listEl.current) return;
-    listEl.current.innerHTML = '';
-    if (!servers.length) {
-      const li = document.createElement('li');
-      li.className = 'mcp__empty';
-      li.textContent = 'No MCP servers yet. Tap "+" to add one.';
-      listEl.current.appendChild(li);
-      return;
-    }
-    for (const s of servers) listEl.current.appendChild(renderRow(s));
+
+  function scopeBadge(s) {
+    const isApp = s.scope === 'app';
+    return h('span', {
+      class: 'mcp__scope mcp__scope--' + (isApp ? 'app' : 'project'),
+      title: isApp ? 'App-wide: visible to every project' : 'Project: committed to this project\'s .mcp.json'
+    }, isApp ? 'app' : 'project');
   }
 
-  function renderRow(s) {
-    const li = document.createElement('li');
-    li.className = 'mcp__row';
-
-    const main = document.createElement('a');
-    main.className = 'mcp__row-main';
-    main.href = '#/settings/mcp/' + encodeURIComponent(s.id) + '?projectDir=' + encodeURIComponent(projectDir);
-    const name = document.createElement('div');
-    name.className = 'mcp__row-name';
-    name.textContent = s.name;
-    const sub = document.createElement('div');
-    sub.className = 'mcp__row-sub';
+  function serverRow(s) {
     const status = s.status || 'stopped';
     const enabledBit = s.enabled === false ? 'disabled' : 'enabled';
     const toolBit = (s.tools && s.tools.length) ? s.tools.length + ' tool' + (s.tools.length === 1 ? '' : 's') : 'no tools';
-    sub.textContent = status + ' · ' + enabledBit + ' · ' + toolBit;
-    main.appendChild(name); main.appendChild(sub);
-    if (s.status === 'errored' && s.error) {
-      const err = document.createElement('div');
-      err.className = 'mcp__row-err';
-      err.textContent = (s.error.code || 'ERR') + ': ' + (s.error.message || '');
-      main.appendChild(err);
-    }
-    const chev = document.createElement('div');
-    chev.className = 'mcp__row-chev';
-    chev.textContent = '›';
-    main.appendChild(chev);
-    li.appendChild(main);
-
-    // Quick-action row: Start / Stop / Refresh. Inline so the user
-    // does not have to open the editor just to control the lifecycle.
-    const actions = document.createElement('div');
-    actions.className = 'mcp__row-actions';
-    const startBtn = document.createElement('button');
-    startBtn.className = 'btn btn--small';
-    startBtn.type = 'button';
-    startBtn.textContent = status === 'ready' ? 'Restart' : 'Start';
-    startBtn.disabled = s.enabled === false;
-    startBtn.addEventListener('click', () => callLifecycle('start', s.id));
-    actions.appendChild(startBtn);
-    if (status === 'ready' || status === 'errored' || status === 'starting') {
-      const stopBtn = document.createElement('button');
-      stopBtn.className = 'btn btn--small';
-      stopBtn.type = 'button';
-      stopBtn.textContent = 'Stop';
-      stopBtn.addEventListener('click', () => callLifecycle('stop', s.id));
-      actions.appendChild(stopBtn);
-    }
-    if (status === 'ready') {
-      const refreshBtn = document.createElement('button');
-      refreshBtn.className = 'btn btn--small';
-      refreshBtn.type = 'button';
-      refreshBtn.textContent = 'Refresh tools';
-      refreshBtn.addEventListener('click', () => refreshTools(s.id));
-      actions.appendChild(refreshBtn);
-    }
-    li.appendChild(actions);
-    return li;
+    const href = '#/settings/mcp/' + encodeURIComponent(s.id) + projectQS(projectDir)
+      + (projectDir ? '&' : '?') + 'scope=' + encodeURIComponent(s.scope || scope);
+    return h('li', { key: s.id, class: 'mcp__row' },
+      h('a', { class: 'mcp__row-main', href },
+        h('div', { class: 'mcp__row-name' }, s.name, ' ', scopeBadge(s)),
+        h('div', { class: 'mcp__row-sub' }, status + ' · ' + enabledBit + ' · ' + toolBit),
+        (s.status === 'errored' && s.error)
+          ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
+          : null,
+        h('div', { class: 'mcp__row-chev' }, '›')
+      ),
+      // Quick-action row: Start / Stop / Refresh. Inline so the user
+      // does not have to open the editor just to control the lifecycle.
+      h('div', { class: 'mcp__row-actions' },
+        h('button', {
+          class: 'btn btn--small', type: 'button',
+          disabled: s.enabled === false,
+          onClick: () => callLifecycle('start', s.id)
+        }, status === 'ready' ? 'Restart' : 'Start'),
+        (status === 'ready' || status === 'errored' || status === 'starting')
+          ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => callLifecycle('stop', s.id) }, 'Stop')
+          : null,
+        status === 'ready'
+          ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => refreshTools(s.id) }, 'Refresh tools')
+          : null
+      )
+    );
   }
 
   async function callLifecycle(action, id) {
-    setStatus(statusEl, action + '…', 'busy');
+    setListStatus({ text: action + '…', kind: 'busy' });
     let r;
     try {
       r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/' + action, {
@@ -237,104 +240,145 @@ export function SettingsMcpView(props = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectDir })
       });
-    } catch (e) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    setStatus(statusEl, action + 'ed', 'success');
+    } catch (e) { setListStatus({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) {
+      setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
+      return;
+    }
+    setListStatus({ text: action + 'ed', kind: 'success' });
     load();
   }
 
   async function refreshTools(id) {
-    setStatus(statusEl, 'refreshing tools…', 'busy');
+    setListStatus({ text: 'refreshing tools…', kind: 'busy' });
+    const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
     try {
-      r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/tools?projectDir=' + encodeURIComponent(projectDir));
-    } catch (e) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    setStatus(statusEl, (r.body.tools || []).length + ' tools', 'success');
+      r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/tools' + qs);
+    } catch (e) { setListStatus({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) {
+      setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
+      return;
+    }
+    setListStatus({ text: (r.body.tools || []).length + ' tools', kind: 'success' });
     load();
   }
 
   useEffect(() => { load(); }, []);
 
+  const newHref = '#/settings/mcp/new' + projectQS(projectDir) + (projectDir ? '&' : '?') + 'scope=' + scope;
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', {
-        href: projectDir ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir)) : '#/settings',
+        href: (scope === 'project' && projectDir)
+          ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir))
+          : '#/settings',
         class: 'view-back',
-        'aria-label': projectDir ? 'Back to project settings' : 'Back to settings'
+        'aria-label': 'Back'
       }, '‹'),
       h('h2', { class: 'view-title' }, 'MCP servers')
     ),
-    h('p', { class: 'hint hint--compact' }, 'Connect per-project Model Context Protocol servers. The AI client discovers each server\'s tools and advertises them to the model.'),
-    h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, with a shared fallback')),
-      h('ul', { class: 'group__list' },
-        serversList.map((s) => {
-          const slug = s.slug || s.id;
-          const entry = mcpAuth.servers && mcpAuth.servers[slug];
-          const overridden = !!(entry && entry.mode);
-          const effMode = overridden ? entry.mode : mcpAuth.mode;
-          const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
-          return h('li', { key: s.id, class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('div', { class: 'settings-project__item-title' }, s.name || slug),
-              h('div', { class: 'settings-project__item-note' },
-                overridden ? ('Override: ' + effMode + '. ') : ('Inherits the shared fallback (' + mcpAuth.mode + '). '),
-                segMode(effMode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null,
-                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
-              )
-            ),
-            authSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMode(slug, mode)),
-            overridden
-              ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use shared fallback')
-              : null,
-            segMode(effMode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                  h('textarea', {
-                    class: 'input settings-project__mono', rows: 3, spellcheck: false,
-                    placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
-                    onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
-                  })
-                )
-              : null
-          );
-        }),
-        h('li', { class: 'settings-project__tool' },
-          h('div', { class: 'settings-project__tool-head' },
-            h('div', { class: 'settings-project__item-title' }, 'Shared fallback (all MCP servers)'),
-            h('div', { class: 'settings-project__item-note' },
-              'Applies to every server without an override. ',
-              segMode(mcpAuth.mode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null
-            )
-          ),
-          authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
-          segMode(mcpAuth.mode) === 'ask'
-            ? h('details', { class: 'settings-project__allowlist' },
-                h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-                h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-              )
-            : null
+    h('p', { class: 'hint hint--compact' },
+      'Connect Model Context Protocol servers. App-wide servers are visible to every project; project servers are committed to that project\'s .mcp.json. The AI client discovers each server\'s tools and advertises them to the model.'),
+    // ---- Scope switcher -------------------------------------------------
+    h('div', { class: 'seg seg--block', role: 'tablist', 'aria-label': 'Configuration scope' },
+      h('button', {
+        type: 'button', role: 'tab', 'aria-selected': scope === 'app',
+        class: 'seg__item seg__item--btn' + (scope === 'app' ? ' seg__item--on' : ''),
+        onClick: () => pickScope('app')
+      }, h('span', { class: 'seg__pill' }, 'App')),
+      h('button', {
+        type: 'button', role: 'tab', 'aria-selected': scope === 'project',
+        class: 'seg__item seg__item--btn' + (scope === 'project' ? ' seg__item--on' : ''),
+        onClick: () => pickScope('project')
+      }, h('span', { class: 'seg__pill' }, 'Project'))
+    ),
+    scope === 'project'
+      ? h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'mcp-project-dir' }, 'Project directory'),
+          h('div', { class: 'row row--inline' },
+            h('input', {
+              class: 'input', id: 'mcp-project-dir', type: 'text',
+              placeholder: 'C:/path/to/project', value: projectDir,
+              onInput: (e) => setProjectDir(e.target.value)
+            }),
+            h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: () => applyProjectDirInput(projectDir) }, 'Load')
+          )
         )
-      )
+      : null,
+    // ---- Tool permissions (project scope only) --------------------------
+    scope === 'project' && projectDir
+      ? h('div', { class: 'group' },
+          h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, with a shared fallback')),
+          h('ul', { class: 'group__list' },
+            serversList.map((s) => {
+              const slug = s.slug || s.id;
+              const entry = mcpAuth.servers && mcpAuth.servers[slug];
+              const overridden = !!(entry && entry.mode);
+              const effMode = overridden ? entry.mode : mcpAuth.mode;
+              const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
+              return h('li', { key: s.id, class: 'settings-project__tool' },
+                h('div', { class: 'settings-project__tool-head' },
+                  h('div', { class: 'settings-project__item-title' }, s.name || slug, ' ', scopeBadge(s)),
+                  h('div', { class: 'settings-project__item-note' },
+                    overridden ? ('Override: ' + effMode + '. ') : ('Inherits the shared fallback (' + mcpAuth.mode + '). '),
+                    segMode(effMode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null,
+                    h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
+                  )
+                ),
+                authSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMode(slug, mode)),
+                overridden
+                  ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use shared fallback')
+                  : null,
+                segMode(effMode) === 'ask'
+                  ? h('details', { class: 'settings-project__allowlist' },
+                      h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
+                      h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                      h('textarea', {
+                        class: 'input settings-project__mono', rows: 3, spellcheck: false,
+                        placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
+                        onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
+                      })
+                    )
+                  : null
+              );
+            }),
+            h('li', { class: 'settings-project__tool' },
+              h('div', { class: 'settings-project__tool-head' },
+                h('div', { class: 'settings-project__item-title' }, 'Shared fallback (all MCP servers)'),
+                h('div', { class: 'settings-project__item-note' },
+                  'Applies to every server without an override. ',
+                  segMode(mcpAuth.mode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null
+                )
+              ),
+              authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
+              segMode(mcpAuth.mode) === 'ask'
+                ? h('details', { class: 'settings-project__allowlist' },
+                    h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
+                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
+                  )
+                : null
+            )
+          )
+        )
+      : null,
+    // ---- Server list -----------------------------------------------------
+    h('ul', { class: 'mcp__list', 'aria-label': 'MCP servers' },
+      serversList.length
+        ? serversList.map(serverRow)
+        : h('li', { class: 'mcp__empty' },
+            scope === 'app'
+              ? 'No app-wide MCP servers yet. Tap "+" to add one — it will be visible to every project.'
+              : 'No MCP servers for this project yet. Tap "+" to add one, or check the App tab for app-wide servers.')
     ),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'mcp-project-dir' }, 'Project directory'),
-      h('div', { class: 'row row--inline' },
-        h('input', { ref: projectDirEl, class: 'input', id: 'mcp-project-dir', type: 'text', placeholder: 'C:/path/to/project', value: projectDir }),
-        h('button', { ref: loadBtn, class: 'btn', type: 'button', onClick: load }, 'Load')
-      )
-    ),
-    h('ul', { ref: listEl, class: 'mcp__list', 'aria-label': 'MCP servers' }),
     h('div', { class: 'page-bar' },
-      h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
-      h('a', {
-        href: '#/settings/mcp/new?projectDir=' + encodeURIComponent((projectDirEl.current && projectDirEl.current.value || '').trim() || projectDir),
-        class: 'page-bar__add',
-        'aria-label': 'Add MCP server'
-      }, '+')
+      h('span', {
+        class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
+        'aria-live': 'polite'
+      }, listStatus.text),
+      h('a', { href: newHref, class: 'page-bar__add', 'aria-label': 'Add MCP server' }, '+')
     )
   );
 }
@@ -342,6 +386,10 @@ export function SettingsMcpView(props = {}) {
 export function SettingsMcpEditView(props) {
   const id = props.id || '';
   const projectDir = props.projectDir || (activeProject.value && activeProject.value.dir) || '';
+  // The scope an add creates in; an edit always reflects the server's
+  // actual scope (scope is fixed at creation — delete + re-add to move).
+  const [addScope, setAddScope] = useState(props.scope === 'app' ? 'app' : (projectDir ? 'project' : 'app'));
+  const [currentScope, setCurrentScope] = useState(props.scope === 'app' ? 'app' : 'project');
 
   const nameEl = useRef(null);
   const commandEl = useRef(null);
@@ -359,17 +407,21 @@ export function SettingsMcpEditView(props) {
   const [toolAuthMsg, setToolAuthMsg] = useState('');
 
   async function load() {
-    if (!projectDir) { setStatus(statusEl, 'project directory is required', 'error'); return; }
     if (id) {
       // List and find by id; the dedicated /api/mcp/servers/:id route
       // is reserved for a future revision (a `getServer` REST shape).
+      // The list is the merged app + project view, so a server of either
+      // scope is found; scope on the record tells the editor which file
+      // the save lands in.
+      const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
       let r;
       try {
-        r = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir));
+        r = await fetchJson('/api/mcp/servers' + qs);
       } catch (e) { setStatus(statusEl, 'network error', 'error'); return; }
       if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
       current = (r.body.servers || []).find(s => s.id === id) || null;
       if (!current) { setStatus(statusEl, 'Server not found', 'error'); return; }
+      setCurrentScope(current.scope === 'app' ? 'app' : 'project');
       if (nameEl.current) nameEl.current.value = current.name || '';
       if (commandEl.current) commandEl.current.value = current.command || '';
       if (argsEl.current) argsEl.current.value = (current.args || []).join(' ');
@@ -380,16 +432,19 @@ export function SettingsMcpEditView(props) {
       if (deleteBtn.current) deleteBtn.current.hidden = false;
       setToolsState(current.tools || []);
       // Per-tool overrides for THIS server's tools live under
-      // mcp.authorization.tools.<composedName>. Load the map once so
-      // each row's select can default to "inherit".
-      try {
-        const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
-        const mcp = ar.status === 200 && ar.body.mcp;
-        const map = (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {};
-        setToolAuths(map);
-      } catch { /* keep empty map */ }
+      // mcp.authorization.tools.<composedName> — project-scoped, so the
+      // section only renders for project-scoped servers with a project.
+      if (current.scope !== 'app' && projectDir) {
+        try {
+          const ar = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
+          const mcp = ar.status === 200 && ar.body.mcp;
+          const map = (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {};
+          setToolAuths(map);
+        } catch { /* keep empty map */ }
+      }
     } else {
       if (deleteBtn.current) deleteBtn.current.hidden = true;
+      if (enabledEl.current) enabledEl.current.checked = true;
     }
     setStatus(statusEl, '');
   }
@@ -467,8 +522,15 @@ export function SettingsMcpEditView(props) {
   async function save() {
     if (saveBtn.current) saveBtn.current.disabled = true;
     setStatus(statusEl, 'saving…', 'busy');
+    const scope = id ? currentScope : addScope;
+    if (!id && scope === 'project' && !projectDir) {
+      setStatus(statusEl, 'a project-scoped server needs an active project — switch to App or open a project first', 'error');
+      if (saveBtn.current) saveBtn.current.disabled = false;
+      return;
+    }
     const body = {
       projectDir,
+      scope,
       name: (nameEl.current.value || '').trim(),
       command: (commandEl.current.value || '').trim(),
       args: parseArgs(argsEl.current.value),
@@ -490,7 +552,7 @@ export function SettingsMcpEditView(props) {
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (r.status !== 200 && r.status !== 201) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
     setStatus(statusEl, 'saved', 'success');
-    nav('settings/mcp?projectDir=' + encodeURIComponent(projectDir));
+    nav('settings/mcp' + projectQS(projectDir));
   }
 
   async function deleteServer() {
@@ -498,23 +560,50 @@ export function SettingsMcpEditView(props) {
     if (!confirm('Delete this MCP server?')) return;
     if (deleteBtn.current) deleteBtn.current.disabled = true;
     setStatus(statusEl, 'deleting…', 'busy');
+    const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
     try {
-      r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
+      r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + qs, { method: 'DELETE' });
     } catch (e) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
-    nav('settings/mcp?projectDir=' + encodeURIComponent(projectDir));
+    nav('settings/mcp' + projectQS(projectDir));
   }
 
   useEffect(() => { load(); }, [id]);
 
   const title = id ? 'Edit MCP server' : 'Add MCP server';
+  const backQs = projectQS(projectDir);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/mcp?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
+      h('a', { href: '#/settings/mcp' + backQs, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, title)
     ),
+    // ---- Scope (add only; fixed at creation) ----------------------------
+    id
+      ? h('p', { class: 'hint hint--compact' },
+          currentScope === 'app'
+            ? 'Scope: app-wide — stored in the app store, visible to every project.'
+            : 'Scope: project — stored in this project\'s .mcp.json so it can be committed with the repo.',
+          ' Scope is set at creation; delete and re-add to move a server.')
+      : h('div', { class: 'row' },
+          h('label', { class: 'label' }, 'Scope'),
+          h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Server scope' },
+            [{ value: 'app', label: 'App (all projects)' }, { value: 'project', label: 'This project' }].map((m) =>
+              h('label', { key: m.value, class: 'seg__item' + (addScope === m.value ? ' seg__item--on' : '') },
+                h('input', {
+                  type: 'radio', name: 'mcp-add-scope', value: m.value,
+                  checked: addScope === m.value,
+                  onChange: () => setAddScope(m.value)
+                }),
+                h('span', { class: 'seg__pill' }, m.label)
+              )
+            )
+          ),
+          addScope === 'project' && !projectDir
+            ? h('span', { class: 'hint hint--compact' }, 'No active project — open a chat in the project first, or pick App scope.')
+            : null
+        ),
     h('div', { class: 'row' },
       h('label', { class: 'label', for: 'mcp-name' }, 'Name'),
       h('input', { ref: nameEl, class: 'input', id: 'mcp-name', type: 'text', placeholder: 'e.g. filesystem' })
@@ -540,7 +629,7 @@ export function SettingsMcpEditView(props) {
       h('input', { ref: enabledEl, class: 'checkbox', id: 'mcp-enabled', type: 'checkbox' }),
       h('label', { class: 'label', for: 'mcp-enabled' }, 'Enabled')
     ),
-    id ? h('div', { class: 'row' },
+    id && currentScope !== 'app' && projectDir ? h('div', { class: 'row' },
       h('h3', { class: 'mcp__tools-h' }, 'Discovered tools'),
       h('p', { class: 'hint hint--compact' },
         'Per-tool authorization overrides. "Inherit" uses the server-level or shared fallback gate; a tool override wins for that call. ',

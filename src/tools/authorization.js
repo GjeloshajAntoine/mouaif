@@ -62,6 +62,16 @@ function cancelSession(projectDir, chatId) {
   return count;
 }
 
+function listPending(projectDir, chatId) {
+  if (!projectDir || !chatId) return [];
+  const session = sessions.get(sessionKey(projectDir, chatId));
+  if (!session || !session.pending.size) return [];
+  return Array.from(session.pending.entries()).map(([callId, pending]) => {
+    const request = pending && pending.request && typeof pending.request === 'object' ? pending.request : {};
+    return Object.assign({ callId, pendingId: callId, tool: pending.tool }, request);
+  });
+}
+
 function normalizeConfig(raw, source, enabled, tool) {
   const value = raw && typeof raw === 'object' ? raw : {};
   // Binary-mode tools only support { off, ask } — clamp any legacy
@@ -390,7 +400,19 @@ async function authorize(input) {
     flow: input.flow === 'retry' ? 'retry' : 'wait',
     resolve: resolveWait,
     reject: rejectWait,
-    publicResult
+    publicResult,
+    request: {
+      chatId,
+      callId,
+      tool,
+      cmd: input.cmd,
+      path: input.path,
+      query: input.query,
+      summary: input.summary,
+      timeoutMs: input.timeoutMs,
+      projectDir,
+      args: input.args && typeof input.args === 'object' ? input.args : undefined
+    }
   });
   return publicResult;
 }
@@ -467,6 +489,7 @@ module.exports = {
   recordDecision,
   clearGrants,
   cancelSession,
+  listPending,
   regexMatch,
   matchesAllowlist,
   configToolName,

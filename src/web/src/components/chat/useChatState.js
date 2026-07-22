@@ -29,7 +29,7 @@ import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
-import { send as sendTurn, runShellCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat } from './stream.js';
+import { send as sendTurn, runShellCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { addImagesFromFiles } from './imageInput.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
@@ -49,6 +49,7 @@ export function useChatState(props) {
   const [imageAttachments, setImageAttachments] = useState([]);
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [runningVisible, setRunningVisible] = useState(false);
 
   // ---- DOM refs ----------------------------------------------
   const back = useRef(null);
@@ -105,6 +106,7 @@ export function useChatState(props) {
   // helpers same-tick values, useState still drives JSX re-renders.
   const state = {
     props: { projectDir, chatId },
+    _setRunningVisible: setRunningVisible,
     get chat() { return chatCurrent.current; },
     set chat(v) { chatCurrent.current = v; setChat(v); },
     get providers() { return providersCurrent.current; },
@@ -220,6 +222,7 @@ export function useChatState(props) {
   const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
   const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound), [chat]);
   const onToggleMcpServer = useCallback((id, enabled) => toggleMcpServer(id, enabled, state, refs, updateChatBound, (txt, st) => setChatStatus(refs, txt, st), projectDir, chatId), [projectDir, chatId]);
+  const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
     if (!providerId || !modelId) return;
     closeModelPicker(refs);
@@ -363,6 +366,12 @@ export function useChatState(props) {
         if (cancelled) return;
         renderModelPicker(state, refs);
         renderTranscriptBound();
+        if (c.running) {
+          setRunningVisible(true);
+          loadPendingAuthorization(state, refs);
+        } else {
+          setRunningVisible(false);
+        }
         updateSetupVisibility(state, refs);
         updateSwitch(activeProfileId(state), refs);
       } finally {
@@ -441,7 +450,7 @@ export function useChatState(props) {
 
   return {
     state, refs,
-    chat, providers, imageAttachments, fileEditorOpen, loading,
+    chat, providers, imageAttachments, fileEditorOpen, loading, runningVisible,
     setImageAttachments, setFileEditorOpen,
     // Actions bound for direct use in the JSX
     send,
@@ -465,6 +474,7 @@ export function useChatState(props) {
     },
     onRemoveImage: (idx) => setImageAttachments((prev) => prev.filter((_, i) => i !== idx)),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
+    onCancelRunning,
     onBack: () => { window.location.hash = '#/projects'; }
   };
 }
