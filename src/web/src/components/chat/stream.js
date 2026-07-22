@@ -22,7 +22,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
-import { normalizeToolName } from './tools.js';
+import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
 
 // markToolUsed(state, refs, toolName)
@@ -323,18 +323,19 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       if (String(toolName).startsWith('mcp__')) {
         // MCP tool — parse server slug + tool name
         const parts = String(toolName).split('__');
-        if (parts.length >= 3 && rest) {
+        if (parts.length >= 3) {
           const serverSlug = parts[1];
           const mcpTool = parts.slice(2).join('__');
-          let args = {};
-          try { args = JSON.parse(rest); } catch { args = { cmd: rest }; }
-          return runMcpCommand(serverSlug, mcpTool, toolName, state, refs, args);
+          const args = rest ? parseToolArgs(rest) : null;
+          if (args) {
+            return runMcpCommand(serverSlug, mcpTool, toolName, state, refs, args);
+          }
         }
-      } else if (toolName === 'shell' && rest) {
-        return runShellCommand(rest, state, refs);
+      } else if (toolName === 'shell') {
+        if (rest) return runShellCommand(rest, state, refs);
       }
     }
-    // Not a directly-invocable tool (native file tool, or empty-arg shell,
+    // Not a directly-invocable tool (native file tool, empty-arg shell/MCP,
     // or plain file path). Fall through to normal model send.
   }
   if (!modelId || !providerId) {

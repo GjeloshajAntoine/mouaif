@@ -15,6 +15,42 @@ export function normalizeToolName(name) {
   return String(name || '').replace(/^functions\./, '');
 }
 
+// parseToolArgs(text) -> object | null
+//
+// Converts user-typed argument text into a JSON object. Tries two
+// formats:
+//   1. Raw JSON       `{ "path": "/etc", "recursive": true }`
+//   2. Key=value      `path=/etc recursive=true key="quoted val"`
+//
+// Returns null when the input is empty or doesn't match either format.
+// The caller (stream.js send()) decides how to handle null — for MCP
+// tools it means "no structured args" and the tool is sent to the model;
+// for shell it falls back to `{ cmd: text }`.
+export function parseToolArgs(text) {
+  const s = (text || '').trim();
+  if (!s) return null;
+
+  // 1. Raw JSON
+  try { return JSON.parse(s); } catch { /* not JSON */ }
+
+  // 2. key=value pairs (supports double and single quoted values)
+  const kvRe = /(\w[\w.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  const pairs = {};
+  let count = 0;
+  let match;
+  while ((match = kvRe.exec(s)) !== null) {
+    pairs[match[1]] = match[2] != null ? match[2] : (match[3] != null ? match[3] : match[4]);
+    count++;
+  }
+  if (count > 0) {
+    // Verify every non-whitespace token was consumed
+    const leftover = s.replace(kvRe, ' ').trim();
+    if (!leftover) return pairs;
+  }
+
+  return null;
+}
+
 // isSubagentTool(name) -> bool
 export function isSubagentTool(name) {
   return name === 'subagent' || name === 'functions.subagent';
