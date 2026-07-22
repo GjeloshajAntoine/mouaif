@@ -93,6 +93,7 @@
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
+  min-height: 36px;
   min-width: 36px;
   border: 0;
   background: transparent;
