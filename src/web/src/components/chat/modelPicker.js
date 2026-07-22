@@ -3,10 +3,100 @@
 // The picker replaces the old provider + model <select>s + refresh
 // icon. The trigger button shows the current model id and provider
 // and opens the picker; the popover holds a search input, an
-// All/<provider> filter, one section per provider, and a header
-// refresh button.
+// All/<provider> filter, one section per provider, pinned + recent
+// sections, and a header refresh button.
+//
+// Pinned models and recently used models are persisted per project
+// in localStorage so they survive page reloads.
 
 import { fetchJson, fetchLiveModels, invalidateModelsCache } from '../../api.js';
+
+// ---- Model bookmarks (pinned + recent) -------------------------------
+
+// keyFor(projectDir) returns a prefix to namespace per-project data.
+function keyFor(projectDir) {
+  return 'mouaif_models_' + (projectDir || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// loadPinned(state) -> Set<string> of "providerId::modelId"
+export function loadPinned(state) {
+  try {
+    const raw = localStorage.getItem(keyFor(state.props.projectDir) + '_pinned');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+// savePinned(state, pinned)
+function savePinned(state, pinned) {
+  try {
+    localStorage.setItem(keyFor(state.props.projectDir) + '_pinned', JSON.stringify(Array.from(pinned)));
+  } catch { /* storage full or unavailable; non-fatal */ }
+}
+
+// loadRecent(state) -> Array<{ provider, id, ts }> ordered by recency, newest first
+export function loadRecent(state) {
+  try {
+    const raw = localStorage.getItem(keyFor(state.props.projectDir) + '_recent');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+// saveRecent(state, recent)
+function saveRecent(state, recent) {
+  try {
+    localStorage.setItem(keyFor(state.props.projectDir) + '_recent', JSON.stringify(recent));
+  } catch { /* non-fatal */ }
+}
+
+// touchRecent(state, providerId, modelId) — mark a model as used now.
+// Capped at 20 entries. Duplicates are moved to the front.
+export function touchRecent(state, providerId, modelId) {
+  if (!providerId || !modelId) return;
+  const recent = loadRecent(state);
+  const key = providerId + '\u0000' + modelId;
+  const idx = recent.findIndex((r) => r.provider + '\u0000' + r.id === key);
+  if (idx >= 0) recent.splice(idx, 1);
+  recent.unshift({ provider: providerId, id: modelId, ts: Date.now() });
+  if (recent.length > 20) recent.length = 20;
+  saveRecent(state, recent);
+}
+
+// togglePin(state, providerId, modelId) — add or remove a pin. Returns the new state (true = pinned).
+export function togglePin(state, providerId, modelId) {
+  const pinned = loadPinned(state);
+  const key = providerId + '\u0000' + modelId;
+  if (pinned.has(key)) { pinned.delete(key); savePinned(state, pinned); return false; }
+  pinned.add(key); savePinned(state, pinned); return true;
+}
+
+// isPinned(state, providerId, modelId) -> bool
+export function isPinned(state, providerId, modelId) {
+  return loadPinned(state).has(providerId + '\u0000' + modelId);
+}
+
+// renderPinButton(state, providerId, modelId, refs) -> HTMLButtonElement
+function renderPinButton(state, providerId, modelId, refs) {
+  const pinBtn = document.createElement('button');
+  pinBtn.type = 'button';
+  pinBtn.className = 'chat-view__picker-pin';
+  pinBtn.setAttribute('aria-label', 'Pin model');
+  const pinned = isPinned(state, providerId, modelId);
+  pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+  pinBtn.innerHTML = pinned
+    ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+  pinBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const nowPinned = togglePin(state, providerId, modelId);
+    pinBtn.setAttribute('aria-pressed', nowPinned ? 'true' : 'false');
+    pinBtn.innerHTML = nowPinned
+      ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+    // Re-render the picker so newly pinned models appear in the pinned section immediately.
+    renderModelPicker(state, refs);
+  });
+  return pinBtn;
+}
 
 // mergeModelLists(projectList, liveList) — dedupes by id, project
 // entries win on conflict (user-defined slugs preserve their label
@@ -149,6 +239,40 @@ export function updatePickerChips(state, refs, visibleList, activeFilter) {
   }
 }
 
+// buildPickerRow(state, refs, m, activeProvider, activeModel) -> HTMLDivElement
+function buildPickerRow(state, refs, m, activeProvider, activeModel) {
+  const row = document.createElement('div');
+  row.className = 'chat-view__picker-row';
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+  if (m.provider === activeProvider && m.id === activeModel) row.classList.add('is-active');
+  if (m.ghost) row.classList.add('is-ghost');
+  // Pin button (always present, but invisible on ghost rows)
+  if (!m.ghost) {
+    const pinBtn = renderPinButton(state, m.provider, m.id, refs);
+    row.appendChild(pinBtn);
+  }
+  const id = document.createElement('span');
+  id.className = 'chat-view__picker-row-id';
+  id.textContent = m.id;
+  row.appendChild(id);
+  if (m.label && m.label !== m.id) {
+    const label = document.createElement('span');
+    label.className = 'chat-view__picker-row-label';
+    label.textContent = m.label;
+    row.appendChild(label);
+  }
+  const meta = document.createElement('span');
+  meta.className = 'chat-view__picker-row-meta';
+  meta.textContent = m.ghost ? 'unavailable' : m.provider;
+  row.appendChild(meta);
+  row.addEventListener('click', () => {
+    if (state._onPickerPick) state._onPickerPick(m.provider, m.id);
+    else onPickerPick(state, refs, m.provider, m.id, state._updateChat);
+  });
+  return row;
+}
+
 // renderModelPicker(state, refs)
 //
 // Rebuild the popover list section. The search input + provider
@@ -156,6 +280,8 @@ export function updatePickerChips(state, refs, visibleList, activeFilter) {
 // list area. Called when the picker opens, when the user types,
 // when the provider filter changes, after a refresh, and after a
 // chat save that changes the active selection.
+// Shows pinned and recently used models at the top when the
+// provider filter is 'all' and there is no active search query.
 export function renderModelPicker(state, refs) {
   const list = refs.modelPickerList.current;
   if (!list) return;
@@ -184,6 +310,68 @@ export function renderModelPicker(state, refs) {
   }
   const activeProvider = c && c.providerId ? c.providerId : '';
   const activeModel = c && c.modelId ? c.modelId : '';
+
+  // ---- Pinned + recent sections (only when not filtering by provider or search) ----
+  const showingFullList = providerFilter === 'all' && !q;
+  if (showingFullList) {
+    // Pinned section
+    const pinned = loadPinned(state);
+    const pinItems = all.filter((m) => pinned.has(m.provider + '\u0000' + m.id));
+    if (pinItems.length) {
+      const sec = document.createElement('section');
+      sec.className = 'chat-view__picker-section';
+      const head = document.createElement('div');
+      head.className = 'chat-view__picker-section-head';
+      const title = document.createElement('span');
+      title.className = 'chat-view__picker-section-title';
+      title.textContent = 'Pinned';
+      const count = document.createElement('span');
+      count.className = 'chat-view__picker-section-count';
+      count.textContent = String(pinItems.length);
+      head.appendChild(title); head.appendChild(count);
+      sec.appendChild(head);
+      for (const m of pinItems) {
+        sec.appendChild(buildPickerRow(state, refs, m, activeProvider, activeModel));
+      }
+      list.appendChild(sec);
+    }
+
+    // Recent section (up to 5)
+    const recent = loadRecent(state);
+    if (recent.length && recent.length !== pinItems.length) {
+      const recentItems = [];
+      const seen = new Set();
+      for (const r of recent) {
+        const key = r.provider + '\u0000' + r.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // Only show recent models still in the current catalog (skip stale entries)
+        const m = all.find((x) => x.provider === r.provider && x.id === r.id);
+        if (m && !pinned.has(key)) recentItems.push(m);
+        if (recentItems.length >= 5) break;
+      }
+      if (recentItems.length) {
+        const sec = document.createElement('section');
+        sec.className = 'chat-view__picker-section';
+        const head = document.createElement('div');
+        head.className = 'chat-view__picker-section-head';
+        const title = document.createElement('span');
+        title.className = 'chat-view__picker-section-title';
+        title.textContent = 'Recent';
+        const count = document.createElement('span');
+        count.className = 'chat-view__picker-section-count';
+        count.textContent = String(recentItems.length);
+        head.appendChild(title); head.appendChild(count);
+        sec.appendChild(head);
+        for (const m of recentItems) {
+          sec.appendChild(buildPickerRow(state, refs, m, activeProvider, activeModel));
+        }
+        list.appendChild(sec);
+      }
+    }
+  }
+
+  // ---- Per-provider sections ----
   for (const g of groups) {
     const section = document.createElement('section');
     section.className = 'chat-view__picker-section';
@@ -198,30 +386,7 @@ export function renderModelPicker(state, refs) {
     header.appendChild(title); header.appendChild(count);
     section.appendChild(header);
     for (const m of g.items) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'chat-view__picker-row';
-      if (m.provider === activeProvider && m.id === activeModel) row.classList.add('is-active');
-      if (m.ghost) row.classList.add('is-ghost');
-      const id = document.createElement('span');
-      id.className = 'chat-view__picker-row-id';
-      id.textContent = m.id;
-      row.appendChild(id);
-      if (m.label && m.label !== m.id) {
-        const label = document.createElement('span');
-        label.className = 'chat-view__picker-row-label';
-        label.textContent = m.label;
-        row.appendChild(label);
-      }
-      const meta = document.createElement('span');
-      meta.className = 'chat-view__picker-row-meta';
-      meta.textContent = m.ghost ? 'unavailable' : m.provider;
-      row.appendChild(meta);
-      row.addEventListener('click', () => {
-        if (state._onPickerPick) state._onPickerPick(m.provider, m.id);
-        else onPickerPick(state, refs, m.provider, m.id, state._updateChat);
-      });
-      section.appendChild(row);
+      section.appendChild(buildPickerRow(state, refs, m, activeProvider, activeModel));
     }
     list.appendChild(section);
   }
@@ -451,15 +616,17 @@ export function closeModelPicker(refs) {
 }
 
 // onPickerPick — user tapped a row. Persist the pair to the chat,
-// update the head trigger label, and close the picker. A pick on
-// the "ghost" row (an unavailable active model) clears the chat's
-// modelId so the user re-picks on the next open — keeping a dead
-// reference around just means the chat sends a request to a model
-// that no longer exists.
+// update the head trigger label, close the picker, and record the
+// pick in recent models. A pick on the "ghost" row (an unavailable
+// active model) clears the chat's modelId so the user re-picks on
+// the next open — keeping a dead reference around just means the
+// chat sends a request to a model that no longer exists.
 export async function onPickerPick(state, refs, providerId, modelId, updateChat) {
   if (!providerId || !modelId) return;
   closeModelPicker(refs);
   if (state.chat && state.chat.providerId === providerId && state.chat.modelId === modelId) return;
+  // Track the pick in recently used models
+  touchRecent(state, providerId, modelId);
   state.chat = Object.assign({}, state.chat, { providerId, modelId });
   updateModelTrigger(refs, state);
   await updateChat({ providerId, modelId });

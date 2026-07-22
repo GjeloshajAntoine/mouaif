@@ -77,7 +77,7 @@ function buildFeatureSummary(opts) {
     const parts = [];
     if (running.length) parts.push(running.length + ' running');
     if (stopped.length) parts.push(stopped.length + ' stopped');
-    feat.push('[MCP] ' + parts.join(', ') + ' (' + mcpServers.length + ' total)');
+    feat.push('[MCP] ' + parts.join(', '));
   }
 
   // --- Agent files ---

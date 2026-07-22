@@ -17,7 +17,7 @@
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson, loadModels } from '../../api.js';
 import {
-  renderModelPicker, refreshActiveProvider, refreshAllProviders, openModelPicker, closeModelPicker, onPickerSearch, activeProviderId
+  renderModelPicker, refreshActiveProvider, refreshAllProviders, openModelPicker, closeModelPicker, onPickerSearch, activeProviderId, touchRecent
 } from './modelPicker.js';
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
@@ -227,6 +227,7 @@ export function useChatState(props) {
     if (!providerId || !modelId) return;
     closeModelPicker(refs);
     if (state.chat && state.chat.providerId === providerId && state.chat.modelId === modelId) return;
+    touchRecent(state, providerId, modelId);
     const next = Object.assign({}, state.chat, { providerId, modelId });
     state.chat = next;
     updateModelTriggerLocal();

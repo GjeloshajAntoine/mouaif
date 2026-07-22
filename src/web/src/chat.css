@@ -443,9 +443,9 @@
 .chat-view__picker-row {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 3px;
   width: 100%;
-  padding: 6px 10px 6px 12px;
+  padding: 6px 10px 6px 6px;
   font: inherit;
   font-size: 0.8rem;
   color: var(--fg);
@@ -463,7 +463,7 @@
 .chat-view__picker-row.is-active {
   background: var(--accent-soft);
   color: var(--fg);
-  padding: 6px 8px 6px 12px;
+  padding: 6px 8px 6px 6px;
 }
 .chat-view__picker-row.is-active::before {
   content: '';
@@ -475,6 +475,28 @@
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: var(--accent);
 }
+.chat-view__picker-pin {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color 80ms ease, background 80ms ease;
+}
+.chat-view__picker-pin:hover { color: var(--accent); background: var(--surface-3); }
+.chat-view__picker-pin[aria-pressed="true"] { color: var(--accent-hi); }
+.chat-view__picker-pin:active { transform: scale(0.92); }
 .chat-view__picker-row-id {
   font-weight: 500;
   flex: 1 1 auto;
