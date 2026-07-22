@@ -15,8 +15,11 @@ import { fetchJson, setStatus } from '../api.js';
 import { createVirtualList } from '../virtual-list.js';
 
 export function SettingsTagsView(props) {
-  const projectId = props.projectId || '';
   const projectDir = props.projectDir || '';
+  // The view may be reached with only a projectDir (Settings → Active
+  // project → File tags). Resolve the registered project id from the
+  // path in that case; a passed-in id always wins.
+  const resolvedId = useRef(props.projectId || '');
 
   const listEl = useRef(null);
   const statusEl = useRef(null);
@@ -29,24 +32,27 @@ export function SettingsTagsView(props) {
   const tagMap = useRef({});
   const files = useRef([]);
 
-  const base = '/api/projects/' + encodeURIComponent(projectId) + '/tags';
+  // Read the live id so the resolver in useEffect can populate it
+  // before the first loadTags()/scan() call.
+  function id() { return resolvedId.current; }
+  function base() { return '/api/projects/' + encodeURIComponent(id()) + '/tags'; }
 
   async function loadTags() {
-    if (!projectId) { setStatus(statusEl, 'no project id', 'error'); return; }
+    if (!id()) { setStatus(statusEl, 'no project id', 'error'); return; }
     let r;
-    try { r = await fetchJson(base); }
+    try { r = await fetchJson(base()); }
     catch { setStatus(statusEl, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
     tagMap.current = r.body.tags || {};
   }
 
   async function scan() {
-    if (!projectId) { setStatus(statusEl, 'no project id', 'error'); return; }
+    if (!id()) { setStatus(statusEl, 'no project id', 'error'); return; }
     if (scanBtn.current) scanBtn.current.disabled = true;
     setStatus(statusEl, 'scanning…', 'busy');
     let r;
     try {
-      r = await fetchJson(base + '/scan', {
+      r = await fetchJson(base() + '/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -63,7 +69,7 @@ export function SettingsTagsView(props) {
   async function persist() {
     let r;
     try {
-      r = await fetchJson(base, {
+      r = await fetchJson(base(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags: tagMap.current })
@@ -266,12 +272,30 @@ export function SettingsTagsView(props) {
         node.replaceChildren(renderRow(file));
       }
     });
-    loadTags().then(scan).catch(() => setStatus(statusEl, 'load failed', 'error'));
+    (async () => {
+      // Resolve the registered project id from the path when the route
+      // only carried projectDir. The tags REST surface hangs off the id.
+      if (!resolvedId.current && projectDir) {
+        try {
+          const r = await fetchJson('/api/projects/registered');
+          if (r.status === 200 && Array.isArray(r.body.projects)) {
+            const hit = r.body.projects.find((p) => p && p.path === projectDir);
+            if (hit) resolvedId.current = hit.id;
+          }
+        } catch { /* fall through to the no-id error */ }
+        if (!resolvedId.current) {
+          setStatus(statusEl, 'this folder is not a registered project — register it first', 'error');
+          return;
+        }
+      }
+      await loadTags();
+      await scan();
+    })().catch(() => setStatus(statusEl, 'load failed', 'error'));
     return () => {
       if (virtualList.current) virtualList.current.destroy();
       virtualList.current = null;
     };
-  }, [projectId]);
+  }, [projectDir]);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

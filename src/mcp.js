@@ -48,6 +48,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { URL } = require('url');
 const settings = require('./settings.js');
 
 // ---- SDK lazy load ------------------------------------------------------
@@ -60,9 +61,11 @@ function getSdk() {
   try {
     const clientMod = require('@modelcontextprotocol/sdk/client/index.js');
     const stdioMod = require('@modelcontextprotocol/sdk/client/stdio.js');
+    const httpMod = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
     sdk = {
       Client: clientMod.Client,
-      StdioClientTransport: stdioMod.StdioClientTransport
+      StdioClientTransport: stdioMod.StdioClientTransport,
+      StreamableHTTPClientTransport: httpMod.StreamableHTTPClientTransport
     };
     return sdk;
   } catch (e) {
@@ -128,6 +131,22 @@ const ENV_DENYLIST = new Set([
   'NODE_DISABLE_COLORS',
   'ELECTRON_RUN_AS_NODE'
 ]);
+
+function normalizeHeaders(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || !k.trim()) continue;
+    if (typeof v === 'string') out[k.trim()] = v;
+  }
+  return out;
+}
+
+function redactHeaders(headers) {
+  const out = {};
+  for (const key of Object.keys(headers || {})) out[key] = { configured: true };
+  return out;
+}
 
 function buildChildEnv(perServerEnv) {
   const env = Object.assign({}, process.env);
@@ -296,7 +315,9 @@ function writeConfigForScope(projectDir, scope, servers) {
 function normalizeServerEntry(raw, usedSlugs) {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof raw.name !== 'string' || !raw.name.trim()) return null;
-  if (typeof raw.command !== 'string' || !raw.command.trim()) return null;
+  const transport = raw.transport === 'http' ? 'http' : 'stdio';
+  if (transport === 'stdio' && (typeof raw.command !== 'string' || !raw.command.trim())) return null;
+  if (transport === 'http' && (typeof raw.url !== 'string' || !raw.url.trim())) return null;
   const name = raw.name.trim();
   let slug = typeof raw.slug === 'string' && raw.slug ? slugify(raw.slug) : slugify(name);
   if (!slug) slug = 'srv';
@@ -314,17 +335,23 @@ function normalizeServerEntry(raw, usedSlugs) {
     ? Object.fromEntries(Object.entries(raw.env).filter(([, v]) => typeof v === 'string' || v == null))
     : {};
   const cwd = typeof raw.cwd === 'string' && raw.cwd.trim() ? raw.cwd.trim() : '';
-  return {
+  const out = {
     id: typeof raw.id === 'string' && raw.id ? raw.id : newServerId(),
     name,
     slug: candidate,
-    command: raw.command.trim(),
+    command: transport === 'stdio' ? raw.command.trim() : '',
+    url: transport === 'http' ? raw.url.trim() : '',
+    headers: normalizeHeaders(raw.headers),
     args,
     env,
     cwd,
     enabled: raw.enabled === true, // default off
     createdAt: raw.createdAt || new Date().toISOString()
   };
+  // Only persist the transport field for HTTP — stdio is the implicit
+  // default. The read path defaults to 'stdio' when the field is absent.
+  if (transport === 'http') out.transport = 'http';
+  return out;
 }
 
 function normalizeAll(rawList) {
@@ -416,6 +443,116 @@ function shrinkMcpSchema(schema) {
   return _shrink(schema || {}, 0);
 }
 
+// Minimal JSON Schema validator for outputSchema checking (spec 2025-06-18:
+// "Clients SHOULD validate structured results against this schema"). Covers
+// the subset shrinkMcpSchema preserves: type, enum, const, required,
+// properties, items, additionalProperties, oneOf/anyOf/allOf, and the simple
+// numeric/string constraints. Returns an error string on mismatch, null on
+// success. Deliberately not a full validator — a miss just means we skip
+// the warning, never that we reject a valid result.
+function validateAgainstSchema(value, schema, path) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return null;
+  const at = path || '$';
+
+  // const / enum first — they pin the value exactly.
+  if (schema.const !== undefined && value !== schema.const) {
+    return at + ': expected const ' + JSON.stringify(schema.const);
+  }
+  if (Array.isArray(schema.enum) && schema.enum.length && !schema.enum.some(v => deepEqual(v, value))) {
+    return at + ': not in enum';
+  }
+
+  if (typeof schema.type === 'string') {
+    const t = schema.type;
+    const ok =
+      (t === 'string' && typeof value === 'string') ||
+      (t === 'number' && typeof value === 'number' && Number.isFinite(value)) ||
+      (t === 'integer' && typeof value === 'number' && Number.isInteger(value)) ||
+      (t === 'boolean' && typeof value === 'boolean') ||
+      (t === 'null' && value === null) ||
+      (t === 'array' && Array.isArray(value)) ||
+      (t === 'object' && value !== null && typeof value === 'object' && !Array.isArray(value));
+    if (!ok) return at + ': expected ' + t + ', got ' + (Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value);
+  }
+
+  if (typeof value === 'number') {
+    if (schema.minimum !== undefined && value < schema.minimum) return at + ': below minimum ' + schema.minimum;
+    if (schema.maximum !== undefined && value > schema.maximum) return at + ': above maximum ' + schema.maximum;
+  }
+  if (typeof value === 'string') {
+    if (schema.minLength !== undefined && value.length < schema.minLength) return at + ': shorter than minLength';
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) return at + ': longer than maxLength';
+    if (typeof schema.pattern === 'string') {
+      try { if (!new RegExp(schema.pattern).test(value)) return at + ': does not match pattern'; } catch { /* bad pattern: skip */ }
+    }
+  }
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return at + ': fewer than minItems';
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return at + ': more than maxItems';
+    if (schema.items && typeof schema.items === 'object') {
+      for (let i = 0; i < value.length; i++) {
+        const e = validateAgainstSchema(value[i], schema.items, at + '[' + i + ']');
+        if (e) return e;
+      }
+    }
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    if (Array.isArray(schema.required)) {
+      for (const key of schema.required) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) return at + ': missing required "' + key + '"';
+      }
+    }
+    if (schema.properties && typeof schema.properties === 'object') {
+      for (const key of Object.keys(schema.properties)) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const e = validateAgainstSchema(value[key], schema.properties[key], at + '.' + key);
+          if (e) return e;
+        }
+      }
+    }
+    if (schema.additionalProperties === false && schema.properties) {
+      for (const key of Object.keys(value)) {
+        if (!Object.prototype.hasOwnProperty.call(schema.properties, key)) return at + ': additional property "' + key + '"';
+      }
+    } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+      for (const key of Object.keys(value)) {
+        if (!schema.properties || !Object.prototype.hasOwnProperty.call(schema.properties, key)) {
+          const e = validateAgainstSchema(value[key], schema.additionalProperties, at + '.' + key);
+          if (e) return e;
+        }
+      }
+    }
+  }
+  // Combinators: value must satisfy at least one of oneOf/anyOf, all of allOf.
+  if (Array.isArray(schema.allOf)) {
+    for (const sub of schema.allOf) {
+      const e = validateAgainstSchema(value, sub, at);
+      if (e) return e;
+    }
+  }
+  for (const comb of ['oneOf', 'anyOf']) {
+    if (Array.isArray(schema[comb]) && schema[comb].length) {
+      const ok = schema[comb].some(sub => validateAgainstSchema(value, sub, at) === null);
+      if (!ok) return at + ': no ' + comb + ' branch matched';
+    }
+  }
+  return null;
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (typeof a === 'object') {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every(k => deepEqual(a[k], b[k]));
+  }
+  return false;
+}
+
 // Older builds stored the cache inline in .mcp.json under each server
 // entry's `toolCache` key. loadToolCache migrates those rows into the
 // DB on first read and strips the key the next time the config file is
@@ -424,13 +561,23 @@ function normalizeToolCache(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(t => t && typeof t.name === 'string' && t.name)
-    .map(t => ({
-      name: t.name,
-      description: typeof t.description === 'string' ? t.description : '',
-      inputSchema: (t.inputSchema && typeof t.inputSchema === 'object')
-        ? shrinkMcpSchema(t.inputSchema)
-        : { type: 'object', properties: {} }
-    }));
+    .map(t => {
+      const out = {
+        name: t.name,
+        description: typeof t.description === 'string' ? t.description : '',
+        inputSchema: (t.inputSchema && typeof t.inputSchema === 'object')
+          ? shrinkMcpSchema(t.inputSchema)
+          : { type: 'object', properties: {} }
+      };
+      // outputSchema (spec 2025-06-18+): optional JSON Schema describing the
+      // shape of structuredContent results. Preserved (shrunk) so clients can
+      // validate structured results against it; omitted when the tool does
+      // not declare one.
+      if (t.outputSchema && typeof t.outputSchema === 'object' && !Array.isArray(t.outputSchema)) {
+        out.outputSchema = shrinkMcpSchema(t.outputSchema);
+      }
+      return out;
+    });
 }
 
 // Returns the persisted cache for a server. Migration path: if the DB
@@ -558,7 +705,7 @@ function decorate(entry, projectDir, rawEntry) {
   const cache = loadToolCache(projectDir, rawEntry || entry);
   const tools = session ? session.tools.slice() : cache;
   const error = session && session.error ? session.error : null;
-  const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), status, tools });
+  const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), headers: redactHeaders(entry.headers), status, tools });
   if (error) decorated.error = error;
   return decorated;
 }
@@ -574,7 +721,9 @@ function redactEnv(env) {
 function addServer(projectDir, opts) {
   if (!opts || typeof opts !== 'object') throw err('EBADINPUT', 'opts required');
   if (typeof opts.name !== 'string' || !opts.name.trim()) throw err('EBADINPUT', 'name is required');
-  if (typeof opts.command !== 'string' || !opts.command.trim()) throw err('EBADINPUT', 'command is required');
+  const transport = opts.transport === 'http' ? 'http' : 'stdio';
+  if (transport === 'stdio' && (typeof opts.command !== 'string' || !opts.command.trim())) throw err('EBADINPUT', 'command is required');
+  if (transport === 'http' && (typeof opts.url !== 'string' || !opts.url.trim())) throw err('EBADINPUT', 'url is required');
   const scope = opts.scope === APP_SCOPE ? APP_SCOPE : PROJECT_SCOPE;
   if (scope === PROJECT_SCOPE && (!projectDir || typeof projectDir !== 'string' || !projectDir.trim())) {
     throw err('EBADINPUT', 'projectDir is required for a project-scoped server');
@@ -642,6 +791,7 @@ function updateServer(projectDir, serverId, patch) {
   delete cleanPatch.scope; // scope is fixed at creation; use delete+add to move
   delete cleanPatch.projectDir; // transport detail, never persisted
   if (!Object.prototype.hasOwnProperty.call(cleanPatch, 'env')) cleanPatch.env = normalized[idx].env;
+  if (!Object.prototype.hasOwnProperty.call(cleanPatch, 'headers')) cleanPatch.headers = normalized[idx].headers;
   const merged = Object.assign({}, normalized[idx], cleanPatch, { id: serverId });
   // Re-slug only if the name changed and the user did not pin a slug.
   if (patch && typeof patch.name === 'string' && !patch.slug) {
@@ -700,35 +850,46 @@ async function startServer(projectDir, serverId) {
     untrackSession(projectDir, serverId);
   }
 
-  const { Client, StdioClientTransport } = getSdk();
-  // cwd anchor: relative entry.cwd resolves against the chat's projectDir.
-  // Without a project context (app-scope start from the Settings UI) a
-  // relative cwd has no anchor — fall back to the process cwd; absolute
-  // cwd values still work. The project-containment check only applies
-  // when there is a project to be contained in.
+  const { Client, StdioClientTransport, StreamableHTTPClientTransport } = getSdk();
   const hasProject = !!(projectDir && typeof projectDir === 'string' && projectDir.trim());
-  const cwd = entry.cwd
-    ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(hasProject ? projectDir : process.cwd(), entry.cwd))
-    : (hasProject ? projectDir : process.cwd());
-  const cwdResolved = path.resolve(cwd);
-  if (hasProject) {
-    // Sanity check: cwd must be inside projectDir (decision §4's
-    // "outside project" rule, applied to the spawn directory).
-    const projectResolved = path.resolve(projectDir);
-    const rel = path.relative(projectResolved, cwdResolved);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw err('EOUTSIDE_PROJECT', 'Server cwd must be inside the project directory', { cwd: cwdResolved });
+  let transport;
+  if (entry.transport === 'http') {
+    let endpoint;
+    try { endpoint = new URL(entry.url); } catch { throw err('EBADINPUT', 'HTTP MCP URL is invalid', { serverId }); }
+    if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') {
+      throw err('EBADINPUT', 'HTTP MCP URL must start with http:// or https://', { serverId });
     }
+    transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: entry.headers || {} }
+    });
+  } else {
+    // cwd anchor: relative entry.cwd resolves against the chat's projectDir.
+    // Without a project context (app-scope start from the Settings UI) a
+    // relative cwd has no anchor — fall back to the process cwd; absolute
+    // cwd values still work. The project-containment check only applies
+    // when there is a project to be contained in.
+    const cwd = entry.cwd
+      ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(hasProject ? projectDir : process.cwd(), entry.cwd))
+      : (hasProject ? projectDir : process.cwd());
+    const cwdResolved = path.resolve(cwd);
+    if (hasProject) {
+      // Sanity check: cwd must be inside projectDir (decision §4's
+      // "outside project" rule, applied to the spawn directory).
+      const projectResolved = path.resolve(projectDir);
+      const rel = path.relative(projectResolved, cwdResolved);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        throw err('EOUTSIDE_PROJECT', 'Server cwd must be inside the project directory', { cwd: cwdResolved });
+      }
+    }
+    const env = buildChildEnv(entry.env);
+    transport = new StdioClientTransport({
+      command: entry.command,
+      args: entry.args,
+      env,
+      cwd: cwdResolved,
+      stderr: 'pipe'
+    });
   }
-  const env = buildChildEnv(entry.env);
-
-  const transport = new StdioClientTransport({
-    command: entry.command,
-    args: entry.args,
-    env,
-    cwd: cwdResolved,
-    stderr: 'pipe'
-  });
 
   // Track stderr so a misbehaving server's logs are visible from
   // /api/mcp/servers/:id for debugging. Cap the buffer to avoid
@@ -748,7 +909,14 @@ async function startServer(projectDir, serverId) {
   const client = new Client({
     name: 'mouaif',
     version: require('./package-version.js')
-  }, { capabilities: {} });
+  }, {
+    capabilities: {
+      // roots: we can expose the project directory as a filesystem root
+      roots: { listChanged: false }
+      // sampling: not supported — mouaif is a thin client, not an LLM host
+      // elicitation: not supported — no UI for server-initiated user prompts
+    }
+  });
 
   const session = {
     entry,
@@ -816,6 +984,38 @@ async function startServer(projectDir, serverId) {
       }
     };
   } catch { /* transport may not expose onclose */ }
+
+  // Handle notifications/tools/list_changed (spec: servers that declared
+  // the listChanged capability SHOULD send it when tools change). Refresh
+  // the live tool list + persisted cache in place so the next
+  // listComposedToolSpecs / callTool sees the new surface without a
+  // restart. Debounced — a server that adds tools in a burst sends one
+  // notification per change and we only need one refresh.
+  try {
+    const { ToolListChangedNotificationSchema } = require('@modelcontextprotocol/sdk/types.js');
+    if (ToolListChangedNotificationSchema && typeof client.setNotificationHandler === 'function') {
+      let refreshTimer = null;
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(async () => {
+          refreshTimer = null;
+          if (_sessions.get(keyOf(projectDir, serverId)) !== session) return;
+          try {
+            let refreshed = [];
+            let cursor;
+            for (let i = 0; i < 16; i++) {
+              const page = await client.listTools(cursor ? { cursor } : undefined, { timeout: 10000 });
+              refreshed = refreshed.concat((page && page.tools) || []);
+              cursor = page && page.nextCursor;
+              if (!cursor) break;
+            }
+            session.tools = normalizeToolCache(refreshed);
+            try { persistToolCache(projectDir, serverId, session.tools); } catch { /* best-effort */ }
+          } catch { /* a failed refresh keeps the last-known list */ }
+        }, 250);
+      });
+    }
+  } catch { /* SDK without notification support; tool list stays start-time */ }
 
   session.status = 'ready';
   return decorate(Object.assign({}, entry, { scope: found.scope }), projectDir);
@@ -898,15 +1098,33 @@ async function callTool(projectDir, serverSlug, toolName, args) {
   if (!result || typeof result !== 'object') {
     return { ok: false, content: [{ type: 'text', text: 'MCP server returned no result' }], isError: true };
   }
-  // MCP tool results are { content: [...], isError?: bool }. content
-  // is an array of typed blocks (text, image, resource, etc). The
-  // model-facing shape we forward is the same — the chat UI renders
-  // each block in order.
-  return {
+  // MCP tool results are { content: [...], structuredContent?, isError?: bool }.
+  // content is an array of typed blocks (text, image, resource, etc).
+  // structuredContent (spec 2025-06-18+) is JSON-typed result data for
+  // programmatic use. The model-facing shape we forward is the same —
+  // the chat UI renders each block in order.
+  const out = {
     ok: result.isError !== true,
     content: Array.isArray(result.content) ? result.content : [],
     isError: result.isError === true
   };
+  // Forward structuredContent when present (spec 2025-06-18). This is
+  // server-produced result data, not LLM "structured outputs" — it lets
+  // callers consume typed JSON without parsing text blocks.
+  if (result.structuredContent !== undefined) {
+    out.structuredContent = result.structuredContent;
+    // Spec: "Clients SHOULD validate structured results against this schema."
+    // The check is advisory — a mismatch is surfaced as a warning on the
+    // result, never a rejection: the server may legitimately outrun its own
+    // schema, and dropping real data would be worse than flagging it.
+    if (tool.outputSchema) {
+      const vErr = validateAgainstSchema(result.structuredContent, tool.outputSchema);
+      if (vErr) {
+        out.schemaWarning = 'structuredContent does not match outputSchema: ' + vErr;
+      }
+    }
+  }
+  return out;
 }
 
 // composedToolNameFor and parseComposedToolName are exported so
@@ -955,6 +1173,7 @@ async function ensureEnabledServers(projectDir) {
       results.push(Object.assign({}, entry, {
         scope,
         env: redactEnv(entry.env),
+        headers: redactHeaders(entry.headers),
         status: 'errored',
         tools: [],
         error: { code: (e && e.code) || 'EMCP_START', message: (e && e.message) || String(e) }
@@ -1038,6 +1257,7 @@ module.exports = {
   slugify,
   composedToolName,
   parseServerSlugAndToolName,
+  normalizeHeaders,
   buildChildEnv,
   // CRUD
   listServers,

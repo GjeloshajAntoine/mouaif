@@ -160,6 +160,7 @@ export function SettingsPricingView() {
     ),
     h('section', null,
       h('p', { class: 'hint hint--compact' }, 'Override the cost-per-1 000 tokens (USD) for any model id. The chat UI uses this to render the per-turn cost line. Verify prices with your provider — the built-in defaults may be outdated.'),
+      h('p', { class: 'hint hint--compact' }, 'This is the app-level fallback. A per-model pricing block on a project model record wins over this table; an id missing here falls back to the built-in defaults, then to --.'),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'pricing-table' }, 'Pricing table (JSON)'),
         h('textarea', { ref: editor, class: 'input pricing__editor', id: 'pricing-table', rows: 10, spellcheck: false }),

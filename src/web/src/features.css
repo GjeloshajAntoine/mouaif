@@ -368,6 +368,8 @@
 .mcp__row-chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
 .mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; border-top: 1px solid var(--border); background: var(--surface-2); }
 .mcp__row-actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.72rem; }
+.mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }
+.mcp__row--busy { opacity: 0.65; pointer-events: none; }
 .mcp__tools-h { font-size: 0.8rem; margin: 8px 0 3px; color: var(--fg-soft); text-transform: uppercase; letter-spacing: 0.04em; }
 .mcp__tools-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .mcp__tools-empty { color: var(--muted); font-size: 0.8rem; padding: 6px 10px; }
