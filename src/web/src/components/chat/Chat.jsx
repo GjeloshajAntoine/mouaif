@@ -37,13 +37,15 @@ export function ChatView(props) {
   }, [fileEditorOpen, FileEditor]);
 
   const atMentionRef = useRef(null);
+  const atArgBarRef = useRef(null);
   useEffect(() => {
     // Mount the at-mention popup on the composer textarea
     if (!refs.promptInput.current || !atMentionRef.current) return;
     const cleanup = mountAtMention(
       refs.promptInput.current,
       atMentionRef.current,
-      s.state
+      s.state,
+      atArgBarRef.current
     );
     // Refresh items periodically so new files / tools show up
     const timer = setInterval(() => refreshAtMentionItems(), 5000);
@@ -189,6 +191,7 @@ export function ChatView(props) {
         onPaste: onComposerPaste,
         onInput: onComposerInput
       }),
+      h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', style: 'display: none;' }),
       h('button', {
         ref: refs.sendBtn,
         class: 'btn btn--primary chat-view__send',

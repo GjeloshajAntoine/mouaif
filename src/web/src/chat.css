@@ -1085,6 +1085,39 @@
 }
 .at-mention[hidden] { display: none; }
 
+/* ---- Arg bar (tool parameter suggestion chips) ------------------ */
+
+.at-mention__arg-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 0;
+  width: 100%;
+  flex: 0 0 auto;
+}
+.at-mention__arg-bar[hidden] { display: none; }
+
+.at-mention__arg-chip {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  min-height: 22px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 60ms ease;
+}
+.at-mention__arg-chip:active { background: var(--accent-soft); }
+.at-mention__arg-chip.is-required {
+  font-weight: 700;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Popup headers ---------------------------------------------- */
+
 .at-mention__header {
   font-size: 0.62rem;
   font-weight: 600;

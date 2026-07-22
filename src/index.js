@@ -2674,7 +2674,8 @@ async function handleTools(req, res, parsed) {
           name,
           kind: 'native',
           source: 'files',
-          description: (spec && spec.function && spec.function.description) || ''
+          description: (spec && spec.function && spec.function.description) || '',
+          parameters: (spec && spec.function && spec.function.parameters) || null
         });
       }
     } catch { /* files module unavailable; omit */ }
@@ -2686,7 +2687,8 @@ async function handleTools(req, res, parsed) {
           name: s.name,
           kind: 'mcp',
           source: s.serverSlug || '',
-          description: s.description || ''
+          description: s.description || '',
+          parameters: s.parameters || null
         });
       }
     } catch { /* mcp module not loaded; no MCP tools */ }
