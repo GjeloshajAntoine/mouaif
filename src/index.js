@@ -115,6 +115,8 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
+  'chatStorage',    // app-wide chat persistence backend
+  'notifications',  // browser notification event preferences
   'flags'           // server-side feature toggles (non-secret)
 ]);
 
@@ -431,6 +433,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 //   POST   /api/push/subscribe          body: { subscription: { endpoint, keys: { p256dh, auth } } }
 //   DELETE /api/push/subscribe          body: { endpoint }
 //   GET    /api/push/subscriptions      -> { subscriptions }
+//   POST   /api/push/test               -> send a notification to this browser session
 
 async function handlePush(req, res, parsed, sessionToken) {
   const urlPath = parsed.pathname;
@@ -487,6 +490,18 @@ async function handlePush(req, res, parsed, sessionToken) {
   if (urlPath === '/api/push/subscriptions' && method === 'GET') {
     if (!sid) return sendJSON(res, 200, { subscriptions: [] });
     return sendJSON(res, 200, { subscriptions: push.listSubscriptions(sid) });
+  }
+
+  // POST /api/push/test
+  if (urlPath === '/api/push/test' && method === 'POST') {
+    if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
+    push.sendPushToSession(sid, {
+      title: 'mouaif notifications',
+      body: 'Notifications are ready on this browser.',
+      tag: 'mouaif-notification-test',
+      data: { kind: 'test', url: '/web/#/settings/notifications' }
+    });
+    return sendJSON(res, 200, { ok: true });
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'push' });
@@ -1254,11 +1269,6 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
   const content = body && typeof body.content === 'string' ? body.content : '';
   const attachments = messages.normalizeAttachments(body && body.attachments);
-  // The client reports whether the app is currently visible so we skip
-  // push notifications the user is already looking at (the in-app
-  // overlay / transcript is the live surface in that case).
-  const _pageVisible = body && body.pageVisible === true;
-  const _pushOk = _pushSessionId && !_pageVisible;
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
   if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
@@ -1458,12 +1468,6 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // would otherwise stretch the window and under-report tok/s.
   let streamStartedAt = 0;   // set on first message/reasoning delta
   let streamingMs = 0;       // accumulated across streaming windows
-  // Throttle progress_update pushes: the model can call report_progress
-  // very frequently, and each tick would otherwise hit the push gateway.
-  // At most one push per PUSH_PROGRESS_MIN_MS per stream; completion and
-  // error pushes are never throttled.
-  const PUSH_PROGRESS_MIN_MS = 5000;
-  let lastProgressPushAt = 0;
   // Per-round usage snapshots from ai.js. Each tool round's upstream
   // call reports its own prompt/completion tokens. When a round ends
   // with tool calls, the pending snapshot is attached to the segment
@@ -1512,6 +1516,52 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // app object is fine — only the file-tool keys are consulted.
   let appSettings = {};
   try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
+
+  const notificationPrefs = Object.assign({
+    askUser: true,
+    toolAuthorization: true,
+    completion: true,
+    errors: true,
+    quickActions: true
+  }, appSettings.notifications || {});
+  const chatUrl = `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
+
+  function sendChatPush(kind, options = {}) {
+    if (!_pushSessionId) return;
+    const preferenceKey = kind === 'ask_user' ? 'askUser'
+      : kind === 'tool_authorization' ? 'toolAuthorization'
+        : kind === 'completion' ? 'completion'
+          : kind === 'error' ? 'errors' : '';
+    if (preferenceKey && notificationPrefs[preferenceKey] === false) return;
+    const data = Object.assign({ kind, chatId, projectDir, url: chatUrl }, options.data || {});
+    push.sendPushToSession(_pushSessionId, {
+      title: options.title || ((chat && chat.title) || 'mouaif'),
+      body: options.body || '',
+      chatId,
+      projectDir,
+      tag: options.tag || `chat-${chatId}-${kind}`,
+      data,
+      actions: options.actions,
+      requireInteraction: options.requireInteraction === true
+    });
+  }
+
+  function attentionActions(kind, data) {
+    const actions = [];
+    if (notificationPrefs.quickActions !== false) {
+      if (kind === 'tool_authorization') {
+        actions.push({ action: 'allow-once', title: 'Allow once' });
+        actions.push({ action: 'deny', title: 'Deny' });
+      } else if (kind === 'ask_user' && data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2) {
+        for (let i = 0; i < data.options.length; i++) {
+          const option = data.options[i] || {};
+          if (option.label && option.value) actions.push({ action: 'answer-' + i, title: String(option.label).slice(0, 40) });
+        }
+      }
+    }
+    if (!actions.length) actions.push({ action: 'open', title: 'Open chat' });
+    return actions;
+  }
 
   // formatStreamError(err) — one-line, user-facing summary of a
   // failed turn. Persisted as a system message and shown as the
@@ -1634,18 +1684,38 @@ async function handleChatStream(req, res, chatId, sessionToken) {
             ok: !!data.ok, content: JSON.stringify(data.result || {})
           });
         } catch { /* non-fatal */ }
+      } else if (name === 'authorization_required') {
+        const notificationData = {
+          callId: data && data.callId,
+          tool: data && data.tool
+        };
+        sendChatPush('tool_authorization', {
+          title: 'Authorization needed',
+          body: (data && data.tool ? data.tool : 'A tool') + ' is waiting for approval.',
+          tag: 'chat-' + chatId + '-attention',
+          data: notificationData,
+          actions: attentionActions('tool_authorization', data),
+          requireInteraction: true
+        });
+      } else if (name === 'ask_user_required') {
+        const quickOptions = data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2
+          ? data.options.slice(0, 2).map((option) => ({ label: String(option.label || '').slice(0, 40), value: String(option.value || '').slice(0, 120) }))
+          : [];
+        const notificationData = {
+          callId: data && data.callId,
+          tool: 'ask_user',
+          options: quickOptions
+        };
+        sendChatPush('ask_user', {
+          title: 'The chat needs your answer',
+          body: data && data.question ? String(data.question).slice(0, 240) : 'Open the chat to answer.',
+          tag: 'chat-' + chatId + '-attention',
+          data: notificationData,
+          actions: attentionActions('ask_user', data),
+          requireInteraction: true
+        });
       } else if (name === 'done') {
-        // Send push notification for completed chat.
-        if (_pushOk) {
-          const chatTitle = (chat && chat.title) || chatId;
-          push.sendPushToSession(_pushSessionId, {
-            title: chatTitle,
-            body: 'Response complete',
-            chatId,
-            projectDir,
-            tag: 'chat-' + chatId
-          });
-        }
+        sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1701,31 +1771,6 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         emit('done', enriched);
         return;
       }
-      // Send push notification for progress updates. Throttled: at most
-      // one push per PUSH_PROGRESS_MIN_MS so a chatty report_progress
-      // loop doesn't flood the push gateway. The in-app overlay still
-      // receives every tick via the SSE `emit` below.
-      if (name === 'progress_update' && _pushOk && data && data.status === 'running') {
-        const now = Date.now();
-        if (now - lastProgressPushAt >= PUSH_PROGRESS_MIN_MS) {
-          lastProgressPushAt = now;
-          const chatTitle = (chat && chat.title) || 'mouaif';
-          push.sendPushToSession(_pushSessionId, {
-            title: chatTitle,
-            body: data.message || data.title || 'Operation in progress',
-            chatId,
-            projectDir,
-            tag: 'chat-' + chatId,
-            data: {
-              chatId,
-              projectDir,
-              progress: data.current,
-              total: data.total,
-              url: `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`
-            }
-          });
-        }
-      }
       emit(name, data);
     }
   });
@@ -1738,16 +1783,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
-    if (_pushOk) {
-      const chatTitle = (chat && chat.title) || chatId;
-      push.sendPushToSession(_pushSessionId, {
-        title: chatTitle,
-        body: 'Error: ' + (errPayload.message || 'stream failed'),
-        chatId,
-        projectDir,
-        tag: 'chat-' + chatId
-      });
-    }
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: 'chat-' + chatId + '-status' });
     res.end();
     return;
   }
@@ -1774,16 +1810,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
-    if (_pushSessionId) {
-      const chatTitle = (chat && chat.title) || chatId;
-      push.sendPushToSession(_pushSessionId, {
-        title: chatTitle,
-        body: 'Error: ' + (errPayload.message || 'upstream error'),
-        chatId,
-        projectDir,
-        tag: 'chat-' + chatId
-      });
-    }
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: 'chat-' + chatId + '-status' });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);

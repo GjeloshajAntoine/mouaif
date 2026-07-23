@@ -111,6 +111,16 @@
 
 .settings-home { margin: 0; padding: 0; border: 0; }
 
+/* ---- Settings: browser notifications ---------------------------- */
+
+.settings-notifications { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.settings-notifications__event { cursor: pointer; }
+.settings-notifications__event .group__row-body { min-width: 0; }
+.settings-notifications__event .checkbox { flex: 0 0 auto; }
+.settings-notifications__actions { display: flex; padding: 10px; }
+.settings-notifications__actions .btn { width: 100%; min-height: var(--tap); }
+.settings-notifications > .hint { margin-inline: 10px; }
+
 /* ---- Settings: provider list + edit form ------------------------ */
 
 .providers__list {

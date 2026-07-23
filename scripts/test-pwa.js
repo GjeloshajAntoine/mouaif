@@ -82,6 +82,11 @@ server.listen(0, '127.0.0.1', () => {
       assert(sw.body.indexOf('CACHE_VERSION') >= 0, 'sw: hash baked in');
       // SW must guard out /api/* (live data surface, must never be cached).
       assert(sw.body.indexOf('/web/api/') >= 0 || sw.body.indexOf('/api/') >= 0, 'sw: /api/ bypass present');
+      assert(sw.body.indexOf("addEventListener('push'") >= 0, 'sw: push handler present');
+      assert(sw.body.indexOf("addEventListener('notificationclick'") >= 0, 'sw: notification click handler present');
+      assert(sw.body.indexOf('/api/tools/authorization/decision') >= 0, 'sw: notification actions submit decisions');
+      assert(sw.body.indexOf('allow-once') >= 0, 'sw: allow-once action supported');
+      assert(sw.body.indexOf('answer-') >= 0, 'sw: quick-answer action supported');
 
       // 4. Icon reachability + content-type. All three declared sizes.
       for (const rel of ['/web/icons/icon-192.png', '/web/icons/icon-512.png', '/web/icons/icon-maskable-512.png']) {

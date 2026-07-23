@@ -13,7 +13,6 @@
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { registerServiceWorker } from './sw-registration.js';
-import { initPwaInstall } from './components/PwaInstallBanner.jsx';
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
@@ -27,9 +26,6 @@ if (root) render(h(App, null), root);
 // for the production-only path). Deferred until after first paint so
 // the SW install doesn't block the entry bundle download.
 registerServiceWorker();
-
-// Initialise the PWA install banner (beforeinstallprompt listener).
-initPwaInstall();
 
 // Sync push notification state when the service worker is ready.
 if ('serviceWorker' in navigator) {

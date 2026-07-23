@@ -178,52 +178,78 @@ self.addEventListener('message', (event) => {
 self.addEventListener('push', (event) => {
   let data;
   try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
-  const { title, body, tag, renotify, icon, badge, data: payload, actions } = data;
+  const { title, body, tag, renotify, icon, badge, data: payload, actions, requireInteraction } = data;
   if (!title && !body) return;
 
-  const options = {
-    body: body || '',
-    tag: tag || 'default',
-    renotify: renotify !== false,
-    icon: icon || '/web/icons/icon-192.png',
-    badge: badge || '/web/icons/favicon-32.png',
-    data: payload || {},
-    actions: actions || [
-      { action: 'open', title: 'Open chat' }
-    ],
-    // Vibrate pattern: short buzz for progress, longer for completion
-    vibrate: tag ? [100] : [100, 50, 100]
-  };
-
-  event.waitUntil(self.registration.showNotification(title || 'mouaif', options));
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
+    const chatVisible = windows.some((client) => {
+      if (!client.focused || !targetUrl) return false;
+      try { return new URL(client.url).hash === targetUrl.hash; } catch { return false; }
+    });
+    if (chatVisible) return;
+    await self.registration.showNotification(title || 'mouaif', {
+      body: body || '',
+      tag: tag || 'default',
+      renotify: renotify !== false,
+      icon: icon || '/web/icons/icon-192.png',
+      badge: badge || '/web/icons/favicon-32.png',
+      data: payload || {},
+      actions: actions || [{ action: 'open', title: 'Open chat' }],
+      requireInteraction: requireInteraction === true,
+      vibrate: requireInteraction === true ? [150, 80, 150] : [100]
+    });
+  })());
 });
 
-self.addEventListener('notificationclick', (event) => {
-  const data = event.notification.data || {};
-  event.notification.close();
-
+async function openNotificationTarget(data) {
   const urlToOpen = data.url
     || (data.chatId && data.projectDir
       ? '/web/#/chat/' + data.chatId + '?projectDir=' + encodeURIComponent(data.projectDir)
       : '/web/');
-
-  if (event.action && event.action !== 'open') {
-    // Future: handle custom actions
-    return;
+  const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const client of clientList) {
+    if (client.url.startsWith(self.location.origin + '/web/') && 'focus' in client) {
+      client.postMessage({ type: 'NAVIGATE', url: urlToOpen });
+      return client.focus();
+    }
   }
+  return clients.openWindow(new URL(urlToOpen, self.location.origin).href);
+}
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin + '/web/') && 'focus' in client) {
-            client.postMessage({ type: 'NAVIGATE', url: urlToOpen });
-            return client.focus();
-          }
-        }
-        return clients.openWindow(new URL(urlToOpen, self.location.origin).href);
-      })
-  );
+async function submitNotificationDecision(data, action) {
+  if (!data.projectDir || !data.chatId || !data.callId) throw new Error('missing decision context');
+  let decision = action;
+  let payload;
+  if (action.startsWith('answer-')) {
+    const index = Number(action.slice('answer-'.length));
+    const option = Array.isArray(data.options) ? data.options[index] : null;
+    if (!option || !option.value) throw new Error('missing answer option');
+    decision = 'allow-once';
+    payload = { choice: option.value, extra: '' };
+  }
+  const response = await fetch('/api/tools/authorization/decision', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectDir: data.projectDir,
+      chatId: data.chatId,
+      callId: data.callId,
+      decision,
+      payload
+    })
+  });
+  if (!response.ok) throw new Error('decision failed');
+}
+
+self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  event.notification.close();
+  const action = event.action || 'open';
+  if (action === 'open') event.waitUntil(openNotificationTarget(data));
+  else event.waitUntil(submitNotificationDecision(data, action).catch(() => openNotificationTarget(data)));
 });
 
 self.addEventListener('notificationclose', (event) => {

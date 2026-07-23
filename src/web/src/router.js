@@ -22,6 +22,7 @@ function parseHash() {
     return { name: 'settingsProject', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
   }
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
+  if (h === 'settings/notifications') return { name: 'settingsNotifications' };
   // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
   // screen. It now lives inside the Copilot provider form, so keep old links
   // working by resolving straight to that provider's edit view.

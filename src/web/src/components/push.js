@@ -6,22 +6,29 @@
 import { signal } from '@preact/signals';
 import { fetchJson } from '../api.js';
 
-export const pushSupported = signal(typeof window !== 'undefined' && 'Notification' in window && 'PushManager' in window && !!navigator.serviceWorker);
+// The service worker is intentionally production-only. Treat Push as
+// unsupported in Vite dev mode rather than waiting forever on
+// navigator.serviceWorker.ready when no worker will be registered.
+const productionBuild = !!import.meta.env && import.meta.env.PROD === true;
+export const pushSupported = signal(productionBuild && typeof window !== 'undefined' && 'Notification' in window && 'PushManager' in window && !!navigator.serviceWorker);
 export const pushPermission = signal(typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied');
 export const pushEnabled = signal(false); // whether we have a registered subscription
-export const pageVisible = signal(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true);
 
 let _registration = null;
 let _subscription = null;
 
-// Track page visibility — push notifications are less useful when the
-// user is already looking at the app.
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    pageVisible.value = document.visibilityState === 'visible';
+async function registerSubscription(sub) {
+  const subData = sub && sub.toJSON ? sub.toJSON() : null;
+  if (!subData || !subData.endpoint || !subData.keys || !subData.keys.p256dh || !subData.keys.auth) return false;
+  const r = await fetchJson('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      origin: window.location.origin,
+      subscription: { endpoint: subData.endpoint, keys: subData.keys }
+    })
   });
-  window.addEventListener('focus', () => { pageVisible.value = true; });
-  window.addEventListener('blur', () => { pageVisible.value = false; });
+  return r.status === 200;
 }
 
 // Check and sync the current subscription state with the server.
@@ -38,15 +45,14 @@ export async function syncPushState() {
     pushEnabled.value = !!sub;
 
     if (sub) {
-      // Verify this exact browser endpoint is still registered server-side.
-      // A session can have multiple subscriptions, so merely seeing any row
-      // made a deleted/stale local subscription look enabled.
+      // Rebind a valid local subscription to the fresh browser session after
+      // a server restart. The Push endpoint remains valid while the HttpOnly
+      // mouaif session cookie is intentionally ephemeral.
       const r = await fetchJson('/api/push/subscriptions');
       const rows = r.status === 200 && r.body && Array.isArray(r.body.subscriptions) ? r.body.subscriptions : [];
       pushEnabled.value = rows.some(x => x && x.endpoint === sub.endpoint);
       if (!pushEnabled.value) {
-        try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
-        _subscription = null;
+        pushEnabled.value = await registerSubscription(sub);
       }
     }
 
@@ -86,33 +92,14 @@ export async function requestPushPermission() {
     });
     _subscription = sub;
 
-    // Send subscription to server
-    const subData = sub.toJSON();
-    if (!subData.endpoint || !subData.keys || !subData.keys.p256dh || !subData.keys.auth) {
+    if (!await registerSubscription(sub)) {
       try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
       _subscription = null;
       pushEnabled.value = false;
       return false;
     }
-    const r = await fetchJson('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription: {
-          endpoint: subData.endpoint,
-          keys: subData.keys
-        }
-      })
-    });
-
-    if (r.status === 200) {
-      pushEnabled.value = true;
-      return true;
-    }
-    try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
-    _subscription = null;
-    pushEnabled.value = false;
-    return false;
+    pushEnabled.value = true;
+    return true;
   } catch {
     pushEnabled.value = false;
     return false;

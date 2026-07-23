@@ -28,6 +28,7 @@
 const MAX_QUESTION_CHARS = 500;
 const MAX_OPTION_CHARS = 120;
 const MAX_EXTRA_CHARS = 1000;
+const MAX_PRESETS = 6;
 
 const SPEC = {
   type: 'function',
@@ -111,7 +112,10 @@ function validateArgs(args) {
     });
   }
   const multiSelect = args.multiSelect === true;
-  return { question, options, multiSelect };
+  const presets = Array.isArray(args.presets)
+    ? args.presets.slice(0, MAX_PRESETS).map((value) => trimString(value, MAX_OPTION_CHARS)).filter(Boolean)
+    : [];
+  return { question, options, multiSelect, presets };
 }
 
 // Shape the runner result. `cancelled: true` means the user picked
@@ -145,5 +149,6 @@ module.exports = {
   clampExtra,
   MAX_QUESTION_CHARS,
   MAX_OPTION_CHARS,
-  MAX_EXTRA_CHARS
+  MAX_EXTRA_CHARS,
+  MAX_PRESETS
 };

@@ -9,7 +9,7 @@ The PWA scaffolding covers four things:
 - A `manifest.webmanifest` declaring the app's display metadata, theme color, start URL, scope, and icon set. Vite copies it verbatim from `src/web/public/manifest.webmanifest` into `dist/`, where the Node server serves it at `/web/manifest.webmanifest` with the `application/manifest+json` MIME.
 - A tiny, hand-rolled service worker (no Workbox, no dependencies) that precaches the app shell, runs cache-first for fingerprinted JS/CSS/icons and network-first for navigation, and bypasses `/api/*`, `/events`, `/data`, `/oauth/callback`, cross-origin, and any non-GET request.
 - iOS-specific meta tags and an `apple-touch-icon` so an iPhone user can tap Share → Add to Home Screen and get a standalone shortcut with the mouaif glyph as its home-screen icon.
-- Two banners in the app shell: a thin offline indicator and a "new version ready" prompt. Both use the existing design palette so they don't feel like OS dialogs.
+- Two app-state banners in the app shell: a thin offline indicator and a "new version ready" prompt. Browsers may still expose their own install affordance in the URL bar, but mouaif no longer shows an in-app install banner just because the page became installable.
 
 ## Usage
 
@@ -29,7 +29,7 @@ node scripts/test-pwa.js
 ```
 ````
 
-On Chrome (desktop and Android), the URL bar shows an "Install" icon once the manifest is reachable. On iOS Safari, the user taps Share → Add to Home Screen.
+On Chrome (desktop and Android), the browser may show an "Install" icon in the URL bar once the manifest is reachable. mouaif does not show its own in-app install banner on first load. On iOS Safari, the user taps Share → Add to Home Screen.
 
 Once installed:
 

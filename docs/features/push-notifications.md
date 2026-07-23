@@ -2,7 +2,7 @@
 
 ## Overview
 
-Browser push notifications let mouaif send OS-level alerts for chat progress, completion, and errors even when the tab is backgrounded or the browser is closed. The system uses the standard Web Push API (service worker `push`/`notificationclick` events) with per-chat tagged notifications so progress bars are updatable without stacking multiple alerts.
+Browser notifications let mouaif follow a running chat when the tab is in the background or closed. The important alerts are interactive: a user can answer a simple two-choice `ask_user` question, allow a tool once, or deny a tool directly from the notification when the browser supports actions.
 
 **Stack:** `web-push` (server), service worker `push` event (client), VAPID keys (auto-generated, stored in SQLite).
 
@@ -10,29 +10,50 @@ Browser push notifications let mouaif send OS-level alerts for chat progress, co
 
 ### Enabling push notifications
 
-1. Open **Settings → App defaults**.
-2. Tap **Enable** under "Push notifications".
+1. Open **Settings → Notifications**.
+2. Tap **Enable** under "Web notifications".
 3. Accept the browser's permission prompt.
-4. The button changes to "Disable" when subscribed.
+4. Optionally tap **Send test notification**.
+
+The same screen configures which chat events produce alerts and whether quick actions are shown. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
 
 ### What triggers a push
 
 | Event | When | Content |
 |-------|------|---------|
-| `progress_update` | AI model calls `report_progress` with `status: "running"` | Chat title + progress message |
+| `ask_user_required` | The model pauses for a structured answer | Question; exactly two single-choice answers can be tapped directly |
+| `authorization_required` | A tool is waiting for approval | Tool name with **Allow once** and **Deny** actions |
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 
-Each notification uses `tag: chat-{chatId}` so multiple updates for the same chat replace the previous notification rather than stacking.
+Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert when that exact chat is already focused.
 
 ### Clicking a notification
 
-- If the app is already open in a browser tab, the service worker posts a `NAVIGATE` message to the page, the tab focuses, and the hash router opens the specific chat.
-- If the app is closed, a new tab opens at the absolute chat URL.
+- Tapping the notification body opens the exact chat and restores its pending question or authorization card.
+- **Allow once** and **Deny** post to the existing authorization-decision API without opening the app.
+- A simple two-choice question submits the selected value through the same API.
+- Multi-select questions, long option lists, and free-form answers open the full chat UI.
 
 ### Subscription sync
 
-Startup sync compares the browser's current Push endpoint with the server's saved subscriptions for the current session. A stale local subscription is unsubscribed, and disabling push only removes an endpoint owned by that same session.
+Startup sync compares the browser's current Push endpoint with the server's saved subscriptions for the current session. After a server restart, an existing local subscription is rebound to the fresh session instead of being destroyed. Disabling notifications removes only an endpoint owned by that session.
+
+### Configuration
+
+The app-level `notifications` setting stores:
+
+```json
+{
+	"askUser": true,
+	"toolAuthorization": true,
+	"completion": true,
+	"errors": true,
+	"quickActions": true
+}
+```
+
+Browser permission and subscription are installation-specific. Event preferences are app-wide and are exposed through the normal `/api/settings/app` endpoint.
 
 ## Implementation notes
 
@@ -45,7 +66,7 @@ Startup sync compares the browser's current Push endpoint with the server's save
 | `src/settings.js` | `push_subscriptions` and `push_vapid` SQLite tables |
 | `src/web/build/sw-src.js` | Service worker push/notificationclick/notificationclose event handlers |
 | `src/web/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
-| `src/web/src/components/SettingsDefaults.jsx` | Push enable/disable toggle in settings |
+| `src/web/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
 | `src/web/src/main.jsx` | Push state sync on startup |
 | `src/web/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
 
@@ -57,6 +78,8 @@ Startup sync compares the browser's current Push endpoint with the server's save
 | `/api/push/subscribe` | POST | Save a push subscription (body: `{ subscription: { endpoint, keys: { p256dh, auth } } }`) |
 | `/api/push/subscribe` | DELETE | Remove a push subscription (body: `{ endpoint }`) |
 | `/api/push/subscriptions` | GET | List subscriptions for the current session |
+| `/api/push/test` | POST | Send a test notification to the current browser session |
+| `/api/tools/authorization/decision` | POST | Handle notification actions using the same decision path as chat cards |
 
 ### VAPID keys
 
@@ -68,8 +91,8 @@ When sending a push fails with HTTP 410 (Gone) or 404 (Not Found), the subscript
 
 ### Session binding
 
-Subscriptions are tied to the browser session (via a one-way hash of the session cookie token). A different tab or device with the same session shares the subscription; clearing cookies removes the binding permanently.
+Subscriptions are tied to the browser session through a one-way hash of the session cookie token. The endpoint row is updated in place when a fresh session rebinds it, preserving its stable subscription ID and creation time.
 
 ### Service worker
 
-The push event handlers are compiled into `dist/sw.js` via the Vite build plugin in `vite.config.js`. The service worker is registered in production builds only (dev mode skips it for HMR speed).
+The push event handlers are compiled into `dist/sw.js` via the Vite build plugin in `vite.config.js`. The service worker is registered in production builds only (dev mode skips it for HMR speed). Notification actions use same-origin `fetch()` with the HttpOnly session cookie; failures fall back to opening the chat.

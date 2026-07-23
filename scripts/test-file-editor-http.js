@@ -51,7 +51,10 @@ async function waitForServer() {
   for (let i = 0; i < 60; i++) {
     try {
       const r = await request('GET', '/');
-      if (r.status === 200) return true;
+      // The app root intentionally redirects to the canonical /web/ URL.
+      // Either a direct 200 (older servers) or that redirect proves the
+      // child is accepting HTTP requests.
+      if (r.status === 200 || r.status === 302) return true;
     } catch {}
     await new Promise((r) => setTimeout(r, 200));
   }

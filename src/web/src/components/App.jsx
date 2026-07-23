@@ -2,12 +2,11 @@
 import { h, Fragment } from 'preact';
 import { route, activeProject, setActiveProject } from '../api.js';
 import { PwaBanners } from './PwaBanners.jsx';
-import { NotificationsOverlay } from './NotificationsOverlay.jsx';
-import { PwaInstallBanner } from './PwaInstallBanner.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
 import { SettingsProjectView } from './SettingsProject.jsx';
 import { SettingsDefaultsView } from './SettingsDefaults.jsx';
+import { SettingsNotificationsView } from './SettingsNotifications.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
 import { SettingsMcpView, SettingsMcpEditView } from './SettingsMcp.jsx';
@@ -69,7 +68,7 @@ export function App() {
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
-    && view.name !== 'settingsDefaults'
+    && view.name !== 'settingsDefaults' && view.name !== 'settingsNotifications'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
     && view.name !== 'settingsAgents'
     && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
@@ -88,6 +87,7 @@ export function App() {
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
+  else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
@@ -103,9 +103,7 @@ export function App() {
   return h('div', { class: 'app__shell' },
     h(Header, null),
     h(PwaBanners, null),
-    h(PwaInstallBanner, null),
     h('main', { class: 'app__main' + (showTabBar ? '' : ' app__main--flush') }, body),
-    showTabBar ? h(BottomNav, null) : null,
-    h(NotificationsOverlay, null)
+    showTabBar ? h(BottomNav, null) : null
   );
 }

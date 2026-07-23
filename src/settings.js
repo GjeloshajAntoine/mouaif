@@ -60,6 +60,16 @@ const DEFAULTS = Object.freeze({
   // When 'db', chat metadata and messages live in ~/.mouaif/store.sqlite.
   // When 'json', they live in <projectDir>/.mouaif.json and .mouaif.messages.*.json.
   chatStorage: 'db',
+  // OS-level browser notifications. Attention events are on by default;
+  // quick actions let the user answer simple questions or approve once
+  // without opening the app.
+  notifications: {
+    askUser: true,
+    toolAuthorization: true,
+    completion: true,
+    errors: true,
+    quickActions: true
+  },
   // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).
   flags: {}
 });

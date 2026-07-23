@@ -1126,8 +1126,6 @@ async function streamChat(opts) {
   catch { /* ask_user tool module unavailable; skip */ }
   try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); }
   catch { /* list_features tool module unavailable; skip */ }
-  try { toolSpecs.push(require('./tools/progress.js').SPEC); }
-  catch { /* report_progress tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -1460,6 +1458,7 @@ async function streamChat(opts) {
               question: askUserPayload.question,
               options: askUserPayload.options,
               multiSelect: askUserPayload.multiSelect,
+              presets: askUserPayload.presets,
               projectDir: opts && opts.projectDir
             });
           } else {

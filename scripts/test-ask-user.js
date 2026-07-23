@@ -50,6 +50,15 @@ async function main() {
   check('happy path: question', ok.question === 'Pick a default branch?');
   check('happy path: 2 options', ok.options.length === 2);
   check('happy path: multiSelect false', ok.multiSelect === false);
+  check('happy path: presets default empty', Array.isArray(ok.presets) && ok.presets.length === 0);
+
+  const withPresets = ask.validateArgs({
+    question: 'Pick one',
+    options: [{ label: 'a', value: 'a' }, { label: 'b', value: 'b' }],
+    presets: ['  use default  ', '', 'ask later']
+  });
+  check('presets are transported', withPresets.presets.length === 2);
+  check('presets are trimmed', withPresets.presets[0] === 'use default');
 
   // 3) validateArgs — multiSelect defaults to false.
   const noMs = ask.validateArgs({

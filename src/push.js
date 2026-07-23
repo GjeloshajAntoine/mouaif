@@ -67,10 +67,18 @@ function listSubscriptions(sessionId) {
 
 function addSubscription({ sessionId, endpoint, p256dh, auth, origin }) {
   const db = settings.getDb();
-  const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  db.prepare(`INSERT OR REPLACE INTO ${SUB_TABLE} (id, session_id, endpoint, p256dh, auth, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, sessionId, endpoint, p256dh, auth, origin || null, now, now);
+  const existing = db.prepare(`SELECT id, created_at FROM ${SUB_TABLE} WHERE endpoint = ?`).get(endpoint);
+  const id = existing ? existing.id : crypto.randomUUID();
+  db.prepare(`INSERT INTO ${SUB_TABLE} (id, session_id, endpoint, p256dh, auth, origin, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      session_id = excluded.session_id,
+      p256dh = excluded.p256dh,
+      auth = excluded.auth,
+      origin = excluded.origin,
+      updated_at = excluded.updated_at`)
+    .run(id, sessionId, endpoint, p256dh, auth, origin || null, existing ? existing.created_at : now, now);
   return { id, endpoint, origin };
 }
 
@@ -89,7 +97,7 @@ function removeAllSubscriptions(sessionId) {
 
 // ---- Push sending -------------------------------------------------------
 
-function sendPush({ sessionId, title, body, tag, data, chatId, projectDir }) {
+function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actions, requireInteraction }) {
   const subs = sessionId ? listSubscriptions(sessionId) : [];
   if (!subs.length) return;
 
@@ -101,9 +109,10 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir }) {
     icon: '/web/icons/icon-192.png',
     badge: '/web/icons/favicon-32.png',
     data: data || { chatId, projectDir, url: chatId && projectDir ? `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}` : '/web/' },
-    actions: [
-      { action: 'open', title: 'Open chat' }
-    ]
+    actions: Array.isArray(actions) && actions.length
+      ? actions
+      : [{ action: 'open', title: 'Open chat' }],
+    requireInteraction: requireInteraction === true
   });
 
   for (const sub of subs) {
@@ -121,9 +130,9 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir }) {
 }
 
 // sendPushToSession — send a push notification to a specific session.
-// Called from handleChatStream when events like progress_update, done, or error fire.
-function sendPushToSession(sessionId, { title, body, chatId, projectDir, tag, data }) {
-  sendPush({ sessionId, title, body, tag, chatId, projectDir, data });
+// Called from handleChatStream for attention, completion, and error events.
+function sendPushToSession(sessionId, { title, body, chatId, projectDir, tag, data, actions, requireInteraction }) {
+  sendPush({ sessionId, title, body, tag, chatId, projectDir, data, actions, requireInteraction });
 }
 
 // ---- Session ID helpers -------------------------------------------------
