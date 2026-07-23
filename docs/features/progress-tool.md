@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `report_progress` tool lets the model report real-time progress on a long-running operation. The server validates the call, emits a `progress_update` SSE event, and the frontend renders a live progress bar card in the transcript. The tool is advertised to all models that support tool calling.
+The `report_progress` tool lets the model report real-time progress on a long-running operation. The server validates the call, emits a `progress_update` SSE event, and the frontend renders a live progress bar card in the transcript. The tool is advertised to all models that support tool calling when its project authorization mode is not `off`.
 
 ## Usage
 
@@ -26,6 +26,10 @@ The model calls `report_progress` with this schema:
 | `status` | string | no | `"running"`, `"completed"`, or `"failed"` (default: `"running"`) |
 | `message` | string | no | Optional status message shown below the progress bar (max 500 chars) |
 
+## Authorization
+
+`report_progress` appears in Settings → Project with the same `off` / `ask` / `allow` modes as other native tools. `off` hides it from model requests, while `ask` and `allow` keep it visible. Execution bypasses the interactive authorization prompt because progress updates do not read or modify project resources; the mode is used as the visibility gate. Legacy or external calls can still be dispatched directly for compatibility.
+
 ## Frontend rendering
 
 When the server emits a `progress_update` SSE event, the frontend renders a `.tool-card--progress` card in the transcript with:
@@ -43,9 +47,10 @@ Completed/failed statuses auto-expand the card; running cards stay collapsed. Th
 |------|---------|
 | `src/tools/progress.js` | `report_progress` tool specification, validator, and result builder |
 | `src/ai.js` | Tool advertised to models in `toolSpecs`; dispatch for `report_progress` calls |
-| `src/index.js` | Tool listed in `/api/tools/list` catalog |
+| `src/index.js` | Tool listed in `/api/tools/list` catalog and prompt-profile previews |
+| `src/tools/authorization.js` | Native authorization/visibility state for the Settings UI |
 | `src/web/src/components/chat/transcript.js` | `updateProgressCard` — progress card DOM construction and update |
 | `src/web/src/components/chat/stream.js` | SSE `progress_update` event handler |
 | `src/web/src/features.css` | Progress card styles (`.tool-card--progress`, progress bar, percentage, message) |
 
-The tool is advertised to models that support tool calling (OpenAI-compatible shape). Its `progress_update` event does not produce a global toast or browser push alert.
+The `progress_update` event does not produce a global toast or browser push alert.

@@ -99,7 +99,7 @@ function normalizeConfig(raw, source, enabled, tool) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user']);
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress']);
 // Tools that only support a binary `off` / `ask` mode. `ask_user` is
 // the first of its kind: the model can't predict the user's answer,
 // so allowlist / allow make no sense. The authorization module still
@@ -223,7 +223,8 @@ function getAuthorization(projectDir) {
       shell: effectiveConfig(projectDir, 'shell'),
       subagent: effectiveConfig(projectDir, 'subagent'),
       file: effectiveConfig(projectDir, 'file'),
-      ask_user: effectiveConfig(projectDir, 'ask_user')
+      ask_user: effectiveConfig(projectDir, 'ask_user'),
+      report_progress: effectiveConfig(projectDir, 'report_progress')
     },
     mcp
   };

@@ -30,10 +30,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
   const [askUserMode, setAskUserMode] = useState('ask');
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
   const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
+  const [progressStatusMsg, setProgressStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
@@ -131,6 +133,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     setShellStatusMsg('');
     setFileStatusMsg('');
+    setSubagentStatusMsg('');
+    setProgressStatusMsg('');
     setAskUserStatusMsg('');
 
     try {
@@ -149,6 +153,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       setSubagentAuth({
         mode: (sub && sub.mode) || 'ask',
         allowlist: sub && Array.isArray(sub.allowlist) ? sub.allowlist : []
+      });
+      const progress = authz.status === 200 && authz.body.tools && authz.body.tools.report_progress;
+      setProgressAuth({
+        mode: (progress && progress.mode) || 'ask',
+        allowlist: progress && Array.isArray(progress.allowlist) ? progress.allowlist : []
       });
       // ask_user is a binary { off, ask } tool. The server clamps any
       // legacy allowlist / allow value to `ask`; here we read what the
@@ -358,6 +367,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
   function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
+  function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
 
   // Per-server MCP authorization (no allowlist — that's in the
   // dedicated MCP settings page). The segment writes the mode
@@ -570,6 +580,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
+    const progressTool = catalog.find((t) => t.name === 'report_progress');
+    if (progressTool) {
+      groups.push({
+        id: 'report_progress',
+        name: 'Progress updates',
+        description: shortDesc(progressTool.description),
+        title: progressTool.description || '',
+        checked: isOn(progressAuth.mode),
+        control: toolModeSegs('Progress updates', segMode(progressAuth.mode), pickProgressMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [leaf(progressTool, { checked: isOn(progressAuth.mode) })],
+        extra: progressStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, progressStatusMsg) : null
+      });
+    }
+
     const askTool = catalog.find((t) => t.name === 'ask_user');
     if (askTool) {
       groups.push({
@@ -677,6 +705,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'shell') pickShellMode(mode);
     else if (groupId === 'subagent') pickSubagentMode(mode);
+    else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') pickFileMode(mode);
     // MCP shared fallback authorization is managed in the dedicated
@@ -690,6 +719,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const AGENT_TOOL_CHOICES = [
     { value: 'shell', label: 'shell' },
     { value: 'subagent', label: 'subagent' },
+    { value: 'report_progress', label: 'report_progress' },
     { value: 'ask_user', label: 'ask_user' },
     { value: 'list_features', label: 'list_features' },
     { value: 'read_file', label: 'read_file' },

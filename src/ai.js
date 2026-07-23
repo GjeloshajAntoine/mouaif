@@ -1092,19 +1092,20 @@ async function streamChat(opts) {
   // ---- Tool specs advertised to the model ----------------------------
   // Three sources feed the `tools` field of the outgoing request:
   //   1. The native `shell` tool (src/tools/shell.js), always present.
-  //   2. The native `subagent` tool (src/tools/subagent.js), always present.
-  //   3. The native `ask_user` tool (src/tools/ask.js), always present.
+  //   2. The native `report_progress` tool (src/tools/progress.js), always present.
+  //   3. The native `subagent` tool (src/tools/subagent.js), always present.
+  //   4. The native `ask_user` tool (src/tools/ask.js), always present.
   //      Lets the model pause and ask the user a structured question
   //      with a list of options (2+, no cap). The user always has a
   //      free-form "extra" textbox alongside their pick, so the answer
   //      is never constrained to the offered options. See
   //      docs/features/ask-user-tool.md.
-  //   4. The native file tools (read_file / list_files / search_files /
+  //   5. The native file tools (read_file / list_files / search_files /
   //      write_file, src/tools/files.js), always present. Authorization
   //      decides whether a call prompts, runs, or is rejected. These cover
   //      "read this file / find where X is used / patch a small file"
   //      loop without requiring an MCP server.
-  //   5. MCP-discovered tools (decision §18), which use the
+  //   6. MCP-discovered tools (decision §18), which use the
   //      mcp__<serverSlug>__<toolName> name convention.
   // Tool calling and the multi-turn loop below are wired only for the
   // OpenAI-compatible tool shape (openai-compatible + github-copilot).
@@ -1161,7 +1162,7 @@ async function streamChat(opts) {
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user']) {
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
           const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -1373,6 +1374,23 @@ async function streamChat(opts) {
           }
           onEvent('tool_call', { id: c.id || null, name: c.name, args });
           callEmitted = true;
+        } else if (c.name === 'report_progress') {
+          // report_progress is a read-only UI/update tool. It honors
+          // the project `off` visibility gate, but does not show an
+          // interactive authorization prompt because progress updates
+          // do not read or modify project resources.
+          try {
+            const authGate = require('./tools/authorization.js');
+            const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name);
+            if (cfg && cfg.mode === 'off') {
+              exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
+            }
+          } catch { /* unreadable authorization state: keep compatibility path */ }
+          // Emit the running card before dispatch so the subsequent
+          // progress_update can attach to the same call id.
+          onEvent('tool_call', { id: c.id || null, name: c.name, args });
+          callEmitted = true;
+          if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
         } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
           const requested = args && (args.toolName || args.name || args.tool);
           const spec = toolSpecs.find(s => s && s.function && s.function.name === requested);

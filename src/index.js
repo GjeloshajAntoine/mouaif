@@ -1135,14 +1135,15 @@ async function handleChats(req, res, parsed, sessionToken) {
         if (p && p.id) profileId = p.id;
       } catch { /* fall through to default */ }
       // Collect the tool specs exactly as streamChat does: base shell,
-      // subagent, ask_user, and file tools are always advertised, plus
-      // ready MCP servers.
+      // progress, subagent, ask_user, and file tools are always
+      // advertised, plus ready MCP servers.
       const shellEnabled = true;
       const fileToolsEnabled = true;
       const toolSpecs = [];
       if (shellEnabled) {
         try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
       }
+      try { toolSpecs.push(require('./tools/progress.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
@@ -1163,6 +1164,26 @@ async function handleChats(req, res, parsed, sessionToken) {
           }
         }
       } catch { /* no MCP tools */ }
+      try {
+        const authz = require('./tools/authorization.js');
+        const authState = authz.getAuthorization(dir);
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress']) {
+          const cfg = authState.tools[family];
+          if (cfg && cfg.mode === 'off') {
+            const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
+            for (let i = toolSpecs.length - 1; i >= 0; i--) {
+              const spec = toolSpecs[i];
+              if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
+            }
+          }
+        }
+        for (let i = toolSpecs.length - 1; i >= 0; i--) {
+          const spec = toolSpecs[i];
+          if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
+          const cfg = authz.effectiveConfig(dir, spec.function.name);
+          if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+        }
+      } catch { /* authorization state unreadable; keep every tool advertised */ }
       // Apply the same initial per-profile reduction the stream applies.
       // For very-small, this starts with discover_tool only; discovered
       // tool schemas are added dynamically during the tool loop.

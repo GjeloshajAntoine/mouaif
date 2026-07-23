@@ -105,6 +105,18 @@ async function main() {
     { code: 'ETOOL_DISABLED' }
   );
 
+  settings.setProject(projectDir, { tools: { report_progress: { mode: 'allow' } } });
+  const progressAllowed = await authz.authorize({
+    projectDir, chatId: 'a1b2c3d4', callId: 'call_progress', tool: 'report_progress', summary: 'Build 50%'
+  });
+  assert.equal(progressAllowed.decision, 'allow', 'report_progress is configurable as a native tool');
+  settings.setProject(projectDir, { tools: { report_progress: { mode: 'off' } } });
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_progress_off', tool: 'report_progress', summary: 'Build 50%' }),
+    { code: 'ETOOL_DISABLED' },
+    'report_progress can be hidden by authorization mode'
+  );
+
   // ---- Layered MCP authorization (per-tool > per-server > shared) ----
   // A dedicated chat session keeps the MCP assertions hermetic —
   // earlier shell grants must not leak into MCP decisions.
@@ -182,7 +194,7 @@ async function main() {
     projectDir, chatId: mcpChat, callId: 'call_mcp_beat', tool: 'mcp__db__list_tables', summary: 'mcp__db__list_tables'
   });
   assert.equal(mcpToolBeatsOff.decision, 'allow', 'per-tool allow overrides the shared off');
-  console.log('tool authorization: 32 assertions passed');
+  console.log('tool authorization: 35 assertions passed');
 }
 
 main().finally(() => {

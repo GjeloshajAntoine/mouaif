@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `report_progress` tool is retained only for compatibility with persisted or external tool calls. It is no longer advertised to models, and progress events no longer create global overlays or Web Push notifications. The frontend **does** render a real-time progress bar card in the transcript when the model calls it.
+The `report_progress` tool was briefly retained only for compatibility with persisted or external tool calls. It is advertised to models again through the current [Progress tool](progress-tool.md), but this page documents the compatibility path for older transcripts and external callers. Progress events do not create global overlays or Web Push notifications. The frontend **does** render a real-time progress bar card in the transcript when the model calls it.
 
 ## Usage
 
@@ -41,4 +41,4 @@ Completed/failed statuses auto-expand the card; running cards stay collapsed. Th
 | `src/web/src/components/chat/stream.js` | SSE `progress_update` event handler |
 | `src/web/src/features.css` | Progress card styles (`.tool-card--progress`, progress bar, percentage, message) |
 
-The tool remains dispatchable but is excluded from new model requests. Its `progress_update` event does not produce a global toast or browser push alert.
+The tool remains dispatchable for compatibility. Its `progress_update` event does not produce a global toast or browser push alert.
