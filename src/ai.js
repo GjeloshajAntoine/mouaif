@@ -1126,6 +1126,8 @@ async function streamChat(opts) {
   catch { /* ask_user tool module unavailable; skip */ }
   try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); }
   catch { /* list_features tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./tools/progress.js').SPEC); }
+  catch { /* report_progress tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -2140,6 +2142,36 @@ async function streamChat(opts) {
         chatId: callOpts && callOpts.chatId,
         chat: callOpts && callOpts.chat
       });
+    }
+
+    // Native report_progress tool — validates args, emits a
+    // progress_update SSE event so the frontend can show a live
+    // progress bar, and returns the structured data to the model.
+    if (name === 'report_progress') {
+      let progMod;
+      try { progMod = require('./tools/progress.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'report_progress tool module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      let validated;
+      try { validated = progMod.validateArgs(args); }
+      catch (e) {
+        const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      // Emit progress_update SSE event for the frontend.
+      if (callOpts && callOpts.onEvent && typeof callOpts.onEvent === 'function') {
+        callOpts.onEvent('progress_update', {
+          callId: (callOpts && callOpts.callId) || null,
+          title: validated.title,
+          current: validated.current,
+          total: validated.total,
+          status: validated.status,
+          message: validated.message || ''
+        });
+      }
+      return progMod.buildResult(validated);
     }
 
     // Native file tools: read_file, list_files, search_files, write_file,

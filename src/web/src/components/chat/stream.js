@@ -24,6 +24,7 @@ import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
+import { addNotification, updateNotification, removeNotification } from '../notifications.js';
 
 // markToolUsed(state, refs, toolName)
 //
@@ -558,6 +559,26 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       authorizationCard(data, projectDir, chatId, refs);
     } else if (ev.eventName === 'ask_user_required') {
       askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+    } else if (ev.eventName === 'progress_update') {
+      // Show a live progress bar notification.
+      const progId = 'progress-' + (data.callId || 'global');
+      const existing = document.querySelector('[data-notif-id="' + progId.replace(/"/g, '\\"') + '"]');
+      if (existing) {
+        updateNotification(progId, { progress: data.current, progressMax: data.total, message: data.message || '' });
+      } else {
+        addNotification({
+          id: progId,
+          type: 'progress',
+          title: data.title || 'Operation',
+          progress: data.current,
+          progressMax: data.total,
+          message: data.message || '',
+          autoClose: false
+        });
+      }
+      if (data.status === 'completed' || data.status === 'failed') {
+        setTimeout(() => removeNotification(progId), 2500);
+      }
     } else if (ev.eventName === 'tool_call') {
       markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);
