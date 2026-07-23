@@ -1291,7 +1291,26 @@
   line-height: 1.2;
 }
 
-/* ---- File toolbar button (inside composer) ------------------------- */
+/* ---- Composer row: tool button beside composer pill ----------------- */
+
+.chat-view__composer-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 10px 0;
+  flex: 0 0 auto;
+}
+
+/* Tool button container — sits left of the composer pill */
+.chat-view__composer-tool {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+/* ---- File toolbar button ------------------------------------------- */
 
 .file-toolbar {
   position: relative;
@@ -1528,8 +1547,8 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
-  flex: 0 0 auto;
-  margin: 6px 10px 0;
+  flex: 1 1 auto;
+  min-width: 0;
   box-shadow: var(--shadow-sm);
   overscroll-behavior: contain;
   position: relative;
