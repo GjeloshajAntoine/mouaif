@@ -473,12 +473,13 @@ async function handlePush(req, res, parsed, sessionToken) {
 
   // DELETE /api/push/subscribe  body: { endpoint }
   if (urlPath === '/api/push/subscribe' && method === 'DELETE') {
+    if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, 400, { error: e.message }); }
     const endpoint = body && body.endpoint;
     if (!endpoint) return sendJSON(res, 400, { error: 'endpoint is required', code: 'EBADINPUT' });
-    const removed = push.removeSubscription(endpoint);
+    const removed = push.removeSubscription(endpoint, sid);
     return sendJSON(res, 200, { ok: true, removed });
   }
 
@@ -1642,8 +1643,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
             body: 'Response complete',
             chatId,
             projectDir,
-            tag: 'chat-' + chatId,
-            data: { chatId, projectDir }
+            tag: 'chat-' + chatId
           });
         }
         // Compute the enrichment once. `cost.known` is true when at
@@ -1716,7 +1716,13 @@ async function handleChatStream(req, res, chatId, sessionToken) {
             chatId,
             projectDir,
             tag: 'chat-' + chatId,
-            data: { chatId, projectDir, progress: data.current, total: data.total }
+            data: {
+              chatId,
+              projectDir,
+              progress: data.current,
+              total: data.total,
+              url: `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`
+            }
           });
         }
       }
@@ -1739,8 +1745,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         body: 'Error: ' + (errPayload.message || 'stream failed'),
         chatId,
         projectDir,
-        tag: 'chat-' + chatId,
-        data: { chatId, projectDir }
+        tag: 'chat-' + chatId
       });
     }
     res.end();
@@ -1776,8 +1781,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         body: 'Error: ' + (errPayload.message || 'upstream error'),
         chatId,
         projectDir,
-        tag: 'chat-' + chatId,
-        data: { chatId, projectDir }
+        tag: 'chat-' + chatId
       });
     }
   }

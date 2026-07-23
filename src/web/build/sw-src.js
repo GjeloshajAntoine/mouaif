@@ -221,7 +221,7 @@ self.addEventListener('notificationclick', (event) => {
             return client.focus();
           }
         }
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(new URL(urlToOpen, self.location.origin).href);
       })
   );
 });

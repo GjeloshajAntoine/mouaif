@@ -24,7 +24,8 @@ import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
-import { addNotification, updateNotification, removeNotification } from '../notifications.js';
+import { addNotification, removeNotification, updateNotification } from '../notifications.js';
+import { pageVisible } from '../push.js';
 
 // markToolUsed(state, refs, toolName)
 //
@@ -380,7 +381,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts })
+      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, pageVisible: pageVisible.value })
     });
   } catch (err) {
     setChatStatus(refs, 'network error', 'error');
@@ -560,23 +561,25 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     } else if (ev.eventName === 'ask_user_required') {
       askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
     } else if (ev.eventName === 'progress_update') {
-      // Show a live progress bar notification.
+      // Show a live progress bar notification. addNotification() upserts
+      // by id, so repeated/proxied progress events cannot stack duplicates.
       const progId = 'progress-' + (data.callId || 'global');
-      const existing = document.querySelector('[data-notif-id="' + progId.replace(/"/g, '\\"') + '"]');
-      if (existing) {
-        updateNotification(progId, { progress: data.current, progressMax: data.total, message: data.message || '' });
-      } else {
-        addNotification({
-          id: progId,
-          type: 'progress',
-          title: data.title || 'Operation',
-          progress: data.current,
-          progressMax: data.total,
-          message: data.message || '',
-          autoClose: false
-        });
-      }
+      addNotification({
+        id: progId,
+        type: 'progress',
+        title: data.title || 'Operation',
+        progress: Number(data.current) || 0,
+        progressMax: Number(data.total) || 0,
+        message: data.message || '',
+        autoClose: false
+      });
       if (data.status === 'completed' || data.status === 'failed') {
+        updateNotification(progId, {
+          type: data.status === 'failed' ? 'error' : 'success',
+          progress: 1,
+          progressMax: 1,
+          message: data.message || (data.status === 'failed' ? 'failed' : 'complete')
+        });
         setTimeout(() => removeNotification(progId), 2500);
       }
     } else if (ev.eventName === 'tool_call') {

@@ -27,8 +27,12 @@ Each notification uses `tag: chat-{chatId}` so multiple updates for the same cha
 
 ### Clicking a notification
 
-- If the app is already open in a browser tab, the tab is focused and navigated to the specific chat.
-- If the app is closed, a new tab opens at the chat URL.
+- If the app is already open in a browser tab, the service worker posts a `NAVIGATE` message to the page, the tab focuses, and the hash router opens the specific chat.
+- If the app is closed, a new tab opens at the absolute chat URL.
+
+### Subscription sync
+
+Startup sync compares the browser's current Push endpoint with the server's saved subscriptions for the current session. A stale local subscription is unsubscribed, and disabling push only removes an endpoint owned by that same session.
 
 ## Implementation notes
 
@@ -43,6 +47,7 @@ Each notification uses `tag: chat-{chatId}` so multiple updates for the same cha
 | `src/web/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
 | `src/web/src/components/SettingsDefaults.jsx` | Push enable/disable toggle in settings |
 | `src/web/src/main.jsx` | Push state sync on startup |
+| `src/web/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
 
 ### API endpoints
 

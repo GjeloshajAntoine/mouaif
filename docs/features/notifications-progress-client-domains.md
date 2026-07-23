@@ -12,7 +12,7 @@ Three new features that enhance the user experience:
 
 ### Notifications overlay
 
-The overlay is rendered automatically by `NotificationsOverlay` in the app shell. Any module can push notifications:
+The overlay is rendered automatically by `NotificationsOverlay` in the app shell. Notifications with the same caller-supplied `id` are upserted instead of duplicated, which keeps live progress events to one card per tool call. Any module can push notifications:
 
 ```js
 import { addNotification, updateNotification, removeNotification } from '../notifications.js';
@@ -82,6 +82,8 @@ The API key is a 64-character hex string (32 random bytes). It is hashed with SH
 ### Key design decisions
 
 - Notifications are signal-driven and rendered by a single Preact component in the app shell, not by individual views.
+- Caller-supplied notification IDs are upserts; this avoids duplicate progress toasts when SSE progress frames arrive before the DOM has repainted.
+- Progress bars render determinate percentages when `total > 0` and an indeterminate animated track when the total is unknown.
 - The `report_progress` tool is always advertised to the model (no authorization gate — it is read-only metadata).
 - Client domain API keys are SHA-256 hashed before storage; the plaintext is returned once on creation. The `regenerate-key` endpoint returns the new key once.
 - The `client_domains` table is created via `CREATE TABLE IF NOT EXISTS` in `settings.js` alongside the other tables.

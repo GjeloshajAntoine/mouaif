@@ -6,8 +6,8 @@
 import { signal } from '@preact/signals';
 import { fetchJson } from '../api.js';
 
-export const pushSupported = signal(typeof window !== 'undefined' && 'Notification' in window && 'PushManager' in window);
-export const pushPermission = signal(typeof window !== 'undefined' ? Notification.permission : 'denied');
+export const pushSupported = signal(typeof window !== 'undefined' && 'Notification' in window && 'PushManager' in window && !!navigator.serviceWorker);
+export const pushPermission = signal(typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied');
 export const pushEnabled = signal(false); // whether we have a registered subscription
 export const pageVisible = signal(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true);
 
@@ -30,6 +30,7 @@ export async function syncPushState() {
   if (typeof navigator === 'undefined' || !navigator.serviceWorker) return false;
 
   try {
+    pushPermission.value = Notification.permission;
     const reg = await navigator.serviceWorker.ready;
     _registration = reg;
     const sub = await reg.pushManager.getSubscription();
@@ -37,14 +38,21 @@ export async function syncPushState() {
     pushEnabled.value = !!sub;
 
     if (sub) {
-      // Verify subscription is still valid by listing from server
+      // Verify this exact browser endpoint is still registered server-side.
+      // A session can have multiple subscriptions, so merely seeing any row
+      // made a deleted/stale local subscription look enabled.
       const r = await fetchJson('/api/push/subscriptions');
-      pushEnabled.value = r.status === 200 && Array.isArray(r.body.subscriptions) && r.body.subscriptions.length > 0;
+      const rows = r.status === 200 && r.body && Array.isArray(r.body.subscriptions) ? r.body.subscriptions : [];
+      pushEnabled.value = rows.some(x => x && x.endpoint === sub.endpoint);
+      if (!pushEnabled.value) {
+        try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
+        _subscription = null;
+      }
     }
 
-    pushPermission.value = Notification.permission;
     return pushEnabled.value;
   } catch {
+    pushEnabled.value = false;
     return false;
   }
 }
@@ -59,8 +67,8 @@ export async function requestPushPermission() {
     pushPermission.value = perm;
     if (perm !== 'granted') return false;
 
-    // Already subscribed? Sync.
-    if (pushEnabled.value) return true;
+    // Already subscribed? Make sure the server still has this endpoint.
+    if (pushEnabled.value && await syncPushState()) return true;
 
     // Fetch VAPID public key from server
     const keyRes = await fetchJson('/api/push/vapid-public-key');
@@ -80,6 +88,12 @@ export async function requestPushPermission() {
 
     // Send subscription to server
     const subData = sub.toJSON();
+    if (!subData.endpoint || !subData.keys || !subData.keys.p256dh || !subData.keys.auth) {
+      try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
+      _subscription = null;
+      pushEnabled.value = false;
+      return false;
+    }
     const r = await fetchJson('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,19 +109,36 @@ export async function requestPushPermission() {
       pushEnabled.value = true;
       return true;
     }
+    try { await sub.unsubscribe(); } catch { /* best-effort cleanup */ }
+    _subscription = null;
+    pushEnabled.value = false;
     return false;
   } catch {
+    pushEnabled.value = false;
     return false;
   }
 }
 
 // Unsubscribe and remove subscription from server.
 export async function unsubscribePush() {
-  if (!pushSupported.value || !_subscription) return;
+  if (!pushSupported.value) return;
 
   try {
+    if (!_subscription && _registration) {
+      _subscription = await _registration.pushManager.getSubscription();
+    }
+    if (!_subscription && typeof navigator !== 'undefined' && navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      _registration = reg;
+      _subscription = await reg.pushManager.getSubscription();
+    }
+    if (!_subscription) {
+      pushEnabled.value = false;
+      return;
+    }
+
     const endpoint = _subscription.endpoint;
-    await _subscription.unsubscribe();
+    try { await _subscription.unsubscribe(); } catch { /* best-effort */ }
     _subscription = null;
     pushEnabled.value = false;
 
@@ -118,7 +149,7 @@ export async function unsubscribePush() {
       body: JSON.stringify({ endpoint })
     });
   } catch {
-    // Best-effort
+    pushEnabled.value = false;
   }
 }
 

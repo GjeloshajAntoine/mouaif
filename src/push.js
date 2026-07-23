@@ -74,9 +74,11 @@ function addSubscription({ sessionId, endpoint, p256dh, auth, origin }) {
   return { id, endpoint, origin };
 }
 
-function removeSubscription(endpoint) {
+function removeSubscription(endpoint, sessionId) {
   const db = settings.getDb();
-  const info = db.prepare(`DELETE FROM ${SUB_TABLE} WHERE endpoint = ?`).run(endpoint);
+  const info = sessionId
+    ? db.prepare(`DELETE FROM ${SUB_TABLE} WHERE endpoint = ? AND session_id = ?`).run(endpoint, sessionId)
+    : db.prepare(`DELETE FROM ${SUB_TABLE} WHERE endpoint = ?`).run(endpoint);
   return info.changes > 0;
 }
 

@@ -90,6 +90,18 @@ export function registerServiceWorker() {
   if (!isProduction()) return;
   if (!('serviceWorker' in navigator)) return;
 
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const msg = event.data || {};
+    if (msg.type === 'NAVIGATE' && msg.url) {
+      const url = new URL(msg.url, window.location.origin);
+      if (url.origin !== window.location.origin || !url.pathname.startsWith('/web/')) return;
+      const next = url.hash || '#/projects';
+      if (window.location.hash === next) window.dispatchEvent(new HashChangeEvent('hashchange'));
+      else window.location.hash = next;
+      window.focus();
+    }
+  });
+
   trackOnlineStatus();
   trackFetchFailures();
 

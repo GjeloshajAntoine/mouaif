@@ -12,10 +12,19 @@ import { h } from 'preact';
 import { notifications, addNotification, updateNotification, removeNotification } from './notifications.js';
 
 function ProgressBar({ current, total }) {
-  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-  return h('div', { class: 'notif__progress-bar', role: 'progressbar', 'aria-valuenow': current, 'aria-valuemin': 0, 'aria-valuemax': total },
-    h('div', { class: 'notif__progress-fill', style: 'width:' + pct + '%' }),
-    h('span', { class: 'notif__progress-label' }, pct + '%')
+  const hasTotal = total > 0;
+  const pct = hasTotal ? Math.min(100, Math.max(0, Math.round((current / total) * 100))) : 0;
+  return h('div', {
+    class: 'notif__progress-bar' + (hasTotal ? '' : ' notif__progress-bar--indeterminate'),
+    role: 'progressbar',
+    'aria-valuenow': hasTotal ? current : null,
+    'aria-valuemin': hasTotal ? 0 : null,
+    'aria-valuemax': hasTotal ? total : null
+  },
+    h('div', { class: 'notif__progress-track' },
+      h('div', { class: 'notif__progress-fill', style: hasTotal ? 'width:' + pct + '%' : null })
+    ),
+    hasTotal ? h('span', { class: 'notif__progress-label' }, pct + '%') : null
   );
 }
 

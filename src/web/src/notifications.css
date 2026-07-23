@@ -113,12 +113,31 @@
   margin-top: 2px;
 }
 
-.notif__progress-fill {
+.notif__progress-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
   height: 6px;
+  overflow: hidden;
   border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.notif__progress-fill {
+  height: 100%;
+  border-radius: inherit;
   background: var(--accent);
   transition: width 150ms ease;
-  flex-shrink: 0;
+}
+
+.notif__progress-bar--indeterminate .notif__progress-fill {
+  width: 40%;
+  animation: notif-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes notif-progress-indeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(260%); }
 }
 
 .notif__progress-label {
