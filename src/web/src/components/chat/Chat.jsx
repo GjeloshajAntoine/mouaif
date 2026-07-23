@@ -71,15 +71,12 @@ export function ChatView(props) {
           'aria-haspopup': 'true',
           'aria-expanded': String(chatSwitcherOpen)
         },
+          h('span', { class: 'chat-view__chat-switcher-arrow', 'aria-hidden': 'true' }, '‹'),
           h('div', { class: 'chat-view__chat-switcher-title' },
             h('div', { ref: refs.chatName, class: 'chat-view__name' }, '…'),
             h('div', { ref: refs.chatMeta, class: 'chat-view__meta' }, '')
           ),
-          h('span', { class: 'chat-view__chat-switcher-arrows', 'aria-hidden': 'true' },
-            h('svg', { viewBox: '0 0 16 16', width: 12, height: 12, fill: 'currentColor' },
-              h('path', { d: 'M5 3l6 5-6 5V3Z' })
-            )
-          )
+          h('span', { class: 'chat-view__chat-switcher-arrow', 'aria-hidden': 'true' }, '›')
         ),
         h('div', {
           ref: refs.chatSwitcherPop,

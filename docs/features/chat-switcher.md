@@ -12,7 +12,7 @@ The chat switcher is a dropdown in the chat header that lets the user quickly sw
 4. The currently active chat is highlighted with the accent color.
 5. Tap outside the dropdown or click the title again to close it.
 
-The chevron arrow rotates 90° when the dropdown is open, providing a visual indicator.
+Two small side arrows (`‹` and `›`) flank the chat title to visually suggest switching between chats. They fade in on hover.
 
 ## Implementation notes
 

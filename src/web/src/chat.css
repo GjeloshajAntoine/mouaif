@@ -613,17 +613,17 @@
   min-width: 0;
   overflow: hidden;
 }
-.chat-view__chat-switcher-arrows {
+.chat-view__chat-switcher-arrow {
   flex: 0 0 auto;
   color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 120ms ease;
-  line-height: 0;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.5;
+  transition: opacity 80ms ease;
 }
-.chat-view__chat-switcher-trigger[aria-expanded="true"] .chat-view__chat-switcher-arrows {
-  transform: rotate(90deg);
+.chat-view__chat-switcher-trigger:hover .chat-view__chat-switcher-arrow {
+  opacity: 0.9;
 }
 
 /* Chat switcher dropdown */
