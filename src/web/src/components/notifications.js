@@ -16,7 +16,10 @@ export const notifications = signal([]);
 let nextId = 0;
 
 export function addNotification(n) {
-  const id = String(++nextId);
+  // Honor a caller-supplied id so live notifications (e.g. progress bars
+  // keyed by `progress-<callId>`) can be updated/removed later. Fall back
+  // to an incrementing id otherwise.
+  const id = n.id != null ? String(n.id) : String(++nextId);
   notifications.value = [...notifications.value, { ...n, id }];
   if (n.autoClose !== false && n.type !== 'progress' && n.type !== 'auth' && n.type !== 'ask') {
     setTimeout(() => removeNotification(id), 4000);
