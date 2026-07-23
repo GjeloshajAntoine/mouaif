@@ -9,7 +9,7 @@
 // inline action buttons; progress cards show a percentage bar.
 
 import { h } from 'preact';
-import { notifications, removeNotification } from './notifications.js';
+import { notifications, addNotification, updateNotification, removeNotification } from './notifications.js';
 
 function ProgressBar({ current, total }) {
   const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;

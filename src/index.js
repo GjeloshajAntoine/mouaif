@@ -1253,6 +1253,11 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
   const content = body && typeof body.content === 'string' ? body.content : '';
   const attachments = messages.normalizeAttachments(body && body.attachments);
+  // The client reports whether the app is currently visible so we skip
+  // push notifications the user is already looking at (the in-app
+  // overlay / transcript is the live surface in that case).
+  const _pageVisible = body && body.pageVisible === true;
+  const _pushOk = _pushSessionId && !_pageVisible;
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
   if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
@@ -1452,6 +1457,12 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // would otherwise stretch the window and under-report tok/s.
   let streamStartedAt = 0;   // set on first message/reasoning delta
   let streamingMs = 0;       // accumulated across streaming windows
+  // Throttle progress_update pushes: the model can call report_progress
+  // very frequently, and each tick would otherwise hit the push gateway.
+  // At most one push per PUSH_PROGRESS_MIN_MS per stream; completion and
+  // error pushes are never throttled.
+  const PUSH_PROGRESS_MIN_MS = 5000;
+  let lastProgressPushAt = 0;
   // Per-round usage snapshots from ai.js. Each tool round's upstream
   // call reports its own prompt/completion tokens. When a round ends
   // with tool calls, the pending snapshot is attached to the segment
@@ -1624,7 +1635,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         } catch { /* non-fatal */ }
       } else if (name === 'done') {
         // Send push notification for completed chat.
-        if (_pushSessionId) {
+        if (_pushOk) {
           const chatTitle = (chat && chat.title) || chatId;
           push.sendPushToSession(_pushSessionId, {
             title: chatTitle,
@@ -1690,17 +1701,24 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         emit('done', enriched);
         return;
       }
-      // Send push notification for progress updates
-      if (name === 'progress_update' && _pushSessionId && data && data.status === 'running') {
-        const chatTitle = (chat && chat.title) || 'mouaif';
-        push.sendPushToSession(_pushSessionId, {
-          title: chatTitle,
-          body: data.message || data.title || 'Operation in progress',
-          chatId,
-          projectDir,
-          tag: 'chat-' + chatId,
-          data: { chatId, projectDir, progress: data.current, total: data.total }
-        });
+      // Send push notification for progress updates. Throttled: at most
+      // one push per PUSH_PROGRESS_MIN_MS so a chatty report_progress
+      // loop doesn't flood the push gateway. The in-app overlay still
+      // receives every tick via the SSE `emit` below.
+      if (name === 'progress_update' && _pushOk && data && data.status === 'running') {
+        const now = Date.now();
+        if (now - lastProgressPushAt >= PUSH_PROGRESS_MIN_MS) {
+          lastProgressPushAt = now;
+          const chatTitle = (chat && chat.title) || 'mouaif';
+          push.sendPushToSession(_pushSessionId, {
+            title: chatTitle,
+            body: data.message || data.title || 'Operation in progress',
+            chatId,
+            projectDir,
+            tag: 'chat-' + chatId,
+            data: { chatId, projectDir, progress: data.current, total: data.total }
+          });
+        }
       }
       emit(name, data);
     }
@@ -1714,7 +1732,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
-    if (_pushSessionId) {
+    if (_pushOk) {
       const chatTitle = (chat && chat.title) || chatId;
       push.sendPushToSession(_pushSessionId, {
         title: chatTitle,
