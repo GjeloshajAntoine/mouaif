@@ -629,8 +629,10 @@
 .chat-view__chat-switcher-pop {
   position: absolute;
   top: 100%;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 220px;
+  max-width: min(90vw, 360px);
   max-height: 60vh;
   overflow-y: auto;
   background: var(--surface-3);
