@@ -1113,6 +1113,8 @@ async function streamChat(opts) {
   const toolSpecs = [];
   try { toolSpecs.push(require('./tools/shell.js').SPEC); }
   catch { /* shell tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./tools/progress.js').SPEC); }
+  catch { /* progress tool module unavailable; skip */ }
   try {
     const sub = require('./tools/subagent.js');
     // Enumerate the project's agent names in the `agent` parameter

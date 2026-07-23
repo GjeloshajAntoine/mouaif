@@ -28,7 +28,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Chrome Debug MCP](features/chrome-debug-mcp.md) — preset `chrome-debug` MCP entry pairing the model with the same Chrome instance the Inspector tab talks to (port 9222).
 - [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.
 - [File tagging](features/file-tagging.md) — annotate project files with tags, pin excerpts, and auto-inject them into new chat messages; tags live in the project's `.mouaif.json`.
-- [Legacy `report_progress` tool](features/legacy-progress-tool.md) — compatibility behavior for persisted or external progress tool calls.
+- [Progress tool (`report_progress`)](features/progress-tool.md) — live progress bar in transcript for long-running model operations.
 - [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.

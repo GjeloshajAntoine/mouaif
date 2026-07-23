@@ -2854,6 +2854,15 @@ async function handleTools(req, res, parsed) {
       });
     } catch { /* shell module unavailable; omit */ }
     try {
+      const prog = require('./tools/progress.js');
+      tools.push({
+        name: 'report_progress',
+        kind: 'native',
+        source: 'progress',
+        description: (prog.SPEC && prog.SPEC.function && prog.SPEC.function.description) || 'Report real-time progress on a long-running operation.'
+      });
+    } catch { /* progress module unavailable; omit */ }
+    try {
       const subagent = require('./tools/subagent.js');
       tools.push({
         name: 'subagent',
