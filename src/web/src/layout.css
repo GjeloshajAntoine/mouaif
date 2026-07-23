@@ -175,32 +175,6 @@
   flex-direction: column;
   gap: 1px;
 }
-.group__row-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.client-domain__key-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-}
-.client-domain__key-value {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 6px 8px;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  white-space: pre;
-  user-select: all;
-  -webkit-user-select: all;
-}
-
 /* ---- Motion: view enter + bubble enter + live cursor -------------- */
 
 /* The .app__main > section is the root of every top-level view. A

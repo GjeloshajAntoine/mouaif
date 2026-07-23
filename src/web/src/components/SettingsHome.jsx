@@ -66,7 +66,6 @@ export function SettingsHomeView() {
       h('ul', { class: 'group__list' },
         rowLi('settings/defaults', 'Chat defaults', { detailRef: promptSize, detail: 'prompt style' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
-        rowLi('settings/client-domains', 'Client domains', { sub: 'allowed origins & API keys' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers & default permission' }),
         rowLi('settings/pricing', 'Model pricing', { detailRef: pricingSummary, detail: 'cost table' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })

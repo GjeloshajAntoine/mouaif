@@ -105,16 +105,6 @@ function openDb(home) {
      );`
   );
   db.exec(
-    `CREATE TABLE IF NOT EXISTS client_domains (
-       id            TEXT PRIMARY KEY,
-       origin_pattern TEXT NOT NULL,
-       api_key_hash  TEXT NOT NULL,
-       api_key_prefix TEXT NOT NULL,
-       created_at    TEXT NOT NULL,
-       updated_at    TEXT NOT NULL
-     );`
-  );
-  db.exec(
     `CREATE TABLE IF NOT EXISTS push_subscriptions (
        id         TEXT PRIMARY KEY,
        session_id TEXT NOT NULL,
@@ -182,6 +172,13 @@ const MIGRATIONS = [
           console.error('  [migration] import failed for ' + p.path + ': ' + e.message);
         }
       }
+    }
+  },
+  {
+    name: '2026-07-23-drop-unused-client-domains',
+    description: 'Remove the unused client domains table',
+    run() {
+      db().exec('DROP TABLE IF EXISTS client_domains');
     }
   }
 ];
