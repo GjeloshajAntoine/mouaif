@@ -1291,65 +1291,59 @@
   line-height: 1.2;
 }
 
-/* ---- File toolbar (above composer) --------------------------------- */
-
-.chat-view__composer-area {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
+/* ---- File toolbar button (inside composer) ------------------------- */
 
 .file-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 10px;
-  margin: 0;
-  flex: 0 0 auto;
-}
-
-.file-toolbar__bar {
   position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
 }
 
 .file-toolbar__trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px 2px 6px;
-  min-height: 28px;
-  font: inherit;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex: 0 0 auto;
   color: var(--fg-soft);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+  transition: background 80ms ease, color 80ms ease;
   -webkit-tap-highlight-color: transparent;
-  font-size: 0.75rem;
 }
-.file-toolbar__trigger:hover { background: var(--surface-2); color: var(--fg); }
-.file-toolbar__trigger:active { background: var(--surface-3); }
+.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.file-toolbar__trigger:active { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] {
-  border-color: var(--accent);
+  color: var(--accent);
   background: var(--surface-3);
-  color: var(--fg);
 }
-.file-toolbar__arrow {
-  font-size: 0.55rem;
-  line-height: 1;
-  color: var(--muted);
-  margin-left: 1px;
-}
-.file-toolbar__trigger:hover .file-toolbar__arrow { color: var(--fg-soft); }
 
-/* Dropdown menu */
+.file-toolbar__arrows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  font-size: 0;
+}
+.file-toolbar__arrow-up,
+.file-toolbar__arrow-down {
+  display: block;
+  font-size: 0.52rem;
+  line-height: 1;
+}
+.file-toolbar__arrow-up { margin-bottom: -1px; }
+.file-toolbar__arrow-down { margin-top: -1px; }
+
+/* Dropdown menu — opens above the composer */
 .file-toolbar__menu {
   position: absolute;
-  top: calc(100% + 4px);
+  bottom: calc(100% + 6px);
   left: 0;
   min-width: 200px;
   max-width: min(280px, 85vw);
@@ -1457,10 +1451,16 @@
 
 /* Result card */
 .file-toolbar__result {
-  margin-top: 4px;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-width: min(320px, 90vw);
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
   max-height: 300px;
   overflow-y: auto;
 }
