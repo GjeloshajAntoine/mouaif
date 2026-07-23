@@ -47,6 +47,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Model bookmarks (pinned & recently used)](features/model-bookmarks.md) — per-project pinned and recently used models at the top of the model picker, persisted in localStorage.
 - [Chat storage](features/chat-storage.md) — SQLite-backed chat and message persistence; import JSON files into the DB.
 - [Chat switcher](features/chat-switcher.md) — inline dropdown in the chat header to switch between project chats without leaving the view.
+- [Tool popup](features/tool-popup.md) — floating popover in the composer toolbar to toggle available tools, authorization modes, MCP servers, and agent files.
 
 ## Architectural decisions
 

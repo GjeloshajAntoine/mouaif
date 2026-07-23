@@ -10,6 +10,7 @@ import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
+import { ToolPopup } from './ToolPopup.jsx';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -189,7 +190,19 @@ export function ChatView(props) {
     ),
     h('div', { class: 'chat-view__composer-row' },
       h('div', { class: 'chat-view__composer-tool' },
-        h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
+        h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) }),
+        h(ToolPopup, {
+          tools: s.state.tools,
+          mcpServers: s.state.mcpServers,
+          usedTools: s.state.usedTools,
+          agentFiles: s.state.agentFiles,
+          toolAuth: s.state.toolAuth,
+          onToggleTool: s.state._toggleTool,
+          onToggleToolGroup: s.state._toggleToolGroup,
+          onToggleMcpServer: s.state._toggleMcpServer,
+          onToggleAgentFiles: s.state._toggleAgentFiles,
+          onSaveToolAuth: s.state._saveToolAuth
+        })
       ),
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
