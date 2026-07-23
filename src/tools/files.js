@@ -275,8 +275,25 @@ async function runListFiles(opts) {
 function formatListFilesResult(r) {
   const header = '# Listing: ' + (r.pattern || '<all text files>') + '\n# Count: ' + r.entries.length + (r.truncated ? ' (capped at ' + r.cap + ')' : '') + (r.skipped ? '\n# Skipped: ' + r.skipped : '');
   if (!r.entries.length) return header + '\n\n(no matching files)';
-  const body = r.entries.map((e) => e.path + '\t' + e.size).join('\n');
-  return header + '\n\n' + body;
+
+  // Group by directory, emitting one #-prefixed directory header per
+  // group then indented file lines. This saves tokens over repeating
+  // the full path on every line. Lines starting with '# ' are directory
+  // headers; indented lines are files under the preceding header.
+  const sorted = [...r.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  const lines = [];
+  let currentDir = null;
+  for (const e of sorted) {
+    const slash = e.path.lastIndexOf('/');
+    const dir = slash === -1 ? '.' : e.path.slice(0, slash);
+    const name = slash === -1 ? e.path : e.path.slice(slash + 1);
+    if (dir !== currentDir) {
+      if (dir !== '.') lines.push('# ' + dir + '/');
+      currentDir = dir;
+    }
+    lines.push('  ' + name + '\t' + e.size);
+  }
+  return header + '\n\n' + lines.join('\n');
 }
 
 // Minimal glob: **/foo matches foo anywhere; foo/** matches a directory
