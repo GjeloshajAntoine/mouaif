@@ -15,6 +15,7 @@ import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
 import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsImportView } from './SettingsImport.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
+import { SettingsClientDomainsView } from './SettingsClientDomains.jsx';
 import { InspectorView } from './Inspector.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
@@ -74,6 +75,7 @@ export function App() {
     && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
     && view.name !== 'settingsTags'
     && view.name !== 'settingsPricing'
+    && view.name !== 'settingsClientDomains' && view.name !== 'settingsClientDomainNew' && view.name !== 'settingsClientDomainEdit'
     && view.name !== 'settingsImport'
     && view.name !== 'settingsAbout';
   let body = null;
@@ -94,6 +96,7 @@ export function App() {
   else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });
   else if (view.name === 'settingsImport') body = h(SettingsImportView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
+  else if (view.name === 'settingsClientDomains') body = h(SettingsClientDomainsView, null);
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);

@@ -94,6 +94,16 @@ function openDb(home) {
        run_at     TEXT NOT NULL
      );`
   );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS client_domains (
+       id            TEXT PRIMARY KEY,
+       origin_pattern TEXT NOT NULL,
+       api_key_hash  TEXT NOT NULL,
+       api_key_prefix TEXT NOT NULL,
+       created_at    TEXT NOT NULL,
+       updated_at    TEXT NOT NULL
+     );`
+  );
   return db;
 }
 

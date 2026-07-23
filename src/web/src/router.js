@@ -90,6 +90,18 @@ function parseHash() {
     return { name: 'settingsTags', projectId: params.get('projectId') || '', projectDir: params.get('projectDir') || '' };
   }
   if (h === 'settings/about') return { name: 'settingsAbout' };
+  if (h === 'settings/client-domains' || h.startsWith('settings/client-domains?')) {
+    return { name: 'settingsClientDomains' };
+  }
+  if (h === 'settings/client-domains/new' || h.startsWith('settings/client-domains/new?')) {
+    return { name: 'settingsClientDomainNew' };
+  }
+  if (h.startsWith('settings/client-domains/')) {
+    const rest = h.slice('settings/client-domains/'.length);
+    const [id, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsClientDomainEdit', id, projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/project/import' || h.startsWith('settings/project/import?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);

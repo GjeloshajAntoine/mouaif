@@ -65,6 +65,7 @@ export function SettingsHomeView() {
       h('div', { class: 'group__title' }, 'App defaults', h('span', { class: 'group__title-note' }, 'Apply to every project')),
       h('ul', { class: 'group__list' },
         rowLi('settings/defaults', 'Chat defaults', { detailRef: promptSize, detail: 'prompt style' }),
+        rowLi('settings/client-domains', 'Client domains', { sub: 'allowed origins & API keys' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers & default permission' }),
         rowLi('settings/pricing', 'Model pricing', { detailRef: pricingSummary, detail: 'cost table' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })

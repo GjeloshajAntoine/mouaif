@@ -124,6 +124,44 @@ export function setStatus(ref, text, state) {
   else delete ref.current.dataset.state;
 }
 
+// ---- Client domains API helpers ----------------------------------------
+
+export async function loadClientDomains() {
+  const r = await fetchJson('/api/settings/client-domains');
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  return r.body.domains || [];
+}
+
+export async function createClientDomain(originPattern) {
+  const r = await fetchJson('/api/settings/client-domains', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ originPattern })
+  });
+  if (r.status !== 200) throw new Error(r.body && r.body.error ? r.body.error : 'HTTP ' + r.status);
+  return r.body.domain;
+}
+
+export async function updateClientDomain(id, originPattern) {
+  const r = await fetchJson('/api/settings/client-domains/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ originPattern })
+  });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+}
+
+export async function deleteClientDomain(id) {
+  const r = await fetchJson('/api/settings/client-domains/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+}
+
+export async function regenerateClientKey(id) {
+  const r = await fetchJson('/api/settings/client-domains/' + encodeURIComponent(id) + '/regenerate-key', { method: 'POST' });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  return r.body;
+}
+
 // ---- SSE parser -------------------------------------------------------
 
 export function parseSSEFrame(frame) {

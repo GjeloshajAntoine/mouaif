@@ -282,6 +282,11 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleAuth(req, res, parsed);
   }
 
+  // Client domains API — manage allowed origins and API keys.
+  if (urlPath.startsWith('/api/settings/client-domains')) {
+    return handleClientDomains(req, res, parsed);
+  }
+
   // Usage / pricing (model id list, built-in pricing table).
   // The chat UI never holds pricing data; the cost is computed
   // server-side per the stream and shipped on the `done` event.
@@ -3451,6 +3456,98 @@ async function handleToolAuthorization(req, res, parsed) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'tools-authorization' });
+}
+
+// ---- Client Domains API --------------------------------------------------
+// Manages allowed origins and API keys for external clients.
+// GET    /api/settings/client-domains               -> list
+// POST   /api/settings/client-domains               -> create (returns apiKey once)
+// PATCH  /api/settings/client-domains/:id            -> update originPattern
+// DELETE /api/settings/client-domains/:id            -> delete
+// POST   /api/settings/client-domains/:id/regenerate-key  -> generate new key
+
+async function handleClientDomains(req, res, parsed) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  let clientDomains;
+  try { clientDomains = require('./clientDomains.js'); }
+  catch (e) { return sendJSON(res, 500, { error: 'clientDomains module unavailable', detail: e.message }); }
+
+  // GET /api/settings/client-domains
+  if (urlPath === '/api/settings/client-domains' && method === 'GET') {
+    return sendJSON(res, 200, { domains: clientDomains.list() });
+  }
+
+  // POST /api/settings/client-domains  body: { originPattern }
+  if (urlPath === '/api/settings/client-domains' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    if (!body || !body.originPattern || typeof body.originPattern !== 'string' || !body.originPattern.trim()) {
+      return sendJSON(res, 400, { error: 'originPattern is required' });
+    }
+    try {
+      const result = clientDomains.create({ originPattern: body.originPattern.trim() });
+      // Return the full apiKey (one-time display only).
+      return sendJSON(res, 200, { domain: result });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message, code: e.code || 'EUNKNOWN' });
+    }
+  }
+
+  // Matches: /api/settings/client-domains/:id and /api/settings/client-domains/:id/regenerate-key
+  const match = urlPath.match(/^\/api\/settings\/client-domains\/([^/]+)(\/([^/]+))?$/);
+  if (match) {
+    const id = decodeURIComponent(match[1]);
+
+    // PATCH /api/settings/client-domains/:id  body: { originPattern }
+    if (method === 'PATCH') {
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (e) { return sendJSON(res, 400, { error: e.message }); }
+      if (!body || !body.originPattern || typeof body.originPattern !== 'string' || !body.originPattern.trim()) {
+        return sendJSON(res, 400, { error: 'originPattern is required' });
+      }
+      try {
+        clientDomains.update(id, { originPattern: body.originPattern.trim() });
+        return sendJSON(res, 200, { ok: true });
+      } catch (e) {
+        const status = e.code === 'ENOTFOUND' ? 404 : 400;
+        return sendJSON(res, status, { error: e.message, code: e.code || 'EUNKNOWN' });
+      }
+    }
+
+    // DELETE /api/settings/client-domains/:id
+    if (method === 'DELETE' && !match[3]) {
+      try {
+        clientDomains.remove(id);
+        return sendJSON(res, 200, { ok: true });
+      } catch (e) {
+        const status = e.code === 'ENOTFOUND' ? 404 : 400;
+        return sendJSON(res, status, { error: e.message, code: e.code || 'EUNKNOWN' });
+      }
+    }
+
+    // POST /api/settings/client-domains/:id/regenerate-key
+    if (method === 'POST' && match[3] === 'regenerate-key') {
+      try {
+        const result = clientDomains.regenerateKey(id);
+        return sendJSON(res, 200, { apiKey: result.apiKey, apiKeyPrefix: result.apiKeyPrefix });
+      } catch (e) {
+        const status = e.code === 'ENOTFOUND' ? 404 : 400;
+        return sendJSON(res, status, { error: e.message, code: e.code || 'EUNKNOWN' });
+      }
+    }
+
+    // GET /api/settings/client-domains/:id
+    if (method === 'GET' && !match[3]) {
+      const domain = clientDomains.getById(id);
+      if (!domain) return sendJSON(res, 404, { error: 'not found' });
+      return sendJSON(res, 200, { domain });
+    }
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'client-domains' });
 }
 
 function createServer(port = DEFAULT_PORT, options = {}) {
