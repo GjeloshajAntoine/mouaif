@@ -979,6 +979,9 @@
 .pwa-banner--offline .pwa-banner__icon { color: var(--warning); }
 .pwa-banner--update { color: var(--accent); }
 .pwa-banner--update .pwa-banner__icon { color: var(--accent); }
+.pwa-banner--install { color: var(--accent); }
+.pwa-banner--install .pwa-banner__icon { color: var(--accent); }
+.pwa-banner__btn--dismiss { color: var(--muted); border-color: var(--border); }
 
 @keyframes mouaif-banner-in {
   from { opacity: 0; transform: translateY(-12px); }
