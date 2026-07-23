@@ -1408,7 +1408,73 @@
   line-height: 0;
 }
 
-.chat-view__files-btn,
+/* ---- Toolbar (arrows, file icon, + menu) ------------------------- */
+
+.chat-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 10px 0;
+  flex: 0 0 auto;
+  min-height: 28px;
+}
+
+.chat-view__toolbar-btn {
+  width: 28px; height: 28px; padding: 0; min-height: 28px;
+  flex: 0 0 auto;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: var(--r-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__toolbar-btn:hover { background: var(--surface-3); color: var(--fg); }
+.chat-view__toolbar-btn:active { background: var(--surface); }
+
+.chat-view__toolbar-files {
+  margin-left: auto;
+}
+
+.chat-view__toolbar-menu-wrap {
+  position: relative;
+}
+
+.chat-view__toolbar-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  min-width: 140px;
+  margin-bottom: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+}
+.chat-view__toolbar-menu[hidden] { display: none !important; }
+
+.chat-view__toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms ease;
+}
+.chat-view__toolbar-menu-item:hover { background: var(--surface-2); }
+.chat-view__toolbar-menu-item:active { background: var(--surface); }
+.chat-view__toolbar-menu-item svg { flex: 0 0 auto; color: var(--muted); }
+
 .chat-view__image-btn {
   width: 32px; height: 32px; padding: 0; min-height: 32px;
   flex: 0 0 auto; align-self: flex-start;
@@ -1416,9 +1482,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__files-btn:hover,
 .chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
-.chat-view__files-btn:active,
 .chat-view__image-btn:active { background: var(--surface); }
 
 /* ---- Jump to bottom ---------------------------------------------- */
