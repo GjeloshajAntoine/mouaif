@@ -53,7 +53,13 @@ const SPEC = {
             additionalProperties: false
           }
         },
-        multiSelect: { type: 'boolean', description: 'When true, the user may pick multiple options.' }
+        multiSelect: { type: 'boolean', description: 'When true, the user may pick multiple options.' },
+        presets: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Quick-answer presets shown as chips above the option list. Tapping a preset immediately submits it without showing the option list.',
+          maxItems: 6
+        }
       },
       required: ['question', 'options'],
       additionalProperties: false

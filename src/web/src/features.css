@@ -633,6 +633,26 @@
   line-height: 1.25;
   color: var(--fg-soft);
 }
+.tool-card__ask-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.tool-card__ask-preset-chip {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent-soft);
+  border-radius: 12px;
+  padding: 3px 10px;
+  min-height: 28px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.tool-card__ask-preset-chip:active { background: var(--accent-soft); }
 .tool-card__ask-extra-label {
   font-family: var(--font-sans);
   font-size: 0.62rem;

@@ -459,16 +459,19 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
       .filter(Boolean).join('\n');
     const actions = document.createElement('div');
     actions.className = 'tool-card__actions';
-    for (const [decision, label] of [
-      ['allow-once', 'Allow once'],
-      ['allow-session', 'Allow for session'],
-      ['allow-always', 'Always allow'],
-      ['deny', 'Deny']
+    const buttons = [];
+    for (const [decision, label, shortcut] of [
+      ['allow-once', 'Allow once', '1'],
+      ['allow-session', 'Allow session', '2'],
+      ['allow-always', 'Always allow', '3'],
+      ['deny', 'Deny', '4']
     ]) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'btn' + (decision === 'deny' ? ' btn--danger' : '');
-      button.textContent = label;
+      button.textContent = label + ' [' + shortcut + ']';
+      button.setAttribute('aria-label', label + ' (' + shortcut + ')');
+      button.dataset.shortcut = shortcut;
       button.addEventListener('click', async () => {
         for (const child of actions.querySelectorAll('button')) child.disabled = true;
         const r = await fetchJson('/api/tools/authorization/decision', {
@@ -489,7 +492,17 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
         resolve(decision);
       });
       actions.appendChild(button);
+      buttons.push(button);
     }
+    // Keyboard shortcuts: 1-4 to select, Esc to deny.
+    function onKey(e) {
+      if (e.key === 'Escape' && buttons[3]) { buttons[3].click(); return; }
+      const b = buttons.find((b) => b.dataset.shortcut === e.key);
+      if (b) { b.click(); }
+    }
+    card.addEventListener('keydown', onKey);
+    // Auto-focus the first button so keyboard shortcuts work immediately.
+    if (buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
     card.appendChild(head); card.appendChild(detail); card.appendChild(actions);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);
@@ -537,6 +550,36 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   question.className = 'tool-card__ask-question';
   question.textContent = request.question || '(no question)';
   body.appendChild(question);
+  // Quick-answer presets: chips that immediately submit the answer.
+  const presets = Array.isArray(request.presets) ? request.presets : [];
+  if (presets.length) {
+    const presetsHost = document.createElement('div');
+    presetsHost.className = 'tool-card__ask-presets';
+    for (const p of presets) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'tool-card__ask-preset-chip';
+      chip.textContent = p;
+      chip.addEventListener('click', async () => {
+        for (const child of card.querySelectorAll('button')) child.disabled = true;
+        const payload = { choice: p, extra: '' };
+        const r = await fetchJson('/api/tools/authorization/decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'allow-once', payload })
+        });
+        if (r.status !== 200) {
+          for (const child of card.querySelectorAll('button')) child.disabled = false;
+          setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
+          return;
+        }
+        card.remove();
+        setChatStatus('answer sent', 'success');
+      });
+      presetsHost.appendChild(chip);
+    }
+    body.appendChild(presetsHost);
+  }
   const optionsHost = document.createElement('div');
   optionsHost.className = 'tool-card__ask-options';
   body.appendChild(optionsHost);
@@ -578,6 +621,13 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
         lastTapped = { value: optEl.dataset.value, label: opt.label || optEl.dataset.value };
       }
       refreshSelectedUi();
+    });
+    // Keyboard navigation: Enter/Space to select.
+    optEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        optEl.click();
+      }
     });
     optionsHost.appendChild(optEl);
   }
