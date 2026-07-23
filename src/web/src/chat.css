@@ -1291,25 +1291,6 @@
   line-height: 1.2;
 }
 
-/* ---- Composer row: tool button beside composer pill ----------------- */
-
-.chat-view__composer-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 6px 10px 0;
-  flex: 0 0 auto;
-}
-
-/* Tool button container — sits left of the composer pill */
-.chat-view__composer-tool {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  padding-bottom: 2px;
-}
-
 /* ---- File toolbar button ------------------------------------------- */
 
 .file-toolbar {
@@ -1320,16 +1301,16 @@
 }
 
 .file-toolbar__trigger {
-  width: 36px; height: 36px; padding: 0;
-  flex: 0 0 auto;
-  color: var(--fg-soft);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
+  width: 32px; height: 32px; padding: 0; min-height: 32px;
+  flex: 0 0 auto; align-self: flex-start;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
   -webkit-tap-highlight-color: transparent;
 }
+.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.file-toolbar__trigger:active { background: var(--surface); }
+.file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); background: var(--surface-3); }
 .file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
 .file-toolbar__trigger:active { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] {
@@ -1530,8 +1511,8 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  margin: 6px 10px 0;
   box-shadow: var(--shadow-sm);
   overscroll-behavior: contain;
   position: relative;

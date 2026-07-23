@@ -98,9 +98,9 @@ export function FileToolbar(props) {
       'aria-expanded': String(menuOpen),
       title: 'File and git tools'
     },
-      h('svg', { viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': 'true', class: 'file-toolbar__icon' },
-        h('path', { d: 'M2 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5Z', fill: 'currentColor', opacity: '0.85' }),
-        h('path', { d: 'M10 13l-3-4h6l-3 4Z', fill: 'currentColor' })
+      h('svg', { viewBox: '0 0 20 20', width: 18, height: 18, 'aria-hidden': 'true', class: 'file-toolbar__icon' },
+        h('path', { d: 'M2 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5Z', fill: 'currentColor' }),
+        h('path', { d: 'M10 12l-3-4h6l-3 4Z', fill: 'currentColor' })
       )
     ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
