@@ -1723,8 +1723,17 @@
 .tool-popup {
   position: relative;
   flex: 0 0 auto;
-  display: flex;
+  display: inline-flex;
 }
+
+.tool-popup__trigger {
+  width: 28px; height: 28px; padding: 0;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
+}
+.tool-popup__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.tool-popup__trigger:active { background: var(--surface); }
 
 .tool-popup__trigger svg {
   display: block;
@@ -1734,8 +1743,8 @@
 
 .tool-popup__popup {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
+  top: calc(100% + 4px);
+  right: 0;
   min-width: 280px;
   max-width: min(380px, 92vw);
   max-height: min(60dvh, 400px);
