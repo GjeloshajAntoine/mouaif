@@ -121,6 +121,7 @@ function buildToolsCard(state) {
     if (g.id === 'shell') g.control = makeSegVNode('shell', g.id);
     else if (g.id === 'subagent') g.control = makeSegVNode('subagent', g.id);
     else if (g.id === 'ask_user') g.control = makeSegVNode('ask_user', g.id);
+    else if (g.id === 'report_progress') g.control = makeSegVNode('report_progress', g.id);
     else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
   }
 

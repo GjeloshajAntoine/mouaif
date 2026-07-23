@@ -34,6 +34,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.
 - [Tool feedback compaction](features/tool-feedback-compaction.md) — preserve complete tool cards and transcripts while capping the copy returned to the model at 64 KiB per result.
 - [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
+- [File toolbar](features/file-toolbar.md) — a dedicated toolbar above the composer with a dropdown menu for the file editor and git actions (status, diff, log, add, commit).
 - [Ask the user tool](features/ask-user-tool.md) — built-in `ask_user` tool the model can invoke to pause the chat and ask the user a structured question with 2-4 options. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. Binary authorization mode (`off` / `ask`).
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
 - [Agents](features/agents.md) — named personas stored in `.mouaif.json`, used exclusively as delegation targets for the `subagent` tool.

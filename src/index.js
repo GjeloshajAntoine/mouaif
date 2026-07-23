@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { spawn } = require('node:child_process');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
@@ -369,6 +370,12 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // Tool Authorization API
   if (urlPath.startsWith('/api/tools/authorization')) {
     return handleToolAuthorization(req, res, parsed);
+  }
+
+  // Git — direct git command execution (status, diff, log, add, commit).
+  // Uses the project directory as working dir. No model round-trip.
+  if (urlPath === '/api/git' && method === 'POST') {
+    return handleGit(req, res, parsed);
   }
 
   // Tools — the native shell tool's direct REST surface (also the
@@ -2831,6 +2838,90 @@ function inspectorErrorStatus(err) {
 // Routes:
 //   GET  /api/tools/list?projectDir=<abs>
 //     -> { tools: [{ name, kind, description, source }] }
+// ---- Git API ----------------------------------------------------------------
+//
+// Lightweight git operations run directly against the project directory.
+// Routes:
+//   POST /api/git  body: { projectDir, action, args? }
+//     -> { ok, stdout, stderr, exitCode }
+//
+// Supported actions: status, diff, log, add, commit, branch, checkout, stash
+// These are read-safe or explicit-save commands. `commit` and `add` require
+// an extra `message` field. No remote push/pull for safety.
+async function handleGit(req, res, parsed) {
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+  const action = body && typeof body.action === 'string' ? body.action : '';
+  const args = body && typeof body.args === 'string' ? body.args : '';
+  const message = body && typeof body.message === 'string' ? body.message : '';
+
+  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+  if (!action) return sendJSON(res, 400, { error: 'action is required' });
+
+  const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'commit', 'branch', 'checkout', 'stash']);
+  if (!SAFE_ACTIONS.has(action)) {
+    return sendJSON(res, 400, { error: 'unsupported action: ' + action, supported: [...SAFE_ACTIONS] });
+  }
+
+  let cmd;
+  switch (action) {
+    case 'status':
+      cmd = 'git status --short --branch';
+      break;
+    case 'diff':
+      cmd = 'git diff' + (args ? ' ' + args : ' --stat');
+      break;
+    case 'log':
+      cmd = 'git log --oneline -20' + (args ? ' ' + args : '');
+      break;
+    case 'add':
+      if (!args) return sendJSON(res, 400, { error: 'args (file paths) required for add' });
+      cmd = 'git add ' + args;
+      break;
+    case 'commit':
+      if (!message) return sendJSON(res, 400, { error: 'message required for commit' });
+      cmd = 'git commit -m ' + JSON.stringify(message);
+      break;
+    case 'branch':
+      cmd = 'git branch' + (args ? ' ' + args : '');
+      break;
+    case 'checkout':
+      if (!args) return sendJSON(res, 400, { error: 'args (branch name) required for checkout' });
+      cmd = 'git checkout ' + args;
+      break;
+    case 'stash':
+      cmd = 'git stash' + (args ? ' ' + args : '');
+      break;
+    default:
+      return sendJSON(res, 400, { error: 'unsupported action' });
+  }
+
+  const child = spawn('git', ['-C', projectDir].concat(cmd.split(' ').slice(1)), {
+    cwd: projectDir,
+    timeout: 15000,
+    env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' })
+  });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', d => { stdout += d; });
+  child.stderr.on('data', d => { stderr += d; });
+  try {
+    const exitCode = await new Promise((resolve, reject) => {
+      child.on('close', resolve);
+      child.on('error', reject);
+    });
+    return sendJSON(res, 200, { ok: exitCode === 0, stdout: stdout.trim(), stderr: stderr.trim(), exitCode });
+  } catch (err) {
+    return sendJSON(res, 500, { ok: false, error: err.message, stdout: stdout.trim(), stderr: stderr.trim(), exitCode: -1 });
+  }
+}
+
+// ---- Tools API ---------------------------------------------------------------
+//
+// REST surface for the native tool set (shell, file tools).
+// Routes:
+//   GET  /api/tools/list?projectDir=<abs>
 //        Catalog of every tool the model can be advertised to use on
 //        this project: native shell + file tools, plus MCP-discovered
 //        tools whose server is currently running. The chat UI reads

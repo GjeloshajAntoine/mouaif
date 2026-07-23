@@ -9,6 +9,7 @@ import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
+import { FileToolbar } from './FileToolbar.jsx';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -186,107 +187,63 @@ export function ChatView(props) {
       ),
       h('span', { class: 'chat-view__jump-count' }, '')
     ),
-    h('div', { class: 'chat-view__composer' },
-      h('button', {
-        class: 'chat-view__toolbar-btn chat-view__toolbar-files',
-        type: 'button',
-        onClick: () => setFileEditorOpen(true),
-        'aria-label': 'Edit project files',
-        title: 'Edit project files'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm12 1.5V7h3.5L15 7.5ZM6 8h6v1.5H6V8Zm0 3h9v1.5H6V11Zm0 3h7v1.5H6V14Z', fill: 'currentColor' })
-        )
-      ),
-      h('button', {
-        class: 'chat-view__toolbar-btn',
-        type: 'button',
-        onClick: () => {},
-        'aria-label': 'Previous',
-        title: 'Previous'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M15.5 19.5 8 12l7.5-7.5L17 6l-6 6 6 6-1.5 1.5Z', fill: 'currentColor' })
-        )
-      ),
-      h('button', {
-        class: 'chat-view__toolbar-btn',
-        type: 'button',
-        onClick: () => {},
-        'aria-label': 'Next',
-        title: 'Next'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M8.5 4.5 16 12l-7.5 7.5L7 18l6-6-6-6 1.5-1.5Z', fill: 'currentColor' })
-        )
-      ),
-      h('button', {
-        class: 'chat-view__toolbar-btn',
-        type: 'button',
-        onClick: () => {
-          // Git tool placeholder — will be wired to a git action
+    h('div', { class: 'chat-view__composer-area' },
+      h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) }),
+      h('div', { class: 'chat-view__composer' },
+        h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
+        h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
+        h('button', {
+          class: 'chat-view__iconbtn chat-view__image-btn',
+          type: 'button',
+          onClick: () => refs.imageInput.current && refs.imageInput.current.click(),
+          'aria-label': 'Add image',
+          title: 'Add image'
         },
-        'aria-label': 'Git tool',
-        title: 'Git tool'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M2.6 10.6a2 2 0 0 1 0-2.8l5.2-5.2a2 2 0 0 1 2.8 0l10.6 10.6a2 2 0 0 1 0 2.8l-5.2 5.2a2 2 0 0 1-2.8 0L2.6 10.6Zm1.4 1.4L12 20l8-8-8-8-8 8Z', fill: 'currentColor' })
-        )
-      ),
-      h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
-      h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
-      h('button', {
-        class: 'chat-view__iconbtn chat-view__image-btn',
-        type: 'button',
-        onClick: () => refs.imageInput.current && refs.imageInput.current.click(),
-        'aria-label': 'Add image',
-        title: 'Add image'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-          h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
-        )
-      ),
-      h('input', {
-        ref: refs.imageInput,
-        class: 'chat-view__image-input',
-        type: 'file',
-        accept: 'image/png,image/jpeg,image/webp,image/gif',
-        multiple: true,
-        onChange: onImagePickerChange
-      }),
-      h('textarea', {
-        ref: refs.promptInput,
-        class: 'input chat-view__textarea',
-        id: 'chatComposer',
-        rows: 1,
-        placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message',
-        'aria-label': 'Message',
-        onKeydown: onComposerKey,
-        onPaste: onComposerPaste,
-        onInput: onComposerInput
-      }),
-      h('button', {
-        ref: refs.sendBtn,
-        class: 'btn btn--primary chat-view__send',
-        type: 'button',
-        onClick: send,
-        'aria-label': 'Send'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-          h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
-        )
-      ),
-      imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
-        imageAttachments.map((a, idx) => h('button', {
-          key: idx, class: 'chat-view__image-chip', type: 'button',
-          onClick: () => onRemoveImage(idx), title: 'Remove image'
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
+          )
+        ),
+        h('input', {
+          ref: refs.imageInput,
+          class: 'chat-view__image-input',
+          type: 'file',
+          accept: 'image/png,image/jpeg,image/webp,image/gif',
+          multiple: true,
+          onChange: onImagePickerChange
+        }),
+        h('textarea', {
+          ref: refs.promptInput,
+          class: 'input chat-view__textarea',
+          id: 'chatComposer',
+          rows: 1,
+          placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message',
+          'aria-label': 'Message',
+          onKeydown: onComposerKey,
+          onPaste: onComposerPaste,
+          onInput: onComposerInput
+        }),
+        h('button', {
+          ref: refs.sendBtn,
+          class: 'btn btn--primary chat-view__send',
+          type: 'button',
+          onClick: send,
+          'aria-label': 'Send'
         },
-          h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
-          h('span', null, '×')
-        ))
-      ) : null
-    ),
-    h('div', { class: 'chat-view__status-row' },
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
+          )
+        ),
+        imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
+          imageAttachments.map((a, idx) => h('button', {
+            key: idx, class: 'chat-view__image-chip', type: 'button',
+            onClick: () => onRemoveImage(idx), title: 'Remove image'
+          },
+            h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
+            h('span', null, '×')
+          ))
+        ) : null
+      ),
+      h('div', { class: 'chat-view__status-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
       runningVisible ? h('button', {
         class: 'btn btn--danger chat-view__cancel-run',

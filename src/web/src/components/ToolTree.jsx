@@ -163,6 +163,18 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     });
   }
 
+  const progressTool = catalog.find((x) => x && x.name === 'report_progress');
+  if (progressTool) {
+    groups.push({
+      id: 'report_progress',
+      name: 'Progress updates',
+      description: shortDesc(progressTool.description),
+      title: progressTool.description || '',
+      checked: isOn('report_progress'),
+      tools: [leaf(progressTool)]
+    });
+  }
+
   const fileTools = catalog.filter((t) => t && t.kind === 'native' && t.source === 'files');
   if (fileTools.length) {
     groups.push({
