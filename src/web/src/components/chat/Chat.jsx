@@ -186,29 +186,7 @@ export function ChatView(props) {
       ),
       h('span', { class: 'chat-view__jump-count' }, '')
     ),
-    h('div', { class: 'chat-view__toolbar' },
-      h('button', {
-        class: 'chat-view__toolbar-btn',
-        type: 'button',
-        onClick: () => {},
-        'aria-label': 'Previous',
-        title: 'Previous'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M15.5 19.5 8 12l7.5-7.5L17 6l-6 6 6 6-1.5 1.5Z', fill: 'currentColor' })
-        )
-      ),
-      h('button', {
-        class: 'chat-view__toolbar-btn',
-        type: 'button',
-        onClick: () => {},
-        'aria-label': 'Next',
-        title: 'Next'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M8.5 4.5 16 12l-7.5 7.5L7 18l6-6-6-6 1.5-1.5Z', fill: 'currentColor' })
-        )
-      ),
+    h('div', { class: 'chat-view__composer' },
       h('button', {
         class: 'chat-view__toolbar-btn chat-view__toolbar-files',
         type: 'button',
@@ -241,6 +219,30 @@ export function ChatView(props) {
             class: 'chat-view__toolbar-menu-item',
             type: 'button',
             role: 'menuitem',
+            onClick: () => {},
+            'aria-label': 'Previous'
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+              h('path', { d: 'M15.5 19.5 8 12l7.5-7.5L17 6l-6 6 6 6-1.5 1.5Z', fill: 'currentColor' })
+            ),
+            h('span', null, 'Previous')
+          ),
+          h('button', {
+            class: 'chat-view__toolbar-menu-item',
+            type: 'button',
+            role: 'menuitem',
+            onClick: () => {},
+            'aria-label': 'Next'
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+              h('path', { d: 'M8.5 4.5 16 12l-7.5 7.5L7 18l6-6-6-6 1.5-1.5Z', fill: 'currentColor' })
+            ),
+            h('span', null, 'Next')
+          ),
+          h('button', {
+            class: 'chat-view__toolbar-menu-item',
+            type: 'button',
+            role: 'menuitem',
             onClick: () => {
               // Git tool placeholder — will be wired to a git action
             },
@@ -252,9 +254,7 @@ export function ChatView(props) {
             h('span', null, 'Git tool')
           )
         )
-      )
-    ),
-    h('div', { class: 'chat-view__composer' },
+      ),
       h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
       h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
       h('button', {
