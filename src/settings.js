@@ -104,6 +104,25 @@ function openDb(home) {
        updated_at    TEXT NOT NULL
      );`
   );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS push_subscriptions (
+       id         TEXT PRIMARY KEY,
+       session_id TEXT NOT NULL,
+       endpoint   TEXT NOT NULL UNIQUE,
+       p256dh     TEXT NOT NULL,
+       auth       TEXT NOT NULL,
+       origin     TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     );`
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS push_vapid (
+       key        TEXT PRIMARY KEY,
+       value      TEXT NOT NULL,
+       created_at TEXT NOT NULL
+     );`
+  );
   return db;
 }
 

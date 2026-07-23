@@ -14,6 +14,7 @@ import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { registerServiceWorker } from './sw-registration.js';
 import { initPwaInstall } from './components/PwaInstallBanner.jsx';
+import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
 
@@ -29,3 +30,8 @@ registerServiceWorker();
 
 // Initialise the PWA install banner (beforeinstallprompt listener).
 initPwaInstall();
+
+// Sync push notification state when the service worker is ready.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.ready.then(() => syncPushState()).catch(() => {});
+}

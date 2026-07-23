@@ -23,6 +23,7 @@ const agentFeatures = require('./agentFeatures.js');
 const agents = require('./agents.js');
 const mcp = require('./mcp.js');
 const usage = require('./usage.js');
+const push = require('./push.js');
 const shellTool = require('./tools/shell.js');
 const files = require('./files.js');
 
@@ -414,8 +415,80 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return;
   }
 
+  // Push notification API — managed by the browser push subsystem.
+  if (urlPath.startsWith('/api/push/')) {
+    return handlePush(req, res, parsed, sessionToken);
+  }
+
   // 404
   sendJSON(res, 404, { error: 'Not found' });
+}
+
+// ---- Push Notification API ----------------------------------------------
+// Browser push notification endpoints. All require session cookie auth
+// (handled by authorizeBrowserRequest above).
+//   GET    /api/push/vapid-public-key   -> { publicKey }
+//   POST   /api/push/subscribe          body: { subscription: { endpoint, keys: { p256dh, auth } } }
+//   DELETE /api/push/subscribe          body: { endpoint }
+//   GET    /api/push/subscriptions      -> { subscriptions }
+
+async function handlePush(req, res, parsed, sessionToken) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const sid = push.sessionIdFromToken(sessionToken);
+
+  // GET /api/push/vapid-public-key
+  if (urlPath === '/api/push/vapid-public-key' && method === 'GET') {
+    const publicKey = push.getVapidPublicKey();
+    if (!publicKey) return sendJSON(res, 500, { error: 'VAPID keys not initialised', code: 'ENOVAPID' });
+    return sendJSON(res, 200, { publicKey });
+  }
+
+  // POST /api/push/subscribe
+  if (urlPath === '/api/push/subscribe' && method === 'POST') {
+    if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    if (!body || !body.subscription || !body.subscription.endpoint) {
+      return sendJSON(res, 400, { error: 'subscription with endpoint is required', code: 'EBADINPUT' });
+    }
+    const { endpoint, keys } = body.subscription;
+    if (!keys || !keys.p256dh || !keys.auth) {
+      return sendJSON(res, 400, { error: 'subscription must include keys.p256dh and keys.auth', code: 'EBADINPUT' });
+    }
+    try {
+      const result = push.addSubscription({
+        sessionId: sid,
+        endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+        origin: body.origin || null
+      });
+      return sendJSON(res, 200, { ok: true, id: result.id });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: 'EDB' });
+    }
+  }
+
+  // DELETE /api/push/subscribe  body: { endpoint }
+  if (urlPath === '/api/push/subscribe' && method === 'DELETE') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    const endpoint = body && body.endpoint;
+    if (!endpoint) return sendJSON(res, 400, { error: 'endpoint is required', code: 'EBADINPUT' });
+    const removed = push.removeSubscription(endpoint);
+    return sendJSON(res, 200, { ok: true, removed });
+  }
+
+  // GET /api/push/subscriptions
+  if (urlPath === '/api/push/subscriptions' && method === 'GET') {
+    if (!sid) return sendJSON(res, 200, { subscriptions: [] });
+    return sendJSON(res, 200, { subscriptions: push.listSubscriptions(sid) });
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'push' });
 }
 
 // ---- Settings API -------------------------------------------------------
@@ -1162,7 +1235,7 @@ async function handleChats(req, res, parsed) {
   // is on). One round-trip per user turn.
   const streamMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages\/stream$/);
   if (streamMatch && method === 'POST') {
-    return handleChatStream(req, res, streamMatch[1]);
+    return handleChatStream(req, res, streamMatch[1], sessionToken);
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
@@ -1170,7 +1243,8 @@ async function handleChats(req, res, parsed) {
 
 // Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
 // the route table above stays compact.
-async function handleChatStream(req, res, chatId) {
+async function handleChatStream(req, res, chatId, sessionToken) {
+  const _pushSessionId = push.sessionIdFromToken(sessionToken);
   let body;
   try { body = await readJsonBody(req); }
   catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
@@ -1549,6 +1623,18 @@ async function handleChatStream(req, res, chatId) {
           });
         } catch { /* non-fatal */ }
       } else if (name === 'done') {
+        // Send push notification for completed chat.
+        if (_pushSessionId) {
+          const chatTitle = (chat && chat.title) || chatId;
+          push.sendPushToSession(_pushSessionId, {
+            title: chatTitle,
+            body: 'Response complete',
+            chatId,
+            projectDir,
+            tag: 'chat-' + chatId,
+            data: { chatId, projectDir }
+          });
+        }
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1604,6 +1690,18 @@ async function handleChatStream(req, res, chatId) {
         emit('done', enriched);
         return;
       }
+      // Send push notification for progress updates
+      if (name === 'progress_update' && _pushSessionId && data && data.status === 'running') {
+        const chatTitle = (chat && chat.title) || 'mouaif';
+        push.sendPushToSession(_pushSessionId, {
+          title: chatTitle,
+          body: data.message || data.title || 'Operation in progress',
+          chatId,
+          projectDir,
+          tag: 'chat-' + chatId,
+          data: { chatId, projectDir, progress: data.current, total: data.total }
+        });
+      }
       emit(name, data);
     }
   });
@@ -1616,6 +1714,17 @@ async function handleChatStream(req, res, chatId) {
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
+    if (_pushSessionId) {
+      const chatTitle = (chat && chat.title) || chatId;
+      push.sendPushToSession(_pushSessionId, {
+        title: chatTitle,
+        body: 'Error: ' + (errPayload.message || 'stream failed'),
+        chatId,
+        projectDir,
+        tag: 'chat-' + chatId,
+        data: { chatId, projectDir }
+      });
+    }
     res.end();
     return;
   }
@@ -1642,6 +1751,17 @@ async function handleChatStream(req, res, chatId) {
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
+    if (_pushSessionId) {
+      const chatTitle = (chat && chat.title) || chatId;
+      push.sendPushToSession(_pushSessionId, {
+        title: chatTitle,
+        body: 'Error: ' + (errPayload.message || 'upstream error'),
+        chatId,
+        projectDir,
+        tag: 'chat-' + chatId,
+        data: { chatId, projectDir }
+      });
+    }
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
@@ -3553,6 +3673,9 @@ async function handleClientDomains(req, res, parsed) {
 function createServer(port = DEFAULT_PORT, options = {}) {
   // Run any pending database migrations before serving requests.
   try { settings.runMigrations(); } catch (e) { console.warn('[mouaif] migrations failed:', e.message); }
+  // Initialise push notification tables and VAPID keys.
+  try { push.ensureTable(); } catch (e) { console.warn('[mouaif] push table init failed:', e.message); }
+  try { push.ensureVapidKeys(); } catch (e) { console.warn('[mouaif] VAPID key init failed:', e.message); }
   // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
   // are never consumed and would otherwise accumulate PKCE verifiers in the
   // app store forever. Best-effort: a failure here must not stop the server.

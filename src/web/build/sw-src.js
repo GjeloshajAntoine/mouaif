@@ -167,4 +167,66 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  // Navigate to a specific URL (e.g. deep link from notification click).
+  if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
+    clients.openWindow(event.data.url);
+  }
+});
+
+// ---- Push notifications ------------------------------------------------
+
+self.addEventListener('push', (event) => {
+  let data;
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const { title, body, tag, renotify, icon, badge, data: payload, actions } = data;
+  if (!title && !body) return;
+
+  const options = {
+    body: body || '',
+    tag: tag || 'default',
+    renotify: renotify !== false,
+    icon: icon || '/web/icons/icon-192.png',
+    badge: badge || '/web/icons/favicon-32.png',
+    data: payload || {},
+    actions: actions || [
+      { action: 'open', title: 'Open chat' }
+    ],
+    // Vibrate pattern: short buzz for progress, longer for completion
+    vibrate: tag ? [100] : [100, 50, 100]
+  };
+
+  event.waitUntil(self.registration.showNotification(title || 'mouaif', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  event.notification.close();
+
+  const urlToOpen = data.url
+    || (data.chatId && data.projectDir
+      ? '/web/#/chat/' + data.chatId + '?projectDir=' + encodeURIComponent(data.projectDir)
+      : '/web/');
+
+  if (event.action && event.action !== 'open') {
+    // Future: handle custom actions
+    return;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin + '/web/') && 'focus' in client) {
+            client.postMessage({ type: 'NAVIGATE', url: urlToOpen });
+            return client.focus();
+          }
+        }
+        return clients.openWindow(urlToOpen);
+      })
+  );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  // Notification dismissed by user — could send a beacon for analytics
+  // but is intentionally a no-op for now.
 });

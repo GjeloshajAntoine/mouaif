@@ -2,12 +2,14 @@
 import { h, Fragment } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { loadApp, saveApp, setStatus } from '../api.js';
+import { pushSupported, pushPermission, pushEnabled, requestPushPermission, unsubscribePush, syncPushState } from './push.js';
 
 export function SettingsDefaultsView() {
   const promptSize = useRef(null);
   const chatStorage = useRef(null);
   const saveBtn = useRef(null);
   const statusEl = useRef(null);
+  const pushStatus = useRef(null);
 
   async function load() {
     try {
@@ -15,6 +17,7 @@ export function SettingsDefaultsView() {
       if (promptSize.current) promptSize.current.value = (app.app && app.app.promptSize) || 'average';
       if (chatStorage.current) chatStorage.current.value = (app.app && app.app.chatStorage) || 'db';
     } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); }
+    await syncPushState();
   }
 
   async function save() {
@@ -25,6 +28,16 @@ export function SettingsDefaultsView() {
       setStatus(statusEl, 'saved.', 'success');
     } catch (e) { setStatus(statusEl, 'save failed: ' + e.message, 'error'); }
     if (saveBtn.current) saveBtn.current.disabled = false;
+  }
+
+  async function handlePushToggle() {
+    if (pushEnabled.value) {
+      await unsubscribePush();
+      setStatus(pushStatus, 'Push notifications disabled', 'success');
+    } else {
+      const ok = await requestPushPermission();
+      setStatus(pushStatus, ok ? 'Push notifications enabled' : 'Could not enable push notifications', ok ? 'success' : 'error');
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -53,10 +66,40 @@ export function SettingsDefaultsView() {
         )
       ),
       h('p', { class: 'hint hint--compact' }, '"Database" stores chats and messages in the app SQLite store. "JSON files" keeps the legacy per-chat .mouaif.messages.*.json files. Changing this does not migrate existing data; use the Import tool to reimport JSON files into the DB.'),
+      
+      // Push notifications
+      pushSupported.value
+        ? h('div', { class: 'group' },
+            h('div', { class: 'group__title' }, 'Push notifications'),
+            h('div', { class: 'group__list' },
+              h('div', { class: 'group__row' },
+                h('div', { class: 'group__row-body' },
+                  h('span', { class: 'group__row-label' }, 'Browser push notifications'),
+                  h('span', { class: 'group__row-detail' },
+                    pushPermission.value === 'granted'
+                      ? (pushEnabled.value ? 'Enabled' : 'Permission granted, not subscribed')
+                      : (pushPermission.value === 'denied' ? 'Blocked in browser settings' : 'Permission not requested')
+                  )
+                ),
+                h('div', { class: 'group__row-actions' },
+                  h('button', {
+                    type: 'button',
+                    class: 'btn btn--small' + (pushEnabled.value ? ' btn--danger' : ' btn--primary'),
+                    onClick: handlePushToggle,
+                    'aria-label': pushEnabled.value ? 'Disable push notifications' : 'Enable push notifications'
+                  }, pushEnabled.value ? 'Disable' : 'Enable')
+                )
+              )
+            ),
+            h('p', { class: 'hint hint--compact' }, 'Receive OS-level notifications for chat progress, completion, and errors even when the tab is backgrounded or closed.')
+          )
+        : null,
+
       h('div', { class: 'row row--actions' },
         h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
-      )
+      ),
+      h('span', { ref: pushStatus, class: 'status', 'aria-live': 'polite' })
     )
   );
 }
