@@ -248,15 +248,15 @@ function writeFile(p, content) {
   assert(miss.ok === false, 'read_file missing path -> !ok');
   assert(miss.result && miss.result.error && miss.result.error.code === 'ENOENT', 'read_file missing path -> ENOENT (not EOUTSIDE_PROJECT)');
 
-  // ---- Settings caps (fileReadMaxBytes) --------------------------
+  // ---- Settings caps (fileReadMaxLines) --------------------------
   const root2 = tmpdir('ft2-');
-  writeFile(path.join(root2, 'big.js'), 'x'.repeat(100));
+  writeFile(path.join(root2, 'big.js'), Array(101).join('x\n'));
   const wSet = await files.runFileTool('read_file', {
     projectDir: root2,
     args: { path: 'big.js' },
-    settings: { fileReadMaxBytes: 50 }
+    settings: { fileReadMaxLines: 50 }
   });
-  assert(wSet.ok === false && wSet.result.error.code === 'ETOOL_CAP', 'read_file respects fileReadMaxBytes override');
+  assert(wSet.ok === false && wSet.result.error.code === 'ETOOL_CAP', 'read_file respects fileReadMaxLines override');
 
   // ---- End --------------------------------------------------------
   console.log('---');

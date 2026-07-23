@@ -49,7 +49,7 @@ Every tool:
 
 - Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`. .`, absolute paths outside the root, and symlinks that point outside are all rejected).
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
-- Refuses whole-file reads over `fileReadMaxBytes` (default 256 KB). A `startLine` / `endLine` slice bypasses the cap.
+- Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
 - Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` scanned (default 200 / 2 MB).
 
@@ -57,7 +57,7 @@ The caps are app-level knobs. Override them in the app store:
 
 ```json
 {
-  "fileReadMaxBytes": 524288,
+  "fileReadMaxLines": 10000,
   "fileListMaxEntries": 500,
   "fileSearchMaxMatches": 100,
   "fileSearchMaxBytes": 1048576,

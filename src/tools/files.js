@@ -24,13 +24,13 @@
 // and the call becomes a typed EOUTSIDE_PROJECT tool_result — the same
 // error shape the shell tool already uses.
 //
-// Defaults (overridable via app.<name>MaxBytes / app.<name>DefaultLines):
-//   fileReadMaxBytes     = 256 KB   (whole-file reads; excerpts bypass the cap)
-//   fileListMaxEntries   = 1000     (cap on list_files result rows)
-//   fileSearchMaxMatches = 200      (cap on search_files matches)
-//   fileSearchMaxBytes   = 2 MB     (cap on total bytes read by one search call)
-//   fileWriteMaxBytes    = 1 MB     (cap on a single write_file call)
-//   fileReadDefaultLines = 2000     (default window when the model asks for a slice)
+// Defaults:
+//   fileReadMaxLines     = 10000   (whole-file reads cap by line count; use startLine/endLine for larger files)
+//   fileReadDefaultLines = 2000    (default window when the model asks for a slice)
+//   fileListMaxEntries   = 1000    (cap on list_files result rows)
+//   fileSearchMaxMatches = 200     (cap on search_files matches)
+//   fileSearchMaxBytes   = 2 MB    (cap on total bytes read by one search call)
+//   fileWriteMaxBytes    = 1 MB    (cap on a single write_file call)
 
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -38,12 +38,12 @@ const path = require('path');
 
 // ---- Constants ---------------------------------------------------------
 
-const DEFAULT_READ_MAX_BYTES = 256 * 1024;
+const DEFAULT_READ_MAX_LINES = 10000;
+const DEFAULT_READ_LINES = 2000;
 const DEFAULT_LIST_MAX_ENTRIES = 1000;
 const DEFAULT_SEARCH_MAX_MATCHES = 200;
 const DEFAULT_SEARCH_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_WRITE_MAX_BYTES = 1024 * 1024;
-const DEFAULT_READ_LINES = 2000;
 
 const MAX_TIMEOUT_MS = 60_000; // hard ceiling per call (defensive)
 
@@ -164,7 +164,7 @@ function toAbsInside(root, rel) {
 // ---- read_file ---------------------------------------------------------
 
 // Read a file. Optional `startLine` / `endLine` (1-indexed, inclusive) pin
-// a window. Whole-file reads over the cap are refused with ETOOL_CAP.
+// a window. Whole-file reads over the line cap are refused with ETOOL_CAP.
 async function runReadFile(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
@@ -176,23 +176,23 @@ async function runReadFile(opts) {
 
   // The cap only applies to whole-file reads. A bounded slice always
   // succeeds, no matter how large the file is.
-  const cap = (settings && settings.fileReadMaxBytes) || DEFAULT_READ_MAX_BYTES;
+  const cap = (settings && settings.fileReadMaxLines) || DEFAULT_READ_MAX_LINES;
   const startLine = Number.isInteger(args && args.startLine) ? args.startLine : null;
   const endLine = Number.isInteger(args && args.endLine) ? args.endLine : null;
   const isSlice = startLine != null && endLine != null && endLine >= startLine;
-  if (!isSlice) {
-    if (st.size > cap) {
-      throw err('ETOOL_CAP', 'file is ' + st.size + ' bytes, exceeds cap ' + cap + ' (use startLine/endLine)', { size: st.size, cap });
-    }
-  }
 
   const raw = await fsp.readFile(abs, 'utf8');
+  const totalLines = raw ? raw.split('\n').length : 0;
+
   if (!isSlice) {
+    if (totalLines > cap) {
+      throw err('ETOOL_CAP', 'file has ' + totalLines + ' lines, exceeds cap ' + cap + ' (use startLine/endLine)', { lines: totalLines, cap });
+    }
     return {
       relPath: rel,
       size: st.size,
       startLine: 1,
-      endLine: raw ? raw.split('\n').length : 0,
+      endLine: totalLines,
       body: raw,
       truncated: false
     };
@@ -202,7 +202,6 @@ async function runReadFile(opts) {
   // past the end, the tail is returned. Line numbers in the response
   // header stay 1-indexed for human readability.
   const lines = raw.split('\n');
-  const totalLines = lines.length;
   const a = Math.max(1, startLine);
   const b = Math.min(totalLines, endLine);
   const slice = lines.slice(a - 1, b).join('\n');
@@ -606,7 +605,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the project directory. Returns the file body with a header that shows the path, size, and line range. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 256 KB are refused.',
+      description: 'Read a text file from the project directory. Returns the file body with a header that shows the path, size, and line range. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused.',
       parameters: {
         type: 'object',
         properties: {
@@ -700,11 +699,11 @@ module.exports = {
   // exposed for tests
   globToRegExp,
   // constants
-  DEFAULT_READ_MAX_BYTES,
+  DEFAULT_READ_MAX_LINES,
+  DEFAULT_READ_LINES,
   DEFAULT_LIST_MAX_ENTRIES,
   DEFAULT_SEARCH_MAX_MATCHES,
   DEFAULT_SEARCH_MAX_BYTES,
   DEFAULT_WRITE_MAX_BYTES,
-  DEFAULT_READ_LINES,
   MAX_TIMEOUT_MS
 };
