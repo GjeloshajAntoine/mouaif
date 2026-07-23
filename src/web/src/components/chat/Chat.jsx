@@ -15,11 +15,14 @@ export function ChatView(props) {
   const {
     refs,
     imageAttachments, fileEditorOpen, runningVisible,
+    chatSwitcherOpen, chatSwitcherList,
     setFileEditorOpen,
+    setChatSwitcherOpen,
     send, onPickerSearch,
     onRefreshAllProviders, onOpenModelPicker, onCloseModelPicker,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, onJumpToBottom, onCancelRunning, onBack
+    onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
+    onToggleChatSwitcher, onSwitchChat
   } = s;
 
   const { projectDir, chatId } = props;
@@ -58,9 +61,48 @@ export function ChatView(props) {
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
       h('button', { ref: refs.back, class: 'chat-view__back', type: 'button', onClick: onBack, 'aria-label': 'Back to projects' }, '←'),
-      h('div', { class: 'chat-view__title-stack' },
-        h('div', { ref: refs.chatName, class: 'chat-view__name' }, '…'),
-        h('div', { ref: refs.chatMeta, class: 'chat-view__meta' }, ''),
+      h('div', { class: 'chat-view__title-stack', 'data-switcher': '1' },
+        h('button', {
+          ref: refs.chatSwitcherTrigger,
+          class: 'chat-view__chat-switcher-trigger',
+          type: 'button',
+          onClick: onToggleChatSwitcher,
+          'aria-label': 'Switch chat',
+          'aria-haspopup': 'true',
+          'aria-expanded': String(chatSwitcherOpen)
+        },
+          h('div', { class: 'chat-view__chat-switcher-title' },
+            h('div', { ref: refs.chatName, class: 'chat-view__name' }, '…'),
+            h('div', { ref: refs.chatMeta, class: 'chat-view__meta' }, '')
+          ),
+          h('span', { class: 'chat-view__chat-switcher-arrows', 'aria-hidden': 'true' },
+            h('svg', { viewBox: '0 0 16 16', width: 12, height: 12, fill: 'currentColor' },
+              h('path', { d: 'M5 3l6 5-6 5V3Z' })
+            )
+          )
+        ),
+        h('div', {
+          ref: refs.chatSwitcherPop,
+          class: 'chat-view__chat-switcher-pop',
+          hidden: !chatSwitcherOpen,
+          role: 'listbox',
+          'aria-label': 'Switch to a chat'
+        },
+          chatSwitcherList.map((c) =>
+            h('button', {
+              key: c.id,
+              class: 'chat-view__chat-switcher-item' + (c.id === chatId ? ' is-current' : ''),
+              type: 'button',
+              role: 'option',
+              'aria-selected': String(c.id === chatId),
+              onClick: () => onSwitchChat(c.id)
+            },
+              h('span', { class: 'chat-view__chat-switcher-item-title' }, (c.title && c.title.trim()) ? c.title : 'New chat'),
+              h('span', { class: 'chat-view__chat-switcher-item-model' }, c.modelId || '')
+            )
+          ),
+          !chatSwitcherList.length ? h('div', { class: 'chat-view__chat-switcher-empty' }, 'No other chats') : null
+        ),
         h('div', { ref: refs.usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage and provider credit' },
           h('span', null, 'Context --'),
           h('span', null, 'Total --')

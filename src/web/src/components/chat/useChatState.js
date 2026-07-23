@@ -16,6 +16,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson, loadModels } from '../../api.js';
+import { nav } from '../../router.js';
 import {
   renderModelPicker, refreshActiveProvider, refreshAllProviders, openModelPicker, closeModelPicker, onPickerSearch, activeProviderId, touchRecent
 } from './modelPicker.js';
@@ -50,6 +51,9 @@ export function useChatState(props) {
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
+  const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
+  const [chatSwitcherList, setChatSwitcherList] = useState([]);
+  const chatSwitcherIdxRef = useRef(-1);
 
   // ---- DOM refs ----------------------------------------------
   const back = useRef(null);
@@ -146,6 +150,9 @@ export function useChatState(props) {
     set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; }
   };
 
+  const chatSwitcherTrigger = useRef(null);
+  const chatSwitcherPop = useRef(null);
+
   const refs = {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
@@ -153,6 +160,7 @@ export function useChatState(props) {
     promptInput, imageInput, draftSaveTimer, sendBtn, status,
     jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
+    chatSwitcherTrigger, chatSwitcherPop,
     _autoresize: () => autoresize({ promptInput })
   };
 
@@ -403,6 +411,14 @@ export function useChatState(props) {
       if (pop && !pop.hidden) {
         if (!(pop.contains(e.target) || (trig && trig.contains(e.target)))) closeModelPicker(refs);
       }
+      // Close chat switcher on outside click
+      const swPop = refs.chatSwitcherPop && refs.chatSwitcherPop.current;
+      const swTrig = refs.chatSwitcherTrigger && refs.chatSwitcherTrigger.current;
+      if (swPop && !swPop.hidden && swTrig) {
+        if (!swPop.contains(e.target) && !swTrig.contains(e.target)) {
+          setChatSwitcherOpen(false);
+        }
+      }
     }
     function onKey(e) {
       if (e.key === 'Escape') {
@@ -476,6 +492,38 @@ export function useChatState(props) {
     onRemoveImage: (idx) => setImageAttachments((prev) => prev.filter((_, i) => i !== idx)),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
     onCancelRunning,
-    onBack: () => { window.location.hash = '#/projects'; }
+    onBack: () => { window.location.hash = '#/projects'; },
+    // ---- Chat switcher -------------------------------------------
+    chatSwitcherOpen,
+    setChatSwitcherOpen,
+    chatSwitcherList,
+    onToggleChatSwitcher: useCallback(() => {
+      setChatSwitcherOpen((prev) => {
+        if (!prev) {
+          // Load the chat list when opening
+          loadChatListForSwitcher(projectDir, chatId, setChatSwitcherList);
+        }
+        return !prev;
+      });
+    }, [projectDir, chatId]),
+    onSwitchChat: useCallback((targetChatId) => {
+      setChatSwitcherOpen(false);
+      if (targetChatId && targetChatId !== chatId) {
+        nav('chat/' + encodeURIComponent(targetChatId) + '?projectDir=' + encodeURIComponent(projectDir));
+      }
+    }, [projectDir, chatId])
   };
+}
+
+// Load the chat list for the chat switcher dropdown.
+async function loadChatListForSwitcher(projectDir, currentChatId, setList) {
+  if (!projectDir) return;
+  try {
+    const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(projectDir) + '&offset=0&limit=50');
+    const chats = r.status === 200 && r.body ? (r.body.chats || []) : [];
+    // Mark current chat and limit to 50 items
+    setList(chats.slice(0, 50));
+  } catch {
+    setList([]);
+  }
 }
