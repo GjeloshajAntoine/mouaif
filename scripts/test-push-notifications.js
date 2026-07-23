@@ -11,14 +11,27 @@ process.env.MOUAIF_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-push-hom
 
 const webpush = require('web-push');
 const deliveries = [];
-webpush.sendNotification = (subscription, payload) => {
-  deliveries.push({ subscription, payload: JSON.parse(payload) });
+const vapidDetails = [];
+webpush.setVapidDetails = (subject, publicKey, privateKey) => {
+  vapidDetails.push({ subject, publicKey, privateKey });
+};
+webpush.sendNotification = (subscription, payload, options) => {
+  deliveries.push({ subscription, payload: JSON.parse(payload), options });
   return Promise.resolve();
 };
 
 const push = require('../src/push.js');
 push.ensureTable();
 push.ensureVapidKeys();
+
+const localConfig = push.getPushConfig('http://127.0.0.1:5732');
+assert.equal(localConfig.privateKeyConfigured, true, 'a complete VAPID pair is configured automatically');
+assert.ok(localConfig.publicKey, 'the generated VAPID public key is exposed');
+assert.equal(localConfig.subject, 'mailto:push@mouaif.local', 'local HTTP uses the valid mailto VAPID fallback');
+const iosConfig = push.getPushConfig('https://mouaif.example.test');
+assert.equal(iosConfig.subject, 'https://mouaif.example.test', 'public HTTPS origin becomes the deployment VAPID contact');
+assert.equal(iosConfig.publicKey, localConfig.publicKey, 'changing served origin preserves existing subscriptions');
+assert.equal(vapidDetails.at(-1).subject, 'https://mouaif.example.test', 'web-push receives the served-domain VAPID subject');
 
 const endpoint = 'https://push.example.test/subscription-1';
 const first = push.addSubscription({
@@ -68,5 +81,8 @@ assert.equal(deliveries[0].payload.data.kind, 'tool_authorization', 'interaction
 assert.equal(deliveries[0].payload.actions[0].action, 'allow-once', 'allow-once action is preserved');
 assert.equal(deliveries[0].payload.actions[1].action, 'deny', 'deny action is preserved');
 assert.equal(deliveries[0].payload.requireInteraction, true, 'attention notification remains visible');
+assert.equal(deliveries[0].options.vapidDetails.subject, 'mailto:push@mouaif.local', 'local subscription uses the fallback VAPID contact');
+assert.equal(deliveries[0].options.vapidDetails.publicKey, localConfig.publicKey, 'delivery uses the persisted VAPID public key');
+assert.ok(deliveries[0].options.vapidDetails.privateKey, 'delivery configures the private VAPID key without exposing it');
 
-console.log('push notifications: 11 assertions passed');
+console.log('push notifications: 20 assertions passed');

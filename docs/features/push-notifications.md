@@ -17,6 +17,18 @@ Browser notifications let mouaif follow a running chat when the tab is in the ba
 
 The same screen configures which chat events produce alerts and whether quick actions are shown. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
 
+The **Server configuration** group shows the origin used by the notification service, the generated-key status, and the VAPID contact. Opening this screen repairs a missing VAPID pair automatically; there are no keys to copy into the browser.
+
+### Serving from a public domain
+
+Web Push on iPhone and iPad requires an installed Home Screen app served over HTTPS. When a TLS reverse proxy exposes mouaif on a public domain, start the HTTP server with its canonical external origin:
+
+```bash
+mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
+```
+
+`MOUAIF_PUBLIC_ORIGIN=https://mouaif.example.com` is the equivalent environment setting. The origin must contain only the scheme, host, and optional port. This explicit value is used for same-origin checks, the Secure browser-session cookie, subscription records, and the VAPID contact; untrusted forwarding headers are not accepted as configuration.
+
 ### What triggers a push
 
 | Event | When | Content |
@@ -74,6 +86,7 @@ Browser permission and subscription are installation-specific. Event preferences
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/api/push/config` | GET | Ensures the VAPID pair exists and returns safe status, served origin, public key, and VAPID contact |
 | `/api/push/vapid-public-key` | GET | Returns the VAPID public key for subscription |
 | `/api/push/subscribe` | POST | Save a push subscription (body: `{ subscription: { endpoint, keys: { p256dh, auth } } }`) |
 | `/api/push/subscribe` | DELETE | Remove a push subscription (body: `{ endpoint }`) |
@@ -83,7 +96,15 @@ Browser permission and subscription are installation-specific. Event preferences
 
 ### VAPID keys
 
-VAPID keys are auto-generated on first server start and stored in the `push_vapid` SQLite table. They are NOT regenerated on restart — the same keys persist so existing push subscriptions remain valid.
+VAPID keys are auto-generated on first server start and stored in the `push_vapid` SQLite table. They are NOT regenerated on restart or when the served domain changes — the same keys persist so existing push subscriptions remain valid. The private key never appears in settings responses.
+
+For an HTTPS public origin, the canonical served origin is used as the VAPID subject/contact. Local HTTP deployments retain the valid `mailto:push@mouaif.local` fallback. Each delivery selects the subject associated with the subscription's server-derived origin, so subscriptions created before a domain change remain sendable.
+
+### iOS and APNs
+
+Safari on iOS and iPadOS exposes the standard Web Push API for installed Home Screen apps. Apple Push Notification service transports those pushes internally, but mouaif does **not** need an Apple Developer account, an APNs `.p8` key, a Team ID, a Key ID, or a bundle identifier. The VAPID pair generated in notification settings is sufficient. Networks with restricted egress must allow Apple's Web Push endpoints, including `*.push.apple.com`.
+
+The manifest uses the same-origin `id`, `start_url`, and `scope` value `/web/`, so the installed app identity follows whichever domain serves mouaif instead of embedding a build-time hostname.
 
 ### Dead subscription cleanup
 
@@ -91,7 +112,7 @@ When sending a push fails with HTTP 410 (Gone) or 404 (Not Found), the subscript
 
 ### Session binding
 
-Subscriptions are tied to the browser session through a one-way hash of the session cookie token. The endpoint row is updated in place when a fresh session rebinds it, preserving its stable subscription ID and creation time.
+Subscriptions are tied to the browser session through a one-way hash of the session cookie token. The endpoint row is updated in place when a fresh session rebinds it, preserving its stable subscription ID and creation time. The saved origin comes from the server's canonical origin calculation; a client-provided origin is ignored.
 
 ### Service worker
 

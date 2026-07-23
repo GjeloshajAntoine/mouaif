@@ -17,25 +17,60 @@ const VAPID_SUBJECT = 'mailto:push@mouaif.local';
 
 // ---- VAPID keys ---------------------------------------------------------
 
-function ensureVapidKeys() {
+function vapidSubjectForOrigin(origin) {
+  if (!origin) return VAPID_SUBJECT;
+  try {
+    const parsed = new URL(origin);
+    // web-push accepts mailto: or HTTPS VAPID subjects. Public iOS Web Push
+    // origins are HTTPS, so using the served origin gives Apple a stable,
+    // deployment-specific contact without requiring APNs credentials.
+    if (parsed.protocol === 'https:') return parsed.origin;
+  } catch { /* use the local fallback */ }
+  return VAPID_SUBJECT;
+}
+
+function readVapidKeys() {
   const db = settings.getDb();
-  const existing = db.prepare(`SELECT value FROM ${VAPID_TABLE} WHERE key = 'publicKey'`).pluck().get();
-  if (existing) {
-    const privateKey = db.prepare(`SELECT value FROM ${VAPID_TABLE} WHERE key = 'privateKey'`).pluck().get();
-    webpush.setVapidDetails(VAPID_SUBJECT, existing, privateKey);
-    return existing;
+  const publicKey = db.prepare(`SELECT value FROM ${VAPID_TABLE} WHERE key = 'publicKey'`).pluck().get() || null;
+  const privateKey = db.prepare(`SELECT value FROM ${VAPID_TABLE} WHERE key = 'privateKey'`).pluck().get() || null;
+  return { publicKey, privateKey };
+}
+
+function ensureVapidKeys(origin) {
+  const db = settings.getDb();
+  const existing = readVapidKeys();
+  const subject = vapidSubjectForOrigin(origin);
+  if (existing.publicKey && existing.privateKey) {
+    webpush.setVapidDetails(subject, existing.publicKey, existing.privateKey);
+    return existing.publicKey;
   }
   const keys = webpush.generateVAPIDKeys();
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO ${VAPID_TABLE} (key, value, created_at) VALUES ('publicKey', ?, ?)`).run(keys.publicKey, now);
-  db.prepare(`INSERT INTO ${VAPID_TABLE} (key, value, created_at) VALUES ('privateKey', ?, ?)`).run(keys.privateKey, now);
-  webpush.setVapidDetails(VAPID_SUBJECT, keys.publicKey, keys.privateKey);
+  const save = db.prepare(`INSERT INTO ${VAPID_TABLE} (key, value, created_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at`);
+  const saveKeys = db.transaction(() => {
+    save.run('publicKey', keys.publicKey, now);
+    save.run('privateKey', keys.privateKey, now);
+  });
+  saveKeys();
+  webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
   return keys.publicKey;
 }
 
 function getVapidPublicKey() {
   const db = settings.getDb();
   return db.prepare(`SELECT value FROM ${VAPID_TABLE} WHERE key = 'publicKey'`).pluck().get() || null;
+}
+
+function getPushConfig(origin) {
+  const publicKey = ensureVapidKeys(origin);
+  const keys = readVapidKeys();
+  return {
+    origin: origin || null,
+    subject: vapidSubjectForOrigin(origin),
+    publicKey,
+    privateKeyConfigured: !!keys.privateKey
+  };
 }
 
 // ---- Subscription CRUD --------------------------------------------------
@@ -101,6 +136,8 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actio
   const subs = sessionId ? listSubscriptions(sessionId) : [];
   if (!subs.length) return;
 
+  const keys = readVapidKeys();
+
   const payload = JSON.stringify({
     title: title || 'mouaif',
     body: body || '',
@@ -120,7 +157,14 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actio
       endpoint: sub.endpoint,
       keys: { p256dh: sub.p256dh, auth: sub.auth }
     };
-    webpush.sendNotification(subscription, payload).catch((err) => {
+    const options = keys.publicKey && keys.privateKey ? {
+      vapidDetails: {
+        subject: vapidSubjectForOrigin(sub.origin),
+        publicKey: keys.publicKey,
+        privateKey: keys.privateKey
+      }
+    } : undefined;
+    webpush.sendNotification(subscription, payload, options).catch((err) => {
       // 410 Gone / 404 Not Found means the subscription is dead
       if (err && (err.statusCode === 410 || err.statusCode === 404)) {
         removeSubscription(sub.endpoint);
@@ -148,6 +192,8 @@ module.exports = {
   ensureTable,
   ensureVapidKeys,
   getVapidPublicKey,
+  getPushConfig,
+  vapidSubjectForOrigin,
   listSubscriptions,
   addSubscription,
   removeSubscription,

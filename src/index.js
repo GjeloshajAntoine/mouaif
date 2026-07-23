@@ -180,16 +180,31 @@ function requestOrigin(req) {
   try { return new URL(raw).origin; } catch { return null; }
 }
 
-function expectedOrigin(req) {
-  const host = typeof req.headers.host === 'string' ? req.headers.host.trim() : '';
-  if (!host || /[\r\n]/.test(host)) return null;
-  try { return new URL('http://' + host).origin; } catch { return null; }
+function normalizePublicOrigin(value) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(String(value));
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+    return parsed.origin;
+  } catch { return null; }
 }
 
-function authorizeBrowserRequest(req, res, sessionToken) {
+function expectedOrigin(req, publicOrigin) {
+  if (publicOrigin) return publicOrigin;
+  const host = typeof req.headers.host === 'string' ? req.headers.host.trim() : '';
+  if (!host || /[\r\n]/.test(host)) return null;
+  const protocol = req.socket && req.socket.encrypted ? 'https://' : 'http://';
+  try { return new URL(protocol + host).origin; } catch { return null; }
+}
+
+function sessionCookie(sessionToken, secure) {
+  return SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict' + (secure ? '; Secure' : '');
+}
+
+function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
   const origin = requestOrigin(req);
   if (!origin) return true;
-  const expected = expectedOrigin(req);
+  const expected = expectedOrigin(req, publicOrigin);
   if (!expected || origin !== expected) {
     sendJSON(res, 403, { error: 'Cross-origin requests are not allowed', code: 'EORIGIN' });
     return false;
@@ -209,12 +224,12 @@ function authorizeBrowserRequest(req, res, sessionToken) {
     // /web/. Same-origin Origin validation above is the CSRF boundary; for
     // same-origin browser traffic with a stale cookie, mint the fresh cookie
     // and let the request continue.
-    res.setHeader('Set-Cookie', SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict');
+    res.setHeader('Set-Cookie', sessionCookie(sessionToken, !!expected && expected.startsWith('https://')));
   }
   return true;
 }
 
-function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}) {
+function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
   const parsed = url.parse(req.url, true);
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -231,7 +246,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   const browserProtected = urlPath === '/events'
     || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/');
-  if (browserProtected && !authorizeBrowserRequest(req, res, sessionToken)) {
+  if (browserProtected && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
     return;
   }
 
@@ -245,7 +260,8 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // (e.g. during development before `npm run build:web`). This lets the
   // repo keep working in either state without breaking.
   if (urlPath === '/web' || urlPath === '/web/') {
-    res.setHeader('Set-Cookie', SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict');
+    const servedOrigin = expectedOrigin(req, serverConfig.publicOrigin);
+    res.setHeader('Set-Cookie', sessionCookie(sessionToken, !!servedOrigin && servedOrigin.startsWith('https://')));
     return serveWebFile(res, 'index.html', { preferDist: true });
   }
   if (urlPath.startsWith('/web/')) {
@@ -419,7 +435,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 
   // Push notification API — managed by the browser push subsystem.
   if (urlPath.startsWith('/api/push/')) {
-    return handlePush(req, res, parsed, sessionToken);
+    return handlePush(req, res, parsed, sessionToken, expectedOrigin(req, serverConfig.publicOrigin));
   }
 
   // 404
@@ -435,7 +451,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 //   GET    /api/push/subscriptions      -> { subscriptions }
 //   POST   /api/push/test               -> send a notification to this browser session
 
-async function handlePush(req, res, parsed, sessionToken) {
+async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
   const urlPath = parsed.pathname;
   const method = req.method;
   const sid = push.sessionIdFromToken(sessionToken);
@@ -445,6 +461,17 @@ async function handlePush(req, res, parsed, sessionToken) {
     const publicKey = push.getVapidPublicKey();
     if (!publicKey) return sendJSON(res, 500, { error: 'VAPID keys not initialised', code: 'ENOVAPID' });
     return sendJSON(res, 200, { publicKey });
+  }
+
+  // GET /api/push/config — safe notification configuration. Opening the
+  // settings screen also repairs a missing VAPID pair. The private key never
+  // leaves the server.
+  if (urlPath === '/api/push/config' && method === 'GET') {
+    try {
+      return sendJSON(res, 200, push.getPushConfig(servedOrigin));
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: 'EVAPID' });
+    }
   }
 
   // POST /api/push/subscribe
@@ -466,7 +493,7 @@ async function handlePush(req, res, parsed, sessionToken) {
         endpoint,
         p256dh: keys.p256dh,
         auth: keys.auth,
-        origin: body.origin || null
+        origin: servedOrigin || null
       });
       return sendJSON(res, 200, { ok: true, id: result.id });
     } catch (e) {
@@ -3720,11 +3747,18 @@ async function handleClientDomains(req, res, parsed) {
 }
 
 function createServer(port = DEFAULT_PORT, options = {}) {
+  const requestedPublicOrigin = options && typeof options === 'object'
+    ? (options.publicOrigin || process.env.MOUAIF_PUBLIC_ORIGIN || '')
+    : (process.env.MOUAIF_PUBLIC_ORIGIN || '');
+  const publicOrigin = normalizePublicOrigin(requestedPublicOrigin);
+  if (requestedPublicOrigin && !publicOrigin) {
+    throw Object.assign(new Error('publicOrigin must be an http(s) origin without a path'), { code: 'EBAD_PUBLIC_ORIGIN' });
+  }
   // Run any pending database migrations before serving requests.
   try { settings.runMigrations(); } catch (e) { console.warn('[mouaif] migrations failed:', e.message); }
   // Initialise push notification tables and VAPID keys.
   try { push.ensureTable(); } catch (e) { console.warn('[mouaif] push table init failed:', e.message); }
-  try { push.ensureVapidKeys(); } catch (e) { console.warn('[mouaif] VAPID key init failed:', e.message); }
+  try { push.ensureVapidKeys(publicOrigin); } catch (e) { console.warn('[mouaif] VAPID key init failed:', e.message); }
   // Drop OAuth flows the user abandoned (closed the tab mid-sign-in). They
   // are never consumed and would otherwise accumulate PKCE verifiers in the
   // app store forever. Best-effort: a failure here must not stop the server.
@@ -3736,9 +3770,10 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
+  const serverConfig = { publicOrigin };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
-    handleRequest(req, res, port, sessionToken, lifecycle);
+    handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
   });
   // Track connections so the graceful-restart path can force-close
   // SSE / keep-alive sockets that would otherwise hang server.close().
@@ -3753,7 +3788,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
     const u = req.url || '';
     if (u.startsWith('/api/inspector/proxy')) {
       const origin = requestOrigin(req);
-      const expected = expectedOrigin(req);
+      const expected = expectedOrigin(req, publicOrigin);
       const cookies = parseCookies(req.headers.cookie);
       const actual = cookies[SESSION_COOKIE] || '';
       const validToken = actual.length === sessionToken.length

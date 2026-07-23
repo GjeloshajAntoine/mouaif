@@ -57,6 +57,7 @@ server.listen(0, '127.0.0.1', () => {
       assert(/application\/manifest\+json/.test(manifest.headers['content-type'] || ''), 'manifest: content-type');
       const m = JSON.parse(manifest.body);
       assert(m.name === 'mouaif', 'manifest: name');
+      assert(m.id === '/web/', 'manifest: stable same-origin app id');
       assert(m.start_url === '/web/', 'manifest: start_url');
       assert(m.scope === '/web/', 'manifest: scope');
       assert(m.display === 'standalone', 'manifest: display');

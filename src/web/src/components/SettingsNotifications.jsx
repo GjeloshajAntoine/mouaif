@@ -24,12 +24,16 @@ export function SettingsNotificationsView() {
   const [busy, setBusy] = useState(true);
   const [status, setStatus] = useState('Checking this browser…');
   const [statusState, setStatusState] = useState('busy');
+  const [pushConfig, setPushConfig] = useState(null);
 
   async function load() {
     setBusy(true);
     try {
       const app = await loadApp({ force: true });
       setPrefs({ ...DEFAULTS, ...((app.app && app.app.notifications) || {}) });
+      const configResponse = await fetchJson('/api/push/config');
+      if (configResponse.status !== 200) throw new Error((configResponse.body && configResponse.body.error) || 'Push key configuration failed');
+      setPushConfig(configResponse.body);
       if (pushSupported.value) await syncPushState();
       setStatus(pushSupported.value
         ? (pushPermission.value === 'denied'
@@ -148,6 +152,31 @@ export function SettingsNotificationsView() {
           }, 'Send test notification')
         ),
         h('p', { class: 'status', 'data-state': statusState, 'aria-live': 'polite' }, status)
+      ),
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Server configuration'),
+        h('div', { class: 'group__list' },
+          h('div', { class: 'group__row' },
+            h('span', { class: 'group__row-body' },
+              h('span', { class: 'group__row-label' }, 'Served origin'),
+              h('span', { class: 'group__row-detail settings-notifications__value' }, pushConfig && pushConfig.origin ? pushConfig.origin : window.location.origin)
+            )
+          ),
+          h('div', { class: 'group__row' },
+            h('span', { class: 'group__row-body' },
+              h('span', { class: 'group__row-label' }, 'Web Push keys'),
+              h('span', { class: 'group__row-detail' }, pushConfig && pushConfig.privateKeyConfigured ? 'Configured automatically' : 'Not configured')
+            )
+          ),
+          h('div', { class: 'group__row' },
+            h('span', { class: 'group__row-body' },
+              h('span', { class: 'group__row-label' }, 'VAPID contact'),
+              h('span', { class: 'group__row-detail settings-notifications__value' }, pushConfig ? pushConfig.subject : 'Checking…')
+            )
+          )
+        ),
+        h('p', { class: 'hint hint--compact' },
+          'Keys are generated once and reused. iPhone and iPad use these standard Web Push keys through Apple Push Notification service; Apple developer keys are not required.')
       ),
       h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'Chat events'),

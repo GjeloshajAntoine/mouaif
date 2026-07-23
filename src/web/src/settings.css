@@ -120,6 +120,7 @@
 .settings-notifications__actions { display: flex; padding: 10px; }
 .settings-notifications__actions .btn { width: 100%; min-height: var(--tap); }
 .settings-notifications > .hint { margin-inline: 10px; }
+.settings-notifications__value { overflow-wrap: anywhere; }
 
 /* ---- Settings: provider list + edit form ------------------------ */
 

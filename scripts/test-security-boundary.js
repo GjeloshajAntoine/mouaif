@@ -45,11 +45,55 @@ async function main() {
     assert.equal(localClient.status, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+
+  const publicOrigin = 'https://mouaif.example.test';
+  const proxiedServer = createServer(0, { publicOrigin });
+  await new Promise((resolve) => proxiedServer.listen(0, '127.0.0.1', resolve));
+  const proxiedAddress = 'http://127.0.0.1:' + proxiedServer.address().port;
+  try {
+    const page = await fetch(proxiedAddress + '/web/');
+    const setCookie = String(page.headers.get('set-cookie') || '');
+    assert.match(setCookie, /; Secure(?:;|$)/, 'public HTTPS origin produces a Secure session cookie');
+    const cookie = setCookie.split(';')[0];
+
+    const wrongScheme = await fetch(proxiedAddress + '/api/push/config', {
+      headers: { Origin: 'http://mouaif.example.test', Cookie: cookie }
+    });
+    assert.equal(wrongScheme.status, 403, 'public origin requires the configured HTTPS scheme');
+
+    const config = await fetch(proxiedAddress + '/api/push/config', {
+      headers: { Origin: publicOrigin, Cookie: cookie }
+    });
+    assert.equal(config.status, 200, 'configured public origin is accepted behind a proxy');
+    const configBody = await config.json();
+    assert.equal(configBody.origin, publicOrigin, 'push config reports the served public origin');
+    assert.equal(configBody.subject, publicOrigin, 'VAPID contact adapts to the served domain');
+    assert.equal(configBody.privateKeyConfigured, true, 'notification settings ensure a private VAPID key exists');
+    assert.equal(Object.hasOwn(configBody, 'privateKey'), false, 'private VAPID key is never returned');
+
+    const subscribe = await fetch(proxiedAddress + '/api/push/subscribe', {
+      method: 'POST',
+      headers: { Origin: publicOrigin, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin: 'https://spoofed.example',
+        subscription: { endpoint: 'https://push.example/sub', keys: { p256dh: 'key', auth: 'auth' } }
+      })
+    });
+    assert.equal(subscribe.status, 200, 'subscription accepts the configured public origin');
+    const subscriptions = await fetch(proxiedAddress + '/api/push/subscriptions', {
+      headers: { Origin: publicOrigin, Cookie: cookie }
+    });
+    const subscriptionsBody = await subscriptions.json();
+    assert.equal(subscriptionsBody.subscriptions[0].origin, publicOrigin, 'subscription origin is derived by the server, not request JSON');
+  } finally {
+    await new Promise((resolve) => proxiedServer.close(resolve));
     serverModule.settings.close();
     fs.rmSync(projectDir, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
-  console.log('security boundary: 9 assertions passed');
+  assert.throws(() => createServer(0, { publicOrigin: 'https://example.test/path' }), { code: 'EBAD_PUBLIC_ORIGIN' });
+  console.log('security boundary: 19 assertions passed');
 }
 
 main().catch((error) => {

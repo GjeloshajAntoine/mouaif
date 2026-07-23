@@ -2,6 +2,7 @@
   "name": "mouaif",
   "short_name": "mouaif",
   "description": "Mobile UI for mouaif — chat with AI providers, manage prompts, and run tools against your projects.",
+  "id": "/web/",
   "start_url": "/web/",
   "scope": "/web/",
   "display": "standalone",

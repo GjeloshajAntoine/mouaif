@@ -1,6 +1,6 @@
 # PWA — install, offline shell, update prompts
 
-The mobile UI served from `/web/` is a Progressive Web App: it ships a manifest, a service worker, and the iOS-specific meta tags needed for an Add-to-Home-Screen experience. The feature is opt-in for the user (a browser decides when to surface the install prompt) and the chat surface stays fundamentally a live one — the SW guards the API and SSE endpoints out of its cache.
+The mobile UI served from `/web/` is a Progressive Web App: it ships a manifest, a service worker, and the iOS-specific meta tags needed for an Add-to-Home-Screen experience. The feature is opt-in for the user (a browser decides when to surface the install prompt) and the chat surface stays fundamentally a live one — the SW guards the API and SSE endpoints out of its cache. Its manifest identity is `/web/`, so an installation follows the domain that serves mouaif without a hard-coded hostname.
 
 ## Overview
 

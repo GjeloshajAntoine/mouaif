@@ -24,7 +24,6 @@ async function registerSubscription(sub) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      origin: window.location.origin,
       subscription: { endpoint: subData.endpoint, keys: subData.keys }
     })
   });

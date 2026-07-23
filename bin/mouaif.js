@@ -42,6 +42,7 @@ function collectWatchFiles(dir, out = []) {
 function runWatchSupervisor(options) {
   const port = String(parseInt(options.port, 10));
   const host = String(options.host || '127.0.0.1');
+  const publicOrigin = String(options.publicOrigin || process.env.MOUAIF_PUBLIC_ORIGIN || '');
   const binPath = path.join(__dirname, 'mouaif.js');
   const watchRoots = [path.join(__dirname), path.join(__dirname, '..', 'src')];
   const watched = new Set();
@@ -51,7 +52,9 @@ function runWatchSupervisor(options) {
   let debounce = null;
 
   function startChild() {
-    child = spawn(process.execPath, [binPath, 'serve', '--port', port, '--host', host], {
+    const args = [binPath, 'serve', '--port', port, '--host', host];
+    if (publicOrigin) args.push('--public-origin', publicOrigin);
+    child = spawn(process.execPath, args, {
       stdio: 'inherit',
       env: { ...process.env, [WATCH_CHILD_ENV]: '1' }
     });
@@ -113,6 +116,7 @@ program
   .description('Start the HTTP server')
   .option('-p, --port <port>', 'Port to listen on', DEFAULT_PORT)
   .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
+  .option('--public-origin <origin>', 'Public HTTP(S) origin when served through a proxy', process.env.MOUAIF_PUBLIC_ORIGIN)
   .option('-w, --watch', 'Restart the server when local source files change')
   .action((options) => {
     if (options.watch && process.env[WATCH_CHILD_ENV] !== '1') {
@@ -130,9 +134,10 @@ program
     };
 
     function start() {
-      server = createServer(port, { lifecycle });
+      server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin });
       server.listen(port, options.host, () => {
-        console.log(`🚀 mouaif server running at http://${options.host}:${port}`);
+        const servedOrigin = options.publicOrigin || `http://${options.host}:${port}`;
+        console.log(`🚀 mouaif server running at ${servedOrigin}`);
         console.log(`   Web:    /             — mobile UI`);
         console.log(`   Web:    /web/         — mobile UI`);
         console.log(`   REST:   GET  /data    — get data`);
