@@ -1321,51 +1321,6 @@
 .chat-view__toolbar-btn:hover { background: var(--surface-3); color: var(--fg); }
 .chat-view__toolbar-btn:active { background: var(--surface); }
 
-.chat-view__toolbar-files {
-  /* no extra margin needed — flex order keeps it inline */
-}
-
-.chat-view__toolbar-menu-wrap {
-  position: relative;
-}
-
-.chat-view__toolbar-menu {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  min-width: 140px;
-  margin-bottom: 4px;
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  box-shadow: var(--shadow-md);
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px;
-}
-.chat-view__toolbar-menu[hidden] { display: none !important; }
-
-.chat-view__toolbar-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: 0.78rem;
-  color: var(--fg);
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  text-align: left;
-  transition: background 80ms ease;
-}
-.chat-view__toolbar-menu-item:hover { background: var(--surface-2); }
-.chat-view__toolbar-menu-item:active { background: var(--surface); }
-.chat-view__toolbar-menu-item svg { flex: 0 0 auto; color: var(--muted); }
 .chat-view__textarea {
   flex: 1 1 0;
   min-width: 0;
