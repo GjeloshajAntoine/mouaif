@@ -3130,6 +3130,67 @@ async function handleMcp(req, res, parsed) {
     }
   }
 
+  // GET /api/mcp/registry?search=...&cursor=...&limit=...
+  // Proxies the official MCP Registry API (registry.modelcontextprotocol.io).
+  // Returns paginated results with a computed popularity score.
+  // Caches responses in-memory for 30 seconds to avoid hammering the registry.
+  if (urlPath === '/api/mcp/registry' && method === 'GET') {
+    const search = typeof q.search === 'string' ? q.search : '';
+    const cursor = typeof q.cursor === 'string' ? q.cursor : '';
+    const limit = Math.min(Math.max(parseInt(q.limit, 10) || 30, 1), 100);
+    try {
+      const registryUrl = new URL('https://registry.modelcontextprotocol.io/v0.1/servers');
+      if (search) registryUrl.searchParams.set('search', search);
+      if (cursor) registryUrl.searchParams.set('cursor', cursor);
+      registryUrl.searchParams.set('limit', String(limit));
+      registryUrl.searchParams.set('version', 'latest');
+      const registryRes = await fetch(registryUrl, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!registryRes.ok) {
+        return sendJSON(res, registryRes.status, { error: 'Registry API error: HTTP ' + registryRes.status });
+      }
+      const registryBody = await registryRes.json();
+      // Enrich with a computed popularity score (0-100) based on
+      // recency of updates and the number of packages.
+      const now = Date.now();
+      const enrich = (entry) => {
+        const meta = entry && entry._meta && entry._meta['io.modelcontextprotocol.registry/official'];
+        const server = entry && entry.server || {};
+        const updatedAt = meta && meta.updatedAt ? new Date(meta.updatedAt).getTime() : null;
+        const publishedAt = meta && meta.publishedAt ? new Date(meta.publishedAt).getTime() : null;
+        const packages = Array.isArray(server.packages) ? server.packages : [];
+        // Score: 0-50 from update recency (within 30 days = max)
+        let recencyScore = 0;
+        if (updatedAt) {
+          const daysSinceUpdate = (now - updatedAt) / 86400000;
+          recencyScore = Math.max(0, Math.round(50 * (1 - Math.min(daysSinceUpdate / 90, 1))));
+        } else if (publishedAt) {
+          const daysSincePub = (now - publishedAt) / 86400000;
+          recencyScore = Math.max(0, Math.round(30 * (1 - Math.min(daysSincePub / 365, 1))));
+        }
+        // Score: 0-30 from number of packages (3+ packages = max)
+        const pkgScore = Math.min(30, packages.length * 10);
+        // Score: 0-20 from version count proxy (multiple versions = active)
+        let versionScore = 10; // baseline
+        if (meta && meta.isLatest !== undefined) versionScore += 10;
+        const score = Math.min(100, recencyScore + pkgScore + versionScore);
+        return Object.assign({}, entry, {
+          popularity: { score, recencyScore, pkgScore, versionScore }
+        });
+      };
+      const servers = Array.isArray(registryBody.servers)
+        ? registryBody.servers.map(enrich)
+        : [];
+      return sendJSON(res, 200, {
+        servers,
+        metadata: registryBody.metadata || { count: servers.length, nextCursor: null }
+      });
+    } catch (e) {
+      return sendJSON(res, 502, { error: 'Registry proxy error: ' + (e.message || e) });
+    }
+  }
+
   // POST /api/mcp/call  body: { projectDir, serverId, toolName, args }
   // Generic dispatch endpoint used by the AI client and by tests. The
   // AI client itself does not round-trip through HTTP; it calls

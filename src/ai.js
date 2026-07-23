@@ -1641,6 +1641,18 @@ async function streamChat(opts) {
   // we assemble by `index`. The accumulator lives only for the
   // duration of one turn.
   const toolAcc = new Map(); // index -> { id, name, arguments }
+  // Per-round usage trackers. OpenAI-shaped providers report usage once
+  // on the final chunk (with stream_options.include_usage), but some
+  // compatible gateways stamp a running total on every chunk. Summing
+  // those would double-count, so the round's LAST non-zero report is
+  // committed once by commitRoundUsage() when the stream ends. Across
+  // tool rounds, completion tokens and cost are genuinely new and do sum.
+  let roundPromptTokens = null;
+  let roundCompletionTokens = null;
+  let roundProviderCost = null;
+  let roundProviderCostInput = null;
+  let roundProviderCostOutput = null;
+  let roundUsageCommitted = false;
   const stream = upstream.body;
   const isNDJSON = def.streamFormat === 'ndjson';
   try {
@@ -1678,6 +1690,12 @@ async function streamChat(opts) {
   stopIdle();
   if (signal && outerAbort) signal.removeEventListener('abort', outerAbort);
 
+  // Commit the round's usage exactly once. Providers that stamp usage
+  // on every chunk (not just the final one) would otherwise have their
+  // running totals summed into the turn aggregate (double-count). The
+  // last non-zero report of the round wins — see apply()'s `done`.
+  commitRoundUsage();
+
   if (sawError) return { ok: false, error: sawError };
 
   // Collapse the accumulator into an ordered list of tool calls.
@@ -1713,81 +1731,73 @@ async function streamChat(opts) {
       if (model.provider !== 'openrouter') onEvent('reasoning', ev.data);
     }
     else if (ev.name === 'done') {
-      // Accumulate usage into the shared counter. Do NOT emit `done`
+      // Record the round's usage into per-round trackers; committed once
+      // by commitRoundUsage() when the stream ends. Do NOT emit `done`
       // here — the outer tool loop owns the single final `done` after
       // the whole exchange (all tool round-trips) has completed.
       //
-      // promptTokens: the last round wins. Every round-trip re-sends the
+      // promptTokens: the last report wins. Every round-trip re-sends the
       // full conversation, so summing would double-count the context on
       // tool-heavy turns (N rounds × full convo). The final round's
       // prompt is the accurate footprint.
-      // completionTokens: summed — each round's output is genuinely new.
+      // completionTokens / providerCost: summed ACROSS rounds (each
+      // round's output is genuinely new) but last-wins WITHIN a round,
+      // so a provider that stamps running totals on intermediate chunks
+      // is not double-counted.
       if (ev.data && ev.data.usage) {
         const p = Number(ev.data.usage.promptTokens);
+        const c = Number(ev.data.usage.completionTokens);
         // Only overwrite when the provider actually reported a count;
-        // a 0/absent value must not clobber a real `usage_input` number.
-        if (isFinite(p) && p > 0) usage.promptTokens = p;
-        usage.completionTokens = (usage.completionTokens || 0) + (ev.data.usage.completionTokens || 0);
+        // a 0/absent value must not clobber a real number.
+        if (isFinite(p) && p > 0) roundPromptTokens = p;
+        if (isFinite(c) && c > 0) roundCompletionTokens = c;
         // Surface the round's prompt footprint so the chat UI can
         // refresh its context-usage line mid-exchange (tool rounds).
         // Anthropic already streams usage_input/usage_output; this
         // covers OpenAI-shaped providers that only report on `done`.
         if (isFinite(p) && p > 0) onEvent('usage_input', { promptTokens: p });
       }
-      if (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0) {
-        providerCost = (providerCost || 0) + ev.data.providerCost;
-      }
-      // Per-round usage snapshot. Fires on every upstream `done`
-      // (one per API round-trip, including tool rounds). The outer
-      // loop's `done` still carries the final aggregated usage for
-      // the turn; this callback lets the chat server persist cost
-      // on each intermediate assistant segment. Fires after the
-      // accumulator updates so the snapshot reflects the round.
-      if (typeof onRoundUsage === 'function') {
-        try {
-          const promptTokens = (ev.data && ev.data.usage && Number(ev.data.usage.promptTokens)) || 0;
-          const completionTokens = (ev.data && ev.data.usage && Number(ev.data.usage.completionTokens)) || 0;
-          if (promptTokens > 0 || completionTokens > 0) {
-            // firstFiniteNumber yields 0 when a field is absent; map
-            // that to null so "no breakdown reported" stays distinct
-            // from a genuine $0 and doesn't masquerade as known.
-            const norm = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : null;
-            onRoundUsage({
-              promptTokens,
-              completionTokens,
-              providerCost: (ev.data && typeof ev.data.providerCost === 'number' && isFinite(ev.data.providerCost) && ev.data.providerCost >= 0)
-                ? ev.data.providerCost
-                : null,
-              providerCostInput: norm(ev.data && ev.data.providerCostInput),
-              providerCostOutput: norm(ev.data && ev.data.providerCostOutput)
-            });
-          }
-        } catch { /* listener errors must not abort the stream */ }
+      const cost = ev.data && ev.data.providerCost;
+      if (typeof cost === 'number' && isFinite(cost) && cost >= 0) {
+        roundProviderCost = cost;
+        // firstFiniteNumberOrNull leaves absent fields null; keep "no
+        // breakdown reported" distinct from a genuine $0 so the split
+        // doesn't masquerade as known.
+        const norm = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : null;
+        roundProviderCostInput = norm(ev.data && ev.data.providerCostInput);
+        roundProviderCostOutput = norm(ev.data && ev.data.providerCostOutput);
       }
     } else if (ev.name === 'usage_input') {
       const p = Number(ev.data && ev.data.promptTokens);
       // Anthropic reports this once at message_start; last wins so the
       // final round's prompt (the full conversation footprint) prevails.
-      if (isFinite(p) && p > 0) usage.promptTokens = p;
+      if (isFinite(p) && p > 0) roundPromptTokens = p;
       onEvent('usage_input', ev.data);
     } else if (ev.name === 'usage_output') {
-      usage.completionTokens = (usage.completionTokens || 0) + (ev.data.completionTokens || 0);
+      const c = Number(ev.data && ev.data.completionTokens);
+      if (isFinite(c) && c > 0) roundCompletionTokens = c;
       onEvent('usage_output', ev.data);
       // Anthropic does not put usage on its `done` frame; the output
       // count arrives on `message_delta` and the input count on
-      // `message_start`. Emit the round snapshot here so per-round
-      // cost reaches intermediate segments for Anthropic too. The
-      // `done` branch above may fire a second time for providers
-      // that put usage on `done` — the server keeps the richer value.
+      // `message_start`. Emit the round snapshot here so per-round cost
+      // reaches intermediate segments for Anthropic too. Anthropic's
+      // deltas are cumulative, so fire per delta — the server keeps the
+      // last (richest) value. The trackers are intentionally NOT
+      // committed here; the end-of-stream commitRoundUsage() folds the
+      // final values into the turn aggregate exactly once.
       if (typeof onRoundUsage === 'function') {
         try {
-          const completionTokens = Number(ev.data.completionTokens) || 0;
-          if (completionTokens > 0) {
+          if ((roundPromptTokens || 0) > 0 || (roundCompletionTokens || 0) > 0) {
             onRoundUsage({
-              promptTokens: usage.promptTokens || 0,
-              completionTokens,
-              providerCost: null
+              promptTokens: roundPromptTokens || 0,
+              completionTokens: roundCompletionTokens || 0,
+              providerCost: null,
+              providerCostInput: null,
+              providerCostOutput: null
             });
+            // The round has a snapshot; commitRoundUsage() must not
+            // emit a duplicate when it folds the aggregates.
+            roundUsageCommitted = true;
           }
         } catch { /* listener errors must not abort the stream */ }
       }
@@ -1818,6 +1828,42 @@ async function streamChat(opts) {
     } else if (ev.name === 'passthrough') {
       onEvent('passthrough', ev.data);
     }
+  }
+
+  // Fold the round's latest usage report into the turn aggregate. The
+  // trackers are consumed, so each report is added exactly once: a
+  // provider that stamps usage on every chunk overwrites the pending
+  // value (last-wins) instead of accumulating it. Anthropic commits per
+  // `usage_output` delta; the end-of-stream call is then a no-op and the
+  // real commit for providers that report on `done` (OpenAI-shaped,
+  // Ollama). The per-round snapshot for segment costing is emitted once
+  // per round, carrying the most recent numbers.
+  function commitRoundUsage() {
+    const promptTokens = roundPromptTokens || 0;
+    const completionTokens = roundCompletionTokens || 0;
+    const hasUsage = promptTokens > 0 || completionTokens > 0;
+    const hasCost = typeof roundProviderCost === 'number' && isFinite(roundProviderCost) && roundProviderCost >= 0;
+    if (!hasUsage && !hasCost) return;
+    if (promptTokens > 0) usage.promptTokens = promptTokens;
+    if (completionTokens > 0) usage.completionTokens = (usage.completionTokens || 0) + completionTokens;
+    if (hasCost) providerCost = (providerCost || 0) + roundProviderCost;
+    if (!roundUsageCommitted && hasUsage && typeof onRoundUsage === 'function') {
+      try {
+        onRoundUsage({
+          promptTokens,
+          completionTokens,
+          providerCost: hasCost ? roundProviderCost : null,
+          providerCostInput: roundProviderCostInput,
+          providerCostOutput: roundProviderCostOutput
+        });
+      } catch { /* listener errors must not abort the stream */ }
+    }
+    roundUsageCommitted = true;
+    roundPromptTokens = null;
+    roundCompletionTokens = null;
+    roundProviderCost = null;
+    roundProviderCostInput = null;
+    roundProviderCostOutput = null;
   }
   } // end runUpstreamTurn
 

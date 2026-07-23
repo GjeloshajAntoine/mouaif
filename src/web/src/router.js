@@ -42,6 +42,13 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
   }
+  // #/settings/mcp/registry routes to the browse view (before the generic
+  // settings/mcp match, which only catches hash === settings/mcp or ?qs).
+  if (h === 'settings/mcp/registry' || h.startsWith('settings/mcp/registry?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsMcpRegistry', projectDir: params.get('projectDir') || '' };
+  }
   // settings/mcp lists servers in both scopes (app-wide + per project).
   // The active project is the source of truth for the Project tab; the
   // route hash can override it via ?projectDir=... for deep links and

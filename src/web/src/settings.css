@@ -528,6 +528,50 @@
 .settings-project__agent-tools .checkbox-row .checkbox { margin-right: 4px; }
 .settings-project__add-agent { margin-top: 8px; width: 100%; }
 
+/* ---- MCP Registry browse ----------------------------------------- */
+
+.reg-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.reg-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reg-row__head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.reg-row__name { font-weight: 600; font-size: 0.88rem; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.reg-row__ver { color: var(--muted); font-size: 0.65rem; font-weight: 400; }
+.reg-row__status { font-size: 0.62rem; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: var(--r-pill); }
+.reg-row__status--active { background: var(--success-soft, #1a3a1a); color: var(--success, #4caf50); }
+.reg-row__status--deprecated { background: var(--surface-3); color: var(--muted); }
+.reg-row__desc { color: var(--fg-soft); font-size: 0.76rem; line-height: 1.35; }
+.reg-row__meta { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 0.68rem; color: var(--muted); }
+.reg-row__meta-item { }
+.reg-row__actions { display: flex; gap: 4px; margin-top: 2px; }
+
+/* Popularity bar */
+.reg-pop { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.reg-pop__bar {
+  display: inline-block;
+  width: 40px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  transition: width 0.3s ease;
+}
+.reg-pop--high .reg-pop__bar { background: var(--accent); }
+.reg-pop--mid .reg-pop__bar { background: #e6a817; }
+.reg-pop--low .reg-pop__bar { background: var(--muted-2); }
+.reg-pop--high .reg-pop__label { color: var(--accent); }
+.reg-pop--mid .reg-pop__label { color: #e6a817; }
+.reg-pop--low .reg-pop__label { color: var(--muted); }
+.reg-pop__label { font-size: 0.65rem; font-weight: 700; min-width: 18px; text-align: right; color: var(--muted); }
+
 .code-inline {
   font-family: var(--font-mono);
   font-size: 0.86em;

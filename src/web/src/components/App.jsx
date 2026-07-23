@@ -2,6 +2,7 @@
 import { h, Fragment } from 'preact';
 import { route, activeProject, setActiveProject } from '../api.js';
 import { PwaBanners } from './PwaBanners.jsx';
+import { NotificationsOverlay } from './NotificationsOverlay.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
 import { SettingsProjectView } from './SettingsProject.jsx';
@@ -9,6 +10,7 @@ import { SettingsDefaultsView } from './SettingsDefaults.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
 import { SettingsMcpView, SettingsMcpEditView } from './SettingsMcp.jsx';
+import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
 import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsImportView } from './SettingsImport.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
@@ -68,7 +70,7 @@ export function App() {
     && view.name !== 'settingsDefaults'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
     && view.name !== 'settingsAgents'
-    && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit'
+    && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
     && view.name !== 'settingsTags'
     && view.name !== 'settingsPricing'
     && view.name !== 'settingsImport'
@@ -87,6 +89,7 @@ export function App() {
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
   else if (view.name === 'settingsMcpEdit') body = h(SettingsMcpEditView, { id: view.id, projectDir: view.projectDir, scope: view.scope });
+  else if (view.name === 'settingsMcpRegistry') body = h(SettingsMcpRegistryView, { projectDir: view.projectDir });
   else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });
   else if (view.name === 'settingsImport') body = h(SettingsImportView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
@@ -97,6 +100,7 @@ export function App() {
     h(Header, null),
     h(PwaBanners, null),
     h('main', { class: 'app__main' + (showTabBar ? '' : ' app__main--flush') }, body),
-    showTabBar ? h(BottomNav, null) : null
+    showTabBar ? h(BottomNav, null) : null,
+    h(NotificationsOverlay, null)
   );
 }

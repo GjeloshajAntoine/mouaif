@@ -413,6 +413,7 @@ export function SettingsMcpView(props = {}) {
         )
       : null,
     h('div', { class: 'page-bar' },
+      h('a', { href: '#/settings/mcp/registry' + projectQS(projectDir), class: 'btn btn--small', type: 'button' }, 'Browse Registry'),
       h('span', {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
         'aria-live': 'polite'
