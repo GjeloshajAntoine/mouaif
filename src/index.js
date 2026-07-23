@@ -116,6 +116,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'authAccounts',   // non-secret OAuth account index
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
   'chatStorage',    // app-wide chat persistence backend
+  'toolFeedbackMaxBytes', // model-facing tool-result byte cap
   'notifications',  // browser notification event preferences
   'flags'           // server-side feature toggles (non-secret)
 ]);
@@ -1471,8 +1472,11 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const supportsOpenAIToolHistory = model.provider === 'openai-compatible'
     || model.provider === 'openrouter'
     || model.provider === 'github-copilot';
+  let toolFeedbackMaxBytes;
+  try { toolFeedbackMaxBytes = settings.getApp().toolFeedbackMaxBytes; } catch { /* default applies */ }
   upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {
-    includeTools: supportsOpenAIToolHistory
+    includeTools: supportsOpenAIToolHistory,
+    toolFeedbackMaxBytes
   }));
 
   let assistantContent = '';

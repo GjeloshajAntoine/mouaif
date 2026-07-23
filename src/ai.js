@@ -27,6 +27,8 @@
 // `parseEvent(eventName, data)` so adding a new provider is a localized
 // change.
 
+const toolFeedback = require('./toolFeedback.js');
+
 // ---- Provider endpoints ------------------------------------------------
 
 const ENDPOINTS = {
@@ -1224,6 +1226,15 @@ async function streamChat(opts) {
   let repeatedToolCallCount = 0;
   const REPEATED_TOOL_CALL_LIMIT = 3;
 
+  function modelContentForTool(name, exec) {
+    return toolFeedback.compactToolFeedback({
+      name,
+      content: exec && exec.content,
+      result: exec && exec.result,
+      maxBytes: opts && opts.appSettings && opts.appSettings.toolFeedbackMaxBytes
+    });
+  }
+
   while (true) {
     let effectiveToolSpecs = visibleToolSpecs;
     try {
@@ -1342,7 +1353,7 @@ async function streamChat(opts) {
           role: 'tool',
           tool_call_id: c.id || undefined,
           name: c.name,
-          content: exec.content
+          content: modelContentForTool(c.name, exec)
         });
         return exec;
       }
@@ -1443,7 +1454,7 @@ async function streamChat(opts) {
               role: 'tool',
               tool_call_id: c.id || undefined,
               name: c.name,
-              content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
+              content: modelContentForTool(c.name, exec)
             });
             return exec;
           }
@@ -1522,7 +1533,7 @@ async function streamChat(opts) {
         role: 'tool',
         tool_call_id: c.id || undefined,
         name: c.name,
-        content: typeof exec.content === 'string' ? exec.content : JSON.stringify(exec.content)
+        content: modelContentForTool(c.name, exec)
       });
 
       const imageParts = toolResultImageParts(exec && exec.result);

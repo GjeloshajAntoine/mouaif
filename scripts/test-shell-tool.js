@@ -153,8 +153,49 @@ async function main() {
   const finalMsg = events.filter(e => e.name === 'message').map(e => e.data.delta).join('');
   check('final assistant text present', /output was captured/.test(finalMsg), finalMsg);
 
+  // ---- Part 2b: model feedback is capped, SSE result stays complete --
+  let cappedRequests = 0;
+  let cappedToolBytes = 0;
+  const serverCapped = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      cappedRequests++;
+      const parsed = JSON.parse(body);
+      if (cappedRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_big', function: { name: 'shell', arguments: JSON.stringify({ cmd: 'node -e "process.stdout.write(\'x\'.repeat(10000))"' }) } }] } }] },
+          { choices: [{ finish_reason: 'tool_calls' }] }
+        ]);
+      } else {
+        const toolMessage = (parsed.messages || []).find((m) => m.role === 'tool' && m.name === 'shell');
+        cappedToolBytes = toolMessage ? Buffer.byteLength(toolMessage.content, 'utf8') : 0;
+        sse(res, [
+          { choices: [{ delta: { content: 'Large output handled.' } }] },
+          { choices: [{ finish_reason: 'stop' }] }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverCapped.listen(0, '127.0.0.1', resolve));
+  const cappedEvents = [];
+  const cappedResult = await ai.streamChat({
+    model: Object.assign({}, model, { baseUrl: 'http://127.0.0.1:' + serverCapped.address().port }),
+    messages: [{ role: 'user', content: 'produce a large result' }],
+    projectDir,
+    chatId,
+    appSettings: { toolFeedbackMaxBytes: 4096 },
+    onEvent: (name, data) => cappedEvents.push({ name, data })
+  });
+  serverCapped.close();
+  const cappedRichResult = cappedEvents.find((e) => e.name === 'tool_result' && e.data.name === 'shell');
+  check('large live tool loop returned ok', cappedResult.ok && cappedRequests === 2, JSON.stringify(cappedResult));
+  check('large model-facing tool result is capped', cappedToolBytes > 0 && cappedToolBytes <= 4096, String(cappedToolBytes));
+  check('large SSE tool result stays complete', cappedRichResult && cappedRichResult.data.result.stdout.length === 10000, JSON.stringify(cappedRichResult && cappedRichResult.data.result));
+
   // ---- Part 3: subagent usage is counted in parent totals ------------
   let subagentRequests = 0;
+  let subagentParentFeedback = null;
   const serverSubagent = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
@@ -173,6 +214,9 @@ async function main() {
           { usage: { prompt_tokens: 30, completion_tokens: 5, cost: 0.0003 } }
         ]);
       } else {
+        const parsed = JSON.parse(body);
+        const toolMessage = (parsed.messages || []).find((m) => m.role === 'tool' && m.name === 'subagent');
+        try { subagentParentFeedback = toolMessage ? JSON.parse(toolMessage.content) : null; } catch { /* assertion reports failure */ }
         sse(res, [
           { choices: [{ delta: { content: 'Parent final.' } }] },
           { choices: [{ finish_reason: 'stop' }] },
@@ -195,6 +239,8 @@ async function main() {
   const subagentToolResult = subagentEvents.find((e) => e.name === 'tool_result' && e.data && e.data.name === 'subagent');
   check('subagent loop returned ok', subagentResult.ok === true && subagentRequests === 3, JSON.stringify(subagentResult));
   check('subagent tool result carries nested usage', subagentToolResult && subagentToolResult.data.result && subagentToolResult.data.result.usage && subagentToolResult.data.result.usage.promptTokens === 30, JSON.stringify(subagentToolResult && subagentToolResult.data));
+  check('subagent parent feedback keeps final text', subagentParentFeedback && subagentParentFeedback.text === 'Nested answer.', JSON.stringify(subagentParentFeedback));
+  check('subagent parent feedback omits nested transcript', subagentParentFeedback && !Object.hasOwn(subagentParentFeedback, 'chat') && !Object.hasOwn(subagentParentFeedback, 'toolEvents'), JSON.stringify(subagentParentFeedback));
   check('subagent prompt usage added to final done', subagentDone && subagentDone.data.usage.promptTokens === 230, JSON.stringify(subagentDone && subagentDone.data));
   check('subagent completion usage added to final done', subagentDone && subagentDone.data.usage.completionTokens === 35, JSON.stringify(subagentDone && subagentDone.data));
   check('subagent provider cost added to final done', subagentDone && subagentDone.data.providerCost === 0.0033, JSON.stringify(subagentDone && subagentDone.data));

@@ -60,6 +60,9 @@ const DEFAULTS = Object.freeze({
   // When 'db', chat metadata and messages live in ~/.mouaif/store.sqlite.
   // When 'json', they live in <projectDir>/.mouaif.json and .mouaif.messages.*.json.
   chatStorage: 'db',
+  // Maximum UTF-8 bytes of one tool result copied into model context.
+  // The complete result remains available to the UI and transcript.
+  toolFeedbackMaxBytes: 64 * 1024,
   // OS-level browser notifications. Attention events are on by default;
   // quick actions let the user answer simple questions or approve once
   // without opening the app.

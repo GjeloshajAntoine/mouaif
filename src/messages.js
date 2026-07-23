@@ -14,6 +14,7 @@
 
 const path = require('path');
 const settings = require('./settings.js');
+const toolFeedback = require('./toolFeedback.js');
 
 const CHAT_ID_RE = /^[a-f0-9]{8}$/i;
 
@@ -206,6 +207,7 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
     ? contentForMessage
     : (m) => m && m.content;
   const includeTools = !options || options.includeTools !== false;
+  const toolFeedbackMaxBytes = options && options.toolFeedbackMaxBytes;
   const out = [];
   const usedIds = new Set();
   let pairNumber = 0;
@@ -238,6 +240,9 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
       let args = '{}';
       try { args = JSON.stringify(m.args || {}); } catch { /* keep empty object */ }
       const name = m.name || result.name || 'tool';
+      const storedContent = typeof result.content === 'string' ? result.content : JSON.stringify(result.content || {});
+      let storedResult = null;
+      try { storedResult = JSON.parse(storedContent); } catch { /* plain-text result */ }
       out.push({
         role: 'assistant',
         content: null,
@@ -247,7 +252,12 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
         role: 'tool',
         tool_call_id: wireId,
         name,
-        content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content || {})
+        content: toolFeedback.compactToolFeedback({
+          name,
+          content: storedContent,
+          result: storedResult,
+          maxBytes: toolFeedbackMaxBytes
+        })
       });
       i++;
       continue;
