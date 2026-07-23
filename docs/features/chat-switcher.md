@@ -12,7 +12,7 @@ The chat switcher is a dropdown in the chat header that lets the user quickly sw
 4. The currently active chat is highlighted with the accent color.
 5. Tap outside the dropdown or click the title again to close it.
 
-Two small side arrows (`‹` and `›`) flank the chat title to visually suggest switching between chats. They fade in on hover.
+A small down-chevron (`▾`) sits to the right of the chat title; it flips to `▴` (via CSS `rotate(180deg)`) when the dropdown is open.
 
 ## Implementation notes
 
