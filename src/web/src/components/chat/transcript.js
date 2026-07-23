@@ -721,6 +721,99 @@ export function renderSubagentChat(card, toolResult) {
   else card.appendChild(wrap);
 }
 
+// getOrCreateProgressCard(refs, callId, title)
+//
+// Find an existing progress card by callId, or create + append a new
+// one. Returns the card element.
+function getOrCreateProgressCard(refs, callId, title) {
+  if (!refs.transcript.current) return null;
+  const existing = refs.transcript.current.querySelector('[data-progress-id="' + cssEscape(callId || '') + '"]');
+  if (existing) return existing;
+
+  const card = document.createElement('div');
+  card.className = 'tool-card tool-card--progress';
+  if (callId) card.dataset.progressId = callId;
+
+  const head = document.createElement('div');
+  head.className = 'tool-card__head';
+  const name = document.createElement('span');
+  name.className = 'tool-card__name';
+  name.textContent = title || 'Progress';
+  const pill = document.createElement('span');
+  pill.className = 'tool-card__pill tool-card__pill--busy';
+  pill.textContent = 'running';
+  head.appendChild(name);
+  head.appendChild(pill);
+  card.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'tool-card__body';
+
+  const barWrap = document.createElement('div');
+  barWrap.className = 'tool-card__progress-bar-wrap';
+  const bar = document.createElement('div');
+  bar.className = 'tool-card__progress-bar';
+  barWrap.appendChild(bar);
+  body.appendChild(barWrap);
+
+  const pct = document.createElement('span');
+  pct.className = 'tool-card__progress-pct';
+  pct.textContent = '0%';
+  body.appendChild(pct);
+
+  const msg = document.createElement('div');
+  msg.className = 'tool-card__progress-msg';
+  body.appendChild(msg);
+
+  card.appendChild(body);
+  refs.transcript.current.appendChild(card);
+  afterTranscriptAppend(refs, true);
+  return card;
+}
+
+// updateProgressCard(refs, data)
+//
+// Update an existing progress card with new values (current, total,
+// status, message). Creates one if no card matches `callId`.
+export function updateProgressCard(refs, data) {
+  if (!refs.transcript.current || !data) return;
+  const card = getOrCreateProgressCard(refs, data.callId, data.title);
+  if (!card) return;
+
+  const current = Math.max(0, Math.min(Number(data.current) || 0, Number(data.total) || 100));
+  const total = Math.max(1, Number(data.total) || 100);
+  const fraction = Math.min(1, current / total);
+  const percent = Math.round(fraction * 100);
+
+  const bar = card.querySelector('.tool-card__progress-bar');
+  if (bar) bar.style.width = percent + '%';
+
+  const pct = card.querySelector('.tool-card__progress-pct');
+  if (pct) pct.textContent = percent + '%';
+
+  const msgEl = card.querySelector('.tool-card__progress-msg');
+  if (msgEl) msgEl.textContent = data.message || '';
+
+  const pill = card.querySelector('.tool-card__pill');
+  if (pill) {
+    if (data.status === 'completed') {
+      pill.className = 'tool-card__pill tool-card__pill--ok';
+      pill.textContent = 'completed';
+      // Auto-expand on completion so the user sees the result.
+      card.classList.add('is-expanded');
+    } else if (data.status === 'failed') {
+      pill.className = 'tool-card__pill tool-card__pill--err';
+      pill.textContent = 'failed';
+      card.classList.add('is-expanded');
+    } else {
+      pill.className = 'tool-card__pill tool-card__pill--busy';
+      pill.textContent = 'running';
+    }
+  }
+
+  afterTranscriptAppend(refs, false);
+}
+
 // renderTranscript(state, refs)
 //
 // Build / rebuild the entire transcript from state.messages. On a

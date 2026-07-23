@@ -16,7 +16,8 @@ import {
   appendToolCallCard,
   appendToolResultCard,
   finalizeLiveMessage,
-  handleSubagentStreamEvent
+  handleSubagentStreamEvent,
+  updateProgressCard
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -563,6 +564,15 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       appendToolCallCard(data, refs);
     } else if (ev.eventName === 'tool_result') {
       appendToolResultCard(data, refs);
+    } else if (ev.eventName === 'progress_update') {
+      // Real-time progress bar from the model's report_progress tool.
+      // Creates or updates a progress card in the transcript with a
+      // live progress bar and status pill.
+      updateProgressCard(refs, data);
+      const pct = data.current != null && data.total != null
+        ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100) + '%'
+        : (data.status || 'running');
+      setChatStatus(refs, data.title + ' ' + pct, 'busy');
     } else if (ev.eventName === 'error') {
       streamFailed = true;
       // Clear the per-round counters so a subsequent turn does not
