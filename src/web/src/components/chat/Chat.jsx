@@ -198,61 +198,39 @@ export function ChatView(props) {
           h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm12 1.5V7h3.5L15 7.5ZM6 8h6v1.5H6V8Zm0 3h9v1.5H6V11Zm0 3h7v1.5H6V14Z', fill: 'currentColor' })
         )
       ),
-      h('div', { class: 'chat-view__toolbar-menu-wrap' },
-        h('button', {
-          class: 'chat-view__toolbar-btn chat-view__toolbar-plus',
-          type: 'button',
-          onClick: (e) => {
-            const menu = e.currentTarget.parentElement.querySelector('.chat-view__toolbar-menu');
-            if (menu) menu.hidden = !menu.hidden;
-          },
-          'aria-label': 'More tools',
-          'aria-haspopup': 'true',
-          title: 'More tools'
+      h('button', {
+        class: 'chat-view__toolbar-btn',
+        type: 'button',
+        onClick: () => {},
+        'aria-label': 'Previous',
+        title: 'Previous'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+          h('path', { d: 'M15.5 19.5 8 12l7.5-7.5L17 6l-6 6 6 6-1.5 1.5Z', fill: 'currentColor' })
+        )
+      ),
+      h('button', {
+        class: 'chat-view__toolbar-btn',
+        type: 'button',
+        onClick: () => {},
+        'aria-label': 'Next',
+        title: 'Next'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+          h('path', { d: 'M8.5 4.5 16 12l-7.5 7.5L7 18l6-6-6-6 1.5-1.5Z', fill: 'currentColor' })
+        )
+      ),
+      h('button', {
+        class: 'chat-view__toolbar-btn',
+        type: 'button',
+        onClick: () => {
+          // Git tool placeholder — will be wired to a git action
         },
-          h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-            h('path', { d: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z', fill: 'currentColor' })
-          )
-        ),
-        h('div', { class: 'chat-view__toolbar-menu', hidden: true, role: 'menu' },
-          h('button', {
-            class: 'chat-view__toolbar-menu-item',
-            type: 'button',
-            role: 'menuitem',
-            onClick: () => {},
-            'aria-label': 'Previous'
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-              h('path', { d: 'M15.5 19.5 8 12l7.5-7.5L17 6l-6 6 6 6-1.5 1.5Z', fill: 'currentColor' })
-            ),
-            h('span', null, 'Previous')
-          ),
-          h('button', {
-            class: 'chat-view__toolbar-menu-item',
-            type: 'button',
-            role: 'menuitem',
-            onClick: () => {},
-            'aria-label': 'Next'
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-              h('path', { d: 'M8.5 4.5 16 12l-7.5 7.5L7 18l6-6-6-6 1.5-1.5Z', fill: 'currentColor' })
-            ),
-            h('span', null, 'Next')
-          ),
-          h('button', {
-            class: 'chat-view__toolbar-menu-item',
-            type: 'button',
-            role: 'menuitem',
-            onClick: () => {
-              // Git tool placeholder — will be wired to a git action
-            },
-            'aria-label': 'Git tool'
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-              h('path', { d: 'M2.6 10.6a2 2 0 0 1 0-2.8l5.2-5.2a2 2 0 0 1 2.8 0l10.6 10.6a2 2 0 0 1 0 2.8l-5.2 5.2a2 2 0 0 1-2.8 0L2.6 10.6Zm1.4 1.4L12 20l8-8-8-8-8 8Z', fill: 'currentColor' })
-            ),
-            h('span', null, 'Git tool')
-          )
+        'aria-label': 'Git tool',
+        title: 'Git tool'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+          h('path', { d: 'M2.6 10.6a2 2 0 0 1 0-2.8l5.2-5.2a2 2 0 0 1 2.8 0l10.6 10.6a2 2 0 0 1 0 2.8l-5.2 5.2a2 2 0 0 1-2.8 0L2.6 10.6Zm1.4 1.4L12 20l8-8-8-8-8 8Z', fill: 'currentColor' })
         )
       ),
       h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),

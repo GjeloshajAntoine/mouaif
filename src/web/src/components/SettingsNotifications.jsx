@@ -16,6 +16,7 @@ const DEFAULTS = Object.freeze({
   toolAuthorization: true,
   completion: true,
   errors: true,
+  progress: true,
   quickActions: true
 });
 
@@ -184,6 +185,7 @@ export function SettingsNotificationsView() {
           eventRow('askUser', 'Questions from the model', 'Answer two-choice questions directly when supported.'),
           eventRow('toolAuthorization', 'Tool authorization', 'Allow once or deny without reopening the chat.'),
           eventRow('completion', 'Response completed', 'Know when a background chat has finished.'),
+          eventRow('progress', 'Progress updates', 'Receive per-chat progress status from the model.'),
           eventRow('errors', 'Chat errors', 'Be alerted when a background run fails.'),
           eventRow('quickActions', 'Notification actions', 'Show safe quick actions on supported browsers.')
         )

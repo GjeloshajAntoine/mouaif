@@ -1548,6 +1548,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     toolAuthorization: true,
     completion: true,
     errors: true,
+    progress: true,
     quickActions: true
   }, appSettings.notifications || {});
   const chatUrl = `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
@@ -1557,7 +1558,8 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     const preferenceKey = kind === 'ask_user' ? 'askUser'
       : kind === 'tool_authorization' ? 'toolAuthorization'
         : kind === 'completion' ? 'completion'
-          : kind === 'error' ? 'errors' : '';
+          : kind === 'error' ? 'errors'
+            : kind === 'progress' ? 'progress' : '';
     if (preferenceKey && notificationPrefs[preferenceKey] === false) return;
     const data = Object.assign({ kind, chatId, projectDir, url: chatUrl }, options.data || {});
     push.sendPushToSession(_pushSessionId, {
@@ -1739,6 +1741,18 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           data: notificationData,
           actions: attentionActions('ask_user', data),
           requireInteraction: true
+        });
+      } else if (name === 'progress_update') {
+        // Updatable per-chat push notification for real-time progress.
+        // Uses a stable tag so each new progress_update replaces the
+        // previous OS notification for this chat (no notification spam).
+        const pct = data.current != null && data.total != null
+          ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100) + '%'
+          : '';
+        sendChatPush('progress', {
+          title: data.title || 'Progress',
+          body: (pct ? pct + ' — ' : '') + (data.message || ''),
+          tag: 'chat-' + chatId + '-progress'
         });
       } else if (name === 'done') {
         sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
