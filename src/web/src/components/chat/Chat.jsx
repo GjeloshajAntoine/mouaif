@@ -242,8 +242,9 @@ export function ChatView(props) {
             h('span', null, '×')
           ))
         ) : null
-      ),
-      h('div', { class: 'chat-view__status-row' },
+      )
+    ),
+    h('div', { class: 'chat-view__status-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
       runningVisible ? h('button', {
         class: 'btn btn--danger chat-view__cancel-run',
