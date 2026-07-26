@@ -99,6 +99,7 @@ export function ToolPopup(props) {
     subagent: 'subagent',
     ask_user: 'ask_user',
     report_progress: 'report_progress',
+    task: 'task',
     files: 'file'
   };
   for (const g of groups) {

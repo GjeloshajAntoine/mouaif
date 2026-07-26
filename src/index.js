@@ -1176,7 +1176,7 @@ async function handleChats(req, res, parsed, sessionToken) {
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress']) {
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task']) {
           const cfg = authState.tools[family];
           if (cfg && cfg.mode === 'off') {
             const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -3004,6 +3004,15 @@ async function handleTools(req, res, parsed) {
         description: (ask.SPEC && ask.SPEC.function && ask.SPEC.function.description) || 'Ask the user a structured question with options.'
       });
     } catch { /* ask_user module unavailable; omit */ }
+    try {
+      const taskMod = require('./tools/task.js');
+      tools.push({
+        name: 'task',
+        kind: 'native',
+        source: 'task',
+        description: (taskMod.SPEC && taskMod.SPEC.function && taskMod.SPEC.function.description) || 'Create, update, track progress on, and list structured tasks with subtasks.'
+      });
+    } catch { /* task module unavailable; omit */ }
     try {
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {

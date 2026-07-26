@@ -31,11 +31,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
   const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
   const [askUserMode, setAskUserMode] = useState('ask');
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
   const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
   const [progressStatusMsg, setProgressStatusMsg] = useState('');
+  const [taskStatusMsg, setTaskStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
@@ -135,6 +137,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setFileStatusMsg('');
     setSubagentStatusMsg('');
     setProgressStatusMsg('');
+    setTaskStatusMsg('');
     setAskUserStatusMsg('');
 
     try {
@@ -158,6 +161,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       setProgressAuth({
         mode: (progress && progress.mode) || 'ask',
         allowlist: progress && Array.isArray(progress.allowlist) ? progress.allowlist : []
+      });
+      const task = authz.status === 200 && authz.body.tools && authz.body.tools.task;
+      setTaskAuth({
+        mode: (task && task.mode) || 'ask',
+        allowlist: task && Array.isArray(task.allowlist) ? task.allowlist : []
       });
       // ask_user is a binary { off, ask } tool. The server clamps any
       // legacy allowlist / allow value to `ask`; here we read what the
@@ -368,6 +376,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
+  function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 
   // Per-server MCP authorization (no allowlist — that's in the
   // dedicated MCP settings page). The segment writes the mode
@@ -598,6 +607,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
+    const taskTool = catalog.find((t) => t.name === 'task');
+    if (taskTool) {
+      groups.push({
+        id: 'task',
+        name: 'Task',
+        description: shortDesc(taskTool.description),
+        title: taskTool.description || '',
+        checked: isOn(taskAuth.mode),
+        control: toolModeSegs('Task', segMode(taskAuth.mode), pickTaskMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [leaf(taskTool, { checked: isOn(taskAuth.mode) })],
+        extra: taskStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, taskStatusMsg) : null
+      });
+    }
+
     const askTool = catalog.find((t) => t.name === 'ask_user');
     if (askTool) {
       groups.push({
@@ -705,6 +732,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'shell') pickShellMode(mode);
     else if (groupId === 'subagent') pickSubagentMode(mode);
+    else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') pickFileMode(mode);
@@ -719,6 +747,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const AGENT_TOOL_CHOICES = [
     { value: 'shell', label: 'shell' },
     { value: 'subagent', label: 'subagent' },
+    { value: 'task', label: 'task' },
     { value: 'report_progress', label: 'report_progress' },
     { value: 'ask_user', label: 'ask_user' },
     { value: 'list_features', label: 'list_features' },

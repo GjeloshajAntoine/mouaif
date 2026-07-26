@@ -4,6 +4,7 @@ import { h, Fragment } from 'preact';
 export const AGENT_TOOL_CHOICES = [
   { value: 'shell', label: 'shell' },
   { value: 'subagent', label: 'subagent' },
+  { value: 'task', label: 'task' },
   { value: 'report_progress', label: 'report_progress' },
   { value: 'ask_user', label: 'ask_user' },
   { value: 'list_features', label: 'list_features' },
