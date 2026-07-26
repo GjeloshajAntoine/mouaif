@@ -363,18 +363,24 @@ export function useChatState(props) {
         refreshProviderCredit(state, refs);
         updateModelTriggerLocal();
 
-        // Auto-fetch the live catalog before the picker renders.
-        if (activeProviderId(state)) {
-          await refreshActiveProvider(state, refs).catch(() => {});
-        } else {
-          const ps = state.providers.map((p) => p && p.id).filter(Boolean);
-          if (ps.length) {
-            await Promise.all(ps.map((p) => fetchLiveForProviderLocal(p).catch(() => {})));
-          }
-        }
+        // Render the transcript and model picker immediately with the
+        // project-level model list. Then fire live model fetches in the
+        // background — they update the picker when they arrive, but must
+        // not block the initial render (the upstream can take up to 8 s).
         if (cancelled) return;
         renderModelPicker(state, refs);
         renderTranscriptBound();
+        // Fire live model fetches in the background (no await).
+        (function fireLiveFetches() {
+          if (activeProviderId(state)) {
+            refreshActiveProvider(state, refs).catch(() => {});
+          } else {
+            const ps = state.providers.map((p) => p && p.id).filter(Boolean);
+            if (ps.length) {
+              Promise.all(ps.map((p) => fetchLiveForProviderLocal(p).catch(() => {}))).catch(() => {});
+            }
+          }
+        })();
         if (c.running) {
           setRunningVisible(true);
           loadPendingAuthorization(state, refs);

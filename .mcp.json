@@ -5,6 +5,8 @@
       "name": "git",
       "slug": "git",
       "command": "uvx",
+      "url": "",
+      "headers": {},
       "args": [
         "mcp-server-git",
         "--repository",
@@ -20,6 +22,8 @@
       "name": "chrome-debug",
       "slug": "chrome_debug",
       "command": "npx",
+      "url": "",
+      "headers": {},
       "args": [
         "-y",
         "chrome-devtools-mcp@latest",
@@ -29,7 +33,7 @@
       ],
       "env": {},
       "cwd": "",
-      "enabled": true,
+      "enabled": false,
       "createdAt": "2026-07-17T23:45:00.000Z"
     }
   ],

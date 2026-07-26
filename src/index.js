@@ -2952,9 +2952,10 @@ async function handleTools(req, res, parsed) {
     // this as "open a chat that references a stopped server" — without
     // it, the tool list comes back empty after a server restart even
     // though the servers are enabled, which reads as "not saved".
-    try {
-      await mcp.ensureEnabledServers(projectDir);
-    } catch { /* best-effort; the AI client retries on demand */ }
+    // Fire asynchronously so slow/blocked MCP servers don't delay the
+    // chat load — the tool list will reflect the previous session state
+    // (or re-fetched on the next tools/list call).
+    mcp.ensureEnabledServers(projectDir).catch(() => {});
     const tools = [];
     try {
       const shell = require('./tools/shell.js');
