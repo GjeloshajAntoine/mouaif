@@ -1,4 +1,4 @@
-﻿/* mouaif mobile-first base. Built by Vite into /web/assets/index.css.
+/* mouaif mobile-first base. Built by Vite into /web/assets/index.css.
 
    This file is the entrypoint: it imports each sub-file in cascade
    order. Vite inlines all @imports into a single bundle at build
@@ -9,9 +9,19 @@
    2. layout.css       — app shell, tab bar, view headers, groups, keyframes
    3. forms.css        — rows, labels, inputs, buttons, status
    4. components.css   — auth, models, prompts, providers, settings home,
-                         cards, projects, picker, chat view + small media
-   5. features.css     — inspector, MCP, tags, tool cards, pricing,
-                         reduce-motion override
+                         cards, projects, picker
+   5. chat-view.css    — chat view layout, head, title, model picker
+   6. chat-transcript.css — bubbles, system prompt, usage, jump-to-bottom
+   7. chat-cards.css   — tools card, agent files card
+   8. chat-markdown.css — markdown content, reasoning, tables
+   9. chat-composer.css — composer, file toolbar, tool popup, send button
+   10. chat-at-mention.css — @-mention popup, arg bar
+   11. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
+   12. inspector.css   — inspector setup, targets, tabs, panels
+   13. settings.css    — settings pages
+   14. file-editor.css — file editor overlay
+   15. tool-tree.css   — tool tree component
+   16. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
 */
 
 @import './base.css';
@@ -20,7 +30,14 @@
 @import './auth.css';
 @import './settings.css';
 @import './projects.css';
-@import './chat.css';
+@import './chat-view.css';
+@import './chat-transcript.css';
+@import './chat-cards.css';
+@import './chat-markdown.css';
+@import './chat-composer.css';
+@import './chat-at-mention.css';
+@import './tool-cards.css';
+@import './inspector.css';
 @import './file-editor.css';
-@import './features.css';
 @import './tool-tree.css';
+@import './features.css';

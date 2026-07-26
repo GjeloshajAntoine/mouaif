@@ -72,6 +72,7 @@ export function useChatState(props) {
   const imageInput = useRef(null);
   const draftSaveTimer = useRef(null);
   const sendBtn = useRef(null);
+  const stopBtn = useRef(null);
   const status = useRef(null);
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
@@ -157,7 +158,7 @@ export function useChatState(props) {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
-    promptInput, imageInput, draftSaveTimer, sendBtn, status,
+    promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
     jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
     chatSwitcherTrigger, chatSwitcherPop,

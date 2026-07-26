@@ -1,0 +1,497 @@
+/* Chat composer: textarea, send button, image picker, status row,
+   file toolbar, tool popup.
+   Imported after chat-transcript.css. */
+
+/* ---- Composer row: tool button beside composer pill ----------------- */
+
+.chat-view__composer-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 10px 0;
+  flex: 0 0 auto;
+}
+
+/* Tool button container — sits left of the composer pill */
+.chat-view__composer-tool {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 2px;
+}
+
+/* ---- File toolbar button ------------------------------------------- */
+
+.file-toolbar {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.file-toolbar__trigger {
+  width: 36px; height: 36px; padding: 0;
+  flex: 0 0 auto;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.file-toolbar__trigger:active { background: var(--surface); }
+.file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); background: var(--surface-3); }
+.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.file-toolbar__trigger:active { background: var(--surface); }
+.file-toolbar__trigger[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--surface-3);
+}
+
+.file-toolbar__arrows {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  gap: 0;
+  transition: transform 160ms ease;
+}
+.file-toolbar__arrow-up {
+  font-size: 9px;
+  line-height: 1;
+  display: block;
+  margin-bottom: -1px;
+  color: var(--fg-soft);
+}
+.file-toolbar__arrow-down {
+  font-size: 9px;
+  line-height: 1;
+  display: block;
+  margin-top: -1px;
+  color: var(--fg-soft);
+}
+
+/* Dropdown menu — opens above the composer */
+.file-toolbar__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-width: min(280px, 85vw);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  overscroll-behavior: contain;
+}
+
+.file-toolbar__menu-header {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 8px 2px;
+}
+
+.file-toolbar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.file-toolbar__menu-item:hover { background: var(--surface-2); }
+.file-toolbar__menu-item:active { background: var(--surface); }
+.file-toolbar__menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.file-toolbar__menu-icon {
+  flex: 0 0 20px;
+  font-size: 0.9rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.file-toolbar__menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 8px;
+}
+
+.file-toolbar__spinner {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+/* Inline forms (add / commit input) */
+.file-toolbar__inline-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+.file-toolbar__inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  outline: none;
+}
+.file-toolbar__inline-input:focus { border-color: var(--accent); }
+.file-toolbar__inline-input::placeholder { color: var(--muted); }
+.file-toolbar__inline-submit {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 80ms ease;
+}
+.file-toolbar__inline-submit:hover { background: var(--accent-press); }
+.file-toolbar__inline-submit:active { transform: scale(0.97); }
+.file-toolbar__inline-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Result card */
+.file-toolbar__result {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-width: min(320px, 90vw);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.file-toolbar__result-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.file-toolbar__result-action {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.file-toolbar__result-status {
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.file-toolbar__result-status.is-ok { color: var(--success); }
+.file-toolbar__result-status.is-err { color: var(--danger); }
+.file-toolbar__result-out {
+  margin: 0;
+  padding: 6px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.file-toolbar__result-err {
+  margin: 0;
+  padding: 6px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--danger);
+  background: var(--danger-soft);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ---- Composer ----------------------------------------------------- */
+
+.chat-view__composer {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 2px 2px 2px 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  flex: 1 1 auto;
+  min-width: 0;
+  box-shadow: var(--shadow-sm);
+  overscroll-behavior: contain;
+  position: relative;
+}
+
+/* Toolbar buttons live inline inside the composer pill */
+.chat-view__toolbar-btn {
+  width: 28px; height: 28px; padding: 0; min-height: 28px;
+  flex: 0 0 auto;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__toolbar-btn:hover { background: var(--surface-3); color: var(--fg); }
+.chat-view__toolbar-btn:active { background: var(--surface); }
+
+.chat-view__textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  resize: none;
+  font-family: inherit;
+  font-size: 1rem;
+  min-height: 32px;
+  max-height: 120px;
+  line-height: 20px;
+  padding: 6px 4px;
+  width: auto;
+  color: var(--fg);
+  border-radius: 0;
+  outline: none;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.chat-view__textarea::-webkit-scrollbar { display: none; }
+.chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
+.chat-view__image-input { display: none; }
+.chat-view__image-preview {
+  flex: 1 0 100%;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 38px 4px 34px;
+}
+.chat-view__image-chip {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.chat-view__image-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chat-view__image-chip span {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: rgba(0,0,0,0.72);
+  color: white;
+  font-size: 14px;
+  line-height: 15px;
+}
+.chat-view__send {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  min-height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  margin: 0;
+  align-self: flex-end;
+}
+.chat-view__send svg { display: block; margin-left: -1px; }
+.chat-view__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 10px;
+  padding: 2px 0 calc(var(--safe-bottom) + 14px);
+}
+.chat-view__status {
+  display: block;
+  flex: 0 1 auto;
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--muted);
+  line-height: 1.3;
+  min-height: 0;
+}
+.chat-view__status:empty {
+  display: block;
+  min-height: calc(var(--safe-bottom) + 6px);
+  font-size: 0;
+  line-height: 0;
+}
+
+.chat-view__image-btn {
+  width: 32px; height: 32px; padding: 0; min-height: 32px;
+  flex: 0 0 auto; align-self: flex-start;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
+}
+.chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
+.chat-view__image-btn:active { background: var(--surface); }
+
+/* ---- Tool popup --------------------------------------------------- */
+
+.tool-popup {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
+.tool-popup__trigger {
+  width: 28px; height: 28px; padding: 0;
+  color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 80ms ease, color 80ms ease;
+}
+.tool-popup__trigger:hover { background: var(--surface-3); color: var(--fg); }
+.tool-popup__trigger:active { background: var(--surface); }
+
+.tool-popup__trigger svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.tool-popup__popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 280px;
+  max-width: min(380px, 92vw);
+  max-height: min(60dvh, 400px);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+.tool-popup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.tool-popup__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.01em;
+}
+
+.tool-popup__close {
+  width: 24px; height: 24px; padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 80ms ease, color 80ms ease;
+}
+.tool-popup__close:hover { background: var(--surface-3); color: var(--fg); }
+
+.tool-popup__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  min-height: 0;
+}
+
+.tool-popup__tree {
+  font-size: 0.72rem;
+}
+
+.tool-popup__foot {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.tool-popup__foot-note {
+  font-size: 0.6rem;
+  color: var(--muted);
+}
+
+/* Segments inside the popup use a more compact style */
+.tool-popup .seg {
+  gap: 1px;
+}
+.tool-popup .seg__item {
+  font-size: 0.6rem;
+  min-height: 20px;
+  padding: 0 2px;
+}
+.tool-popup .seg__pill {
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  font-size: 0.6rem;
+}

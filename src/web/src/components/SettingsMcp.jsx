@@ -1,4 +1,4 @@
-// mouaif web — SettingsMcpView (MCP server list) + SettingsMcpEditView
+// mouaif web — SettingsMcpView (MCP server list)
 // MCP = Model Context Protocol. Servers can be configured app-wide
 // (visible to every project) or per project (committed to
 // <projectDir>/.mcp.json). The two scopes have two homes in Settings:
@@ -22,6 +22,7 @@ export function SettingsMcpView(props = {}) {
   // project card, so #/settings/mcp is always the app-wide list even
   // when an active project exists.
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+  const projectName = projectDir ? projectDir.split(/[/\\]/).filter(Boolean).pop() || projectDir : '';
 
   const openBtn = useRef(null);
   const refreshBtn = useRef(null);
@@ -295,7 +296,7 @@ export function SettingsMcpView(props = {}) {
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '←'),
-      h('h2', { class: 'view-title' }, projectDir ? 'MCP servers · this project' : 'MCP servers · app defaults')
+      h('h2', { class: 'view-title' }, projectDir ? 'MCP servers · ' + projectName : 'MCP servers · app defaults')
     ),
     h('p', { class: 'hint hint--compact' },
       projectDir

@@ -214,11 +214,17 @@ export function ChatView(props) {
         ),
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
-        h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
-          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-            h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
-          )
-        ),
+        runningVisible
+          ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },
+              h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+                h('path', { d: 'M6 6h12v12H6Z', fill: 'currentColor' })
+              )
+            )
+          : h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
+              h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+                h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
+              )
+            ),
         imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
           imageAttachments.map((a, idx) => h('button', { key: idx, class: 'chat-view__image-chip', type: 'button', onClick: () => onRemoveImage(idx), title: 'Remove image' },
             h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
@@ -228,8 +234,7 @@ export function ChatView(props) {
       )
     ),
     h('div', { class: 'chat-view__status-row' },
-      h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' }),
-      runningVisible ? h('button', { class: 'btn btn--danger chat-view__cancel-run', type: 'button', onClick: onCancelRunning, 'aria-label': 'Cancel running chat' }, 'Cancel') : null
+      h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
     fileEditorOpen && FileEditor
       ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
