@@ -541,7 +541,7 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user)) .tool-card__body { display: none; }
+.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress)) .tool-card__body { display: none; }
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
   margin: 0;
@@ -845,7 +845,9 @@
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
-  cursor: default;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .tool-card--progress .tool-card__name {
   flex: 1;
@@ -863,9 +865,14 @@
 }
 .tool-card--progress .tool-card__body {
   display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 6px 6px;
+}
+.tool-card--progress .tool-card__progress-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 6px 6px;
 }
 .tool-card--progress .tool-card__progress-bar-wrap {
   flex: 1;
@@ -892,7 +899,6 @@
   text-align: right;
 }
 .tool-card--progress .tool-card__progress-msg {
-  flex: 0 1 100%;
   font-size: 0.62rem;
   color: var(--muted);
   white-space: nowrap;

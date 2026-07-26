@@ -736,30 +736,44 @@ function getOrCreateProgressCard(refs, callId, title) {
 
   const head = document.createElement('div');
   head.className = 'tool-card__head';
+  const chev = document.createElement('span');
+  chev.className = 'tool-card__chev';
+  chev.setAttribute('aria-hidden', 'true');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
   const name = document.createElement('span');
   name.className = 'tool-card__name';
   name.textContent = title || 'Progress';
   const pill = document.createElement('span');
   pill.className = 'tool-card__pill tool-card__pill--busy';
   pill.textContent = 'running';
+  head.appendChild(chev);
   head.appendChild(name);
   head.appendChild(pill);
   card.appendChild(head);
+  // Toggle expand/collapse on head tap.
+  head.addEventListener('click', () => {
+    card.classList.toggle('is-expanded');
+  });
 
   const body = document.createElement('div');
   body.className = 'tool-card__body';
+
+  const row = document.createElement('div');
+  row.className = 'tool-card__progress-row';
 
   const barWrap = document.createElement('div');
   barWrap.className = 'tool-card__progress-bar-wrap';
   const bar = document.createElement('div');
   bar.className = 'tool-card__progress-bar';
   barWrap.appendChild(bar);
-  body.appendChild(barWrap);
+  row.appendChild(barWrap);
 
   const pct = document.createElement('span');
   pct.className = 'tool-card__progress-pct';
   pct.textContent = '0%';
-  body.appendChild(pct);
+  row.appendChild(pct);
+
+  body.appendChild(row);
 
   const msg = document.createElement('div');
   msg.className = 'tool-card__progress-msg';
