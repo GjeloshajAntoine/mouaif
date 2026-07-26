@@ -1029,6 +1029,8 @@ async function handleChats(req, res, parsed, sessionToken) {
       // file so it can remain committed with the project (decision §5).
       try { fs.rmSync(messages.messagesFilePath(dir, id), { force: true }); }
       catch { /* best-effort cleanup after the chat record is gone */ }
+      // Clean up in-memory task state.
+      try { require('./tools/task.js').clearChat(id); } catch { /* non-fatal */ }
       // Refresh the persisted project total cost.
       try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });

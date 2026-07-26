@@ -1131,6 +1131,8 @@ async function streamChat(opts) {
   catch { /* ask_user tool module unavailable; skip */ }
   try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); }
   catch { /* list_features tool module unavailable; skip */ }
+  try { toolSpecs.push(require('./tools/task.js').SPEC); }
+  catch { /* task tool module unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -1972,6 +1974,21 @@ async function streamChat(opts) {
         out = { ok: false, error: e.message || String(e), code: 'ESHELL' };
       }
       return { ok: !!out.ok, content: JSON.stringify(out), result: out };
+    }
+
+    // Native task tool. Manages structured tasks with subtasks, progress
+    // tracking, and completion. Tasks are in-memory per chat (do not
+    // survive a server restart).
+    if (name === 'task') {
+      try {
+        const taskMod = require('./tools/task.js');
+        const validated = taskMod.validateArgs(args);
+        const out = taskMod.dispatchTask(callOpts && callOpts.chatId, validated);
+        return out;
+      } catch (e) {
+        const r = { error: { code: e.code || 'ETASK', message: e.message || String(e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
     }
 
     // Native subagent tool. It delegates to the same model with the same

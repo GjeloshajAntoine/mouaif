@@ -1,0 +1,100 @@
+# Task tool
+
+Built-in `task` tool that lets the model create, track progress on, and complete structured tasks within a chat. Tasks are rendered as rich inline cards with progress bars, checkboxes, and descriptions — no MCP server required.
+
+## Overview
+
+The `task` tool gives the model a lightweight way to break complex work into manageable pieces and show real-time progress to the user. Tasks are stored in-memory per chat (they do not survive a server restart). Each task gets an auto-generated 8-hex-character ID the model references across turns.
+
+Four actions are supported:
+
+- **`create`** — define a new task with a title and optional description.
+- **`update_progress`** — set the current count and total for an existing task, rendering a live progress bar.
+- **`complete`** — mark a task as done.
+- **`list`** — return every task in the current chat.
+
+## Usage
+
+The model calls `task` with these parameters:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | yes | One of `"create"`, `"update_progress"`, `"list"`, `"complete"` |
+| `title` | string | on create | Task title (max 200 chars) |
+| `description` | string | no | Optional description (max 2000 chars) |
+| `taskId` | string | on update/complete | The task ID returned when the task was created |
+| `current` | number | on update | Current progress value (0-based) |
+| `total` | number | on update | Total progress value (must be ≥ 1) |
+
+### Example: creating a task
+
+```json
+{
+  "action": "create",
+  "title": "Implement user authentication",
+  "description": "Add login, logout, and session management"
+}
+```
+
+The tool returns:
+
+```json
+{
+  "task": {
+    "id": "a1b2c3d4",
+    "title": "Implement user authentication",
+    "description": "Add login, logout, and session management",
+    "status": "in_progress",
+    "current": 0,
+    "total": 100
+  },
+  "action": "created"
+}
+```
+
+### Example: updating progress
+
+```json
+{
+  "action": "update_progress",
+  "taskId": "a1b2c3d4",
+  "current": 2,
+  "total": 5
+}
+```
+
+### Example: completing a task
+
+```json
+{
+  "action": "complete",
+  "taskId": "a1b2c3d4"
+}
+```
+
+### Example: listing all tasks
+
+```json
+{
+  "action": "list"
+}
+```
+
+## Authorization
+
+The `task` tool uses the same authorization module as every other built-in tool. It is a native tool listed under `project.tools.task` with four modes:
+
+| Mode | Behaviour |
+|------|-----------|
+| `off` | The tool spec is hidden from the model and calls are rejected with `ETOOL_DISABLED` |
+| `ask` | The user is prompted on the first call per session |
+| `allowlist` | Matches the call summary (first string argument) against a regex allowlist |
+| `allow` | Runs without prompting |
+
+## Implementation notes
+
+- Tasks live in a module-level `Map<chatId, Map<taskId, task>>` and are garbage-collected on server restart.
+- The tool is read/write on the in-memory store only — it never touches the filesystem or chat storage.
+- When a chat is deleted via `DELETE /api/chats/:id`, the server calls `task.clearChat(id)` to release the task entries.
+- The `validateArgs` function returns typed errors (`EBADINPUT`) so the model can self-correct on the next turn.
+- Capped at 50 tasks per chat to prevent memory unbounded growth.

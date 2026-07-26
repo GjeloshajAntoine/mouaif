@@ -115,6 +115,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
   if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
   if (name === 'subagent') return args.task || '';
+  if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   try { return JSON.stringify(args, null, 2); }
   catch { return String(args); }
 }
@@ -173,6 +174,12 @@ export function formatResultSummary(name, r) {
   if (n === 'write_file') {
     if (r.bytesWritten != null) return r.bytesWritten + 'B';
     if (r.size != null) return r.size + 'B';
+    return null;
+  }
+  if (n === 'task') {
+    if (r.action === 'completed' && r.task) return r.task.title + ' ✓';
+    if (r.task && r.task.status) return r.task.status;
+    if (Array.isArray(r.tasks)) return r.tasks.length + ' task' + (r.tasks.length === 1 ? '' : 's');
     return null;
   }
   return null;

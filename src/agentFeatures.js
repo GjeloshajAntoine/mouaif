@@ -69,6 +69,13 @@ function buildFeatureSummary(opts) {
       feat.push('[ask_user](off|ask) → ' + s.mode);
     }
   }
+  // task tool
+  if (authz && authz.tools && authz.tools.task) {
+    const s = authz.tools.task;
+    if (s.mode !== 'off') {
+      feat.push('[task](off|ask|allow) → ' + s.mode);
+    }
+  }
   // file tools
   if (authz && authz.tools && authz.tools.file) {
     const s = authz.tools.file;
@@ -171,7 +178,7 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress']) {
+    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task']) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',

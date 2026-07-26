@@ -222,6 +222,101 @@ function renderGenericToolResult(body, r) {
   renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
 }
 
+// renderTaskToolResult(body, r)
+//
+// Renders a task card with title, description, and progress bar.
+// Supports both single-task results and task list results.
+function renderTaskToolResult(body, r) {
+  body.classList.add('tool-preview', 'tool-preview--task');
+  if (typeof r === 'string') {
+    try { r = JSON.parse(r); } catch { return renderPreviewPre(body, r, 'tool-preview__pre'); }
+  }
+  if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+
+  // Task list
+  if (Array.isArray(r.tasks)) {
+    if (!r.tasks.length) {
+      body.innerHTML = '<div class="tool-preview__task-empty">No tasks yet.</div>';
+      return;
+    }
+    const list = document.createElement('div');
+    list.className = 'tool-preview__task-list';
+    for (const t of r.tasks) {
+      const item = document.createElement('div');
+      item.className = 'tool-preview__task-item tool-preview__task-item--' + (t.status === 'completed' ? 'done' : 'progress');
+      const check = document.createElement('span');
+      check.className = 'tool-preview__task-check';
+      check.textContent = t.status === 'completed' ? '✓' : '○';
+      const label = document.createElement('span');
+      label.className = 'tool-preview__task-label';
+      label.textContent = t.title;
+      item.appendChild(check);
+      item.appendChild(label);
+      if (t.status !== 'completed' && t.total > 0) {
+        const bar = document.createElement('div');
+        bar.className = 'tool-preview__task-bar';
+        const fill = document.createElement('div');
+        fill.className = 'tool-preview__task-bar-fill';
+        const pct = Math.min(100, Math.max(0, Math.round((t.current / t.total) * 100)));
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        item.appendChild(bar);
+        const stat = document.createElement('div');
+        stat.className = 'tool-preview__task-stat';
+        stat.textContent = t.current + ' / ' + t.total;
+        item.appendChild(stat);
+      }
+      if (t.description) {
+        const desc = document.createElement('div');
+        desc.className = 'tool-preview__task-desc';
+        desc.textContent = t.description;
+        item.appendChild(desc);
+      }
+      list.appendChild(item);
+    }
+    body.appendChild(list);
+    return;
+  }
+
+  // Single task result (created / updated / completed)
+  const task = r.task;
+  if (!task) return renderGenericToolResult(body, r);
+  const container = document.createElement('div');
+  container.className = 'tool-preview__task-item tool-preview__task-item--' + (task.status === 'completed' ? 'done' : 'progress');
+  const check = document.createElement('span');
+  check.className = 'tool-preview__task-check';
+  check.textContent = task.status === 'completed' ? '✓' : '○';
+  const inner = document.createElement('div');
+  inner.className = 'tool-preview__task-inner';
+  const title = document.createElement('div');
+  title.className = 'tool-preview__task-label';
+  title.textContent = task.title;
+  inner.appendChild(title);
+  if (task.status !== 'completed' && task.total > 0) {
+    const bar = document.createElement('div');
+    bar.className = 'tool-preview__task-bar';
+    const fill = document.createElement('div');
+    fill.className = 'tool-preview__task-bar-fill';
+    const pct = Math.min(100, Math.max(0, Math.round((task.current / task.total) * 100)));
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    inner.appendChild(bar);
+    const stat = document.createElement('div');
+    stat.className = 'tool-preview__task-stat';
+    stat.textContent = task.current + ' / ' + task.total;
+    inner.appendChild(stat);
+  }
+  if (task.description) {
+    const desc = document.createElement('div');
+    desc.className = 'tool-preview__task-desc';
+    desc.textContent = task.description;
+    inner.appendChild(desc);
+  }
+  container.appendChild(check);
+  container.appendChild(inner);
+  body.appendChild(container);
+}
+
 // renderToolResultBody(body, toolResult, isSubagentFn)
 //
 // The dispatcher called by appendToolResultCard in transcript.js.
@@ -244,6 +339,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'search_files') return renderSearchFilesToolResult(body, r);
   if (name === 'edit_file') return renderEditFileToolResult(body, r);
   if (name === 'write_file') return renderWriteFileToolResult(body, r);
+  if (name === 'task') return renderTaskToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after
@@ -280,5 +376,6 @@ export {
   renderListFilesToolResult,
   renderSearchFilesToolResult,
   renderEditFileToolResult,
-  renderWriteFileToolResult
+  renderWriteFileToolResult,
+  renderTaskToolResult
 };
