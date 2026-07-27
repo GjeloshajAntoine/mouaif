@@ -375,12 +375,22 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // replaces the heuristic on the final tick.
   const counter = createCounter();
 
+  // Read the effective thinking level: if the dropdown is set to
+  // __custom__, use the custom input value instead of the sentinel.
+  const effectiveThinkingLevel = (() => {
+    const tl = state.thinkingLevel || '';
+    if (tl === '__custom__') {
+      return (refs.thinkingLevelCustom && refs.thinkingLevelCustom.current && refs.thinkingLevelCustom.current.value.trim()) || '';
+    }
+    return tl;
+  })();
+
   let resp;
   try {
     resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts })
+      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel })
     });
   } catch (err) {
     setChatStatus(refs, 'network error', 'error');

@@ -51,7 +51,7 @@ const ENDPOINTS = {
       }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
-      return parseOpenAIShapedModels(body);
+      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
     }
   },
   'anthropic': {
@@ -62,7 +62,9 @@ const ENDPOINTS = {
     // /v1/models beta is OAuth-only and is not reachable with a
     // standard API key. Ship a curated catalog that mirrors the
     // models documented at https://docs.claude.com/en/docs/about-claude/models.
-    listModels: async () => parseCuratedModels(ANTHROPIC_MODEL_CATALOG),
+    // Every current Claude model supports extended thinking with a raw
+    // token budget, so the descriptor is uniform across the catalog.
+    listModels: async () => parseCuratedModels(ANTHROPIC_MODEL_CATALOG, { kind: 'budget' }),
     // Per the official `ant` CLI source and the platform.claude.com
     // docs: API-key auth uses the `x-api-key` header; OAuth user_oauth
     // tokens use `Authorization: Bearer ...` and require the
@@ -123,7 +125,10 @@ const ENDPOINTS = {
       if (!r.ok) throw httpError(r);
       const body = await r.json();
       return parseOllamaModels(body);
-    }
+    },
+    // Ollama exposes reasoning as a boolean `think` flag on the chat
+    // request for thinking-capable models (deepseek-r1, qwq, gpt-oss).
+    thinkingDescriptor: { kind: 'toggle' }
   },
   'github-copilot': {
     // The base URL points at the public Copilot API. Calls require a
@@ -139,8 +144,17 @@ const ENDPOINTS = {
     // Copilot does not expose a public list-models endpoint. Return
     // a small curated list of the model ids the Copilot API actually
     // serves today. Kept in sync with the public Copilot docs; the
-    // `contextWindow` field is the upstream maximum.
-    listModels: async () => parseCuratedModels(COPILOT_MODEL_CATALOG),
+    // `contextWindow` field is the upstream maximum. Thinking support
+    // is inferred per family: OpenAI reasoning models take effort
+    // levels, Claude models take a token budget, Gemini 2.5+ takes a
+    // thinking budget.
+    listModels: async () => parseCuratedModels(COPILOT_MODEL_CATALOG, (m) => {
+      const id = String(m.id || '');
+      if (/^(gpt-5|o\d)/.test(id)) return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
+      if (/^claude-/.test(id)) return { kind: 'budget' };
+      if (/^gemini-(2\.5|[3-9])/.test(id)) return { kind: 'budget' };
+      return undefined;
+    }),
     // Copilot requires a handful of editor-identifying headers. The
     // values mirror the public Copilot CLI; they identify this
     // client as a third-party tool without sending PII. Tests can
@@ -178,7 +192,7 @@ const ENDPOINTS = {
       catch (e) { throw unreachableError('openrouter', e); }
       if (!r.ok) throw httpError(r);
       const body = await r.json();
-      return parseOpenAIShapedModels(body);
+      return parseOpenAIShapedModels(body, thinkingForOpenRouterModel);
     },
     staticHeaders: {
       'HTTP-Referer': 'https://mouaif.local',
@@ -281,16 +295,67 @@ function abortedError(provider) {
   return e;
 }
 
-function parseOpenAIShapedModels(body) {
+// ---- Thinking capability descriptors ----------------------------------
+//
+// Each live model record may carry a `thinking` field describing the
+// reasoning controls the provider actually accepts for that model:
+//
+//   { kind: 'levels', levels: ['low','medium','high'] }  — effort presets
+//   { kind: 'budget'  }                                   — raw token budget
+//
+// The chat UI builds its thinking dropdown from this descriptor when
+// present; when absent it falls back to the generic presets. The
+// request builders accept any provider-reported level verbatim (they
+// no longer whitelist only low/medium/high) so new upstream values
+// (e.g. OpenAI's "minimal"/"xhigh") work without a client update.
+
+// Effort levels known to be valid on OpenAI-shaped reasoning endpoints.
+// Order matters: the UI shows them in this sequence.
+const OPENAI_THINKING_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+
+// thinkingForOpenAIModel(id) — best-effort static inference for the
+// openai-compatible provider, whose /models endpoint does not report
+// reasoning support. Returns undefined when the id gives no signal so
+// the UI falls back to generic presets.
+function thinkingForOpenAIModel(id) {
+  const s = String(id || '').toLowerCase();
+  // OpenAI reasoning families (o1/o3/o4, gpt-5*), plus common
+  // reasoning-flagged models on OpenAI-shaped third-party endpoints.
+  const isReasoning = /^(o\d|gpt-5)/.test(s)
+    || /reasoning|think|\br1\b|qwq/.test(s);
+  if (!isReasoning) return undefined;
+  return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
+}
+
+// thinkingForOpenRouterModel(m) — OpenRouter reports per-model
+// `supported_parameters` (and on some revisions a `reasoning` block)
+// on GET /api/v1/models. Map that onto our descriptor.
+function thinkingForOpenRouterModel(m) {
+  const sp = Array.isArray(m && m.supported_parameters) ? m.supported_parameters : [];
+  const supportsReasoning = sp.indexOf('reasoning') >= 0
+    || sp.indexOf('reasoning_effort') >= 0
+    || sp.indexOf('include_reasoning') >= 0;
+  if (!supportsReasoning) return undefined;
+  // Anthropic-family models behind OpenRouter take a token budget;
+  // everything else takes effort levels. OpenRouter accepts either
+  // shape on its /chat/completions, so levels are a safe default.
+  if (/^anthropic\//.test(String(m.id || ''))) return { kind: 'budget' };
+  return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
+}
+
+function parseOpenAIShapedModels(body, thinkingFor) {
   const arr = Array.isArray(body && body.data) ? body.data : [];
   const out = [];
   for (const m of arr) {
     if (!m || !m.id) continue;
-    out.push({
+    const rec = {
       id: String(m.id),
       label: m.id,
       contextWindow: typeof m.context_window === 'number' ? m.context_window : undefined
-    });
+    };
+    const thinking = typeof thinkingFor === 'function' ? thinkingFor(m) : undefined;
+    if (thinking) rec.thinking = thinking;
+    out.push(rec);
   }
   return out;
 }
@@ -305,11 +370,15 @@ function parseGeminiModels(body) {
     // Only show models that can actually generate (text-to-text).
     const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
     if (methods.length && !methods.includes('generateContent')) continue;
-    out.push({
+    const rec = {
       id,
       label: m.displayName || id,
       contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
-    });
+    };
+    // Gemini 2.5+ models accept generationConfig.thinkingConfig with a
+    // raw thinkingBudget token count.
+    if (/gemini-(2\.5|[3-9])/.test(id)) rec.thinking = { kind: 'budget' };
+    out.push(rec);
   }
   return out;
 }
@@ -328,12 +397,19 @@ function parseOllamaModels(body) {
   return out;
 }
 
-function parseCuratedModels(catalog) {
-  return catalog.map((m) => ({
-    id: m.id,
-    label: m.label || m.id,
-    contextWindow: m.contextWindow
-  }));
+function parseCuratedModels(catalog, thinkingFor) {
+  return catalog.map((m) => {
+    const rec = {
+      id: m.id,
+      label: m.label || m.id,
+      contextWindow: m.contextWindow
+    };
+    const thinking = typeof thinkingFor === 'function'
+      ? thinkingFor(m)
+      : (thinkingFor || m.thinking);
+    if (thinking) rec.thinking = thinking;
+    return rec;
+  });
 }
 
 // listModels(provider, cred, signal) -> Promise<[{ id, label, contextWindow? }]>
@@ -626,6 +702,16 @@ function buildOpenAIRequest(model, messages, stream) {
     // asked. Prefer that over local pricing when present.
     body.usage = { include: true };
   }
+  // Inject thinking level (reasoning_effort) for OpenAI-compatible
+  // providers. Empty string means off/default. Any non-empty value is
+  // passed through verbatim — the valid set comes from the provider
+  // (surface via the model's `thinking.levels` descriptor) and varies
+  // by model ("minimal"/"low"/"medium"/"high"/"xhigh" today), so
+  // whitelisting here would just lag the upstream.
+  if (model.thinkingLevel) {
+    const tl = String(model.thinkingLevel).trim();
+    if (tl) body.reasoning_effort = tl;
+  }
   return {
     url: joinUrl(baseUrl, ENDPOINTS['openai-compatible'].chatPath),
     headers,
@@ -663,6 +749,33 @@ function buildAnthropicRequest(model, messages, stream) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
+  const body = {
+    model: model.id,
+    max_tokens: model.maxTokens || 1024,
+    system: systemContent || undefined,
+    messages: chatMessages.map(m => ({ role: m.role, content: openAIContentToAnthropic(m.content) })),
+    stream: !!stream
+  };
+  // Inject thinking budget for Anthropic. The thinking level maps to
+  // a budget_tokens value. When the level is a plain number string, use
+  // it directly as budget_tokens. Known presets: "low"=2048, "medium"=8192, "high"=16384.
+  // An empty string means no thinking block (default).
+  if (model.thinkingLevel) {
+    const tl = String(model.thinkingLevel).trim();
+    let budget = 0;
+    if (tl === 'low') budget = 2048;
+    else if (tl === 'medium') budget = 8192;
+    else if (tl === 'high') budget = 16384;
+    else {
+      const n = parseInt(tl, 10);
+      if (isFinite(n) && n > 0) budget = n;
+    }
+    if (budget > 0) {
+      body.thinking = { type: 'enabled', budget_tokens: Math.min(budget, 100000) };
+      // ensure max_tokens is at least budget + 256
+      if (body.max_tokens < budget + 256) body.max_tokens = budget + 256;
+    }
+  }
   return {
     // model.baseUrl wins when set, so test mocks and Anthropic-compatible
     // proxies (Bedrock, Vertex, Foundry) can route the call. Production
@@ -673,13 +786,7 @@ function buildAnthropicRequest(model, messages, stream) {
       'Content-Type': 'application/json',
       ...ENDPOINTS.anthropic.authHeader(credential(model), model)
     },
-    body: {
-      model: model.id,
-      max_tokens: model.maxTokens || 1024,
-      system: systemContent || undefined,
-      messages: chatMessages.map(m => ({ role: m.role, content: openAIContentToAnthropic(m.content) })),
-      stream: !!stream
-    }
+    body
   };
 }
 
@@ -693,6 +800,27 @@ function buildGeminiRequest(model, messages, stream) {
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: openAIContentToGeminiParts(m.content) }));
   const body = { contents };
   if (systemContent) body.systemInstruction = { role: 'system', parts: [{ text: systemContent }] };
+  // Inject thinking budget for Gemini 2.5+ models. The thinking level
+  // maps to generationConfig.thinkingConfig.thinkingBudget. Known
+  // presets: "low"=2048, "medium"=8192, "high"=16384; a plain number
+  // string is used directly. Empty string leaves thinking at the
+  // upstream default (dynamic).
+  if (model.thinkingLevel) {
+    const tl = String(model.thinkingLevel).trim();
+    let budget = 0;
+    if (tl === 'low') budget = 2048;
+    else if (tl === 'medium') budget = 8192;
+    else if (tl === 'high') budget = 16384;
+    else {
+      const n = parseInt(tl, 10);
+      if (isFinite(n) && n > 0) budget = n;
+    }
+    if (budget > 0) {
+      body.generationConfig = Object.assign({}, body.generationConfig, {
+        thinkingConfig: { thinkingBudget: budget }
+      });
+    }
+  }
   return {
     url,
     headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
@@ -701,10 +829,15 @@ function buildGeminiRequest(model, messages, stream) {
 }
 
 function buildOllamaRequest(model, messages, stream) {
+  const body = { model: model.id, messages, stream: !!stream };
+  // Ollama's reasoning switch is a boolean `think` flag. Any non-empty
+  // thinking level means "on"; empty means upstream default (off for
+  // most models).
+  if (model.thinkingLevel && String(model.thinkingLevel).trim()) body.think = true;
   return {
     url: joinUrl(model.baseUrl || ENDPOINTS.ollama.baseUrl, ENDPOINTS.ollama.chatPath),
     headers: { 'Content-Type': 'application/json' },
-    body: { model: model.id, messages, stream: !!stream }
+    body
   };
 }
 
@@ -1063,7 +1196,7 @@ async function* readNDJSON(stream) {
 }
 
 async function streamChat(opts) {
-  const { model, messages, signal, onEvent, onRoundUsage } = opts || {};
+  const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel } = opts || {};
   if (!model || !model.provider) {
     return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
   }
@@ -1072,6 +1205,11 @@ async function streamChat(opts) {
   }
   if (typeof onEvent !== 'function') {
     return { ok: false, error: { code: 'EBADINPUT', message: 'onEvent must be a function' } };
+  }
+  // Pass thinking level down to the request builders so they can
+  // inject provider-specific fields (reasoning_effort, thinking budget, etc.)
+  if (typeof thinkingLevel === 'string' && thinkingLevel) {
+    model.thinkingLevel = thinkingLevel;
   }
 
   let def, build, parse;

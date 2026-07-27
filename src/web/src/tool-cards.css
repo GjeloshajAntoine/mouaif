@@ -121,7 +121,7 @@
   padding: 2px 0 0 17px;
   display: block;
   overflow-y: auto;
-  max-height: 75dvh;
+  max-height: 40dvh;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -255,7 +255,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 4px 6px;
-  max-height: min(65dvh, 24rem);
+  max-height: min(40dvh, 20rem);
   overflow-y: auto;
   white-space: normal;
   font-size: 0.72rem;

@@ -80,6 +80,7 @@ function normalizeChat(chat) {
     promptId: typeof chat.promptId === 'string' && chat.promptId ? chat.promptId : null,
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
+    thinkingLevel: typeof chat.thinkingLevel === 'string' ? chat.thinkingLevel : '',
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
     agentId: typeof chat.agentId === 'string' && chat.agentId ? chat.agentId : null,
@@ -170,6 +171,7 @@ function createChat(projectDir, opts) {
     lastOpenedAt: null,
     trace: opts && opts.trace === true,
     promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize,
+    thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
     tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
   });
 
@@ -204,6 +206,9 @@ function updateChat(projectDir, chatId, patch) {
     }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
       dbPatch.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
+    }
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'thinkingLevel')) {
+      dbPatch.thinkingLevel = typeof patch.thinkingLevel === 'string' ? patch.thinkingLevel : '';
     }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
       dbPatch.draft = typeof patch.draft === 'string' ? patch.draft : '';
@@ -249,6 +254,9 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
     merged.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'thinkingLevel')) {
+    merged.thinkingLevel = typeof patch.thinkingLevel === 'string' ? patch.thinkingLevel : '';
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
     merged.draft = typeof patch.draft === 'string' ? patch.draft : '';

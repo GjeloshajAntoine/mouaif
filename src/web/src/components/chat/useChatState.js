@@ -30,6 +30,7 @@ import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
+import { syncThinkingSelect } from './thinking.js';
 import { send as sendTurn, runShellCommand, runMcpCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { addImagesFromFiles } from './imageInput.js';
 
@@ -68,6 +69,8 @@ export function useChatState(props) {
   const modelPickerSearch = useRef(null);
   const modelPickerRefresh = useRef(null);
   const modelPickerList = useRef(null);
+  const thinkingLevel = useRef(null);
+  const thinkingLevelCustom = useRef(null);
   const promptInput = useRef(null);
   const imageInput = useRef(null);
   const draftSaveTimer = useRef(null);
@@ -96,6 +99,9 @@ export function useChatState(props) {
   // Tool authorization state — same shape as SettingsProject shellAuth etc.
   // { shell: { mode, allowlist }, file: { mode, allowlist }, subagent: { mode, allowlist }, ask_user: { mode } }
   const toolAuth = useRef({});
+  // Track the current thinking level (survives re-renders, unlike
+  // a plain state property that resets on every render cycle).
+  const thinkingLevelRef = useRef('');
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -148,7 +154,9 @@ export function useChatState(props) {
     get providerCredit() { return providerCredit.current; },
     set providerCredit(v) { providerCredit.current = v; },
     get toolAuth() { return toolAuth.current; },
-    set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; }
+    set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; },
+    get thinkingLevel() { return thinkingLevelRef.current; },
+    set thinkingLevel(v) { thinkingLevelRef.current = v; }
   };
 
   const chatSwitcherTrigger = useRef(null);
@@ -158,6 +166,7 @@ export function useChatState(props) {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
+    thinkingLevel, thinkingLevelCustom,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
     jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
@@ -199,11 +208,17 @@ export function useChatState(props) {
     if (provEl) provEl.textContent = providerId || (state.providers.length ? '' : 'add a provider in Settings → Providers');
     trig.classList.toggle('is-empty', !modelId);
     trig.classList.toggle('no-providers', !state.providers.length);
+    // Sync thinking level select — options come from the provider's
+    // reported descriptor for the active model when available.
+    syncThinkingSelect(refs, state);
   }
 
   // Wire the model-picker's onChatChanged hook so the head
   // elements re-render when updateChat fires.
   state._onChatChanged = () => updateModelTriggerLocal();
+  // Re-sync the thinking dropdown when live model data arrives —
+  // provider-reported descriptors replace the seeded/fallback options.
+  state._onLiveModels = () => syncThinkingSelect(refs, state);
   state._openModelPicker = () => openModelPicker(state, refs);
   // The empty-state card in the picker can fire the same refresh
   // the head's ↻ button does, but it lives inside the picker
@@ -316,7 +331,9 @@ export function useChatState(props) {
         for (const m of models.current) {
           if (!m || !m.id || !m.provider) continue;
           const arr = liveByProvider.current[m.provider] || (liveByProvider.current[m.provider] = []);
-          arr.push({ id: m.id, label: m.label, contextWindow: m.contextWindow });
+          const rec = { id: m.id, label: m.label, contextWindow: m.contextWindow };
+          if (m.thinking) rec.thinking = m.thinking;
+          arr.push(rec);
         }
         pickerFilter.current = { q: '', provider: 'all' };
         prompts.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
@@ -360,6 +377,10 @@ export function useChatState(props) {
           autoresize(refs);
         }
         if (chatName.current) chatName.current.textContent = c.title || chatId;
+        state.thinkingLevel = c.thinkingLevel || '';
+        // Sync thinking level select after initial load — options come
+        // from the provider's reported descriptor when available.
+        syncThinkingSelect(refs, state);
         updateMetaLine(refs, state);
         updateUsageSummary(state, null, refs);
         refreshProviderCredit(state, refs);
@@ -407,6 +428,9 @@ export function useChatState(props) {
     if (r.status !== 200) return { provider, ok: false, body: r.body, status: r.status };
     const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
     liveByProvider.current = Object.assign({}, liveByProvider.current, { [provider]: live });
+    // Live data may carry per-model thinking descriptors that the
+    // seeded project-level records lack — rebuild the dropdown options.
+    syncThinkingSelect(refs, state);
     return { provider, ok: true, count: live.length };
   }
 

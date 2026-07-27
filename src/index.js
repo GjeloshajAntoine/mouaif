@@ -1322,6 +1322,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
   const content = body && typeof body.content === 'string' ? body.content : '';
   const attachments = messages.normalizeAttachments(body && body.attachments);
+  const thinkingLevel = body && typeof body.thinkingLevel === 'string' ? body.thinkingLevel : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
   if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
@@ -1665,6 +1666,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     fileToolsEnabled,
     appSettings,
     promptSize: resolvedProfileId,
+    thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
     signal: runController.signal,
     // Per-chat tool filter (decisions: chat.tools). null/undefined
     // means "all tools available to the project"; an array (even an
@@ -2252,9 +2254,18 @@ async function handleAI(req, res, parsed) {
   if (urlPath === '/api/ai/models' && method === 'GET') {
     const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
     const resolved = settings.getResolved(projectDir || null);
-    const models = (resolved.models || []).map(m => ({
-      id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
-    }));
+    const models = (resolved.models || []).map(m => {
+      const rec = {
+        id: m.id, provider: m.provider, label: m.label, auth: m.auth || 'apikey'
+      };
+      // Thinking options come from the provider when it reports them
+      // (per-model on live lists, provider-level otherwise); a
+      // user-set model.thinking always wins.
+      const def = ai.ENDPOINTS[m.provider];
+      const thinking = m.thinking || (def && def.thinkingDescriptor) || null;
+      if (thinking) rec.thinking = thinking;
+      return rec;
+    });
     return sendJSON(res, 200, { models, providers: Object.keys(ai.ENDPOINTS) });
   }
 

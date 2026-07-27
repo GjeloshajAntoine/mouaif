@@ -49,6 +49,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Chat switcher](features/chat-switcher.md) — inline dropdown in the chat header to switch between project chats without leaving the view.
 - [Tool popup](features/tool-popup.md) — floating popover in the composer toolbar to toggle available tools, authorization modes, MCP servers, and agent files.
 - [Task tool](features/task-tool.md) — built-in `task` tool for creating, tracking progress on, and completing structured tasks within a chat. Tasks render as rich inline cards with progress bars.
+- [Thinking level](features/thinking-level.md) — per-chat dropdown for model reasoning/thinking effort, with options sourced from the provider when available (OpenAI `reasoning_effort`, Anthropic `thinking.budget_tokens`, Gemini `thinkingConfig`, Ollama `think`) plus fallback presets.
 
 ## Architectural decisions
 

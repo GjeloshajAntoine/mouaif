@@ -123,6 +123,45 @@ export function ChatView(props) {
           ),
           h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '▾')
         ),
+        h('select', {
+          ref: refs.thinkingLevel,
+          class: 'input chat-view__thinking-select',
+          'aria-label': 'Thinking level',
+          'data-allow-custom': '1',
+          onChange: (e) => {
+            const v = e.currentTarget.value;
+            s.state.thinkingLevel = v;
+            // Show/hide the custom input
+            const customInput = s.refs.thinkingLevelCustom && s.refs.thinkingLevelCustom.current;
+            if (customInput) {
+              customInput.hidden = v !== '__custom__';
+              if (v === '__custom__') customInput.focus();
+            }
+            if (v !== '__custom__' && s.state.chat) {
+              s.updateChat({ thinkingLevel: v });
+            }
+          }
+        }),
+        h('input', {
+          ref: refs.thinkingLevelCustom,
+          class: 'input chat-view__thinking-custom',
+          type: 'text',
+          hidden: true,
+          placeholder: 'e.g. 4096, minimal, low, high',
+          'aria-label': 'Custom thinking level',
+          onBlur: (e) => {
+            const v = e.currentTarget.value.trim();
+            if (v && s.state.chat) {
+              s.state.thinkingLevel = v;
+              s.updateChat({ thinkingLevel: v });
+            }
+          },
+          onKeydown: (e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }
+        }),
         h('div', {
           ref: refs.modelPickerPop,
           class: 'chat-view__picker',

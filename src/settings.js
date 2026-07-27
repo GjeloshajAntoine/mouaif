@@ -183,6 +183,20 @@ const MIGRATIONS = [
     run() {
       db().exec('DROP TABLE IF EXISTS client_domains');
     }
+  },
+  {
+    name: '2026-07-27-add-thinking-level',
+    description: 'Add thinking_level column to chat_store for existing databases',
+    run() {
+      const d = db();
+      // Check if the column already exists (e.g. if the CREATE TABLE IF NOT EXISTS
+      // already has it for a fresh install, or if this migration was partially applied).
+      const cols = d.prepare("PRAGMA table_info('chat_store')").all();
+      const hasCol = cols.some((c) => c.name === 'thinking_level');
+      if (!hasCol) {
+        d.exec("ALTER TABLE chat_store ADD COLUMN thinking_level TEXT DEFAULT ''");
+      }
+    }
   }
 ];
 
