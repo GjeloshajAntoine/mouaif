@@ -217,25 +217,33 @@
 
 /* ---- Settings: project page ------------------------------------- */
 
-.settings-project { padding-bottom: 12px; }
+.settings-project { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 
-.settings-project .group { margin-top: 20px; }
+.settings-project .group { margin-top: 8px; }
 .settings-project .group__list { background: var(--surface); border: 1px solid var(--border); }
 .settings-project .group .input { background: var(--surface-2); border: 1px solid var(--border-strong); }
 .settings-project .group .input:hover,
 .settings-project .group .input:focus { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
 
+/* Compact page header: path + save status on one line, one-line lede. */
 .settings-project__intro {
-  margin: 0 12px 8px;
-  padding-bottom: 14px;
+  margin: 0 10px 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+.settings-project__intro-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
 .settings-project__path {
-  margin: 0 0 6px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   color: var(--fg);
   font-size: 0.9rem;
   line-height: 1.35;
-  word-break: break-all;
 }
 .settings-project__path code,
 .settings-project__code {
@@ -246,12 +254,123 @@
   color: var(--fg-soft);
   font-size: 0.78rem;
   padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;      /* keep the meaningful tail (project name) visible */
+  text-align: left;
 }
+.settings-project__intro .status { flex-shrink: 0; font-size: 0.72rem; }
 .settings-project__lede {
-  color: var(--fg-soft);
-  font-size: 0.8rem;
+  color: var(--muted);
+  font-size: 0.76rem;
   line-height: 1.4;
-  margin: 0 0 6px;
+  margin: 2px 0 0;
+}
+
+/* Section title row: icon + name + optional inline help ("?"). */
+.settings-project__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0 4px 4px;
+}
+.settings-project__section-title > span { flex: 1; min-width: 0; }
+.settings-project__section-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* CSS glyph icons (kept monochrome; recolored per section below). */
+.settings-project__section-icon > span { display: block; position: relative; }
+.ico-sliders { width: 12px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; }
+.ico-sliders::before { content: ''; position: absolute; top: -4px; left: 2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; box-shadow: 4px 8px 0 currentColor; }
+.ico-chat { width: 12px; height: 9px; border: 2px solid currentColor; border-radius: 4px; }
+.ico-chat::after { content: ''; position: absolute; bottom: -5px; left: 1px; border: 3px solid transparent; border-top-color: currentColor; border-left-color: currentColor; }
+.ico-wrench { width: 11px; height: 11px; border: 2px solid currentColor; border-radius: 50%; border-right-color: transparent; border-bottom-color: transparent; transform: rotate(45deg); }
+.ico-wrench::after { content: ''; position: absolute; right: -6px; bottom: -6px; width: 7px; height: 3px; border-radius: 2px; background: currentColor; }
+.ico-doc { width: 9px; height: 12px; border: 2px solid currentColor; border-radius: 2px; }
+.ico-doc::before { content: ''; position: absolute; top: 2px; left: 1px; right: 1px; height: 2px; background: currentColor; box-shadow: 0 3px 0 currentColor; }
+.ico-people { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: -5px 4px 0 -1px currentColor, 5px 4px 0 -1px currentColor; }
+.ico-grid { width: 12px; height: 12px; background:
+  linear-gradient(currentColor, currentColor) 0 0 / 5px 5px,
+  linear-gradient(currentColor, currentColor) 100% 0 / 5px 5px,
+  linear-gradient(currentColor, currentColor) 0 100% / 5px 5px,
+  linear-gradient(currentColor, currentColor) 100% 100% / 5px 5px;
+  background-repeat: no-repeat; }
+.settings-project__section-icon--chat { background: var(--success-soft); color: var(--success); }
+.settings-project__section-icon--tools { background: var(--warning-soft); color: var(--warning); }
+.settings-project__section-icon--more { background: var(--surface-3); color: var(--fg-soft); }
+
+/* Inline help: a small "?" button on the section title that expands
+   into an explanatory note. Keeps long-form help out of the way but
+   one tap close. */
+.settings-project__info { position: relative; flex: 0 0 auto; }
+.settings-project__info > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.settings-project__info > summary::-webkit-details-marker { display: none; }
+.settings-project__info[open] > summary { color: var(--accent); border-color: var(--accent); }
+.settings-project__info-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: min(78vw, 300px);
+  padding: 10px 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  color: var(--fg-soft);
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.settings-project__info-body p { margin: 0 0 6px; }
+.settings-project__info-body p:last-child { margin-bottom: 0; }
+.settings-project__info-body ul { margin: 0 0 6px; padding-left: 16px; }
+.settings-project__info-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+}
+
+/* Two-line link rows in "More settings". */
+.settings-project__link-row { align-items: center; padding: 7px 10px; }
+.settings-project__link-sub {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
 }
 
 .settings-project__item,
@@ -259,8 +378,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px 10px;
   min-height: var(--tap);
 }
 .settings-project__tool {
@@ -276,7 +395,7 @@
 .settings-project__item-main { flex: 1; }
 .settings-project__item-title {
   color: var(--fg);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: -0.005em;
   line-height: 1.2;
@@ -288,7 +407,7 @@
   margin-top: 2px;
 }
 .settings-project__item-status {
-  color: var(--accent);
+  color: var(--success);
   font-size: 0.7rem;
   line-height: 1.35;
   margin-top: 2px;
@@ -304,26 +423,22 @@
 .settings-project__item-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding-top: 9px;
   margin-top: 2px;
   border-top: 1px solid var(--border);
 }
+.settings-project__item-actions .settings-project__item-status { margin: 0 auto 0 0; }
 .settings-project__item-actions .btn--danger { margin-left: auto; }
 .settings-project__select {
   width: 100%;
   min-width: 0;
   max-width: none;
-  font-size: 0.85rem;
-  padding: 8px 10px;
-  min-height: var(--tap);
-}
-.settings-project__section-help {
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
-  margin: 2px 12px 8px;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+  min-height: 40px;
 }
 .settings-project__help {
   color: var(--muted);
@@ -343,11 +458,11 @@
 }
 
 .settings-project__tools-tree {
-  padding: 4px 12px 8px;
+  padding: 2px 6px 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  margin: 4px 12px 8px;
+  margin: 2px 6px 4px;
 }
 
 .settings-project__allowlist {
@@ -509,20 +624,15 @@
   text-transform: uppercase;
 }
 
-/* Agent presets */
-.settings-project__agents { margin: 0 10px; }
+/* Agent presets use the same compact, edge-to-edge rows as other settings. */
+.settings-project__agents { margin: 0; }
 .settings-project__agents-list { list-style: none; margin: 0; padding: 0; }
-.settings-project__agent-row { border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 6px; overflow: hidden; }
-.settings-project__agent-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--surface); }
-.settings-project__agent-chev { background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 0 2px; transition: transform 0.15s; width: 18px; text-align: center; }
-.settings-project__agent-chev.is-open { transform: rotate(90deg); }
-.settings-project__agent-title { flex: 1; font-size: 0.92rem; font-weight: 500; }
-.settings-project__agent-tools-badge { font-size: 0.72rem; color: var(--muted); background: var(--bg); border-radius: var(--r-sm); padding: 1px 6px; white-space: nowrap; }
-.settings-project__agent-del { flex-shrink: 0; width: 24px; height: 24px; font-size: 1.1rem; line-height: 1; padding: 0; border: none; }
-.settings-project__agent-body { padding: 6px 8px 8px; border-top: 1px solid var(--border); }
+.settings-project__agents-list > li + li { border-top: 1px solid var(--border); }
+.settings-project__agent-link { min-height: var(--tap); padding: 7px 10px; align-items: center; }
+.settings-project__agent-body { padding: 8px 10px; }
 .settings-project__agent-field { margin-bottom: 6px; }
 .settings-project__agent-field .label { font-size: 0.82rem; color: var(--muted); display: block; margin-bottom: 2px; }
-.settings-project__add-agent { margin-top: 8px; width: 100%; }
+.settings-project__add-agent { margin: 8px 12px 10px; width: calc(100% - 24px); }
 
 /* ---- MCP Registry browse ----------------------------------------- */
 

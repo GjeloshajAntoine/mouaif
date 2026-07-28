@@ -14,7 +14,7 @@ import { nav } from '../router.js';
 import { ToolTree, shortDesc, buildAgentToolGroups } from './ToolTree.jsx';
 import { toggleToolInList, toggleGroupInList } from './SettingsAgents.jsx';
 
-export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main', agentName = '' } = {}) {
   const statusEl = useRef(null);
   const pathEl = useRef(null);
   // Structured controls
@@ -64,6 +64,22 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const revertBtn = useRef(null);
   const editorStatus = useRef(null);
   const resolvedOut = useRef(null);
+
+  // Section icons — small glyphs that mark each settings card so the
+  // page scans faster. Shapes (not emoji) to keep them monochrome and
+  // consistent with the rest of the UI.
+  function sectionIcon(kind) {
+    const attrs = { class: 'settings-project__section-icon settings-project__section-icon--' + kind, 'aria-hidden': 'true' };
+    switch (kind) {
+      case 'general': return h('span', attrs, h('span', { class: 'ico-sliders' }));
+      case 'chat': return h('span', attrs, h('span', { class: 'ico-chat' }));
+      case 'tools': return h('span', attrs, h('span', { class: 'ico-wrench' }));
+      case 'files': return h('span', attrs, h('span', { class: 'ico-doc' }));
+      case 'agents': return h('span', attrs, h('span', { class: 'ico-people' }));
+      case 'more': return h('span', attrs, h('span', { class: 'ico-grid' }));
+      default: return h('span', attrs);
+    }
+  }
 
   // The loaded project settings. Held in a ref (not a render-local
   // `let`) so async reads after any re-render see the latest value
@@ -876,6 +892,70 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
   }
 
+  if (page === 'technical') return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'Technical details')
+    ),
+    h('section', { class: 'settings-project' },
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title' }, 'Raw project file'),
+        h('p', { class: 'hint hint--compact' }, 'Hand-edit ', h('code', null, '.mouaif.json'), '. The main settings page writes the same file.'),
+        h('textarea', { ref: editor, class: 'input settings-project__code', id: 'sp-project-editor', rows: 10, spellcheck: false }),
+        h('div', { class: 'row row--actions' },
+          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: true }, 'Save file'),
+          h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revertRaw, disabled: true }, 'Revert'),
+          h('span', { ref: editorStatus, class: 'status', 'aria-live': 'polite' })
+        )
+      ),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title' }, 'Resolved settings'),
+        h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. Provider keys are redacted.'),
+        h('pre', { ref: resolvedOut, class: 'settings__out' })
+      )
+    )
+  );
+
+  if (page === 'agent') {
+    const agent = agentPresets.find(item => item.name === agentName);
+    const restricted = agent && agent.tools !== undefined;
+    return h(Fragment, null,
+      h('div', { class: 'view-head' },
+        h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+        h('h2', { class: 'view-title' }, agentName || 'Agent')
+      ),
+      h('section', { class: 'settings-project' },
+        !agent ? h('div', { class: 'group settings-project__section' }, h('p', { class: 'hint' }, 'Loading agent…')) :
+        h('div', { class: 'group settings-project__section settings-project__agent-body' },
+          h('label', { class: 'row settings-project__agent-field' },
+            h('span', { class: 'label' }, 'Instructions'),
+            h('textarea', { class: 'input settings-project__mono', rows: 8, value: agent.content || '', onInput: e => onAgentContentInput(agent.name, e.target.value), placeholder: 'You are an assistant who…' })
+          ),
+          h('label', { class: 'row settings-project__agent-field' },
+            h('span', { class: 'label' }, 'Model'),
+            h('select', { class: 'input', value: agent.modelId || '', onChange: e => onAgentModelChange(agent.name, e.target.value) },
+              h('option', { value: '' }, 'Inherit chat model'),
+              projectModels.map(m => h('option', { key: m.id, value: m.id }, (m.label || m.id) + (m.provider ? ' (' + m.provider + ')' : '')))
+            )
+          ),
+          h('div', { class: 'settings-project__agent-field' },
+            h('span', { class: 'label' }, 'Tools'),
+            h(ToolTree, {
+              groups: buildAgentToolGroups({ choices: AGENT_TOOL_CHOICES, restricted, selected: value => agent.tools.includes(value), mcpServers }),
+              collapsedByDefault: true,
+              onToggleGroup: (groupId, checked) => onAgentToolGroupToggle(agent.name, groupId, checked),
+              onToggleTool: (groupId, toolId, checked) => onAgentToolToggle(agent.name, toolId, checked)
+            })
+          ),
+          h('div', { class: 'row row--actions' },
+            h('span', { 'data-agent-status': agent.name, class: 'status' }),
+            h('button', { type: 'button', class: 'btn btn--danger', onClick: () => deleteAgentPreset(agent.name) }, 'Delete agent')
+          )
+        )
+      )
+    );
+  }
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
@@ -883,21 +963,32 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     ),
     h('section', { class: 'settings-project' },
       h('div', { class: 'settings-project__intro' },
-        h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
-        h('p', { class: 'settings-project__lede' }, 'These settings apply only to this project. Defaults follow the app settings, and changes save automatically.'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('div', { class: 'settings-project__intro-top' },
+          h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
+          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        ),
+        h('p', { class: 'settings-project__lede' }, 'Only for this project — everything saves automatically.')
       ),
       // ---- Project overrides ------------------------------------------
       // Settings that live in .mouaif.json and win over the app-level
       // value for this folder only (decisions §2). The select's "Inherit
       // app default" option is the visible end of the resolution chain.
-      h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'General'),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('general'),
+          h('span', null, 'General'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About these settings' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Settings here live in ', h('code', null, '.mouaif.json'), ' and override the app-level defaults for this folder only. Leave a control untouched to inherit the app default.')
+            )
+          )
+        ),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item' },
             h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt style'),
-              h('div', { class: 'settings-project__item-note' }, 'Choose how much tool and instruction detail chats receive.'),
+              h('div', { class: 'settings-project__item-note' }, 'How much tool and instruction detail chats receive.'),
               h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Following the app default until you change it here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
@@ -914,14 +1005,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // Actions that apply to the chat the user came from (?chatId=…),
       // not to the project. Split out of the overrides group so the two
       // scopes are not confused. Hidden when there is no chat in context.
-      h('div', { class: 'group', hidden: !traceCardVisible },
-        h('div', { class: 'group__title' }, 'Current chat'),
+      h('div', { class: 'group settings-project__section', hidden: !traceCardVisible },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('chat'),
+          h('span', null, 'Current chat'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About tracing' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Tracing appends this chat’s events to ', h('code', null, '.mouaif/traces/<chatId>.ndjson'), ' in the project so you can commit it alongside your code. “Export trace” writes the file once, on demand.')
+            )
+          )
+        ),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item settings-project__item--col' },
             h('div', { class: 'settings-project__item-row' },
               h('div', { class: 'settings-project__item-main' },
                 h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
-                h('div', { class: 'settings-project__item-note' }, 'Write this chat to a project trace file.'),
+                h('div', { class: 'settings-project__item-note' }, 'Append this chat’s events to a trace file in the project.'),
                 h('div', { ref: chatTraceStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
               ),
               h('label', { class: 'switch' },
@@ -943,9 +1043,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // its enable checkbox AND its Off/Ask/Allow authorization
       // segment on the same line. Only the checkbox / segment are
       // click targets; the row text is inert.
-      h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Tools'),
-        h('p', { class: 'settings-project__section-help' }, 'Choose whether each tool is off, asks before use, or runs without asking.'),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('tools'),
+          h('span', null, 'Tools'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About tool permissions' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Each tool has three modes:'),
+              h('ul', null,
+                h('li', null, h('strong', null, 'Off'), ' — hidden from the model, zero prompt tokens.'),
+                h('li', null, h('strong', null, 'Ask'), ' — you approve every call (the default).'),
+                h('li', null, h('strong', null, 'Allow'), ' — calls run without asking.')
+              ),
+              h('p', null, 'In Ask mode, shell and file tools also accept an auto-approve list: matching calls run silently, the rest still ask. The checkbox next to a group is a quick Off ↔ Ask toggle.')
+            )
+          )
+        ),
         h('div', { class: 'settings-project__tools-tree' },
           toolsCatalog.length
             ? h(ToolTree, {
@@ -959,8 +1073,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
 
       // ---- Agent files ------------------------------------------------
-      h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Agent files'),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('files'),
+          h('span', null, 'Agent files'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About agent files' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. A chat can still opt out individually.')
+            )
+          )
+        ),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
@@ -1003,60 +1126,33 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
 
       // ---- Agents -----------------------------------------------------
-      h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Agents'),
-        h('p', { class: 'settings-project__section-help' }, 'Create reusable agents with their own instructions, model, and tools.'),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('agents'),
+          h('span', null, 'Agents'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About agents' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Edits save automatically; names are fixed after creation.')
+            )
+          )
+        ),
         h('div', { class: 'settings-project__agents' },
           agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
-            agentPresets.map(a => {
-              const open = !!agentPresetsOpened[a.name];
-              const restricted = a.tools !== undefined;
-              return h('li', { key: a.name, class: 'settings-project__agent-row' },
-                h('div', { class: 'settings-project__agent-head' },
-                  h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.name]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
-                  h('span', { class: 'settings-project__agent-title' }, a.name),
-                  a.modelId && h('span', { class: 'settings-project__agent-tools-badge' }, a.modelId),
-                  restricted
-                    ? h('span', { class: 'settings-project__agent-tools-badge' }, a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))
-                    : h('span', { class: 'settings-project__agent-tools-badge' }, 'all tools'),
-                  h('button', { type: 'button', class: 'btn btn--danger btn--sm settings-project__agent-del', onClick: () => deleteAgentPreset(a.name), 'aria-label': 'Delete' }, '×')
+            agentPresets.map(a => h('li', { key: a.name },
+              h('a', {
+                class: 'group__row settings-project__agent-link',
+                href: '#/settings/project/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()),
+                'aria-label': 'Configure ' + a.name
+              },
+                h('span', { class: 'group__row-body' },
+                  h('span', { class: 'group__row-label' }, a.name),
+                  h('span', { class: 'settings-project__link-sub' }, a.modelId || 'Inherits chat model')
                 ),
-                open && h('div', { class: 'settings-project__agent-body' },
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Name'),
-                    h('input', { class: 'input', value: a.name, disabled: true, 'aria-readonly': 'true' })
-                  ),
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Instructions ' + (a.content ? a.content.length + ' chars' : '')),
-                    h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', onInput: e => onAgentContentInput(a.name, e.target.value), placeholder: 'You are an assistant who…' })
-                  ),
-                  h('label', { class: 'row settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Model'),
-                    h('select', { class: 'input', value: a.modelId || '', onChange: e => onAgentModelChange(a.name, e.target.value) },
-                      h('option', { value: '' }, 'Inherit chat model'),
-                      projectModels.map(m => h('option', { key: m.id, value: m.id }, (m.label || m.id) + (m.provider ? ' (' + m.provider + ')' : '')))
-                    )
-                  ),
-                  h('div', { class: 'settings-project__agent-field' },
-                    h('span', { class: 'label' }, 'Tools'),
-                    h(ToolTree, {
-                      groups: buildAgentToolGroups({
-                        choices: AGENT_TOOL_CHOICES,
-                        restricted,
-                        selected: (v) => a.tools.includes(v),
-                        mcpServers
-                      }),
-                      collapsedByDefault: true,
-                      onToggleGroup: (groupId, checked) => onAgentToolGroupToggle(a.name, groupId, checked),
-                      onToggleTool: (groupId, toolId, checked) => onAgentToolToggle(a.name, toolId, checked)
-                    })
-                  ),
-                  h('div', { class: 'row row--actions' },
-                    h('span', { 'data-agent-status': a.name, class: 'status' })
-                  )
-                )
-              );
-            })
+                h('span', { class: 'group__row-detail' }, a.tools === undefined ? 'All tools' : (a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))),
+                h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+              )
+            ))
           ),
           !agentCreating
             ? h('button', { type: 'button', class: 'btn btn--primary settings-project__add-agent', onClick: openAgentCreator }, '+ Add agent')
@@ -1080,17 +1176,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
 
       // ---- Links ------------------------------------------------------
-      h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'More settings'),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('more'),
+          h('span', null, 'More settings')
+        ),
         h('ul', { class: 'group__list' },
           h('li', null,
             h('a', {
               ref: mcpCard,
-              class: 'group__row',
+              class: 'group__row settings-project__link-row',
               'aria-label': 'MCP servers',
               href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir.current || '')
             },
-              h('span', { class: 'group__row-label' }, 'MCP servers'),
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'MCP servers'),
+                h('span', { class: 'settings-project__link-sub' }, 'Connect external tool servers')
+              ),
               h('span', { ref: mcpSummary, class: 'group__row-detail' }, '—'),
               h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
@@ -1098,43 +1200,50 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('li', null,
             h('a', {
               ref: promptsCard,
-              class: 'group__row',
+              class: 'group__row settings-project__link-row',
               'aria-label': 'Custom prompts',
               href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir.current || '')
             },
-              h('span', { class: 'group__row-label' }, 'Custom prompts'),
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Custom prompts'),
+                h('span', { class: 'settings-project__link-sub' }, 'Reusable system and role prompts')
+              ),
               h('span', { ref: promptsSummary, class: 'group__row-detail' }, '—'),
               h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
           ),
           h('li', null,
             h('a', {
-              class: 'group__row',
+              class: 'group__row settings-project__link-row',
               'aria-label': 'Import chats from JSON files',
               href: '#/settings/project/import?projectDir=' + encodeURIComponent(loadedDir.current || '')
             },
-              h('span', { class: 'group__row-label' }, 'Import chats'),
-              h('span', { class: 'group__row-detail' }, 'reimport from .mouaif.messages.*.json'),
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Import chats'),
+                h('span', { class: 'settings-project__link-sub' }, 'Reimport from .mouaif.messages.*.json files')
+              ),
               h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
           )
         )
       ),
 
-      // ---- Advanced (raw file + resolved) ----------------------------
-      h('details', { class: 'settings__advanced settings-project__advanced' },
-        h('summary', null, 'Advanced: raw project file'),
-        h('p', { class: 'hint hint--compact' }, 'Use this only if you need to hand-edit ', h('code', null, '.mouaif.json'), '. The controls above write the same file.'),
-        h('label', { class: 'label', for: 'sp-project-editor' }, 'Project file'),
-        h('textarea', { ref: editor, class: 'input settings-project__code', id: 'sp-project-editor', rows: 10, spellcheck: false }),
-        h('div', { class: 'row row--actions' },
-          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: true }, 'Save file'),
-          h('button', { ref: revertBtn, class: 'btn', type: 'button', onClick: revertRaw, disabled: true }, 'Revert'),
-          h('span', { ref: editorStatus, class: 'status', 'aria-live': 'polite' })
-        ),
-        h('div', { class: 'group__title settings-project__subhead' }, 'Resolved settings'),
-        h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. Provider keys are redacted.'),
-        h('pre', { ref: resolvedOut, class: 'settings__out' })
+      // Technical information stays last and opens on a dedicated page.
+      h('div', { class: 'group settings-project__section' },
+        h('ul', { class: 'group__list' },
+          h('li', null,
+            h('a', {
+              class: 'group__row settings-project__link-row',
+              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir())
+            },
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Technical details'),
+                h('span', { class: 'settings-project__link-sub' }, 'Raw project file and resolved settings')
+              ),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+            )
+          )
+        )
       )
     )
   );
