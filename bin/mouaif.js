@@ -70,6 +70,7 @@ function runWatchSupervisor(options) {
   function startChild() {
     const args = [binPath, 'serve', '--port', port, '--host', host];
     if (publicOrigin) args.push('--public-origin', publicOrigin);
+    if (options.auth || options.user || options.authSetup) args.push('--auth');
     if (options.user) args.push('--user', options.user);
     if (options.authSetup) args.push('--auth-setup');
     child = spawn(process.execPath, args, {
@@ -135,6 +136,7 @@ program
   .option('-p, --port <port>', 'Port to listen on', DEFAULT_PORT)
   .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .option('--public-origin <origin>', 'Public HTTP(S) origin when served through a proxy', process.env.MOUAIF_PUBLIC_ORIGIN)
+  .option('--auth', 'Require app access authentication (disabled unless explicitly enabled)')
   .option('--user <user>', 'Set the app access user before serving')
   .option('--password <password>', 'Set the app access password before serving (prefer MOUAIF_PASSWORD to avoid shell history)')
   .option('--auth-setup', 'Print a one-time setup link, QR code, and short code')
@@ -145,6 +147,7 @@ program
     }
 
     const port = parseInt(options.port, 10);
+    const authEnabled = !!(options.auth || options.user || options.authSetup);
     const suppliedPassword = options.password || process.env.MOUAIF_PASSWORD || '';
     if ((options.user && !suppliedPassword) || (!options.user && suppliedPassword)) {
       console.error('❌ --user and --password (or MOUAIF_PASSWORD) must be supplied together');
@@ -171,7 +174,7 @@ program
     };
 
     function start() {
-      server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin });
+      server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin, authEnabled });
       server.listen(port, options.host, () => {
         const servedOrigin = displayOrigin(options, port);
         console.log(`🚀 mouaif server running at ${servedOrigin}`);
@@ -181,7 +184,7 @@ program
         console.log(`   REST:   POST /data    — update data`);
         console.log(`   SSE:    GET  /events  — subscribe to events`);
         console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
-        if (options.authSetup || !accessAuth.configured()) {
+        if (authEnabled && (options.authSetup || !accessAuth.configured())) {
           const setup = accessAuth.createSetupCode();
           const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(setup.code);
           console.log('');
@@ -189,7 +192,10 @@ program
           console.log(`   Link:   ${setupUrl}`);
           console.log(`   Code:   ${setup.code}`);
           try { console.log('\n' + qr.terminal(setupUrl)); } catch (_) { /* narrow terminals can use the link */ }
-          console.log('   The setup page can create a password and register a passkey.');
+          const securePasskeys = /^https:\/\//i.test(servedOrigin) || /^http:\/\/(localhost|127(?:\.\d+){3}|\[::1\])(?::|\/|$)/i.test(servedOrigin);
+          console.log(securePasskeys
+            ? '   The setup page can create a password and register a passkey.'
+            : '   Password setup is available. Passkeys require HTTPS for remote devices.');
         }
         console.log('   Press Ctrl+C to stop');
       });

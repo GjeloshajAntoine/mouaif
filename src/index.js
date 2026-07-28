@@ -273,7 +273,8 @@ function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
   return true;
 }
 
-function authorizeAccessRequest(req, res) {
+function authorizeAccessRequest(req, res, authEnabled) {
+  if (!authEnabled) return true;
   if (!accessAuth.configured()) {
     // Preserve the existing loopback CLI/API workflow until the user opts in;
     // browser traffic is held at setup so the web UI cannot expose app data.
@@ -337,7 +338,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/')
     || urlPath === '/data';
-  if (accessProtected && !authorizeAccessRequest(req, res)) return;
+  if (accessProtected && !authorizeAccessRequest(req, res, serverConfig.authEnabled)) return;
 
   // SSE endpoint
   if (urlPath === '/events' && method === 'GET') {
@@ -655,9 +656,10 @@ function clearAccessFailures(req) {
   accessAttempts.delete(accessAttemptKey(req));
 }
 
-function publicAccessStatus() {
+function publicAccessStatus(authEnabled = true) {
   const account = accessAuth.user();
   return {
+    enabled: !!authEnabled,
     configured: !!account,
     user: account ? account.username : null,
     passkeyCount: account ? accessAuth.passkeys().length : 0
@@ -675,7 +677,7 @@ async function handleAccess(req, res, parsed, serverConfig) {
   const activeSession = accessAuth.session(accessToken);
 
   if (urlPath === '/api/access/status' && method === 'GET') {
-    return sendJSON(res, 200, { ...publicAccessStatus(), authenticated: !!activeSession });
+    return sendJSON(res, 200, { ...publicAccessStatus(serverConfig.authEnabled), authenticated: !serverConfig.authEnabled || !!activeSession });
   }
 
   if (urlPath === '/api/access/login' && method === 'POST') {
@@ -716,7 +718,7 @@ async function handleAccess(req, res, parsed, serverConfig) {
       if (setupAuthorized && !accessAuth.consumeSetupCode(body.code)) return sendJSON(res, 409, { error: 'Setup code was already used or expired', code: 'ESETUP_CODE' });
       const issued = accessAuth.issueSession();
       res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
-      return sendJSON(res, 200, { ok: true, ...publicAccessStatus(), authenticated: true });
+      return sendJSON(res, 200, { ok: true, ...publicAccessStatus(serverConfig.authEnabled), authenticated: true });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message, code: e.code || 'EBADINPUT' });
     }
@@ -4200,7 +4202,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const serverConfig = { publicOrigin };
+  const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
@@ -4224,7 +4226,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
       const validToken = actual.length === sessionToken.length
         && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
       const accessToken = cookies[ACCESS_COOKIE] || '';
-      const validAccess = !!accessAuth.session(accessToken);
+      const validAccess = !serverConfig.authEnabled || !!accessAuth.session(accessToken);
       if (!origin || origin !== expected || !validToken || !validAccess) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.end();

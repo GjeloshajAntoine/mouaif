@@ -32,7 +32,7 @@ async function main() {
   assert.equal(path.dirname(messages.messagesFilePath(projectDir, 'a1b2c3d4')), projectDir);
   assert.equal(path.dirname(trace.traceFilePath(projectDir, 'a1b2c3d4')), path.join(projectDir, '.mouaif', 'traces'));
 
-  const server = createServer(0);
+  const server = createServer(0, { authEnabled: true });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   const ownOrigin = 'http://127.0.0.1:' + port;
@@ -62,7 +62,7 @@ async function main() {
   }
 
   const publicOrigin = 'https://mouaif.example.test';
-  const proxiedServer = createServer(0, { publicOrigin });
+  const proxiedServer = createServer(0, { publicOrigin, authEnabled: true });
   await new Promise((resolve) => proxiedServer.listen(0, '127.0.0.1', resolve));
   const proxiedAddress = 'http://127.0.0.1:' + proxiedServer.address().port;
   try {

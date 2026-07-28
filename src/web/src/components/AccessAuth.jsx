@@ -50,6 +50,7 @@ function authenticationOptions(publicKey) {
 }
 
 async function registerPasskey({ code = '', username = '', name = 'This device' } = {}) {
+  if (!window.isSecureContext) throw new Error('Passkeys require HTTPS on remote devices (localhost is allowed for local development)');
   if (!window.PublicKeyCredential || !navigator.credentials) throw new Error('Passkeys are not supported in this browser');
   const options = await fetchJson('/api/access/passkeys/register/options', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, username })
@@ -66,6 +67,7 @@ async function registerPasskey({ code = '', username = '', name = 'This device' 
 }
 
 async function loginWithPasskey() {
+  if (!window.isSecureContext) throw new Error('Passkeys require HTTPS on remote devices (localhost is allowed for local development)');
   if (!window.PublicKeyCredential || !navigator.credentials) throw new Error('Passkeys are not supported in this browser');
   const options = await fetchJson('/api/access/passkeys/login/options', { method: 'POST' });
   if (options.status !== 200) throw new Error(options.body.error || 'Could not start passkey sign-in');
@@ -206,6 +208,7 @@ export function AccessGate({ children }) {
   }
   useEffect(() => { load(); }, []);
   if (!status) return h(AuthFrame, { title: 'mouaif', sub: 'Checking access…' });
+  if (!status.enabled) return children;
   if (setup || !status.configured) return h(SetupView, { initialCode, status, onAuthenticated: () => { window.location.hash = '#/projects'; load(); }, onCancel: () => setSetup(false) });
   if (!status.authenticated) return h(LoginView, { status, onAuthenticated: load, onSetup: () => setSetup(true) });
   return children;

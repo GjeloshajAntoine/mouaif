@@ -2,16 +2,24 @@
 
 ## Overview
 
-mouaif can protect its web UI and APIs with one local user, a password, and optional WebAuthn passkeys. Access can be configured directly from CLI arguments or through an expiring setup link, QR code, or short code printed by `mouaif serve`.
+mouaif can optionally protect its web UI and APIs with one local user, a password, and WebAuthn passkeys. Authentication is disabled unless an auth-related CLI option is supplied, preserving the local development workflow.
 
 ## Usage
 
 ### Set a user and password from the CLI
 
+Enable authentication and print an expiring setup invitation:
+
+```bash
+mouaif serve --auth
+```
+
+Without `--auth`, `--auth-setup`, or `--user`, the server does not require a login. Existing stored credentials are left intact but are not enforced for that process.
+
 Pass both values when starting the server:
 
 ```bash
-mouaif serve --user alice --password 'a-long-password'
+mouaif serve --auth --user alice --password 'a-long-password'
 ```
 
 To keep the password out of shell history, use the environment variable instead:
@@ -24,20 +32,20 @@ On PowerShell:
 
 ```powershell
 $env:MOUAIF_PASSWORD = 'a-long-password'
-mouaif serve --user alice
+mouaif serve --auth --user alice
 ```
 
 The password must contain at least eight characters. Supplying changed CLI credentials updates the single access user, invalidates existing login sessions, and removes passkeys tied to the replaced account. Repeating the same credentials on a restart is a no-op.
 
 ### Use the setup UI
 
-If access has not been configured, startup prints:
+When authentication is enabled and access has not been configured, startup prints:
 
 - an expiring setup link;
 - a scannable terminal QR code containing that link;
 - an eight-character short code.
 
-Use `--auth-setup` to print a new setup invitation even when access is already configured:
+Use `--auth-setup` to enable authentication and print a new setup invitation even when access is already configured:
 
 ```bash
 mouaif serve --host 0.0.0.0 --public-origin https://mouaif.example.test --auth-setup
@@ -49,7 +57,7 @@ For another device to use the printed URL, the served origin must be reachable f
 
 ### Sign in with a passkey
 
-After password setup, choose **Add a passkey**. WebAuthn requires a secure context: HTTPS is required for remote origins, while browsers permit `localhost` as a development exception.
+After password setup, choose **Add a passkey**. WebAuthn requires a secure context: HTTPS is required for remote origins, while browsers permit `localhost` as a development exception. On an insecure LAN URL, the UI reports this requirement instead of presenting the failure as missing browser support, and the CLI warns that only password setup is available.
 
 Existing users can manage passkeys under **Settings → Access & passkeys**. Password login remains available. Removing a passkey does not change the password.
 
@@ -99,4 +107,4 @@ GET    /api/access/passkeys
 DELETE /api/access/passkeys/<credential-id>
 ```
 
-All browser requests remain subject to mouaif's same-origin and CSRF-session checks. Once access is configured, app APIs, SSE, push endpoints, and the Inspector WebSocket require an authenticated access session. Before opt-in, local non-browser API clients retain the prior loopback workflow, while the browser UI is held at setup. Static `/web/` assets remain public so the Preact shell can render login and setup screens.
+All browser requests remain subject to mouaif's same-origin and CSRF-session checks. When the process starts with authentication enabled, app APIs, SSE, push endpoints, and the Inspector WebSocket require an authenticated access session. When authentication is disabled, the UI and APIs remain open while retaining the same-origin browser boundary. Static `/web/` assets remain public so the Preact shell can render login and setup screens.

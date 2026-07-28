@@ -27,7 +27,7 @@ async function main() {
   assert.match(setup.code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
   assert.equal(access.setupCodeValid(setup.code.toLowerCase()), true);
 
-  const server = createServer(0);
+  const server = createServer(0, { authEnabled: true });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   let csrfCookie = '';
@@ -74,12 +74,26 @@ async function main() {
       assert.equal(access.verifyPassword('bob', 'new-password'), true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+
+  const openServer = createServer(0);
+  await new Promise((resolve) => openServer.listen(0, '127.0.0.1', resolve));
+  const openOrigin = 'http://127.0.0.1:' + openServer.address().port;
+  try {
+    const page = await fetch(openOrigin + '/web/');
+    const cookie = String(page.headers.get('set-cookie') || '').split(';')[0];
+    const status = await fetch(openOrigin + '/api/access/status', { headers: { Origin: openOrigin, Cookie: cookie } });
+    assert.deepEqual(await status.json(), { enabled: false, configured: true, user: 'bob', passkeyCount: 0, authenticated: true });
+    const allowed = await fetch(openOrigin + '/api/settings', { headers: { Origin: openOrigin, Cookie: cookie } });
+    assert.equal(allowed.status, 200);
+  } finally {
+    await new Promise((resolve) => openServer.close(resolve));
     settings.close();
     fs.rmSync(home, { recursive: true, force: true });
   }
 
   assert.equal(qr.makeMatrix('https://example.test/web/#/setup?code=ABCD-2345').length >= 21, true);
-  console.log('access auth: 18 assertions passed');
+  console.log('access auth: 20 assertions passed');
 }
 
 main().catch((error) => {
