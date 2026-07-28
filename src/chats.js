@@ -12,7 +12,7 @@
 //
 // Schema (per chat):
 //   { id, title, createdAt, lastOpenedAt, trace, promptSize, promptId,
-//     providerId, modelId, draft, tools, agentId, agentFiles, skills }
+//     providerId, modelId, draft, tools, agentFiles, skills }
 //
 // API enrichment (added by GET /api/chats, NOT persisted):
 //   { totalCost: { total, known, currency } }
@@ -83,7 +83,6 @@ function normalizeChat(chat) {
     thinkingLevel: typeof chat.thinkingLevel === 'string' ? chat.thinkingLevel : '',
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
-    agentId: typeof chat.agentId === 'string' && chat.agentId ? chat.agentId : null,
     agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined
   };
 }
@@ -213,9 +212,6 @@ function updateChat(projectDir, chatId, patch) {
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
       dbPatch.draft = typeof patch.draft === 'string' ? patch.draft : '';
     }
-    if (patch && Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
-      dbPatch.agentId = (patch.agentId === null || patch.agentId === '') ? null : String(patch.agentId);
-    }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
       if (patch.tools === null) {
         dbPatch.tools = null;
@@ -260,9 +256,6 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
     merged.draft = typeof patch.draft === 'string' ? patch.draft : '';
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
-    merged.agentId = (patch.agentId === null || patch.agentId === '') ? null : String(patch.agentId);
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
     if (patch.tools === null) {

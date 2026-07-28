@@ -2,7 +2,7 @@
 //
 // Detects when the user types @ in the textarea and shows a popup
 // overlay with matching items: project files, tools/actions, and
-// the active agent/model.
+// the active model.
 //
 // The popup appears above the textarea and stays visible until the
 // user dismisses it with Escape, taps outside, or completes a
@@ -12,9 +12,9 @@ import { fetchJson } from '../../api.js';
 
 // ---- Categories ---------------------------------------------------------
 
-const CATEGORY = { FILES: 'files', ACTIONS: 'actions', AGENT: 'agent' };
-const CATEGORY_LABELS = { files: 'Files', actions: 'Actions', agent: 'Agent' };
-const ICON_MAP = { file: '📄', action: '⚡', agent: '🤖' };
+const CATEGORY = { FILES: 'files', ACTIONS: 'actions', MODEL: 'model' };
+const CATEGORY_LABELS = { files: 'Files', actions: 'Actions', model: 'Model' };
+const ICON_MAP = { file: '📄', action: '⚡', model: '🤖' };
 
 // ---- Module-level state -------------------------------------------------
 
@@ -152,21 +152,21 @@ async function buildItems(projectDir) {
     }
   }
 
-  // 4. Agent (current model)
+  // 4. Model (current chat model)
   const chat = uiState && uiState.chat;
   if (chat && chat.modelId) {
     out.push({
-      id: 'agent:model',
+      id: 'model:current',
       label: chat.modelId,
       subtitle: chat.providerId || 'model',
-      category: CATEGORY.AGENT, icon: 'agent',
+      category: CATEGORY.MODEL, icon: 'model',
       insert: chat.modelId,
       searchText: (chat.modelId + ' ' + (chat.providerId || '')).toLowerCase()
     });
   }
 
   out.sort((a, b) => {
-    const catOrder = { files: 0, agent: 1, actions: 2 };
+    const catOrder = { files: 0, model: 1, actions: 2 };
     const ca = catOrder[a.category] ?? 3;
     const cb = catOrder[b.category] ?? 3;
     if (ca !== cb) return ca - cb;
@@ -288,7 +288,7 @@ function selectItem(idx) {
     return;
   }
 
-  // Files, agent, or tools without known parameters — simple insert
+  // Files, model, or tools without known parameters — simple insert
   const insert = '@' + item.insert + ' ';
   ta.value = before + insert + after;
   const newPos = before.length + insert.length;

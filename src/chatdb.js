@@ -92,7 +92,6 @@ function rowToChat(row) {
     modelId: row.model_id || null,
     thinkingLevel: row.thinking_level || '',
     draft: row.draft || '',
-    agentId: row.agent_id || null,
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
     skills: row.skills === null ? undefined : (row.skills === 1)
   };
@@ -120,7 +119,9 @@ function chatToRow(projectDir, chat) {
     thinking_level: chat.thinkingLevel || '',
     draft: chat.draft || '',
     tools: chat.tools === undefined ? null : JSON.stringify(chat.tools),
-    agent_id: chat.agentId || null,
+    // agent_id is a legacy column from the removed chat-persona design.
+    // It stays in the schema for old DBs but is always written as null.
+    agent_id: null,
     agent_files: chat.agentFiles === undefined ? null : (chat.agentFiles ? 1 : 0),
     skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0)
   };

@@ -2,14 +2,14 @@
 
 ## Overview
 
-The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **tools/actions**, and the **current agent/model**. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
+The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **tools/actions**, and the **current model**. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
 
 ## Usage
 
 - Type `@` anywhere in the chat composer. A popup appears above the composer showing:
   - **Files** — tagged project files first (with their tags listed in the search text), then scanned project text files (up to ~200). Selecting a file inserts `@<relPath>`.
   - **Actions** — the project's available tools (shell, read_file, list_files, write_file, etc.).
-  - **Agent** — the currently selected model ID.
+  - **Model** — the currently selected model ID.
 - Narrow the list by typing more characters (case-insensitive search against label, path, and tags).
 - Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
@@ -42,7 +42,7 @@ The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=
 |-----------|---------------------------------------------------------|
 | Files     | Tagged files from `.mouaif.json` (via `GET /api/projects/:id/tags`), then scanned files from `POST /api/projects/:id/tags/scan` |
 | Actions   | Tool catalog from the project settings (`state.tools.catalog`) |
-| Agent     | Current chat model (`state.chat.modelId`)              |
+| Model     | Current chat model (`state.chat.modelId`)              |
 
 ## Implementation notes
 
@@ -55,7 +55,7 @@ The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=
 - The `@` detection walks backwards from the cursor to find `@` preceded by whitespace or start-of-string. The query ends at the cursor and cannot contain whitespace.
 - **Direct invocation** happens in `stream.js` `send()` — the popup itself never invokes tools. It always inserts `@<name>` into the composer, and the typed-Enter path in `send()` decides whether to dispatch (shell/MCP at start-of-text with args) or send to the model.
 - Argument parsing in `tools.js` (`parseToolArgs`): tries JSON first, then `key=value` pairs. Unparseable text returns `null`, causing the tool dispatch to skip and fall through to normal model send.
-- **Arg bar:** When a tool with `parameters` is selected, `selectItem()` calls `renderArgBar(props, required, filled)` which creates a chip for each unfilled parameter. Required args are marked with `.is-required` (bold/accent border). `appendArg(key, prop)` appends ` key=\`\`` for string types or ` key= ` for booleans/numbers, then updates the bar to remove the filled chip. The bar is cleared when a non-tool item (file, agent) is selected or the popup is remounted.
+- **Arg bar:** When a tool with `parameters` is selected, `selectItem()` calls `renderArgBar(props, required, filled)` which creates a chip for each unfilled parameter. Required args are marked with `.is-required` (bold/accent border). `appendArg(key, prop)` appends ` key=\`\`` for string types or ` key= ` for booleans/numbers, then updates the bar to remove the filled chip. The bar is cleared when a non-tool item (file, model) is selected or the popup is remounted.
 - Mobile-first: the popup is full-width inside the composer, capped at 240 px height with scroll, uses system font stacks and touch-friendly tap targets (≥ 36 px). The arg bar uses small chips (22 px height) that wrap to a second row on narrow screens.
 
 ## Related

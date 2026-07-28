@@ -69,7 +69,7 @@ Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
 | `model_id` | TEXT | Nullable |
 | `draft` | TEXT | |
 | `tools` | TEXT | JSON array or NULL |
-| `agent_id` | TEXT | Nullable |
+| `agent_id` | TEXT | Legacy — always NULL; kept for old DBs, no longer read or written |
 | `agent_files` | INTEGER | 0, 1, or NULL (=undefined) |
 | `skills` | INTEGER | 0, 1, or NULL (=undefined) |
 
