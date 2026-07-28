@@ -2172,6 +2172,7 @@ async function streamChat(opts) {
       // a hard, typed error so the model can retry with a valid one
       // instead of silently delegating to a generic subagent.
       let agentTools = null;
+      let nestedModel = model; // default: inherit the chat's model
       const nestedMessages = [];
       if (agentName) {
         if (!callOpts || !callOpts.projectDir) {
@@ -2180,8 +2181,9 @@ async function streamChat(opts) {
         }
         let agent = null;
         let available = [];
+        let agentMod = null;
         try {
-          const agentMod = require('./agents.js');
+          agentMod = require('./agents.js');
           const all = agentMod.list(callOpts.projectDir);
           available = all.map((a) => a.name);
           agent = all.find((a) => a.name === agentName) || null;
@@ -2189,6 +2191,26 @@ async function streamChat(opts) {
         if (!agent) {
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
           return { ok: false, content: JSON.stringify(r), result: r };
+        }
+        // Optional per-agent model pin. When set, the nested call runs
+        // on that project model (hydrated with its provider connection)
+        // instead of inheriting the chat's model. Unknown model ids
+        // fail loudly — never a silent fallback.
+        if (agent.modelId) {
+          try {
+            const rec = agentMod.resolveModel(callOpts.projectDir, agent);
+            const settingsMod = require('./settings.js');
+            const app = settingsMod.getApp();
+            const providers = Array.isArray(app.providers) ? app.providers : [];
+            const connection = providers.find((p) => p && p.id === rec.provider) || null;
+            nestedModel = Object.assign({}, connection || {}, rec, {
+              provider: rec.provider,
+              auth: rec.auth || (connection && connection.auth) || 'apikey'
+            });
+          } catch (e) {
+            const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
+            return { ok: false, content: JSON.stringify(r), result: r };
+          }
         }
         nestedMessages.push({ role: 'system', content: agent.content });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
@@ -2215,7 +2237,7 @@ async function streamChat(opts) {
         nestedEnabled = nestedEnabled.filter((toolName) => allow.has(toolName));
       }
       const nested = await streamChat({
-        model,
+        model: nestedModel,
         messages: nestedMessages,
         signal,
         projectDir: callOpts && callOpts.projectDir,

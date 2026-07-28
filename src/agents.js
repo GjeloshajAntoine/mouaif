@@ -7,7 +7,7 @@
 // message is the agent's instructions, optionally restricted to the
 // agent's tool allowlist.
 //
-// Each agent = { name, content, tools?, createdAt, updatedAt }
+// Each agent = { name, content, tools?, modelId?, createdAt, updatedAt }
 //   name:    user-defined, unique per project, immutable. Matches
 //            NAME_RE. This is the value the subagent `agent` argument
 //            is matched against.
@@ -15,6 +15,9 @@
 //            system message. Capped at MAX_BYTES on write.
 //   tools:   optional array of tool names the nested call may use.
 //            Absent/empty = inherit the parent's full tool surface.
+//   modelId: optional project model id (from settings `models`) the
+//            nested call runs on. Absent/empty = inherit the chat's
+//            model and provider.
 //
 // Agents are NOT chat personas — a chat-level persona is what custom
 // prompts are for. Nothing in the stream path, chat record, or project
@@ -54,13 +57,34 @@ function normalizeAgent(raw) {
   const tools = Array.isArray(raw.tools)
     ? raw.tools.map(String).map((s) => s.trim()).filter(Boolean)
     : undefined;
+  const modelId = typeof raw.modelId === 'string' && raw.modelId.trim() ? raw.modelId.trim() : undefined;
   return {
     name,
     content: capContent(raw.content),
     tools: tools && tools.length ? tools : undefined,
+    modelId,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
+}
+
+// Validate an agent's modelId against the project's user-defined
+// models. Returns the matching model record, or null when the agent
+// inherits the chat model (no modelId set). Throws EBADINPUT /
+// EUNKNOWN_MODEL otherwise — an agent pinned to a model that no longer
+// exists must fail loudly, not silently fall back.
+function resolveModel(projectDir, agent) {
+  const modelId = agent && typeof agent.modelId === 'string' ? agent.modelId.trim() : '';
+  if (!modelId) return null;
+  const resolved = settings.getResolved(projectDir || null);
+  const models = Array.isArray(resolved.models) ? resolved.models : [];
+  const m = models.find((x) => x && x.id === modelId);
+  if (!m) {
+    const error = new Error('Agent "' + (agent.name || '?') + '" references unknown model "' + modelId + '"');
+    error.code = 'EUNKNOWN_MODEL';
+    throw error;
+  }
+  return m;
 }
 
 function readRawList(project) {
@@ -107,6 +131,7 @@ function create(projectDir, opts) {
     name,
     content,
     tools: Array.isArray(opts.tools) ? opts.tools : undefined,
+    modelId: typeof opts.modelId === 'string' ? opts.modelId : undefined,
     createdAt: now,
     updatedAt: now
   });
@@ -131,6 +156,9 @@ function update(projectDir, name, patch) {
           ? patch.tools.map(String).map((s) => s.trim()).filter(Boolean)
           : undefined)
       : current.tools,
+    modelId: Object.prototype.hasOwnProperty.call(patch || {}, 'modelId')
+      ? (typeof patch.modelId === 'string' && patch.modelId.trim() ? patch.modelId.trim() : undefined)
+      : current.modelId,
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString()
   };
@@ -158,5 +186,6 @@ module.exports = {
   get,
   create,
   update,
-  remove
+  remove,
+  resolveModel
 };

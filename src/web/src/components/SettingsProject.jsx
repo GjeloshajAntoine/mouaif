@@ -49,8 +49,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
   const mcpSummary = useRef(null);
-  // Agents — subagent delegation personas (name + instructions + tools)
+  // Agents — subagent delegation personas (name + instructions + tools + model)
   const [agentPresets, setAgentPresets] = useState([]);
+  const [projectModels, setProjectModels] = useState([]);
   const [agentPresetsOpened, setAgentPresetsOpened] = useState({}); // { [name]: true } for expanded editors
   const [agentCreating, setAgentCreating] = useState(false); // inline new-agent form visible
   const [agentCreateStatus, setAgentCreateStatus] = useState('');
@@ -63,7 +64,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const editorStatus = useRef(null);
   const resolvedOut = useRef(null);
 
-  let currentProject = {};
+  // The loaded project settings. Held in a ref (not a render-local
+  // `let`) so async reads after any re-render see the latest value
+  // instead of a freshly-reset `{}`.
+  const currentProject = useRef({});
   const loadedDir = useRef('');
   const loadedChatId = useRef((initialChatId || '').trim());
 
@@ -93,7 +97,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       setStatus(statusEl, 'project: HTTP ' + projRes.status + (projRes.body && projRes.body.error ? ' ' + projRes.body.error : ''), 'error');
       return;
     }
-    currentProject = projRes.body.project || {};
+    currentProject.current = projRes.body.project || {};
     // Make the loaded project the active one for downstream views.
     setActiveProject(d, '');
     if (pathEl.current) pathEl.current.textContent = projRes.body.path || d;
@@ -102,7 +106,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     // Prompt size (project override; '' means "inherit app default").
     if (promptSizeSel.current) {
-      promptSizeSel.current.value = (currentProject.promptSize && String(currentProject.promptSize)) || '';
+      promptSizeSel.current.value = (currentProject.current.promptSize && String(currentProject.current.promptSize)) || '';
       promptSizeSel.current.disabled = false;
     }
     if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
@@ -227,20 +231,26 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
     } catch { /* keep empty list */ }
 
+    // Project models — feed the per-agent model picker.
+    try {
+      const mr = await fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(d));
+      if (mr.status === 200 && Array.isArray(mr.body.models)) setProjectModels(mr.body.models);
+    } catch { /* keep empty list */ }
+
     // Agent files: project-level enable + file list.
     if (agentFilesToggle.current) {
-      const on = currentProject.agentFiles === true;
+      const on = currentProject.current.agentFiles === true;
       agentFilesToggle.current.checked = on;
       agentFilesToggle.current.setAttribute('aria-checked', on ? 'true' : 'false');
     }
     if (agentFileNames.current) {
-      agentFileNames.current.value = Array.isArray(currentProject.agentFileNames)
-        ? currentProject.agentFileNames.join('\n')
+      agentFileNames.current.value = Array.isArray(currentProject.current.agentFileNames)
+        ? currentProject.current.agentFileNames.join('\n')
         : '';
     }
 
     // Advanced: raw project file + resolved object.
-    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (revertBtn.current) revertBtn.current.disabled = false;
     if (resolvedRes.status === 200 && resolvedOut.current) {
@@ -272,8 +282,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       if (statusRef && statusRef.current) statusRef.current.textContent = 'HTTP ' + r.status;
       return false;
     }
-    currentProject = r.body.project || Object.assign({}, currentProject, patch);
-    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    currentProject.current = r.body.project || Object.assign({}, currentProject.current, patch);
+    if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
     if (statusRef && statusRef.current) statusRef.current.textContent = okMsg || 'saved';
     return true;
   }
@@ -293,8 +303,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       body: JSON.stringify({ projectDir: d, unset: ['promptSize'] })
     });
     if (r.status === 200) {
-      currentProject = r.body.project || {};
-      if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+      currentProject.current = r.body.project || {};
+      if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
       if (promptSizeStatus.current) promptSizeStatus.current.textContent = 'following the app default';
     } else if (promptSizeStatus.current) {
       promptSizeStatus.current.textContent = 'HTTP ' + r.status;
@@ -455,8 +465,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
     });
     if (r.status === 200) {
-      currentProject = r.body.project || Object.assign({}, currentProject, patch);
-      if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+      currentProject.current = r.body.project || Object.assign({}, currentProject.current, patch);
+      if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
       if (agentFilesStatus.current) agentFilesStatus.current.textContent = 'saved';
     } else if (agentFilesStatus.current) {
       agentFilesStatus.current.textContent = 'HTTP ' + r.status;
@@ -498,7 +508,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   function revertRaw() {
-    if (editor.current) editor.current.value = JSON.stringify(currentProject, null, 2);
+    if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
     if (editorStatus.current) editorStatus.current.textContent = 'reverted';
   }
 
@@ -796,6 +806,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveAgentSoon(name, { content: value });
   }
 
+  function onAgentModelChange(name, value) {
+    const modelId = value || '';
+    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { modelId: modelId || undefined }) : a));
+    saveAgent(name, { modelId });
+  }
+
   function onAgentToolToggle(name, tool, checked) {
     const agent = agentPresets.find((a) => a.name === name);
     if (!agent) return;
@@ -994,6 +1010,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 h('div', { class: 'settings-project__agent-head' },
                   h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.name]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
                   h('span', { class: 'settings-project__agent-title' }, a.name),
+                  a.modelId && h('span', { class: 'settings-project__agent-tools-badge' }, a.modelId),
                   restricted
                     ? h('span', { class: 'settings-project__agent-tools-badge' }, a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))
                     : h('span', { class: 'settings-project__agent-tools-badge' }, 'all tools'),
@@ -1007,6 +1024,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   h('label', { class: 'row settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Instructions ' + (a.content ? a.content.length + ' chars' : '')),
                     h('textarea', { class: 'input settings-project__mono', rows: 4, value: a.content || '', onInput: e => onAgentContentInput(a.name, e.target.value), placeholder: 'You are an assistant who…' })
+                  ),
+                  h('label', { class: 'row settings-project__agent-field' },
+                    h('span', { class: 'label' }, 'Model'),
+                    h('select', { class: 'input', value: a.modelId || '', onChange: e => onAgentModelChange(a.name, e.target.value) },
+                      h('option', { value: '' }, 'Inherit chat model'),
+                      projectModels.map(m => h('option', { key: m.id, value: m.id }, (m.label || m.id) + (m.provider ? ' (' + m.provider + ')' : '')))
+                    )
                   ),
                   h('div', { class: 'settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Tools'),

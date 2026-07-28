@@ -13,8 +13,9 @@ Agents are **not** chat personas — a chat-level persona is what [custom prompt
 | **Name** | string | — (required) | Unique per project, matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. Immutable after creation. This is the value the `subagent` `agent` argument is matched against. |
 | **Instructions** | string | — (required) | The persona text. Becomes the nested call's system message. Capped at 64 KiB. |
 | **Tools** | tool-name list | all | Optional allowlist restricting which tools the nested call may use. Empty/unset = the nested call inherits the parent's full tool surface. |
+| **Model** | model id | inherit | Optional project model (from Settings → Project models) the nested call runs on. Empty/unset = the nested call uses the chat's model and provider. An id that no longer exists fails loudly with `EUNKNOWN_MODEL` — never a silent fallback. |
 
-Model, provider, and prompt size are **never** configurable on an agent — the nested call always uses the chat's model and provider.
+Provider and prompt size are **never** configurable on an agent — the model pin carries its own provider; everything else follows the chat.
 
 ## Usage
 
@@ -25,6 +26,7 @@ Open **Settings → Project → Agents**. The section lists agent names with a t
 - **New agent** prompts for a name, creates the agent, and opens its editor.
 - **Name** is shown read-only in the editor (immutable after creation).
 - **Instructions** is a multiline field; it saves on a short debounce.
+- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The collapsed row shows the pinned model id as a badge.
 - **Tools** is a checklist of the native tools plus one entry per configured MCP server. All checked = inherit everything; unchecking builds an explicit allowlist.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
@@ -33,9 +35,9 @@ Open **Settings → Project → Agents**. The section lists agent names with a t
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/api/agents?projectDir=<abs>` | — | `{ agents: [...] }` |
-| `POST` | `/api/agents` | `{ projectDir, name, content, tools? }` | `{ agent }` (201); 400 on invalid/duplicate name |
+| `POST` | `/api/agents` | `{ projectDir, name, content, tools?, modelId? }` | `{ agent }` (201); 400 on invalid/duplicate name |
 | `GET` | `/api/agents/:name?projectDir=<abs>` | — | `{ agent }` or 404 |
-| `PATCH` | `/api/agents/:name` | `{ projectDir, content?, tools? }` | `{ agent }`; `name` is immutable |
+| `PATCH` | `/api/agents/:name` | `{ projectDir, content?, tools?, modelId? }` | `{ agent }`; `name` is immutable; `modelId: ""` clears the pin |
 | `DELETE` | `/api/agents/:name?projectDir=<abs>` | — | `{ ok, removed }` |
 
 ### Delegate with `subagent`
@@ -52,7 +54,8 @@ When a name is provided:
 
 - The nested call's system message is the agent's **instructions** (replacing the generic "focused subagent" persona).
 - If the agent has a **tools** allowlist, the nested call is restricted to it.
-- Everything else is inherited from the parent: model, provider, MCP surface, and the authorization gate.
+- If the agent has a **model** pin, the nested call runs on that project model (its own provider connection) instead of the chat's model.
+- Everything else is inherited from the parent: MCP surface and the authorization gate.
 
 An **unknown name returns a typed error** — no silent fallback to a generic subagent:
 
@@ -62,7 +65,8 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 
 ## Implementation notes
 
-- Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`modelId`/`promptSize`/`agentFiles` are dropped) and removed on first write.
+- Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
+- The model pin resolves at dispatch time: `agents.resolveModel()` finds the project model by id, and the subagent dispatch hydrates it with the app-level provider connection (same sanitization as chat model resolution — credentials never come from the project file).
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
 - Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsProject.jsx`.

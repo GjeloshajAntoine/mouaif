@@ -108,12 +108,41 @@ ok(!agents.isValidName('x'.repeat(65)), 'too long invalid');
   ok(list.length === 1, 'legacy list read');
   ok(list[0].name === 'reviewer', 'legacy id becomes name');
   ok(list[0].content === 'Review.', 'legacy content preserved');
-  ok(list[0].modelId === undefined && list[0].promptSize === undefined && list[0].agentFiles === undefined && list[0].title === undefined, 'legacy extra fields dropped');
+  ok(list[0].modelId === 'gpt-x', 'legacy modelId survives as the model pin');
+  ok(list[0].promptSize === undefined && list[0].agentFiles === undefined && list[0].title === undefined, 'legacy extra fields dropped');
   // First write drops the legacy key.
   agents.update(dir, 'reviewer', { content: 'v2' });
   const raw = readProject(dir);
   ok(Array.isArray(raw.agents), 'write stores under agents');
   ok(raw.agentPresets === undefined, 'legacy key dropped on write');
+}
+
+// ---- modelId: create, patch, clear, resolve --------------------------------
+{
+  const dir = tmpProject();
+  // Seed two project models in .mouaif.json so resolveModel can find one.
+  fs.writeFileSync(path.join(dir, '.mouaif.json'), JSON.stringify({
+    models: [
+      { id: 'small', provider: 'openai-compatible', label: 'Small' },
+      { id: 'big', provider: 'anthropic', label: 'Big' }
+    ]
+  }), 'utf8');
+  const a = agents.create(dir, { name: 'pinned', content: 'x', modelId: 'small' });
+  ok(a.modelId === 'small', 'create stores modelId');
+  const b = agents.create(dir, { name: 'plain', content: 'x' });
+  ok(b.modelId === undefined, 'create without modelId leaves it unset');
+  const patched = agents.update(dir, 'pinned', { modelId: 'big' });
+  ok(patched.modelId === 'big', 'update patches modelId');
+  const cleared = agents.update(dir, 'pinned', { modelId: '' });
+  ok(cleared.modelId === undefined, 'empty modelId clears the pin');
+  // resolveModel: null when unpinned, record when pinned, throw on unknown.
+  ok(agents.resolveModel(dir, agents.get(dir, 'plain')) === null, 'resolveModel returns null when unpinned');
+  agents.update(dir, 'pinned', { modelId: 'big' });
+  const rec = agents.resolveModel(dir, agents.get(dir, 'pinned'));
+  ok(rec && rec.id === 'big' && rec.provider === 'anthropic', 'resolveModel returns the project model record');
+  agents.update(dir, 'pinned', { modelId: 'ghost' });
+  assert.throws(() => agents.resolveModel(dir, agents.get(dir, 'pinned')), /unknown model/i);
+  passed++;
 }
 
 console.log('test-agents: ' + passed + ' assertions passed');

@@ -3277,13 +3277,13 @@ async function handleFeatures(req, res, parsed) {
 
 // ---- Project agents API -----------------------------------------------
 // Project-scoped named personas stored in .mouaif.json under `agents`.
-// Each agent = { name, content, tools? } — a delegation target for the
-// native `subagent` tool, nothing else. See docs/features/agents.md.
+// Each agent = { name, content, tools?, modelId? } — a delegation target
+// for the native `subagent` tool, nothing else. See docs/features/agents.md.
 // Routes:
 //   GET    /api/agents?projectDir=<abs>          -> { agents }
-//   POST   /api/agents  body: { projectDir, name, content, tools? }
+//   POST   /api/agents  body: { projectDir, name, content, tools?, modelId? }
 //   GET    /api/agents/:name?projectDir=<abs>    -> { agent } | 404
-//   PATCH  /api/agents/:name  body: { projectDir, content?, tools? }
+//   PATCH  /api/agents/:name  body: { projectDir, content?, tools?, modelId? }
 //   DELETE /api/agents/:name?projectDir=<abs>
 
 async function handleAgents(req, res, parsed) {
