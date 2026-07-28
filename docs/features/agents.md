@@ -10,7 +10,7 @@ Agents are **not** chat personas — a chat-level persona is what [custom prompt
 
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
-| **Name** | string | — (required) | Unique per project, matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. Immutable after creation. This is the value the `subagent` `agent` argument is matched against. |
+| **Name** | string | — (required) | Unique per project, matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. Mutable after creation — renaming auto-saves and redirects the edit view to the new URL. This is the value the `subagent` `agent` argument is matched against. |
 | **Instructions** | string | — (required) | The persona text. Becomes the nested call's system message. Capped at 64 KiB. |
 | **Tools** | tool-name list | all | Optional allowlist restricting which tools the nested call may use. Empty/unset = the nested call inherits the parent's full tool surface. |
 | **Model** | model id | inherit | Optional project model (from Settings → Project models) the nested call runs on. Empty/unset = the nested call uses the chat's model and provider. An id that no longer exists fails loudly with `EUNKNOWN_MODEL` — never a silent fallback. |
@@ -21,12 +21,12 @@ Provider and prompt size are **never** configurable on an agent — the model pi
 
 ### Manage agents
 
-Open **Settings → Project → Agents**. The section lists agent names with a tool-count badge; tap a row to expand its editor. All edits auto-save.
+Open **Settings → Project → Agents** (in the *Project add-ons* group, alongside MCP servers and Custom prompts). The list view (`#/settings/agents`) shows one row per agent with its tool count and model pin; tapping a row opens the edit view (`#/settings/agents/<name>`). All edits on the edit view auto-save.
 
-- **New agent** prompts for a name, creates the agent, and opens its editor.
-- **Name** is shown read-only in the editor (immutable after creation).
+- **+ Add agent** opens `#/settings/agents/new`, asks for a name and instructions, creates the agent, and redirects to its edit view.
+- **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.
 - **Instructions** is a multiline field; it saves on a short debounce.
-- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The collapsed row shows the pinned model id as a badge.
+- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The list row shows the pinned model id in its meta line.
 - **Tools** is a checklist of the native tools plus one entry per configured MCP server. All checked = inherit everything; unchecking builds an explicit allowlist.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
@@ -37,7 +37,7 @@ Open **Settings → Project → Agents**. The section lists agent names with a t
 | `GET` | `/api/agents?projectDir=<abs>` | — | `{ agents: [...] }` |
 | `POST` | `/api/agents` | `{ projectDir, name, content, tools?, modelId? }` | `{ agent }` (201); 400 on invalid/duplicate name |
 | `GET` | `/api/agents/:name?projectDir=<abs>` | — | `{ agent }` or 404 |
-| `PATCH` | `/api/agents/:name` | `{ projectDir, content?, tools?, modelId? }` | `{ agent }`; `name` is immutable; `modelId: ""` clears the pin |
+| `PATCH` | `/api/agents/:name` | `{ projectDir, name?, content?, tools?, modelId? }` | `{ agent }`; `name` is now mutable (renames the agent); `modelId: ""` clears the pin |
 | `DELETE` | `/api/agents/:name?projectDir=<abs>` | — | `{ ok, removed }` |
 
 ### Delegate with `subagent`
@@ -84,7 +84,7 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 - Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
-- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsProject.jsx`.
+- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `src/web/src/components/SettingsProject.jsx` (link row + count summary).
 
 ## Related
 

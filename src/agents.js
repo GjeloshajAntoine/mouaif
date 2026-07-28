@@ -146,8 +146,29 @@ function update(projectDir, name, patch) {
   const idx = agents.findIndex((a) => a.name === name);
   if (idx < 0) return null;
   const current = agents[idx];
+  // Name is now mutable. Validate and check duplicates (excluding self).
+  let newName = current.name;
+  if (Object.prototype.hasOwnProperty.call(patch || {}, 'name')) {
+    const candidate = typeof patch.name === 'string' ? patch.name.trim() : '';
+    if (!candidate) {
+      const error = new Error('Agent name must match ' + NAME_RE);
+      error.code = 'EBADINPUT';
+      throw error;
+    }
+    if (!isValidName(candidate)) {
+      const error = new Error('Agent name must match ' + NAME_RE);
+      error.code = 'EBADINPUT';
+      throw error;
+    }
+    if (candidate !== current.name && agents.some((a) => a.name === candidate)) {
+      const error = new Error('Agent "' + candidate + '" already exists');
+      error.code = 'EBADINPUT';
+      throw error;
+    }
+    newName = candidate;
+  }
   const merged = {
-    name: current.name, // immutable
+    name: newName,
     content: Object.prototype.hasOwnProperty.call(patch || {}, 'content')
       ? capContent(patch.content)
       : current.content,
