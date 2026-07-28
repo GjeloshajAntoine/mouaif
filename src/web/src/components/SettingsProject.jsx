@@ -882,10 +882,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       h('h2', { class: 'view-title' }, 'Project settings')
     ),
     h('section', { class: 'settings-project' },
-      h('div', { class: 'settings-project__hero' },
-        h('div', { class: 'settings-project__eyebrow' }, 'This project'),
+      h('div', { class: 'settings-project__intro' },
         h('p', { class: 'settings-project__path' }, h('code', { ref: pathEl }, '…')),
-        h('p', { class: 'settings-project__lede' }, 'Saved in ', h('code', null, '.mouaif.json'), ', committed with the project. Anything left on its default here follows the app-level setting.'),
+        h('p', { class: 'settings-project__lede' }, 'These settings apply only to this project. Defaults follow the app settings, and changes save automatically.'),
         h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
       ),
       // ---- Project overrides ------------------------------------------
@@ -893,12 +892,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // value for this folder only (decisions §2). The select's "Inherit
       // app default" option is the visible end of the resolution chain.
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Chat defaults', h('span', { class: 'group__title-note' }, 'For chats in this project')),
+        h('div', { class: 'group__title' }, 'General'),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item' },
             h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Default prompt style'),
-              h('div', { class: 'settings-project__item-note' }, 'How much tool schema and instruction text new chats get. Smaller = faster, less context used. A single chat can still pick its own.'),
+              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt style'),
+              h('div', { class: 'settings-project__item-note' }, 'Choose how much tool and instruction detail chats receive.'),
               h('div', { ref: promptSizeStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, 'Following the app default until you change it here')
             ),
             h('select', { ref: promptSizeSel, class: 'input settings-project__select', id: 'sp-prompt-size', disabled: true, onChange: onPromptSize },
@@ -916,7 +915,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // not to the project. Split out of the overrides group so the two
       // scopes are not confused. Hidden when there is no chat in context.
       h('div', { class: 'group', hidden: !traceCardVisible },
-        h('div', { class: 'group__title' }, 'This chat', h('span', { class: 'group__title-note' }, 'Only the chat you came from')),
+        h('div', { class: 'group__title' }, 'Current chat'),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item settings-project__item--col' },
             h('div', { class: 'settings-project__item-row' },
@@ -945,7 +944,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // segment on the same line. Only the checkbox / segment are
       // click targets; the row text is inert.
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Tools', h('span', { class: 'group__title-note' }, 'Visibility + authorization per project')),
+        h('div', { class: 'group__title' }, 'Tools'),
+        h('p', { class: 'settings-project__section-help' }, 'Choose whether each tool is off, asks before use, or runs without asking.'),
         h('div', { class: 'settings-project__tools-tree' },
           toolsCatalog.length
             ? h(ToolTree, {
@@ -960,7 +960,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
       // ---- Agent files ------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Agent files', h('span', { class: 'group__title-note' }, 'Project-level defaults')),
+        h('div', { class: 'group__title' }, 'Agent files'),
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
@@ -1004,8 +1004,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
       // ---- Agents -----------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Agents', h('span', { class: 'group__title-note' }, 'Subagent delegation personas')),
-        h('p', { class: 'settings-project__help' }, 'Named personas the subagent tool can delegate to. Changes save automatically.'),
+        h('div', { class: 'group__title' }, 'Agents'),
+        h('p', { class: 'settings-project__section-help' }, 'Create reusable agents with their own instructions, model, and tools.'),
         h('div', { class: 'settings-project__agents' },
           agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
             agentPresets.map(a => {
@@ -1081,7 +1081,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
       // ---- Links ------------------------------------------------------
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Project add-ons'),
+        h('div', { class: 'group__title' }, 'More settings'),
         h('ul', { class: 'group__list' },
           h('li', null,
             h('a', {

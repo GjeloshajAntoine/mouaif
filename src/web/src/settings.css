@@ -219,29 +219,16 @@
 
 .settings-project { padding-bottom: 12px; }
 
-.settings-project .group { margin-top: 16px; }
-.settings-project .group__list { background: var(--surface); border: 1px solid var(--border-strong); }
+.settings-project .group { margin-top: 20px; }
+.settings-project .group__list { background: var(--surface); border: 1px solid var(--border); }
 .settings-project .group .input { background: var(--surface-2); border: 1px solid var(--border-strong); }
 .settings-project .group .input:hover,
 .settings-project .group .input:focus { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
 
-.settings-project__hero {
-  position: relative;
-  margin: 0 10px 14px;
-  padding: 12px 12px 12px 14px;
-  background: var(--accent-soft);
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-.settings-project__eyebrow {
-  color: var(--accent);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 4px;
+.settings-project__intro {
+  margin: 0 12px 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 .settings-project__path {
   margin: 0 0 6px;
@@ -256,13 +243,9 @@
 }
 .settings-project__path code {
   display: block;
-  color: var(--fg);
-  font-size: 0.88rem;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  padding: 5px 8px;
-  margin-top: 2px;
+  color: var(--fg-soft);
+  font-size: 0.78rem;
+  padding: 0;
 }
 .settings-project__lede {
   color: var(--fg-soft);
@@ -274,10 +257,10 @@
 .settings-project__item,
 .settings-project__tool {
   display: flex;
-  flex-direction: row;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 12px;
   min-height: var(--tap);
 }
 .settings-project__tool {
@@ -329,13 +312,18 @@
 }
 .settings-project__item-actions .btn--danger { margin-left: auto; }
 .settings-project__select {
-  width: auto;
+  width: 100%;
   min-width: 0;
-  max-width: 46%;
-  flex-shrink: 0;
-  font-size: 0.8rem;
-  padding: 4px 8px;
-  min-height: 30px;
+  max-width: none;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  min-height: var(--tap);
+}
+.settings-project__section-help {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 2px 12px 8px;
 }
 .settings-project__help {
   color: var(--muted);

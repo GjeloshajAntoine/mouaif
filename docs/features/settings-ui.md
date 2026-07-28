@@ -73,6 +73,8 @@ The provider form has all fields on one screen: provider id (locked after creati
 
 The project view loads both the raw project file and the resolved view in parallel. Saving the project refreshes the resolved view in the same tap.
 
+Project settings use a regular, single-column form: a quiet path and scope introduction followed by consistently titled sections (`General`, `Current chat`, `Tools`, `Agent files`, `Agents`, and `More settings`). Controls span the available mobile width, descriptions use plain language, and every existing option remains available. Advanced raw JSON stays collapsed at the bottom.
+
 The project view's groups are scoped on purpose: a **Chat defaults** group holds settings that live in `.mouaif.json` and apply to chats in this project (prompt style today; anything left on its default follows the app-level value), and a separate **This chat** group holds actions that apply to the chat the user came from (trace toggle, export trace, delete chat). The two scopes are never mixed in one group — a per-chat action next to a project setting reads as "this writes `.mouaif.json`", which it does not. The "This chat" group is hidden when the route carries no `?chatId=…`.
 
 The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
