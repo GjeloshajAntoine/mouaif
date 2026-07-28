@@ -3143,6 +3143,85 @@ async function handleTools(req, res, parsed) {
     return sendJSON(res, status, out);
   }
 
+  // POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, modelId?, providerId? }
+  // Direct subagent dispatch from the composer (@agent <task>). Runs the
+  // native subagent tool through the same authorization gate and the
+  // same dispatcher the model-driven loop uses — one tool_call +
+  // tool_result pair, returned in the JSON body (no SSE stream).
+  if (urlPath === '/api/tools/subagent' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
+    const task = body && typeof body.task === 'string' ? body.task.trim() : '';
+    const agentName = body && typeof body.agent === 'string' ? body.agent.trim() : '';
+    const context = body && typeof body.context === 'string' ? body.context : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
+    if (!task) return sendJSON(res, 400, { error: 'task is required' });
+    const chat = chats.getChat(projectDir, chatId);
+    if (!chat) return sendJSON(res, 404, { error: 'Chat not found', chatId });
+
+    // Model: explicit body.modelId wins, else the chat's current model.
+    const modelId = typeof body.modelId === 'string' && body.modelId ? body.modelId : (chat.modelId || '');
+    const providerId = typeof body.providerId === 'string' && body.providerId ? body.providerId : (chat.providerId || '');
+    if (!modelId) return sendJSON(res, 400, { error: 'No model selected for this chat' });
+    let model;
+    try { model = resolveModel(modelId, projectDir, providerId); }
+    catch (e) { return sendJSON(res, e.code === 'EMODEL_NOT_FOUND' || e.code === 'EPROVIDER_NOT_FOUND' ? 404 : 400, { error: e.message, code: e.code || 'EBADMODEL' }); }
+
+    let appSettings;
+    try { appSettings = settings.getApp(); } catch { /* defaults apply */ }
+    const args = { task };
+    if (agentName) args.agent = agentName;
+    if (context) args.context = context;
+
+    const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const events = [];
+    try {
+      const out = await ai.runSingleToolCall(
+        { id: callId, name: 'subagent', arguments: JSON.stringify(args) },
+        {
+          opts: {
+            projectDir,
+            chatId,
+            appSettings,
+            promptSize: chat.promptSize,
+            enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+            model
+          },
+          onEvent: (name, data) => events.push({ name, data }),
+          convo: null,
+          toolSpecs: [],
+          promptProfilesMod: null,
+          discoveredToolNames: null,
+          modelContentForTool: (name, exec) => (exec && exec.content) || '',
+          getLastToolCallKey: () => null,
+          setLastToolCallKey: () => {},
+          getRepeatedToolCallCount: () => 0,
+          setRepeatedToolCallCount: () => {},
+          REPEATED_TOOL_CALL_LIMIT: 3,
+          onDelegatedUsage: null
+        }
+      );
+      const exec = out && out.exec;
+      const toolCall = events.find((e) => e.name === 'tool_call');
+      const payload = {
+        ok: !!(exec && exec.ok),
+        id: callId,
+        name: 'subagent',
+        args,
+        result: exec && exec.result,
+        toolCall: toolCall ? { id: toolCall.data && toolCall.data.id, name: toolCall.data && toolCall.data.name, args: toolCall.data && toolCall.data.args } : { id: callId, name: 'subagent', args }
+      };
+      return sendJSON(res, 200, payload);
+    } catch (e) {
+      const status = e && (e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED') ? 403 : 500;
+      return sendJSON(res, status, { ok: false, error: (e && e.message) || String(e), code: (e && e.code) || 'ESUBAGENT' });
+    }
+  }
+
   return sendJSON(res, 404, { error: 'Not found' });
 }
 

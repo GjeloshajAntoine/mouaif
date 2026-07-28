@@ -1195,6 +1195,258 @@ async function* readNDJSON(stream) {
   }
 }
 
+// ---- Single tool-call runner ---------------------------------------------
+// Executes one tool call through the full native pipeline — circuit
+// breaker, authorization gate, dispatch — emitting tool_call/tool_result
+// events and appending the `tool` message to `cx.convo` (when provided).
+// Shared by the streamChat tool loop and by POST /api/tools/subagent
+// (direct @agent dispatch from the composer).
+//
+// cx = {
+//   opts, onEvent, convo,               // streamChat closure (convo optional)
+//   toolSpecs, promptProfilesMod, discoveredToolNames,
+//   modelContentForTool,                // (name, exec) -> string
+//   dispatchTool, firstStringArgument, toolResultImageParts, // helpers
+//   getLastToolCallKey/setLastToolCallKey,
+//   getRepeatedToolCallCount/setRepeatedToolCallCount, REPEATED_TOOL_CALL_LIMIT,
+//   onDelegatedUsage                    // optional subagent usage hook
+// }
+async function runSingleToolCall(c, cx) {
+  const { opts, onEvent, convo, toolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
+  const dispatchTool = cx.dispatchTool;
+  const firstStringArgument = cx.firstStringArgument;
+  const toolResultImageParts = cx.toolResultImageParts;
+  let args = {};
+  if (c.arguments) {
+    try { args = JSON.parse(c.arguments); }
+    catch { args = { __raw: c.arguments }; }
+  }
+  let exec;
+  let callEmitted = false;
+  // Captured when the authorization gate resolves a prompt for an
+  // `ask_user` call. The runner reads it to fold the user's
+  // structured answer into the `tool` message it returns.
+  let callOptsAnswerPayload = null;
+  const pushToolMessage = (name, content) => {
+    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name, content });
+  };
+  // Identical-call circuit breaker. A model retrying the exact same
+  // call with the exact same arguments (typically after a tool
+  // error) never converges — enforce that the returned result is
+  // identical, so nothing was learned from the retry. Refuse it
+  // with an explanatory tool error so the model is forced to vary
+  // the command or answer in plain text. Counts per consecutive
+  // identical call; any different call resets the streak.
+  const callKey = c.name + '\n' + (c.arguments || '');
+  if (callKey === cx.getLastToolCallKey()) {
+    cx.setRepeatedToolCallCount(cx.getRepeatedToolCallCount() + 1);
+  } else {
+    cx.setLastToolCallKey(callKey);
+    cx.setRepeatedToolCallCount(0);
+  }
+  const loopLimit = typeof cx.REPEATED_TOOL_CALL_LIMIT === 'number' ? cx.REPEATED_TOOL_CALL_LIMIT : 3;
+  if (cx.getRepeatedToolCallCount() >= loopLimit) {
+    const r = {
+      error: {
+        code: 'ELOOP',
+        message: 'You have called ' + c.name + ' with identical arguments ' + (cx.getRepeatedToolCallCount() + 1) + ' times in a row with identical results. The call was refused. Do not retry it — change the command/arguments or answer the user in plain text instead.'
+      }
+    };
+    exec = { ok: false, content: JSON.stringify(r), result: r };
+    onEvent('tool_call', { id: c.id || null, name: c.name, args });
+    callEmitted = true;
+    onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
+    pushToolMessage(c.name, modelContentForTool(c.name, exec));
+    return exec;
+  }
+  try {
+    // list_features is a read-only metadata tool that bypasses
+    // the authorization gate — it only returns feature state.
+    if (c.name === 'list_features') {
+      let af;
+      try { af = require('./agentFeatures.js'); }
+      catch (e) {
+        exec = { ok: false, content: JSON.stringify({ error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } }), result: { error: { code: 'EMODULE' } } };
+      }
+      if (!exec) {
+        exec = await af.dispatchListFeatures(args, Object.assign({}, opts, { callId: c.id || null }));
+      }
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+    } else if (c.name === 'report_progress') {
+      // report_progress is a read-only UI/update tool. It honors
+      // the project `off` visibility gate, but does not show an
+      // interactive authorization prompt because progress updates
+      // do not read or modify project resources.
+      try {
+        const authGate = require('./tools/authorization.js');
+        const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name);
+        if (cfg && cfg.mode === 'off') {
+          exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
+        }
+      } catch { /* unreadable authorization state: keep compatibility path */ }
+      // Emit the running card before dispatch so the subsequent
+      // progress_update can attach to the same call id.
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+      if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
+    } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
+      const requested = args && (args.toolName || args.name || args.tool);
+      const spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
+      if (!spec) {
+        exec = {
+          ok: false,
+          content: JSON.stringify({ error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }),
+          result: { error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }
+        };
+      } else {
+        if (discoveredToolNames) discoveredToolNames.add(requested);
+        const fn = spec.function || {};
+        exec = {
+          ok: true,
+          content: JSON.stringify({ name: fn.name, description: fn.description, parameters: fn.parameters }),
+          result: { name: fn.name, description: fn.description, parameters: fn.parameters }
+        };
+      }
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+    } else {
+      const authGate = require('./tools/authorization.js');
+      // The summary shown on the "Authorization required" card and
+      // matched against the file-tool allowlist needs the right
+      // argument per tool family. For shell it's the command; for
+      // the file tools it's the path (with the optional query /
+      // content as a hint, when relevant).
+      let summary;
+      if (c.name === 'shell') summary = (args && args.cmd) || '';
+      else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
+        summary = (args && (args.path || args.file)) || (args && args.query) || '';
+      } else if (String(c.name).startsWith('mcp__')) {
+        // MCP allowlists (shared or per-server/per-tool) match
+        // against "<composedName> <firstStringArg>" so a pattern
+        // can pin either the tool itself (^mcp__fs__read_file$)
+        // or the resource it touches (^mcp__fs__read_file src/).
+        const first = firstStringArgument(args);
+        summary = first ? (c.name + ' ' + first) : c.name;
+      } else {
+        summary = firstStringArgument(args);
+      }
+      const authResult = await authGate.authorize({
+        projectDir: opts && opts.projectDir,
+        chatId: opts && opts.chatId,
+        tool: c.name,
+        callId: c.id,
+        cmd: args && args.cmd,
+        path: args && args.path,
+        query: args && args.query,
+        summary,
+        timeoutMs: args && args.timeoutMs,
+        args
+      });
+
+      // `ask_user` rides a separate UI card (question + options +
+      // free-form "extra" textbox). The same authorization gate is
+      // reused so the audit log, session grants, and `off` /
+      // `allow-always` semantics work the same as for the other
+      // tools. The dedicated `ask_user_required` event carries the
+      // validated question payload so the chat UI can render the
+      // right component without parsing `args` itself.
+      let askUserPayload = null;
+      if (c.name === 'ask_user') {
+        try {
+          const askMod = require('./tools/ask.js');
+          askUserPayload = askMod.validateArgs(args);
+        } catch (e) {
+          // The model fed us a bad question (too many options,
+          // duplicate value, missing label, ...). Surface the
+          // validation error directly as a tool_result so the
+          // model can self-correct on the next turn; do NOT block
+          // the gate on a user prompt, because the bug is on the
+          // model side, not the user side.
+          const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+          exec = { ok: false, content: JSON.stringify(r), result: r };
+          onEvent('tool_call', { id: c.id || null, name: c.name, args });
+          callEmitted = true;
+          onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
+          pushToolMessage(c.name, modelContentForTool(c.name, exec));
+          return exec;
+        }
+      }
+
+      if (authResult.decision === 'prompt') {
+        if (c.name === 'ask_user' && askUserPayload) {
+          onEvent('ask_user_required', {
+            chatId: opts && opts.chatId,
+            callId: c.id,
+            tool: c.name,
+            question: askUserPayload.question,
+            options: askUserPayload.options,
+            multiSelect: askUserPayload.multiSelect,
+            presets: askUserPayload.presets,
+            projectDir: opts && opts.projectDir
+          });
+        } else {
+          onEvent('authorization_required', {
+            chatId: opts && opts.chatId,
+            callId: c.id,
+            tool: c.name,
+            cmd: args && args.cmd,
+            path: args && args.path,
+            query: args && args.query,
+            summary,
+            timeoutMs: args && args.timeoutMs,
+            projectDir: opts && opts.projectDir
+          });
+        }
+        // Capture the resolved value (allow, payload, ...) so the
+        // `ask_user` runner can read the user's structured answer.
+        // For every other tool the payload is undefined and the
+        // runner ignores it.
+        const authDecision = await authResult.wait;
+        if (c.name === 'ask_user' && authDecision && authDecision.payload) {
+          callOptsAnswerPayload = authDecision.payload;
+        }
+      }
+      // Only announce a running tool after authorization has completed.
+      // Previously the UI showed "tool call — running" while the server
+      // was actually blocked waiting for an authorization decision. If the
+      // authorization card was missed or the page reloaded, the transcript
+      // appeared permanently stuck on a tool call with no messages.
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload }));
+    }
+  } catch (e) {
+    // Denied/disabled/error calls still need a call card immediately
+    // before their result so persisted history remains a valid pair.
+    if (!callEmitted) onEvent('tool_call', { id: c.id || null, name: c.name, args });
+    if (e.code === 'EDENIED') {
+      // For `ask_user` we want the runner to produce a
+      // `cancelled: true` result so the model can decide what to
+      // do next (fall back to a free-form chat, stop, ask a
+      // different question, ...). For every other tool a deny
+      // stays a plain EDENIED stub.
+      if (c.name === 'ask_user') {
+        exec = await dispatchTool('ask_user', args, Object.assign({}, opts, { callId: c.id || null, answerPayload: { cancelled: true } }));
+      } else {
+        exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
+      }
+    } else if (e.code === 'ETOOL_DISABLED') {
+      exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
+    } else {
+      exec = { ok: false, content: JSON.stringify({ ok: false, error: e.message }), result: { ok: false, error: e.message } };
+    }
+  }
+
+  if (c.name === 'subagent' && typeof cx.onDelegatedUsage === 'function') cx.onDelegatedUsage(exec && exec.result);
+
+  onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
+
+  pushToolMessage(c.name, modelContentForTool(c.name, exec));
+  return { exec, imageParts: toolResultImageParts(exec && exec.result) };
+}
+
 async function streamChat(opts) {
   const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel } = opts || {};
   if (!model || !model.provider) {
@@ -1455,249 +1707,32 @@ async function streamChat(opts) {
     // parentCallId, so concurrent subagents prompt and render correctly.
     const runParallel = calls.length > 1 && calls.every((c) => c.name === 'subagent');
     const postToolImageMessages = [];
+    // Single-call runner shared with POST /api/tools/subagent (direct
+    // @agent dispatch from the composer). Closure state: convo (tool
+    // messages), call-key circuit breaker, delegated-usage counters,
+    // and the discoveredToolNames set for the very-small profile.
     const runOneCall = async (c) => {
-      let args = {};
-      if (c.arguments) {
-        try { args = JSON.parse(c.arguments); }
-        catch { args = { __raw: c.arguments }; }
-      }
-      let exec;
-      let callEmitted = false;
-      // Captured when the authorization gate resolves a prompt for an
-      // `ask_user` call. The runner reads it to fold the user's
-      // structured answer into the `tool` message it returns.
-      let callOptsAnswerPayload = null;
-      // Identical-call circuit breaker. A model retrying the exact same
-      // call with the exact same arguments (typically after a tool
-      // error) never converges — enforce that the returned result is
-      // identical, so nothing was learned from the retry. Refuse it
-      // with an explanatory tool error so the model is forced to vary
-      // the command or answer in plain text. Counts per consecutive
-      // identical call; any different call resets the streak.
-      const callKey = c.name + '\n' + (c.arguments || '');
-      if (callKey === lastToolCallKey) {
-        repeatedToolCallCount++;
-      } else {
-        lastToolCallKey = callKey;
-        repeatedToolCallCount = 0;
-      }
-      if (repeatedToolCallCount >= REPEATED_TOOL_CALL_LIMIT) {
-        const r = {
-          error: {
-            code: 'ELOOP',
-            message: 'You have called ' + c.name + ' with identical arguments ' + (repeatedToolCallCount + 1) + ' times in a row with identical results. The call was refused. Do not retry it — change the command/arguments or answer the user in plain text instead.'
-          }
-        };
-        exec = { ok: false, content: JSON.stringify(r), result: r };
-        onEvent('tool_call', { id: c.id || null, name: c.name, args });
-        callEmitted = true;
-        onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
-        convo.push({
-          role: 'tool',
-          tool_call_id: c.id || undefined,
-          name: c.name,
-          content: modelContentForTool(c.name, exec)
-        });
-        return exec;
-      }
-      try {
-        // list_features is a read-only metadata tool that bypasses
-        // the authorization gate — it only returns feature state.
-        if (c.name === 'list_features') {
-          let af;
-          try { af = require('./agentFeatures.js'); }
-          catch (e) {
-            exec = { ok: false, content: JSON.stringify({ error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } }), result: { error: { code: 'EMODULE' } } };
-          }
-          if (!exec) {
-            exec = await af.dispatchListFeatures(args, Object.assign({}, opts, { callId: c.id || null }));
-          }
-          onEvent('tool_call', { id: c.id || null, name: c.name, args });
-          callEmitted = true;
-        } else if (c.name === 'report_progress') {
-          // report_progress is a read-only UI/update tool. It honors
-          // the project `off` visibility gate, but does not show an
-          // interactive authorization prompt because progress updates
-          // do not read or modify project resources.
-          try {
-            const authGate = require('./tools/authorization.js');
-            const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name);
-            if (cfg && cfg.mode === 'off') {
-              exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
-            }
-          } catch { /* unreadable authorization state: keep compatibility path */ }
-          // Emit the running card before dispatch so the subsequent
-          // progress_update can attach to the same call id.
-          onEvent('tool_call', { id: c.id || null, name: c.name, args });
-          callEmitted = true;
-          if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
-        } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
-          const requested = args && (args.toolName || args.name || args.tool);
-          const spec = toolSpecs.find(s => s && s.function && s.function.name === requested);
-          if (!spec) {
-            exec = {
-              ok: false,
-              content: JSON.stringify({ error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }),
-              result: { error: { code: 'EUNKNOWN_TOOL', message: 'Unknown tool: ' + requested } }
-            };
-          } else {
-            discoveredToolNames.add(requested);
-            const fn = spec.function || {};
-            exec = {
-              ok: true,
-              content: JSON.stringify({ name: fn.name, description: fn.description, parameters: fn.parameters }),
-              result: { name: fn.name, description: fn.description, parameters: fn.parameters }
-            };
-          }
-          onEvent('tool_call', { id: c.id || null, name: c.name, args });
-          callEmitted = true;
-        } else {
-        const authGate = require('./tools/authorization.js');
-        // The summary shown on the "Authorization required" card and
-        // matched against the file-tool allowlist needs the right
-        // argument per tool family. For shell it's the command; for
-        // the file tools it's the path (with the optional query /
-        // content as a hint, when relevant).
-        let summary;
-        if (c.name === 'shell') summary = (args && args.cmd) || '';
-        else if (c.name === 'subagent') summary = (args && args.task) || '';
-        else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
-          summary = (args && (args.path || args.file)) || (args && args.query) || '';
-        } else if (String(c.name).startsWith('mcp__')) {
-          // MCP allowlists (shared or per-server/per-tool) match
-          // against "<composedName> <firstStringArg>" so a pattern
-          // can pin either the tool itself (^mcp__fs__read_file$)
-          // or the resource it touches (^mcp__fs__read_file src/).
-          const first = firstStringArgument(args);
-          summary = first ? (c.name + ' ' + first) : c.name;
-        } else {
-          summary = firstStringArgument(args);
-        }
-        const authResult = await authGate.authorize({
-          projectDir: opts && opts.projectDir,
-          chatId: opts && opts.chatId,
-          tool: c.name,
-          callId: c.id,
-          cmd: args && args.cmd,
-          path: args && args.path,
-          query: args && args.query,
-          summary,
-          timeoutMs: args && args.timeoutMs,
-          args
-        });
-
-        // `ask_user` rides a separate UI card (question + options +
-        // free-form "extra" textbox). The same authorization gate is
-        // reused so the audit log, session grants, and `off` /
-        // `allow-always` semantics work the same as for the other
-        // tools. The dedicated `ask_user_required` event carries the
-        // validated question payload so the chat UI can render the
-        // right component without parsing `args` itself.
-        let askUserPayload = null;
-        if (c.name === 'ask_user') {
-          try {
-            const askMod = require('./tools/ask.js');
-            askUserPayload = askMod.validateArgs(args);
-          } catch (e) {
-            // The model fed us a bad question (too many options,
-            // duplicate value, missing label, ...). Surface the
-            // validation error directly as a tool_result so the
-            // model can self-correct on the next turn; do NOT block
-            // the gate on a user prompt, because the bug is on the
-            // model side, not the user side.
-            const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
-            exec = { ok: false, content: JSON.stringify(r), result: r };
-            onEvent('tool_call', { id: c.id || null, name: c.name, args });
-            callEmitted = true;
-            onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
-            convo.push({
-              role: 'tool',
-              tool_call_id: c.id || undefined,
-              name: c.name,
-              content: modelContentForTool(c.name, exec)
-            });
-            return exec;
-          }
-        }
-
-        if (authResult.decision === 'prompt') {
-          if (c.name === 'ask_user' && askUserPayload) {
-            onEvent('ask_user_required', {
-              chatId: opts && opts.chatId,
-              callId: c.id,
-              tool: c.name,
-              question: askUserPayload.question,
-              options: askUserPayload.options,
-              multiSelect: askUserPayload.multiSelect,
-              presets: askUserPayload.presets,
-              projectDir: opts && opts.projectDir
-            });
-          } else {
-            onEvent('authorization_required', {
-              chatId: opts && opts.chatId,
-              callId: c.id,
-              tool: c.name,
-              cmd: args && args.cmd,
-              path: args && args.path,
-              query: args && args.query,
-              summary,
-              timeoutMs: args && args.timeoutMs,
-              projectDir: opts && opts.projectDir
-            });
-          }
-          // Capture the resolved value (allow, payload, ...) so the
-          // `ask_user` runner can read the user's structured answer.
-          // For every other tool the payload is undefined and the
-          // runner ignores it.
-          const authDecision = await authResult.wait;
-          if (c.name === 'ask_user' && authDecision && authDecision.payload) {
-            callOptsAnswerPayload = authDecision.payload;
-          }
-        }
-        // Only announce a running tool after authorization has completed.
-        // Previously the UI showed "tool call — running" while the server
-        // was actually blocked waiting for an authorization decision. If the
-        // authorization card was missed or the page reloaded, the transcript
-        // appeared permanently stuck on a tool call with no messages.
-        onEvent('tool_call', { id: c.id || null, name: c.name, args });
-        callEmitted = true;
-        exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload }));
-        }
-      } catch (e) {
-        // Denied/disabled/error calls still need a call card immediately
-        // before their result so persisted history remains a valid pair.
-        if (!callEmitted) onEvent('tool_call', { id: c.id || null, name: c.name, args });
-        if (e.code === 'EDENIED') {
-          // For `ask_user` we want the runner to produce a
-          // `cancelled: true` result so the model can decide what to
-          // do next (fall back to a free-form chat, stop, ask a
-          // different question, ...). For every other tool a deny
-          // stays a plain EDENIED stub.
-          if (c.name === 'ask_user') {
-            exec = await dispatchTool('ask_user', args, Object.assign({}, opts, { callId: c.id || null, answerPayload: { cancelled: true } }));
-          } else {
-            exec = { ok: false, content: JSON.stringify({ ok: false, code: 'EDENIED', reason: 'user denied' }), result: { ok: false, code: 'EDENIED', reason: 'user denied' } };
-          }
-        } else if (e.code === 'ETOOL_DISABLED') {
-          exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
-        } else {
-          exec = { ok: false, content: JSON.stringify({ ok: false, error: e.message }), result: { ok: false, error: e.message } };
-        }
-      }
-
-      if (c.name === 'subagent') addDelegatedUsage(exec && exec.result);
-
-      onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
-
-      convo.push({
-        role: 'tool',
-        tool_call_id: c.id || undefined,
-        name: c.name,
-        content: modelContentForTool(c.name, exec)
+      const out = await runSingleToolCall(c, {
+        opts,
+        onEvent,
+        convo,
+        toolSpecs,
+        visibleToolSpecs,
+        promptProfilesMod,
+        discoveredToolNames,
+        modelContentForTool,
+        dispatchTool,
+        firstStringArgument,
+        toolResultImageParts,
+        getLastToolCallKey: () => lastToolCallKey,
+        setLastToolCallKey: (k) => { lastToolCallKey = k; },
+        getRepeatedToolCallCount: () => repeatedToolCallCount,
+        setRepeatedToolCallCount: (n) => { repeatedToolCallCount = n; },
+        REPEATED_TOOL_CALL_LIMIT,
+        onDelegatedUsage: (result) => addDelegatedUsage(result)
       });
-
-      const imageParts = toolResultImageParts(exec && exec.result);
-      if (imageParts.length) {
+      const imageParts = out && out.imageParts;
+      if (imageParts && imageParts.length) {
         postToolImageMessages.push({
           role: 'user',
           content: [
@@ -1706,6 +1741,7 @@ async function streamChat(opts) {
           ]
         });
       }
+      return out.exec;
     };
     if (runParallel) {
       // Concurrent subagent fan-out. `convo` and `postToolImageMessages`
@@ -2470,6 +2506,7 @@ module.exports = {
   // public
   streamChat,
   chat,
+  runSingleToolCall,
   ENDPOINTS,
   listModels,
   // exposed for tests

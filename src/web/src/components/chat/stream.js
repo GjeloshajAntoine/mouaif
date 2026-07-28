@@ -104,6 +104,55 @@ export async function runShellCommand(cmd, state, refs) {
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 
+// runAgentCommand(agentName, task, state, refs)
+//
+// `@<agentName> <task>` composer command: dispatch a project agent
+// directly through POST /api/tools/subagent — no model round-trip to
+// decide whether to delegate. The nested run's text is appended to
+// the transcript as an assistant message so it persists; tool_call
+// and tool_result cards render inline exactly like the shell path.
+export async function runAgentCommand(agentName, task, state, refs) {
+  const { projectDir, chatId } = state.props;
+  if (!projectDir || !chatId) return;
+  refs.promptInput.current.value = '';
+  refs._autoresize();
+  const args = { task, agent: agentName };
+  appendToolCallCard({ id: 'pending', name: 'subagent', args }, refs);
+  setChatStatus(refs, 'running agent ' + agentName + '…', 'busy');
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+  let r;
+  try {
+    r = await fetchJson('/api/tools/subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir, chatId, task, agent: agentName })
+    });
+  } catch (err) {
+    appendToolResultCard({ id: null, name: 'subagent', args, ok: false, result: { error: String(err) } }, refs);
+    setChatStatus(refs, 'agent error', 'error');
+    if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+    return;
+  }
+  const body = r.body || {};
+  appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
+  // Fold the agent's final text into the transcript as an assistant
+  // message so it survives reloads (tool cards are live-only here;
+  // the server does not persist direct tool invocations).
+  const text = body.result && typeof body.result.text === 'string' ? body.result.text : '';
+  if (text) {
+    const msg = { role: 'assistant', content: text, ts: new Date().toISOString() };
+    state.messages = state.messages.concat([msg]);
+    appendMessageToTranscript(msg, false, refs, state);
+  }
+  if (r.status === 403) setChatStatus(refs, 'subagent tool is disabled for this project', 'error');
+  else if (!body.ok) setChatStatus(refs, 'agent failed: ' + ((body.result && body.result.error && body.result.error.message) || body.error || 'unknown'), 'error');
+  else setChatStatus(refs, 'agent ' + agentName + ' done', 'success');
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+}
+
 // runMcpCommand(serverSlug, toolName, label, state, refs)
 //
 // runMcpCommand(serverSlug, toolName, label, state, refs, args)
@@ -271,6 +320,10 @@ export async function cancelRunningChat(state, refs) {
     return;
   }
   removePendingAuthorizationCards(refs);
+  // Stop any in-flight stream-recovery poller first — otherwise it
+  // keeps ticking after the cancel and flips the status back to
+  // "reconnecting…", fighting the cancel.
+  stopStreamRecovery(state, refs);
   state.streaming = false;
   state.watchingRun = false;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
@@ -318,6 +371,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   if (atMatch) {
     const toolName = atMatch[1];
     const rest = atMatch[2].trim();
+    // @<agent> <task> — direct project-agent dispatch. Checked before
+    // the tool catalog: agent names live in .mouaif.json, not the tool
+    // list. Only a leading @ with a non-empty task dispatches.
+    if (rest && Array.isArray(state.agents) && state.agents.some(a => a && a.name === toolName)) {
+      return runAgentCommand(toolName, rest, state, refs);
+    }
     const t = state.tools || { catalog: [] };
     const toolSpec = (t.catalog || []).find(x => x && x.name === toolName);
     if (toolSpec) {
@@ -348,12 +407,18 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     return;
   }
 
+  // Mark streaming BEFORE the awaited updateChat below: the reconcile
+  // poller skips running chats, and without this a 1s reconcile tick
+  // landing in the await window could replace state.messages and
+  // re-render, after which the optimistic user bubble appended below
+  // would be duplicated by the next sync.
+  state.streaming = true;
+
   // Persist the pair before sending so reopening this chat keeps
   // the exact provider/model choice.
   await updateChat({ providerId, modelId }, state, refs);
 
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
-  state.streaming = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
   setChatStatus(refs, 'streaming…', 'busy');
   if (refs.promptInput.current) refs.promptInput.current.value = '';

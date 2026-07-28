@@ -50,6 +50,20 @@ The native `subagent` tool accepts an optional `agent` argument matched against 
 
 The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call.
 
+### Invoke an agent yourself with `@`
+
+You don't have to wait for the model to delegate. In the chat composer, type `@` and pick the agent from the **Agents** section (or type `@<name>`), write the task, and send:
+
+```
+@reviewer Check the staged changes for regressions.
+```
+
+A leading `@<agent> <task>` dispatches the agent directly through `POST /api/tools/subagent` — the same dispatcher and authorization gate the model-driven path uses. The run shows as a `subagent` tool card pair and the agent's answer lands in the transcript as an assistant message. A leading `@<agent>` with no task (or `@` mid-text) sends to the model as plain text. See [at-mention](./at-mention.md).
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `POST` | `/api/tools/subagent` | `{ projectDir, chatId, task, agent?, context?, modelId?, providerId? }` | `{ ok, id, name, args, result, toolCall }`; 400 on missing task; 403 when the subagent tool is off/denied |
+
 When a name is provided:
 
 - The nested call's system message is the agent's **instructions** (replacing the generic "focused subagent" persona).
@@ -67,6 +81,7 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 
 - Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
 - The model pin resolves at dispatch time: `agents.resolveModel()` finds the project model by id, and the subagent dispatch hydrates it with the app-level provider connection (same sanitization as chat model resolution — credentials never come from the project file).
+- Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
 - Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsProject.jsx`.

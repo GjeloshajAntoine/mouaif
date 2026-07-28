@@ -96,6 +96,9 @@ export function useChatState(props) {
   const tools = useRef({ catalog: [], filter: null });
   const agentFiles = useRef({ files: [], enabled: true, explicit: false });
   const mcpServers = useRef([]);
+  // Project agents (subagent delegation personas). Feeds the @-mention
+  // popup's Agents section and the leading @agent <task> direct dispatch.
+  const agents = useRef([]);
   // Tool authorization state — same shape as SettingsProject shellAuth etc.
   // { shell: { mode, allowlist }, file: { mode, allowlist }, subagent: { mode, allowlist }, ask_user: { mode } }
   const toolAuth = useRef({});
@@ -141,6 +144,8 @@ export function useChatState(props) {
     set agentFiles(v) { agentFiles.current = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
+    get agents() { return agents.current; },
+    set agents(v) { agents.current = Array.isArray(v) ? v : []; },
     get usedTools() { return usedTools.current; },
     set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
     get transcriptSignature() { return transcriptSignature.current; },
@@ -303,7 +308,7 @@ export function useChatState(props) {
       if (!projectDir || !chatId) return;
       setLoading(true);
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rAgents] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
           loadModels(projectDir),
           fetchJson('/api/ai/models/providers'),
@@ -311,7 +316,8 @@ export function useChatState(props) {
           fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
+          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir))
         ]);
         if (cancelled) return;
         if (rChat.status !== 200) {
@@ -356,6 +362,7 @@ export function useChatState(props) {
           projectLocked: projectGate === false  // project has it off → toggle locked
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
+        agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
 
         // Fetch tool authorization settings for the tools card segments.
         try {

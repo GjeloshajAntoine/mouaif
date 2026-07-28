@@ -12,9 +12,9 @@ import { fetchJson } from '../../api.js';
 
 // ---- Categories ---------------------------------------------------------
 
-const CATEGORY = { FILES: 'files', ACTIONS: 'actions', MODEL: 'model' };
-const CATEGORY_LABELS = { files: 'Files', actions: 'Actions', model: 'Model' };
-const ICON_MAP = { file: '📄', action: '⚡', model: '🤖' };
+const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MODEL: 'model' };
+const CATEGORY_LABELS = { files: 'Files', agents: 'Agents', actions: 'Actions', model: 'Model' };
+const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', model: '🤖' };
 
 // ---- Module-level state -------------------------------------------------
 
@@ -152,6 +152,26 @@ async function buildItems(projectDir) {
     }
   }
 
+  // 3b. Agents (subagent delegation personas) — selecting one inserts
+  // @<name> at the composer start; a leading @agent <task> dispatches
+  // the agent directly on send (see stream.js send()).
+  try {
+    const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir));
+    if (ar.status === 200 && Array.isArray(ar.body && ar.body.agents)) {
+      for (const a of ar.body.agents) {
+        if (!a || !a.name) continue;
+        out.push({
+          id: 'agent:' + a.name,
+          label: a.name,
+          subtitle: (a.modelId ? a.modelId + ' · ' : '') + 'agent',
+          category: CATEGORY.AGENTS, icon: 'agent',
+          insert: a.name,
+          searchText: (a.name + ' agent ' + (a.content || '')).toLowerCase().slice(0, 200)
+        });
+      }
+    }
+  } catch { /* no agents endpoint */ }
+
   // 4. Model (current chat model)
   const chat = uiState && uiState.chat;
   if (chat && chat.modelId) {
@@ -166,7 +186,7 @@ async function buildItems(projectDir) {
   }
 
   out.sort((a, b) => {
-    const catOrder = { files: 0, model: 1, actions: 2 };
+    const catOrder = { files: 0, agents: 1, model: 2, actions: 3 };
     const ca = catOrder[a.category] ?? 3;
     const cb = catOrder[b.category] ?? 3;
     if (ca !== cb) return ca - cb;
