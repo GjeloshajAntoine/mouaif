@@ -69,6 +69,7 @@ export function App() {
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
+    && view.name !== 'settingsProjectTechnical' && view.name !== 'settingsProjectAgent'
     && view.name !== 'settingsDefaults' && view.name !== 'settingsNotifications'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
     && view.name !== 'settingsAgents'
@@ -87,6 +88,8 @@ export function App() {
   else if (view.name === 'settingsProviderNew') body = h(SettingsProviderEditView, { id: '' });
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
+  else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical' });
+  else if (view.name === 'settingsProjectAgent') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'agent', agentName: view.agentName });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
