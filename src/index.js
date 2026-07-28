@@ -143,6 +143,15 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'flags'           // server-side feature toggles (non-secret)
 ]);
 
+// Keys that POST /api/settings/app/reset is allowed to drop from the app
+// store. The DEFAULTS keys are the baseline; the extras are additive app
+// keys that have no in-code default (their absence IS the default) but
+// that the UI must still be able to clear — otherwise "reset" silently
+// can't reach settings like the custom pricing table.
+const RESETTABLE_APP_KEYS = Object.freeze(
+  new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot'])
+);
+
 function settingsForClient(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const safe = {};
@@ -807,8 +816,7 @@ async function handleSettings(req, res, parsed) {
     try { body = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     const keys = Array.isArray(body && body.keys) ? body.keys : [];
-    const allowed = new Set(Object.keys(settings.DEFAULTS));
-    const bad = keys.filter(k => !allowed.has(k));
+    const bad = keys.filter(k => !RESETTABLE_APP_KEYS.has(k));
     if (bad.length) return sendJSON(res, 400, { error: 'Unknown key(s)', bad });
     // Build a fresh object that omits the reset keys, then write it
     // through. SQLite stores the new object verbatim (setApp uses
