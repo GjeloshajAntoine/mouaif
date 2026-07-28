@@ -12,9 +12,9 @@ The endpoints build on [docs/features/app-and-project-settings.md](./app-and-pro
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| GET    | `/api/settings` | — | `{ home, defaults, app }` (app is the raw app-level object) |
-| GET    | `/api/settings/project?projectDir=<abs path>` | — | `{ project, path }` (raw project file, `{}` if it doesn't exist) |
-| GET    | `/api/settings/resolved?projectDir=<abs path>` | — | `{ resolved }` (defaults + app + project, project wins) |
+| GET    | `/api/settings` | — | `{ home, defaults, app }` (redacted: allowlisted keys only, provider/model `apiKey` dropped) |
+| GET    | `/api/settings/project?projectDir=<abs path>` | — | `{ project, path }` (raw project file, `{}` if it doesn't exist; redacted for the client) |
+| GET    | `/api/settings/resolved?projectDir=<abs path>` | — | `{ resolved }` (defaults + app + project, project wins; redacted for the client) |
 | PUT    | `/api/settings/app` | `{ ...patch }` | `{ app }` (shallow-merged) |
 | PUT    | `/api/settings/project` | `{ projectDir, ...patch }` | `{ project, path }` |
 | POST   | `/api/settings/app/providers` | `{ id, baseUrl?, apiKey?, auth?, oauthAccount? }` | `{ provider, providers }` |
