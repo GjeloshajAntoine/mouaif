@@ -276,9 +276,18 @@
   gap: 6px;
   margin: 0 4px 4px;
 }
-.settings-project__section-title > span { flex: 1; min-width: 0; }
+.settings-project__section-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The section name label takes the free space so the "?" help stays
+   pinned to the right; it must NOT match the icon span. */
+.settings-project__section-title > span:not(.settings-project__section-icon) { flex: 1 1 auto; min-width: 0; }
 .settings-project__section-icon {
-  flex: 0 0 auto;
+  flex: 0 0 18px;
   width: 18px;
   height: 18px;
   border-radius: var(--r-sm);
@@ -380,7 +389,6 @@
   align-items: stretch;
   gap: 6px;
   padding: 8px 10px;
-  min-height: var(--tap);
 }
 .settings-project__tool {
   flex-wrap: wrap;
@@ -437,9 +445,12 @@
   min-width: 0;
   max-width: none;
   font-size: 0.82rem;
-  padding: 6px 8px;
-  min-height: 40px;
+  padding: 4px 8px;
+  min-height: 32px;
 }
+/* Status line reserves no space until it has text. */
+.settings-project__item-status { min-height: 0; }
+.settings-project__item-status:empty { display: none; }
 .settings-project__help {
   color: var(--muted);
   font-size: 0.7rem;
