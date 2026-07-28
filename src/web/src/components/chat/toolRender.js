@@ -94,16 +94,20 @@ function renderReadFileToolResult(body, r) {
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
   meta.push(r.relPath || r.path);
-  if (r.size != null) meta.push(r.size + 'B');
   if (r.startLine != null && r.endLine != null) {
     meta.push('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : ''));
   }
+  if (r.chars != null) meta.push(r.chars + ' chars');
   if (r.truncated) meta.push('truncated');
   renderToolMeta(body, meta);
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
 }
 
 // renderListFilesToolResult(body, r)
+//
+// Grouped by directory: one small dir label per group, then one line
+// per file with just the basename. Fewer DOM nodes and no repeated
+// path prefix on every row.
 function renderListFilesToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
@@ -117,13 +121,43 @@ function renderListFilesToolResult(body, r) {
   if (r.skipped) meta.push(r.skipped + ' skipped');
   if (r.truncated) meta.push('capped');
   renderToolMeta(body, meta);
-  const lines = Array.isArray(r.entries)
-    ? r.entries.map((e) => (e.path || '') + (e.size != null ? '\t' + e.size : ''))
-    : String(r.body || '').split('\n');
-  renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+  if (!Array.isArray(r.entries)) {
+    const lines = String(r.body || '').split('\n');
+    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+  }
+  if (!r.entries.length) return renderPreviewPre(body, '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-preview__grouped';
+  const sorted = [...r.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  let currentDir = null;
+  let dirLabel = null;
+  let list = null;
+  for (const e of sorted) {
+    const p = String(e.path || '');
+    const slash = p.lastIndexOf('/');
+    const dir = slash === -1 ? '.' : p.slice(0, slash);
+    const name = slash === -1 ? p : p.slice(slash + 1);
+    if (dir !== currentDir) {
+      currentDir = dir;
+      dirLabel = document.createElement('div');
+      dirLabel.className = 'tool-preview__dir';
+      dirLabel.textContent = dir === '.' ? '' : dir + '/';
+      wrap.appendChild(dirLabel);
+      list = document.createElement('div');
+      list.className = 'tool-preview__group';
+      wrap.appendChild(list);
+    }
+    const row = document.createElement('div');
+    row.className = 'tool-preview__file';
+    row.textContent = name;
+    list.appendChild(row);
+  }
+  body.appendChild(wrap);
 }
 
 // renderSearchFilesToolResult(body, r)
+//
+// Grouped by file: one path label per file, then "line: text" rows.
 function renderSearchFilesToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
@@ -132,12 +166,42 @@ function renderSearchFilesToolResult(body, r) {
   meta.push(r.query ? ('search ' + r.query) : 'no query');
   if (Array.isArray(r.matches)) meta.push(r.matches.length + ' matches');
   if (r.filesScanned != null) meta.push(r.filesScanned + ' files');
+  if (r.charsRead != null) meta.push(r.charsRead + ' chars');
   if (r.truncated) meta.push('capped');
   renderToolMeta(body, meta);
-  const lines = Array.isArray(r.matches)
-    ? r.matches.map((m) => (m.path || '') + ':' + m.line + ': ' + (m.text || ''))
-    : String(r.body || '').split('\n');
-  renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+  if (!Array.isArray(r.matches)) {
+    const lines = String(r.body || '').split('\n');
+    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+  }
+  if (!r.matches.length) return renderPreviewPre(body, '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-preview__grouped';
+  let currentPath = null;
+  let list = null;
+  for (const m of r.matches) {
+    if (m.path !== currentPath) {
+      currentPath = m.path;
+      const dirLabel = document.createElement('div');
+      dirLabel.className = 'tool-preview__dir';
+      dirLabel.textContent = currentPath || '';
+      wrap.appendChild(dirLabel);
+      list = document.createElement('div');
+      list.className = 'tool-preview__group';
+      wrap.appendChild(list);
+    }
+    const row = document.createElement('div');
+    row.className = 'tool-preview__match';
+    const lineNo = document.createElement('span');
+    lineNo.className = 'tool-preview__match-line';
+    lineNo.textContent = String(m.line);
+    const text = document.createElement('span');
+    text.className = 'tool-preview__match-text';
+    text.textContent = m.text || '';
+    row.appendChild(lineNo);
+    row.appendChild(text);
+    list.appendChild(row);
+  }
+  body.appendChild(wrap);
 }
 
 // renderEditFileToolResult(body, r)
@@ -146,7 +210,9 @@ function renderEditFileToolResult(body, r) {
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [r.relPath || r.path];
-  if (r.bytesWritten != null) {
+  if (r.addedChars != null) {
+    meta.push('+' + r.addedChars + (r.removedChars != null ? ' / -' + r.removedChars : '') + ' chars');
+  } else if (r.bytesWritten != null) {
     meta.push('+' + r.bytesWritten + 'B' + (r.replacedBytes != null ? ' / -' + r.replacedBytes + 'B' : ''));
   }
   renderToolMeta(body, meta);
@@ -159,22 +225,11 @@ function renderWriteFileToolResult(body, r) {
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const writeMeta = [r.relPath || r.path];
-  if (r.bytesWritten != null) writeMeta.push(r.bytesWritten + 'B');
+  if (r.chars != null) writeMeta.push(r.chars + ' chars' + (r.lines != null ? ' · ' + r.lines + ' lines' : ''));
+  else if (r.bytesWritten != null) writeMeta.push(r.bytesWritten + 'B');
   else if (r.size != null) writeMeta.push(r.size + 'B');
   renderToolMeta(body, writeMeta);
   renderPreviewPre(body, 'write complete', 'tool-preview__pre');
-}
-
-// byteLength(str) -> number
-//
-// Cross-browser byte-length helper (no Buffer dependency). Fast path
-// for ASCII, fallback to TextEncoder for multi-byte strings.
-function byteLength(str) {
-  if (!str) return 0;
-  for (let i = 0; i < str.length; i++) {
-    if (str.charCodeAt(i) > 127) return new TextEncoder().encode(str).length;
-  }
-  return str.length;
 }
 
 // renderShellToolResult(body, r)
@@ -182,13 +237,15 @@ function renderShellToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--terminal');
   if (typeof r === 'string') r = coerceToolResult(r, 'shell');
   if (!r || r.error) {
-    renderToolMeta(body, [r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null, r && r.stderr ? (r.stdout ? 'partial output' : null) : null]);
+    renderToolMeta(body, [r && r.identity, r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null]);
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__terminal');
   }
-  const meta = ['exit ' + (r.exitCode ?? 0)];
+  const meta = [];
+  if (r.identity) meta.push(r.identity);
+  meta.push('exit ' + (r.exitCode ?? 0));
   if (r.durationMs != null) meta.push(r.durationMs + 'ms');
-  if (r.stdout) meta.push(byteLength(r.stdout) + 'B out');
-  if (r.stderr) meta.push(byteLength(r.stderr) + 'B err');
+  if (r.stdout) meta.push(r.stdout.length + ' chars out');
+  if (r.stderr) meta.push(r.stderr.length + ' chars err');
   renderToolMeta(body, meta);
   const out = [];
   if (r.stdout) out.push(r.stdout);

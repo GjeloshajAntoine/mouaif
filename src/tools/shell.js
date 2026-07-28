@@ -15,11 +15,13 @@
 // does not leak zombies.
 
 const { spawn } = require('node:child_process');
+const { StringDecoder } = require('node:string_decoder');
 const fs = require('node:fs');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 10 * 60 * 1000; // 10 min ceiling
-const DEFAULT_MAX_BYTES = 256 * 1024; // 256 KB per stream
+const DEFAULT_MAX_CHARS = 256 * 1024; // 256K chars per stream
+const DEFAULT_MAX_BYTES = DEFAULT_MAX_CHARS; // legacy export alias
 const KILL_GRACE_MS = 5_000; // SIGTERM -> SIGKILL grace
 
 // Environment variables stripped from the child to prevent trivial
@@ -48,12 +50,36 @@ function hookExit() {
   process.on('SIGTERM', () => { reap(); process.exit(143); });
 }
 
+// Human-readable label for the platform shell ("PowerShell 7 (pwsh)",
+// "bash (bash)", ...). Computed once at module load from the exact
+// interpreter the runner will spawn, so the model-facing description
+// and the result metadata always agree with what actually ran.
+function shellLabel() {
+  if (process.platform === 'win32') {
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    const base = comspec.split(/[\\/]/).pop().toLowerCase();
+    if (base === 'pwsh.exe' || base === 'pwsh') return 'PowerShell 7 (pwsh)';
+    if (base === 'powershell.exe' || base === 'powershell') return 'Windows PowerShell (powershell)';
+    if (base === 'cmd.exe' || base === 'cmd') return 'Command Prompt (cmd.exe)';
+    return 'Windows shell (' + comspec + ')';
+  }
+  const shellPath = process.env.SHELL || '/bin/sh';
+  const base = shellPath.split('/').pop() || shellPath;
+  return base + ' (' + shellPath + ')';
+}
+
+function osLabel() {
+  if (process.platform === 'win32') return 'Windows';
+  if (process.platform === 'darwin') return 'macOS';
+  return process.platform;
+}
+
 // The model-facing tool spec (OpenAI-compatible function shape).
 const SPEC = {
   type: 'function',
   function: {
     name: 'shell',
-    description: 'Run a shell command in the project directory. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
+    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellLabel() + '. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
     parameters: {
       type: 'object',
       properties: {
@@ -91,14 +117,14 @@ function childEnv() {
   return env;
 }
 
-// Truncate a Buffer/string to maxBytes, appending a truncation marker.
-function truncate(buf, maxBytes) {
+// Truncate a Buffer/string to maxChars characters, appending a
+// truncation marker. Counts UTF-16 code units (String.length) rather
+// than bytes so the cap and the marker match how the model and the UI
+// read the text; multi-byte output can no longer be split mid-codepoint.
+function truncate(buf, maxChars) {
   const s = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-  const bytes = Buffer.byteLength(s, 'utf8');
-  if (bytes <= maxBytes) return s;
-  // Slice by bytes, then decode; append the marker.
-  const sliced = Buffer.from(s, 'utf8').subarray(0, maxBytes).toString('utf8');
-  return sliced + '\n...[truncated at ' + maxBytes + ' bytes]';
+  if (s.length <= maxChars) return s;
+  return s.slice(0, maxChars) + '\n...[truncated at ' + maxChars + ' chars]';
 }
 
 // The platform shell: cmd.exe on Windows, $SHELL (or /bin/sh) on POSIX.
@@ -118,11 +144,16 @@ function platformShell() {
 }
 
 // runShell — execute cmd in projectDir, capturing stdout/stderr.
+// Optional opts.onOutput(stream, delta) fires per decoded output chunk
+// while the command is still running so callers can stream a live
+// preview to the chat UI.
 async function runShell(opts) {
   const projectDir = opts && opts.projectDir;
   const cmd = opts && opts.cmd;
+  const onOutput = opts && typeof opts.onOutput === 'function' ? opts.onOutput : null;
   let timeoutMs = opts && typeof opts.timeoutMs === 'number' ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
-  const maxBytes = opts && typeof opts.maxBytes === 'number' ? opts.maxBytes : DEFAULT_MAX_BYTES;
+  const maxChars = opts && typeof opts.maxChars === 'number' ? opts.maxChars
+    : (opts && typeof opts.maxBytes === 'number' ? opts.maxBytes : DEFAULT_MAX_CHARS);
 
   if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
     return { ok: false, error: 'cmd is required', code: 'EBADINPUT', durationMs: 0 };
@@ -130,6 +161,11 @@ async function runShell(opts) {
   // Clamp timeout to [1, MAX_TIMEOUT_MS].
   if (!(timeoutMs >= 1)) timeoutMs = DEFAULT_TIMEOUT_MS;
   if (timeoutMs > MAX_TIMEOUT_MS) timeoutMs = MAX_TIMEOUT_MS;
+
+  // Identity of this runner, surfaced in the tool result and prepended
+  // to the first model-facing tool message, so the model always knows
+  // which software and which shell executed the command.
+  const identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabel();
 
   let cwd;
   try { cwd = resolveSandbox(projectDir); }
@@ -157,21 +193,30 @@ async function runShell(opts) {
 
     liveChildren.add(child);
 
-    let outBuf = Buffer.alloc(0);
-    let errBuf = Buffer.alloc(0);
+    // Output is accumulated as decoded text (StringDecoder keeps
+    // multi-byte UTF-8 sequences intact across chunk boundaries) so
+    // both the char cap and the live preview deltas are codepoint-safe.
+    const outDec = new StringDecoder('utf8');
+    const errDec = new StringDecoder('utf8');
+    let outText = '';
+    let errText = '';
     let settled = false;
     let killGrace = null;
 
-    const appendCapped = (existing, chunk) => {
+    const appendCapped = (existing, decoder, chunk, stream) => {
+      const text = decoder.write(chunk);
+      if (text && onOutput) {
+        try { onOutput(stream, text); } catch { /* preview is best-effort */ }
+      }
       // Stop growing the buffer once we exceed the cap (leave room for
       // the marker in truncate()); we still drain the stream so the
       // child does not block on a full pipe.
-      if (Buffer.byteLength(existing) >= maxBytes) return existing;
-      return Buffer.concat([existing, chunk]);
+      if (existing.length >= maxChars) return existing;
+      return existing + text;
     };
 
-    child.stdout.on('data', (c) => { outBuf = appendCapped(outBuf, c); });
-    child.stderr.on('data', (c) => { errBuf = appendCapped(errBuf, c); });
+    child.stdout.on('data', (c) => { outText = appendCapped(outText, outDec, c, 'stdout'); });
+    child.stderr.on('data', (c) => { errText = appendCapped(errText, errDec, c, 'stderr'); });
 
     const timer = setTimeout(() => {
       // Timed out: SIGTERM, then SIGKILL after the grace window.
@@ -189,8 +234,9 @@ async function runShell(opts) {
           ok: false,
           error: 'timed out',
           code: 'ETIMEDOUT',
-          stdout: truncate(outBuf, maxBytes),
-          stderr: truncate(errBuf, maxBytes),
+          stdout: truncate(outText, maxChars),
+          stderr: truncate(errText, maxChars),
+          identity,
           durationMs: Date.now() - startedAt
         });
       }
@@ -214,9 +260,10 @@ async function runShell(opts) {
       liveChildren.delete(child);
       resolve({
         ok: exitCode === 0,
-        stdout: truncate(outBuf, maxBytes),
-        stderr: truncate(errBuf, maxBytes),
+        stdout: truncate(outText, maxChars),
+        stderr: truncate(errText, maxChars),
         exitCode: exitCode == null ? -1 : exitCode,
+        identity,
         durationMs: Date.now() - startedAt
       });
     });
@@ -230,5 +277,6 @@ module.exports = {
   SPEC,
   DEFAULT_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
+  DEFAULT_MAX_CHARS,
   DEFAULT_MAX_BYTES
 };

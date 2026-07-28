@@ -92,9 +92,9 @@ function writeFile(p, content) {
   assert(r1s.result.body.split('\n').length === 3, 'read_file slice body has 3 lines');
   assert(!r1s.content.includes('one\n'), 'read_file slice excludes line 1');
 
-  // ETOOL_CAP on whole-file large read.
+  // ETOOL_CAP on whole-file large read (line cap).
   const big = path.join(root, 'big.js');
-  writeFile(big, 'x'.repeat(files.DEFAULT_READ_MAX_BYTES + 1));
+  writeFile(big, ('x\n').repeat(files.DEFAULT_READ_MAX_LINES + 1));
   const r1c = await files.runFileTool('read_file', { projectDir: root, args: { path: 'big.js' } });
   assert(r1c.ok === false && r1c.result.error.code === 'ETOOL_CAP', 'read_file ETOOL_CAP on oversized whole-file read');
   const r1cs = await files.runFileTool('read_file', { projectDir: root, args: { path: 'big.js', startLine: 1, endLine: 1 } });

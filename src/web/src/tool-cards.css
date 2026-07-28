@@ -114,7 +114,12 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress)) .tool-card__body { display: none; }
+.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress):not(.tool-card--subagent)) .tool-card__body { display: none; }
+/* Subagent and shell call cards keep a live body while running so the
+   user can expand the card and watch nested activity / command output
+   stream in before the result arrives. */
+.tool-card--subagent .tool-card__body,
+.tool-card--call[data-tool-name="shell"] .tool-card__body { display: block; }
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
   margin: 0;
@@ -309,6 +314,35 @@
   flex: 1 0 100%;
   margin-top: 2px;
 }
+
+/* ---- Live shell output (call cards) -------------------------------- */
+
+.tool-card__shell-live {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+.tool-card__shell-live-hint {
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.tool-card__shell-live-pre {
+  margin: 0;
+  padding: 3px 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 30dvh;
+  overflow-y: auto;
+}
+.tool-card__shell-live-pre:empty { display: none; }
 .tool-card__subagent-msg {
   max-width: 100%;
   align-self: stretch;
@@ -444,6 +478,58 @@
 .tool-preview__pre--content {
   max-height: none;
   min-height: 1.5rem;
+}
+
+/* Grouped list/search previews: one dir/file label per group, then
+   compact rows — fewer nodes and no repeated path prefixes. */
+.tool-preview__grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+.tool-preview__dir {
+  color: var(--fg-soft);
+  font-weight: 600;
+  margin-top: 2px;
+}
+.tool-preview__dir:first-child { margin-top: 0; }
+.tool-preview__group {
+  display: flex;
+  flex-direction: column;
+  padding-left: 8px;
+}
+.tool-preview__file {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-preview__match {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-preview__match-line {
+  flex: 0 0 auto;
+  min-width: 22px;
+  text-align: right;
+  color: var(--muted-2);
+}
+.tool-preview__match-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tool-preview__pre:empty { display: none; }
 .tool-preview__terminal {

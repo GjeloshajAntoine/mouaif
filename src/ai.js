@@ -2139,15 +2139,41 @@ async function streamChat(opts) {
       let out;
       try {
         const shell = require('./tools/shell.js');
+        const parentOnEvent = callOpts && callOpts.onEvent;
+        const callId = callOpts && callOpts.callId;
         out = await shell.runShell({
           projectDir: callOpts.projectDir,
           cmd: args && args.cmd,
-          timeoutMs: args && args.timeoutMs
+          timeoutMs: args && args.timeoutMs,
+          // Stream decoded output chunks to the chat UI while the
+          // command is still running so the tool card shows a live
+          // preview instead of a silent spinner.
+          onOutput: typeof parentOnEvent === 'function'
+            ? (stream, delta) => {
+              try {
+                parentOnEvent('shell_output', { id: callId || null, stream, delta });
+                // Inside a subagent run, re-emit under the nested event
+                // name so the chunk lands in the parent subagent card
+                // instead of a standalone transcript card.
+                if (callOpts && callOpts.nestedSubagent) {
+                  parentOnEvent('subagent_event', {
+                    parentCallId: callOpts.callId || null,
+                    kind: 'shell_output',
+                    data: { id: callId || null, stream, delta }
+                  });
+                }
+              } catch { /* best-effort */ }
+            }
+            : null
         });
       } catch (e) {
         out = { ok: false, error: e.message || String(e), code: 'ESHELL' };
       }
-      return { ok: !!out.ok, content: JSON.stringify(out), result: out };
+      // The first tool message line tells the model which software and
+      // which shell ran the command (the spec description says the same
+      // thing up front; the per-call line survives prompt compaction).
+      const identity = (out && out.identity) || 'mouaif shell';
+      return { ok: !!out.ok, content: '# ' + identity + '\n' + JSON.stringify(out), result: out };
     }
 
     // Native task tool. Manages structured tasks with subtasks, progress
@@ -2292,6 +2318,9 @@ async function streamChat(opts) {
         appSettings: callOpts && callOpts.appSettings,
         promptSize: callOpts && callOpts.promptSize,
         enabledTools: nestedEnabled,
+        // Marker the shell dispatcher reads to re-emit live output
+        // chunks as subagent_event so they render inside this card.
+        nestedSubagent: true,
         onEvent: (eventName, data) => {
           nestedEvents.push({ name: eventName, data });
           if (typeof onEvent !== 'function') return;

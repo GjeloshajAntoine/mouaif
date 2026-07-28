@@ -20,7 +20,7 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
   "type": "function",
   "function": {
     "name": "shell",
-    "description": "Run a shell command in the project directory. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.",
+    "description": "Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on <os> via <shell> (e.g. \"Windows via Command Prompt (cmd.exe)\" or \"macOS via zsh (/bin/zsh)\"). Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -44,9 +44,17 @@ The wire shape on the SSE stream:
 event: tool_call
 data: { "id": "call_abc123", "name": "shell", "args": { "cmd": "npm test", "timeoutMs": 60000 } }
 
+event: shell_output
+data: { "id": "call_abc123", "stream": "stdout", "delta": "> project@1.0.0 test\n" }
+
+event: shell_output
+data: { "id": "call_abc123", "stream": "stderr", "delta": "npm warn ...\n" }
+
 event: tool_result
-data: { "id": "call_abc123", "name": "shell", "ok": true, "result": { "stdout": "...", "stderr": "", "exitCode": 0, "durationMs": 4213 } }
+data: { "id": "call_abc123", "name": "shell", "ok": true, "result": { "stdout": "...", "stderr": "", "exitCode": 0, "durationMs": 4213, "identity": "mouaif shell · macOS · zsh (/bin/zsh)" } }
 ```
+
+`shell_output` frames are live, best-effort output deltas emitted while the command is still running. They are never persisted to the transcript; the final `tool_result` carries the complete (truncated) output. The `identity` field names the software (`mouaif shell`) plus the OS and the exact shell that ran the command; the same line is prepended to the first model-facing `tool` message so the model always knows which environment executed its command.
 
 The chat composer also accepts a `/shell <cmd>` slash command that runs the tool directly without going through the model. The output is rendered in the chat as a `tool_result` block. This is the same code path as a model-initiated call — the only difference is that there is no prior `tool_call` from the model and the result is shown without a follow-up assistant message.
 
@@ -54,7 +62,7 @@ The chat composer also accepts a `/shell <cmd>` slash command that runs the tool
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs? }` | `{ ok, stdout, stderr, exitCode, durationMs }` or `{ ok: false, error, code }` |
+| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs? }` | `{ ok, stdout, stderr, exitCode, durationMs, identity }` or `{ ok: false, error, code }` |
 
 The REST endpoint is the same path the model-initiated call goes through. The chat composer uses it for `/shell`. A script can also use it to run a project command without going through the chat at all.
 
@@ -68,7 +76,8 @@ const out = await runShell({
   cmd: 'npm test',
   timeoutMs: 60_000
 });
-// out: { ok: true, stdout: '...', stderr: '', exitCode: 0, durationMs: 4213 }
+// out: { ok: true, stdout: '...', stderr: '', exitCode: 0, durationMs: 4213,
+//        identity: 'mouaif shell · macOS · zsh (/bin/zsh)' }
 ```
 
 ## Behavior
@@ -78,18 +87,18 @@ const out = await runShell({
 - **Env.** The child inherits the parent process's environment, minus a small denylist (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`) to prevent trivial tool escape. `PATH` is preserved.
 - **Sandboxing.** The runner does not provide OS-level sandboxing (containers, seccomp, `bwrap`). It is the user's responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.
 - **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: <actual elapsed ms> }`. A child that ignores SIGTERM stays tracked for the exit-hook reap; its late `close` is ignored.
-- **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256 KB each, configurable via `app.shellOutputMaxBytes`). Truncation adds a final `\n...[truncated at 256000 bytes]` line; the original exit code is preserved.
+- **Output size cap.** stdout and stderr are truncated to a per-call cap (default 256K chars each, configurable via `app.shellOutputMaxBytes`). The cap counts characters (UTF-16 code units), not bytes, so multi-byte output is never split mid-codepoint and the marker matches what the model and the UI read. Truncation adds a final `\n...[truncated at 262144 chars]` line; the original exit code is preserved.
 - **Multi-turn loop.** Tool results are fed back to the model as `tool` messages, so the model can chain calls (read a file, run a build, read the error, fix it). There is no fixed tool-turn limit; cancellation comes from the user aborting the active request.
 - **Non-interactive only.** The child runs with no stdin (`stdio: ['ignore', 'pipe', 'pipe']`), so REPLs and commands that read stdin (bare `node`, `cmd` builtins, `npm init`, ...) fail or exit immediately — e.g. `Input redirection is not supported, exiting the process immediately.` on Windows. The tool spec declares this constraint; use one-shot forms (`node -e "..."`, `npm test`, flags) instead.
 - **Identical-call circuit breaker.** The tool loop has no turn limit, so a model retrying the exact same failing call (same tool + same arguments) would spin forever. After 3 consecutive identical calls the server refuses the 4th+ with an `ELOOP` tool error telling the model to vary the command or answer in plain text. Any different call resets the streak.
-- **No streaming on the wire.** The tool returns a single `tool_result` after the command exits. A future revision may stream stdout/stderr line-by-line; for this commit, a single result is enough to keep the upstream contract simple.
+- **Live output preview.** While the command runs, decoded stdout/stderr chunks ride the SSE stream as `shell_output` events so the chat card can stream a live preview (same for shell calls nested inside a subagent, which re-emit as `subagent_event` with `kind: "shell_output"`). These frames are UI-only — never persisted and never sent back to the model; the authoritative output is the single `tool_result` after the command exits.
 - **Disabled by default.** A project with the tool off returns `ETOOL_DISABLED` for any call (model-initiated or `/shell`).
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.
 - **No new runtime dependencies.** The runner is built on `node:child_process.spawn` only. No third-party shell wrappers.
 
 ## Implementation notes
 
-- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs, maxBytes })`, `resolveSandbox(projectDir)`, `truncate(buf, maxBytes)`, and the model-facing `SPEC`.
+- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs, maxChars, onOutput })`, `resolveSandbox(projectDir)`, `truncate(buf, maxChars)` (char-based), and the model-facing `SPEC`. The spec description names mouaif and the concrete OS/shell (computed once at module load); `runShell` also returns an `identity` string and the AI client prepends it to the first tool message line.
 - The tool spec is added to the outgoing request inside `ai.streamChat()`: when `opts.shellEnabled` is set, `require('./tools/shell.js').SPEC` is pushed onto the `tools` array alongside any MCP-discovered specs. `streamChat` runs the multi-turn loop itself — an inner `runUpstreamTurn()` performs one request and returns the assembled tool calls; the outer loop dispatches them through `dispatchTool()` (native `shell` first, then MCP `mcp__<slug>__<tool>`), appends the assistant tool-call message + `tool` result messages to the working conversation, and re-requests. The single final `done` event carries the summed usage across all turns.
 - `src/index.js` `handleChatStream` resolves `settings.getResolved(projectDir).tools.shell.enabled` and passes `{ projectDir, shellEnabled }` to `streamChat`. It also mounts `POST /api/tools/shell` (`handleTools`), which gates on the same flag (HTTP 403 `ETOOL_DISABLED` when off).\n- The `/shell <cmd>` composer command is parsed in `src/web/src/components/Chat.jsx` (`runShellCommand`); it POSTs to `/api/tools/shell` and renders the result inline as a `tool_result` card, no model round-trip.\n- The Settings \u2192 Project view (`src/web/src/components/SettingsProject.jsx`) has a **Shell tool** checkbox that PUTs `tools.shell.enabled` on the project file.
 - Mobile-first layout: the `tool_call` and `tool_result` blocks render as monospaced cards with a 13 px monospace font and a minimum 44 px tap target for expansion. Long stdout is collapsed by default with an expand action.

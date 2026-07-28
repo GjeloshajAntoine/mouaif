@@ -155,6 +155,8 @@ export function formatResultSummary(name, r) {
     return parts.join(' ');
   }
   if (n === 'read_file') {
+    if (r.lines != null) return r.lines + ' line' + (r.lines === 1 ? '' : 's');
+    if (r.chars != null) return r.chars + ' chars';
     if (r.size != null && r.size < 1024) return r.size + 'B';
     if (r.size != null) return Math.round(r.size / 1024) + 'KB';
     return null;
@@ -168,10 +170,12 @@ export function formatResultSummary(name, r) {
     return count + ' match' + (count === 1 ? '' : 'es');
   }
   if (n === 'edit_file') {
+    if (r.addedChars != null) return '+' + r.addedChars + ' chars';
     if (r.bytesWritten != null) return '+' + r.bytesWritten + 'B';
     return null;
   }
   if (n === 'write_file') {
+    if (r.chars != null) return r.chars + ' chars';
     if (r.bytesWritten != null) return r.bytesWritten + 'B';
     if (r.size != null) return r.size + 'B';
     return null;

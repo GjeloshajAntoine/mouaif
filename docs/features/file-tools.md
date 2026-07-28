@@ -51,7 +51,7 @@ Every tool:
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
-- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` scanned (default 200 / 2 MB).
+- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars scanned (default 200 / 2 MB; the counter counts characters, not bytes, so multi-byte text measures the same for the model and the UI).
 
 The caps are app-level knobs. Override them in the app store:
 
@@ -72,21 +72,41 @@ The `tool` message the model sees is a small header followed by the body, so the
 ```text
 # File: src/index.js
 # Lines: 1-72
+# Chars: 2310
 
 <file body>
 ```
+
+`list_files` groups entries by directory (one `# dir/` header per group, then bare filenames) so the path prefix is printed once instead of on every row:
+
+```text
+# Listing: src/**/*.js
+# Count: 3
+
+# src/
+  auth.js
+  logout.js
+# src/utils/
+  new.js
+```
+
+`search_files` groups matches by file the same way — one `# path` header per file, then `line: text` rows — and reports the scan volume in chars:
 
 ```text
 # Search: function (login|logout)
 # Matches: 2
 # Files scanned: 4
+# Chars scanned: 5120
 
-src/auth.js:1: export function login() {}
-src/logout.js:1: export function logout() {}
+# src/auth.js
+1: export function login() {}
+# src/logout.js
+1: export function logout() {}
 ```
 
 ```text
 # Wrote: src/utils/new.js
+# Chars: 21 · 1 lines
 ```
 
 The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card.

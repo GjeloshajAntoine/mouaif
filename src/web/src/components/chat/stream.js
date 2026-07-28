@@ -16,6 +16,7 @@ import {
   appendToolCallCard,
   appendToolResultCard,
   finalizeLiveMessage,
+  handleShellOutputEvent,
   handleSubagentStreamEvent,
   updateProgressCard
 } from './transcript.js';
@@ -533,6 +534,10 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     // card instead of the live bubble / standalone tool cards.
     if (ev.eventName === 'subagent_event' && data) {
       handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+      return;
+    }
+    if (ev.eventName === 'shell_output' && data) {
+      handleShellOutputEvent(data, refs);
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {

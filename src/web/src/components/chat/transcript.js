@@ -372,7 +372,9 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
 // Render a tool_call event as a compact card above the live message
 // (or appended if there is no live row). Subagent calls get a live
 // body up front so the user can expand the card while the subagent
-// is still running and watch nested tool activity stream in.
+// is still running and watch nested tool activity stream in. Shell
+// calls get an empty live body that fills as stdout/stderr chunks
+// arrive (see handleShellOutputEvent).
 export function appendToolCallCard(toolCall, refs) {
   if (!refs.transcript.current) return;
   const empty = refs.transcript.current.querySelector('.chat-view__empty');
@@ -395,11 +397,52 @@ export function appendToolCallCard(toolCall, refs) {
     live.appendChild(hint);
     body.appendChild(live);
     card.appendChild(body);
-    // Keep subagent calls collapsed by default like every other
-    // tool card; tapping the standard header reveals live progress.
+    // The subagent body stays visible while running (the CSS hides
+    // bodies only for generic call cards) so tapping the header
+    // reveals live progress immediately.
+  } else if (normalizeToolName(toolCall.name) === 'shell') {
+    const body = document.createElement('div');
+    body.className = 'tool-card__body';
+    const live = document.createElement('div');
+    live.className = 'tool-card__shell-live';
+    const hint = document.createElement('div');
+    hint.className = 'tool-card__shell-live-hint';
+    hint.textContent = 'Running…';
+    const pre = document.createElement('pre');
+    pre.className = 'tool-card__shell-live-pre';
+    live.appendChild(hint);
+    live.appendChild(pre);
+    body.appendChild(live);
+    card.appendChild(body);
   }
   refs.transcript.current.appendChild(card);
   afterTranscriptAppend(refs, true);
+}
+
+// handleShellOutputEvent(data, refs)
+//
+// Fold a live `shell_output` SSE chunk into the matching shell tool
+// card's live preview. The full result still arrives as tool_result
+// and replaces the live view; this only fills the wait.
+export function handleShellOutputEvent(data, refs) {
+  if (!refs.transcript.current || !data) return false;
+  const card = data.id
+    ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(data.id)) + '"]')
+    : null;
+  if (!card) return false;
+  const pre = card.querySelector('.tool-card__shell-live-pre');
+  if (!pre) return false;
+  if (data.stream === 'stderr') {
+    pre.dataset.hasStderr = '1';
+    const marker = '\n── stderr ──\n';
+    if (!pre.textContent.includes(marker)) pre.textContent += marker;
+    pre.textContent += String(data.delta || '');
+  } else {
+    pre.textContent += String(data.delta || '');
+  }
+  scrollToolBodyToBottom(pre);
+  afterTranscriptAppend(refs, false);
+  return true;
 }
 
 // findSubagentCard(refs, parentCallId)
@@ -457,6 +500,29 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     renderAssistantBody(textEl, live._text, '', false);
     scrollToolBodyToBottom(live);
     afterTranscriptAppend(refs, false);
+    return true;
+  }
+  if (ev.eventName === 'shell_output' && data && data.id) {
+    // Nested shell output: append to the matching nested tool row's
+    // live preview so the user can watch a subagent's command run.
+    const row = live.querySelector('[data-nested-tool-id="' + cssEscape(String(data.id)) + '"]');
+    if (row) {
+      let pre = row.querySelector('.tool-card__shell-live-pre');
+      if (!pre) {
+        pre = document.createElement('pre');
+        pre.className = 'tool-card__shell-live-pre';
+        row.appendChild(pre);
+      }
+      if (data.stream === 'stderr') {
+        const marker = '\n── stderr ──\n';
+        if (!pre.textContent.includes(marker)) pre.textContent += marker;
+        pre.textContent += String(data.delta || '');
+      } else {
+        pre.textContent += String(data.delta || '');
+      }
+      scrollToolBodyToBottom(pre);
+      afterTranscriptAppend(refs, false);
+    }
     return true;
   }
   if (ev.eventName === 'tool_call') {
@@ -551,6 +617,9 @@ export function appendToolResultCard(toolResult, refs) {
       body.className = 'tool-card__body';
       card.appendChild(body);
     }
+    // A shell card that streamed a live preview while running keeps
+    // its expanded state if the user opened it; successful results
+    // stay as they are, errors auto-expand below.
   }
   if (isSubagent) card.classList.add('tool-card--subagent');
   const body = card.querySelector('.tool-card__body');
@@ -865,7 +934,7 @@ export function renderTranscript(state, refs) {
     if (m.role === 'tool' && m.phase === 'call') {
       appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
     } else if (m.role === 'tool' && m.phase === 'result') {
-      appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, result: m.content || '' }, refs);
+      appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
     } else {
       appendMessageToTranscript(m, false, refs, state);
     }

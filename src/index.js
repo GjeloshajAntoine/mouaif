@@ -3387,6 +3387,9 @@ async function handleTools(req, res, parsed) {
     }
 
     const out = await shellTool.runShell({ projectDir, cmd, timeoutMs: authorization.timeoutMs });
+    // Same identity header the model-facing tool message carries, so a
+    // composer /shell run reads exactly like a model-driven run.
+    if (out && typeof out === 'object' && !out.identity) out.identity = 'mouaif shell';
     const status = out.ok ? 200 : (out.code === 'EOUTSIDE_PROJECT' || out.code === 'ENOENT' ? 400 : 200);
     return sendJSON(res, status, out);
   }

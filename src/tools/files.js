@@ -190,9 +190,10 @@ async function runReadFile(opts) {
     }
     return {
       relPath: rel,
-      size: st.size,
       startLine: 1,
       endLine: totalLines,
+      lines: totalLines,
+      chars: raw.length,
       body: raw,
       truncated: false
     };
@@ -207,17 +208,21 @@ async function runReadFile(opts) {
   const slice = lines.slice(a - 1, b).join('\n');
   return {
     relPath: rel,
-    size: st.size,
     startLine: a,
     endLine: b,
     totalLines,
+    lines: b - a + 1,
+    chars: slice.length,
     body: slice,
     truncated: b < endLine
   };
 }
 
 function formatReadFileResult(r) {
-  const header = '# File: ' + r.relPath + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '') + (r.truncated ? '\n# Truncated: yes' : '');
+  const header = '# File: ' + r.relPath
+    + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')
+    + (r.chars != null ? '\n# Chars: ' + r.chars : '')
+    + (r.truncated ? '\n# Truncated: yes' : '');
   return header + '\n\n' + r.body;
 }
 
@@ -262,9 +267,7 @@ async function runListFiles(opts) {
       // model can actually read.
       const ext = path.extname(ent.name).toLowerCase();
       if (!TEXT_EXTS.has(ext)) { skipped++; continue; }
-      let st;
-      try { st = await fsp.stat(childAbs); } catch { skipped++; continue; }
-      out.push({ path: childRel, size: st.size });
+      out.push({ path: childRel });
       total++;
     }
   }
@@ -291,7 +294,7 @@ function formatListFilesResult(r) {
       if (dir !== '.') lines.push('# ' + dir + '/');
       currentDir = dir;
     }
-    lines.push('  ' + name + '\t' + e.size);
+    lines.push('  ' + name);
   }
   return header + '\n\n' + lines.join('\n');
 }
@@ -375,17 +378,17 @@ async function runSearchFiles(opts) {
   const pathFilter = makeSearchPathFilter(root, args && args.path);
 
   const matches = [];
-  let bytesRead = 0;
+  let charsRead = 0;
   let filesScanned = 0;
   let truncated = false;
 
   async function walk(dirAbs, dirRel) {
-    if (matches.length >= cap.matches || bytesRead >= cap.bytes) { truncated = true; return; }
+    if (matches.length >= cap.matches || charsRead >= cap.bytes) { truncated = true; return; }
     let entries;
     try { entries = await fsp.readdir(dirAbs, { withFileTypes: true }); }
     catch { return; }
     for (const ent of entries) {
-      if (matches.length >= cap.matches || bytesRead >= cap.bytes) { truncated = true; return; }
+      if (matches.length >= cap.matches || charsRead >= cap.bytes) { truncated = true; return; }
       const childAbs = path.join(dirAbs, ent.name);
       const childRel = (dirRel ? dirRel + '/' : '') + ent.name;
       if (ent.isDirectory()) {
@@ -402,8 +405,8 @@ async function runSearchFiles(opts) {
       let content;
       try { content = await fsp.readFile(childAbs, 'utf8'); }
       catch { continue; }
-      bytesRead += Buffer.byteLength(content, 'utf8');
-      if (bytesRead > cap.bytes) { truncated = true; return; }
+      charsRead += content.length;
+      if (charsRead > cap.bytes) { truncated = true; return; }
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
         if (re.test(lines[i])) {
@@ -414,14 +417,28 @@ async function runSearchFiles(opts) {
     }
   }
   await walk(root, '');
-  return { query, matches, filesScanned, bytesRead, truncated, cap };
+  return { query, matches, filesScanned, charsRead, truncated, cap };
 }
 
 function formatSearchFilesResult(r) {
-  const header = '# Search: ' + r.query + '\n# Matches: ' + r.matches.length + (r.truncated ? ' (capped at ' + r.cap.matches + ' matches / ' + r.cap.bytes + ' bytes)' : '') + '\n# Files scanned: ' + r.filesScanned;
+  const header = '# Search: ' + r.query
+    + '\n# Matches: ' + r.matches.length + (r.truncated ? ' (capped at ' + r.cap.matches + ' matches / ' + r.cap.bytes + ' chars)' : '')
+    + '\n# Files scanned: ' + r.filesScanned
+    + (r.charsRead != null ? '\n# Chars scanned: ' + r.charsRead : '');
   if (!r.matches.length) return header + '\n\n(no matches)';
-  const body = r.matches.map((m) => m.path + ':' + m.line + ': ' + m.text).join('\n');
-  return header + '\n\n' + body;
+  // Group by file so each path is printed once (a "# path" header)
+  // followed by "line: text" rows, instead of repeating the full path
+  // on every match line.
+  const lines = [];
+  let currentPath = null;
+  for (const m of r.matches) {
+    if (m.path !== currentPath) {
+      lines.push('# ' + m.path);
+      currentPath = m.path;
+    }
+    lines.push(m.line + ': ' + m.text);
+  }
+  return header + '\n\n' + lines.join('\n');
 }
 
 // ---- write_file / edit_file --------------------------------------------
@@ -512,8 +529,7 @@ async function runWriteFile(opts) {
   }
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, content, 'utf8');
-  const st = await fsp.stat(abs);
-  return { relPath: rel, size: st.size, bytesWritten: Buffer.byteLength(content, 'utf8') };
+  return { relPath: rel, chars: content.length, lines: content ? content.split('\n').length : 0 };
 }
 
 // Replace one unique block in an existing text file. Line-ending styles are
@@ -565,15 +581,17 @@ async function runEditFile(opts) {
   }
   return {
     relPath: rel,
-    size: bytes,
-    bytesWritten: Buffer.byteLength(replacement, 'utf8'),
-    replacedBytes: Buffer.byteLength(replaced, 'utf8'),
+    addedChars: replacement.length,
+    removedChars: replaced.length,
     diff: previewEditDiff(rel, replaced, replacement)
   };
 }
 
 function formatWriteFileResult(r) {
-  return '# Wrote: ' + r.relPath;
+  let out = '# Wrote: ' + r.relPath;
+  if (r.chars != null) out += '\n# Chars: ' + r.chars + (r.lines != null ? ' · ' + r.lines + ' lines' : '');
+  else if (r.addedChars != null) out += '\n# Chars: +' + r.addedChars + ' / -' + (r.removedChars || 0);
+  return out;
 }
 
 // ---- Dispatcher --------------------------------------------------------
@@ -622,7 +640,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the project directory. Returns the file body with a header that shows the path, size, and line range. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused.',
+      description: 'Read a text file from the project directory. Returns the file body with a header that shows the path, line range, and char count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused.',
       parameters: {
         type: 'object',
         properties: {
@@ -653,7 +671,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search for a regex in text files under the project directory. Returns one match per line as "path:line: text". Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2 MB scanned.',
+      description: 'Search for a regex in text files under the project directory. Matches are grouped by file: one "# path" header per file, then "line: text" rows. Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2M chars scanned.',
       parameters: {
         type: 'object',
         properties: {
