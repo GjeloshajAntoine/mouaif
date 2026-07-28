@@ -1778,14 +1778,34 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         // Updatable per-chat push notification for real-time progress.
         // Uses a stable tag so each new progress_update replaces the
         // previous OS notification for this chat (no notification spam).
-        const pct = data.current != null && data.total != null
-          ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100) + '%'
-          : '';
-        sendChatPush('progress', {
-          title: data.title || 'Progress',
-          body: (pct ? pct + ' — ' : '') + (data.message || ''),
-          tag: 'chat-' + chatId + '-progress'
-        });
+        const pctNum = data.current != null && data.total != null
+          ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
+          : null;
+        if (data.kind === 'task') {
+          // Task notifications get a structured, UI-like plain-text layout
+          // (push bodies can't do real alignment):
+          //   title row:  <task title> · 40%
+          //   bar row:    ▓▓▓▓░░░░░░
+          //   task row:   2 of 5
+          const title = data.title || 'Task';
+          const barWidth = 10;
+          const filled = pctNum == null ? 0 : Math.round((pctNum / 100) * barWidth);
+          const bar = '▓'.repeat(filled) + '░'.repeat(barWidth - filled);
+          const counts = (data.current != null && data.total != null)
+            ? data.current + ' of ' + data.total
+            : (data.message || '');
+          sendChatPush('progress', {
+            title: pctNum == null ? title : title + ' · ' + pctNum + '%',
+            body: counts ? bar + '\n' + counts : bar,
+            tag: 'chat-' + chatId + '-progress'
+          });
+        } else {
+          sendChatPush('progress', {
+            title: data.title || 'Progress',
+            body: (pctNum != null ? pctNum + '% — ' : '') + (data.message || ''),
+            tag: 'chat-' + chatId + '-progress'
+          });
+        }
       } else if (name === 'done') {
         sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
         // Compute the enrichment once. `cost.known` is true when at

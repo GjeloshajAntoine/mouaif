@@ -101,4 +101,14 @@ The `task` tool uses the same authorization module as every other built-in tool.
 
 ### Push notifications
 
-`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`title`, `current`, `total`, `status`, `message` = `"<current> of <total>"`). This flows through the same per-chat updatable push notification as the `report_progress` tool (tag `chat-<id>-progress`), so the task title and count appear in the same notification that live progress reports use — each update replaces the previous one instead of stacking. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
+`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable push notification as the `report_progress` tool (tag `chat-<id>-progress`), so each update replaces the previous one instead of stacking. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
+
+Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so the percentage rides in the title row):
+
+```text
+🔔 Fix push layout · 40%
+    ▓▓▓▓░░░░░░
+    2 of 5
+```
+
+The progress bar is 10 cells wide (`▓` filled / `░` empty); the bottom row shows the task's current and total counts. Generic `report_progress` notifications keep the simpler `"<pct>% — <message>"` body.

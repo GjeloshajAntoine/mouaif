@@ -2135,6 +2135,7 @@ async function streamChat(opts) {
           const completed = out.result.action === 'completed';
           callOpts.onEvent('progress_update', {
             callId: (callOpts && callOpts.callId) || null,
+            kind: 'task',
             title: t.title || 'Task',
             current: typeof t.current === 'number' ? t.current : 0,
             total: typeof t.total === 'number' ? t.total : 100,
