@@ -20,6 +20,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Inspector](features/inspector.md) — from-scratch mobile-friendly DevTools-style UI on top of CDP over WebSocket. Console + Network panels driven by a virtual list; targets list + connect flow. Mobile shell's fourth tab.
 - [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 6 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
+- [Access authentication](features/access-authentication.md) — CLI user/password setup, expiring setup links, QR and short codes, authenticated sessions, and WebAuthn passkeys.
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
 - [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API key or PKCE sign-in (`https://openrouter.ai/auth`); the issued key is stored in the `openrouter` keyring namespace.
 - [Custom prompts](features/custom-prompts.md) — user-authored system prompts stored per project, with direct per-chat API override.

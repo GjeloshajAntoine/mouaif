@@ -8,6 +8,7 @@ import { SettingsProjectView } from './SettingsProject.jsx';
 import { SettingsDefaultsView } from './SettingsDefaults.jsx';
 import { SettingsNotificationsView } from './SettingsNotifications.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
+import { AccessSettingsView } from './AccessAuth.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
 import { SettingsMcpView } from './SettingsMcp.jsx';
 import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
@@ -75,6 +76,7 @@ export function App() {
     && view.name !== 'settingsTags'
     && view.name !== 'settingsPricing'
     && view.name !== 'settingsImport'
+    && view.name !== 'settingsAccess'
     && view.name !== 'settingsAbout';
   let body = null;
   if (view.name === 'chats') body = h(ProjectsView, null);
@@ -95,6 +97,7 @@ export function App() {
   else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });
   else if (view.name === 'settingsImport') body = h(SettingsImportView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
+  else if (view.name === 'settingsAccess') body = h(AccessSettingsView, null);
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(InspectorView, null);
   else body = h(ProjectsView, null);

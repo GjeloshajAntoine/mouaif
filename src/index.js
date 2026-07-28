@@ -9,6 +9,8 @@ const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
 const auth = require('./auth.js');
+const accessAuth = require('./access-auth.js');
+const qr = require('./qr.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
 const oauthCopilot = require('./oauth-github-copilot.js');
 const oauthOpenRouter = require('./oauth-openrouter.js');
@@ -40,6 +42,7 @@ mcp.installShutdown();
 
 const DEFAULT_PORT = 5732;
 const SESSION_COOKIE = 'mouaif_session';
+const ACCESS_COOKIE = 'mouaif_access';
 const WEB_DIR = path.join(__dirname, 'web');
 // Vite builds the mobile UI into src/web/dist/. The /web/ route serves
 // that directory when it exists; otherwise it falls back to the
@@ -74,6 +77,7 @@ function destroyOpenSockets() {
 // restart ends every run anyway, so nothing survives to clear.
 const runningChats = new Set();
 const runningChatCancels = new Map();
+const accessAttempts = new Map();
 function runningKey(projectDir, chatId) {
   return String(projectDir) + '::' + String(chatId);
 }
@@ -233,6 +237,14 @@ function sessionCookie(sessionToken, secure) {
   return SESSION_COOKIE + '=' + sessionToken + '; Path=/; HttpOnly; SameSite=Strict' + (secure ? '; Secure' : '');
 }
 
+function accessCookie(token, secure, maxAge) {
+  return ACCESS_COOKIE + '=' + (token || '') + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + Math.max(0, Math.floor(maxAge || 0)) + (secure ? '; Secure' : '');
+}
+
+function requestHasBrowserOrigin(req) {
+  return typeof req.headers.origin === 'string' || typeof req.headers['sec-fetch-site'] === 'string';
+}
+
 function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
   const origin = requestOrigin(req);
   if (!origin) return true;
@@ -261,6 +273,37 @@ function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
   return true;
 }
 
+function authorizeAccessRequest(req, res) {
+  if (!accessAuth.configured()) {
+    // Preserve the existing loopback CLI/API workflow until the user opts in;
+    // browser traffic is held at setup so the web UI cannot expose app data.
+    if (!requestHasBrowserOrigin(req)) return true;
+    sendJSON(res, 401, { error: 'Complete access setup first', code: 'EAUTH_SETUP_REQUIRED' });
+    return false;
+  }
+  const token = parseCookies(req.headers.cookie)[ACCESS_COOKIE] || '';
+  if (accessAuth.session(token)) return true;
+  // Non-browser CLI/API clients can use standard HTTP Basic auth instead of
+  // first creating a cookie session.
+  const authorization = String(req.headers.authorization || '');
+  if (authorization.startsWith('Basic ')) {
+    try {
+      const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+      const split = decoded.indexOf(':');
+      if (split >= 0 && accessAuth.verifyPassword(decoded.slice(0, split), decoded.slice(split + 1))) return true;
+    } catch (_) { /* malformed Basic header falls through to 401 */ }
+  }
+  res.setHeader('WWW-Authenticate', 'Basic realm="mouaif", charset="UTF-8"');
+  const accept = String(req.headers.accept || '');
+  if (req.method === 'GET' && accept.includes('text/html')) {
+    res.writeHead(302, { Location: '/web/#/login' });
+    res.end();
+    return false;
+  }
+  sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
+  return false;
+}
+
 function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
   const parsed = url.parse(req.url, true);
   const urlPath = parsed.pathname;
@@ -278,9 +321,23 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   const browserProtected = urlPath === '/events'
     || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/');
-  if (browserProtected && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
+  if (browserProtected && requestHasBrowserOrigin(req) && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
     return;
   }
+
+  // Access setup/login endpoints must remain reachable before a user has a
+  // session. They still pass the same-origin/CSRF check above in browsers.
+  if (urlPath.startsWith('/api/access/')) {
+    return handleAccess(req, res, parsed, serverConfig);
+  }
+
+  // Static assets and the Preact shell stay public so they can render the
+  // login/setup view. Everything containing app data is authenticated.
+  const accessProtected = urlPath === '/events'
+    || urlPath === '/oauth/callback'
+    || urlPath.startsWith('/api/')
+    || urlPath === '/data';
+  if (accessProtected && !authorizeAccessRequest(req, res)) return;
 
   // SSE endpoint
   if (urlPath === '/events' && method === 'GET') {
@@ -565,6 +622,174 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
   }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'push' });
+}
+
+// ---- App access authentication ------------------------------------------
+
+function accessRequestOrigin(req, publicOrigin) {
+  const origin = expectedOrigin(req, publicOrigin);
+  if (!origin) throw Object.assign(new Error('Could not determine the app origin'), { code: 'EORIGIN' });
+  return origin;
+}
+
+function accessAttemptKey(req) {
+  return String(req.socket && req.socket.remoteAddress || 'unknown');
+}
+
+function checkAccessAttempts(req) {
+  const key = accessAttemptKey(req);
+  const now = Date.now();
+  const recent = (accessAttempts.get(key) || []).filter((at) => now - at < 60_000);
+  accessAttempts.set(key, recent);
+  return recent.length < 10;
+}
+
+function recordAccessFailure(req) {
+  const key = accessAttemptKey(req);
+  const recent = accessAttempts.get(key) || [];
+  recent.push(Date.now());
+  accessAttempts.set(key, recent);
+}
+
+function clearAccessFailures(req) {
+  accessAttempts.delete(accessAttemptKey(req));
+}
+
+function publicAccessStatus() {
+  const account = accessAuth.user();
+  return {
+    configured: !!account,
+    user: account ? account.username : null,
+    passkeyCount: account ? accessAuth.passkeys().length : 0
+  };
+}
+
+async function handleAccess(req, res, parsed, serverConfig) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  let servedOrigin;
+  try { servedOrigin = accessRequestOrigin(req, serverConfig.publicOrigin); }
+  catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code || 'EORIGIN' }); }
+  const secure = servedOrigin.startsWith('https://');
+  const accessToken = parseCookies(req.headers.cookie)[ACCESS_COOKIE] || '';
+  const activeSession = accessAuth.session(accessToken);
+
+  if (urlPath === '/api/access/status' && method === 'GET') {
+    return sendJSON(res, 200, { ...publicAccessStatus(), authenticated: !!activeSession });
+  }
+
+  if (urlPath === '/api/access/login' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!accessAuth.configured()) return sendJSON(res, 409, { error: 'Access is not configured yet', code: 'ENOTCONFIGURED' });
+    if (!checkAccessAttempts(req)) return sendJSON(res, 429, { error: 'Too many sign-in attempts; wait a minute', code: 'ERATE_LIMIT' });
+    if (!accessAuth.verifyPassword(body.username, body.password)) {
+      recordAccessFailure(req);
+      return sendJSON(res, 401, { error: 'User or password is incorrect', code: 'EBADCREDENTIALS' });
+    }
+    clearAccessFailures(req);
+    const issued = accessAuth.issueSession();
+    res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+    return sendJSON(res, 200, { ok: true, user: accessAuth.user().username });
+  }
+
+  if (urlPath === '/api/access/logout' && method === 'POST') {
+    accessAuth.revokeSession(accessToken);
+    res.setHeader('Set-Cookie', accessCookie('', secure, 0));
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  if (urlPath === '/api/access/setup/verify' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const valid = accessAuth.setupCodeValid(body.code);
+    return sendJSON(res, valid ? 200 : 401, { valid });
+  }
+
+  if (urlPath === '/api/access/setup' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const setupAuthorized = accessAuth.setupCodeValid(body.code);
+    if (!activeSession && !setupAuthorized) return sendJSON(res, 401, { error: 'A valid one-time setup code or signed-in session is required', code: 'ESETUP_CODE' });
+    try {
+      accessAuth.setPassword(body.username, body.password);
+      if (setupAuthorized && !accessAuth.consumeSetupCode(body.code)) return sendJSON(res, 409, { error: 'Setup code was already used or expired', code: 'ESETUP_CODE' });
+      const issued = accessAuth.issueSession();
+      res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+      return sendJSON(res, 200, { ok: true, ...publicAccessStatus(), authenticated: true });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message, code: e.code || 'EBADINPUT' });
+    }
+  }
+
+  if (urlPath === '/api/access/passkeys/register/options' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!accessAuth.configured()) return sendJSON(res, 409, { error: 'Create the access user before adding a passkey', code: 'ENOTCONFIGURED' });
+    const setupAuthorized = accessAuth.setupCodeValid(body.code);
+    if (!activeSession && !setupAuthorized) return sendJSON(res, 401, { error: 'Sign in or provide a valid setup code first', code: 'EAUTH_REQUIRED' });
+    const username = activeSession ? activeSession.username : String(body.username || accessAuth.user()?.username || '').trim();
+    if (!username) return sendJSON(res, 400, { error: 'username is required' });
+    try {
+      return sendJSON(res, 200, accessAuth.beginRegistration({
+        origin: servedOrigin, username,
+        authorizedBy: setupAuthorized ? accessAuth.normalizeCode(body.code) : 'session'
+      }));
+    } catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code || 'EWEBAUTHN' }); }
+  }
+
+  if (urlPath === '/api/access/passkeys/register/verify' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    try {
+      const result = accessAuth.finishRegistration(body);
+      return sendJSON(res, 200, { ok: true, passkeys: result.passkeys });
+    } catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code || 'EWEBAUTHN' }); }
+  }
+
+  if (urlPath === '/api/access/passkeys/login/options' && method === 'POST') {
+    if (!checkAccessAttempts(req)) return sendJSON(res, 429, { error: 'Too many sign-in attempts; wait a minute', code: 'ERATE_LIMIT' });
+    try { return sendJSON(res, 200, accessAuth.beginAuthentication({ origin: servedOrigin })); }
+    catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code || 'EWEBAUTHN' }); }
+  }
+
+  if (urlPath === '/api/access/passkeys/login/verify' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    try {
+      const account = accessAuth.finishAuthentication(body);
+      clearAccessFailures(req);
+      const issued = accessAuth.issueSession();
+      res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+      return sendJSON(res, 200, { ok: true, user: account.username });
+    } catch (e) {
+      recordAccessFailure(req);
+      return sendJSON(res, 401, { error: e.message, code: e.code || 'EWEBAUTHN' });
+    }
+  }
+
+  if (urlPath === '/api/access/passkeys' && method === 'GET') {
+    if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
+    return sendJSON(res, 200, { passkeys: accessAuth.passkeys() });
+  }
+
+  if (urlPath.startsWith('/api/access/passkeys/') && method === 'DELETE') {
+    if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
+    const id = decodeURIComponent(urlPath.slice('/api/access/passkeys/'.length));
+    return sendJSON(res, accessAuth.deletePasskey(id) ? 200 : 404, { ok: true });
+  }
+
+  if (urlPath === '/api/access/setup/qr' && method === 'GET') {
+    const code = typeof parsed.query.code === 'string' ? parsed.query.code : '';
+    if (!accessAuth.setupCodeValid(code)) return sendJSON(res, 404, { error: 'Setup code is missing or expired', code: 'ESETUP_CODE' });
+    const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(accessAuth.normalizeCode(code));
+    const svg = qr.svg(setupUrl);
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(svg);
+    return;
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'access' });
 }
 
 // ---- Settings API -------------------------------------------------------
@@ -3960,6 +4185,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   // Run any pending database migrations before serving requests.
   try { settings.runMigrations(); } catch (e) { console.warn('[mouaif] migrations failed:', e.message); }
+  try { accessAuth.ensureTables(); } catch (e) { console.warn('[mouaif] access auth init failed:', e.message); }
   // Initialise push notification tables and VAPID keys.
   try { push.ensureTable(); } catch (e) { console.warn('[mouaif] push table init failed:', e.message); }
   try { push.ensureVapidKeys(publicOrigin); } catch (e) { console.warn('[mouaif] VAPID key init failed:', e.message); }
@@ -3997,7 +4223,9 @@ function createServer(port = DEFAULT_PORT, options = {}) {
       const actual = cookies[SESSION_COOKIE] || '';
       const validToken = actual.length === sessionToken.length
         && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
-      if (!origin || origin !== expected || !validToken) {
+      const accessToken = cookies[ACCESS_COOKIE] || '';
+      const validAccess = !!accessAuth.session(accessToken);
+      if (!origin || origin !== expected || !validToken || !validAccess) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.end();
         return;

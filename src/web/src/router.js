@@ -8,6 +8,7 @@ function parseHash() {
   if (!h) return { name: 'chats' };
   if (h === 'projects') return { name: 'chats' };
   if (h === 'settings') return { name: 'settings' };
+  if (h === 'settings/access') return { name: 'settingsAccess' };
   if (h === 'auth') return { name: 'settings' };
   if (h === 'inspector') return { name: 'inspector' };
   if (h === 'settings/providers') return { name: 'settingsProviders' };

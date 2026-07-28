@@ -2,9 +2,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawn } = require('child_process');
 const { program } = require('commander');
 const { createServer, destroyOpenSockets, DEFAULT_PORT } = require('../src/index.js');
+const accessAuth = require('../src/access-auth.js');
+const qr = require('../src/qr.js');
 
 const { name, version, description } = require('../package.json');
 
@@ -24,6 +27,19 @@ function closeServer(server) {
     // server.close() only fires once all connections are gone.
     destroyOpenSockets();
   });
+}
+
+function displayOrigin(options, port) {
+  if (options.publicOrigin) return options.publicOrigin;
+  const host = String(options.host || '127.0.0.1');
+  if (host !== '0.0.0.0' && host !== '::') return `http://${host.includes(':') ? '[' + host + ']' : host}:${port}`;
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry && entry.family === 'IPv4' && !entry.internal) return `http://${entry.address}:${port}`;
+    }
+  }
+  return `http://127.0.0.1:${port}`;
 }
 
 function collectWatchFiles(dir, out = []) {
@@ -54,9 +70,11 @@ function runWatchSupervisor(options) {
   function startChild() {
     const args = [binPath, 'serve', '--port', port, '--host', host];
     if (publicOrigin) args.push('--public-origin', publicOrigin);
+    if (options.user) args.push('--user', options.user);
+    if (options.authSetup) args.push('--auth-setup');
     child = spawn(process.execPath, args, {
       stdio: 'inherit',
-      env: { ...process.env, [WATCH_CHILD_ENV]: '1' }
+      env: { ...process.env, [WATCH_CHILD_ENV]: '1', ...(options.password ? { MOUAIF_PASSWORD: options.password } : {}) }
     });
     child.on('exit', (code, signal) => {
       child = null;
@@ -117,6 +135,9 @@ program
   .option('-p, --port <port>', 'Port to listen on', DEFAULT_PORT)
   .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .option('--public-origin <origin>', 'Public HTTP(S) origin when served through a proxy', process.env.MOUAIF_PUBLIC_ORIGIN)
+  .option('--user <user>', 'Set the app access user before serving')
+  .option('--password <password>', 'Set the app access password before serving (prefer MOUAIF_PASSWORD to avoid shell history)')
+  .option('--auth-setup', 'Print a one-time setup link, QR code, and short code')
   .option('-w, --watch', 'Restart the server when local source files change')
   .action((options) => {
     if (options.watch && process.env[WATCH_CHILD_ENV] !== '1') {
@@ -124,6 +145,22 @@ program
     }
 
     const port = parseInt(options.port, 10);
+    const suppliedPassword = options.password || process.env.MOUAIF_PASSWORD || '';
+    if ((options.user && !suppliedPassword) || (!options.user && suppliedPassword)) {
+      console.error('❌ --user and --password (or MOUAIF_PASSWORD) must be supplied together');
+      process.exitCode = 1;
+      return;
+    }
+    if (options.user) {
+      try {
+        accessAuth.setPassword(options.user, suppliedPassword);
+        console.log(`🔐 App access user set to ${accessAuth.user().username}`);
+      } catch (error) {
+        console.error('❌ Could not set app access:', error.message);
+        process.exitCode = 1;
+        return;
+      }
+    }
     let server;
     const lifecycle = {
       restarting: false,
@@ -136,7 +173,7 @@ program
     function start() {
       server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin });
       server.listen(port, options.host, () => {
-        const servedOrigin = options.publicOrigin || `http://${options.host}:${port}`;
+        const servedOrigin = displayOrigin(options, port);
         console.log(`🚀 mouaif server running at ${servedOrigin}`);
         console.log(`   Web:    /             — mobile UI`);
         console.log(`   Web:    /web/         — mobile UI`);
@@ -144,6 +181,16 @@ program
         console.log(`   REST:   POST /data    — update data`);
         console.log(`   SSE:    GET  /events  — subscribe to events`);
         console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
+        if (options.authSetup || !accessAuth.configured()) {
+          const setup = accessAuth.createSetupCode();
+          const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(setup.code);
+          console.log('');
+          console.log('🔐 Set up app access (expires in 15 minutes)');
+          console.log(`   Link:   ${setupUrl}`);
+          console.log(`   Code:   ${setup.code}`);
+          try { console.log('\n' + qr.terminal(setupUrl)); } catch (_) { /* narrow terminals can use the link */ }
+          console.log('   The setup page can create a password and register a passkey.');
+        }
         console.log('   Press Ctrl+C to stop');
       });
     }

@@ -7,6 +7,58 @@
 .auth__help { margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
 .auth__help code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85em; background: var(--surface-3); padding: 1px 6px; border-radius: var(--r-sm); word-break: break-all; color: var(--fg); }
 
+/* ---- App access login / setup ----------------------------------- */
+
+.access-auth {
+  min-height: 100dvh;
+  display: grid;
+  align-items: center;
+  padding: max(1rem, var(--safe-top)) 0.75rem max(1rem, var(--safe-bottom));
+}
+.access-auth__card {
+  width: min(100%, 27rem);
+  margin: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.access-auth__logo {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  margin-bottom: 1rem;
+  border-radius: var(--r-md);
+  color: var(--on-accent);
+  background: var(--accent);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+.access-auth h1 { margin: 0; font-size: 1.5rem; }
+.access-auth__sub { margin: 0.35rem 0 1.25rem; color: var(--fg-soft); }
+.access-auth__form { display: grid; gap: 0.35rem; }
+.access-auth__form .btn { margin-top: 0.65rem; width: 100%; }
+.access-auth__passkey { width: 100%; margin-top: 0.65rem; }
+.access-auth__link {
+  min-height: var(--tap);
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.access-auth__code { text-align: center; font-family: var(--font-mono); font-size: 1.15rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.access-auth__actions { display: grid; gap: 0.5rem; }
+.access-auth__keys { display: grid; gap: 0.5rem; padding: 0 0.65rem; }
+.access-auth__key { display: flex; align-items: center; gap: 0.75rem; min-height: var(--tap); padding: 0.5rem 0.65rem; border-radius: var(--r-md); background: var(--surface); }
+.access-auth__key > div { min-width: 0; flex: 1; display: grid; }
+.access-auth__key small { color: var(--muted); }
+
 /* ---- SSO / reserved-provider UI --------------------------------- */
 
 /* Reserved (SSO-only) providers like GitHub Copilot have a fixed

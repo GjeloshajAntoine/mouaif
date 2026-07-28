@@ -11,9 +11,21 @@ process.env.MOUAIF_HOME = home;
 const messages = require('../src/messages.js');
 const trace = require('../src/trace.js');
 const serverModule = require('../src/index.js');
+const accessAuth = require('../src/access-auth.js');
 const { createServer } = serverModule;
 
+async function login(origin, csrfCookie, publicOrigin = origin) {
+  const response = await fetch(origin + '/api/access/login', {
+    method: 'POST',
+    headers: { Origin: publicOrigin, Cookie: csrfCookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'security', password: 'security-password' })
+  });
+  assert.equal(response.status, 200);
+  return String(response.headers.get('set-cookie') || '').split(';')[0];
+}
+
 async function main() {
+  accessAuth.setPassword('security', 'security-password');
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-project-'));
   assert.throws(() => messages.messagesFilePath(projectDir, '../../escape'), { code: 'EBADINPUT' });
   assert.throws(() => trace.traceFilePath(projectDir, '/../../escape'), { code: 'EBADINPUT' });
@@ -35,13 +47,15 @@ async function main() {
     assert.equal(page.status, 200);
     const cookie = String(page.headers.get('set-cookie') || '').split(';')[0];
     assert.match(cookie, /^mouaif_session=/);
+    const userCookie = await login(ownOrigin, cookie);
 
     const allowed = await fetch(ownOrigin + '/api/settings', {
-      headers: { Origin: ownOrigin, Cookie: cookie }
+      headers: { Origin: ownOrigin, Cookie: cookie + '; ' + userCookie }
     });
     assert.equal(allowed.status, 200);
 
-    const localClient = await fetch(ownOrigin + '/api/settings');
+    const basic = Buffer.from('security:security-password').toString('base64');
+    const localClient = await fetch(ownOrigin + '/api/settings', { headers: { Authorization: 'Basic ' + basic } });
     assert.equal(localClient.status, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -56,14 +70,16 @@ async function main() {
     const setCookie = String(page.headers.get('set-cookie') || '');
     assert.match(setCookie, /; Secure(?:;|$)/, 'public HTTPS origin produces a Secure session cookie');
     const cookie = setCookie.split(';')[0];
+    const userCookie = await login(proxiedAddress, cookie, publicOrigin);
+    const cookies = cookie + '; ' + userCookie;
 
     const wrongScheme = await fetch(proxiedAddress + '/api/push/config', {
-      headers: { Origin: 'http://mouaif.example.test', Cookie: cookie }
+      headers: { Origin: 'http://mouaif.example.test', Cookie: cookies }
     });
     assert.equal(wrongScheme.status, 403, 'public origin requires the configured HTTPS scheme');
 
     const config = await fetch(proxiedAddress + '/api/push/config', {
-      headers: { Origin: publicOrigin, Cookie: cookie }
+      headers: { Origin: publicOrigin, Cookie: cookies }
     });
     assert.equal(config.status, 200, 'configured public origin is accepted behind a proxy');
     const configBody = await config.json();
@@ -74,7 +90,7 @@ async function main() {
 
     const subscribe = await fetch(proxiedAddress + '/api/push/subscribe', {
       method: 'POST',
-      headers: { Origin: publicOrigin, Cookie: cookie, 'Content-Type': 'application/json' },
+      headers: { Origin: publicOrigin, Cookie: cookies, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         origin: 'https://spoofed.example',
         subscription: { endpoint: 'https://push.example/sub', keys: { p256dh: 'key', auth: 'auth' } }
@@ -82,7 +98,7 @@ async function main() {
     });
     assert.equal(subscribe.status, 200, 'subscription accepts the configured public origin');
     const subscriptions = await fetch(proxiedAddress + '/api/push/subscriptions', {
-      headers: { Origin: publicOrigin, Cookie: cookie }
+      headers: { Origin: publicOrigin, Cookie: cookies }
     });
     const subscriptionsBody = await subscriptions.json();
     assert.equal(subscriptionsBody.subscriptions[0].origin, publicOrigin, 'subscription origin is derived by the server, not request JSON');

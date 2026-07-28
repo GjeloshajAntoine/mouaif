@@ -12,6 +12,7 @@
 
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
+import { AccessGate } from './components/AccessAuth.jsx';
 import { registerServiceWorker } from './sw-registration.js';
 import { syncPushState } from './components/push.js';
 import './style.css';
@@ -20,7 +21,7 @@ import './router.js';
 // ---- Render ------------------------------------------------------------
 
 const root = document.getElementById('app');
-if (root) render(h(App, null), root);
+if (root) render(h(AccessGate, null, h(App, null)), root);
 
 // Register the service worker (no-op in dev; see sw-registration.js
 // for the production-only path). Deferred until after first paint so
