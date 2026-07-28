@@ -1532,6 +1532,23 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // turn ends without tool calls, the snapshot is redundant — the
   // `done` handler computes the final cost from aggregated usage.
   let pendingRoundUsage = null;
+  // Running token/cost totals across all upstream rounds in this turn,
+  // used by the task progress push notification title ("12.4K tok · $0.0312").
+  let turnTokens = 0;
+  let turnCost = 0;
+  let turnCostKnown = false;
+  function accumulateRoundUsage(roundUsage) {
+    if (!roundUsage) return;
+    turnTokens += (Number(roundUsage.promptTokens) || 0) + (Number(roundUsage.completionTokens) || 0);
+    const segCost = computeSegmentCost(roundUsage);
+    if (segCost && segCost.known) { turnCost += segCost.total; turnCostKnown = true; }
+  }
+  // Right-hand side of the task push title: token count plus price when
+  // pricing is known. Returns '' when no usage has been reported yet.
+  function pushUsageLabel() {
+    if (!turnTokens) return '';
+    return usage.formatTokens(turnTokens) + ' tok' + (turnCostKnown ? ' · ' + usage.formatCost(turnCost) : '');
+  }
   // Per-turn enrichment (cost + usage) is computed once on `done`
   // and reused for both the SSE emit and the persisted assistant
   // message. The chat UI's own live counter and the cost line
@@ -1677,7 +1694,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.
-    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; },
+    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; accumulateRoundUsage(roundUsage); },
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         if (!streamStartedAt) streamStartedAt = Date.now();
@@ -1783,20 +1800,22 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           : null;
         if (data.kind === 'task') {
           // Task notifications get a structured, UI-like plain-text layout
-          // (push bodies can't do real alignment):
-          //   title row:  <task title> · 40%
-          //   bar row:    ▓▓▓▓░░░░░░
-          //   task row:   2 of 5
-          const title = data.title || 'Task';
+          // (push bodies can't do real alignment, so each "row" is a line):
+          //   title row:  <chat title> · <tokens> · <price>
+          //   bar row:    ▓▓▓▓░░░░░░ 40%
+          //   task row:   <task title> — 2 of 5
           const barWidth = 10;
           const filled = pctNum == null ? 0 : Math.round((pctNum / 100) * barWidth);
-          const bar = '▓'.repeat(filled) + '░'.repeat(barWidth - filled);
+          const bar = '▓'.repeat(filled) + '░'.repeat(barWidth - filled) + (pctNum == null ? '' : ' ' + pctNum + '%');
           const counts = (data.current != null && data.total != null)
             ? data.current + ' of ' + data.total
             : (data.message || '');
+          const taskLine = (data.title || 'Task') + (counts ? ' — ' + counts : '');
+          const usageLabel = pushUsageLabel();
+          const chatTitle = (chat && chat.title) || 'mouaif';
           sendChatPush('progress', {
-            title: pctNum == null ? title : title + ' · ' + pctNum + '%',
-            body: counts ? bar + '\n' + counts : bar,
+            title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
+            body: bar + '\n' + taskLine,
             tag: 'chat-' + chatId + '-progress'
           });
         } else {

@@ -103,12 +103,16 @@ The `task` tool uses the same authorization module as every other built-in tool.
 
 `update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable push notification as the `report_progress` tool (tag `chat-<id>-progress`), so each update replaces the previous one instead of stacking. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
 
-Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so the percentage rides in the title row):
+Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so each "row" is a line):
 
 ```text
-🔔 Fix push layout · 40%
-    ▓▓▓▓░░░░░░
-    2 of 5
+🔔 Refactor auth · 12K tok · $0.0312
+    ▓▓▓▓░░░░░░ 40%
+    Fix push layout — 2 of 5
 ```
 
-The progress bar is 10 cells wide (`▓` filled / `░` empty); the bottom row shows the task's current and total counts. Generic `report_progress` notifications keep the simpler `"<pct>% — <message>"` body.
+- **Title row** — chat name on the left, running turn usage on the right: total tokens (formatted via `usage.formatTokens`, e.g. `12K tok`) plus the accumulated price (`usage.formatCost`) when pricing is known. Token and cost totals accumulate across every upstream round of the turn (including tool rounds).
+- **Bar row** — 10-cell ascii bar (`▓` filled / `░` empty) with the percentage.
+- **Task row** — the task title with its `current of total` counts.
+
+Generic `report_progress` notifications keep the simpler `"<pct>% — <message>"` body.
