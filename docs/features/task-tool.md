@@ -98,3 +98,7 @@ The `task` tool uses the same authorization module as every other built-in tool.
 - When a chat is deleted via `DELETE /api/chats/:id`, the server calls `task.clearChat(id)` to release the task entries.
 - The `validateArgs` function returns typed errors (`EBADINPUT`) so the model can self-correct on the next turn.
 - Capped at 50 tasks per chat to prevent memory unbounded growth.
+
+### Push notifications
+
+`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`title`, `current`, `total`, `status`, `message` = `"<current> of <total>"`). This flows through the same per-chat updatable push notification as the `report_progress` tool (tag `chat-<id>-progress`), so the task title and count appear in the same notification that live progress reports use — each update replaces the previous one instead of stacking. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
