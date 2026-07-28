@@ -11,7 +11,8 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject, projectsReload } from '../api.js';
 import { nav } from '../router.js';
-import { ToolTree, shortDesc } from './ToolTree.jsx';
+import { ToolTree, shortDesc, buildAgentToolGroups } from './ToolTree.jsx';
+import { toggleToolInList, toggleGroupInList } from './SettingsAgents.jsx';
 
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId } = {}) {
   const statusEl = useRef(null);
@@ -764,7 +765,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     { value: 'read_file', label: 'read_file' },
     { value: 'list_files', label: 'list_files' },
     { value: 'search_files', label: 'search_files' },
-    { value: 'write_file', label: 'write_file' }
+    { value: 'write_file', label: 'write_file' },
+    { value: 'edit_file', label: 'edit_file' }
   ].concat(
     mcpServers.filter(s => s && s.id).map(s => ({
       value: 'mcp__' + (s.slug || s.id),
@@ -815,21 +817,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function onAgentToolToggle(name, tool, checked) {
     const agent = agentPresets.find((a) => a.name === name);
     if (!agent) return;
-    const current = Array.isArray(agent.tools) ? agent.tools.slice() : null;
-    let next;
-    if (current == null) {
-      // Was inheriting all tools; unchecking one builds an explicit list.
-      const all = AGENT_TOOL_CHOICES.map((c) => c.value);
-      next = checked ? all : all.filter((t) => t !== tool);
-    } else {
-      next = checked ? current.concat(tool) : current.filter((t) => t !== tool);
-    }
-    // De-dupe, and collapse back to "inherit" when everything is on.
-    next = Array.from(new Set(next));
-    const full = next.length >= AGENT_TOOL_CHOICES.length;
-    const tools = full ? [] : next;
-    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: tools.length ? tools : undefined }) : a));
-    saveAgent(name, { tools });
+    const r = toggleToolInList(agent.tools, tool, checked, AGENT_TOOL_CHOICES);
+    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: r.tools }) : a));
+    saveAgent(name, { tools: r.send });
+  }
+
+  function onAgentToolGroupToggle(name, groupId, checked) {
+    const agent = agentPresets.find((a) => a.name === name);
+    if (!agent) return;
+    const group = buildAgentToolGroups({
+      choices: AGENT_TOOL_CHOICES,
+      restricted: agent.tools !== undefined,
+      selected: (v) => agent.tools.includes(v),
+      mcpServers
+    }).find((g) => g.id === groupId);
+    if (!group) return;
+    const r = toggleGroupInList(agent.tools, group, checked, AGENT_TOOL_CHOICES);
+    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: r.tools }) : a));
+    saveAgent(name, { tools: r.send });
   }
 
   function openAgentCreator() {
@@ -1005,7 +1010,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
             agentPresets.map(a => {
               const open = !!agentPresetsOpened[a.name];
-              const restricted = Array.isArray(a.tools) && a.tools.length > 0;
+              const restricted = a.tools !== undefined;
               return h('li', { key: a.name, class: 'settings-project__agent-row' },
                 h('div', { class: 'settings-project__agent-head' },
                   h('button', { type: 'button', class: 'settings-project__agent-chev' + (open ? ' is-open' : ''), onClick: () => setAgentPresetsOpened(p => Object.assign({}, p, { [a.name]: !open })), 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, '›'),
@@ -1034,14 +1039,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   ),
                   h('div', { class: 'settings-project__agent-field' },
                     h('span', { class: 'label' }, 'Tools'),
-                    h('div', { class: 'settings-project__agent-tools' },
-                      AGENT_TOOL_CHOICES.map(choice =>
-                        h('label', { key: choice.value, class: 'checkbox-row' },
-                          h('input', { type: 'checkbox', class: 'checkbox', checked: !restricted || a.tools.includes(choice.value), onChange: e => onAgentToolToggle(a.name, choice.value, e.target.checked) }),
-                          ' ' + choice.label
-                        )
-                      )
-                    )
+                    h(ToolTree, {
+                      groups: buildAgentToolGroups({
+                        choices: AGENT_TOOL_CHOICES,
+                        restricted,
+                        selected: (v) => a.tools.includes(v),
+                        mcpServers
+                      }),
+                      collapsedByDefault: true,
+                      onToggleGroup: (groupId, checked) => onAgentToolGroupToggle(a.name, groupId, checked),
+                      onToggleTool: (groupId, toolId, checked) => onAgentToolToggle(a.name, toolId, checked)
+                    })
                   ),
                   h('div', { class: 'row row--actions' },
                     h('span', { 'data-agent-status': a.name, class: 'status' })

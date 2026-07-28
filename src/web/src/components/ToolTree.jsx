@@ -119,6 +119,75 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
   );
 }
 
+// buildAgentToolGroups({ choices, restricted, selected, mcpServers }) -> groups
+//
+// Agent-editor flavour: one group per native tool, a "File tools"
+// group, and one group per configured MCP server — the same shape
+// as the chat tools card and the project Tools section, minus the
+// authorization controls (an agent allowlist has no auth meaning).
+//
+//   choices   — [{ value, label }] (native tools + 'mcp__<slug>' entries)
+//   restricted — agent has an explicit allowlist (tools !== undefined)
+//   selected   — (value) => bool: is this tool in the allowlist
+//                (only consulted when restricted; inherit = all on)
+// The group checkbox means "all tools in this group allowed":
+// checking a fully-off group enables all its tools; unchecking a
+// fully-on group disables all of them. A single on/off pair inside
+// a group never collapses the agent back to inherit — only every
+// tool on does (handled by the caller).
+export function buildAgentToolGroups({ choices, restricted, selected, mcpServers = [] }) {
+  const isOn = (value) => !restricted || selected(value);
+  const groups = [];
+  const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
+  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(c.value));
+  for (const c of natives) {
+    if (files.includes(c)) continue;
+    groups.push({
+      id: c.value,
+      name: c.label,
+      checked: isOn(c.value),
+      tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
+    });
+  }
+  if (files.length) {
+    groups.push({
+      id: 'files',
+      name: 'File tools',
+      description: 'read, list, search, write, edit',
+      checked: files.every((c) => isOn(c.value)),
+      tools: files.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
+    });
+  }
+  for (const c of choices) {
+    if (!c.value.startsWith('mcp__')) continue;
+    const slug = c.value.slice('mcp__'.length);
+    const server = mcpServers.find((s) => s && (s.slug || s.id) === slug);
+    const label = c.label.replace(/^MCP:\s*/, '');
+    const prefix = c.value + '__';
+    const tools = server && Array.isArray(server.tools) ? server.tools.map((tool) => {
+      const rawName = typeof tool === 'string' ? tool : tool && tool.name;
+      if (!rawName) return null;
+      const name = rawName.startsWith(prefix) ? rawName.slice(prefix.length) : rawName;
+      const id = rawName.startsWith('mcp__') ? rawName : prefix + rawName;
+      return {
+        id,
+        name,
+        description: shortDesc(tool && tool.description),
+        title: (tool && tool.description) || '',
+        checked: isOn(c.value) || isOn(id)
+      };
+    }).filter(Boolean) : [];
+    groups.push({
+      id: c.value, // Agent allowlists may select the whole server.
+      name: label,
+      description: (server && server.status ? server.status : 'MCP server') + (tools.length ? '' : ' · no tools discovered'),
+      checked: isOn(c.value),
+      tools: tools.length ? tools : [{ id: c.value, name: label, checked: isOn(c.value) }]
+    });
+  }
+  return groups;
+}
+
 // shortDesc(text, max) -> string
 //
 // Clamp a tool description to one short line. Catalog descriptions

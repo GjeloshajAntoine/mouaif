@@ -534,9 +534,6 @@
 .settings-project__agent-body { padding: 6px 8px 8px; border-top: 1px solid var(--border); }
 .settings-project__agent-field { margin-bottom: 6px; }
 .settings-project__agent-field .label { font-size: 0.82rem; color: var(--muted); display: block; margin-bottom: 2px; }
-.settings-project__agent-tools { display: flex; flex-wrap: wrap; gap: 4px; }
-.settings-project__agent-tools .checkbox-row { font-size: 0.82rem; padding: 2px 6px; background: var(--bg); border-radius: var(--r-sm); border: 1px solid var(--border); }
-.settings-project__agent-tools .checkbox-row .checkbox { margin-right: 4px; }
 .settings-project__add-agent { margin-top: 8px; width: 100%; }
 
 /* ---- MCP Registry browse ----------------------------------------- */

@@ -12,6 +12,7 @@ import { h, Fragment } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { fetchJson, setStatus, activeProject } from '../api.js';
 import { nav } from '../router.js';
+import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 
 function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
@@ -30,7 +31,8 @@ const NATIVE_TOOL_CHOICES = [
   { value: 'read_file', label: 'read_file' },
   { value: 'list_files', label: 'list_files' },
   { value: 'search_files', label: 'search_files' },
-  { value: 'write_file', label: 'write_file' }
+  { value: 'write_file', label: 'write_file' },
+  { value: 'edit_file', label: 'edit_file' }
 ];
 
 function toolChoicesWithMcp(servers) {
@@ -41,6 +43,47 @@ function toolChoicesWithMcp(servers) {
     }))
   );
 }
+
+// Apply a tool toggle to an agent allowlist, shared by the two
+// editors. currentTools === undefined means "inherit everything".
+// Returns { tools, send }: `tools` is the new state value
+// (undefined = inherit), `send` is what to PATCH ([] = inherit).
+function toggleToolInList(currentTools, toolId, checked, allChoices) {
+  const all = allChoices.map((c) => c.value);
+  const current = currentTools !== undefined ? currentTools.slice() : null;
+  let next;
+  if (current == null) {
+    // Was inheriting all tools; unchecking one builds an explicit list.
+    next = checked ? all.slice() : all.filter((t) => t !== toolId);
+  } else {
+    next = checked ? current.concat(toolId) : current.filter((t) => t !== toolId);
+  }
+  // De-dupe, and collapse back to "inherit" when everything is on.
+  next = Array.from(new Set(next));
+  const full = next.length === all.length && all.every((tool) => next.includes(tool));
+  const send = full ? [] : next;
+  return { tools: send.length ? send : undefined, send };
+}
+
+// Toggle every tool in a ToolTree group at once.
+function toggleGroupInList(currentTools, group, checked, allChoices) {
+  // MCP server groups are represented by their server slug in an agent
+  // allowlist; selecting it grants every discovered tool, including tools
+  // added by the server later.
+  if (group.id.startsWith('mcp__')) {
+    return toggleToolInList(currentTools, group.id, checked, allChoices);
+  }
+  let tools = currentTools;
+  let send = currentTools === undefined ? [] : currentTools.slice();
+  for (const tool of group.tools) {
+    const r = toggleToolInList(tools, tool.id, checked, allChoices);
+    tools = r.tools;
+    send = r.send;
+  }
+  return { tools, send };
+}
+
+export { toggleToolInList, toggleGroupInList };
 
 export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
@@ -148,7 +191,6 @@ export function SettingsAgentEditView(props) {
   const nameRef = useRef(null);
   const contentRef = useRef(null);
   const modelRef = useRef(null);
-  const toolsRef = useRef(null);
   const statusEl = useRef(null);
   const deleteBtn = useRef(null);
   const [projectModels, setProjectModels] = useState([]);
@@ -234,21 +276,17 @@ export function SettingsAgentEditView(props) {
   }
 
   function onToolToggle(tool, checked) {
-    const current = agent && Array.isArray(agent.tools) ? agent.tools.slice() : null;
-    let next;
-    if (current == null) {
-      // Was inheriting all tools; unchecking one builds an explicit list.
-      const all = NATIVE_TOOL_CHOICES.map(c => c.value);
-      next = checked ? all : all.filter(t => t !== tool);
-    } else {
-      next = checked ? current.concat(tool) : current.filter(t => t !== tool);
-    }
-    // De-dupe, and collapse back to "inherit" when everything is on.
-    next = Array.from(new Set(next));
-    const full = next.length >= NATIVE_TOOL_CHOICES.length;
-    const tools = full ? [] : next;
-    setAgent(a => Object.assign({}, a, { tools: tools.length ? tools : undefined }));
-    saveNow({ tools });
+    const r = toggleToolInList(agent && agent.tools, tool, checked, toolChoices);
+    setAgent(a => Object.assign({}, a, { tools: r.tools }));
+    saveNow({ tools: r.send });
+  }
+
+  function onToolGroupToggle(groupId, checked) {
+    const group = agentToolGroups.find(g => g.id === groupId);
+    if (!group) return;
+    const r = toggleGroupInList(agent && agent.tools, group, checked, toolChoices);
+    setAgent(a => Object.assign({}, a, { tools: r.tools }));
+    saveNow({ tools: r.send });
   }
 
   async function create() {
@@ -315,8 +353,17 @@ export function SettingsAgentEditView(props) {
     );
   }
 
-  const restricted = Array.isArray(agent.tools) && agent.tools.length > 0;
+  const restricted = agent.tools !== undefined;
   const toolChoices = toolChoicesWithMcp(mcpServers);
+  // Same group structure as the chat tools card and the project
+  // Tools section: one group per native tool, "File tools", one
+  // group per MCP server — minus the authorization controls.
+  const agentToolGroups = buildAgentToolGroups({
+    choices: toolChoices,
+    restricted,
+    selected: (v) => agent.tools.includes(v),
+    mcpServers
+  });
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -358,18 +405,12 @@ export function SettingsAgentEditView(props) {
       ),
       h('div', { class: 'row', hidden: isNew },
         h('span', { class: 'label' }, 'Tools'),
-        h('div', { ref: toolsRef, class: 'agent-edit__tools' },
-          toolChoices.map(choice =>
-            h('label', { key: choice.value, class: 'checkbox-row' },
-              h('input', {
-                type: 'checkbox', class: 'checkbox',
-                checked: !restricted || agent.tools.includes(choice.value),
-                onChange: e => onToolToggle(choice.value, e.target.checked)
-              }),
-              ' ' + choice.label
-            )
-          )
-        ),
+        h(ToolTree, {
+          groups: agentToolGroups,
+          collapsedByDefault: true,
+          onToggleGroup: onToolGroupToggle,
+          onToggleTool: (groupId, toolId, checked) => onToolToggle(toolId, checked)
+        }),
         h('p', { class: 'hint hint--compact' }, 'All checked = the agent inherits the chat\'s full tool surface. Uncheck to build an explicit allowlist.')
       ),
       h('div', { class: 'row row--actions' },

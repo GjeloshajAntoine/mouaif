@@ -2268,9 +2268,20 @@ async function streamChat(opts) {
             .map((spec) => spec && spec.function && spec.function.name)
             .filter((toolName) => toolName && toolName !== 'subagent');
       // An agent's tool allowlist restricts the nested call's surface.
+      // Agent tool entries can be exact tool names (e.g. "shell") or MCP
+      // server slugs (e.g. "mcp__fs") which should allow every tool from
+      // that server (mcp__fs__read_file, mcp__fs__write_file, ...).
       if (agentTools) {
         const allow = new Set(agentTools);
-        nestedEnabled = nestedEnabled.filter((toolName) => allow.has(toolName));
+        nestedEnabled = nestedEnabled.filter((toolName) => {
+          if (allow.has(toolName)) return true;
+          // Prefix match for MCP server slugs: "mcp__fs" allows
+          // "mcp__fs__read_file", "mcp__fs__write_file", etc.
+          for (const prefix of allow) {
+            if (prefix.startsWith('mcp__') && toolName.startsWith(prefix + '__')) return true;
+          }
+          return false;
+        });
       }
       const nested = await streamChat({
         model: nestedModel,

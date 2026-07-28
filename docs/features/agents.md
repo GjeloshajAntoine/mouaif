@@ -27,7 +27,7 @@ Open **Settings → Project → Agents** (in the *Project add-ons* group, alongs
 - **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.
 - **Instructions** is a multiline field; it saves on a short debounce.
 - **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The list row shows the pinned model id in its meta line.
-- **Tools** is a checklist of the native tools plus one entry per configured MCP server. All checked = inherit everything; unchecking builds an explicit allowlist.
+- **Tools** is a grouped tree of native tools and configured MCP servers. Each MCP group shows its status and discovered tool names/descriptions (using cached discovery data while stopped). Selecting an MCP server stores its server slug, so current and future tools from that server are available to the agent. All groups checked = inherit everything; unchecking builds an explicit allowlist.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
 ### REST
