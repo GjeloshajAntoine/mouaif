@@ -101,6 +101,27 @@ function modelForClient(model) {
   return connectionForClient(model);
 }
 
+// A redacted settings snapshot contains `hasApiKey`, which is a
+// response-only marker. Never persist it if a client round-trips the
+// snapshot through a generic patch endpoint. Existing secrets are
+// preserved unless the client explicitly submits a new `apiKey`.
+// Shared by PUT /api/settings/app and PUT /api/settings/project so the
+// redaction contract is symmetric across scopes.
+function sanitizeClientEntries(patch, key, existing) {
+  if (!patch || !Array.isArray(patch[key])) return;
+  const prior = Array.isArray(existing) ? existing : [];
+  patch[key] = patch[key].map((entry) => {
+    if (!entry || typeof entry !== 'object') return entry;
+    const clean = { ...entry };
+    delete clean.hasApiKey;
+    if (!Object.prototype.hasOwnProperty.call(clean, 'apiKey')) {
+      const prev = prior.find(x => x && x.id === clean.id);
+      if (prev && typeof prev.apiKey === 'string') clean.apiKey = prev.apiKey;
+    }
+    return clean;
+  });
+}
+
 // The app-level store accumulates server-only bookkeeping that the browser
 // has no business seeing: in-flight OAuth flows (`authPending`, which carry a
 // PKCE `codeVerifier` and CSRF `state` — real secrets), the CDP debugger URL,
@@ -603,23 +624,8 @@ async function handleSettings(req, res, parsed) {
     try { patch = await readJsonBody(req); }
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     try {
-      // A redacted settings snapshot contains `hasApiKey`, which is a
-      // response-only marker. Never persist it if a client round-trips the
-      // snapshot through this generic patch endpoint. Existing secrets are
-      // preserved unless the client explicitly submits a new `apiKey`.
       for (const key of ['providers', 'models']) {
-        if (!Array.isArray(patch[key])) continue;
-        const existing = Array.isArray(settings.getApp()[key]) ? settings.getApp()[key] : [];
-        patch[key] = patch[key].map((entry) => {
-          if (!entry || typeof entry !== 'object') return entry;
-          const clean = { ...entry };
-          delete clean.hasApiKey;
-          if (!Object.prototype.hasOwnProperty.call(clean, 'apiKey')) {
-            const prior = existing.find(x => x && x.id === clean.id);
-            if (prior && typeof prior.apiKey === 'string') clean.apiKey = prior.apiKey;
-          }
-          return clean;
-        });
+        sanitizeClientEntries(patch, key, settings.getApp()[key]);
       }
       const next = settings.setApp(patch);
       return sendJSON(res, 200, { app: settingsForClient(next) });
@@ -638,7 +644,14 @@ async function handleSettings(req, res, parsed) {
       return sendJSON(res, 400, { error: 'projectDir is required' });
     }
     try {
-      let next = Object.keys(patch).length ? settings.setProject(projectDir, patch) : settings.getProject(projectDir);
+      // Same redaction contract as the app store: a round-tripped project
+      // snapshot must not persist the response-only `hasApiKey` marker,
+      // and an entry re-submitted without `apiKey` keeps the stored one.
+      const currentProject = settings.getProject(projectDir);
+      for (const key of ['providers', 'models']) {
+        sanitizeClientEntries(patch, key, currentProject[key]);
+      }
+      let next = Object.keys(patch).length ? settings.setProject(projectDir, patch) : currentProject;
       if (Array.isArray(unset) && unset.length) next = settings.unsetProjectKeys(projectDir, unset);
       return sendJSON(res, 200, { project: settingsForClient(next), path: settings.getProjectPath(projectDir) });
     } catch (e) {
