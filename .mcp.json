@@ -33,7 +33,7 @@
       ],
       "env": {},
       "cwd": "",
-      "enabled": false,
+      "enabled": true,
       "createdAt": "2026-07-17T23:45:00.000Z"
     }
   ],

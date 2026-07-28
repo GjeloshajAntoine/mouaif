@@ -17,6 +17,17 @@ function parseHash() {
     const id = decodeURIComponent(h.slice('settings/providers/'.length));
     if (id && id !== 'new') return { name: 'settingsProviderEdit', id };
   }
+  if (h === 'settings/project/technical' || h.startsWith('settings/project/technical?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '' };
+  }
+  if (h.startsWith('settings/project/agents/')) {
+    const rest = h.slice('settings/project/agents/'.length);
+    const [name, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsProjectAgent', agentName: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/project' || h.startsWith('settings/project?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);

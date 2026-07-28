@@ -4,7 +4,9 @@
 
 Two surfaces in this commit. The REST surface is the endpoints the mobile UI calls; the mobile UI is the panel at `/web/` that lets a user edit app-level settings, provider connections, and raw project settings without `curl`.
 
-The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§3](../decisions.md). The current UI manages app-level provider connections and edits project models through the project's raw settings file.
+The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§3](../decisions.md). The current UI manages app-level provider connections and project settings.
+
+Project settings use a simple mobile-first list. Technical details (the raw `.mouaif.json` editor and resolved values) are on a dedicated page linked at the very bottom. Every agent row also opens a dedicated configuration page for its instructions, model, tools, and deletion action.
 
 ## Usage
 
