@@ -129,6 +129,70 @@ function openDb(home) {
   return db;
 }
 
+// ---- Model recent store (app DB) -----------------------------------------
+//
+// Per-project list of recently used models, capped at 20 entries per project.
+// Stored in a dedicated table so the web UI can fetch and update it without
+// reading/writing the whole app-level settings object.
+
+const MODEL_RECENT_TABLE = 'model_recent';
+const MODEL_RECENT_CAP = 20;
+
+function ensureModelRecentTable() {
+  db().exec(
+    `CREATE TABLE IF NOT EXISTS ${MODEL_RECENT_TABLE} (
+       project_dir TEXT NOT NULL,
+       provider    TEXT NOT NULL,
+       model_id    TEXT NOT NULL,
+       ts          INTEGER NOT NULL,
+       PRIMARY KEY (project_dir, provider, model_id)
+     );`
+  );
+}
+
+function getRecentModels(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') return [];
+  ensureModelRecentTable();
+  const rows = db()
+    .prepare(
+      `SELECT provider, model_id AS id, ts
+       FROM ${MODEL_RECENT_TABLE}
+       WHERE project_dir = ?
+       ORDER BY ts DESC
+       LIMIT ?`
+    )
+    .all(projectDir, MODEL_RECENT_CAP);
+  return rows;
+}
+
+function touchRecentModel(projectDir, provider, modelId) {
+  if (!projectDir || !provider || !modelId) return;
+  ensureModelRecentTable();
+  const now = Date.now();
+  db()
+    .prepare(
+      `INSERT INTO ${MODEL_RECENT_TABLE} (project_dir, provider, model_id, ts) VALUES (?, ?, ?, ?)
+       ON CONFLICT(project_dir, provider, model_id) DO UPDATE SET ts = excluded.ts`
+    )
+    .run(projectDir, provider, modelId, now);
+  // Reap any entries beyond the cap (oldest first)
+  db()
+    .prepare(
+      `DELETE FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ? AND rowid NOT IN (
+         SELECT rowid FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ? ORDER BY ts DESC LIMIT ?
+       )`
+    )
+    .run(projectDir, projectDir, MODEL_RECENT_CAP);
+}
+
+function clearRecentModels(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') return;
+  ensureModelRecentTable();
+  db()
+    .prepare(`DELETE FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ?`)
+    .run(projectDir);
+}
+
 // ---- Migrations ----------------------------------------------------------
 //
 // Each migration is an idempotent function keyed by name. The `_migrations`
@@ -454,6 +518,10 @@ module.exports = {
   getMcpToolCache,
   setMcpToolCache,
   deleteMcpToolCache,
+  // model recent (app DB)
+  getRecentModels,
+  touchRecentModel,
+  clearRecentModels,
   // migrations
   runMigrations,
   // lifecycle (mostly for tests)

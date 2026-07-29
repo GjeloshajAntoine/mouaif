@@ -6,10 +6,10 @@
 // All/<provider> filter, one section per provider, pinned + recent
 // sections, and a header refresh button.
 //
-// Pinned models and recently used models are persisted per project
-// in localStorage so they survive page reloads.
+// Pinned models are persisted per project in localStorage.
+// Recently used models are stored server-side in the app SQLite DB.
 
-import { fetchJson, fetchLiveModels, invalidateModelsCache } from '../../api.js';
+import { fetchJson, fetchLiveModels, invalidateModelsCache, touchRecentModel, loadRecentModels } from '../../api.js';
 
 // ---- Model bookmarks (pinned + recent) -------------------------------
 
@@ -34,31 +34,38 @@ function savePinned(state, pinned) {
 }
 
 // loadRecent(state) -> Array<{ provider, id, ts }> ordered by recency, newest first
+// Synchronous read from the in-memory cache on `state.recentModels`.
+// The cache is populated by `loadRecentFromServer()` (called when the picker opens).
 export function loadRecent(state) {
-  try {
-    const raw = localStorage.getItem(keyFor(state.props.projectDir) + '_recent');
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  return Array.isArray(state.recentModels) ? state.recentModels : [];
 }
 
-// saveRecent(state, recent)
-function saveRecent(state, recent) {
+// loadRecentFromServer(state) — fetch recent models from the server DB and cache them on state.
+export async function loadRecentFromServer(state) {
+  const dir = state.props && state.props.projectDir;
+  if (!dir) { state.recentModels = []; return; }
   try {
-    localStorage.setItem(keyFor(state.props.projectDir) + '_recent', JSON.stringify(recent));
-  } catch { /* non-fatal */ }
+    state.recentModels = await loadRecentModels(dir);
+  } catch {
+    state.recentModels = [];
+  }
 }
 
 // touchRecent(state, providerId, modelId) — mark a model as used now.
-// Capped at 20 entries. Duplicates are moved to the front.
+// Posts to the server (fire-and-forget) and updates the local cache synchronously.
 export function touchRecent(state, providerId, modelId) {
   if (!providerId || !modelId) return;
-  const recent = loadRecent(state);
+  // Update local cache immediately (optimistic)
+  const recent = Array.isArray(state.recentModels) ? [...state.recentModels] : [];
   const key = providerId + '\u0000' + modelId;
   const idx = recent.findIndex((r) => r.provider + '\u0000' + r.id === key);
   if (idx >= 0) recent.splice(idx, 1);
   recent.unshift({ provider: providerId, id: modelId, ts: Date.now() });
   if (recent.length > 20) recent.length = 20;
-  saveRecent(state, recent);
+  state.recentModels = recent;
+  // Fire-and-forget to the server DB
+  const dir = state.props && state.props.projectDir;
+  if (dir) touchRecentModel(dir, providerId, modelId).catch(() => {});
 }
 
 // togglePin(state, providerId, modelId) — add or remove a pin. Returns the new state (true = pinned).
@@ -582,7 +589,7 @@ function unbindPickerScrollLock(pop) {
 }
 
 // openModelPicker / closeModelPicker
-export function openModelPicker(state, refs) {
+export async function openModelPicker(state, refs) {
   const pop = refs.modelPickerPop.current;
   const trig = refs.modelPickerTrigger.current;
   if (!pop || !trig) return;
@@ -590,7 +597,12 @@ export function openModelPicker(state, refs) {
   bindKeyboardInset(pop);
   bindPickerScrollLock(pop, refs.modelPickerList.current);
   trig.setAttribute('aria-expanded', 'true');
+  // Render immediately so opening the picker never waits on the network.
+  // Refresh the recent section when the server-backed list arrives, unless
+  // the user closed the picker in the meantime.
   renderModelPicker(state, refs);
+  await loadRecentFromServer(state);
+  if (!pop.hidden) renderModelPicker(state, refs);
   if (refs.modelPickerSearch.current) {
     refs.modelPickerSearch.current.value = state.pickerFilter.q || '';
     refs.modelPickerSearch.current.focus();

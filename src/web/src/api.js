@@ -115,6 +115,29 @@ export function authNsForProvider(id) {
   return id;
 }
 
+// ---- Model recent (server-side, SQLite) -----------------------------
+
+export async function loadRecentModels(projectDir) {
+  if (!projectDir) return [];
+  const r = await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir));
+  if (r.status !== 200) return [];
+  return Array.isArray(r.body && r.body.recent) ? r.body.recent : [];
+}
+
+export async function touchRecentModel(projectDir, provider, modelId) {
+  if (!projectDir || !provider || !modelId) return;
+  await fetchJson('/api/settings/models/recent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectDir, provider, modelId })
+  });
+}
+
+export async function clearRecentModels(projectDir) {
+  if (!projectDir) return;
+  await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
+}
+
 // ---- Tiny toast helper -----------------------------------------------
 
 export function setStatus(ref, text, state) {
