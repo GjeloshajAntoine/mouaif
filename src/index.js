@@ -1379,8 +1379,8 @@ async function handleChats(req, res, parsed, sessionToken) {
       // Agents are subagent delegation targets only — never part of
       // the chat's system prompt. Skills are project instruction files.
       const skillState = agentSkills.resolve({ chat, projectDir: dir });
-      const skillMessages = agentSkills.load(dir, { chat });
-      for (const skill of skillMessages) parts.push(skill.content);
+      const skillCatalog = agentSkills.catalogMessage(dir, chat);
+      if (skillCatalog) parts.push(skillCatalog);
       if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
       // per-chat toggle as locked off when the project has it disabled.
@@ -1393,7 +1393,7 @@ async function handleChats(req, res, parsed, sessionToken) {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
         projectAgentFiles,
-        skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
+        skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, description: s.description, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
         projectSkills: skillState.projectEnabled,
         prompt,
         text: parts.join('\n\n')
@@ -1731,9 +1731,8 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // Agents are delegation targets for the `subagent` tool only — they
   // are never injected into the main chat stream (docs/features/agents.md).
   try {
-    const injected = agentSkills.load(projectDir, { chat });
-    for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
-    if (traceStream && injected.length) trace.write(traceStream, 'skills', { skills: injected.map((m) => m.id) });
+    const catalog = agentSkills.catalogMessage(projectDir, chat);
+    if (catalog) upstreamMessages.push({ role: 'system', content: catalog });
   } catch { /* non-fatal; stream proceeds without skills */ }
 
   // Agent features summary — a terse list of enabled features and their
@@ -1981,6 +1980,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     // legacy fields above stay so existing API clients keep working.
     // Chat tool filter wins; otherwise all project tools are offered.
     enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+    chat,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.

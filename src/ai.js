@@ -1273,6 +1273,12 @@ async function runSingleToolCall(c, cx) {
       }
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
+    } else if (c.name === 'activate_skill') {
+      // Activation is a read-only lookup constrained to the enum of enabled,
+      // project-contained skills, so it does not require a separate approval.
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
     } else if (c.name === 'report_progress') {
       // report_progress is a read-only UI/update tool. It honors
       // the project `off` visibility gate, but does not show an
@@ -1523,6 +1529,10 @@ async function streamChat(opts) {
   catch { /* list_features tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/task.js').SPEC); }
   catch { /* task tool module unavailable; skip */ }
+  try {
+    const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
+    if (skillSpec) toolSpecs.push(skillSpec);
+  } catch { /* skills unavailable; skip */ }
   try {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
@@ -2174,6 +2184,14 @@ async function streamChat(opts) {
       // thing up front; the per-call line survives prompt compaction).
       const identity = (out && out.identity) || 'mouaif shell';
       return { ok: !!out.ok, content: '# ' + identity + '\n' + JSON.stringify(out), result: out };
+    }
+
+    if (name === 'activate_skill') {
+      try {
+        return require('./agentSkills.js').activate(callOpts && callOpts.projectDir, opts && opts.chat, args && args.name);
+      } catch (e) {
+        return { ok: false, content: JSON.stringify({ error: e.message, code: e.code || 'ENO_SKILL' }), result: { error: e.message, code: e.code || 'ENO_SKILL' } };
+      }
     }
 
     // Native task tool. Manages structured tasks with subtasks, progress
