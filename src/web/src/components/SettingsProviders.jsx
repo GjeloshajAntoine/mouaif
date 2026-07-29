@@ -262,8 +262,21 @@ export function SettingsProviderEditView(props) {
       });
     } catch (err) { setStatus(signInStatus, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(signInStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    const win = window.open(r.body.authorizeUrl, '_blank', 'noopener');
-    if (!win) setStatus(signInStatus, 'popup blocked — open the URL manually', 'error');
+    const authorizeUrl = r.body.authorizeUrl;
+    // On iOS (especially PWA standalone mode) `window.open` is blocked — there
+    // are no tabs. Detect the failure and fall back to redirecting the current
+    // page. The OAuth callback page now auto-redirects back to /web/ after
+    // sign-in completes, so the user lands back at the app.
+    const win = window.open(authorizeUrl, '_blank', 'noopener');
+    if (!win) {
+      // Popup blocked (iOS PWA, aggressive Safari, etc.). Redirect the current
+      // page to the OAuth provider. The provider redirects back to our callback
+      // endpoint, which handles the exchange and auto-redirects back to /web/.
+      // Stash the provider so the app can detect completion on reload.
+      try { sessionStorage.setItem('oauthPending', JSON.stringify({ provider, started: Date.now() })); } catch (_) { /* storage unavailable */ }
+      window.location.href = authorizeUrl;
+      return;
+    }
     setStatus(signInStatus, 'waiting for ' + def.label + ' to redirect back…', 'busy');
 
     const before = new Set((accounts[authNsForProvider(provider)] || []).slice());
