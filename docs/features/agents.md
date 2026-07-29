@@ -84,7 +84,7 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 - Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
-- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `src/web/src/components/SettingsProject.jsx` (link row + count summary).
+- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `src/web/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `src/web/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor).
 
 ## Related
 

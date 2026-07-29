@@ -1,9 +1,9 @@
 'use strict';
 
 // Offline tests for src/agents.js — the subagent-persona store.
-// Covers: name validation, create/read/update/remove, immutability of
-// the name, tool-allowlist normalization, the 64 KiB cap, and the
-// legacy `agentPresets` -> `agents` migration read.
+// Covers: name validation, create/read/update/remove, rename via update,
+// tool-allowlist normalization, the 64 KiB cap, and the legacy
+// `agentPresets` -> `agents` migration read.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -58,17 +58,30 @@ ok(!agents.isValidName('x'.repeat(65)), 'too long invalid');
   passed++;
 }
 
-// ---- Update: name immutable, content + tools patchable -------------------
+// ---- Update: rename, content + tools patchable ---------------------------
 {
   const dir = tmpProject();
   agents.create(dir, { name: 'reviewer', content: 'v1', tools: ['read_file'] });
-  const updated = agents.update(dir, 'reviewer', { content: 'v2', name: 'hacked' });
-  ok(updated && updated.name === 'reviewer', 'update keeps the name immutable');
+  const updated = agents.update(dir, 'reviewer', { content: 'v2', name: 'auditor' });
+  ok(updated && updated.name === 'auditor', 'update renames the agent');
   ok(updated.content === 'v2', 'update patches content');
   ok(Array.isArray(updated.tools) && updated.tools[0] === 'read_file', 'update keeps tools when not patched');
-  const cleared = agents.update(dir, 'reviewer', { tools: [] });
+  ok(agents.get(dir, 'reviewer') === null, 'old name no longer resolves');
+  ok(agents.get(dir, 'auditor') && agents.get(dir, 'auditor').content === 'v2', 'new name resolves');
+  const cleared = agents.update(dir, 'auditor', { tools: [] });
   ok(cleared.tools === undefined, 'empty tools array collapses to inherit (undefined)');
   ok(agents.update(dir, 'ghost', { content: 'x' }) === null, 'update unknown returns null');
+  // Rename validation: empty, invalid, and duplicate names are rejected.
+  agents.create(dir, { name: 'other', content: 'x' });
+  assert.throws(() => agents.update(dir, 'auditor', { name: '' }), /must match/);
+  passed++;
+  assert.throws(() => agents.update(dir, 'auditor', { name: 'bad name' }), /must match/);
+  passed++;
+  assert.throws(() => agents.update(dir, 'auditor', { name: 'other' }), /already exists/);
+  passed++;
+  // Renaming to the same name is a no-op, not a duplicate error.
+  const same = agents.update(dir, 'auditor', { name: 'auditor' });
+  ok(same && same.name === 'auditor', 'rename to self is a no-op');
 }
 
 // ---- Tool allowlist normalization ----------------------------------------

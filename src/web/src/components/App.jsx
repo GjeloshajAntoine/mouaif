@@ -1,6 +1,7 @@
 // mouaif web — App shell, Header, BottomTab
 import { h, Fragment } from 'preact';
 import { route, activeProject, setActiveProject } from '../api.js';
+import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
@@ -10,6 +11,7 @@ import { SettingsNotificationsView } from './SettingsNotifications.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
 import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
+import { SettingsAgentsView, SettingsAgentEditView } from './SettingsAgents.jsx';
 import { SettingsMcpView } from './SettingsMcp.jsx';
 import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
 import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
@@ -59,6 +61,29 @@ function Header() {
 
 export function App() {
   const view = route.value;
+  // Detect OAuth sign-in completion from the redirect-back flow (iOS PWA /
+  // popup-blocked fallback). When startSignIn() redirects the current page to
+  // the OAuth provider, the callback handler auto-redirects back to /web/
+  // after the exchange completes. On mount, check sessionStorage for a
+  // pending-oauth marker and, if found, navigate to the provider settings so
+  // the user sees the signed-in account without having to find the provider
+  // manually. The marker is removed after one read so a subsequent page
+  // reload doesn't re-trigger the navigation.
+  try {
+    const raw = sessionStorage.getItem('oauthPending');
+    if (raw) {
+      sessionStorage.removeItem('oauthPending');
+      const pending = JSON.parse(raw);
+      if (pending && pending.provider && Date.now() - (pending.started || 0) < 10 * 60 * 1000) {
+        // Navigate only if the user isn't already on a deeper route
+        // (e.g. they navigated away after the sign-in completed).
+        if (view.name === 'chats' || view.name === 'settings' || view.name === 'settingsProviders') {
+          nav('settings/providers/' + encodeURIComponent(pending.provider));
+        }
+      }
+    }
+  } catch (_) { /* sessionStorage unavailable */ }
+
   // Track the active project so SettingsPrompts (and any other
   // project-scoped view reached from Settings) can resolve the
   // project directory without asking the user to type it. The chat
@@ -69,10 +94,10 @@ export function App() {
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
-    && view.name !== 'settingsProjectTechnical' && view.name !== 'settingsProjectAgent'
+    && view.name !== 'settingsProjectTechnical'
     && view.name !== 'settingsDefaults' && view.name !== 'settingsNotifications'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
-    && view.name !== 'settingsAgents'
+    && view.name !== 'settingsAgents' && view.name !== 'settingsAgentEdit'
     && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
     && view.name !== 'settingsTags'
     && view.name !== 'settingsPricing'
@@ -89,11 +114,12 @@ export function App() {
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
   else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical' });
-  else if (view.name === 'settingsProjectAgent') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'agent', agentName: view.agentName });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsPromptEdit') body = h(SettingsPromptEditView, { id: view.id, projectDir: view.projectDir });
+  else if (view.name === 'settingsAgents') body = h(SettingsAgentsView, { projectDir: view.projectDir });
+  else if (view.name === 'settingsAgentEdit') body = h(SettingsAgentEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
   else if (view.name === 'settingsMcpEdit') body = h(SettingsMcpEditView, { id: view.id, projectDir: view.projectDir, scope: view.scope });
   else if (view.name === 'settingsMcpRegistry') body = h(SettingsMcpRegistryView, { projectDir: view.projectDir });

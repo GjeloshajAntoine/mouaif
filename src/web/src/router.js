@@ -22,16 +22,31 @@ function parseHash() {
     const params = new URLSearchParams(qs);
     return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '' };
   }
+  // Legacy alias: agent editing used to live under settings/project.
+  // Redirect to the standalone agents editor so old links keep working.
   if (h.startsWith('settings/project/agents/')) {
     const rest = h.slice('settings/project/agents/'.length);
     const [name, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsProjectAgent', agentName: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsAgentEdit', id: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
   }
   if (h === 'settings/project' || h.startsWith('settings/project?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
     return { name: 'settingsProject', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
+  }
+  // settings/agents is project-scoped (same resolution as prompts: the
+  // active project is the default, ?projectDir= overrides).
+  if (h === 'settings/agents' || h.startsWith('settings/agents?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsAgents', projectDir: params.get('projectDir') || '' };
+  }
+  if (h.startsWith('settings/agents/')) {
+    const rest = h.slice('settings/agents/'.length);
+    const [id, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsAgentEdit', id, projectDir: params.get('projectDir') || '' };
   }
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/notifications') return { name: 'settingsNotifications' };

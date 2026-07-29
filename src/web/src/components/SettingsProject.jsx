@@ -11,10 +11,9 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject, projectsReload } from '../api.js';
 import { nav } from '../router.js';
-import { ToolTree, shortDesc, buildAgentToolGroups } from './ToolTree.jsx';
-import { toggleToolInList, toggleGroupInList } from './SettingsAgents.jsx';
+import { ToolTree, shortDesc } from './ToolTree.jsx';
 
-export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main', agentName = '' } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main' } = {}) {
   const statusEl = useRef(null);
   const pathEl = useRef(null);
   // Structured controls
@@ -50,10 +49,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
   const mcpSummary = useRef(null);
-  // Agents — subagent delegation personas (name + instructions + tools + model)
+  // Agents — subagent delegation personas (list + inline create only;
+  // editing happens in SettingsAgents.jsx)
   const [agentPresets, setAgentPresets] = useState([]);
-  const [projectModels, setProjectModels] = useState([]);
-  const [agentPresetsOpened, setAgentPresetsOpened] = useState({}); // { [name]: true } for expanded editors
   const [agentCreating, setAgentCreating] = useState(false); // inline new-agent form visible
   const [agentCreateStatus, setAgentCreateStatus] = useState('');
   const newAgentName = useRef(null);
@@ -246,12 +244,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     try {
       const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(d));
       if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
-    } catch { /* keep empty list */ }
-
-    // Project models — feed the per-agent model picker.
-    try {
-      const mr = await fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(d));
-      if (mr.status === 200 && Array.isArray(mr.body.models)) setProjectModels(mr.body.models);
     } catch { /* keep empty list */ }
 
     // Agent files: project-level enable + file list.
@@ -769,89 +761,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
   // ---- Agent handlers -------------------------------------------------
 
-  // The tool allowlist choices shown on an agent's editor. Native tools
-  // plus one entry per configured MCP server.
-  const AGENT_TOOL_CHOICES = [
-    { value: 'shell', label: 'shell' },
-    { value: 'subagent', label: 'subagent' },
-    { value: 'task', label: 'task' },
-    { value: 'report_progress', label: 'report_progress' },
-    { value: 'ask_user', label: 'ask_user' },
-    { value: 'list_features', label: 'list_features' },
-    { value: 'read_file', label: 'read_file' },
-    { value: 'list_files', label: 'list_files' },
-    { value: 'search_files', label: 'search_files' },
-    { value: 'write_file', label: 'write_file' },
-    { value: 'edit_file', label: 'edit_file' }
-  ].concat(
-    mcpServers.filter(s => s && s.id).map(s => ({
-      value: 'mcp__' + (s.slug || s.id),
-      label: 'MCP: ' + (s.name || s.id)
-    }))
-  );
-
-  // Agents are subagent delegation personas: name + instructions +
-  // an optional tool allowlist. All edits auto-save (same pattern as
-  // the other settings on this page). Name is immutable after create.
-
-  // Debounced per-agent saver for the instructions textarea.
-  const agentSaveTimers = useRef({});
-  function saveAgentSoon(name, patch, delay) {
-    const timers = agentSaveTimers.current;
-    if (timers[name]) clearTimeout(timers[name]);
-    setAgentStatus(name, '…');
-    timers[name] = setTimeout(() => saveAgent(name, patch), delay == null ? 350 : delay);
-  }
-  function setAgentStatus(name, msg) {
-    const el = document.querySelector('[data-agent-status="' + name + '"]');
-    if (el) el.textContent = msg;
-  }
-  async function saveAgent(name, patch) {
-    setAgentStatus(name, 'saving…');
-    const r = await fetchJson('/api/agents/' + encodeURIComponent(name), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
-    });
-    setAgentStatus(name, r.status === 200 ? 'saved' : ('HTTP ' + r.status));
-    if (r.status === 200) {
-      setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, r.body.agent || patch) : a));
-    }
-  }
-
-  function onAgentContentInput(name, value) {
-    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { content: value }) : a));
-    saveAgentSoon(name, { content: value });
-  }
-
-  function onAgentModelChange(name, value) {
-    const modelId = value || '';
-    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { modelId: modelId || undefined }) : a));
-    saveAgent(name, { modelId });
-  }
-
-  function onAgentToolToggle(name, tool, checked) {
-    const agent = agentPresets.find((a) => a.name === name);
-    if (!agent) return;
-    const r = toggleToolInList(agent.tools, tool, checked, AGENT_TOOL_CHOICES);
-    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: r.tools }) : a));
-    saveAgent(name, { tools: r.send });
-  }
-
-  function onAgentToolGroupToggle(name, groupId, checked) {
-    const agent = agentPresets.find((a) => a.name === name);
-    if (!agent) return;
-    const group = buildAgentToolGroups({
-      choices: AGENT_TOOL_CHOICES,
-      restricted: agent.tools !== undefined,
-      selected: (v) => agent.tools.includes(v),
-      mcpServers
-    }).find((g) => g.id === groupId);
-    if (!group) return;
-    const r = toggleGroupInList(agent.tools, group, checked, AGENT_TOOL_CHOICES);
-    setAgentPresets((prev) => prev.map((a) => a.name === name ? Object.assign({}, a, { tools: r.tools }) : a));
-    saveAgent(name, { tools: r.send });
-  }
+  // Agent editing lives in SettingsAgents.jsx (#/settings/agents/<name>);
+  // this page only lists agents and creates new ones.
 
   function openAgentCreator() {
     setAgentCreateStatus('');
@@ -881,15 +792,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setAgentCreating(false);
     setAgentCreateStatus('');
     setAgentPresets((prev) => prev.concat(r.body.agent));
-    if (created) setAgentPresetsOpened(p => Object.assign({}, p, { [created]: true }));
-  }
-
-  async function deleteAgentPreset(name) {
-    if (!confirm('Delete agent "' + name + '"?')) return;
-    const r = await fetchJson('/api/agents/' + encodeURIComponent(name) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
-    if (r.status === 200) {
-      setAgentPresets((prev) => prev.filter((a) => a.name !== name));
-    }
+    // Jump straight into the full editor for the new agent.
+    if (created) nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()));
   }
 
   if (page === 'technical') return h(Fragment, null,
@@ -915,46 +819,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       )
     )
   );
-
-  if (page === 'agent') {
-    const agent = agentPresets.find(item => item.name === agentName);
-    const restricted = agent && agent.tools !== undefined;
-    return h(Fragment, null,
-      h('div', { class: 'view-head' },
-        h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
-        h('h2', { class: 'view-title' }, agentName || 'Agent')
-      ),
-      h('section', { class: 'settings-project' },
-        !agent ? h('div', { class: 'group settings-project__section' }, h('p', { class: 'hint' }, 'Loading agent…')) :
-        h('div', { class: 'group settings-project__section settings-project__agent-body' },
-          h('label', { class: 'row settings-project__agent-field' },
-            h('span', { class: 'label' }, 'Instructions'),
-            h('textarea', { class: 'input settings-project__mono', rows: 8, value: agent.content || '', onInput: e => onAgentContentInput(agent.name, e.target.value), placeholder: 'You are an assistant who…' })
-          ),
-          h('label', { class: 'row settings-project__agent-field' },
-            h('span', { class: 'label' }, 'Model'),
-            h('select', { class: 'input', value: agent.modelId || '', onChange: e => onAgentModelChange(agent.name, e.target.value) },
-              h('option', { value: '' }, 'Inherit chat model'),
-              projectModels.map(m => h('option', { key: m.id, value: m.id }, (m.label || m.id) + (m.provider ? ' (' + m.provider + ')' : '')))
-            )
-          ),
-          h('div', { class: 'settings-project__agent-field' },
-            h('span', { class: 'label' }, 'Tools'),
-            h(ToolTree, {
-              groups: buildAgentToolGroups({ choices: AGENT_TOOL_CHOICES, restricted, selected: value => agent.tools.includes(value), mcpServers }),
-              collapsedByDefault: true,
-              onToggleGroup: (groupId, checked) => onAgentToolGroupToggle(agent.name, groupId, checked),
-              onToggleTool: (groupId, toolId, checked) => onAgentToolToggle(agent.name, toolId, checked)
-            })
-          ),
-          h('div', { class: 'row row--actions' },
-            h('span', { 'data-agent-status': agent.name, class: 'status' }),
-            h('button', { type: 'button', class: 'btn btn--danger', onClick: () => deleteAgentPreset(agent.name) }, 'Delete agent')
-          )
-        )
-      )
-    );
-  }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -1133,7 +997,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agents' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Edits save automatically; names are fixed after creation.')
+              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own name, instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Tap an agent to edit it; edits save automatically.')
             )
           )
         ),
@@ -1142,7 +1006,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             agentPresets.map(a => h('li', { key: a.name },
               h('a', {
                 class: 'group__row settings-project__agent-link',
-                href: '#/settings/project/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()),
+                href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()),
                 'aria-label': 'Configure ' + a.name
               },
                 h('span', { class: 'group__row-body' },

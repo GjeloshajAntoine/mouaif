@@ -1031,6 +1031,37 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
+  // GET /api/settings/models/recent?projectDir=<abs>
+  // Returns the recent models list for the given project (newest first, capped at 20).
+  if (urlPath === '/api/settings/models/recent' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    return sendJSON(res, 200, { recent: settings.getRecentModels(dir) });
+  }
+
+  // POST /api/settings/models/recent  body: { projectDir, provider, modelId }
+  // Records a model as recently used (touches timestamp, deduplicates, caps at 20).
+  if (urlPath === '/api/settings/models/recent' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const { projectDir, provider, modelId } = body || {};
+    if (!projectDir || !provider || !modelId) {
+      return sendJSON(res, 400, { error: 'projectDir, provider, and modelId are required' });
+    }
+    settings.touchRecentModel(projectDir, provider, modelId);
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  // DELETE /api/settings/models/recent?projectDir=<abs>
+  // Clears the recent models list for the given project.
+  if (urlPath === '/api/settings/models/recent' && method === 'DELETE') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    settings.clearRecentModels(dir);
+    return sendJSON(res, 200, { ok: true });
+  }
+
   // POST /api/settings/app/reset  body: { keys: ['models', 'flags'] }
   // Clears the listed app-level keys, restoring them to defaults.
   // Implementation: build a fresh patch that contains only the keys
@@ -3006,7 +3037,17 @@ async function handleAuth(req, res, parsed) {
 // are the same in both cases.
 function htmlPage(title, body) {
   const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '<p>You can close this tab.</p></body></html>';
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '</body></html>';
+}
+
+// Tiny meta-refresh snippet included in OAuth callback pages so the page
+// auto-redirects back to the app after sign-in completes. Critical on iOS
+// PWA standalone mode where there is no tab bar and the user cannot
+// manually "close this tab". The delay is long enough for the user to read
+// the status message before the redirect fires.
+function redirectMeta(url) {
+  const safe = String(url).replace(/["<>]/g, '');
+  return '<meta http-equiv="refresh" content="2; url=' + safe + '"><p>Redirecting back to the app…</p>';
 }
 
 async function finishOAuth({ provider, state, code, errorParam, format }) {
@@ -3072,14 +3113,24 @@ async function handleOAuthCallback(req, res, parsed) {
 
   const result = await finishOAuth({ provider, state, code, errorParam, format: 'html' });
   res.writeHead(result.status, { 'Content-Type': 'text/html; charset=utf-8' });
+  // On iOS (especially PWA standalone mode) the popup that opened the OAuth
+  // provider may be the current page itself — there is no other tab to close.
+  // Auto-redirect back to the app after a brief pause so the user sees the
+  // result and lands back at the UI. The redirect is relative (same origin)
+  // so the existing session cookie carries over.
+  const returnUrl = '/web/';
   if (result.status === 200) {
-    res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + result.account + '</code>.</p>'));
+    res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + result.account + '</code>.</p>'
+      + redirectMeta(returnUrl)));
   } else if (result.code === 'EPROVIDER_ERROR') {
-    res.end(htmlPage('Sign-in failed', '<p class="err">' + result.error + '</p>'));
+    res.end(htmlPage('Sign-in failed', '<p class="err">' + result.error + '</p>'
+      + redirectMeta(returnUrl)));
   } else if (result.code === 'ENOEXCHANGE') {
-    res.end(htmlPage('OAuth not configured', '<p class="err">Sign-in for <code>' + provider + '</code> is not configured in this build. A later commit will register the provider exchange.</p>'));
+    res.end(htmlPage('OAuth not configured', '<p class="err">Sign-in for <code>' + provider + '</code> is not configured in this build. A later commit will register the provider exchange.</p>'
+      + redirectMeta(returnUrl)));
   } else {
-    res.end(htmlPage('OAuth callback', '<p class="err">' + (result.error || 'unknown error') + '</p>'));
+    res.end(htmlPage('OAuth callback', '<p class="err">' + (result.error || 'unknown error') + '</p>'
+      + redirectMeta(returnUrl)));
   }
 }
 
@@ -3613,7 +3664,7 @@ async function handleFeatures(req, res, parsed) {
 //   GET    /api/agents?projectDir=<abs>          -> { agents }
 //   POST   /api/agents  body: { projectDir, name, content, tools?, modelId? }
 //   GET    /api/agents/:name?projectDir=<abs>    -> { agent } | 404
-//   PATCH  /api/agents/:name  body: { projectDir, content?, tools?, modelId? }
+//   PATCH  /api/agents/:name  body: { projectDir, name?, content?, tools?, modelId? }
 //   DELETE /api/agents/:name?projectDir=<abs>
 
 async function handleAgents(req, res, parsed) {
