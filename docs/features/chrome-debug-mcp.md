@@ -62,6 +62,7 @@ If you need both surfaces on the exact same browser, edit the MCP row back to an
 - **No secrets in the entry.** The env block is empty; the package only needs the debug URL. Anything sensitive stays in the keyring ([docs/features/auth.md](./auth.md)).
 - **Authorization defaults to `ask`.** MCP tool calls go through the same gate as the native tools ([docs/features/tool-authorization.md](./tool-authorization.md)). The user approves each `click` / `type_text` / `navigate` call before the runner executes, or flips the **MCP tools** mode to **Allow** (or adds auto-approve patterns) at the top of **Settings → MCP**.
 - **Args are not shell-parsed.** Each flag is a single token passed straight to the child; the same rule as every other MCP server (decision §18).
+- **Artifact paths stay in the project.** Chrome tools that write screenshots, traces, Lighthouse reports, heap snapshots, or network payloads may use project-relative values for `filePath`, `outputDirPath`, `requestFilePath`, and `responseFilePath`. Mouaif converts them to the absolute paths required by Chrome DevTools MCP immediately before dispatch and rejects paths outside the active project.
 - **Failure is contained.** A `chrome-debug` crash surfaces as `EMCP_TRANSPORT` and marks just that server `errored` — the rest of the chat (and every other MCP server) keeps running.
 
 ## Implementation notes

@@ -1063,6 +1063,33 @@ async function listDiscoveredTools(projectDir, serverId) {
 
 // ---- Tool dispatch ------------------------------------------------------
 
+// Chrome DevTools MCP requires absolute paths for artifacts, while mouaif's
+// model-facing file convention is project-relative. Resolve only its known
+// artifact path arguments here and keep them confined to the active project.
+const CHROME_ARTIFACT_PATH_KEYS = new Set([
+  'filePath',
+  'outputDirPath',
+  'requestFilePath',
+  'responseFilePath'
+]);
+
+function resolveChromeArtifactPaths(projectDir, serverSlug, args) {
+  if (serverSlug !== 'chrome-debug' || !args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const root = path.resolve(projectDir);
+  const next = Object.assign({}, args);
+  for (const key of CHROME_ARTIFACT_PATH_KEYS) {
+    const value = next[key];
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const resolved = path.resolve(root, value);
+    const relative = path.relative(root, resolved);
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+      throw err('EBADINPUT', key + ' must be inside the project directory', { key });
+    }
+    next[key] = resolved;
+  }
+  return next;
+}
+
 // callTool: route a model tool_call to the right server and return the
 // normalized result. `serverSlug` is the slug the model saw in the
 // tool name; `toolName` is the bare tool name from the server. Used
@@ -1088,6 +1115,8 @@ async function callTool(projectDir, serverSlug, toolName, args) {
   else if (typeof callArgs !== 'object' || Array.isArray(callArgs)) {
     throw err('EBADINPUT', 'tool args must be a JSON object', { toolName });
   }
+
+  callArgs = resolveChromeArtifactPaths(projectDir, serverSlug, callArgs);
 
   let result;
   try {
@@ -1259,6 +1288,7 @@ module.exports = {
   parseServerSlugAndToolName,
   normalizeHeaders,
   buildChildEnv,
+  resolveChromeArtifactPaths,
   // CRUD
   listServers,
   getServer,
