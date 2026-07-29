@@ -45,6 +45,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
+  const skillsToggle = useRef(null);
+  const disabledSkills = useRef(null);
+  const skillsStatus = useRef(null);
   const promptsCard = useRef(null);
   const promptsSummary = useRef(null);
   const mcpCard = useRef(null);
@@ -257,6 +260,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         ? currentProject.current.agentFileNames.join('\n')
         : '';
     }
+    if (skillsToggle.current) skillsToggle.current.checked = currentProject.current.skills !== false;
+    if (disabledSkills.current) disabledSkills.current.value = Array.isArray(currentProject.current.disabledSkills)
+      ? currentProject.current.disabledSkills.join('\n') : '';
 
     // Advanced: raw project file + resolved object.
     if (editor.current) editor.current.value = JSON.stringify(currentProject.current, null, 2);
@@ -481,6 +487,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       agentFilesStatus.current.textContent = 'HTTP ' + r.status;
     }
   }
+  async function saveSkills() {
+    const ids = ((disabledSkills.current && disabledSkills.current.value) || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    await patchProject({ skills: skillsToggle.current ? !!skillsToggle.current.checked : true, disabledSkills: ids }, skillsStatus, 'saved');
+  }
+
   // Debounced version for the file-names textarea.
   function makeAgentFilesSaver() {
     let t = null;
@@ -968,6 +979,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               }),
               h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
             )
+          ),
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Skills'),
+              h('div', { class: 'settings-project__item-note' }, 'Inject .agents/skills/*/SKILL.md files. Disable the family here or in the chat Tools popup. ', h('span', { ref: skillsStatus, class: 'settings-project__item-status' }))
+            ),
+            h('label', { class: 'switch' },
+              h('input', { ref: skillsToggle, id: 'sp-skills', type: 'checkbox', role: 'switch', onChange: saveSkills }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+            )
+          ),
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-disabled-skills' }, 'Disabled skills'),
+              h('div', { class: 'settings-project__item-note' }, 'One skill folder name per line. These skills stay disabled while other Agent files remain active.')
+            ),
+            h('textarea', { ref: disabledSkills, class: 'input settings-project__mono', id: 'sp-disabled-skills', rows: 3, spellcheck: false, placeholder: 'legacy-skill', onChange: saveSkills })
           ),
           h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },

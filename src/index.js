@@ -22,6 +22,7 @@ const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
 const agentFiles = require('./agentFiles.js');
+const agentSkills = require('./agentSkills.js');
 const agentFeatures = require('./agentFeatures.js');
 const agents = require('./agents.js');
 const mcp = require('./mcp.js');
@@ -1376,7 +1377,10 @@ async function handleChats(req, res, parsed, sessionToken) {
         }
       } catch { /* agent files stay null */ }
       // Agents are subagent delegation targets only — never part of
-      // the chat's system prompt.
+      // the chat's system prompt. Skills are project instruction files.
+      const skillState = agentSkills.resolve({ chat, projectDir: dir });
+      const skillMessages = agentSkills.load(dir, { chat });
+      for (const skill of skillMessages) parts.push(skill.content);
       if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
       // per-chat toggle as locked off when the project has it disabled.
@@ -1389,6 +1393,8 @@ async function handleChats(req, res, parsed, sessionToken) {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
         projectAgentFiles,
+        skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
+        projectSkills: skillState.projectEnabled,
         prompt,
         text: parts.join('\n\n')
       });
@@ -1724,6 +1730,11 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   } catch { /* non-fatal; stream proceeds without agent files */ }
   // Agents are delegation targets for the `subagent` tool only — they
   // are never injected into the main chat stream (docs/features/agents.md).
+  try {
+    const injected = agentSkills.load(projectDir, { chat });
+    for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
+    if (traceStream && injected.length) trace.write(traceStream, 'skills', { skills: injected.map((m) => m.id) });
+  } catch { /* non-fatal; stream proceeds without skills */ }
 
   // Agent features summary — a terse list of enabled features and their
   // authorization state in the current project. Tells the model what it

@@ -95,6 +95,7 @@ export function useChatState(props) {
   const systemPrompt = useRef(null);
   const tools = useRef({ catalog: [], filter: null });
   const agentFiles = useRef({ files: [], enabled: true, explicit: false });
+  const skills = useRef({ items: [], enabled: true, projectLocked: false });
   const mcpServers = useRef([]);
   // Project agents (subagent delegation personas). Feeds the @-mention
   // popup's Agents section and the leading @agent <task> direct dispatch.
@@ -142,6 +143,8 @@ export function useChatState(props) {
     set tools(v) { tools.current = v; },
     get agentFiles() { return agentFiles.current; },
     set agentFiles(v) { agentFiles.current = v; },
+    get skills() { return skills.current; },
+    set skills(v) { skills.current = v; },
     get mcpServers() { return mcpServers.current; },
     set mcpServers(v) { mcpServers.current = v; },
     get agents() { return agents.current; },
@@ -250,6 +253,10 @@ export function useChatState(props) {
   const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
   const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
   const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound), [chat]);
+  const onToggleSkills = useCallback((next) => {
+    state.skills = Object.assign({}, state.skills, { enabled: next });
+    updateChatBound({ skills: next });
+  }, [chat]);
   const onToggleMcpServer = useCallback((id, enabled) => toggleMcpServer(id, enabled, state, refs, updateChatBound, (txt, st) => setChatStatus(refs, txt, st), projectDir, chatId), [projectDir, chatId]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
@@ -279,6 +286,7 @@ export function useChatState(props) {
   state._toggleTool = onToggleTool;
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
+  state._toggleSkills = onToggleSkills;
   state._toggleMcpServer = onToggleMcpServer;
 
   // Save tool authorization (Off/Ask/Allow) directly to the server.
@@ -360,6 +368,12 @@ export function useChatState(props) {
           enabled: afEnabled,
           explicit: typeof c.agentFiles === 'boolean',
           projectLocked: projectGate === false  // project has it off → toggle locked
+        };
+        const skillGate = rSys.status === 200 ? rSys.body.projectSkills : true;
+        skills.current = {
+          items: (rSys.status === 200 && Array.isArray(rSys.body.skills)) ? rSys.body.skills : [],
+          enabled: skillGate !== false && c.skills !== false,
+          projectLocked: skillGate === false
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];

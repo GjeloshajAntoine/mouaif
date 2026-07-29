@@ -83,7 +83,8 @@ function normalizeChat(chat) {
     thinkingLevel: typeof chat.thinkingLevel === 'string' ? chat.thinkingLevel : '',
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
-    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined
+    agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined,
+    skills: typeof chat.skills === 'boolean' ? chat.skills : undefined
   };
 }
 
@@ -224,6 +225,11 @@ function updateChat(projectDir, chatId, patch) {
         ? undefined
         : patch.agentFiles === true;
     }
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
+      dbPatch.skills = (patch.skills === null || patch.skills === undefined)
+        ? undefined
+        : patch.skills === true;
+    }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'lastOpenedAt')) {
       dbPatch.lastOpenedAt = patch.lastOpenedAt;
     }
@@ -270,6 +276,11 @@ function updateChat(projectDir, chatId, patch) {
     merged.agentFiles = (patch.agentFiles === null || patch.agentFiles === undefined)
       ? undefined
       : patch.agentFiles === true;
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
+    merged.skills = (patch.skills === null || patch.skills === undefined)
+      ? undefined
+      : patch.skills === true;
   }
   project.chats[idx] = merged;
   writeProject(projectDir, project);

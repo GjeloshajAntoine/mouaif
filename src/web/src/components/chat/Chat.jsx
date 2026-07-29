@@ -217,11 +217,13 @@ export function ChatView(props) {
         mcpServers: s.state.mcpServers,
         usedTools: s.state.usedTools,
         agentFiles: s.state.agentFiles,
+        skills: s.state.skills,
         toolAuth: s.state.toolAuth,
         onToggleTool: s.state._toggleTool,
         onToggleToolGroup: s.state._toggleToolGroup,
         onToggleMcpServer: s.state._toggleMcpServer,
         onToggleAgentFiles: s.state._toggleAgentFiles,
+        onToggleSkills: s.state._toggleSkills,
         onSaveToolAuth: s.state._saveToolAuth
       })
     ),

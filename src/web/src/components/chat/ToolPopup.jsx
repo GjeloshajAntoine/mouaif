@@ -52,11 +52,13 @@ export function ToolPopup(props) {
     mcpServers,
     usedTools,
     agentFiles,
+    skills,
     toolAuth,
     onToggleTool,
     onToggleToolGroup,
     onToggleMcpServer,
     onToggleAgentFiles,
+    onToggleSkills,
     onSaveToolAuth
   } = props;
 
@@ -119,6 +121,10 @@ export function ToolPopup(props) {
       if (onToggleAgentFiles) onToggleAgentFiles(checked);
       return;
     }
+    if (groupId === 'skills') {
+      if (onToggleSkills) onToggleSkills(checked);
+      return;
+    }
     if (groupId.startsWith('mcp-')) {
       if (onToggleMcpServer) onToggleMcpServer(groupId.slice(4), checked);
       return;
@@ -149,6 +155,18 @@ export function ToolPopup(props) {
         checked: af.enabled,
         disabled: !!af.projectLocked
       }))
+    });
+  }
+
+  const sk = skills || { items: [], enabled: true, projectLocked: false };
+  if (sk.items.length) {
+    groups.push({
+      id: 'skills',
+      name: 'Skills',
+      description: sk.items.filter((s) => s.enabled).map((s) => s.name).join(', '),
+      checked: sk.enabled,
+      disabled: !!sk.projectLocked,
+      tools: sk.items.map((s) => ({ id: s.id, name: s.name, description: '', checked: sk.enabled && s.enabled, disabled: true }))
     });
   }
 
