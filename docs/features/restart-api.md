@@ -48,6 +48,6 @@ Response:
 - Defined in [`src/index.js`](../../src/index.js) as `handleRestart()`.
 - The handler sets `lifecycle.restarting = true` immediately to serialize concurrent requests, then responds synchronously before the delayed teardown begins.
 - Teardown (after `delayMs`): stops all MCP children via `mcp.stopAll()`, then calls the optional `lifecycle.restart()` hook. If the hook fails, `restarting` is reset to `false` and the server continues running.
-- If no `lifecycle.restart` function exists, the process calls `process.exit(0)` — an external supervisor must detect the exit and relaunch.
+- If no `lifecycle.restart` function exists, or if the restart hook throws, the process calls `process.exit(0)` so an external supervisor can relaunch it.
 - The `delayMs` timeout is `.unref()`'d so it does not keep the process alive if the server is already shutting down.
 - The endpoint is not gated behind authentication — it respects the same middleware as all other API routes (session check, CORS, etc.).
