@@ -232,19 +232,19 @@ function buildAgentFilesCard(state) {
   }
   card.appendChild(list);
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'chat-view__agent-files-toggle';
-  if (af.projectLocked) {
-    toggle.disabled = true;
-    toggle.setAttribute('aria-disabled', 'true');
-    toggle.textContent = 'Locked';
-  } else {
-    toggle.setAttribute('aria-pressed', af.enabled ? 'true' : 'false');
-    toggle.textContent = af.enabled ? 'Disable' : 'Enable';
-    toggle.addEventListener('click', () => state._toggleAgentFiles && state._toggleAgentFiles(!af.enabled));
-  }
-  card.appendChild(toggle);
+  const toggleLabel = document.createElement('label');
+  toggleLabel.className = 'chat-view__agent-files-toggle';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = !!af.enabled;
+  toggle.disabled = !!af.projectLocked;
+  toggle.setAttribute('aria-label', 'Use agent files');
+  toggle.addEventListener('change', () => state._toggleAgentFiles && state._toggleAgentFiles(toggle.checked));
+  const toggleText = document.createElement('span');
+  toggleText.textContent = af.projectLocked ? 'Use agent files (locked)' : 'Use agent files';
+  toggleLabel.appendChild(toggle);
+  toggleLabel.appendChild(toggleText);
+  card.appendChild(toggleLabel);
 
   return card;
 }

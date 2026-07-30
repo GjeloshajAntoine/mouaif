@@ -40,6 +40,10 @@ The model has a `list_features` tool available in every chat. It takes no argume
 
 The tool bypasses the authorization gate — it is read-only metadata and never requires user approval.
 
+### Chat controls
+
+When discovered agent files are shown in the chat card, a **Use agent files** checkbox controls whether all discovered files are injected on the next turn. The checkbox is disabled and marked as locked when agent files are disabled in project settings.
+
 ## REST
 
 | Method | Path | Query | Response |
