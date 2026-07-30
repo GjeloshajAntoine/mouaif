@@ -264,7 +264,7 @@
   padding: 3px 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: 1.25rem;
   flex: 1 1 auto;
   min-width: 0;
   box-shadow: var(--shadow-sm);
