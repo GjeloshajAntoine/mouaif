@@ -27,15 +27,19 @@ function check(name, cond, detail) {
 }
 
 async function main() {
-  // Chrome's configured slug is normalized to chrome_debug. Ensure artifact
-  // arguments use that real model-facing spelling and remain project-bound.
-  const artifact = mcp.resolveChromeArtifactPaths(projectDir, 'chrome_debug', { filePath: 'artifacts/shot.png' });
-  check('Chrome artifact path resolves for normalized slug', artifact.filePath === path.join(projectDir, 'artifacts', 'shot.png'));
+  // Standard output path arguments are generic across MCP servers. Resolve
+  // project-relative values without depending on a server or tool name.
+  const artifact = mcp.resolveMcpOutputPaths(projectDir, {
+    filePath: 'artifacts/shot.png',
+    outputPath: 'reports/result.json'
+  });
+  check('MCP filePath resolves inside project', artifact.filePath === path.join(projectDir, 'artifacts', 'shot.png'));
+  check('MCP outputPath resolves inside project', artifact.outputPath === path.join(projectDir, 'reports', 'result.json'));
   try {
-    mcp.resolveChromeArtifactPaths(projectDir, 'chrome_debug', { filePath: '../escape.png' });
-    check('Chrome artifact path rejects escape', false);
+    mcp.resolveMcpOutputPaths(projectDir, { filePath: '../escape.png' });
+    check('MCP output path rejects escape', false);
   } catch (e) {
-    check('Chrome artifact path rejects escape', e && e.code === 'EBADINPUT', e && e.message);
+    check('MCP output path rejects escape', e && e.code === 'EBADINPUT', e && e.message);
   }
 
   const serverScript = path.join(__dirname, 'test-mcp-server.js');

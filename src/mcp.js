@@ -1073,24 +1073,22 @@ async function listDiscoveredTools(projectDir, serverId) {
 
 // ---- Tool dispatch ------------------------------------------------------
 
-// Chrome DevTools MCP requires absolute paths for artifacts, while mouaif's
-// model-facing file convention is project-relative. Resolve only its known
-// artifact path arguments here and keep them confined to the active project.
-const CHROME_ARTIFACT_PATH_KEYS = new Set([
+// MCP servers commonly require absolute filesystem paths even though mouaif's
+// model-facing convention is project-relative. Resolve standard output path
+// arguments for every MCP server and keep them confined to the active project.
+const MCP_OUTPUT_PATH_KEYS = new Set([
   'filePath',
+  'outputPath',
   'outputDirPath',
   'requestFilePath',
   'responseFilePath'
 ]);
 
-function resolveChromeArtifactPaths(projectDir, serverSlug, args) {
-  // Slugs are normalized with slugify(), so the configured "chrome-debug"
-  // server is model-facing as "chrome_debug". Accept the legacy spelling too.
-  if (serverSlug !== 'chrome_debug' && serverSlug !== 'chrome-debug') return args;
+function resolveMcpOutputPaths(projectDir, args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
   const root = path.resolve(projectDir);
   const next = Object.assign({}, args);
-  for (const key of CHROME_ARTIFACT_PATH_KEYS) {
+  for (const key of MCP_OUTPUT_PATH_KEYS) {
     const value = next[key];
     if (typeof value !== 'string' || !value.trim()) continue;
     const resolved = path.resolve(root, value);
@@ -1129,7 +1127,7 @@ async function callTool(projectDir, serverSlug, toolName, args) {
     throw err('EBADINPUT', 'tool args must be a JSON object', { toolName });
   }
 
-  callArgs = resolveChromeArtifactPaths(projectDir, serverSlug, callArgs);
+  callArgs = resolveMcpOutputPaths(projectDir, callArgs);
 
   let result;
   try {
@@ -1301,7 +1299,7 @@ module.exports = {
   parseServerSlugAndToolName,
   normalizeHeaders,
   buildChildEnv,
-  resolveChromeArtifactPaths,
+  resolveMcpOutputPaths,
   // CRUD
   listServers,
   getServer,
