@@ -48,7 +48,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { URL } = require('url');
+const { URL, pathToFileURL } = require('url');
 const settings = require('./settings.js');
 
 // ---- SDK lazy load ------------------------------------------------------
@@ -911,12 +911,22 @@ async function startServer(projectDir, serverId) {
     version: require('./package-version.js')
   }, {
     capabilities: {
-      // roots: we can expose the project directory as a filesystem root
+      // roots: expose the active project as the MCP server's writable workspace.
       roots: { listChanged: false }
       // sampling: not supported — mouaif is a thin client, not an LLM host
       // elicitation: not supported — no UI for server-initiated user prompts
     }
   });
+
+  // Advertising the roots capability is not enough: servers such as Chrome
+  // DevTools MCP call roots/list before allowing an artifact write. Return the
+  // active project as a file URL so their canonical path boundary matches ours.
+  if (hasProject && typeof client.setRequestHandler === 'function') {
+    const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+    client.setRequestHandler(ListRootsRequestSchema, () => ({
+      roots: [{ uri: pathToFileURL(path.resolve(projectDir)).href, name: path.basename(path.resolve(projectDir)) }]
+    }));
+  }
 
   const session = {
     entry,
@@ -1074,7 +1084,10 @@ const CHROME_ARTIFACT_PATH_KEYS = new Set([
 ]);
 
 function resolveChromeArtifactPaths(projectDir, serverSlug, args) {
-  if (serverSlug !== 'chrome-debug' || !args || typeof args !== 'object' || Array.isArray(args)) return args;
+  // Slugs are normalized with slugify(), so the configured "chrome-debug"
+  // server is model-facing as "chrome_debug". Accept the legacy spelling too.
+  if (serverSlug !== 'chrome_debug' && serverSlug !== 'chrome-debug') return args;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
   const root = path.resolve(projectDir);
   const next = Object.assign({}, args);
   for (const key of CHROME_ARTIFACT_PATH_KEYS) {

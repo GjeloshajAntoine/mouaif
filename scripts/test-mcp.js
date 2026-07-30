@@ -27,6 +27,17 @@ function check(name, cond, detail) {
 }
 
 async function main() {
+  // Chrome's configured slug is normalized to chrome_debug. Ensure artifact
+  // arguments use that real model-facing spelling and remain project-bound.
+  const artifact = mcp.resolveChromeArtifactPaths(projectDir, 'chrome_debug', { filePath: 'artifacts/shot.png' });
+  check('Chrome artifact path resolves for normalized slug', artifact.filePath === path.join(projectDir, 'artifacts', 'shot.png'));
+  try {
+    mcp.resolveChromeArtifactPaths(projectDir, 'chrome_debug', { filePath: '../escape.png' });
+    check('Chrome artifact path rejects escape', false);
+  } catch (e) {
+    check('Chrome artifact path rejects escape', e && e.code === 'EBADINPUT', e && e.message);
+  }
+
   const serverScript = path.join(__dirname, 'test-mcp-server.js');
   if (!fs.existsSync(serverScript)) {
     console.error('Missing test server script at ' + serverScript);
