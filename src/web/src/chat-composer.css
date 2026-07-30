@@ -261,7 +261,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 2px;
-  padding: 3px 4px;
+  padding: 3px 2px 3px 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 1.25rem;
