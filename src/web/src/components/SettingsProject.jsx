@@ -41,7 +41,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
-  const [mcpServerAuth, setMcpServerAuth] = useState({});
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -194,13 +193,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       // server says it is, and fall back to `ask` on the first load.
       const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
-      // Per-server MCP authorization: load the servers map from the
-      // MCP authorization block so each server row can show its
-      // Off/Ask/Allow segment. Only the mode (not the allowlist) is
-      // used here — allowlist editing is in the dedicated MCP page.
-      const mcp = authz.status === 200 && authz.body.mcp;
-      const servers = (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {};
-      setMcpServerAuth(servers);
     } catch { /* keep ask + empty allowlist */ }
 
     // Load the tools catalog for the visibility tree. This is the
@@ -403,29 +395,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 
-  // Per-server MCP authorization (no allowlist — that's in the
-  // dedicated MCP settings page). The segment writes the mode
-  // directly to mcp.servers.<slug>.
-  function pickServerMcpAuth(slug, newMode) {
-    const patch = {};
-    if (newMode === 'inherit') {
-      patch[slug] = null;
-    } else {
-      patch[slug] = { mode: newMode };
-    }
-    setMcpServerAuth((prev) => {
-      const next = Object.assign({}, prev);
-      if (newMode === 'inherit') delete next[slug];
-      else next[slug] = { mode: newMode };
-      return next;
-    });
-    fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), mcp: { servers: patch } })
-    });
-  }
-
   // The shared MCP fallback gate lives under `mcp.mode` in the
   // authorization payload (not `tools.mcp`), so it gets its own save
   // path. Per-server overrides write `mcp.servers.<slug>` instead.
@@ -567,7 +536,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // line; the parent checkbox is a shortcut for Off ↔ Ask (the
   // "disabled / enabled" toggle). Full Off/Ask/Allow still lives in
   // the segment — the checkbox never blocks it.
-  function buildSettingsToolGroups(catalog, mcpServers) {
+  function buildSettingsToolGroups(catalog) {
     const groups = [];
     const isOn = (mode) => mode !== 'off';
     const leaf = (t, extra) => Object.assign({
@@ -695,70 +664,14 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
-    // One group per configured MCP server (enable checkbox), then
-    // the shared MCP authorization gate. Servers render even when
-    // stopped — the catalog only lists running servers, so fall
-    // back to the cached tool list on the server record.
-    const servers = (mcpServers || []).filter((s) => s && s.id);
-    for (const server of servers) {
-      const slug = server.slug || server.id;
-      const prefix = 'mcp__' + slug + '__';
-      let serverTools = catalog.filter((t) => t.kind === 'mcp' && t.source === slug);
-      if (!serverTools.length && Array.isArray(server.tools)) {
-        serverTools = server.tools.map((t) => {
-          const name = typeof t === 'string' ? t : (t && t.name);
-          if (!name) return null;
-          return {
-            name: name.startsWith(prefix) ? name : prefix + name,
-            kind: 'mcp',
-            source: slug,
-            description: (t && t.description) || ''
-          };
-        }).filter(Boolean);
-      }
-      const off = server.enabled === false;
-      const entry = mcpServerAuth[slug];
-      const effMode = (entry && entry.mode) || 'ask';
-      groups.push({
-        id: 'mcp-' + server.id,
-        name: server.name || server.id,
-        description: server.status || 'stopped',
-        checked: !off,
-        control: toolModeSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMcpAuth(slug, mode), [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: serverTools.map((t) => {
-          const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
-          return leaf(t, { name: short, checked: !off, disabled: off });
-        })
-      });
-    }
-
     return groups;
-  }
-
-  // Enable/disable one MCP server, then refresh the server list so
-  // the tree picks up the new status + cached tools.
-  async function toggleMcpServerEnabled(id, enabled) {
-    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), enabled })
-    });
-    if (r.status !== 200) return;
-    const mr = await fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(dir()));
-    if (mr.status === 200 && Array.isArray(mr.body.servers)) setMcpServers(mr.body.servers);
   }
 
   // Checkbox on a settings group = enabled/disabled shortcut:
   //   uncheck -> save mode 'off'
   //   check   -> save mode 'ask' (the safe default)
-  // The segment remains the only way to pick 'allow'. MCP server
-  // groups enable/disable the server itself instead.
+  // The segment remains the only way to pick 'allow'.
   function toggleSettingsGroup(groupId, checked) {
-    if (groupId.startsWith('mcp-')) { toggleMcpServerEnabled(groupId.slice(4), checked); return; }
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'shell') pickShellMode(mode);
     else if (groupId === 'subagent') pickSubagentMode(mode);
@@ -938,7 +851,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('div', { class: 'settings-project__tools-tree' },
           toolsCatalog.length
             ? h(ToolTree, {
-                groups: buildSettingsToolGroups(toolsCatalog, mcpServers),
+                groups: buildSettingsToolGroups(toolsCatalog),
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId) => toggleSettingsGroup(groupId, true),
                 collapsedByDefault: true
@@ -1064,6 +977,41 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   h('span', { class: 'status', 'aria-live': 'polite' }, agentCreateStatus)
                 )
               )
+        )
+      ),
+
+      // ---- MCP servers ------------------------------------------------
+      // Same compact edge-to-edge item list as Agents: each server is
+      // a name row that links to its editor in the dedicated MCP page.
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('more'),
+          h('span', null, 'MCP servers'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About MCP servers' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Model Context Protocol servers this project can use. Tap a server to edit it (transport, command, env, headers, per-tool authorization) or to start/stop it. Per-server authorization and auto-approve lists live on the server’s own page.')
+            )
+          )
+        ),
+        h('div', { class: 'settings-project__agents' },
+          mcpServers.length > 0 && h('ul', { class: 'settings-project__agents-list' },
+            mcpServers.map(s => h('li', { key: s.id },
+              h('a', {
+                class: 'group__row settings-project__agent-link',
+                href: '#/settings/mcp/' + encodeURIComponent(s.id) + '?projectDir=' + encodeURIComponent(dir()) + '&scope=' + encodeURIComponent(s.scope === 'app' ? 'app' : 'project'),
+                'aria-label': 'Configure ' + (s.name || s.id)
+              },
+                h('span', { class: 'group__row-body' },
+                  h('span', { class: 'group__row-label' }, s.name || s.id, ' ',
+                    h('span', { class: 'mcp__scope mcp__scope--' + (s.scope === 'app' ? 'app' : 'project') }, s.scope === 'app' ? 'app' : 'project')),
+                  h('span', { class: 'settings-project__link-sub' }, (s.status || 'stopped') + (s.enabled === false ? ' · disabled' : ''))
+                ),
+                h('span', { class: 'group__row-detail' }, s.tools ? (s.tools.length + (s.tools.length === 1 ? ' tool' : ' tools')) : 'no tools'),
+                h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+              )
+            ))
+          )
         )
       ),
 
