@@ -40,7 +40,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
-  const [mcpServers, setMcpServers] = useState([]);
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -199,15 +198,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     // same data the chat view uses, so the settings page shows the
     // same hierarchical checkbox list.
     try {
-      const [toolsRes, mcpRes] = await Promise.all([
-        fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(d)),
-        fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(d))
-      ]);
+      const toolsRes = await fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(d));
       if (toolsRes.status === 200 && Array.isArray(toolsRes.body.tools)) {
         setToolsCatalog(toolsRes.body.tools);
-      }
-      if (mcpRes.status === 200 && Array.isArray(mcpRes.body.servers)) {
-        setMcpServers(mcpRes.body.servers);
       }
     } catch { /* keep empty catalog */ }
 
@@ -977,41 +970,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   h('span', { class: 'status', 'aria-live': 'polite' }, agentCreateStatus)
                 )
               )
-        )
-      ),
-
-      // ---- MCP servers ------------------------------------------------
-      // Same compact edge-to-edge item list as Agents: each server is
-      // a name row that links to its editor in the dedicated MCP page.
-      h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('more'),
-          h('span', null, 'MCP servers'),
-          h('details', { class: 'settings-project__info' },
-            h('summary', { 'aria-label': 'About MCP servers' }, '?'),
-            h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Model Context Protocol servers this project can use. Tap a server to edit it (transport, command, env, headers, per-tool authorization) or to start/stop it. Per-server authorization and auto-approve lists live on the server’s own page.')
-            )
-          )
-        ),
-        h('div', { class: 'settings-project__agents' },
-          mcpServers.length > 0 && h('ul', { class: 'settings-project__agents-list' },
-            mcpServers.map(s => h('li', { key: s.id },
-              h('a', {
-                class: 'group__row settings-project__agent-link',
-                href: '#/settings/mcp/' + encodeURIComponent(s.id) + '?projectDir=' + encodeURIComponent(dir()) + '&scope=' + encodeURIComponent(s.scope === 'app' ? 'app' : 'project'),
-                'aria-label': 'Configure ' + (s.name || s.id)
-              },
-                h('span', { class: 'group__row-body' },
-                  h('span', { class: 'group__row-label' }, s.name || s.id, ' ',
-                    h('span', { class: 'mcp__scope mcp__scope--' + (s.scope === 'app' ? 'app' : 'project') }, s.scope === 'app' ? 'app' : 'project')),
-                  h('span', { class: 'settings-project__link-sub' }, (s.status || 'stopped') + (s.enabled === false ? ' · disabled' : ''))
-                ),
-                h('span', { class: 'group__row-detail' }, s.tools ? (s.tools.length + (s.tools.length === 1 ? ' tool' : ' tools')) : 'no tools'),
-                h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-              )
-            ))
-          )
         )
       ),
 
