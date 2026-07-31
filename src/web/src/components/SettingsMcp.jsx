@@ -75,35 +75,6 @@ export function SettingsMcpView(props = {}) {
     saveMcpAuthorization({ mode, allowlist });
   }
 
-  // Per-server override. 'inherit' clears the entry (a null patch);
-  // anything else persists { mode } (+ allowlist for mode 'allowlist').
-  function pickServerMode(slug, value) {
-    const servers = Object.assign({}, mcpAuth.servers);
-    const patch = {};
-    if (value === 'inherit') {
-      delete servers[slug];
-      patch[slug] = null;
-    } else {
-      const entry = { mode: value };
-      if (value === 'allowlist') entry.allowlist = (servers[slug] && servers[slug].allowlist) || [];
-      servers[slug] = entry;
-      patch[slug] = entry;
-    }
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: patch });
-  }
-
-  function onServerAllowlistInput(slug, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    // An empty pattern list under Ask means "no override" — clear the
-    // entry so the shared fallback stays in charge.
-    if (!allowlist.length) { pickServerMode(slug, 'inherit'); return; }
-    const servers = Object.assign({}, mcpAuth.servers);
-    servers[slug] = { mode: 'allowlist', allowlist };
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
-  }
-
   // Debounced so typing a regex doesn't fire a PUT per keystroke.
   const saveMcpAllowlistDebounced = useRef((() => {
     let t = null;
@@ -111,14 +82,6 @@ export function SettingsMcpView(props = {}) {
       if (t) clearTimeout(t);
       setMcpAuthStatusMsg('…');
       t = setTimeout(() => onMcpAllowlistInput(text), 350);
-    };
-  })());
-  const saveServerAllowlistDebounced = useRef((() => {
-    const timers = new Map();
-    return (slug, text) => {
-      if (timers.has(slug)) clearTimeout(timers.get(slug));
-      setMcpAuthStatusMsg('…');
-      timers.set(slug, setTimeout(() => onServerAllowlistInput(slug, text), 350));
     };
   })());
 
@@ -320,63 +283,6 @@ export function SettingsMcpView(props = {}) {
                 )
               ),
               authSegs('mcp-app-default', segMode(mcpAuth.mode), pickMcpMode),
-              segMode(mcpAuth.mode) === 'ask'
-                ? h('details', { class: 'settings-project__allowlist' },
-                    h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-                  )
-                : null
-            )
-          )
-        )
-      : null,
-    // ---- Tool permissions (project list only) ---------------------------
-    projectDir
-      ? h('div', { class: 'group' },
-          h('div', { class: 'group__title' }, 'Tool permissions', h('span', { class: 'group__title-note' }, 'Per server, falls back to the app default')),
-          h('ul', { class: 'group__list' },
-            serversList.map((s) => {
-              const slug = s.slug || s.id;
-              const entry = mcpAuth.servers && mcpAuth.servers[slug];
-              const overridden = !!(entry && entry.mode);
-              const effMode = overridden ? entry.mode : mcpAuth.mode;
-              const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
-              return h('li', { key: s.id, class: 'settings-project__tool' },
-                h('div', { class: 'settings-project__tool-head' },
-                  h('div', { class: 'settings-project__item-title' }, s.name || slug, ' ', scopeBadge(s)),
-                  h('div', { class: 'settings-project__item-note' },
-                    overridden ? ('Set to ' + effMode + ' for this server. ') : ('Using this project\'s default (' + mcpAuth.mode + '). '),
-                    segMode(effMode) === 'off' ? 'Hidden from the model — costs no tokens. ' : null,
-                    h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
-                  )
-                ),
-                authSegs('mcp-server-' + slug, segMode(effMode), (mode) => pickServerMode(slug, mode)),
-                overridden
-                  ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use project default')
-                  : null,
-                segMode(effMode) === 'ask'
-                  ? h('details', { class: 'settings-project__allowlist' },
-                      h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
-                      h('p', { class: 'settings-project__help' }, 'Calls from this server matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                      h('textarea', {
-                        class: 'input settings-project__mono', rows: 3, spellcheck: false,
-                        placeholder: `^mcp__${slug}__search`, value: effAllowlist.join('\n'),
-                        onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
-                      })
-                    )
-                  : null
-              );
-            }),
-            h('li', { class: 'settings-project__tool' },
-              h('div', { class: 'settings-project__tool-head' },
-                h('div', { class: 'settings-project__item-title' }, 'This project\'s default (all MCP servers)'),
-                h('div', { class: 'settings-project__item-note' },
-                  'Applies to every server above without its own rule. Leave it on Ask to fall back to the app-wide default. ',
-                  segMode(mcpAuth.mode) === 'off' ? 'Off hides MCP tools from the model — costs no tokens. ' : null
-                )
-              ),
-              authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
               segMode(mcpAuth.mode) === 'ask'
                 ? h('details', { class: 'settings-project__allowlist' },
                     h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),

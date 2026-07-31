@@ -25,7 +25,7 @@ A project sees the **union** of both scopes; a project entry whose slug matches 
 The two scopes have two homes in Settings, each its own page (no tabs):
 
 - **Settings → App defaults → MCP servers** (`#/settings/mcp`) — the app-wide list, available in every project. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). It also carries the single **Default permission** row (the app-level gate). A **Project servers** row at the bottom deep-links into a project's list by path.
-- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) — the merged view for that project: app entries first, each marked with an **app** / **project** badge, plus the per-server **Tool permissions** rows and the project default gate (per-server / per-tool maps live in `.mcp.json`; the project default falls through to the app default).
+- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) — the merged view for that project: app entries first, each marked with an **app** / **project** badge, plus the project default gate (per-server / per-tool authorization maps live in `.mcp.json`; the project default falls through to the app default).
 
 ### Adding a server
 
