@@ -110,7 +110,12 @@ async function main() {
   await withStubbedFetch(async (url) => {
     lastUrl = url;
     return { ok: true, status: 200, statusText: 'OK', json: async () => ({
-      data: [{ id: 'openai/gpt-5' }, { id: 'anthropic/claude-sonnet-5' }]
+      data: [
+        { id: 'openai/gpt-5' },
+        { id: 'anthropic/claude-sonnet-5',
+          pricing: { prompt: '0.000004', completion: '0.000016', image: '0.000008',
+                     input_cache_read: '0.0000008', input_cache_write: '0.000005' } }
+      ]
     }) };
   }, async () => {
     const out = await ai.listModels('openrouter', null);
@@ -118,6 +123,11 @@ async function main() {
     check('openrouter: 2 entries', out.length === 2);
     check('openrouter: anthropic/claude-sonnet-5 present',
       out.some((m) => m.id === 'anthropic/claude-sonnet-5'));
+    check('openrouter: pricing + cache factors pulled from the API',
+      out.some((m) => m.id === 'anthropic/claude-sonnet-5'
+        && m.pricing && Math.abs(m.pricing.inputPer1K - 0.004) < 1e-12
+        && Math.abs(m.pricing.cacheReadFactor - 0.2) < 1e-12),
+      JSON.stringify(out));
   });
 
   // 7) Gemini parser: { models: [{ name, displayName, inputTokenLimit, supportedGenerationMethods }] }

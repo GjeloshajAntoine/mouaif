@@ -77,7 +77,17 @@ try {
     { role: 'system', content: 'custom prompt' },
     { role: 'user', content: 'question' }
   ], true);
-  assert.equal(anthropic.body.system, 'profile\n\ntagged file\n\ncustom prompt');
+  // Prompt caching marks the single combined system block with
+  // cache_control. The system is sent as an array (a plain string would
+  // silently drop the cache_control field).
+  assert.deepEqual(anthropic.body.system, [
+    {
+      type: 'text',
+      text: 'profile\n\ntagged file\n\ncustom prompt',
+      cache_control: { type: 'ephemeral' }
+    }
+  ]);
+  assert.equal(anthropic.headers['anthropic-beta'], 'prompt-caching-2024-07-31');
   const gemini = ai.BUILDERS.gemini({ id: 'gemini-test', apiKey: 'x' }, [
     { role: 'system', content: 'profile' },
     { role: 'system', content: 'tagged file' },

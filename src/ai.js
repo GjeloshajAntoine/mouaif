@@ -78,7 +78,7 @@ const ENDPOINTS = {
           'anthropic-beta': 'oauth-2025-04-20'
         };
       }
-      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01' };
+      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' };
     }
   },
   'gemini': {
@@ -353,11 +353,106 @@ function parseOpenAIShapedModels(body, thinkingFor) {
       label: m.id,
       contextWindow: typeof m.context_window === 'number' ? m.context_window : undefined
     };
+    // OpenRouter advertises real per-model prices on GET /api/v1/models
+    // (`pricing.prompt` / `pricing.completion`, strings in $ per TOKEN)
+    // plus cache rates (`pricing.input_cache_read` / `pricing.input_cache_write`,
+    // also $ per token). When present, fold them into the record as a
+    // `pricing` block so the cost line uses the provider's actual numbers
+    // instead of the best-effort built-in table. All values are optional
+    // and validated — a missing or malformed field is dropped, never a
+    // crash.
+    const pricing = openRouterPricingFromModel(m);
+    if (pricing) rec.pricing = pricing;
     const thinking = typeof thinkingFor === 'function' ? thinkingFor(m) : undefined;
     if (thinking) rec.thinking = thinking;
     out.push(rec);
   }
   return out;
+}
+
+// openRouterPricingFromModel(m) -> { inputPer1K, outputPer1K, cacheReadFactor?, cacheWriteFactor? } | undefined
+//
+// OpenRouter's GET /api/v1/models returns, per model:
+//   pricing: { prompt: "0.000003", completion: "0.000015",   // $ per TOKEN, strings
+//              input_cache_read: "0.0000003",                // $ per TOKEN (prompt cache read)
+//              input_cache_write: "0.00000375" }             // $ per TOKEN (prompt cache write)
+//   // newer models may instead ship prompt_cache_read_breakpoints /
+//   // prompt_cache_write_breakpoints with the same $ per token values
+// Values are in dollars per single token, so we multiply by 1000 to get
+// the per-1K shape the rest of src/usage.js uses. Cache rates are turned
+// into unit-free factors (cache rate ÷ base prompt rate) so the cost
+// layer can apply them to any input price.
+function openRouterPricingFromModel(m) {
+  const p = m && m.pricing;
+  const promptStr = p && (p.prompt ?? p.prompt_per_token);
+  const completionStr = p && (p.completion ?? p.completion_per_token);
+  const inputPer1K = pricePer1K(promptStr);
+  const outputPer1K = pricePer1K(completionStr);
+  if (inputPer1K == null && outputPer1K == null) return undefined;
+  const out = {};
+  if (inputPer1K != null) out.inputPer1K = inputPer1K;
+  if (outputPer1K != null) out.outputPer1K = outputPer1K;
+  // Cache factors, when the provider publishes them: read = input_cache_read /
+  // prompt, write = input_cache_write / prompt (both $ per token, so the
+  // ratio is unit-free). Fall back to the breakpoint arrays for models
+  // that ship those instead.
+  const read = cacheFactor(p && (p.input_cache_read ?? p.input_cache_read_per_token), promptStr)
+    ?? breakpointFactor(m && m.prompt_cache_read_breakpoints, promptStr);
+  const write = cacheFactor(p && (p.input_cache_write ?? p.input_cache_write_per_token), promptStr)
+    ?? breakpointFactor(m && m.prompt_cache_write_breakpoints, promptStr);
+  if (read != null) out.cacheReadFactor = read;
+  if (write != null) out.cacheWriteFactor = write;
+  return out;
+}
+
+// pricePer1K(v) — OpenRouter prices are in $ per single token
+// (strings, e.g. "0.000003" for $3 per 1M). Multiply by 1000 to get
+// the per-1K shape the rest of src/usage.js uses. Returns null when
+// unusable.
+function pricePer1K(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!isFinite(n) || n < 0) return null;
+  return n * 1000;
+}
+
+// cacheFactor(cachePriceStr, basePriceStr) -> number | null
+// Ratio of a cache rate to the base prompt rate (both $ per token, so
+// the ratio is unit-free). Missing or garbage values yield null (the
+// caller's default applies).
+function cacheFactor(cachePriceStr, basePriceStr) {
+  if (cachePriceStr == null || cachePriceStr === '') return null;
+  const n = Number(cachePriceStr);
+  if (!isFinite(n) || n < 0) return null;
+  const base = Number(basePriceStr);
+  if (!isFinite(base) || base <= 0) return null;
+  const factor = n / base;
+  // A factor must be a sane positive ratio (0.01–10); anything else is
+  // a malformed provider response and should not distort pricing.
+  return (factor > 0.01 && factor < 10) ? factor : null;
+}
+
+// breakpointFactor(breakpoints, basePriceStr) -> number | null
+// The cache breakpoints carry the cached price at each tier
+// (`cost.prompt`, $ per token). The factor is cached price / base
+// prompt price. Missing base prompt price or missing/garbage breakpoints
+// yield null (the caller's default applies).
+function breakpointFactor(breakpoints, basePriceStr) {
+  const arr = Array.isArray(breakpoints) ? breakpoints : [];
+  for (const b of arr) {
+    const cost = b && b.cost;
+    const v = cost && (cost.prompt ?? cost.prompt_per_token);
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (!isFinite(n) || n < 0) continue;
+    const base = Number(basePriceStr);
+    if (base == null || base <= 0) return null;
+    const factor = n / base;
+    // A factor must be a sane positive ratio (0.01–10); anything else is
+    // a malformed provider response and should not distort pricing.
+    return (factor > 0.01 && factor < 10) ? factor : null;
+  }
+  return null;
 }
 
 function parseGeminiModels(body) {
@@ -752,7 +847,15 @@ function buildAnthropicRequest(model, messages, stream) {
   const body = {
     model: model.id,
     max_tokens: model.maxTokens || 1024,
-    system: systemContent || undefined,
+    // Anthropic prompt caching: the system message (profile + agent files +
+    // custom prompt + feature summary) is stable across every turn of a
+    // multi-tool conversation, so marking it with cache_control means the
+    // second and subsequent turns read it from cache (~90% discount).
+    // The system block is sent as an array so the cache_control field is
+    // accepted; a plain string would silently ignore it.
+    system: systemContent
+      ? [{ type: 'text', text: systemContent, cache_control: { type: 'ephemeral' } }]
+      : undefined,
     messages: chatMessages.map(m => ({ role: m.role, content: openAIContentToAnthropic(m.content) })),
     stream: !!stream
   };
@@ -1038,7 +1141,17 @@ function* parseAnthropicSSE(eventName, data) {
     case 'message_start':
       // usage is reported here for input tokens.
       if (obj.message && obj.message.usage) {
-        yield { name: 'usage_input', data: { promptTokens: obj.message.usage.input_tokens || 0 } };
+        const usage = obj.message.usage;
+        yield { name: 'usage_input', data: {
+          promptTokens: usage.input_tokens || 0,
+          // Anthropic cache metrics: cache_read_input_tokens tells us how
+          // many tokens were served from cache (billed at ~10% rate), and
+          // cache_creation_input_tokens tells us how many were written into
+          // cache on this request (full price). The chat UI can surface
+          // these in the cost line.
+          cacheReadTokens: usage.cache_read_input_tokens || 0,
+          cacheCreationTokens: usage.cache_creation_input_tokens || 0
+        } };
       }
       break;
     case 'content_block_start':
@@ -1617,6 +1730,11 @@ async function streamChat(opts) {
   // task is complete; tool use is not cut off after an arbitrary count.
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
+  // Anthropic prompt-cache totals across all tool rounds in this turn.
+  // Filled by commitRoundUsage() from the per-round trackers; folded into
+  // the final `done` usage block so the server and chat UI can price the
+  // cached tokens at the discounted rate.
+  const usageCache = { readTokens: 0, creationTokens: 0 };
   const delegatedUsage = { promptTokens: 0, completionTokens: 0 };
   let providerCost = null;
   let delegatedProviderCost = null;
@@ -1867,6 +1985,15 @@ async function streamChat(opts) {
   // tool rounds, completion tokens and cost are genuinely new and do sum.
   let roundPromptTokens = null;
   let roundCompletionTokens = null;
+  // Anthropic prompt-cache metrics. `cache_read_input_tokens` are tokens
+  // served from the provider's prompt cache (billed at ~10% of the input
+  // rate); `cache_creation_input_tokens` are the tokens written into the
+  // cache on this request (billed at 1.25× the input rate). They flow from
+  // message_start (parseAnthropicSSE → usage_input) into the per-round
+  // trackers so per-segment cost and the final turn cost can price them
+  // correctly instead of charging everything at the full input rate.
+  let roundCacheReadTokens = null;
+  let roundCacheCreationTokens = null;
   let roundProviderCost = null;
   let roundProviderCostInput = null;
   let roundProviderCostOutput = null;
@@ -1990,6 +2117,13 @@ async function streamChat(opts) {
       // Anthropic reports this once at message_start; last wins so the
       // final round's prompt (the full conversation footprint) prevails.
       if (isFinite(p) && p > 0) roundPromptTokens = p;
+      // Cache metrics ride the same message_start frame. The last non-zero
+      // report wins (mirrors the prompt-token rule); a 0/absent value must
+      // not clobber a real number already recorded this round.
+      const cr = Number(ev.data && ev.data.cacheReadTokens);
+      const cc = Number(ev.data && ev.data.cacheCreationTokens);
+      if (isFinite(cr) && cr > 0) roundCacheReadTokens = cr;
+      if (isFinite(cc) && cc > 0) roundCacheCreationTokens = cc;
       onEvent('usage_input', ev.data);
     } else if (ev.name === 'usage_output') {
       const c = Number(ev.data && ev.data.completionTokens);
@@ -2009,6 +2143,8 @@ async function streamChat(opts) {
             onRoundUsage({
               promptTokens: roundPromptTokens || 0,
               completionTokens: roundCompletionTokens || 0,
+              cacheReadTokens: roundCacheReadTokens || 0,
+              cacheCreationTokens: roundCacheCreationTokens || 0,
               providerCost: null,
               providerCostInput: null,
               providerCostOutput: null
@@ -2064,12 +2200,16 @@ async function streamChat(opts) {
     if (!hasUsage && !hasCost) return;
     if (promptTokens > 0) usage.promptTokens = promptTokens;
     if (completionTokens > 0) usage.completionTokens = (usage.completionTokens || 0) + completionTokens;
+    if (roundCacheReadTokens) usageCache.readTokens += roundCacheReadTokens;
+    if (roundCacheCreationTokens) usageCache.creationTokens += roundCacheCreationTokens;
     if (hasCost) providerCost = (providerCost || 0) + roundProviderCost;
     if (!roundUsageCommitted && hasUsage && typeof onRoundUsage === 'function') {
       try {
         onRoundUsage({
           promptTokens,
           completionTokens,
+          cacheReadTokens: roundCacheReadTokens || 0,
+          cacheCreationTokens: roundCacheCreationTokens || 0,
           providerCost: hasCost ? roundProviderCost : null,
           providerCostInput: roundProviderCostInput,
           providerCostOutput: roundProviderCostOutput
@@ -2079,6 +2219,8 @@ async function streamChat(opts) {
     roundUsageCommitted = true;
     roundPromptTokens = null;
     roundCompletionTokens = null;
+    roundCacheReadTokens = null;
+    roundCacheCreationTokens = null;
     roundProviderCost = null;
     roundProviderCostInput = null;
     roundProviderCostOutput = null;
@@ -2086,10 +2228,18 @@ async function streamChat(opts) {
   } // end runUpstreamTurn
 
   function usageWithDelegated() {
-    return {
+    const u = {
       promptTokens: (usage.promptTokens || 0) + (delegatedUsage.promptTokens || 0),
       completionTokens: (usage.completionTokens || 0) + (delegatedUsage.completionTokens || 0)
     };
+    // Cache totals are Anthropic-only and carry no delegated counterpart
+    // (subagents may run on a different provider), so include them only
+    // when the parent turn actually reported some.
+    if (usageCache.readTokens || usageCache.creationTokens) {
+      u.cacheReadTokens = usageCache.readTokens;
+      u.cacheCreationTokens = usageCache.creationTokens;
+    }
+    return u;
   }
 
   function totalProviderCost() {
@@ -2110,8 +2260,7 @@ async function streamChat(opts) {
       const completionTokens = Number(result.usage.completionTokens);
       if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
       if (isFinite(completionTokens) && completionTokens > 0) delegatedUsage.completionTokens += completionTokens;
-    }
-    const cost = Number(result.providerCost);
+    }    const cost = Number(result.providerCost);
     if (isFinite(cost) && cost >= 0) delegatedProviderCost = (delegatedProviderCost || 0) + cost;
   }
 

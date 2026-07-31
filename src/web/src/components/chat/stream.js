@@ -514,6 +514,11 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // picture for the segment that ends at `assistant_turn_end`.
   let roundPromptTokens = 0;
   let roundCompletionTokens = 0;
+  // Anthropic prompt-cache metrics for the current round (read from
+  // `usage_input` frames; the server folds them into the `done` usage
+  // block, but a segment finalized before `done` needs its own copy).
+  let roundCacheReadTokens = 0;
+  let roundCacheCreationTokens = 0;
   // Throttle the live tok/s repaint: redrawing on every delta
   // produces a strobe effect on a phone. We repaint at most every
   // 120 ms while deltas are flowing, and once on `done`.
@@ -572,8 +577,14 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         const merged = usage || {};
         const p = Number(data.usage.promptTokens);
         const c2 = Number(data.usage.completionTokens);
+        const cr = Number(data.usage.cacheReadTokens);
+        const cc = Number(data.usage.cacheCreationTokens);
         if (isFinite(p) && p > 0) merged.promptTokens = p;
         if (isFinite(c2) && c2 > 0) merged.completionTokens = c2;
+        // Anthropic cache metrics ride the final `done` usage block
+        // (the turn aggregate). Last report wins like the token counts.
+        if (isFinite(cr) && cr > 0) merged.cacheReadTokens = cr;
+        if (isFinite(cc) && cc > 0) merged.cacheCreationTokens = cc;
         usage = merged;
       }
       cost = data.cost || cost;
@@ -591,6 +602,15 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         roundPromptTokens = p;
         repaintLiveRate();
       }
+      // Cache metrics also arrive on this frame (Anthropic message_start).
+      // Keep the latest values around so a segment finalized before
+      // `done` can render its own cached-token share.
+      const cr = Number(data && data.cacheReadTokens);
+      const cc = Number(data && data.cacheCreationTokens);
+      if (isFinite(cr) && cr > 0) { usage = usage || {}; usage.cacheReadTokens = cr; }
+      if (isFinite(cc) && cc > 0) { usage = usage || {}; usage.cacheCreationTokens = cc; }
+      if (isFinite(cr) && cr > 0) roundCacheReadTokens = cr;
+      if (isFinite(cc) && cc > 0) roundCacheCreationTokens = cc;
     } else if (ev.eventName === 'usage_output') {
       const c2 = Number(data && data.completionTokens);
       if (isFinite(c2) && c2 > 0) {
@@ -609,8 +629,13 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         // real providerCost). Prefer it; fall back to locally tracked
         // round counters only if the frame didn't carry usage.
         const segmentUsage = data.usage
-          || ((roundPromptTokens || roundCompletionTokens)
-            ? { promptTokens: roundPromptTokens || undefined, completionTokens: roundCompletionTokens || undefined }
+          || ((roundPromptTokens || roundCompletionTokens || roundCacheReadTokens || roundCacheCreationTokens)
+            ? {
+                promptTokens: roundPromptTokens || undefined,
+                completionTokens: roundCompletionTokens || undefined,
+                cacheReadTokens: roundCacheReadTokens || undefined,
+                cacheCreationTokens: roundCacheCreationTokens || undefined
+              }
             : undefined);
         const segmentCost = data.cost || undefined;
         state.messages = state.messages.concat([{
@@ -632,6 +657,8 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         // Reset round counters for the next segment.
         roundPromptTokens = 0;
         roundCompletionTokens = 0;
+        roundCacheReadTokens = 0;
+        roundCacheCreationTokens = 0;
       }
       assembled = '';
       reasoning = '';

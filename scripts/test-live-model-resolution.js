@@ -82,6 +82,20 @@ try {
   check('chat persists selected live model', updated && updated.modelId === 'anthropic/claude-sonnet-4', JSON.stringify(updated));
   const reopened = server.chats.getChat(projectDir, chat.id);
   check('chat restores provider/model pair', reopened && reopened.providerId === 'openrouter' && reopened.modelId === 'anthropic/claude-sonnet-4', JSON.stringify(reopened));
+
+  // Live-catalog pricing (OpenRouter) flows into resolveModel from the
+  // in-memory model-list cache, so the cost line uses the provider's real
+  // per-model prices instead of the built-in table.
+  server.seedModelListCache('openrouter', [{
+    id: 'anthropic/claude-sonnet-4',
+    pricing: { inputPer1K: 0.000004, outputPer1K: 0.000016, cacheReadFactor: 0.2, cacheWriteFactor: 1.25 }
+  }]);
+  const priced = server.resolveModel('anthropic/claude-sonnet-4', projectDir, 'openrouter');
+  check('live model picks up provider pricing from cache',
+    priced && priced.pricing && priced.pricing.inputPer1K === 0.000004 && priced.pricing.cacheReadFactor === 0.2,
+    JSON.stringify(priced && priced.pricing));
+  check('live model pricing does not leak credentials',
+    priced && priced.pricing && priced.pricing.apiKey === undefined && priced.apiKey === 'sk-or-test');
 } finally {
   server.settings.close();
   fs.rmSync(tmp, { recursive: true, force: true });

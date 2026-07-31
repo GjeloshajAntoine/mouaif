@@ -148,7 +148,7 @@ async function main() {
   //    sum, and the single round snapshot must carry the final numbers.
   {
     const { server, port } = await serve([[
-      { type: 'message_start', message: { usage: { input_tokens: 120 } } },
+      { type: 'message_start', message: { usage: { input_tokens: 120, cache_read_input_tokens: 90, cache_creation_input_tokens: 30 } } },
       { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } },
       { type: 'message_delta', usage: { output_tokens: 3 } },
       { type: 'content_block_delta', delta: { type: 'text_delta', text: ' there' } },
@@ -176,6 +176,40 @@ async function main() {
     check('anthropic: last snapshot carries the cumulative round total',
       roundUsages.length && roundUsages[roundUsages.length - 1].data.promptTokens === 120 &&
         roundUsages[roundUsages.length - 1].data.completionTokens === 7,
+      JSON.stringify(roundUsages[roundUsages.length - 1] && roundUsages[roundUsages.length - 1].data));
+  }
+
+  // 7) Anthropic prompt-cache metrics flow from message_start into the
+  //    round snapshots and the final turn usage (for cache-aware cost).
+  {
+    const { server, port } = await serve([[
+      { type: 'message_start', message: { usage: { input_tokens: 500, cache_read_input_tokens: 400, cache_creation_input_tokens: 100 } } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } },
+      { type: 'message_delta', usage: { output_tokens: 50 } },
+      { type: 'message_stop' }
+    ]]);
+    const events = [];
+    const model = { id: 'claude-mock', provider: 'anthropic', baseUrl: 'http://127.0.0.1:' + port, apiKey: 'k', auth: 'apikey' };
+    const result = await ai.streamChat({
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+      projectDir,
+      chatId: 'usageacc1',
+      onEvent: (name, data) => events.push({ name, data }),
+      onRoundUsage: (ru) => events.push({ name: '_roundUsage', data: ru })
+    });
+    server.close();
+    check('anthropic cache: ok', result.ok === true, JSON.stringify(result.error || {}));
+    check('anthropic cache: final usage carries cacheReadTokens (400)',
+      result.usage.cacheReadTokens === 400, 'got ' + result.usage.cacheReadTokens);
+    check('anthropic cache: final usage carries cacheCreationTokens (100)',
+      result.usage.cacheCreationTokens === 100, 'got ' + result.usage.cacheCreationTokens);
+    const roundUsages = events.filter(e => e.name === '_roundUsage');
+    check('anthropic cache: round snapshot carries cacheReadTokens',
+      roundUsages.length && roundUsages[roundUsages.length - 1].data.cacheReadTokens === 400,
+      JSON.stringify(roundUsages[roundUsages.length - 1] && roundUsages[roundUsages.length - 1].data));
+    check('anthropic cache: round snapshot carries cacheCreationTokens',
+      roundUsages.length && roundUsages[roundUsages.length - 1].data.cacheCreationTokens === 100,
       JSON.stringify(roundUsages[roundUsages.length - 1] && roundUsages[roundUsages.length - 1].data));
   }
 

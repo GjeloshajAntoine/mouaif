@@ -170,6 +170,17 @@ export function renderUsageMeta(el, info, state) {
   if (typeof usage.completionTokens === 'number') {
     tokens.push('output ' + formatTokens(usage.completionTokens));
   }
+  // Anthropic prompt-cache metrics. Shown only when the provider
+  // actually reported cached tokens (reads or writes), so the line
+  // reads "cache 1.2K read · 800 written" on tool-heavy Claude turns
+  // and stays unchanged for every other provider.
+  if ((typeof usage.cacheReadTokens === 'number' && usage.cacheReadTokens > 0)
+    || (typeof usage.cacheCreationTokens === 'number' && usage.cacheCreationTokens > 0)) {
+    const parts = [];
+    if (usage.cacheReadTokens > 0) parts.push(formatTokens(usage.cacheReadTokens) + ' read');
+    if (usage.cacheCreationTokens > 0) parts.push(formatTokens(usage.cacheCreationTokens) + ' written');
+    tokens.push('cache ' + parts.join(' · '));
+  }
   if (cost && cost.known) {
     tokens.push('cost ' + formatCost(cost.total));
   } else if (cost && cost.known === false) {

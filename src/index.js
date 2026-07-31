@@ -1640,8 +1640,12 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   let userMsg;
   try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  // Read the full transcript once and reuse across the title-derivation
+  // check and the upstream message assembly below. Two separate
+  // listMessages() calls would read SQLite or the JSON file twice
+  // for identical data (the user message was already appended above).
+  const history = messages.listMessages(projectDir, chatId);
   try {
-    const history = messages.listMessages(projectDir, chatId);
     if (history.filter(m => m && m.role === 'user').length === 1 && content) {
       const renamed = chats.titleChatFromPrompt(projectDir, chatId, content);
       if (renamed) chat = renamed;
@@ -1697,7 +1701,6 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   //      with the active profile".
   //   4. The transcript (user + assistant turns), with the brand-new
   //      user turn already appended by the appendMessage call above.
-  const history = messages.listMessages(projectDir, chatId);
   const upstreamMessages = [];
   // Resolve the prompt-size profile once. Its id drives BOTH the system
   // message (below) and the tool-declaration reduction passed to
@@ -2013,7 +2016,12 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           try {
             segmentCost = computeSegmentCost(pendingRoundUsage);
             segmentUsage = pendingRoundUsage
-              ? { promptTokens: pendingRoundUsage.promptTokens, completionTokens: pendingRoundUsage.completionTokens }
+              ? {
+                  promptTokens: pendingRoundUsage.promptTokens,
+                  completionTokens: pendingRoundUsage.completionTokens,
+                  cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
+                  cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
+                }
               : undefined;
             assistantMsg = messages.appendMessage(projectDir, chatId, {
               role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
@@ -2525,6 +2533,22 @@ function resolveModel(modelId, projectDir, providerId) {
     throw e;
   }
 
+  // Live-catalog models (OpenRouter etc.) carry per-model pricing from the
+  // upstream /models list, which the client fetched into MODEL_LIST_CACHE
+  // before the user picked the model. Fold that pricing onto the record so
+  // the cost line uses the provider's real numbers instead of the
+  // best-effort built-in table. Project-level records keep their own
+  // `pricing` (most specific) — only the live path is enriched here.
+  if (liveCatalogModel && !m.pricing) {
+    const cached = MODEL_LIST_CACHE.get(m.provider + ':' + credHashFor(m.provider));
+    if (cached && Array.isArray(cached.models)) {
+      const live = cached.models.find((x) => x && x.id === modelId);
+      if (live && live.pricing && typeof live.pricing === 'object') {
+        m = Object.assign({}, m, { pricing: live.pricing });
+      }
+    }
+  }
+
   // Never let committed project JSON redirect a global credential to an
   // attacker-controlled endpoint or replace auth/account/header policy.
   const safeModel = { ...m };
@@ -2541,6 +2565,16 @@ function resolveModel(modelId, projectDir, providerId) {
   const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';
   return hydrated;
+}
+
+// credHashFor(provider) — the same bucket key used by the /api/ai/models/live
+// cache. Reuses credentialForProvider so resolveModel and the live endpoint
+// agree on which cache entry is current.
+function credHashFor(provider) {
+  let cred = null;
+  try { cred = credentialForProvider(provider); }
+  catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
+  return cred ? hashShort(cred) : '-';
 }
 
 function credentialForProvider(provider) {
@@ -4323,7 +4357,14 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   return server;
 }
 
-module.exports = { createServer, broadcast, destroyOpenSockets, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats, resolveModel };
+// seedModelListCache(provider, models) — test-only hook: pre-fill the
+// in-memory live model cache so resolveModel can pick up per-model
+// pricing without a live upstream call.
+function seedModelListCache(provider, models) {
+  if (provider) MODEL_LIST_CACHE.set(provider + ':' + credHashFor(provider), { models, fetchedAt: Date.now() });
+}
+
+module.exports = { createServer, broadcast, destroyOpenSockets, DEFAULT_PORT, settings, projects, ai, auth, oauthAnthropic, oauthCopilot, chats, resolveModel, seedModelListCache };
 
 // ---- Static /web/ serving -----------------------------------------------
 

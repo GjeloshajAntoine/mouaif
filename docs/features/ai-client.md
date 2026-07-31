@@ -35,6 +35,8 @@ The stream emits events with the same names as the upstream:
 
 - `event: message` `data: { "delta": "Hello" }` — text deltas.
 - `event: done` `data: { "usage": { "promptTokens": 11, "completionTokens": 22 } }` — end of stream, with token usage.
+- `event: usage_input` `data: { "promptTokens": 11, "cacheReadTokens": 0, "cacheCreationTokens": 0 }` — per-round prompt footprint (fires on each tool round for Anthropic; the final `done` carries the authoritative sum). For Anthropic, `cacheReadTokens` / `cacheCreationTokens` are the prompt-cache read and write counts from `message_start` (see [prompt-caching.md](./prompt-caching.md)).
+- `event: usage_output` `data: { "completionTokens": 22 }` — per-round completion footprint.
 - `event: error` `data: { "code": "EUPSTREAM", "message": "..." }` — typed error, stream is closed after.
 - `event: passthrough` `data: { "raw": "..." }` — unparsed upstream payload, useful for debugging.
 - `event: finish` `data: { "reason": "stop" }` — upstream's finish reason.
@@ -61,6 +63,8 @@ The project owns model identity:
 ```
 
 For OpenRouter, `id` is the model slug as listed on openrouter.ai, e.g. `'anthropic/claude-3.5-sonnet'`, `'google/gemini-2.0-flash'`, `'meta-llama/llama-3.1-405b-instruct'`. The full upstream id is sent verbatim in the `model` field of the chat-completions body.
+
+Live-catalog records (OpenRouter) also carry a `pricing` block pulled from the upstream `/models` response — `inputPer1K` / `outputPer1K` (converted from OpenRouter's per-token prices) plus `cacheReadFactor` / `cacheWriteFactor` derived from the `input_cache_read` / `input_cache_write` rates. When the user picks a live model, `resolveModel` reuses this block from the in-memory live-model cache so the cost line reflects the provider's real per-model rates (see [prompt-caching.md](./prompt-caching.md)).
 
 The app store owns the provider connection:
 
@@ -120,6 +124,7 @@ When more than one provider is configured, the chat shows an explicit provider p
 - **Interrupted turns do not break continuation.** When a stored transcript is sent again, only adjacent, complete tool call/result pairs are reconstructed. An orphan call left by an aborted request is omitted, and missing, duplicate, or provider-specific call IDs are replaced consistently on both sides of the pair. Empty persisted assistant segments are also omitted because strict providers reject an assistant message with no visible content. Tool records and OpenAI-shaped tool declarations are omitted for providers whose native tool loop is not implemented. This prevents strict endpoints from returning `400 Bad Request` when the user continues the chat or changes models/providers.
 - **`[DONE]` sentinel is suppressed.** OpenAI uses the literal `[DONE]` to end a stream; the parser drops it so it does not show up as `passthrough` in the UI.
 - **Usage accumulates last-wins within a round, summed across rounds.** Each upstream round-trip's usage is tracked per round and folded into the turn aggregate once, when the stream ends. `promptTokens` is last-report-wins (every round re-sends the full conversation, so the final round's prompt is the real footprint). `completionTokens` and `providerCost` sum across tool rounds (each round's output is genuinely new) but are last-wins *within* one round — so an OpenAI-compatible gateway that stamps a running usage/cost total on every chunk (instead of only the final chunk per `stream_options.include_usage`) is not double-counted. Anthropic's `message_start`/`message_delta` usage frames feed the same per-round trackers; its per-round cost snapshot still rides `usage_output` deltas.
+- **Anthropic prompt caching is enabled for API-key models.** Every request marks the combined system block with `cache_control: { type: 'ephemeral' }` (sent as an array so the field is honored) and carries the `anthropic-beta: prompt-caching-2024-07-31` header. Cache read/write token counts from `message_start` are folded into the per-round snapshots and the final `done` usage block as `cacheReadTokens` / `cacheCreationTokens`, and the cost layer prices them at Anthropic's discounted rates. See [prompt-caching.md](./prompt-caching.md).
 
 ## Implementation notes
 

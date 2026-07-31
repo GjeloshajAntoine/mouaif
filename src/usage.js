@@ -110,7 +110,16 @@ function pickPricing(raw) {
   const input = numberOrNull(raw.inputPer1K);
   const output = numberOrNull(raw.outputPer1K);
   if (input == null && output == null) return null;
-  return { inputPer1K: input || 0, outputPer1K: output || 0 };
+  const out = { inputPer1K: input || 0, outputPer1K: output || 0 };
+  // Optional per-model prompt-cache pricing factors. When present they
+  // override the standard 10% / 125% tiers for this model (see computeCost);
+  // when absent the defaults apply. Carried through the resolution chain
+  // so an app-level or model-level override can tune a single model.
+  const read = factorOrNull(raw.cacheReadFactor);
+  const write = factorOrNull(raw.cacheWriteFactor);
+  if (read != null) out.cacheReadFactor = read;
+  if (write != null) out.cacheWriteFactor = write;
+  return out;
 }
 
 function numberOrNull(v) {
@@ -121,19 +130,49 @@ function numberOrNull(v) {
   return null;
 }
 
+// factorOrNull(v) — same acceptance as numberOrNull but returns null for
+// 0 / missing so pickPricing only carries factors the user actually set.
+function factorOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = numberOrNull(v);
+  return n == null || n === 0 ? null : n;
+}
+
 // ---- Cost calculation -------------------------------------------------
+
+// Anthropic prompt-cache pricing factors (docs: https://docs.claude.com/en/docs/build-with-claude/prompt-caching#pricing).
+// Cache reads are billed at 10% of the base input rate; cache writes
+// (creating/refreshing a cache entry) at 125% of the base input rate.
+// These are the DEFAULTS and are uniform across Claude models today, but
+// a pricing record can override them per model (see resolvePricing:
+// `pricing.cacheReadFactor` / `pricing.cacheWriteFactor`) because the
+// provider has changed these rates before and could again, or a future
+// model could ship its own tiers.
+const DEFAULT_CACHE_READ_FACTOR = 0.10;
+const DEFAULT_CACHE_WRITE_FACTOR = 1.25;
 
 // computeCost({ model, usage, app }) -> { input, output, total, currency, known }
 //
-// `usage` is `{ promptTokens, completionTokens }` — the shape on the
-// `done` event from the AI client (decision §10). Missing keys are
-// treated as 0. `model` and `app` are passed straight through to
-// resolvePricing. Returns a `known: false` object when no pricing is
-// found so the UI can render `--` cleanly.
+// `usage` is `{ promptTokens, completionTokens, cacheReadTokens?,
+// cacheCreationTokens? }` — the shape on the `done` event from the AI
+// client (decision §10), with the two Anthropic cache fields optional.
+// Missing keys are treated as 0. `model` and `app` are passed straight
+// through to resolvePricing. Returns a `known: false` object when no
+// pricing is found so the UI can render `--` cleanly.
+//
+// Cost is computed at the provider's tiered rates: cached reads at
+// 10% of input, cache writes at 125% of input, and everything else
+// (uncached prompt + completions) at the base rates. The factors come
+// from the resolved pricing record (per-model overrides) with the
+// defaults above. The `input` bucket keeps the base uncached prompt cost
+// so a `usage` block with no cache fields prices identically to before
+// this feature.
 function computeCost({ model, usage, app } = {}) {
   const u = usage || {};
   const promptTokens = num(u.promptTokens);
   const completionTokens = num(u.completionTokens);
+  const cacheReadTokens = num(u.cacheReadTokens);
+  const cacheCreationTokens = num(u.cacheCreationTokens);
   const pricing = resolvePricing(model, app);
   if (!pricing) {
     return {
@@ -144,7 +183,17 @@ function computeCost({ model, usage, app } = {}) {
       known: false
     };
   }
-  const input = (promptTokens / 1000) * pricing.inputPer1K;
+  const cacheReadFactor = factorOrDefault(pricing.cacheReadFactor, DEFAULT_CACHE_READ_FACTOR);
+  const cacheWriteFactor = factorOrDefault(pricing.cacheWriteFactor, DEFAULT_CACHE_WRITE_FACTOR);
+  // Cached reads/writes are a subset of the reported prompt tokens, so
+  // the uncached input portion is what remains after subtracting them
+  // (never below zero — a provider reporting odd numbers must not
+  // produce negative cost).
+  const cachedTokens = cacheReadTokens + cacheCreationTokens;
+  const uncachedInput = Math.max(0, promptTokens - cachedTokens);
+  const input = (uncachedInput / 1000) * pricing.inputPer1K
+    + (cacheReadTokens / 1000) * pricing.inputPer1K * cacheReadFactor
+    + (cacheCreationTokens / 1000) * pricing.inputPer1K * cacheWriteFactor;
   const output = (completionTokens / 1000) * pricing.outputPer1K;
   const total = input + output;
   return {
@@ -154,6 +203,16 @@ function computeCost({ model, usage, app } = {}) {
     currency: DEFAULT_CURRENCY,
     known: true
   };
+}
+
+// factorOrDefault(v, fallback) -> number
+// A pricing factor must be a finite number >= 0 to be honored; anything
+// else (absent, null, a bad value in a user-edited .mouaif.json) falls
+// back to the standard factor.
+function factorOrDefault(v, fallback) {
+  if (typeof v === 'number' && isFinite(v) && v >= 0) return v;
+  if (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)) && Number(v) >= 0) return Number(v);
+  return fallback;
 }
 
 function num(v) {
