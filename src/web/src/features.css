@@ -4,16 +4,15 @@
 
 /* ---- Settings: MCP servers --------------------------------------- */
 
-.mcp__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mcp__list { list-style: none; margin: 0 0 6px; padding: 0; }
 .mcp__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
-.mcp__row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.mcp__row-main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
+.mcp__row { overflow: hidden; }
+.mcp__row-main { color: var(--fg); cursor: pointer; }
 .mcp__row-main:active { background: var(--surface-2); }
 .mcp__row-name { font-weight: 600; font-size: 0.88rem; }
 .mcp__row-sub { font-size: 0.72rem; color: var(--fg-soft); }
-.mcp__row-err { font-size: 0.7rem; color: var(--danger); margin-top: 3px; word-break: break-all; }
-.mcp__row-chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
-.mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; }
+.mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px; border-top: 1px solid var(--border); background: var(--surface-2); }
 .mcp__row-actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.72rem; }
 .mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }
 .mcp__row--busy { opacity: 0.65; pointer-events: none; }

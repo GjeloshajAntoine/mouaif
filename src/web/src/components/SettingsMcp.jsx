@@ -213,10 +213,13 @@ export function SettingsMcpView(props = {}) {
       : '?scope=app';
     const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
-      h('a', { class: 'mcp__row-main', href },
-        h('div', { class: 'mcp__row-name' }, s.name, ' ', scopeBadge(s)),
-        h('div', { class: 'mcp__row-sub' }, (s.transport === 'http' ? 'http · ' : '') + status + ' · ' + enabledBit + ' · ' + toolBit),
-        h('div', { class: 'mcp__row-chev' }, '›')
+      h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
+        h('span', { class: 'group__row-body' },
+          h('span', { class: 'group__row-label mcp__row-name' }, s.name, ' ', scopeBadge(s)),
+          h('span', { class: 'settings-project__link-sub mcp__row-sub' }, (s.transport === 'http' ? 'http · ' : '') + status + ' · ' + enabledBit)
+        ),
+        h('span', { class: 'group__row-detail' }, toolBit),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
       ),
       (s.status === 'errored' && s.error)
         ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
@@ -389,7 +392,7 @@ export function SettingsMcpView(props = {}) {
         )
       : null,
     // ---- Server list -----------------------------------------------------
-    h('ul', { class: 'mcp__list', 'aria-label': 'MCP servers' },
+    h('ul', { class: 'mcp__list settings-project__agents-list', 'aria-label': 'MCP servers' },
       serversList.length
         ? serversList.map(serverRow)
         : h('li', { class: 'mcp__empty' },
