@@ -4635,6 +4635,14 @@ function serveWebFile(res, absOrRel, opts) {
 
 function serveWebRequest(res, relPath) {
   if (!relPath) return serveWebFile(res, 'index.html', { preferDist: true });
+  // SPA fallback: if the path is not a known asset type (no extension
+  // or an unknown extension), serve index.html so the client-side hash
+  // router can handle it. This prevents 404 JSON pages when navigation
+  // resolves to a garbage path like '/web/+ safe +'.
+  const ext = path.extname(relPath).toLowerCase();
+  if (!ext || !WEB_MIME[ext]) {
+    return serveWebFile(res, 'index.html', { preferDist: true });
+  }
   return serveWebFile(res, relPath, { preferDist: true });
 }
 

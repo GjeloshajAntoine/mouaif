@@ -24,8 +24,10 @@ function autoLink(text) {
       return before + '<a href="mailto:' + url + '">' + url + '</a>';
     }
     // If it starts with www, prepend http
-    const href = url.match(/^www\./i) ? 'http://' + url : url;
-    return before + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+    const href = url.match(/^www\./i) ? 'http://' + url : url;    // Reject paths that look like JavaScript code fragments rather than real URLs.
+    // Code patterns like '+ safe +' or `foo + bar` can sneak through the auto-link
+    // regex when they contain dots or @ signs; guard against the most common patterns.
+    if (/^https?:\/\/[^\s]*\+[^\s]*\+[^\s]*(\s|$)/i.test(href)) return match;    return before + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
   });
 }
 
@@ -77,6 +79,19 @@ function renderInline(text) {
 
   // Step 9: restore inline code spans
   s = s.replace(/\uE001(\d+)\uE001/g, (m, i) => codeSpans[Number(i)] || m);
+
+  // Step 9b: escape auto-linked hrefs that are actually code fragments
+  // containing '+' concatenation or other JS expressions — these look like
+  // real URLs after auto-linking but would navigate to garbage paths like
+  // '/+%20safe%20+'. The inline-code step above already extracted backtick
+  // content, but code fragments written without backticks (e.g. ' + safe + '
+  // in a server-side template literal) can reach autoLink as bare text.
+  s = s.replace(/<a\s+href="([^"]*)"[^>]*>[^<]+<\/a>/gi, (match, href) => {
+    if (/\+[^=]*\+/.test(href) && /^https?:\/\//i.test(href)) {
+      return match.replace(/<a\s+/i, '<a rel="nofollow noopener noreferrer" onclick="return false" ');
+    }
+    return match;
+  });
 
   // Step 10: restore backslash-escaped literal characters
   s = s.replace(/\uE002(\d+)\uE002/g, (m, i) => escaped[Number(i)] || m);
