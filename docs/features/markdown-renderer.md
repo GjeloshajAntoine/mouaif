@@ -40,6 +40,16 @@ The chat view renders AI responses as HTML using a zero-dependency, server-side-
 3. Within each paragraph, block-level structure is detected: horizontal rule → blockquote → table → list → heading → plain paragraph.
 4. Inline rendering runs per-line inside each block: backslash escapes → inline code → HTML escape → images → links → auto-links → bold → italic → strikethrough → restore placeholders.
 
+## Auto-link safety
+
+Auto-linking bare URLs is the most security/UX-sensitive step, so it deliberately refuses several shapes that tool output and code fragments produce:
+
+- **Internal SPA routes** (`http(s)://…/web/#/…`) are never auto-linked. MCP/Chrome-debug tool results embed strings like `Page navigated to http://…/web/#/chat/<id>…`; wrapping them in anchors meant a stray tap navigated the app to another chat (a confusing "auto-redirect"). They now render as plain text.
+- **Swallowed code/JSON punctuation** — if the matched URL already contains a `"`, `{`, `}`, `[`, `]`, or backslash, it is not linked. These are almost always JSON or template-literal fragments, not real URLs.
+- **JS concatenation fragments** (`+ … +`) that sneak through with dots or `@` are not linked.
+
+Legitimate external links, markdown links, and query strings (including `&`) are unaffected.
+
 ## Mobile considerations
 
 - Tables are wrapped in `overflow-x: auto` on the `<table>` itself so narrow viewports can scroll horizontally rather than breaking layout.

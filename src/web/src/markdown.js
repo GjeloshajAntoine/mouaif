@@ -24,10 +24,20 @@ function autoLink(text) {
       return before + '<a href="mailto:' + url + '">' + url + '</a>';
     }
     // If it starts with www, prepend http
-    const href = url.match(/^www\./i) ? 'http://' + url : url;    // Reject paths that look like JavaScript code fragments rather than real URLs.
-    // Code patterns like '+ safe +' or `foo + bar` can sneak through the auto-link
-    // regex when they contain dots or @ signs; guard against the most common patterns.
-    if (/^https?:\/\/[^\s]*\+[^\s]*\+[^\s]*(\s|$)/i.test(href)) return match;    return before + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+    const href = url.match(/^www\./i) ? 'http://' + url : url;
+    // Never auto-link the app's own SPA routes. Tool output (e.g. the
+    // chrome-debug MCP "Page navigated to http://…/web/#/chat/<id>" text)
+    // embeds these URLs; wrapping them in anchors means a stray tap
+    // navigates the SPA to another chat. Keep them as plain text.
+    if (/^https?:\/\/[^/]*\/web\/#\//i.test(href)) return match;
+    // Reject URLs that swallowed surrounding code/JSON punctuation
+    // (quotes, braces, brackets, backslash). These are almost always
+    // tool JSON or template-literal fragments, not real links.
+    if (/["{}[\]\\]/.test(href)) return match;
+    // Reject JS concatenation fragments like ' + safe + ' that sneak
+    // through when they contain dots or @ signs.
+    if (/\+\S*\+/.test(href)) return match;
+    return before + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
   });
 }
 
