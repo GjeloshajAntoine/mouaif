@@ -96,8 +96,7 @@ The app store has no server registry, so the app layer carries only the single s
 
 The Settings UI mirrors the layering:
 
-- **Settings → App defaults → MCP servers** (`#/settings/mcp`) shows a single **Default permission** row — one **Off / Ask / Allow** control (plus its Auto-approve list) that writes the app-level gate.
-- **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) shows the project default once, then places each server's **Off / Ask / Allow** control and auto-approve list directly inside that server's list item. This avoids a second, duplicate server list. A **Use project default** button appears when an override is set; the per-server editor adds an **Inherit / Off / Ask / Allow** select under each discovered tool.
+- **Settings → App defaults → MCP servers** (`#/settings/mcp`) and **Settings → This project → MCP servers** (`#/settings/mcp?projectDir=…`) both render a single item list of servers (name, scope badge, status, tool count, lifecycle buttons). The list is the only surface — per-server, per-tool, and shared-gate authorization controls are not shown here; MCP permissions are configured per tool from the server editor's **Discovered tools** section (`#/settings/mcp/<id>`).
 
 The project rows write through `PUT /api/tools/authorization` with `{ projectDir, mcp: { mode?, servers?, tools? } }`; the app row writes `{ scope: 'app', mcp: { mode?, allowlist? } }`. A `null` value in a `servers` / `tools` map clears that override so the next layer up applies. `GET /api/tools/authorization?scope=app` reads the app-level gate on its own.
 

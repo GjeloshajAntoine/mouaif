@@ -27,100 +27,9 @@ export function SettingsMcpView(props = {}) {
   const openBtn = useRef(null);
   const refreshBtn = useRef(null);
   const [dirInput, setDirInput] = useState('');
-  // MCP authorization is layered (decisions §18): a per-server entry
-  // under mcp.authorization.servers.<slug> overrides the shared
-  // fallback gate; a per-tool entry under mcp.authorization.tools.
-  // <composedName> overrides both. The state below mirrors the
-  // persisted maps so each row is its own segmented control. The maps
-  // live in the project's .mcp.json, so they render on the project
-  // list only.
-  const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
-  const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [serversList, setServersList] = useState([]);
   const [listStatus, setListStatus] = useState({ text: '', kind: '' });
   const [busyIds, setBusyIds] = useState(new Set()); // server ids being acted on
-
-  function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
-
-  // One PUT path for every MCP authorization change. The patch body
-  // carries { mode?, servers?, tools? } — see setAuthorization. On the
-  // app list there is no projectDir, so we write the app-level shared
-  // gate with scope: 'app' (the server rejects server/tool maps there —
-  // the app store has no server registry, decisions §18).
-  async function saveMcpAuthorization(patch) {
-    setMcpAuthStatusMsg('saving…');
-    const body = projectDir
-      ? { projectDir, mcp: patch }
-      : { scope: 'app', mcp: patch };
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    setMcpAuthStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
-  }
-
-  function pickMcpMode(newMode) {
-    // Tapping Allow clears any allowlist: auto-approve-everything makes
-    // the patterns meaningless, and dropping them keeps .mcp.json honest.
-    const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
-    setMcpAuth(Object.assign({}, mcpAuth, { mode: newMode, allowlist }));
-    saveMcpAuthorization({ mode: newMode, allowlist });
-  }
-
-  function onMcpAllowlistInput(text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const mode = allowlist.length ? 'allowlist' : 'ask';
-    setMcpAuth(Object.assign({}, mcpAuth, { mode, allowlist }));
-    saveMcpAuthorization({ mode, allowlist });
-  }
-
-  // Per-server override. 'inherit' clears the entry (a null patch);
-  // anything else persists { mode } (+ allowlist for mode 'allowlist').
-  function pickServerMode(slug, value) {
-    const servers = Object.assign({}, mcpAuth.servers);
-    const patch = {};
-    if (value === 'inherit') {
-      delete servers[slug];
-      patch[slug] = null;
-    } else {
-      const entry = { mode: value };
-      if (value === 'allowlist') entry.allowlist = (servers[slug] && servers[slug].allowlist) || [];
-      servers[slug] = entry;
-      patch[slug] = entry;
-    }
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: patch });
-  }
-
-  function onServerAllowlistInput(slug, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    // An empty pattern list under Ask means "no override" — clear the
-    // entry so the shared fallback stays in charge.
-    if (!allowlist.length) { pickServerMode(slug, 'inherit'); return; }
-    const servers = Object.assign({}, mcpAuth.servers);
-    servers[slug] = { mode: 'allowlist', allowlist };
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
-  }
-
-  // Debounced so typing a regex doesn't fire a PUT per keystroke.
-  const saveMcpAllowlistDebounced = useRef((() => {
-    let t = null;
-    return (text) => {
-      if (t) clearTimeout(t);
-      setMcpAuthStatusMsg('…');
-      t = setTimeout(() => onMcpAllowlistInput(text), 350);
-    };
-  })());
-  const saveServerAllowlistDebounced = useRef((() => {
-    const timers = new Map();
-    return (slug, text) => {
-      if (timers.has(slug)) clearTimeout(timers.get(slug));
-      setMcpAuthStatusMsg('…');
-      timers.set(slug, setTimeout(() => onServerAllowlistInput(slug, text), 350));
-    };
-  })());
 
   async function load() {
     if (openBtn.current) openBtn.current.disabled = true;
@@ -143,24 +52,6 @@ export function SettingsMcpView(props = {}) {
     }
     setServersList(r.body.servers || []);
     setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
-    // MCP authorization is layered (decisions §18). Both scopes expose the
-    // shared gate (mode + allowlist); per-server / per-tool overrides are
-    // project-only, so the app list loads the gate with scope=app and
-    // leaves the server/tool maps empty.
-    try {
-      const authUrl = projectDir
-        ? '/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir)
-        : '/api/tools/authorization?scope=app';
-      const ar = await fetchJson(authUrl);
-      const mcp = ar.status === 200 && ar.body.mcp;
-      setMcpAuth({
-        mode: (mcp && mcp.mode) || 'ask',
-        allowlist: mcp && Array.isArray(mcp.allowlist) ? mcp.allowlist : [],
-        servers: (mcp && mcp.servers && typeof mcp.servers === 'object') ? mcp.servers : {},
-        tools: (mcp && mcp.tools && typeof mcp.tools === 'object') ? mcp.tools : {}
-      });
-      setMcpAuthStatusMsg('');
-    } catch { /* keep ask + empty maps */ }
   }
 
   // App list convenience: jump into a project's list without going back
@@ -170,26 +61,6 @@ export function SettingsMcpView(props = {}) {
     if (!dir) { setListStatus({ text: 'type a project directory first', kind: 'error' }); return; }
     setActiveProject(dir, '');
     nav('settings/mcp' + projectQS(dir));
-  }
-
-  // One segmented Off/Ask/Allow control. `name` must be unique per
-  // row so the radio inputs don't cross-select between servers.
-  function authSegs(name, activeMode, onPick) {
-    const modes = [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }];
-    return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
-      modes.map((m) =>
-        h('label', { key: m.value, class: 'seg__item' + (activeMode === m.value ? ' seg__item--on' : '') },
-          h('input', {
-            type: 'radio',
-            name: 'sp-' + name.replace(/\s+/g, '-').toLowerCase(),
-            value: m.value,
-            checked: activeMode === m.value,
-            onChange: () => onPick(m.value)
-          }),
-          h('span', { class: 'seg__pill' }, m.label)
-        )
-      )
-    );
   }
 
   function scopeBadge(s) {
@@ -212,11 +83,6 @@ export function SettingsMcpView(props = {}) {
       ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project')
       : '?scope=app';
     const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
-    const slug = s.slug || s.id;
-    const entry = mcpAuth.servers && mcpAuth.servers[slug];
-    const overridden = !!(entry && entry.mode);
-    const effectiveMode = overridden ? entry.mode : mcpAuth.mode;
-    const effectiveAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
         h('span', { class: 'group__row-body' },
@@ -228,29 +94,6 @@ export function SettingsMcpView(props = {}) {
       ),
       (s.status === 'errored' && s.error)
         ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
-        : null,
-      projectDir
-        ? h('div', { class: 'mcp__row-permission' },
-            h('div', { class: 'settings-project__item-note' },
-              overridden ? ('Permission override: ' + segMode(effectiveMode) + '. ') : ('Permission: project default (' + segMode(mcpAuth.mode) + '). '),
-              h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
-            ),
-            authSegs('mcp-server-' + slug, segMode(effectiveMode), (mode) => pickServerMode(slug, mode)),
-            overridden
-              ? h('button', { class: 'btn btn--small', type: 'button', onClick: () => pickServerMode(slug, 'inherit') }, 'Use project default')
-              : null,
-            segMode(effectiveMode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, effectiveAllowlist.length ? ('Auto-approve list (' + effectiveAllowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Matching calls run without asking. Enter one regex per line; changes save automatically.'),
-                  h('textarea', {
-                    class: 'input settings-project__mono', rows: 3, spellcheck: false,
-                    placeholder: `^mcp__${slug}__search`, value: effectiveAllowlist.join('\n'),
-                    onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value)
-                  })
-                )
-              : null
-          )
         : null,
       // Quick-action row: Start / Stop / Refresh. Inline so the user
       // does not have to open the editor just to control the lifecycle.
@@ -333,51 +176,6 @@ export function SettingsMcpView(props = {}) {
       projectDir
         ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
         : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
-    // ---- App-level permission default (app list only) -------------------
-    // The app store has no server registry, so the app list shows only
-    // the single shared gate. This is the default every project starts
-    // from; a project can set its own gate or per-server rules on top.
-    !projectDir
-      ? h('div', { class: 'group' },
-          h('div', { class: 'group__title' }, 'Default permission', h('span', { class: 'group__title-note' }, 'Starting point for every project')),
-          h('ul', { class: 'group__list' },
-            h('li', { class: 'settings-project__tool' },
-              h('div', { class: 'settings-project__tool-head' },
-                h('div', { class: 'settings-project__item-title' }, 'All MCP tools'),
-                h('div', { class: 'settings-project__item-note' },
-                  'How MCP tool calls are handled by default, in every project. A project can change this or set per-server rules from its own MCP page. ',
-                  segMode(mcpAuth.mode) === 'off' ? 'Off means MCP tools are hidden from the model and cost no tokens. ' : null,
-                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg)
-                )
-              ),
-              authSegs('mcp-app-default', segMode(mcpAuth.mode), pickMcpMode),
-              segMode(mcpAuth.mode) === 'ask'
-                ? h('details', { class: 'settings-project__allowlist' },
-                    h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-                  )
-                : null
-            )
-          )
-        )
-      : null,
-    // ---- Project permission default -------------------------------------
-    projectDir
-      ? h('div', { class: 'group' },
-          h('div', { class: 'group__title' }, 'Project default permission', h('span', { class: 'group__title-note' }, 'Used by servers without an override')),
-          h('div', { class: 'settings-project__tool' },
-            authSegs('mcp-shared', segMode(mcpAuth.mode), pickMcpMode),
-            segMode(mcpAuth.mode) === 'ask'
-              ? h('details', { class: 'settings-project__allowlist' },
-                  h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-                  h('p', { class: 'settings-project__help' }, 'Matching MCP calls run without asking. Enter one regex per line; changes save automatically.'),
-                  h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^navigate$\n^take_snapshot$`, value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-                )
-              : null
-          )
-        )
-      : null,
     // ---- Server list -----------------------------------------------------
     h('ul', { class: 'mcp__list settings-project__agents-list', 'aria-label': 'MCP servers' },
       serversList.length
