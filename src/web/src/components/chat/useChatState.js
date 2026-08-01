@@ -49,6 +49,7 @@ export function useChatState(props) {
   const [chat, setChat] = useState(null);
   const [providers, setProviders] = useState([]);
   const [imageAttachments, setImageAttachments] = useState([]);
+  const [composerText, setComposerText] = useState('');
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
@@ -245,10 +246,19 @@ export function useChatState(props) {
     }
   };
 
-  const send = useCallback(() => sendTurn(state, refs, {
-    clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
-    setImageAttachments
-  }), [projectDir, chatId, chat, providers, imageAttachments]);
+  const send = useCallback(async () => {
+    try {
+      await sendTurn(state, refs, {
+        clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
+        setImageAttachments
+      });
+    } finally {
+      // sendTurn clears the textarea on success, restores it on 409, and
+      // clears it for direct tool runs. Re-read after it settles so the
+      // send button's disabled state matches the actual composer content.
+      setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
+    }
+  }, [projectDir, chatId, chat, providers, imageAttachments]);
 
   const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
   const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
@@ -397,6 +407,7 @@ export function useChatState(props) {
           promptInput.current.value = c.draft;
           autoresize(refs);
         }
+        if (promptInput.current) setComposerText(promptInput.current.value);
         if (chatName.current) chatName.current.textContent = c.title || chatId;
         state.thinkingLevel = c.thinkingLevel || '';
         // Sync thinking level select after initial load — options come
@@ -520,7 +531,7 @@ export function useChatState(props) {
 
   return {
     state, refs,
-    chat, providers, imageAttachments, fileEditorOpen, loading, runningVisible,
+    chat, providers, imageAttachments, composerText, fileEditorOpen, loading, runningVisible,
     setImageAttachments, setFileEditorOpen,
     // Actions bound for direct use in the JSX
     send,
@@ -531,7 +542,10 @@ export function useChatState(props) {
     onOpenModelPicker: () => openModelPicker(state, refs),
     onCloseModelPicker: () => closeModelPicker(refs),
     onComposerKey: (e) => onComposerKey(e, send),
-    onComposerInput: () => onComposerInput(refs, projectDir, chatId, updateChatBound),
+    onComposerInput: () => {
+      setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
+      onComposerInput(refs, projectDir, chatId, updateChatBound);
+    },
     onComposerPaste: (e) => {
       const files = e.clipboardData && e.clipboardData.files;
       if (files && Array.from(files).some((f) => /^image\//i.test(f.type || ''))) {

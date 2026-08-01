@@ -16,7 +16,7 @@ export function ChatView(props) {
   const s = useChatState(props);
   const {
     refs,
-    imageAttachments, fileEditorOpen, runningVisible,
+    imageAttachments, composerText, fileEditorOpen, runningVisible,
     chatSwitcherOpen, chatSwitcherList,
     setFileEditorOpen,
     setChatSwitcherOpen,
@@ -261,7 +261,7 @@ export function ChatView(props) {
                 h('path', { d: 'M6 6h12v12H6Z', fill: 'currentColor' })
               )
             )
-          : h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, 'aria-label': 'Send' },
+          : h('button', { ref: refs.sendBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: send, disabled: !composerText.trim() && !imageAttachments.length, 'aria-label': 'Send' },
               h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
                 h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
               )
