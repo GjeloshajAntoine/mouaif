@@ -57,18 +57,30 @@ function renderInline(text) {
     return '\uE002' + (escaped.length - 1) + '\uE002';
   });
 
-  // Step 1: extract inline code so its contents are never re-processed
+  // Step 1: extract inline code so its contents are never re-processed.
+  // The code content is HTML-escaped here so that code fragments the model
+  // quotes (e.g. `<img src="/web/+ safe +">` or `![alt](url)` in a reasoning
+  // trace) render as literal text, never as live <img>/<a> elements. Without
+  // this, a quoted `<img src="/web/+ safe +">` becomes a real <img> whose src
+  // the browser loads — navigating the SPA to a garbage path like
+  // '/web/+%20safe%20+' (the "auto-redirect" bug).
   const codeSpans = [];
   s = s.replace(/`([^`]+)`/g, (m, code) => {
-    codeSpans.push('<code>' + code + '</code>');
+    codeSpans.push('<code>' + escapeHtml(code) + '</code>');
     return '\uE001' + (codeSpans.length - 1) + '\uE001';
   });
 
   // Step 2: escape remaining HTML special chars (code was already safe)
   s = escapeHtml(s);
 
-  // Step 3: images (before links)
-  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
+  // Step 3: images (before links). Never let an image target the app's own
+  // SPA routes — a live <img src="/web/..."> makes the browser fetch the app
+  // shell as an image (and a quoted `![alt](url)` in a reasoning trace would
+  // otherwise load garbage paths). Render the alt text as plain text instead.
+  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
+    if (/^(https?:\/\/[^/]*)?\/web\/#\//i.test(url.trim())) return alt;
+    return '<img src="' + url + '" alt="' + alt + '" loading="lazy" />';
+  });
 
   // Step 4: links. Never let an explicit link target the app's own SPA
   // routes (http(s)://…/web/#/… or a root-relative /web/#/…). Tool output

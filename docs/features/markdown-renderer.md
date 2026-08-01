@@ -56,6 +56,14 @@ The same-origin SPA-route guard is not limited to auto-linked bare URLs. **Expli
 
 Non-`/web/#/` targets (external links, API paths like `/api/…`, root-relative asset paths) are unaffected and still render as normal anchors.
 
+### Inline code is HTML-escaped
+
+Inline code (`` `…` ``) is extracted before the HTML-escape pass, but its **content is itself HTML-escaped** before being wrapped in `<code>`. This matters because a model's reasoning trace frequently *quotes* code fragments — e.g. `` `<img src="/web/+ safe +">` `` or `` `![alt](url)` `` — as part of its analysis. Without escaping, that quoted fragment became a **live `<img>`/`<a>` element** whose `src`/`href` the browser then loaded, navigating the SPA to a garbage path like `/web/+%20safe%20+` (the "auto-redirect on load" bug). Escaping the code content renders it as literal text inside `<code>`, never as a real element.
+
+### Images to internal routes
+
+Markdown images (`![alt](url)`) whose target resolves to an internal SPA route (`/web/#/…` or `http(s)://…/web/#/…`) are rendered as their plain alt text instead of a live `<img>`. A live `<img src="/web/…">` would make the browser fetch the app shell as an image (and a quoted `![alt](url)` in a reasoning trace would otherwise load garbage paths).
+
 ## Mobile considerations
 
 - Tables are wrapped in `overflow-x: auto` on the `<table>` itself so narrow viewports can scroll horizontally rather than breaking layout.
