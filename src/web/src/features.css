@@ -6,14 +6,14 @@
 
 .mcp__list { list-style: none; margin: 0 0 6px; padding: 0; }
 .mcp__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
-.mcp__row { overflow: hidden; background: var(--surface); }
-.mcp__row-main { color: var(--fg); cursor: pointer; }
+.mcp__row { overflow: hidden; background: var(--surface); display: flex; align-items: center; }
+.mcp__row-main { color: var(--fg); cursor: pointer; flex: 1 1 auto; min-width: 0; }
 .mcp__row-main:active { background: var(--surface-2); }
 .mcp__row-name { font-weight: 600; font-size: 0.88rem; }
 .mcp__row-sub { font-size: 0.72rem; color: var(--fg-soft); }
-.mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; }
-.mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px; border-top: 1px solid var(--border); }
-.mcp__row-actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.72rem; }
+.mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; flex-basis: 100%; }
+.mcp__row-actions { display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; flex-shrink: 0; }
+.mcp__row-actions .btn { min-height: var(--tap-sm); padding: 0 8px; font-size: 0.72rem; }
 .mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }
 .mcp__row--busy { opacity: 0.65; pointer-events: none; }
 .mcp__tools-h { font-size: 0.8rem; margin: 8px 0 3px; color: var(--fg-soft); text-transform: uppercase; letter-spacing: 0.04em; }

@@ -83,27 +83,22 @@ export function SettingsMcpView(props = {}) {
       ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project')
       : '?scope=app';
     const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
+    const showStop = status === 'ready' || status === 'errored' || status === 'starting';
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
         h('span', { class: 'group__row-body' },
           h('span', { class: 'group__row-label mcp__row-name' }, s.name, ' ', scopeBadge(s)),
           h('span', { class: 'settings-project__link-sub mcp__row-sub' }, (s.transport === 'http' ? 'http · ' : '') + status + ' · ' + enabledBit)
         ),
-        h('span', { class: 'group__row-detail' }, toolBit),
-        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+        h('span', { class: 'group__row-detail' }, toolBit)
       ),
-      (s.status === 'errored' && s.error)
-        ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
-        : null,
-      // Quick-action row: Start / Stop / Refresh. Inline so the user
-      // does not have to open the editor just to control the lifecycle.
-      h('div', { class: 'mcp__row-actions' },
+      h('div', { class: 'mcp__row-actions', onClick: (e) => e.stopPropagation() },
         h('button', {
           class: 'btn btn--small', type: 'button',
           disabled: s.enabled === false || status === 'starting' || isBusy,
           onClick: () => callLifecycle('start', s.id)
         }, status === 'ready' ? 'Restart' : 'Start'),
-        (status === 'ready' || status === 'errored' || status === 'starting')
+        showStop
           ? h('button', {
               class: 'btn btn--small', type: 'button',
               disabled: isBusy,
@@ -115,9 +110,12 @@ export function SettingsMcpView(props = {}) {
               class: 'btn btn--small', type: 'button',
               disabled: isBusy,
               onClick: () => refreshTools(s.id)
-            }, 'Refresh tools')
+            }, '↻')
           : null
-      )
+      ),
+      (s.status === 'errored' && s.error)
+        ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
+        : null
     );
   }
 

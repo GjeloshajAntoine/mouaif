@@ -154,6 +154,15 @@ select.input {
 }
 .btn--ghost:hover  { background: var(--surface-2); color: var(--fg); }
 
+/* Compact inline buttons (table rows, MCP lifecycle, registry, etc.).
+   The plain .btn has min-height: var(--tap) (44px) for primary
+   taps; --small is for secondary actions packed into rows. */
+.btn--small {
+  min-height: var(--tap-sm);
+  padding: 0 10px;
+  font-size: 0.76rem;
+}
+
 .status {
   color: var(--muted);
   font-size: 0.74rem;
