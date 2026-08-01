@@ -1,64 +1,83 @@
 # File toolbar
 
-The file toolbar replaces the inline toolbar buttons that were previously embedded inside the chat composer pill. It sits in a separate row **above** the composer, keeping the text input row compact.
+The file toolbar sits as a round button next to the chat composer text box. It opens a dropdown menu with exactly two actions: **Files** (the project file editor) and **Git** (a full-screen git changes modal).
 
 ## Overview
 
-A single trigger button (file icon + arrow) opens a dropdown menu with two sections:
+A single trigger button (stacked arrow icon) next to the textarea opens a dropdown menu:
 
-- **File editor** — opens the CodeMirror-based project file editor popup.
-- **Git actions** — status, diff, log, add (with file-paths prompt), and commit (with message prompt).
+- **Files** — opens the CodeMirror-based project file editor popup.
+- **Git** — opens a modal that shows the project's git state: staged changes, unstaged changes, and recent commits. Every section and every file row is collapsible; each changed file expands into its diff.
 
-Git results are rendered inline beneath the toolbar as a collapsible card showing stdout/stderr and the exit code.
+The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. Mutating git actions (add, commit) are intentionally not exposed from the composer; the modal is read-only.
 
 ## Usage
 
-Tap the file icon (📁 ▼) to expand the menu:
+Tap the arrow button (▲▼) next to the text box to expand the menu:
 
 | Item | Action |
 |------|--------|
-| File editor | Opens the existing in-app CodeMirror editor for the project |
-| Status | `git status --short --branch` |
-| Diff | `git diff --stat` |
-| Log | `git log --oneline -20` |
-| Add | Prompts for file paths, then runs `git add <paths>` |
-| Commit | Prompts for a message, then runs `git commit -m "<msg>"` |
+| Files | Opens the existing in-app CodeMirror editor for the project |
+| Git | Opens the git changes modal |
 
-`Add` and `Commit` expand inline within the menu so you can type paths/message without leaving the dropdown.
+### Git modal
+
+The modal has three collapsible sections:
+
+1. **Staged changes** — files in the index (status `M`, `A`, `D`, `R`, `C`, …), each expandable to its `git diff --cached` output.
+2. **Unstaged changes** — working-tree modifications, each expandable to its `git diff` output. Untracked files are listed but have no diff (no baseline).
+3. **Recent commits** — the last 20 commits (`git log --oneline -20`). Each commit expands into its changed files; each file expands into the diff for that commit.
+
+Tap a section header to collapse/expand it, tap a file row to show/hide its diff. The header shows the current branch name; a refresh button re-fetches the data.
 
 ## Backend API
 
-### `POST /api/git`
+### `GET /api/git/info?projectDir=<abs>`
 
-**Body:**
-
-```json
-{
-  "projectDir": "/abs/path/to/project",
-  "action": "status | diff | log | add | commit | branch | checkout | stash",
-  "args": "optional extra args (e.g. file paths for add)",
-  "message": "commit message (required for commit)"
-}
-```
-
-**Response:**
+Returns parsed, machine-readable git state (no raw shell output):
 
 ```json
 {
   "ok": true,
-  "stdout": "…",
-  "stderr": "",
-  "exitCode": 0
+  "branch": "master",
+  "staged": [
+    { "path": "src/a.js", "status": "M", "statusText": "Modified", "diff": "diff --git a/src/a.js b/src/a.js\n…" }
+  ],
+  "unstaged": [
+    { "path": "notes.md", "status": "?", "statusText": "Untracked", "diff": "" }
+  ],
+  "commits": [
+    {
+      "hash": "8bb48502df3ceb032fa94d259837caf70c5db115",
+      "short": "8bb4850",
+      "subject": "fix: compact MCP server rows",
+      "author": "mouaif",
+      "date": "2026-07-31T16:40:00+02:00",
+      "files": [
+        { "path": "src/web/src/components/settings/…", "status": "M", "statusText": "Modified", "diff": "diff --git …" }
+      ],
+      "filesTruncated": false
+    }
+  ],
+  "truncated": { "stagedFiles": false, "unstagedFiles": false }
 }
 ```
 
-The backend does a simple `spawn('git', ['-C', projectDir, ...])` with `GIT_TERMINAL_PROMPT=0` to prevent interactive prompts. Only read-safe / explicit-save actions are allowed (no `push`, `pull`, `fetch`).
+Implementation details:
+
+- Parsed from `git status --porcelain=v1 -z` (NUL-separated records, rename targets consumed), `git symbolic-ref --short HEAD`, `git log -20 --format=%H%x00%h%x00%s%x00%an%x00%aI%x00 --`, and per-file `git diff --cached -- <path>` / `git diff -- <path>`.
+- Per-commit files are parsed from `git show --format=<hash>` output.
+- Diffs are capped at 120 lines each; per-section diffs are fetched for the first 12 files, commit diffs for the first 3 commits (flags in `truncated` / `filesTruncated`).
+- `ok: false` with `code: 'ENOGIT'` is returned when the project is not a git repository.
+
+The older `POST /api/git` endpoint (status / diff / log / add / commit / branch / checkout / stash) is unchanged and still available for scripts.
 
 ## Implementation notes
 
-- File: `src/web/src/components/chat/FileToolbar.jsx` (component)
-- File: `src/web/src/components/chat/Chat.jsx` (integration — replaced inline toolbar buttons)
-- File: `src/web/src/chat.css` (CSS — `.file-toolbar*` and `.chat-view__composer-area` classes)
-- File: `src/index.js` (backend — `POST /api/git` handler)
+- File: `src/web/src/components/chat/FileToolbar.jsx` (component — menu with Files + Git)
+- File: `src/web/src/components/chat/GitModal.jsx` (component — the modal)
+- File: `src/web/src/components/chat/Chat.jsx` (integration — toolbar next to composer)
+- File: `src/web/src/chat-composer.css` (CSS — `.file-toolbar*` and `.gm__*` classes)
+- File: `src/index.js` (backend — `GET /api/git/info` handler)
 
-The toolbar is a stateless Preact component that receives `projectDir` and `onOpenFileEditor` as props. It manages its own menu and git-result state via `useState`.
+The toolbar is a stateless Preact component that receives `projectDir` and `onOpenFileEditor` as props. The git modal owns its own fetch state (loading / error / retry) and collapses each section, file, and commit independently.

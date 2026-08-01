@@ -495,3 +495,303 @@
   border-radius: var(--r-sm);
   font-size: 0.6rem;
 }
+
+/* ---- Git modal ----------------------------------------------------- */
+
+/* Full-screen overlay, same pattern as the file editor (.fe__overlay) */
+.gm__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  animation: gm__fade-in 120ms ease-out;
+}
+@keyframes gm__fade-in { from { opacity: 0; } to { opacity: 1; } }
+.gm__sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (min-width: 720px) {
+  .gm__overlay {
+    padding: 32px;
+    align-items: center;
+    justify-content: center;
+  }
+  .gm__sheet {
+    flex: 0 1 860px;
+    max-width: 1000px;
+    width: 100%;
+    height: min(80vh, 720px);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.gm__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.gm__title-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.gm__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.01em;
+}
+.gm__branch {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm__iconbtn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  min-width: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  transition: background 80ms ease, color 80ms ease;
+}
+.gm__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
+.gm__iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.gm__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
+
+.gm__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 0 16px;
+}
+
+/* Sections */
+.gm__section {
+  border-bottom: 1px solid var(--border);
+}
+.gm__section-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gm__section-head:hover { background: var(--surface-2); }
+.gm__section-head.is-open { color: var(--accent); }
+.gm__section-caret {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+.gm__section-head.is-open .gm__section-caret { color: var(--accent); }
+.gm__section-title { flex: 0 1 auto; }
+.gm__section-count {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: var(--surface-3);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.gm__section-body {
+  padding: 0 0 4px;
+  background: var(--surface);
+}
+
+/* File rows */
+.gm__file {
+  border-top: 1px solid var(--border);
+}
+.gm__file-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 12px 6px 16px;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gm__file-head:hover { background: var(--surface-2); }
+.gm__file-status {
+  flex: 0 0 auto;
+  min-width: 64px;
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  color: var(--fg-soft);
+  background: var(--surface-3);
+}
+.gm__file-status--M { color: var(--warning); background: var(--warning-soft); }
+.gm__file-status--A { color: var(--success); background: var(--success-soft); }
+.gm__file-status--D { color: var(--danger); background: var(--danger-soft); }
+.gm__file-status--R, .gm__file-status--C { color: var(--accent); background: var(--accent-soft); }
+.gm__file-status--U { color: var(--danger); background: var(--danger-soft); }
+.gm__file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm__file-caret {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* Diff */
+.gm__diff {
+  padding: 2px 8px 8px 16px;
+  background: var(--surface-2);
+  overflow-x: auto;
+}
+.gm__diff-pre {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre;
+  color: var(--fg-soft);
+  min-width: max-content;
+}
+.gm__diff-line { display: block; }
+.gm__diff-file { color: var(--accent-hi); font-weight: 600; }
+.gm__diff-hunk { color: var(--accent); }
+.gm__diff-add { color: var(--success); background: var(--success-soft); }
+.gm__diff-del { color: var(--danger); background: var(--danger-soft); }
+
+/* Commits */
+.gm__commit {
+  border-bottom: 1px solid var(--border);
+}
+.gm__commit-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px 8px 24px;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gm__commit-head:hover { background: var(--surface-2); }
+.gm__commit-head.is-open { color: var(--accent); }
+.gm__commit-caret {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.gm__commit-hash {
+  flex: 0 0 auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: var(--accent);
+}
+.gm__commit-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.gm__commit-meta {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: 0.62rem;
+  color: var(--muted);
+  text-align: right;
+}
+.gm__commit-body {
+  padding: 0 0 4px;
+  background: var(--surface);
+}
+
+/* Empty / error states */
+.gm__empty {
+  padding: 14px 16px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+}
+.gm__error {
+  padding: 18px 16px;
+  text-align: center;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.gm__error p { margin: 0 0 10px; }
+.gm__error .btn { min-height: 36px; font-size: 0.78rem; }
