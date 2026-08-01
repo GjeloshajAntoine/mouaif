@@ -23,12 +23,25 @@ function mouaifServiceWorkerPlugin() {
   return {
     name: 'mouaif-service-worker',
     apply: 'build',
-    generateBundle() {
+    generateBundle(_opts, bundle) {
       const src = readFileSync(resolve(__dirname, 'build', 'sw-src.js'), 'utf8');
-      // Cache version = first 8 hex chars of sha256 of the source
-      // body. Every change to the SW source bumps the version,
-      // which the activate handler uses to evict the old cache.
-      const hash = createHash('sha256').update(src).digest('hex').slice(0, 8);
+      // Cache version = sha256 over the SW source AND every hashed
+      // JS/CSS asset emitted by this build. The asset filenames
+      // already carry content hashes, so this busts the PWA cache on
+      // ANY code change — not just edits to sw-src.js itself.
+      //
+      // Why this matters: hashed assets are served cache-first by the
+      // SW. If the cache version only changed when sw-src.js changed
+      // (the old behaviour), a rebuild that altered only the JS bundle
+      // left the version identical, the SW never reinstalled, and the
+      // stale bundle kept being served from the old cache forever. The
+      // app silently ran old code (including a stale markdown
+      // auto-linker that redirected taps) with no way to recover.
+      const names = Object.keys(bundle || {})
+        .filter((n) => /\.(js|css)$/.test(n))
+        .sort();
+      const payload = src + '\n' + names.join('\n');
+      const hash = createHash('sha256').update(payload).digest('hex').slice(0, 8);
       const body = src.replace('__CACHE_VERSION__', hash);
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: body });
     }
