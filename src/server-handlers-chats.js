@@ -1,0 +1,1115 @@
+'use strict';
+
+// Chat + message REST handlers, including the SSE streaming loop
+// (handleChatStream). Extracted from the original single-file
+// http-server.js so no file stays above ~1 000 lines. Shared state
+// (runningChats, runningChatCancels) and helpers live in
+// src/server-shared.js.
+
+const {
+  sendJSON,
+  readJsonBody,
+  runningKey,
+  runningChats,
+  runningChatCancels,
+  resolveModel,
+  settings,
+  chats,
+  messages,
+  trace,
+  push,
+  usage,
+  promptProfiles,
+  prompts,
+  agentFiles,
+  agentSkills,
+  agentFeatures,
+  tags,
+  mcp,
+  shellTool,
+  ai
+} = require('./server-shared.js');
+
+async function handleChats(req, res, parsed, sessionToken) {
+  const urlPath = parsed.pathname;
+  const method = req.method;
+  const q = parsed.query || {};
+
+  function chatError(e) {
+    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
+    if (e && e.code === 'EBADINPUT') return 400;
+    return 500;
+  }
+
+  function readProjectDir(body) {
+    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const dir = fromQuery || fromBody;
+    if (!dir) return null;
+    return dir;
+  }
+
+  // GET /api/chats?projectDir=<abs>[&offset=0&limit=20]
+  if (urlPath === '/api/chats' && method === 'GET') {
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const offset = Math.max(0, parseInt(typeof q.offset === 'string' ? q.offset : '0', 10) || 0);
+    const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
+    const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
+    try {
+      const list = chats.listChats(dir);
+      list.sort((a, b) => {
+        const aT = a.lastOpenedAt || a.createdAt || '';
+        const bT = b.lastOpenedAt || b.createdAt || '';
+        if (aT === bT) return 0;
+        return aT < bT ? 1 : -1;
+      });
+      const page = limit > 0 ? list.slice(offset, offset + limit) : list;
+      // Enrich every returned chat with a `totalCost` block so the
+      // mobile chat list can render a cost summary in place of the
+      // old prompt-size label (decision §14). The project-level cost
+      // is read from the persisted `totalCost` field on the project
+      // record (maintained by recomputeProjectTotalCost which is
+      // called after every stream, chat delete, or message delete).
+      let app;
+      try { app = settings.getApp(); } catch { app = null; }
+      for (const c of page) {
+        let totalCost;
+        try { totalCost = chats.chatTotalCost(dir, c.id, app); }
+        catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
+        c.totalCost = totalCost;
+        if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+      }
+      // Read persisted project total cost instead of re-summing.
+      let projectTotalCost = { total: 0, known: false, currency: 'USD' };
+      try {
+        const project = settings.getProject(dir);
+        if (project && project.totalCost && typeof project.totalCost.total === 'number') {
+          projectTotalCost = project.totalCost;
+        }
+      } catch { /* fall through to default */ }
+      return sendJSON(res, 200, {
+        chats: page,
+        total: list.length,
+        offset,
+        limit: limit || list.length,
+        projectTotalCost
+      });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/chats/:id?projectDir=<abs>
+  let m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'GET') {
+    const id = decodeURIComponent(m[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      // Response-only liveness marker (never persisted on the record).
+      if (runningChats.has(runningKey(dir, id))) chat.running = true;
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats   body: { projectDir, title?, trace?, promptSize? }
+  if (urlPath === '/api/chats' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chat = chats.createChat(dir, body || {});
+      return sendJSON(res, 201, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize?, draft? }
+  m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'PATCH') {
+    const id = decodeURIComponent(m[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    // Strip server-owned fields from the client patch. The generic
+    // merge in updateChat absorbs every key, so without this a PATCH
+    // could rewrite the chat's id, createdAt, or lastOpenedAt.
+    // Internal callers (touchChat, titleChatFromPrompt) set those
+    // fields intentionally and don't come through here.
+    const safeBody = Object.assign({}, body || {});
+    delete safeBody.id;
+    delete safeBody.createdAt;
+    delete safeBody.lastOpenedAt;
+    try {
+      const chat = chats.updateChat(dir, id, safeBody);
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/touch   body: { projectDir }
+  m = urlPath.match(/^\/api\/chats\/([^/]+)\/touch$/);
+  if (m && method === 'POST') {
+    const id = decodeURIComponent(m[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      require('./tools/authorization.js').clearGrants(dir, id);
+      const chat = chats.touchChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { chat });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // DELETE /api/chats/:id?projectDir=<abs>
+  m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    const id = decodeURIComponent(m[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const removed = chats.deleteChat(dir, id);
+      if (!removed) return sendJSON(res, 404, { error: 'Chat not found', id });
+      // Chat storage and trace export are independent. Deleting a chat
+      // removes its transcript, but deliberately keeps the user-owned trace
+      // file so it can remain committed with the project (decision §5).
+      try { require('fs').rmSync(messages.messagesFilePath(dir, id), { force: true }); }
+      catch { /* best-effort cleanup after the chat record is gone */ }
+      // Clean up in-memory task state.
+      try { require('./tools/task.js').clearChat(id); } catch { /* non-fatal */ }
+      // Refresh the persisted project total cost.
+      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
+      return sendJSON(res, 200, { ok: true, removed: id });
+    } catch (e) {
+      return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // ---- Per-chat messages -------------------------------------------
+  // GET /api/chats/:id/messages?projectDir= -> { messages }
+  const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
+  if (getMsgsMatch && method === 'GET') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { messages: messages.listMessages(dir, id) });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/chats/:id/system-prompt?projectDir= -> { profile, agentFiles, skills, prompt, text }
+  // Returns the effective system context for a chat as it will be sent
+  // upstream: the resolved prompt-size profile system message, the
+  // agent files (when enabled), and, if the chat references a custom
+  // prompt, that prompt's content. The chat UI renders this as the
+  // first (collapsible) message in the transcript so the user can see
+  // what the model is being told, without the prompt-size picker having
+  // to be a permanent fixture.
+  const sysPromptMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/system-prompt$/);
+  if (sysPromptMatch && method === 'GET') {
+    const id = decodeURIComponent(sysPromptMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
+      let profile = null;
+      try {
+        const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
+        if (p) profile = { id: p.id, label: p.label, description: p.description, systemMessage: p.systemMessage };
+      } catch { /* profile stays null; the stream would fall through too */ }
+      let prompt = null;
+      if (chat.promptId) {
+        try {
+          const cp = prompts.getPrompt(dir, chat.promptId);
+          if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
+        } catch { /* custom prompt stays null */ }
+      }
+      // The combined text mirrors the order handleChatStream uses:
+      // profile system message first, then agent files, selected agent,
+      // skills, then the custom prompt.
+      const parts = [];
+      if (profile && profile.systemMessage) parts.push(profile.systemMessage);
+      let agentFilesList = null;
+      try {
+        if (agentFiles.resolveEnabled({ chat, projectDir: dir })) {
+          const names = agentFiles.resolveFileNames({ chat, projectDir: dir });
+          agentFilesList = agentFiles.load(dir, names);
+          for (const af of agentFilesList) parts.push(af.content);
+        }
+      } catch { /* agent files stay null */ }
+      // Agents are subagent delegation targets only — never part of
+      // the chat's system prompt. Skills are project instruction files.
+      const skillState = agentSkills.resolve({ chat, projectDir: dir });
+      const skillCatalog = agentSkills.catalogMessage(dir, chat);
+      if (skillCatalog) parts.push(skillCatalog);
+      if (prompt && prompt.content) parts.push(prompt.content);
+      // Also expose the project-level gate so the UI can render the
+      // per-chat toggle as locked off when the project has it disabled.
+      let projectAgentFiles = null;
+      try {
+        const project = require('./settings.js').getProject(dir);
+        if (project && typeof project.agentFiles === 'boolean') projectAgentFiles = project.agentFiles;
+      } catch { /* null */ }
+      return sendJSON(res, 200, {
+        profile,
+        agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        projectAgentFiles,
+        skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, description: s.description, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
+        projectSkills: skillState.projectEnabled,
+        prompt,
+        text: parts.join('\n\n')
+      });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/chats/:id/tool-preview?projectDir= -> { profile, tools }
+  // Returns the tool-declaration state for the chat's resolved
+  // prompt-size profile: which tools are advertised to the model and
+  // in what shape (full spec vs. the very-small discover_tool flow).
+  // The chat UI shows this as a temporary preview while
+  // the chat is still empty, so the user sees the concrete effect of
+  // the S/M/L switch on the tool budget before the first message.
+  // The collection logic mirrors ai.streamChat (native shell + MCP),
+  // then promptProfiles.reduceToolSpecs applies the same reduction the
+  // stream will apply — so the preview is always what the model gets.
+  const toolPreviewMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/tool-preview$/);
+  if (toolPreviewMatch && method === 'GET') {
+    const id = decodeURIComponent(toolPreviewMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      const chat = chats.getChat(dir, id);
+      if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
+      // Resolve the profile id (chat -> project -> app -> 'average').
+      let profileId = promptProfiles.DEFAULT_PROFILE;
+      try {
+        const p = promptProfiles.resolveProfile({ chat, projectDir: dir });
+        if (p && p.id) profileId = p.id;
+      } catch { /* fall through to default */ }
+      // Collect the tool specs exactly as streamChat does: base shell,
+      // progress, subagent, ask_user, and file tools are always
+      // advertised, plus ready MCP servers.
+      const shellEnabled = true;
+      const fileToolsEnabled = true;
+      const toolSpecs = [];
+      if (shellEnabled) {
+        try { toolSpecs.push(shellTool.SPEC); } catch { /* skip */ }
+      }
+      try { toolSpecs.push(require('./tools/progress.js').SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
+      if (fileToolsEnabled) {
+        try {
+          const fileTools = require('./tools/files.js');
+          for (const n of fileTools.FILE_TOOL_NAMES) toolSpecs.push(fileTools.SPECS[n]);
+        } catch { /* skip */ }
+      }
+      try {
+        const specs = mcp.listComposedToolSpecs(dir);
+        if (specs && specs.length) {
+          for (const s of specs) {
+            toolSpecs.push({
+              type: 'function',
+              function: { name: s.name, description: s.description, parameters: s.parameters }
+            });
+          }
+        }
+      } catch { /* no MCP tools */ }
+      try {
+        const authz = require('./tools/authorization.js');
+        const authState = authz.getAuthorization(dir);
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task']) {
+          const cfg = authState.tools[family];
+          if (cfg && cfg.mode === 'off') {
+            const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
+            for (let i = toolSpecs.length - 1; i >= 0; i--) {
+              const spec = toolSpecs[i];
+              if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
+            }
+          }
+        }
+        for (let i = toolSpecs.length - 1; i >= 0; i--) {
+          const spec = toolSpecs[i];
+          if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
+          const cfg = authz.effectiveConfig(dir, spec.function.name);
+          if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+        }
+      } catch { /* authorization state unreadable; keep every tool advertised */ }
+      // Apply the same initial per-profile reduction the stream applies.
+      // For very-small, this starts with discover_tool only; discovered
+      // tool schemas are added dynamically during the tool loop.
+      let effective = toolSpecs;
+      try { effective = promptProfiles.reduceToolSpecs(toolSpecs, profileId); } catch { /* full specs */ }
+      const reduced = profileId === 'very-small';
+      const tools = (effective || []).map((s) => {
+        const fn = (s && s.function) || {};
+        const params = fn.parameters && fn.parameters.properties ? Object.keys(fn.parameters.properties) : [];
+        return {
+          name: fn.name || '',
+          description: typeof fn.description === 'string' ? fn.description : '',
+          // hasSchema reflects whether this advertised tool exposes
+          // parameter names. For very-small's initial preview this is
+          // discover_tool's own schema.
+          hasSchema: params.length > 0,
+          params
+        };
+      });
+      return sendJSON(res, 200, {
+        profile: profileId,
+        reduced,
+        shellEnabled,
+        fileToolsEnabled,
+        count: tools.length,
+        tools
+      });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/messages  body: { projectDir, role, content }
+  // Append a message directly. The /messages/stream endpoint below
+  // does the same internally for user / assistant messages; this
+  // route is for manual edits and tests.
+  if (getMsgsMatch && method === 'POST') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const msg = messages.appendMessage(dir, id, { role: body.role, content: body.content, ts: body.ts });
+      return sendJSON(res, 201, { message: msg });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // DELETE /api/chats/:id/messages?projectDir= -> { ok, removed }
+  if (getMsgsMatch && method === 'DELETE') {
+    const id = decodeURIComponent(getMsgsMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const removed = messages.clearMessages(dir, id);
+      // Refresh the persisted project total cost after messages are cleared.
+      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
+      return sendJSON(res, 200, { ok: true, removed });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  const exportTraceMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/trace\/export$/);
+  if (exportTraceMatch && method === 'POST') {
+    const id = decodeURIComponent(exportTraceMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const file = trace.exportMessages(dir, id, messages.listMessages(dir, id));
+      return sendJSON(res, 200, { ok: true, path: file });
+    } catch (e) {
+      return sendJSON(res, e.code === 'EBADINPUT' ? 400 : 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/import  body: { projectDir, skipExisting?: bool }
+  // Re-import chat metadata and messages from JSON files into the DB.
+  if (urlPath === '/api/chats/import' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const dir = readProjectDir(body);
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      const chatdb = require('./chatdb.js');
+      const result = chatdb.importFromJson(dir, { skipExisting: !!body.skipExisting });
+      return sendJSON(res, 200, { ok: true, imported: result });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // POST /api/chats/:id/messages/stream  body: { projectDir, modelId, content }
+  // Appends the user message, calls ai.streamChat, streams the
+  // response back as SSE, appends the assistant message on done, and
+  // writes both events to the trace file (if the chat's trace flag
+  // is on). One round-trip per user turn.
+  const streamMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages\/stream$/);
+  if (streamMatch && method === 'POST') {
+    return handleChatStream(req, res, streamMatch[1], sessionToken);
+  }
+
+  return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+}
+
+// Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
+// the route table above stays compact.
+async function handleChatStream(req, res, chatId, sessionToken) {
+  const _pushSessionId = push.sessionIdFromToken(sessionToken);
+  let body;
+  try { body = await readJsonBody(req); }
+  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+  const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
+  const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
+  const content = body && typeof body.content === 'string' ? body.content : '';
+  const attachments = messages.normalizeAttachments(body && body.attachments);
+  const thinkingLevel = body && typeof body.thinkingLevel === 'string' ? body.thinkingLevel : '';
+  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+  if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
+  if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
+
+  let chat;
+  try { chat = chats.getChat(projectDir, chatId); }
+  catch (e) {
+    const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+    return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+  }
+  if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
+
+  // Reject a second concurrent stream on the same chat. Two in-flight
+  // runs interleave appendMessage read-modify-writes and both append
+  // assistant messages, corrupting transcript order.
+  const runKey = runningKey(projectDir, chatId);
+  if (runningChats.has(runKey)) {
+    return sendJSON(res, 409, { error: 'A response is already streaming for this chat', code: 'EALREADY_RUNNING', id: chatId });
+  }
+
+  // Resolve the project model and hydrate it with its app-level provider
+  // connection (credentials, base URL, and auth account).
+  let model;
+  try { model = resolveModel(modelId, projectDir, providerId); }
+  catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId, providerId: providerId || undefined }); }
+
+  // Append the user message and bump lastOpenedAt BEFORE streaming.
+  // If this is the first prompt in a new/default-named chat, also
+  // derive a human title from that prompt and persist it immediately.
+  let userMsg;
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments }); }
+  catch (e) { return sendJSON(res, 400, { error: e.message }); }
+  // Read the full transcript once and reuse across the title-derivation
+  // check and the upstream message assembly below. Two separate
+  // listMessages() calls would read SQLite or the JSON file twice
+  // for identical data (the user message was already appended above).
+  const history = messages.listMessages(projectDir, chatId);
+  try {
+    if (history.filter(m => m && m.role === 'user').length === 1 && content) {
+      const renamed = chats.titleChatFromPrompt(projectDir, chatId, content);
+      if (renamed) chat = renamed;
+    }
+  } catch { /* non-fatal */ }
+  try { chats.touchChat(projectDir, chatId); } catch { /* non-fatal */ }
+
+  // Mark the chat as running for the lifetime of the SSE response so a
+  // reloaded client re-enters its busy state and a second stream is
+  // rejected (above). Registered only after every failable setup step
+  // (model resolution, message append) so an early 4xx cannot leak the
+  // marker; cleared at every exit below (normal, error, and throw).
+  const runController = new AbortController();
+  runningChats.add(runKey);
+  runningChatCancels.set(runKey, runController);
+
+  // Open SSE.
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  res.write(': connected\n\n');
+
+  // Open the trace file. No-op writer if trace is off or the file
+  // system is read-only.
+  const traceStream = chat.trace ? trace.open(projectDir, chatId) : null;
+  function emit(name, data) {
+    try {
+      res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
+    } catch { /* socket closed */ }
+    if (traceStream) trace.write(traceStream, name, data);
+  }
+  if (traceStream) {
+    const event = trace.eventForMessage(userMsg);
+    trace.write(traceStream, event.type, event.payload);
+  }
+
+  // Build the message list to send upstream: existing transcript + the
+  // user message we just appended. The list is composed in this order
+  // (each block is optional, but the profile block is always present):
+  //   1. Prompt-size profile system message (decisions §4 prompt-size
+  //      profiles). Resolved from chat.promptSize -> resolved project
+  //      settings.promptSize -> 'average'. The profile carries the
+  //      model identity + the default guidance. A missing or unknown
+  //      value falls through to the default; this code never throws.
+  //   2. Agent files (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md),
+  //      when enabled for this chat. Each file rides as its own system
+  //      message so the model sees the file boundary.
+  //   3. Custom prompt (chat.promptId), if the chat references a
+  //      project prompt. The custom prompt refines the profile — the
+  //      instructions on each prompt say "where they do not conflict
+  //      with the active profile".
+  //   4. The transcript (user + assistant turns), with the brand-new
+  //      user turn already appended by the appendMessage call above.
+  const upstreamMessages = [];
+  // Resolve the prompt-size profile once. Its id drives BOTH the system
+  // message (below) and the tool-declaration reduction passed to
+  // streamChat (decisions §4: very-small trims tool schemas).
+  let resolvedProfileId = promptProfiles.DEFAULT_PROFILE;
+  try {
+    const profile = promptProfiles.resolveProfile({ chat, projectDir });
+    if (profile) {
+      if (profile.id) resolvedProfileId = profile.id;
+      if (profile.systemMessage) {
+        upstreamMessages.push({ role: 'system', content: profile.systemMessage });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without a profile system message */ }
+  // Agent files (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).
+  // Injected after the profile but before tagged files and the custom
+  // prompt, so they sit close to the identity block. Each file rides
+  // as its own system message. A trace line records what was injected.
+  try {
+    if (agentFiles.resolveEnabled({ chat, projectDir })) {
+      const names = agentFiles.resolveFileNames({ chat, projectDir });
+      const injected = agentFiles.load(projectDir, names);
+      for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
+      if (traceStream && injected.length) {
+        trace.write(traceStream, 'agent-files', {
+          files: injected.map(m => m.name)
+        });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without agent files */ }
+  // Agents are delegation targets for the `subagent` tool only — they
+  // are never injected into the main chat stream (docs/features/agents.md).
+  try {
+    const catalog = agentSkills.catalogMessage(projectDir, chat);
+    if (catalog) upstreamMessages.push({ role: 'system', content: catalog });
+  } catch { /* non-fatal; stream proceeds without skills */ }
+
+  // Agent features summary — a terse list of enabled features and their
+  // authorization state in the current project. Tells the model what it
+  // can do without the user having to guess or ask. The `list_features`
+  // tool gives the full structured state.
+  try {
+    // Collect what we need for the feature summary.
+    const project = require('./settings.js').getProject(projectDir);
+    let authz = null;
+    try { authz = require('./tools/authorization.js').getAuthorization(projectDir); } catch { /* safe default */ }
+    let mcpServers = null;
+    try { mcpServers = require('./mcp.js').listServers(projectDir); } catch { /* safe default */ }
+    const featureMsg = agentFeatures.buildFeatureSummary({ chat, projectDir, project, authz, mcpServers });
+    if (featureMsg) {
+      upstreamMessages.push({ role: 'system', content: featureMsg });
+    }
+  } catch { /* non-fatal; stream proceeds without feature summary */ }
+  // Tagged files (decisions §15). Injected after the profile but before
+  // the custom prompt and the transcript, so they are the deepest
+  // context. includeInChat entries ride as `system`; any file the user
+  // @-referenced in this turn's message is promoted to `user`. A trace
+  // line records what was injected without re-reading disk on replay.
+  try {
+    const referencedPaths = tags.parseReferences(projectDir, content);
+    const injected = tags.resolveForInjection(projectDir, { referencedPaths });
+    if (injected.length) {
+      for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
+      if (traceStream) {
+        trace.write(traceStream, 'tags', {
+          files: injected.map(m => ({ path: m.relPath, role: m.role }))
+        });
+      }
+    }
+  } catch { /* non-fatal; stream proceeds without tagged files */ }
+  const effectivePromptId = chat.promptId || null;
+  if (effectivePromptId) {
+    try {
+      const prompt = prompts.getPrompt(projectDir, effectivePromptId);
+      if (prompt && prompt.content) {
+        upstreamMessages.push({ role: prompt.role, content: prompt.content });
+      }
+    } catch { /* non-fatal; stream proceeds without the prompt */ }
+  }
+  function upstreamContentForMessage(m) {
+    if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return m && m.content;
+    const parts = [];
+    if (m.content) parts.push({ type: 'text', text: m.content });
+    for (const a of m.attachments) parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
+    return parts;
+  }
+
+  // Reconstruct only complete historical tool call/result pairs. An aborted
+  // run can leave a persisted call with no result; strict OpenAI-compatible
+  // providers reject that orphan on the next send with HTTP 400. The helper
+  // also canonicalizes provider-specific call ids for cross-model resumes.
+  const supportsOpenAIToolHistory = model.provider === 'openai-compatible'
+    || model.provider === 'openrouter'
+    || model.provider === 'github-copilot';
+  let toolFeedbackMaxBytes;
+  try { toolFeedbackMaxBytes = settings.getApp().toolFeedbackMaxBytes; } catch { /* default applies */ }
+  upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {
+    includeTools: supportsOpenAIToolHistory,
+    toolFeedbackMaxBytes
+  }));
+
+  let assistantContent = '';
+  let assistantReasoning = '';
+  let assistantMsg = null;
+  // Track the streaming window so the cost line (which is computed
+  // server-side from the upstream's authoritative usage block) also
+  // carries the streamingMs the chat UI needs for its tok/s counter.
+  // (The chat UI independently tracks its own counter for live
+  // updates; the server-side number is the fallback when the client
+  // missed frames — e.g. when the tab was backgrounded.)
+  //
+  // streamingMs accumulates ONLY the assistant-streaming windows, not
+  // the tool-execution gaps between them. The multi-round tool loop
+  // would otherwise stretch the window and under-report tok/s.
+  let streamStartedAt = 0;   // set on first message/reasoning delta
+  let streamingMs = 0;       // accumulated across streaming windows
+  // Per-round usage snapshots from ai.js. Each tool round's upstream
+  // call reports its own prompt/completion tokens. When a round ends
+  // with tool calls, the pending snapshot is attached to the segment
+  // persisted at `assistant_turn_end`, giving it a cost. When the
+  // turn ends without tool calls, the snapshot is redundant — the
+  // `done` handler computes the final cost from aggregated usage.
+  let pendingRoundUsage = null;
+  // Running token/cost totals across all upstream rounds in this turn,
+  // used by the task progress push notification title ("12.4K tok · $0.0312").
+  let turnTokens = 0;
+  let turnCost = 0;
+  let turnCostKnown = false;
+  function accumulateRoundUsage(roundUsage) {
+    if (!roundUsage) return;
+    turnTokens += (Number(roundUsage.promptTokens) || 0) + (Number(roundUsage.completionTokens) || 0);
+    const segCost = computeSegmentCost(roundUsage);
+    if (segCost && segCost.known) { turnCost += segCost.total; turnCostKnown = true; }
+  }
+  // Right-hand side of the task push title: token count plus price when
+  // pricing is known. Returns '' when no usage has been reported yet.
+  function pushUsageLabel() {
+    if (!turnTokens) return '';
+    return usage.formatTokens(turnTokens) + ' tok' + (turnCostKnown ? ' · ' + usage.formatCost(turnCost) : '');
+  }
+  // Per-turn enrichment (cost + usage) is computed once on `done`
+  // and reused for both the SSE emit and the persisted assistant
+  // message. The chat UI's own live counter and the cost line
+  // diverge slightly while the stream is in flight (the live counter
+  // is per-delta; the cost line is final); that's intentional.
+  let lastEnrichment = null;
+
+  // Compute the cost for an intermediate segment from its round's
+  // usage snapshot. Returns null when pricing is unavailable.
+  function computeSegmentCost(roundUsage) {
+    if (!roundUsage) return null;
+    try {
+      const app = settings.getApp();
+      if (typeof roundUsage.providerCost === 'number' && isFinite(roundUsage.providerCost) && roundUsage.providerCost >= 0) {
+        // OpenRouter reports a real input/output split under
+        // cost_details; fall back to 0 when the round didn't carry it.
+        const split = (v) => (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0;
+        return {
+          known: true,
+          input: split(roundUsage.providerCostInput),
+          output: split(roundUsage.providerCostOutput),
+          total: roundUsage.providerCost,
+          currency: 'USD'
+        };
+      }
+      const result = usage.computeCost({ model, usage: roundUsage, app });
+      return { known: result.known, input: result.input, output: result.output, total: result.total, currency: result.currency };
+    } catch { return null; }
+  }
+
+  // Built-in shell and file tools are always advertised. Their authorization
+  // modes decide whether calls prompt, run automatically, or are disabled.
+  const shellEnabled = true;
+  const fileToolsEnabled = true;
+
+  // App-level knobs (size caps etc.) are read once and passed through
+  // to the file tool dispatcher. The dispatcher itself uses the
+  // DEFAULT_* constants when these are missing, so passing the whole
+  // app object is fine — only the file-tool keys are consulted.
+  let appSettings = {};
+  try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
+
+  const notificationPrefs = Object.assign({
+    askUser: true,
+    toolAuthorization: true,
+    completion: true,
+    errors: true,
+    progress: true,
+    quickActions: true
+  }, appSettings.notifications || {});
+  const chatUrl = `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
+
+  function sendChatPush(kind, options = {}) {
+    if (!_pushSessionId) return;
+    const preferenceKey = kind === 'ask_user' ? 'askUser'
+      : kind === 'tool_authorization' ? 'toolAuthorization'
+        : kind === 'completion' ? 'completion'
+          : kind === 'error' ? 'errors'
+            : kind === 'progress' ? 'progress' : '';
+    if (preferenceKey && notificationPrefs[preferenceKey] === false) return;
+    const data = Object.assign({ kind, chatId, projectDir, url: chatUrl }, options.data || {});
+    push.sendPushToSession(_pushSessionId, {
+      title: options.title || ((chat && chat.title) || 'mouaif'),
+      body: options.body || '',
+      chatId,
+      projectDir,
+      tag: options.tag || `chat-${chatId}-${kind}`,
+      data,
+      actions: options.actions,
+      requireInteraction: options.requireInteraction === true
+    });
+  }
+
+  function attentionActions(kind, data) {
+    const actions = [];
+    if (notificationPrefs.quickActions !== false) {
+      if (kind === 'tool_authorization') {
+        actions.push({ action: 'allow-once', title: 'Allow once' });
+        actions.push({ action: 'deny', title: 'Deny' });
+      } else if (kind === 'ask_user' && data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2) {
+        for (let i = 0; i < data.options.length; i++) {
+          const option = data.options[i] || {};
+          if (option.label && option.value) actions.push({ action: 'answer-' + i, title: String(option.label).slice(0, 40) });
+        }
+      }
+    }
+    if (!actions.length) actions.push({ action: 'open', title: 'Open chat' });
+    return actions;
+  }
+
+  // formatStreamError(err) — one-line, user-facing summary of a
+  // failed turn. Persisted as a system message and shown as the
+  // chat's error bubble, so keep it short: code + message + the
+  // first line of any upstream detail (provider error bodies can
+  // run to a full HTML page — useless in a chat bubble).
+  function formatStreamError(err) {
+    if (!err || typeof err !== 'object') return 'Request failed';
+    const code = err.code ? err.code + ': ' : '';
+    const msg = err.message || 'Request failed';
+    let detail = '';
+    if (typeof err.detail === 'string' && err.detail) {
+      detail = ' — ' + err.detail.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 1).join(' ').slice(0, 300);
+    }
+    return '⚠ ' + code + msg + detail;
+  }
+
+  // persistStreamError(err) — write the failure into the transcript
+  // as a system message so it survives a reload and lands in the
+  // chat history (errors belong in the chat, not just in a transient
+  // status line). Kept best-effort: a read-only transcript must not
+  // mask the original error.
+  function persistStreamError(err) {
+    try {
+      messages.appendMessage(projectDir, chatId, { role: 'system', content: formatStreamError(err) });
+    } catch { /* non-fatal */ }
+  }
+
+  // Keep the server-side chat run alive even if the browser tab or SSE
+  // connection disappears. All stream writes are best-effort and the
+  // transcript remains authoritative, so a reloaded client can catch up by
+  // polling persisted messages instead of causing an upstream abort with
+  // "client disconnected".
+
+  let result;
+  try {
+    result = await ai.streamChat({
+    model,
+    messages: upstreamMessages,
+    projectDir,
+    chatId, // Pass chatId for authorization gate
+    shellEnabled,
+    fileToolsEnabled,
+    appSettings,
+    promptSize: resolvedProfileId,
+    thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
+    signal: runController.signal,
+    // Per-chat tool filter (decisions: chat.tools). null/undefined
+    // means "all tools available to the project"; an array (even an
+    // empty one) means "restrict to exactly these tool names". The
+    // legacy fields above stay so existing API clients keep working.
+    // Chat tool filter wins; otherwise all project tools are offered.
+    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+    chat,
+    // Per-round usage snapshot (one per upstream API call, including
+    // tool rounds). Stashed so `assistant_turn_end` can attach cost
+    // to the intermediate segment it persists.
+    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; accumulateRoundUsage(roundUsage); },
+    onEvent: (name, data) => {
+      if (name === 'message' && typeof data.delta === 'string') {
+        if (!streamStartedAt) streamStartedAt = Date.now();
+        assistantContent += data.delta;
+        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+        return;
+      } else if (name === 'reasoning' && typeof data.delta === 'string') {
+        if (!streamStartedAt) streamStartedAt = Date.now();
+        assistantReasoning += data.delta;
+        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+        return;
+      } else if (name === 'assistant_turn_end') {
+        // A tool round is starting: fold the window that just ended into
+        // the accumulator and clear the start marker. The next assistant
+        // delta re-arms streamStartedAt.
+        if (streamStartedAt) { streamingMs += Date.now() - streamStartedAt; streamStartedAt = 0; }
+        // Persist text produced before a tool call at its real transcript
+        // position, then start a fresh segment for the post-tool response.
+        // Attach the round's usage/cost so this segment shows its own
+        // cost line in the chat UI.
+        // The same numbers ride the SSE event so the live bubble can
+        // render the round's real cost without waiting for reconciliation.
+        let segmentCost = null;
+        let segmentUsage;
+        if (assistantContent.trim() || assistantReasoning.trim()) {
+          try {
+            segmentCost = computeSegmentCost(pendingRoundUsage);
+            segmentUsage = pendingRoundUsage
+              ? {
+                  promptTokens: pendingRoundUsage.promptTokens,
+                  completionTokens: pendingRoundUsage.completionTokens,
+                  cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
+                  cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
+                }
+              : undefined;
+            assistantMsg = messages.appendMessage(projectDir, chatId, {
+              role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
+              usage: segmentUsage,
+              cost: segmentCost || undefined
+            });
+            pendingRoundUsage = null;
+            if (traceStream && assistantMsg) {
+              const event = trace.eventForMessage(assistantMsg);
+              trace.write(traceStream, event.type, event.payload);
+            }
+          } catch { /* non-fatal */ }
+        }
+        assistantContent = '';
+        assistantReasoning = '';
+        // Emit the enriched frame (cost + usage attached) and skip the
+        // generic emit below so the client never sees a cost-less copy.
+        emit(name, Object.assign({}, data, {
+          usage: segmentUsage,
+          cost: segmentCost || undefined,
+          modelId: model.id
+        }));
+        return;
+      } else if (name === 'tool_call') {
+        try {
+          messages.appendMessage(projectDir, chatId, {
+            role: 'tool', phase: 'call', toolCallId: data.id || '', name: data.name || '',
+            args: data.args || {}, content: JSON.stringify(data.args || {})
+          });
+        } catch { /* non-fatal */ }
+      } else if (name === 'tool_result') {
+        try {
+          messages.appendMessage(projectDir, chatId, {
+            role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
+            ok: !!data.ok, content: JSON.stringify(data.result || {})
+          });
+        } catch { /* non-fatal */ }
+      } else if (name === 'authorization_required') {
+        const notificationData = {
+          callId: data && data.callId,
+          tool: data && data.tool
+        };
+        sendChatPush('tool_authorization', {
+          title: 'Authorization needed',
+          body: (data && data.tool ? data.tool : 'A tool') + ' is waiting for approval.',
+          tag: 'chat-' + chatId + '-attention',
+          data: notificationData,
+          actions: attentionActions('tool_authorization', data),
+          requireInteraction: true
+        });
+      } else if (name === 'ask_user_required') {
+        const quickOptions = data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2
+          ? data.options.slice(0, 2).map((option) => ({ label: String(option.label || '').slice(0, 40), value: String(option.value || '').slice(0, 120) }))
+          : [];
+        const notificationData = {
+          callId: data && data.callId,
+          tool: 'ask_user',
+          options: quickOptions
+        };
+        sendChatPush('ask_user', {
+          title: 'The chat needs your answer',
+          body: data && data.question ? String(data.question).slice(0, 240) : 'Open the chat to answer.',
+          tag: 'chat-' + chatId + '-attention',
+          data: notificationData,
+          actions: attentionActions('ask_user', data),
+          requireInteraction: true
+        });
+      } else if (name === 'progress_update') {
+        // Updatable per-chat push notification for real-time progress.
+        // Uses a stable tag so each new progress_update replaces the
+        // previous OS notification for this chat (no notification spam).
+        const pctNum = data.current != null && data.total != null
+          ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
+          : null;
+        if (data.kind === 'task') {
+          // Task notifications get a structured, UI-like plain-text layout
+          // (push bodies can't do real alignment, so each "row" is a line):
+          //   title row:  <chat title> · <tokens> · <price>
+          //   bar row:    ▓▓▓▓░░░░░░ 40%
+          //   task row:   <task title> — 2 of 5
+          const barWidth = 10;
+          const filled = pctNum == null ? 0 : Math.round((pctNum / 100) * barWidth);
+          const bar = '▓'.repeat(filled) + '░'.repeat(barWidth - filled) + (pctNum == null ? '' : ' ' + pctNum + '%');
+          const counts = (data.current != null && data.total != null)
+            ? data.current + ' of ' + data.total
+            : (data.message || '');
+          const taskLine = (data.title || 'Task') + (counts ? ' — ' + counts : '');
+          const usageLabel = pushUsageLabel();
+          const chatTitle = (chat && chat.title) || 'mouaif';
+          sendChatPush('progress', {
+            title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
+            body: bar + '\n' + taskLine,
+            tag: 'chat-' + chatId + '-progress'
+          });
+        } else {
+          sendChatPush('progress', {
+            title: data.title || 'Progress',
+            body: (pctNum != null ? pctNum + '% — ' : '') + (data.message || ''),
+            tag: 'chat-' + chatId + '-progress'
+          });
+        }
+      } else if (name === 'done') {
+        sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
+        // Compute the enrichment once. `cost.known` is true when at
+        // least one of the four pricing layers (model, app, builtin)
+        // had a non-empty entry for this model id. We always emit
+        // the enriched event so the UI can render `--` cleanly; the
+        // `known: false` flag tells it not to show a dollar sign.
+        let enriched = data;
+        try {
+          const app = settings.getApp();
+          const providerCost = data && typeof data.providerCost === 'number' && isFinite(data.providerCost) && data.providerCost >= 0
+            ? data.providerCost
+            : null;
+          const cost = providerCost == null
+            ? usage.computeCost({ model, usage: data && data.usage, app })
+            : { known: true, input: 0, output: 0, total: providerCost, currency: 'USD' };
+          // Fold the still-open window (first delta → done) into the
+          // accumulated tool-round windows. Falls back to the full
+          // elapsed time when no message delta ever armed the start.
+          const finalStreamingMs = streamingMs + (streamStartedAt ? Date.now() - streamStartedAt : 0);
+          enriched = Object.assign({}, data, {
+            cost: {
+              known: cost.known,
+              input: cost.input,
+              output: cost.output,
+              total: cost.total,
+              currency: cost.currency
+            },
+            streamingMs: finalStreamingMs,
+            modelId: model.id
+          });
+        } catch { /* keep data as-is on any pricing resolution error */ }
+        lastEnrichment = enriched;
+        pendingRoundUsage = null; // consumed by the final `done` cost
+        // Persist the assistant message with the same enrichment so
+        // a chat that is later reopened renders the same numbers
+        // (decision §14 — the usage block rides the message).
+        if (assistantContent.trim() || assistantReasoning.trim()) {
+          try {
+            assistantMsg = messages.appendMessage(projectDir, chatId, {
+              role: 'assistant',
+              content: assistantContent,
+              reasoning: assistantReasoning,
+              usage: data && data.usage,
+              cost: enriched.cost,
+              streamingMs: enriched.streamingMs,
+              modelId: enriched.modelId
+            });
+          } catch { /* non-fatal */ }
+        }
+        if (traceStream && assistantMsg) {
+          const event = trace.eventForMessage(assistantMsg);
+          trace.write(traceStream, event.type, event.payload);
+        }
+        emit('done', enriched);
+        return;
+      }
+      emit(name, data);
+    }
+  });
+  } catch (streamErr) {
+    // A throw out of the streaming layer must still clear the running
+    // marker or the chat would look busy forever after a reload.
+    runningChats.delete(runKey);
+    runningChatCancels.delete(runKey);
+    if (traceStream) trace.close(traceStream);
+    const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
+    persistStreamError(errPayload);
+    try { emit('error', errPayload); } catch { /* socket closed */ }
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: 'chat-' + chatId + '-status' });
+    res.end();
+    return;
+  }
+
+  if (!result.ok) {
+    // Always surface the failure — even when the stream produced
+    // partial content before dying. The old guard
+    // (`!assistantContent && !assistantReasoning`) silently dropped
+    // mid-turn failures: the client saw the socket close with no
+    // `done` and no `error`, leaving the chat stuck on "streaming…"
+    // with zero explanation. Persist any partial output first, then
+    // the error itself, so the transcript shows exactly what the
+    // model produced before the failure.
+    const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
+    if (assistantContent.trim() || assistantReasoning.trim()) {
+      try {
+        messages.appendMessage(projectDir, chatId, {
+          role: 'assistant',
+          content: assistantContent,
+          reasoning: assistantReasoning,
+          modelId: model.id
+        });
+      } catch { /* non-fatal */ }
+    }
+    persistStreamError(errPayload);
+    emit('error', errPayload);
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: 'chat-' + chatId + '-status' });
+  }
+  if (traceStream) trace.close(traceStream);
+  runningChats.delete(runKey);
+  runningChatCancels.delete(runKey);
+  // Refresh the persisted project total cost after a stream completes.
+  try { chats.recomputeProjectTotalCost(projectDir); } catch { /* non-fatal */ }
+  res.end();
+}
+
+module.exports = { handleChats, handleChatStream };
