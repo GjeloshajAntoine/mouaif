@@ -212,11 +212,67 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   afterTranscriptAppend(refs, true);
 }
 
+// ensureLiveStreamingBody(row)
+//
+// The streaming hot path must not rebuild the whole assistant body
+// on every delta — that's `body.innerHTML = ''` + re-set of the full
+// accumulated string per token, which is O(n) per delta and O(n²)
+// for a long turn, plus a full DOM teardown/recreate. So the live
+// row's body is switched to "streaming mode" exactly once (on the
+// first delta), after which subsequent deltas append a single text
+// node. Returns the body element.
+function ensureLiveStreamingBody(row) {
+  const body = row && row._body;
+  if (!body) return body;
+  if (!row._streaming) {
+    renderAssistantBody(body, row._content || '', row._reasoning || '', false);
+    row._streaming = true;
+  }
+  return body;
+}
+
+// appendTextToAnswer(body, text)
+//
+// Append a delta as a text node to the streaming answer element,
+// creating it if needed. textContent assignment would re-encode the
+// entire accumulated string; a text node touches only the new bytes.
+function appendTextToAnswer(body, text) {
+  if (!body || text == null) return;
+  let answer = body.querySelector('.chat-msg__answer');
+  if (!answer) {
+    answer = document.createElement('div');
+    answer.className = 'chat-msg__answer';
+    body.appendChild(answer);
+  }
+  answer.appendChild(document.createTextNode(text));
+}
+
+// appendTextToReasoning(body, text)
+//
+// Append a delta as a text node to the streaming reasoning block.
+// Reasoning <details> is only created when reasoning is actually
+// present; if a reasoning delta arrives after the answer was already
+// streaming without one, rebuild the body so the block appears in the
+// correct order ahead of the answer.
+function appendTextToReasoning(body, text) {
+  if (!body || text == null) return;
+  let rbody = body.querySelector('.chat-msg__reasoning-body');
+  if (!rbody) {
+    // Reasoning is newly present — rebuild so the block slots in
+    // ahead of the answer (the accumulated content is preserved).
+    const row = body._owner || null;
+    return renderAssistantBody(body, row ? row._content : '', row ? row._reasoning : text, false);
+  }
+  rbody.appendChild(document.createTextNode(text));
+}
+
 // appendDeltaToLive(delta, refs, state)
 //
 // Find the live row and append text to it. Lazily creates the live
 // row if it doesn't exist (the first delta of a turn can arrive
 // after a tool call, in which case no live row is on screen yet).
+// Appends incrementally (see ensureLiveStreamingBody) instead of
+// rebuilding the whole body on every token.
 export function appendDeltaToLive(delta, refs, state) {
   if (!refs.transcript.current) return;
   let liveRow = refs.transcript.current.querySelector('[data-live="1"]');
@@ -226,8 +282,14 @@ export function appendDeltaToLive(delta, refs, state) {
     liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   }
   if (liveRow) {
+    // Switch to streaming mode BEFORE accumulating the delta: the
+    // one-time initial render in ensureLiveStreamingBody must see the
+    // pre-delta content (empty on the first token), otherwise the
+    // delta below would be rendered twice.
+    const body = ensureLiveStreamingBody(liveRow);
+    if (body) body._owner = liveRow;
     liveRow._content = (liveRow._content || '') + delta;
-    renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
+    appendTextToAnswer(body, delta);
     afterTranscriptAppend(refs, false);
   }
 }
@@ -242,8 +304,13 @@ export function appendReasoningToLive(delta, refs, state) {
     liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   }
   if (liveRow) {
+    // Same ordering as appendDeltaToLive: ensureLiveStreamingBody must
+    // see the pre-delta content for its one-time initial render, else
+    // the first reasoning token would appear twice.
+    const body = ensureLiveStreamingBody(liveRow);
+    if (body) body._owner = liveRow;
     liveRow._reasoning = (liveRow._reasoning || '') + delta;
-    renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', false);
+    appendTextToReasoning(body, delta);
     afterTranscriptAppend(refs, false);
   }
 }
@@ -909,8 +976,56 @@ export function updateProgressCard(refs, data) {
 // The setup card is built imperatively here so the change handler
 // can call back into the meta module. The system prompt and tools
 // card are delegated to their own helpers.
+// snapshotExpandedState(el)
+//
+// Record which interactive elements in the transcript are currently
+// expanded before a full rebuild, so renderTranscript can restore
+// them afterwards. Covers tool cards (keyed by data-tool-id) and
+// progress cards (keyed by data-progress-id), plus any <details>
+// disclosure the user has opened. Without this, a rebuild collapses
+// every card the user expanded whenever a new element is added to
+// the transcript (e.g. the reconcile pass after a tool completes).
+function snapshotExpandedState(root) {
+  const state = { toolIds: new Set(), progressIds: new Set(), details: [] };
+  if (!root) return state;
+  for (const card of root.querySelectorAll('.tool-card.is-expanded')) {
+    if (card.dataset && card.dataset.toolId) state.toolIds.add(card.dataset.toolId);
+  }
+  for (const card of root.querySelectorAll('.tool-card--progress.is-expanded')) {
+    if (card.dataset && card.dataset.progressId) state.progressIds.add(card.dataset.progressId);
+  }
+  root.querySelectorAll('details[open]').forEach((d) => state.details.push(d.className || ''));
+  return state;
+}
+
+// restoreExpandedState(state, root)
+//
+// Re-apply the expanded state captured by snapshotExpandedState to a
+// freshly rebuilt transcript.
+function restoreExpandedState(exp, root) {
+  if (!root) return;
+  for (const card of root.querySelectorAll('.tool-card')) {
+    if (card.dataset && card.dataset.toolId && exp.toolIds.has(card.dataset.toolId)) {
+      card.classList.add('is-expanded');
+    }
+  }
+  for (const card of root.querySelectorAll('.tool-card--progress')) {
+    if (card.dataset && card.dataset.progressId && exp.progressIds.has(card.dataset.progressId)) {
+      card.classList.add('is-expanded');
+    }
+  }
+  root.querySelectorAll('details').forEach((d) => {
+    const cls = d.className || '';
+    if (exp.details.includes(cls)) d.open = true;
+  });
+}
+
 export function renderTranscript(state, refs) {
   if (!refs.transcript.current) return;
+  // Preserve expand/collapse across the rebuild below: appending an
+  // element re-runs renderTranscript from disk, which would otherwise
+  // collapse every tool/result card the user had opened.
+  const expanded = snapshotExpandedState(refs.transcript.current);
   refs.transcript.current.innerHTML = '';
   refs.setupCard.current = null;
   if (!state.messages.length) {
@@ -939,6 +1054,7 @@ export function renderTranscript(state, refs) {
       appendMessageToTranscript(m, false, refs, state);
     }
   }
+  restoreExpandedState(expanded, refs.transcript.current);
   scrollTranscriptToBottomImpl(refs);
   updateUsageSummary(state, null, refs);
 }
