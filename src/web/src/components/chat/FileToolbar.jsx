@@ -1,13 +1,15 @@
 // mouaif web — File/git toolbar button (inline inside composer pill)
 //
 // Sits as the first element inside .chat-view__composer: a round button
-// with a stacked ▲▼ SVG icon. Opens a dropdown menu with two actions:
-// the file editor and the git changes modal. The menu is positioned
-// above the composer; the git modal is a full-screen overlay.
+// with a folder + chevron icon (two stacked SVG icons, not text glyphs).
+// Opens a dropdown menu with two actions: the file editor and the git
+// changes modal. The menu is positioned above the composer; the git
+// modal is a full-screen overlay.
 //
-// The icon is an inline SVG, not text glyphs: ▲ (U+25B2) and ▼ (U+25BC)
-// render as color emoji on some mobile fonts, where one triangle covers
-// the other and only a single icon is visible.
+// The icon is built from inline SVGs, not text glyphs: ▲ (U+25B2) and
+// ▼ (U+25BC) render as color emoji on some mobile fonts, and a single
+// 14px two-triangle SVG is too small to read as two icons. A folder with
+// a chevron underneath at readable sizes shows both icons on every device.
 
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
@@ -50,9 +52,13 @@ export function FileToolbar(props) {
       'aria-expanded': String(menuOpen),
       title: 'File and git tools'
     },
-      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-        h('path', { d: 'M12 5 5.5 11.4h13L12 5Z', fill: 'currentColor' }),
-        h('path', { d: 'M12 19 5.5 12.6h13L12 19Z', fill: 'currentColor' })
+      h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
+        h('svg', { viewBox: '0 0 20 16', width: 18, height: 14 },
+          h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
+        ),
+        h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
+          h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
+        )
       )
     ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },

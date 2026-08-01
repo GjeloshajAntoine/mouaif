@@ -53,7 +53,15 @@
   background: var(--surface-3);
 }
 
-.file-toolbar__trigger svg {
+.file-toolbar__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 0;
+}
+.file-toolbar__stack svg {
   display: block;
   flex: 0 0 auto;
 }

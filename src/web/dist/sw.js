@@ -34,7 +34,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = '253ab238';
+const CACHE_VERSION = 'faaffdb9';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
