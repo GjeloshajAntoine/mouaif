@@ -242,7 +242,7 @@ export function AccessSettingsView() {
   }
 
   return h('section', { class: 'view settings-page' },
-    h('header', { class: 'view__head' }, h('a', { href: '#/settings', class: 'view__back', 'aria-label': 'Back' }, '‹'), h('h2', { class: 'view__title' }, 'Access & passkeys')),
+    h('header', { class: 'view-head' }, h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back' }, '‹'), h('h2', { class: 'view-title' }, 'Access & passkeys')),
     h('div', { class: 'settings-section' },
       h('p', { class: 'hint' }, status ? 'Signed in as ' + status.user + '. Change the password with CLI setup or a one-time setup link.' : 'Loading…'),
       h('div', { class: 'row row--actions' },
