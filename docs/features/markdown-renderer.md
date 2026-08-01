@@ -50,6 +50,12 @@ Auto-linking bare URLs is the most security/UX-sensitive step, so it deliberatel
 
 Legitimate external links, markdown links, and query strings (including `&`) are unaffected.
 
+### Explicit links to internal routes
+
+The same-origin SPA-route guard is not limited to auto-linked bare URLs. **Explicit markdown links** (`[label](url)`) whose target resolves to an internal SPA route — `/web/#/…` or `http(s)://…/web/#/…` — are also stripped of their anchor and rendered as the plain label text. Without this, a tool result containing `[open](http://127.0.0.1:5732/web/#/chat/<id>)` produced a live anchor, and a stray tap navigated the app to another chat — the "auto-redirect on load" symptom that the earlier auto-link guard did not cover. Only the anchor is removed; the visible label is preserved.
+
+Non-`/web/#/` targets (external links, API paths like `/api/…`, root-relative asset paths) are unaffected and still render as normal anchors.
+
 ## Mobile considerations
 
 - Tables are wrapped in `overflow-x: auto` on the `<table>` itself so narrow viewports can scroll horizontally rather than breaking layout.

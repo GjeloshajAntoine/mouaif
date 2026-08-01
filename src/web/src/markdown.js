@@ -70,8 +70,17 @@ function renderInline(text) {
   // Step 3: images (before links)
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
 
-  // Step 4: links
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Step 4: links. Never let an explicit link target the app's own SPA
+  // routes (http(s)://…/web/#/… or a root-relative /web/#/…). Tool output
+  // embeds these URLs; a live anchor lets a stray tap navigate the SPA to
+  // another chat/route (the "auto-redirect" bug). Render the label as plain
+  // text instead. autoLink() already guards the bare-URL shape; this closes
+  // the explicit-link shape it never covered. (label/url are already
+  // HTML-escaped by step 2.)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, label, url) => {
+    if (/^(https?:\/\/[^/]*)?\/web\/#\//i.test(url.trim())) return label;
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+  });
 
   // Step 5: auto-link bare URLs (only on text not already inside a tag)
   s = autoLink(s);
