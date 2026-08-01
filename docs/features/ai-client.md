@@ -4,7 +4,7 @@
 
 `mouaif` is the only thing that holds provider API keys. Provider connections are app-level; model IDs are project-level and reference a provider. The mobile UI POSTs to `/api/ai/chat`, the server combines the selected project model with its provider connection, calls upstream, and forwards events as SSE.
 
-Six providers ship today:
+Ten providers ship today:
 
 - **OpenAI compatible** — any OpenAI-shaped endpoint (OpenAI, Together, Groq, LM Studio, Ollama's `/v1`, etc.). API key.
 - **Anthropic** — Claude Messages API. API key, or OAuth for Claude Pro/Max accounts.
@@ -12,6 +12,12 @@ Six providers ship today:
 - **Ollama** — local server. No key.
 - **OpenRouter** — one API key, many models (Anthropic, OpenAI, Google, Meta, Mistral, etc.) over an OpenAI-shaped endpoint. API key.
 - **GitHub Copilot** — reserved; OAuth-only, requires an active Copilot subscription.
+- **Azure OpenAI** — deployment-based OpenAI endpoint. `api-key` header + `api-version` query param. API key.
+- **Mistral** — La Plateforme, OpenAI-shaped. API key.
+- **Groq** — fast inference for open models, OpenAI-shaped. API key.
+- **DeepSeek** — OpenAI-shaped API. API key.
+
+See [docs/features/cloud-providers.md](./cloud-providers.md) for the four OpenAI-shaped providers.
 
 ## Usage
 
@@ -56,7 +62,7 @@ The project owns model identity:
 ```js
 {
   id:            'gpt-4o-mini',     // slug, also the upstream model id
-  provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'openrouter' | 'github-copilot'
+  provider:      'openai-compatible', // 'openai-compatible' | 'anthropic' | 'gemini' | 'ollama' | 'openrouter' | 'github-copilot' | 'azure' | 'mistral' | 'groq' | 'deepseek'
   label:         'GPT-4o mini',     // optional UI label
   contextWindow: 128000             // informational; not yet enforced
 }

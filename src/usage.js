@@ -58,7 +58,27 @@ const BUILTIN_PRICING = Object.freeze({
   'gemini-2.5-flash':        { inputPer1K: 0.00030, outputPer1K: 0.00250 },
   'gemini-2.0-flash':        { inputPer1K: 0.00010, outputPer1K: 0.00040 },
   'gemini-1.5-pro':          { inputPer1K: 0.00125, outputPer1K: 0.00500 },
-  'gemini-1.5-flash':        { inputPer1K: 0.000075, outputPer1K: 0.00030 }
+  'gemini-1.5-flash':        { inputPer1K: 0.000075, outputPer1K: 0.00030 },
+  // Mistral (https://mistral.ai/pricing)
+  'mistral-large-latest':    { inputPer1K: 0.00200, outputPer1K: 0.00600 },
+  'mistral-medium-latest':   { inputPer1K: 0.00270, outputPer1K: 0.00810 },
+  'mistral-small-latest':    { inputPer1K: 0.00020, outputPer1K: 0.00060 },
+  'codestral-latest':        { inputPer1K: 0.00030, outputPer1K: 0.00090 },
+  'ministral-3b-latest':     { inputPer1K: 0.00004, outputPer1K: 0.00004 },
+  'ministral-8b-latest':     { inputPer1K: 0.00010, outputPer1K: 0.00010 },
+  'pixtral-large-latest':    { inputPer1K: 0.00200, outputPer1K: 0.00600 },
+  // Groq (https://groq.com/pricing)
+  'llama-3.3-70b-versatile': { inputPer1K: 0.00059, outputPer1K: 0.00079 },
+  'llama-3.1-8b-instant':    { inputPer1K: 0.00005, outputPer1K: 0.00008 },
+  'llama3-8b-8192':          { inputPer1K: 0.00005, outputPer1K: 0.00008 },
+  'llama3-70b-8192':         { inputPer1K: 0.00059, outputPer1K: 0.00079 },
+  'mixtral-8x7b-32768':      { inputPer1K: 0.00024, outputPer1K: 0.00024 },
+  'gemma2-9b-it':            { inputPer1K: 0.00020, outputPer1K: 0.00020 },
+  'qwen-qwq-32b':            { inputPer1K: 0.00012, outputPer1K: 0.00018 },
+  // DeepSeek (https://api-docs.deepseek.com/quick_start/pricing)
+  'deepseek-chat':           { inputPer1K: 0.00027, outputPer1K: 0.00110 },
+  'deepseek-reasoner':       { inputPer1K: 0.00055, outputPer1K: 0.00219 },
+  'deepseek-coder':          { inputPer1K: 0.00014, outputPer1K: 0.00028 }
 });
 
 const DEFAULT_CURRENCY = 'USD';

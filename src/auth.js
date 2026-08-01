@@ -185,6 +185,15 @@ const AI_TO_AUTH_PROVIDER = Object.freeze({
   'gemini':            'google',
   'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
   'github-copilot':    'github-copilot',
+  // Azure, Mistral, Groq, DeepSeek and the other OpenAI-shaped
+  // providers take API keys only; they map to their own keyring
+  // namespaces so a key stored under one provider is never treated
+  // as a credential for another (the settings UI never offers an
+  // OAuth option for them anyway).
+  'azure':             'azure',
+  'mistral':           'mistral',
+  'groq':              'groq',
+  'deepseek':          'deepseek',
   // OpenRouter has its own keyring namespace ('openrouter'). The
   // PKCE sign-in flow (src/oauth-openrouter.js) stores the issued
   // API key under that namespace; the apikey path uses

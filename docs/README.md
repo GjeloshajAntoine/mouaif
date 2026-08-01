@@ -18,7 +18,8 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Model picker](features/model-picker.md) — chat-head popover for picking `(providerId, modelId)`; per-provider sections, search, ghost row for unavailable active model, and an actionable empty-state card.
 - [PWA](features/pwa.md) — installable mobile shell: manifest, hand-rolled service worker (precache the shell, network-first for navigations, cache-first for fingerprinted assets, bypass `/api/*` and SSE), iOS Add-to-Home-Screen, offline + "new version" banners.
 - [Inspector](features/inspector.md) — from-scratch mobile-friendly DevTools-style UI on top of CDP over WebSocket. Console + Network panels driven by a virtual list; targets list + connect flow. Mobile shell's fourth tab.
-- [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 6 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved). Apikey only; OAuth lands in follow-up commits.
+- [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 10 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved, Azure OpenAI, Mistral, Groq, DeepSeek). Apikey only; OAuth lands in follow-up commits.
+- [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek as first-class OpenAI-shaped API-key providers: deployment-URL base for Azure (with automatic `api-version`), Bearer-key chat for the others, live model catalogs, built-in pricing defaults.
 - [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
 - [Access authentication](features/access-authentication.md) — CLI user/password setup, expiring setup links, QR and short codes, authenticated sessions, and WebAuthn passkeys.
 - [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
@@ -54,6 +55,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Task tool](features/task-tool.md) — built-in `task` tool for creating, tracking progress on, and completing structured tasks within a chat. Tasks render as rich inline cards with progress bars.
 - [Thinking level](features/thinking-level.md) — per-chat dropdown for model reasoning/thinking effort, with options sourced from the provider when available (OpenAI `reasoning_effort`, Anthropic `thinking.budget_tokens`, Gemini `thinkingConfig`, Ollama `think`) plus fallback presets.
 - [Restart API](features/restart-api.md) — `POST /api/restart` graceful server restart in-process or exit with code 0.
+- [Chat streaming performance](features/chat-streaming-performance.md) — streaming assistant text appends per-token text nodes instead of rebuilding the bubble, removing O(n²) work on long turns.
 
 ## Architectural decisions
 

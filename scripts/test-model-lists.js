@@ -37,7 +37,7 @@ async function main() {
   // 1) Module surface.
   check('exports listModels',   typeof ai.listModels === 'function');
   check('exports ENDPOINTS',    typeof ai.ENDPOINTS === 'object');
-  for (const p of ['openai-compatible', 'anthropic', 'gemini', 'ollama', 'github-copilot', 'openrouter']) {
+  for (const p of ['openai-compatible', 'anthropic', 'gemini', 'ollama', 'github-copilot', 'openrouter', 'azure', 'mistral', 'groq', 'deepseek']) {
     check('ENDPOINTS has ' + p, !!ai.ENDPOINTS[p]);
     check('ENDPOINTS[' + p + '] has listModels', typeof ai.ENDPOINTS[p].listModels === 'function');
   }
@@ -287,6 +287,92 @@ async function main() {
     openrouterReq.body && openrouterReq.body.stream_options && openrouterReq.body.stream_options.include_usage === true);
   check('openrouter: usage.include is set for billed cost',
     openrouterReq.body && openrouterReq.body.usage && openrouterReq.body.usage.include === true);
+
+  // 19) Azure: OpenAI-shaped builder, api-key header, api-version on the
+  //     deployment URL. Azure is the odd one: the base URL already
+  //     includes /openai/deployments/<deploy>, so joinUrl must not
+  //     collide, and the api-version must be appended AFTER the joined
+  //     /chat/completions path.
+  const azureReq = ai.BUILDERS.azure({
+    id: 'gpt4-deploy', provider: 'azure', apiKey: 'az-key',
+    baseUrl: 'https://myres.openai.azure.com/openai/deployments/gpt4-deploy'
+  }, [{ role: 'user', content: 'hi' }], true);
+  check('azure: api-key header used, no Authorization Bearer',
+    azureReq.headers['api-key'] === 'az-key' && !azureReq.headers.Authorization,
+    JSON.stringify(azureReq.headers));
+  check('azure: api-version appended after /chat/completions',
+    /\/chat\/completions\?api-version=2024-10-21$/.test(azureReq.url),
+    'url=' + azureReq.url);
+  check('azure: stream_options.include_usage is set',
+    azureReq.body && azureReq.body.stream_options && azureReq.body.stream_options.include_usage === true);
+  const azureNoKey = ai.BUILDERS.azure({
+    id: 'd', provider: 'azure', apiKey: undefined,
+    baseUrl: 'https://x.openai.azure.com/openai/deployments/d'
+  }, [{ role: 'user', content: 'hi' }], false);
+  check('azure: api-version default applied without model.apiVersion',
+    /api-version=2024-10-21/.test(azureNoKey.url), 'url=' + azureNoKey.url);
+
+  // 20) Azure listModels: queries the deployment list with api-key.
+  await withStubbedFetch(async (url, opts) => {
+    lastUrl = url; lastHeaders = opts && opts.headers;
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({
+      data: [{ id: 'gpt-4o', context_window: 128000 }]
+    }) };
+  }, async () => {
+    const out = await ai.listModels('azure', 'az-key');
+    check('azure listModels: /openai/models URL with api-version',
+      /\/openai\/models\?api-version=2024-10-21$/.test(lastUrl), 'url=' + lastUrl);
+    check('azure listModels: api-key header',
+      lastHeaders && lastHeaders['api-key'] === 'az-key' && !lastHeaders.Authorization);
+    check('azure listModels: parses OpenAI-shaped models',
+      out.length === 1 && out[0].id === 'gpt-4o');
+  });
+
+  // 21) Mistral / Groq / DeepSeek: OpenAI-shaped listModels adapters.
+  for (const p of ['mistral', 'groq', 'deepseek']) {
+    await withStubbedFetch(async (url, opts) => {
+      lastUrl = url; lastHeaders = opts && opts.headers;
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({
+        data: [{ id: 'test-model' }]
+      }) };
+    }, async () => {
+      const out = await ai.listModels(p, 'key-' + p);
+      check(p + ' listModels: /models URL', /\/models$/.test(lastUrl), 'url=' + lastUrl);
+      check(p + ' listModels: Bearer header',
+        lastHeaders && lastHeaders.Authorization === 'Bearer key-' + p);
+      check(p + ' listModels: parses OpenAI-shaped models',
+        out.length === 1 && out[0].id === 'test-model');
+    });
+    const req = ai.BUILDERS[p]({ id: 'm1', provider: p, apiKey: 'k' }, [{ role: 'user', content: 'hi' }], true);
+    check(p + ': Bearer header in builder',
+      req.headers && req.headers.Authorization === 'Bearer k');
+    check(p + ': stream_options.include_usage is set',
+      req.body && req.body.stream_options && req.body.stream_options.include_usage === true);
+  }
+
+  // 22) New providers: missing cred + 401 -> ENO_APIKEY.
+  for (const p of ['azure', 'mistral', 'groq', 'deepseek']) {
+    await withStubbedFetch(async () => ({
+      ok: false, status: 401, statusText: 'Unauthorized', json: async () => ({})
+    }), async () => {
+      let caught = null;
+      try { await ai.listModels(p, null); }
+      catch (e) { caught = e; }
+      check(p + ' (no cred, 401): ENO_APIKEY',
+        caught && caught.code === 'ENO_APIKEY', 'caught=' + (caught && caught.code));
+    });
+  }
+
+  // 23) New providers: fetch() throws -> EUNREACHABLE.
+  for (const p of ['azure', 'mistral', 'groq', 'deepseek']) {
+    await withStubbedFetch(async () => { throw new TypeError('fetch failed'); }, async () => {
+      let caught = null;
+      try { await ai.listModels(p, 'k'); }
+      catch (e) { caught = e; }
+      check(p + ': fetch throws -> EUNREACHABLE',
+        caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
+    });
+  }
 
   // Summary.
   console.log('---');

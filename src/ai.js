@@ -131,7 +131,7 @@ const ENDPOINTS = {
     thinkingDescriptor: { kind: 'toggle' }
   },
   'github-copilot': {
-    // The base URL points at the public Copilot API. Calls require a
+    // The base URL points at the Copilot API. Calls require a
     // short-lived Copilot token that is derived per-request from the
     // GitHub OAuth token stored in the keychain. The exchange is
     // performed by oauth-github-copilot.js and the resolved token
@@ -208,6 +208,112 @@ const ENDPOINTS = {
       // the fallback when the user has not configured one.
       'X-OpenRouter-Title': 'mouaif',
       'X-Title': 'mouaif'
+    }
+  },
+  // Azure OpenAI: OpenAI-shaped chat completions at
+  // https://<resource>.openai.azure.com/openai/deployments/<deployment>/
+  // chat/completions?api-version=<version>. The resource name is the
+  // first path segment of the base URL; the deployment name is the
+  // model id (a custom deployment, not a raw model name). This is the
+  // standard OpenAI SDK request shape with `api-version` as a query
+  // parameter — no Azure-specific headers — so the openai-compatible
+  // builder and parser apply unchanged. The API key goes in the
+  // standard `api-key` header (the SDK does this too; Azure rejects
+  // `Authorization: Bearer` unless you use Entra ID instead).
+  'azure': {
+    baseUrl: '',
+    chatPath: '/chat/completions',
+    authHeader: (cred) => ({ 'api-key': cred }),
+    // GET /openai/models?api-version=<version> — OpenAI-shaped.
+    // Azure requires an `api-version` query param on every call and
+    // a valid deployment key, so the missing-cred path surfaces as
+    // ENO_APIKEY. The api-version is taken from the provider record
+    // (model.apiVersion, settable in the provider form) or defaults
+    // to a recent GA release (2024-10-21, which supports
+    // stream_options.include_usage for chat completions).
+    listModels: async (cred, signal, model) => {
+      const apiVersion = (model && model.apiVersion) || '2024-10-21';
+      const url = joinUrl(ENDPOINTS.azure.baseUrl, '/openai/models?api-version=' + encodeURIComponent(apiVersion));
+      let r;
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.azure.authHeader(cred) : {}, signal }); }
+      catch (e) { throw unreachableError('azure', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('azure');
+        throw httpError(r);
+      }
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
+    },
+    // Every Azure request must carry an api-version query parameter.
+    // model.apiVersion is user-settable (provider form); the builder
+    // appends it unless the caller already set one.
+    apiVersion: '2024-10-21'
+  },
+  // Mistral: OpenAI-shaped chat completions at
+  // https://api.mistral.ai/v1/chat/completions with a Bearer key.
+  // The model catalog (GET /v1/models) is OpenAI-shaped, so the
+  // openai-compatible builder and parser apply unchanged.
+  'mistral': {
+    baseUrl: 'https://api.mistral.ai/v1',
+    chatPath: '/chat/completions',
+    authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    listModels: async (cred, signal) => {
+      const url = ENDPOINTS.mistral.baseUrl + '/models';
+      let r;
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.mistral.authHeader(cred) : {}, signal }); }
+      catch (e) { throw unreachableError('mistral', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('mistral');
+        throw httpError(r);
+      }
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
+    }
+  },
+  // Groq: OpenAI-shaped chat completions at
+  // https://api.groq.com/openai/v1/chat/completions with a Bearer key.
+  // The catalog (GET /openai/v1/models) is OpenAI-shaped, so the
+  // openai-compatible builder and parser apply unchanged.
+  'groq': {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    chatPath: '/chat/completions',
+    authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    listModels: async (cred, signal) => {
+      const url = ENDPOINTS.groq.baseUrl + '/models';
+      let r;
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.groq.authHeader(cred) : {}, signal }); }
+      catch (e) { throw unreachableError('groq', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('groq');
+        throw httpError(r);
+      }
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
+    }
+  },
+  // DeepSeek: OpenAI-shaped chat completions at
+  // https://api.deepseek.com/chat/completions with a Bearer key.
+  // The catalog (GET /models) is OpenAI-shaped, so the openai-
+  // compatible builder and parser apply unchanged.
+  'deepseek': {
+    baseUrl: 'https://api.deepseek.com',
+    chatPath: '/chat/completions',
+    authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
+    listModels: async (cred, signal) => {
+      const url = ENDPOINTS.deepseek.baseUrl + '/models';
+      let r;
+      try { r = await fetch(url, { headers: cred ? ENDPOINTS.deepseek.authHeader(cred) : {}, signal }); }
+      catch (e) { throw unreachableError('deepseek', e); }
+      if (r.status === 401 || r.status === 403) {
+        if (!cred) throw noApiKeyError('deepseek');
+        throw httpError(r);
+      }
+      if (!r.ok) throw httpError(r);
+      const body = await r.json();
+      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
     }
   }
 };
@@ -321,8 +427,15 @@ function thinkingForOpenAIModel(id) {
   const s = String(id || '').toLowerCase();
   // OpenAI reasoning families (o1/o3/o4, gpt-5*), plus common
   // reasoning-flagged models on OpenAI-shaped third-party endpoints.
+  // OpenAI reasoning models take effort levels; reasoning models from
+  // other vendors behind an OpenAI-shaped gateway (DeepSeek's `deepseek-
+  // reasoner`, Qwen's `qwq` / `-thinking` variants, Kimi's `k2-thinking`)
+  // also accept `reasoning_effort` levels or a boolean toggle — levels
+  // are the safe common denominator for those too.
   const isReasoning = /^(o\d|gpt-5)/.test(s)
-    || /reasoning|think|\br1\b|qwq/.test(s);
+    || /reasoning|think|\br1\b|qwq/.test(s)
+    || /deepseek-(reasoner|r1)/.test(s)
+    || /k2-thinking/.test(s);
   if (!isReasoning) return undefined;
   return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
 }
@@ -766,7 +879,14 @@ function buildOpenAIRequest(model, messages, stream) {
   // save, but a hand-edited .mouaif.json or a future provider that
   // forgets to set one would otherwise break.
   const baseUrl = (model && model.baseUrl) || (def && def.baseUrl) || '';
-  const headers = { 'Content-Type': 'application/json', ...ENDPOINTS['openai-compatible'].authHeader(credential(model)) };
+  const headers = { 'Content-Type': 'application/json' };
+  // Auth header: a provider with its own authHeader (azure's `api-key`,
+  // the Bearer-key providers) uses it; the generic fallback is the
+  // OpenAI Bearer header.
+  const authFn = (def && typeof def.authHeader === 'function')
+    ? def.authHeader
+    : ENDPOINTS['openai-compatible'].authHeader;
+  Object.assign(headers, authFn(credential(model)));
   // Per-provider static headers. github-copilot requires editor
   // identification headers; openrouter carries the per-install
   // X-OpenRouter-Title (canonical) + X-Title (deprecated alias)
@@ -786,7 +906,8 @@ function buildOpenAIRequest(model, messages, stream) {
     messages,
     stream: !!stream
   };
-  if (stream && (model.provider === 'openai-compatible' || model.provider === 'openrouter')) {
+  if (stream && (model.provider === 'openai-compatible' || model.provider === 'openrouter'
+    || model.provider === 'azure' || model.provider === 'mistral' || model.provider === 'groq' || model.provider === 'deepseek')) {
     // OpenAI-shaped streaming APIs do not include final token usage by
     // default. Request it explicitly so the chat's Context/Cost line is
     // based on upstream counts instead of staying at zero.
@@ -796,6 +917,23 @@ function buildOpenAIRequest(model, messages, stream) {
     // OpenRouter only includes its authoritative billed `usage.cost` when
     // asked. Prefer that over local pricing when present.
     body.usage = { include: true };
+  }
+  // Azure OpenAI requires an `api-version` query parameter on every
+  // request. The provider form lets the user set model.apiVersion
+  // (defaults to the ENDPOINTS default below); an explicit query
+  // already present in the base URL wins. Azure's URL shape is
+  // https://<res>.openai.azure.com/openai/deployments/<deploy>/chat/
+  // completions?api-version=<version> — the query goes on the joined
+  // deployment URL (after the /chat/completions suffix).
+  let effectiveUrl = joinUrl(baseUrl, ENDPOINTS['openai-compatible'].chatPath);
+  if (model.provider === 'azure') {
+    const apiVersion = (model && model.apiVersion)
+      || (def && def.apiVersion)
+      || '2024-10-21';
+    if (effectiveUrl.indexOf('api-version=') < 0) {
+      const separator = effectiveUrl.indexOf('?') >= 0 ? '&' : '?';
+      effectiveUrl = effectiveUrl + separator + 'api-version=' + encodeURIComponent(apiVersion);
+    }
   }
   // Inject thinking level (reasoning_effort) for OpenAI-compatible
   // providers. Empty string means off/default. Any non-empty value is
@@ -808,7 +946,7 @@ function buildOpenAIRequest(model, messages, stream) {
     if (tl) body.reasoning_effort = tl;
   }
   return {
-    url: joinUrl(baseUrl, ENDPOINTS['openai-compatible'].chatPath),
+    url: effectiveUrl,
     headers,
     body
   };
@@ -950,7 +1088,11 @@ const BUILDERS = {
   'gemini': buildGeminiRequest,
   'ollama': buildOllamaRequest,
   'github-copilot': buildOpenAIRequest, // same shape; ENOAUTH gate above
-  'openrouter':       buildOpenAIRequest  // same shape; apikey-only, reuses staticHeaders
+  'openrouter':       buildOpenAIRequest,  // same shape; apikey-only, reuses staticHeaders
+  'azure':            buildOpenAIRequest,  // OpenAI-shaped; api-version appended below
+  'mistral':          buildOpenAIRequest,
+  'groq':             buildOpenAIRequest,
+  'deepseek':         buildOpenAIRequest
 };
 
 // ---- Event parsers -----------------------------------------------------
@@ -967,6 +1109,10 @@ const PARSERS = {
   'openai-compatible': parseOpenAISSE,
   'github-copilot':   parseOpenAISSE,
   'openrouter':       parseOpenAISSE,     // OpenAI-shaped SSE; [DONE] sentinel suppressed
+  'azure':            parseOpenAISSE,
+  'mistral':          parseOpenAISSE,
+  'groq':             parseOpenAISSE,
+  'deepseek':         parseOpenAISSE,
   'anthropic':        parseAnthropicSSE,
   'gemini':           parseGeminiSSE,
   'ollama':           parseOllamaNDJSON
