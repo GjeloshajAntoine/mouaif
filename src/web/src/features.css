@@ -12,6 +12,8 @@
 .mcp__row-name { font-weight: 600; font-size: 0.88rem; }
 .mcp__row-sub { font-size: 0.72rem; color: var(--fg-soft); }
 .mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; }
+.mcp__row-permission { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); }
+.mcp__row-permission > .btn { align-self: flex-start; }
 .mcp__row-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px; border-top: 1px solid var(--border); background: var(--surface-2); }
 .mcp__row-actions .btn { min-height: var(--tap); padding: 0 8px; font-size: 0.72rem; }
 .mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }
