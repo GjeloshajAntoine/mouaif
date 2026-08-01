@@ -177,13 +177,16 @@ export function SettingsMcpView(props = {}) {
         ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
         : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
     // ---- Server list -----------------------------------------------------
-    h('ul', { class: 'mcp__list settings-project__agents-list', 'aria-label': 'MCP servers' },
-      serversList.length
-        ? serversList.map(serverRow)
-        : h('li', { class: 'mcp__empty' },
-            projectDir
-              ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
-              : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
+    h('div', { class: 'group' },
+      h('div', { class: 'group__title' }, 'Servers', h('span', { class: 'group__title-note' }, serversList.length + ' configured')),
+      h('ul', { class: 'group__list mcp__list', 'aria-label': 'MCP servers' },
+        serversList.length
+          ? serversList.map(serverRow)
+          : h('li', { class: 'mcp__empty' },
+              projectDir
+                ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
+                : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
+      )
     ),
     // App list only: deep-link into a project's list.
     !projectDir
