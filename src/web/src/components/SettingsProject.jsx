@@ -27,8 +27,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const exportTraceBtn = useRef(null);
   const exportTraceStatus = useRef(null);
   // Tool permissions live in state (not refs) so the segmented
-  // Off/Ask/Allow control and the allowlist disclosure re-render
-  // together when the user taps a segment.
+  // Off/Ask/Allow control re-renders when the user taps a segment.
   const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
@@ -49,8 +48,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [mcpServers, setMcpServers] = useState([]);
-  const mcpAuthRef = useRef(mcpAuth);
-  mcpAuthRef.current = mcpAuth;
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
@@ -359,8 +356,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   // Save tool authorization for one tool (shell / file). The segmented
-  // control saves immediately on tap; the allowlist textarea saves on
-  // a short debounce. Both write through the same helper.
+  // control saves immediately on tap.
   async function saveToolAuthorization(tool, mode, allowlist, setStatusMsg) {
     setStatusMsg('saving…');
     const r = await fetchJson('/api/tools/authorization', {
@@ -384,32 +380,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
-
-  // The shared MCP fallback gate lives under `mcp.mode` in the
-  // authorization payload (not `tools.mcp`), so it gets its own save
-  // path. Per-server overrides write `mcp.servers.<slug>` instead.
-  function onAllowlistInput(tool, auth, setAuth, setStatusMsg, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const mode = allowlist.length ? 'allowlist' : 'ask';
-    setAuth({ mode, allowlist });
-    saveToolAuthorization(tool, mode, allowlist, setStatusMsg);
-  }
-  // Debounced so typing a regex doesn't fire a PUT per keystroke.
-  // Each tool has its own timer so the lists don't collide.
-  function makeAllowlistSaver(tool, getAuth, setAuth, setStatusMsg) {
-    let t = null;
-    return (text) => {
-      if (t) clearTimeout(t);
-      setStatusMsg('…');
-      t = setTimeout(() => onAllowlistInput(tool, getAuth(), setAuth, setStatusMsg, text), 350);
-    };
-  }
-  const shellAuthRef = useRef(shellAuth);
-  shellAuthRef.current = shellAuth;
-  const fileAuthRef = useRef(fileAuth);
-  fileAuthRef.current = fileAuth;
-  const saveShellAllowlistDebounced = useRef(makeAllowlistSaver('shell', () => shellAuthRef.current, setShellAuth, setShellStatusMsg));
-  const saveFileAllowlistDebounced = useRef(makeAllowlistSaver('file', () => fileAuthRef.current, setFileAuth, setFileStatusMsg));
 
   // ask_user is binary: the only valid modes are `ask` (the model
   // asks, the user always answers) and `off` (the tool is hidden
@@ -482,42 +452,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setMcpAuth(Object.assign({}, mcpAuth, { servers }));
     saveMcpAuthorization({ servers: { [slug]: null } });
   }
-
-  function onMcpAllowlistInput(auth, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const mode = allowlist.length ? 'allowlist' : 'ask';
-    setMcpAuth(Object.assign({}, auth, { mode, allowlist }));
-    saveMcpAuthorization({ mode, allowlist });
-  }
-
-  // An empty server pattern list under Ask means "no override" — clear
-  // the entry so the shared fallback stays in charge.
-  function onServerAllowlistInput(auth, slug, text) {
-    const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!allowlist.length) { clearServerAuthMode(slug); return; }
-    const servers = Object.assign({}, auth.servers);
-    servers[slug] = { mode: 'allowlist', allowlist };
-    setMcpAuth(Object.assign({}, auth, { servers }));
-    saveMcpAuthorization({ servers: { [slug]: { mode: 'allowlist', allowlist } } });
-  }
-
-  // Debounced so typing a regex doesn't fire a PUT per keystroke.
-  const saveMcpAllowlistDebounced = useRef((() => {
-    let t = null;
-    return (text) => {
-      if (t) clearTimeout(t);
-      setMcpAuthStatusMsg('…');
-      t = setTimeout(() => onMcpAllowlistInput(mcpAuthRef.current, text), 350);
-    };
-  })());
-  const saveServerAllowlistDebounced = useRef((() => {
-    const timers = new Map();
-    return (slug, text) => {
-      if (timers.has(slug)) clearTimeout(timers.get(slug));
-      setMcpAuthStatusMsg('…');
-      timers.set(slug, setTimeout(() => onServerAllowlistInput(mcpAuthRef.current, slug, text), 350));
-    };
-  })());
 
   // Quick project-level enable switch for an MCP server row (same
   // semantics as the chat tools card): PATCH the server, then refresh
@@ -639,13 +573,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           { value: 'allow', label: 'Allow' }
         ]),
         tools: [leaf(shellTool, { checked: isOn(shellAuth.mode) })],
-        extra: segMode(shellAuth.mode) === 'ask'
-          ? h('details', { class: 'settings-project__allowlist' },
-              h('summary', null, shellAuth.allowlist.length ? ('Auto-approve list (' + shellAuth.allowlist.length + ')') : 'Auto-approve list'),
-              h('p', { class: 'settings-project__help' }, 'Commands matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^npm test$\n^git status$`, value: shellAuth.allowlist.join('\n'), onInput: (e) => saveShellAllowlistDebounced.current(e.target.value) })
-            )
-          : (shellStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg) : null)
+        extra: shellStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg) : null
       });
     }
 
@@ -733,13 +661,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           { value: 'allow', label: 'Allow' }
         ]),
         tools: fileTools.map((t) => leaf(t, { checked: isOn(fileAuth.mode) })),
-        extra: segMode(fileAuth.mode) === 'ask'
-          ? h('details', { class: 'settings-project__allowlist' },
-              h('summary', null, fileAuth.allowlist.length ? ('Auto-approve list (' + fileAuth.allowlist.length + ')') : 'Auto-approve list'),
-              h('p', { class: 'settings-project__help' }, 'Paths matching one of these regexes open without asking; everything else still asks. One per line, auto-saves.'),
-              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: `^src/.*\\.js$\n^README\\.md$`, value: fileAuth.allowlist.join('\n'), onInput: (e) => saveFileAllowlistDebounced.current(e.target.value) })
-            )
-          : (fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null)
+        extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
       });
     }
 
@@ -772,13 +694,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           }
         }),
         tools: [],
-        extra: segMode(mcpAuth.mode) === 'ask'
-          ? h('details', { class: 'settings-project__allowlist' },
-              h('summary', null, mcpAuth.allowlist.length ? ('Auto-approve list (' + mcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-              h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-              h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: '^mcp__.*__search.*$', value: mcpAuth.allowlist.join('\n'), onInput: (e) => saveMcpAllowlistDebounced.current(e.target.value) })
-            )
-          : (mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null)
+        extra: mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null
       });
 
       for (const server of servers) {
@@ -786,7 +702,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         const entry = mcpAuth.servers && mcpAuth.servers[slug];
         const overridden = !!(entry && entry.mode);
         const effMode = overridden ? entry.mode : (mcpAuth.mode || 'ask');
-        const effAllowlist = overridden && Array.isArray(entry.allowlist) ? entry.allowlist : mcpAuth.allowlist;
         const toolCount = (Array.isArray(server.tools) ? server.tools.length : 0)
           || (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug).length;
         groups.push({
@@ -815,13 +730,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             }
           }),
           tools: [],
-          extra: segMode(effMode) === 'ask'
-            ? h('details', { class: 'settings-project__allowlist' },
-                h('summary', null, effAllowlist.length ? ('Auto-approve list (' + effAllowlist.length + ')') : 'Auto-approve list'),
-                h('p', { class: 'settings-project__help' }, 'Calls matching one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: '^mcp__' + slug + '__search', value: effAllowlist.join('\n'), onInput: (e) => saveServerAllowlistDebounced.current(slug, e.target.value) })
-              )
-            : null
+          extra: null
         });
       }
     }
@@ -1009,7 +918,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 h('li', null, h('strong', null, 'Ask'), ' — you approve every call (the default).'),
                 h('li', null, h('strong', null, 'Allow'), ' — calls run without asking.')
               ),
-              h('p', null, 'In Ask mode, shell and file tools also accept an auto-approve list: matching calls run silently, the rest still ask. The checkbox next to a group is a quick Off ↔ Ask toggle.')
+              h('p', null, 'The checkbox next to a group is a quick Off ↔ Ask toggle. Allowlists (regex patterns that skip the prompt) are still honored if set in the project file, but are edited from the raw JSON in Technical details.')
             )
           )
         ),

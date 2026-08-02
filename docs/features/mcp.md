@@ -91,13 +91,13 @@ The app store has no server registry, so the app layer carries only the single s
 |---|---|
 | `off` | The covered specs are hidden from the model (no prompt tokens) — one tool, one server, or every `mcp__*` spec. Calls that still arrive return `ETOOL_DISABLED`. |
 | `ask` | Every call must be approved by the user in the UI before the runner executes. |
-| `allowlist` | Calls whose summary matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask**. |
+| `allowlist` | Calls whose summary matches an allowlist regex run without prompting. The rest fall through to `ask`. In the UI this is the **Auto-approve list** disclosure under **Ask** on the app-level MCP page; project-level patterns are edited from the raw project file. |
 | `allow` | Every covered call is auto-approved until the user flips the mode back. |
 
 The Settings UI mirrors the layering everywhere the tool tree appears:
 
 - **Chat tools card** — the transcript's Tools card shows an **MCP default** row (the project's shared gate) plus one **Off / Ask / Allow** segment per configured MCP server. The segment shows the *effective* mode (the per-server override, or the gate when there is none); picking a mode writes `authorization.servers.<slug>`, and a ↺ reset appears only when an override is set, clearing it back to the gate. Server rows keep their enable checkbox (server on/off) and their per-chat tool-filter leaves.
-- **Settings → This project → Tools** — the same tree: the **MCP default** row carries the project gate plus its **Auto-approve list** disclosure, and each server row carries its Off/Ask/Allow override segment (with the same ↺ reset) plus an Auto-approve list disclosure when the effective mode is Ask. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`).
+- **Settings → This project → Tools** — the same tree: the **MCP default** row carries the project gate, and each server row carries its Off/Ask/Allow override segment (with the same ↺ reset). The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Auto-approve patterns set in the project file are still honored, but project-level allowlists have no textarea here anymore — edit them from the raw `.mcp.json` / `.mouaif.json`.
 - **Settings → App defaults → MCP servers** (`#/settings/mcp`) — a single **Default permission** row edits the app-level gate (mode + Auto-approve list), the fallback for every project without its own gate.
 - **Server editor** (`#/settings/mcp/<id>`) — the per-tool layer as an **Inherit / Off / Ask / Allow** select under **Discovered tools** (project-scoped servers only).
 
