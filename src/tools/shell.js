@@ -54,18 +54,25 @@ function hookExit() {
 // "bash (bash)", ...). Computed once at module load from the exact
 // interpreter the runner will spawn, so the model-facing description
 // and the result metadata always agree with what actually ran.
-function shellLabel() {
+//
+// Windows note: cmd.exe is a COMMAND.COM-style shell whose quoting,
+// escaping and environment differ from POSIX sh. `SHELL` is
+// conventionally unset on Windows, so we never consult it there; the
+// child always runs under `ComSpec` (cmd.exe by default).
+function shellLabelFor(shellPath) {
   if (process.platform === 'win32') {
-    const comspec = process.env.ComSpec || 'cmd.exe';
-    const base = comspec.split(/[\\/]/).pop().toLowerCase();
+    const base = shellPath.split(/[\\/]/).pop().toLowerCase();
     if (base === 'pwsh.exe' || base === 'pwsh') return 'PowerShell 7 (pwsh)';
     if (base === 'powershell.exe' || base === 'powershell') return 'Windows PowerShell (powershell)';
     if (base === 'cmd.exe' || base === 'cmd') return 'Command Prompt (cmd.exe)';
-    return 'Windows shell (' + comspec + ')';
+    return 'Windows shell (' + shellPath + ')';
   }
-  const shellPath = process.env.SHELL || '/bin/sh';
   const base = shellPath.split('/').pop() || shellPath;
   return base + ' (' + shellPath + ')';
+}
+
+function shellLabel() {
+  return shellLabelFor(process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : (process.env.SHELL || '/bin/sh'));
 }
 
 function osLabel() {
@@ -74,16 +81,37 @@ function osLabel() {
   return process.platform;
 }
 
+// Shell-family summary for the model, e.g. "Command Prompt (cmd.exe) —
+// Windows command-line syntax, not POSIX sh". This makes the
+// interpreter's dialect explicit so the model does not assume bash.
+function shellDialectHint() {
+  const label = shellLabel();
+  if (process.platform === 'win32') {
+    return label + ' — Windows command-line syntax (cmd.exe batch-style quoting and escaping; not POSIX sh/bash)';
+  }
+  return label + ' — POSIX sh syntax';
+}
+
+// "The exact interpreter that runs commands, e.g. 'C:\Windows\system32\cmd.exe'."
+function shellExeDescription() {
+  if (process.platform === 'win32') {
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    return 'The exact interpreter that runs commands, e.g. ' + JSON.stringify(comspec) + '.';
+  }
+  return "The exact interpreter that runs commands, e.g. '/bin/sh' or the user's \$SHELL.";
+}
+
 // The model-facing tool spec (OpenAI-compatible function shape).
 const SPEC = {
   type: 'function',
   function: {
     name: 'shell',
-    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellLabel() + '. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
+    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellDialectHint() + '. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
     parameters: {
       type: 'object',
       properties: {
         cmd: { type: 'string', description: 'The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts).' },
+        shell: { type: 'string', description: shellExeDescription() },
         timeoutMs: { type: 'integer', description: 'Optional per-call timeout, 1 ms - 10 min. Default 30000.' }
       },
       required: ['cmd'],
@@ -158,6 +186,23 @@ async function runShell(opts) {
   if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
     return { ok: false, error: 'cmd is required', code: 'EBADINPUT', durationMs: 0 };
   }
+  // Optional explicit interpreter override (Windows: cmd.exe / pwsh /
+  // powershell.exe; POSIX: a path to a sh-compatible binary). The
+  // override is validated below and reuses the platform flags, so it
+  // cannot turn into an arbitrary-args injection.
+  let shellOverride = opts && typeof opts.shell === 'string' ? opts.shell.trim() : '';
+  if (shellOverride && shellOverride !== 'default') {
+    const lower = shellOverride.toLowerCase();
+    const knownWin = ['cmd.exe', 'cmd', 'pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'];
+    if (process.platform === 'win32' && !knownWin.includes(lower)) {
+      return { ok: false, error: 'unsupported shell override on Windows: ' + shellOverride + ' (expected cmd.exe, pwsh, or powershell)', code: 'EBADINPUT', durationMs: 0 };
+    }
+    if (process.platform !== 'win32' && (lower.endsWith('.exe') || lower.includes('\\') || !lower.includes('/'))) {
+      return { ok: false, error: 'unsupported shell override: ' + shellOverride + ' (expected a path to a sh-compatible binary)', code: 'EBADINPUT', durationMs: 0 };
+    }
+  } else {
+    shellOverride = '';
+  }
   // Clamp timeout to [1, MAX_TIMEOUT_MS].
   if (!(timeoutMs >= 1)) timeoutMs = DEFAULT_TIMEOUT_MS;
   if (timeoutMs > MAX_TIMEOUT_MS) timeoutMs = MAX_TIMEOUT_MS;
@@ -165,7 +210,7 @@ async function runShell(opts) {
   // Identity of this runner, surfaced in the tool result and prepended
   // to the first model-facing tool message, so the model always knows
   // which software and which shell executed the command.
-  const identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabel();
+  let identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabel();
 
   let cwd;
   try { cwd = resolveSandbox(projectDir); }
@@ -173,8 +218,19 @@ async function runShell(opts) {
 
   hookExit();
 
-  const { file, flags, wrapQuotes, verbatim } = platformShell();
+  const base = platformShell();
+  const override = shellOverride || '';
+  const file = override || base.file;
+  // cmd.exe (and cmd aliases) must keep the wrapper-quote handling;
+  // any POSIX-style interpreter gets the plain `-c` flag path.
+  const isCmd = process.platform === 'win32' && (!override || ['cmd.exe', 'cmd'].includes(override.toLowerCase()));
+  const flags = isCmd ? base.flags : ['-c'];
+  const wrapQuotes = isCmd;
+  const verbatim = isCmd;
   const args = flags.concat(wrapQuotes ? '"' + cmd + '"' : cmd);
+  // Identity reflects the interpreter that actually runs the command,
+  // which is the override when one was requested.
+  if (override) identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabelFor(file);
   const startedAt = Date.now();
 
   return await new Promise((resolve) => {
@@ -278,5 +334,8 @@ module.exports = {
   DEFAULT_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
   DEFAULT_MAX_CHARS,
-  DEFAULT_MAX_BYTES
+  DEFAULT_MAX_BYTES,
+  shellLabel,
+  shellDialectHint,
+  platformShell
 };

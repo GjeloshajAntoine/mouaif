@@ -20,11 +20,12 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
   "type": "function",
   "function": {
     "name": "shell",
-    "description": "Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on <os> via <shell> (e.g. \"Windows via Command Prompt (cmd.exe)\" or \"macOS via zsh (/bin/zsh)\"). Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.",
+    "description": "Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on <os> via <shell> (e.g. \"Windows via Command Prompt (cmd.exe) — Windows command-line syntax (cmd.exe batch-style quoting and escaping; not POSIX sh/bash)\" or \"macOS via zsh (/bin/zsh) — POSIX sh syntax\"). Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.",
     "parameters": {
       "type": "object",
       "properties": {
         "cmd":       { "type": "string", "description": "The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts)." },
+        "shell":     { "type": "string", "description": "Optional. The exact interpreter to run the command with, e.g. \"cmd.exe\" (default), \"pwsh\", or \"powershell.exe\" on Windows; a path to a sh-compatible binary on POSIX. Falls back to the platform default when omitted." },
         "timeoutMs": { "type": "integer", "description": "Optional per-call timeout, 1 ms - 10 min. Default 30 000." }
       },
       "required": ["cmd"],
@@ -33,6 +34,8 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
   }
 }
 ```
+
+The tool spec makes the shell dialect explicit — `cmd.exe` on Windows is not POSIX sh, so the model is told up front which syntax to write (see [Model awareness](#model-awareness) below). An optional `shell` parameter lets the model (or a REST caller) pick a different interpreter for a single call; it is validated before use.
 
 ### In a chat
 
@@ -62,7 +65,7 @@ The chat composer also accepts a `/shell <cmd>` slash command that runs the tool
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs? }` | `{ ok, stdout, stderr, exitCode, durationMs, identity }` or `{ ok: false, error, code }` |
+| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs?, shell? }` | `{ ok, stdout, stderr, exitCode, durationMs, identity }` or `{ ok: false, error, code }` |
 
 The REST endpoint is the same path the model-initiated call goes through. The chat composer uses it for `/shell`. A script can also use it to run a project command without going through the chat at all.
 
@@ -80,10 +83,12 @@ const out = await runShell({
 //        identity: 'mouaif shell · macOS · zsh (/bin/zsh)' }
 ```
 
+`runShell` also accepts an optional `shell` override (`runShell({ projectDir, cmd, shell: 'pwsh' })`), which must be one of `cmd.exe` / `pwsh` / `powershell` on Windows or a path to a sh-compatible binary on POSIX; anything else returns `EBADINPUT` without spawning.
+
 ## Behavior
 
 - **Working directory.** Commands run in `projectDir`. The runner resolves the path and refuses anything outside the project root (`..` segments, absolute paths, symlinks that point outside) with `EOUTSIDE_PROJECT`. The runner is `path.join`-aware; it does not shell-`cd` for the user.
-- **Shell.** The command is run with the user's login shell (`$SHELL` on POSIX, `cmd.exe /d /s /c` on Windows). It is a single string passed verbatim; there is no command parsing or argument splitting. Pipes, redirects, and `&&` chains are the user's responsibility and are not interpreted by mouaif. On Windows the runner passes the flags as separate argv elements and wraps the command in an extra pair of quotes with `windowsVerbatimArguments` so `cmd /s` quote-stripping does not mangle inner quotes (e.g. `node -e "console.log(1+1)"`).
+- **Shell.** The command is run with the user's login shell (`$SHELL` on POSIX, `cmd.exe /d /s /c` on Windows). It is a single string passed verbatim; there is no command parsing or argument splitting. Pipes, redirects, and `&&` chains are the user's responsibility and are not interpreted by mouaif. On Windows the runner passes the flags as separate argv elements and wraps the command in an extra pair of quotes with `windowsVerbatimArguments` so `cmd /s` quote-stripping does not mangle inner quotes (e.g. `node -e "console.log(1+1)"`). An optional per-call `shell` override reuses the same quoting rules when it resolves to `cmd.exe`/`cmd` and plain `-c` otherwise, so the override can never become an arbitrary-arguments injection.
 - **Env.** The child inherits the parent process's environment, minus a small denylist (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS`) to prevent trivial tool escape. `PATH` is preserved.
 - **Sandboxing.** The runner does not provide OS-level sandboxing (containers, seccomp, `bwrap`). It is the user's responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.
 - **Timeouts.** A per-call `timeoutMs` is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is `{ ok: false, error: 'timed out', code: 'ETIMEDOUT', durationMs: <actual elapsed ms> }`. A child that ignores SIGTERM stays tracked for the exit-hook reap; its late `close` is ignored.
@@ -96,9 +101,17 @@ const out = await runShell({
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace (decision §5) as `tool_call` and `tool_result` lines.
 - **No new runtime dependencies.** The runner is built on `node:child_process.spawn` only. No third-party shell wrappers.
 
+## Model awareness
+
+The model learns which shell will run its commands from three redundant sources, so it cannot miss the dialect even after prompt compaction:
+
+- **Tool spec.** The `shell` description embeds the OS + interpreter + dialect hint computed at module load, e.g. `Commands execute on Windows via Command Prompt (cmd.exe) — Windows command-line syntax (cmd.exe batch-style quoting and escaping; not POSIX sh/bash)`.
+- **Feature summary.** `src/agentFeatures.js` injects an extra `[shell] <dialect hint>` line into the per-project system context whenever the shell tool is enabled, next to the existing `[shell](off|ask|allow) → allow` line. The `list_features` tool returns the same detail structurally (`state.tools.shell.dialect`, `state.tools.shell.exe`).
+- **Result identity.** Every `tool_result` carries an `identity` field (`mouaif shell · Windows · Command Prompt (cmd.exe)`), and the same line is prepended to the first model-facing `tool` message. When a `shell` override runs, the identity names the interpreter that actually executed the command (e.g. `mouaif shell · Windows · Windows PowerShell (powershell)`).
+
 ## Implementation notes
 
-- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, timeoutMs, maxChars, onOutput })`, `resolveSandbox(projectDir)`, `truncate(buf, maxChars)` (char-based), and the model-facing `SPEC`. The spec description names mouaif and the concrete OS/shell (computed once at module load); `runShell` also returns an `identity` string and the AI client prepends it to the first tool message line.
+- Source: `src/tools/shell.js` (new module) — `runShell({ projectDir, cmd, shell, timeoutMs, maxChars, onOutput })`, `resolveSandbox(projectDir)`, `truncate(buf, maxChars)` (char-based), `shellLabel()` / `shellLabelFor()` / `shellDialectHint()` (interpreter naming, exported for reuse by the feature summary), and the model-facing `SPEC`. The spec description names mouaif and the concrete OS/shell/dialect (computed once at module load); `runShell` also returns an `identity` string and the AI client prepends it to the first tool message line.
 - The tool spec is added to the outgoing request inside `ai.streamChat()`: when `opts.shellEnabled` is set, `require('./tools/shell.js').SPEC` is pushed onto the `tools` array alongside any MCP-discovered specs. `streamChat` runs the multi-turn loop itself — an inner `runUpstreamTurn()` performs one request and returns the assembled tool calls; the outer loop dispatches them through `dispatchTool()` (native `shell` first, then MCP `mcp__<slug>__<tool>`), appends the assistant tool-call message + `tool` result messages to the working conversation, and re-requests. The single final `done` event carries the summed usage across all turns.
 - `src/index.js` `handleChatStream` resolves `settings.getResolved(projectDir).tools.shell.enabled` and passes `{ projectDir, shellEnabled }` to `streamChat`. It also mounts `POST /api/tools/shell` (`handleTools`), which gates on the same flag (HTTP 403 `ETOOL_DISABLED` when off).\n- The `/shell <cmd>` composer command is parsed in `src/web/src/components/Chat.jsx` (`runShellCommand`); it POSTs to `/api/tools/shell` and renders the result inline as a `tool_result` card, no model round-trip.\n- The Settings \u2192 Project view (`src/web/src/components/SettingsProject.jsx`) has a **Shell tool** checkbox that PUTs `tools.shell.enabled` on the project file.
 - Mobile-first layout: the `tool_call` and `tool_result` blocks render as monospaced cards with a 13 px monospace font and a minimum 44 px tap target for expansion. Long stdout is collapsed by default with an expand action.

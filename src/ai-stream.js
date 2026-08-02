@@ -1120,6 +1120,7 @@ async function streamChat(opts) {
         out = await shell.runShell({
           projectDir: callOpts.projectDir,
           cmd: args && args.cmd,
+          shell: args && args.shell,
           timeoutMs: args && args.timeoutMs,
           // Stream decoded output chunks to the chat UI while the
           // command is still running so the tool card shows a live

@@ -46,6 +46,14 @@ function buildFeatureSummary(opts) {
     const s = authz.tools.shell;
     if (s.mode !== 'off') {
       feat.push('[shell](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
+      // Let the model know which shell dialect runs its commands
+      // (cmd.exe vs a POSIX sh) so it picks the right syntax.
+      try {
+        const shellMod = require('./tools/shell.js');
+        if (typeof shellMod.shellDialectHint === 'function') {
+          feat.push('[shell] ' + shellMod.shellDialectHint());
+        }
+      } catch { /* label is best-effort */ }
     }
   }
   // subagent
@@ -187,6 +195,18 @@ async function dispatchListFeatures(args, opts) {
         maxTimeoutMs: cfg.maxTimeoutMs
       };
     }
+    // Surface the interpreter the shell tool runs under, so the model
+    // can pick the right syntax from the structured state too.
+    try {
+      const shellMod = require('./tools/shell.js');
+      const hint = typeof shellMod.shellDialectHint === 'function' ? shellMod.shellDialectHint() : '';
+      if (hint) {
+        state.tools.shell = Object.assign({}, state.tools.shell, {
+          dialect: hint,
+          exe: process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : (process.env.SHELL || '/bin/sh')
+        });
+      }
+    } catch { /* shell module unavailable; keep auth state only */ }
   } catch (e) {
     state.tools = { _error: e.message };
   }

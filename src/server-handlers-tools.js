@@ -253,6 +253,7 @@ async function handleTools(req, res, parsed) {
     catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
+    const shellOverride = body && typeof body.shell === 'string' ? body.shell : '';
     const timeoutMs = body && typeof body.timeoutMs === 'number' ? body.timeoutMs : undefined;
     const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
     const callId = body && typeof body.callId === 'string' ? body.callId : '';
@@ -293,7 +294,7 @@ async function handleTools(req, res, parsed) {
       });
     }
 
-    const out = await shellTool.runShell({ projectDir, cmd, timeoutMs: authorization.timeoutMs });
+    const out = await shellTool.runShell({ projectDir, cmd, shell: shellOverride || undefined, timeoutMs: authorization.timeoutMs });
     // Same identity header the model-facing tool message carries, so a
     // composer /shell run reads exactly like a model-driven run.
     if (out && typeof out === 'object' && !out.identity) out.identity = 'mouaif shell';
