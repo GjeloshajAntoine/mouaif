@@ -96,8 +96,16 @@ export function registerServiceWorker() {
       const url = new URL(msg.url, window.location.origin);
       if (url.origin !== window.location.origin || !url.pathname.startsWith('/web/')) return;
       const next = url.hash || '#/projects';
-      if (window.location.hash === next) window.dispatchEvent(new HashChangeEvent('hashchange'));
-      else window.location.hash = next;
+      // Only rewrite the hash when it actually changed. Safari treats
+      // `location.hash = <same value>` as a no-op (no hashchange, no
+      // scroll) while Chrome re-fires hashchange even for equal hashes —
+      // so this guard must compare first and dispatch manually only when
+      // the target already equals the current hash.
+      if (window.location.hash !== next) {
+        window.location.hash = next;
+      } else {
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      }
       window.focus();
     }
   });

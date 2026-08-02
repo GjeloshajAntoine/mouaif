@@ -202,9 +202,21 @@ self.addEventListener('push', (event) => {
       } catch { return false; }
     });
     if (chatVisible) return;
+    const notifTag = tag || 'default';
+    // showNotification with a matching tag replaces an existing
+    // notification on every engine we support — except iOS Safari,
+    // which keeps old notifications until the user acts on them. An
+    // updatable progress alert would therefore stack a new alert on
+    // top of every previous one on iPhone/iPad. Prune the same tag
+    // from the OS queue ourselves before showing the new alert so
+    // replace works there too.
+    if (notifTag !== 'default') {
+      const stale = await self.registration.getNotifications({ tag: notifTag });
+      if (stale.length) stale.forEach((n) => n.close());
+    }
     await self.registration.showNotification(title || 'mouaif', {
       body: body || '',
-      tag: tag || 'default',
+      tag: notifTag,
       renotify: renotify !== false,
       icon: icon || '/web/icons/icon-192.png',
       badge: badge || '/web/icons/favicon-32.png',
@@ -221,14 +233,27 @@ async function openNotificationTarget(data) {
     || (data.chatId && data.projectDir
       ? '/web/#/chat/' + data.chatId + '?projectDir=' + encodeURIComponent(data.projectDir)
       : '/web/');
+  const target = new URL(urlToOpen, self.location.origin);
   const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-  for (const client of clientList) {
-    if (client.url.startsWith(self.location.origin + '/web/') && 'focus' in client) {
-      client.postMessage({ type: 'NAVIGATE', url: urlToOpen });
-      return client.focus();
-    }
+  // The client's URL always carries its *current* hash (never the one we
+  // want to move to), so the match below must look at the pathname only —
+  // comparing hashes here would miss every existing window and reopen the
+  // app in a new tab on every click.
+  const isAppWindow = (client) => {
+    let url;
+    try { url = new URL(client.url); } catch { return false; }
+    return url.origin === self.location.origin && url.pathname.startsWith('/web/');
+  };
+  const appWindow = clientList.find(isAppWindow);
+  if (appWindow && 'focus' in appWindow) {
+    // iOS Safari does not support WindowClient.navigate(): posting the
+    // target URL to the page is the only way to move an existing PWA
+    // window there. The page swaps the hash (or reloads when it is
+    // already there) and then focuses itself.
+    appWindow.postMessage({ type: 'NAVIGATE', url: target.href });
+    return appWindow.focus();
   }
-  return clients.openWindow(new URL(urlToOpen, self.location.origin).href);
+  return clients.openWindow(target.href);
 }
 
 async function submitNotificationDecision(data, action) {

@@ -40,9 +40,11 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 
 Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen (focused **and** `visibilityState === 'visible'`); a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Engines that don't report `visibilityState` on their window clients always show the alert rather than risk silently dropping it.
 
+On iOS Safari, the OS keeps a replaced notification visible until the user acts on it, so the service worker prunes the old alert from the queue by tag (`getNotifications({ tag })` → `close()`) before calling `showNotification` with the same tag. This makes progress, completion, and attention alerts replace their predecessors in place on iPhone and iPad instead of stacking.
+
 ### Clicking a notification
 
-- Tapping the notification body opens the exact chat and restores its pending question or authorization card.
+- Tapping the notification body opens the exact chat and restores its pending question or authorization card. If the app is already open, the service worker posts the target URL to the existing window (a `NAVIGATE` message) and focuses it; only when no app window exists does it call `clients.openWindow()`. iOS Safari has no `WindowClient.navigate()`, so the page itself swaps its hash — the click lands in the running window, not in a second tab.
 - **Allow once** and **Deny** post to the existing authorization-decision API without opening the app.
 - A simple two-choice question submits the selected value through the same API.
 - Multi-select questions, long option lists, and free-form answers open the full chat UI.

@@ -88,6 +88,8 @@ server.listen(0, '127.0.0.1', () => {
       assert(sw.body.indexOf('/api/tools/authorization/decision') >= 0, 'sw: notification actions submit decisions');
       assert(sw.body.indexOf('allow-once') >= 0, 'sw: allow-once action supported');
       assert(sw.body.indexOf('answer-') >= 0, 'sw: quick-answer action supported');
+      assert(sw.body.indexOf('getNotifications') >= 0, 'sw: prunes old same-tag notifications before showing (iOS replace)');
+      assert(sw.body.indexOf("postMessage({ type: 'NAVIGATE'") >= 0, 'sw: focuses the existing app window via NAVIGATE postMessage');
 
       // 4. Icon reachability + content-type. All three declared sizes.
       for (const rel of ['/web/icons/icon-192.png', '/web/icons/icon-512.png', '/web/icons/icon-maskable-512.png']) {
