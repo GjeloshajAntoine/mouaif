@@ -299,7 +299,10 @@
 .chat-view__jump {
   position: absolute;
   right: 14px;
-  bottom: calc(var(--safe-bottom) + 64px);
+  /* No --safe-bottom here: the shell's padding-bottom reserves the
+     home-indicator area (see .app__shell), so 64px already clears
+     the composer + inset. */
+  bottom: 64px;
   z-index: 6;
   display: inline-flex;
   align-items: center;

@@ -6,7 +6,6 @@
 .app__shell {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
   /* Bound the shell to the viewport height so a flex child (the
      chat view in --flush mode) can scroll internally instead of
      growing the whole page. min-height keeps short pages from
@@ -15,13 +14,29 @@
   max-width: 480px;
   margin: 0 auto;
   position: relative;
+  /* Safe-area insets live here, not on <html>/<body>: html/body are
+     locked to the viewport (height 100%; overflow hidden, see
+     base.css) so the document can never become a scroll container
+     that competes with the transcript / settings sections for the
+     touch gesture on iOS. The shell is border-box (global
+     box-sizing: border-box), so 100dvh + this padding still fills
+     exactly the visible area: the header sits below the notch, the
+     status row / tab bar float above the home indicator, and the
+     viewport never overflows. */
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
 }
 
 .app__main {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0 calc(var(--tabbar-h) + var(--safe-bottom) + 4px);
+  /* Bottom padding so the last row of a scrolling view (chats list,
+     settings home, inspector) clears the tab bar. The tab bar itself
+     sits above the shell's home-indicator padding, so only the tab
+     bar height (plus a little air) is needed here — the safe-area
+     inset is owned by .app__shell. */
+  padding: 4px 0 calc(var(--tabbar-h) + 4px);
   /* The view inside the main region fades + lifts in on every
      route change. The animation is on the <section> child, not
      on .app__main itself, so re-layout during the transition
@@ -208,9 +223,6 @@
        lost on iOS Safari when the scroll container is sized by
        content instead of by its parent).
      - `overflow-y: auto` makes the section scroll internally.
-     - `padding-bottom: var(--safe-bottom)` reserves room for the
-       home indicator so the last row of content isn't flush
-       against the screen edge on phones.
      - `overscroll-behavior: contain` stops the page from
        rubber-banding at the top/bottom of the section.
      - The chat view is excluded (`.chat-view` has its own
@@ -221,7 +233,6 @@
   min-height: 0;
   height: 0;
   overflow-y: auto;
-  padding-bottom: var(--safe-bottom);
   overscroll-behavior: contain;
 }
 
@@ -249,7 +260,10 @@
    real estate on a phone. */
 
 .app__header {
-  padding: var(--safe-top) 8px 0;
+  /* No safe-top here: the shell's padding-top reserves the notch
+     area (see .app__shell). Adding it again would double the inset
+     on a notched iPhone. */
+  padding: 0 8px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -301,7 +315,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px calc(4px + env(safe-area-inset-bottom, 0px));
+  /* The tab bar below handles the bottom inset; this only needs a
+     little air under the title. */
+  padding: 2px 10px 4px;
 }
 .page-bar__title {
   font-size: 1.05rem;
@@ -344,7 +360,10 @@
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   gap: 0;
-  padding: 0 4px calc(2px + var(--safe-bottom));
+  /* No safe-bottom here: the shell's padding-bottom reserves the
+     home-indicator area (see .app__shell). Adding it again would
+     double the inset and push the tab bar up off the bottom. */
+  padding: 0 4px 2px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: saturate(160%) blur(20px);
   backdrop-filter: saturate(160%) blur(20px);

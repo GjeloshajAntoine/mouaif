@@ -348,7 +348,10 @@
   justify-content: center;
   gap: 0.5rem;
   margin: 0 10px;
-  padding: 2px 0 calc(var(--safe-bottom) + 14px);
+  /* No --safe-bottom here: the shell's padding-bottom reserves the
+     home-indicator area (see .app__shell), so the status line sits
+     above it with just a little breathing room. */
+  padding: 2px 0 14px;
 }
 .chat-view__status {
   display: block;
@@ -361,7 +364,7 @@
 }
 .chat-view__status:empty {
   display: block;
-  min-height: calc(var(--safe-bottom) + 6px);
+  min-height: 6px;
   font-size: 0;
   line-height: 0;
 }

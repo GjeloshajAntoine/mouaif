@@ -34,7 +34,7 @@
 
 /* ---- Settings: agents -------------------------------------------- */
 
-.settings-agents { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.settings-agents { padding-bottom: 16px; }
 .settings-agents__intro { margin-inline: 10px; }
 .settings-agents__create-actions { display: flex; gap: 8px; margin: 10px; }
 .settings-agents__create-actions .btn { flex: 1; }
@@ -52,7 +52,7 @@
 .agent-editor__skill:first-child { border-top: 0; }
 .agent-editor__actions { margin: 0; }
 .settings-agents__overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; background: rgba(0, 0, 0, 0.55); }
-.settings-agents__sheet { width: 100%; max-height: min(86dvh, 720px); overflow-y: auto; padding: 12px 4px calc(12px + env(safe-area-inset-bottom)); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35); }
+.settings-agents__sheet { width: 100%; max-height: min(86dvh, 720px); overflow-y: auto; padding: 12px 4px calc(12px + env(safe-area-inset-bottom)); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35); } /* fixed sheet → keeps its own inset */
 .settings-agents__sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 0 10px 8px; }
 .settings-agents__sheet-head h3 { margin: 0; padding: 0; border: 0; }
 .settings-agents__close { width: var(--tap); padding: 0; font-size: 1.35rem; }
@@ -113,7 +113,7 @@
 
 /* ---- Settings: browser notifications ---------------------------- */
 
-.settings-notifications { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.settings-notifications { padding-bottom: 16px; }
 .settings-notifications__event { cursor: pointer; }
 .settings-notifications__event .group__row-body { min-width: 0; }
 .settings-notifications__event .checkbox { flex: 0 0 auto; }
@@ -217,7 +217,7 @@
 
 /* ---- Settings: project page ------------------------------------- */
 
-.settings-project { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+.settings-project { padding-bottom: 12px; }
 
 .settings-project .group { margin-top: 8px; }
 .settings-project .group__list { background: var(--surface); border: 1px solid var(--border); }
