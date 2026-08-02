@@ -45,7 +45,7 @@ Response:
 
 ## Implementation notes
 
-- Defined in [`src/index.js`](../../src/index.js) as `handleRestart()`.
+- Defined in [`src/server-handlers-misc.js`](../../src/server-handlers-misc.js) as `handleRestart()` and routed from [`src/http-server.js`](../../src/http-server.js). The in-process relaunch hook lives in [`bin/mouaif.js`](../../bin/mouaif.js).
 - The handler sets `lifecycle.restarting = true` immediately to serialize concurrent requests, then responds synchronously before the delayed teardown begins.
 - Teardown (after `delayMs`): stops all MCP children via `mcp.stopAll()`, then calls the optional `lifecycle.restart()` hook. If the hook fails, `restarting` is reset to `false` and the server continues running.
 - If no `lifecycle.restart` function exists, or if the restart hook throws, the process calls `process.exit(0)` so an external supervisor can relaunch it.
