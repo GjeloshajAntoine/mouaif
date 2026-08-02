@@ -61,6 +61,12 @@ After password setup, choose **Add a passkey**. WebAuthn requires a secure conte
 
 Existing users can manage passkeys under **Settings → Access & passkeys**. Password login remains available. Removing a passkey does not change the password.
 
+### Change the password in the UI
+
+**Settings → Access & passkeys** includes a **Change password** form. Enter the current password and the new one (at least eight characters). Changing the password is treated like a reset: every other browser session is revoked and all passkeys are removed; the current device stays signed in. The username is unchanged.
+
+Alternatively, the CLI setup flow (`--auth-setup`) or a one-time setup link can replace the user and password from outside the UI.
+
 ### Authenticate CLI API requests
 
 Browser clients use an HttpOnly session cookie. Non-browser REST clients can use HTTP Basic authentication:
@@ -80,7 +86,7 @@ Access records live in the app SQLite database at `~/.mouaif/store.sqlite` (or `
 - `access_setup_codes` stores SHA-256 hashes of expiring one-time codes;
 - `access_passkeys` stores WebAuthn credential IDs, public keys, algorithms, and signature counters.
 
-There is one local user. Sessions expire after 30 days and use an HttpOnly, SameSite cookie. Password changes revoke every prior session and remove the previous user's passkeys. Browser password and passkey sign-in attempts are limited to ten failures per remote address per minute.
+There is one local user. Sessions expire after 30 days and use an HttpOnly, SameSite cookie. Password changes revoke every prior session and remove the previous user's passkeys — the session that performed the change is re-issued so the current browser stays signed in. Browser password and passkey sign-in attempts are limited to ten failures per remote address per minute.
 
 ### WebAuthn
 
@@ -96,6 +102,7 @@ The public enrollment and sign-in surface is:
 GET    /api/access/status
 POST   /api/access/login
 POST   /api/access/logout
+POST   /api/access/password
 POST   /api/access/setup/verify
 POST   /api/access/setup
 GET    /api/access/setup/qr?code=<short-code>

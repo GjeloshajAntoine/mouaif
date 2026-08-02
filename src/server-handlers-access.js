@@ -53,6 +53,23 @@ async function handleAccess(req, res, parsed, serverConfig) {
     return sendJSON(res, 200, { ok: true });
   }
 
+  // Password change from an authenticated browser session. Requires a real
+  // cookie session (a Basic-auth API client cannot ask to rotate the
+  // password through this endpoint). The current session survives the
+  // rotation; every other browser is signed out.
+  if (urlPath === '/api/access/password' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
+    try {
+      const changed = accessAuth.changePassword(activeSession.username, body.currentPassword, body.newPassword, accessToken);
+      res.setHeader('Set-Cookie', accessCookie(accessToken, secure, accessAuth.SESSION_TTL_MS / 1000));
+      return sendJSON(res, 200, { ok: true, user: changed.user && changed.user.username, expiresAt: changed.expiresAt });
+    } catch (e) {
+      return sendJSON(res, e.code === 'EBADCREDENTIALS' ? 401 : 400, { error: e.message, code: e.code || 'EBADINPUT' });
+    }
+  }
+
   if (urlPath === '/api/access/setup/verify' && method === 'POST') {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }

@@ -114,6 +114,42 @@ function verifyPassword(username, password) {
   return safeEqual(String(username || '').trim(), row.username) && safeEqual(actual, expected);
 }
 
+// Password change from an authenticated session. Verifies the current
+// password, validates and stores the new one, then revokes every other
+// session and discards passkeys — the caller keeps the session token
+// passed here so the current browser stays signed in. Rejects if the new
+// password matches the current one (a no-op that would still invalidate
+// other sessions and passkeys otherwise).
+function changePassword(username, currentPassword, newPassword, keepToken) {
+  ensureTables();
+  const clean = validateCredentials(username, newPassword);
+  if (!verifyPassword(clean.username, currentPassword)) {
+    throw Object.assign(new Error('Current password is incorrect'), { code: 'EBADCREDENTIALS' });
+  }
+  if (verifyPassword(clean.username, newPassword)) {
+    throw Object.assign(new Error('New password must be different from the current one'), { code: 'EBADPASSWORD' });
+  }
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(clean.password, salt, 32);
+  const now = new Date().toISOString();
+  settings.getDb().prepare(`
+    UPDATE access_users SET
+      username = ?, password_salt = ?, password_hash = ?, updated_at = ?
+    WHERE id = 1
+  `).run(clean.username, salt.toString('base64'), hash.toString('base64'), now);
+  // A password change is a security boundary like a reset: invalidate
+  // every old browser and discard passkeys. The current session is
+  // re-issued below so this browser stays signed in.
+  settings.getDb().prepare('DELETE FROM access_sessions').run();
+  settings.getDb().prepare('DELETE FROM access_passkeys').run();
+  if (keepToken) {
+    const expiresAt = Date.now() + SESSION_TTL_MS;
+    settings.getDb().prepare('INSERT INTO access_sessions (token_hash, user_id, expires_at, created_at) VALUES (?, 1, ?, ?)')
+      .run(digest(keepToken), expiresAt, new Date().toISOString());
+  }
+  return { user: user(), expiresAt: keepToken ? Date.now() + SESSION_TTL_MS : null };
+}
+
 function issueSession() {
   ensureTables();
   const token = crypto.randomBytes(32).toString('base64url');
@@ -377,6 +413,7 @@ module.exports = {
   user,
   setPassword,
   verifyPassword,
+  changePassword,
   issueSession,
   session,
   revokeSession,

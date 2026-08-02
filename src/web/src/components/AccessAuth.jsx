@@ -219,12 +219,32 @@ export function AccessSettingsView() {
   const [passkeys, setPasskeys] = useState([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
 
   async function load() {
     const [state, keys] = await Promise.all([fetchJson('/api/access/status'), fetchJson('/api/access/passkeys')]);
     setStatus(state.body); setPasskeys(keys.body.passkeys || []);
   }
   useEffect(() => { load(); }, []);
+
+  async function changePassword(event) {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) { setPasswordMessage('New passwords do not match'); return; }
+    setPasswordMessage(''); setBusy(true);
+    const result = await fetchJson('/api/access/password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    setBusy(false);
+    if (result.status === 200) {
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setPasswordMessage('Password changed. Other devices were signed out and passkeys were removed.');
+      load();
+    } else setPasswordMessage(result.body.error || 'Password could not be changed');
+  }
 
   async function add() {
     setBusy(true); setMessage('');
@@ -244,7 +264,17 @@ export function AccessSettingsView() {
   return h('section', { class: 'view settings-page' },
     h('header', { class: 'view-head' }, h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back' }, '‹'), h('h2', { class: 'view-title' }, 'Access & passkeys')),
     h('div', { class: 'settings-section' },
-      h('p', { class: 'hint' }, status ? 'Signed in as ' + status.user + '. Change the password with CLI setup or a one-time setup link.' : 'Loading…'),
+      h('p', { class: 'hint' }, status ? 'Signed in as ' + status.user + '. Changing the password signs out other devices and removes passkeys.' : 'Loading…'),
+      h('form', { class: 'settings-section__form', onSubmit: changePassword },
+        h('label', { class: 'label', htmlFor: 'current-password' }, 'Current password'),
+        h('input', { id: 'current-password', class: 'input', type: 'password', autocomplete: 'current-password', value: currentPassword, onInput: (e) => setCurrentPassword(e.currentTarget.value), required: true }),
+        h('label', { class: 'label', htmlFor: 'new-password' }, 'New password'),
+        h('input', { id: 'new-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: newPassword, onInput: (e) => setNewPassword(e.currentTarget.value), required: true }),
+        h('label', { class: 'label', htmlFor: 'confirm-password' }, 'Confirm new password'),
+        h('input', { id: 'confirm-password', class: 'input', type: 'password', autocomplete: 'new-password', minLength: 8, value: confirmPassword, onInput: (e) => setConfirmPassword(e.currentTarget.value), required: true }),
+        h('button', { class: 'btn btn--primary', type: 'submit', disabled: busy }, busy ? 'Saving…' : 'Change password')
+      ),
+      passwordMessage && h('p', { class: 'status', 'data-state': passwordMessage.includes('do not match') || passwordMessage.includes('incorrect') ? 'error' : 'success', role: 'status' }, passwordMessage),
       h('div', { class: 'row row--actions' },
         h('button', { class: 'btn btn--primary', disabled: busy, onClick: add }, 'Add passkey'),
         h('button', { class: 'btn', disabled: busy, onClick: logout }, 'Sign out')

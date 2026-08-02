@@ -72,6 +72,35 @@ async function main() {
     assert.equal(replace.status, 200);
     assert.equal(access.setupCodeValid(setup.code), false);
       assert.equal(access.verifyPassword('bob', 'new-password'), true);
+
+    // Password change from an authenticated session.
+    const changeSession = access.issueSession();
+    const changeCookie = 'mouaif_access=' + changeSession.token;
+    const otherSession = access.issueSession();
+    assert.throws(() => access.changePassword('bob', 'wrong-current', 'next-password'), { code: 'EBADCREDENTIALS' });
+    assert.throws(() => access.changePassword('bob', 'new-password', 'new-password'), { code: 'EBADPASSWORD' });
+    assert.throws(() => access.changePassword('bob', 'new-password', 'short'), { code: 'EBADPASSWORD' });
+    const changed = await fetch(origin + '/api/access/password', {
+      method: 'POST', headers: { Origin: origin, Cookie: csrfCookie + '; ' + changeCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'new-password', newPassword: 'rotated-password' })
+    });
+    assert.equal(changed.status, 200);
+    assert.equal(access.verifyPassword('bob', 'rotated-password'), true);
+    assert.equal(access.verifyPassword('bob', 'new-password'), false);
+    assert.equal(!!access.session(changeSession.token), true, 'current session survives a password change');
+    assert.equal(!!access.session(otherSession.token), false, 'other sessions are revoked by a password change');
+
+    const unauthenticatedChange = await fetch(origin + '/api/access/password', {
+      method: 'POST', headers: { Origin: origin, Cookie: csrfCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'rotated-password', newPassword: 'rogue-password' })
+    });
+    assert.equal(unauthenticatedChange.status, 401, 'password change requires an authenticated session');
+    const staleChange = await fetch(origin + '/api/access/password', {
+      method: 'POST', headers: { Origin: origin, Cookie: csrfCookie + '; ' + changeCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'rotated-password', newPassword: 'double-rotate' })
+    });
+    assert.equal(staleChange.status, 200, 'changing the password again re-issues the same session');
+    assert.equal(access.verifyPassword('bob', 'double-rotate'), true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -83,8 +112,7 @@ async function main() {
     const page = await fetch(openOrigin + '/web/');
     const cookie = String(page.headers.get('set-cookie') || '').split(';')[0];
     const status = await fetch(openOrigin + '/api/access/status', { headers: { Origin: openOrigin, Cookie: cookie } });
-    assert.deepEqual(await status.json(), { enabled: false, configured: true, user: 'bob', passkeyCount: 0, authenticated: true });
-    const allowed = await fetch(openOrigin + '/api/settings', { headers: { Origin: openOrigin, Cookie: cookie } });
+    assert.deepEqual(await status.json(), { enabled: false, configured: true, user: 'bob', passkeyCount: 0, authenticated: true });    const allowed = await fetch(openOrigin + '/api/settings', { headers: { Origin: openOrigin, Cookie: cookie } });
     assert.equal(allowed.status, 200);
   } finally {
     await new Promise((resolve) => openServer.close(resolve));
@@ -93,7 +121,7 @@ async function main() {
   }
 
   assert.equal(qr.makeMatrix('https://example.test/web/#/setup?code=ABCD-2345').length >= 21, true);
-  console.log('access auth: 20 assertions passed');
+  console.log('access auth: 30 assertions passed');
 }
 
 main().catch((error) => {
