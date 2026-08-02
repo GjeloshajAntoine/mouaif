@@ -104,6 +104,12 @@ export function useChatState(props) {
   // Tool authorization state — same shape as SettingsProject shellAuth etc.
   // { shell: { mode, allowlist }, file: { mode, allowlist }, subagent: { mode, allowlist }, ask_user: { mode } }
   const toolAuth = useRef({});
+  // MCP authorization (layered, decisions §18): the shared gate plus the
+  // persisted per-server / per-tool override maps from GET
+  // /api/tools/authorization. Feeds the MCP Off/Ask/Allow segments in
+  // the tools card; writes go through state._saveMcpAuth.
+  // { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composed>: { mode } } }
+  const mcpAuth = useRef({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
   // Track the current thinking level (survives re-renders, unlike
   // a plain state property that resets on every render cycle).
   const thinkingLevelRef = useRef('');
@@ -164,6 +170,8 @@ export function useChatState(props) {
     set providerCredit(v) { providerCredit.current = v; },
     get toolAuth() { return toolAuth.current; },
     set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; },
+    get mcpAuth() { return mcpAuth.current; },
+    set mcpAuth(v) { mcpAuth.current = (v instanceof Object && !Array.isArray(v)) ? v : { mode: 'ask', allowlist: [], servers: {}, tools: {} }; },
     get thinkingLevel() { return thinkingLevelRef.current; },
     set thinkingLevel(v) { thinkingLevelRef.current = v; }
   };
@@ -319,6 +327,30 @@ export function useChatState(props) {
     }
   };
 
+  // Save MCP authorization ({ mode?, servers?, tools? }) from the tools
+  // card's MCP segments. Mirrors _saveToolAuth: PUT, merge the echoed
+  // state, re-render the card in place.
+  state._saveMcpAuth = async (patch) => {
+    const d = projectDir;
+    if (!d || !patch || typeof patch !== 'object') return;
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: d, mcp: patch })
+    });
+    if (r.status === 200 && r.body && r.body.mcp) {
+      const m = r.body.mcp;
+      const prev = mcpAuth.current;
+      mcpAuth.current = {
+        mode: (m && m.mode) || prev.mode,
+        allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : prev.allowlist,
+        servers: (m && m.servers && typeof m.servers === 'object') ? m.servers : prev.servers,
+        tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : prev.tools
+      };
+      if (state._updateToolsCard) state._updateToolsCard();
+    }
+  };
+
   // ---- Initial load ----------------------------------------
   useEffect(() => {
     let cancelled = false;
@@ -400,6 +432,16 @@ export function useChatState(props) {
             if (t.task) auth.task = { mode: t.task.mode || 'ask', allowlist: Array.isArray(t.task.allowlist) ? t.task.allowlist : [] };
             if (t.ask_user) auth.ask_user = { mode: t.ask_user.mode === 'off' ? 'off' : 'ask' };
             toolAuth.current = auth;
+          }
+          // MCP authorization: shared gate + per-server/per-tool maps.
+          if (authRes.status === 200 && authRes.body && authRes.body.mcp) {
+            const m = authRes.body.mcp;
+            mcpAuth.current = {
+              mode: (m && m.mode) || 'ask',
+              allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : [],
+              servers: (m && m.servers && typeof m.servers === 'object') ? m.servers : {},
+              tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : {}
+            };
           }
         } catch { /* keep empty auth */ }
 

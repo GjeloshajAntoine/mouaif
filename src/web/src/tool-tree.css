@@ -122,6 +122,33 @@
   font-weight: 500;
 }
 
+/* MCP server rows: segment plus a ↺ reset that appears only when a
+   per-server override is set. The reset is its own touch target
+   (≥26 px) and clears the override back to the shared gate. */
+.tool-tree__control-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-tree__reset {
+  flex: 0 0 auto;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.tool-tree__reset:hover { color: var(--fg); background: var(--surface-3); }
+.tool-tree__reset:active { background: var(--surface-3); }
+.tool-tree__reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* Child list */
 .tool-tree__children {
   list-style: none;

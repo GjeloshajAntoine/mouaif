@@ -11,6 +11,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
+import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 
 function projectQS(projectDir) {
   return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
@@ -30,6 +31,53 @@ export function SettingsMcpView(props = {}) {
   const [serversList, setServersList] = useState([]);
   const [listStatus, setListStatus] = useState({ text: '', kind: '' });
   const [busyIds, setBusyIds] = useState(new Set()); // server ids being acted on
+  // App-level MCP gate (mcp.authorization in the app store) — the
+  // fallback for every project without its own gate (layer 4 of the
+  // MCP authorization layering). Shown on the app list only; the app
+  // store has no server registry, so it carries just mode + allowlist.
+  const [appMcpAuth, setAppMcpAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [appMcpStatus, setAppMcpStatus] = useState('');
+  const appMcpAuthRef = useRef(appMcpAuth);
+  appMcpAuthRef.current = appMcpAuth;
+
+  // Save the app-level gate. No projectDir: the PUT is scoped with
+  // { scope: 'app' } and rejects server/tool maps.
+  async function saveAppMcpAuth(patch) {
+    setAppMcpStatus('saving…');
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'app', mcp: patch })
+    });
+    if (r.status === 200) {
+      setAppMcpStatus('saved');
+      const m = r.body && r.body.mcp;
+      if (m) {
+        setAppMcpAuth({
+          mode: (m && m.mode) || appMcpAuthRef.current.mode,
+          allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : appMcpAuthRef.current.allowlist
+        });
+      }
+    } else {
+      setAppMcpStatus('HTTP ' + r.status);
+    }
+  }
+
+  // Debounced allowlist editor for the app gate (typing a regex must
+  // not fire a PUT per keystroke).
+  const saveAppMcpAllowlistDebounced = useRef((() => {
+    let t = null;
+    return (text) => {
+      if (t) clearTimeout(t);
+      setAppMcpStatus('…');
+      t = setTimeout(() => {
+        const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const mode = allowlist.length ? 'allowlist' : 'ask';
+        setAppMcpAuth({ mode, allowlist });
+        saveAppMcpAuth({ mode, allowlist });
+      }, 350);
+    };
+  })());
 
   async function load() {
     if (openBtn.current) openBtn.current.disabled = true;
@@ -52,6 +100,21 @@ export function SettingsMcpView(props = {}) {
     }
     setServersList(r.body.servers || []);
     setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
+    // App list only: read the app-level MCP gate (the shared fallback
+    // every project inherits until it sets its own).
+    if (!projectDir) {
+      try {
+        const ar = await fetchJson('/api/tools/authorization?scope=app');
+        const m = ar.status === 200 && ar.body && ar.body.mcp;
+        if (m) {
+          setAppMcpAuth({
+            mode: (m && m.mode) || 'ask',
+            allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : []
+          });
+          setAppMcpStatus('');
+        }
+      } catch { /* keep defaults */ }
+    }
   }
 
   // App list convenience: jump into a project's list without going back
@@ -174,6 +237,48 @@ export function SettingsMcpView(props = {}) {
       projectDir
         ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
         : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
+    // ---- App-level permission default (app list only) -------------------
+    // The app store has no server registry, so the app list shows only
+    // the single shared gate — the default every project starts from. A
+    // project can override it from Settings → Project → Tools.
+    !projectDir
+      ? h('div', { class: 'group' },
+          h('div', { class: 'group__title' }, 'Default permission', h('span', { class: 'group__title-note' }, 'Starting point for every project')),
+          h('ul', { class: 'group__list' },
+            h('li', { class: 'settings-project__tool' },
+              h('div', { class: 'settings-project__tool-head' },
+                h('div', { class: 'settings-project__item-title' }, 'All MCP tools'),
+                h('div', { class: 'settings-project__item-note' },
+                  'How MCP tool calls are handled by default in every project. A project can change this or set per-server rules from its own project settings. ',
+                  segMode(appMcpAuth.mode) === 'off' ? 'Off means MCP tools are hidden from the model and cost no tokens. ' : null,
+                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, appMcpStatus)
+                )
+              ),
+              h(McpAuthSeg, {
+                name: 'MCP app default',
+                slug: null,
+                servers: {},
+                shared: appMcpAuth,
+                namePrefix: 'app-mcp',
+                onSave: (patch) => {
+                  if (!patch) return;
+                  const mode = patch.mode || 'ask';
+                  const allowlist = Array.isArray(patch.allowlist) ? patch.allowlist : [];
+                  setAppMcpAuth({ mode, allowlist });
+                  saveAppMcpAuth({ mode, allowlist });
+                }
+              }),
+              segMode(appMcpAuth.mode) === 'ask'
+                ? h('details', { class: 'settings-project__allowlist' },
+                    h('summary', null, appMcpAuth.allowlist.length ? ('Auto-approve list (' + appMcpAuth.allowlist.length + ')') : 'Auto-approve list'),
+                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
+                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: '^navigate$\n^take_snapshot$', value: appMcpAuth.allowlist.join('\n'), onInput: (e) => saveAppMcpAllowlistDebounced.current(e.target.value) })
+                  )
+                : null
+            )
+          )
+        )
+      : null,
     // ---- Server list -----------------------------------------------------
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Servers', h('span', { class: 'group__title-note' }, serversList.length + ' configured')),

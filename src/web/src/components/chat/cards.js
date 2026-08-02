@@ -9,6 +9,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { isSubagentTool, normalizeToolName } from './tools.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
+import { McpAuthSeg } from '../settings/toolAuth.js';
 
 // buildSetupCard()
 //
@@ -126,11 +127,58 @@ function buildToolsCard(state) {
     else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
   }
 
+  // MCP authorization — same layered model as project settings:
+  // an "MCP default" gate row (the project's shared fallback, layers
+  // 3-4) plus one Off/Ask/Allow segment per MCP server group (the
+  // per-server override, layer 2; shows the effective mode and gains
+  // a ↺ reset when an override is set). Writes go through
+  // state._saveMcpAuth so the card re-renders in place.
+  const mcpAuth = state.mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
+  const mcpServers = state.mcpServers || [];
+  const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));
+  if (firstMcp >= 0) {
+    const onSaveMcp = (patch) => state._saveMcpAuth && state._saveMcpAuth(patch);
+    groups.splice(firstMcp, 0, {
+      id: 'mcp',
+      name: 'MCP default',
+      description: 'gate for servers without an override',
+      checked: (mcpAuth.mode || 'ask') !== 'off',
+      control: h(McpAuthSeg, {
+        name: 'MCP default',
+        slug: null,
+        servers: mcpAuth.servers,
+        shared: mcpAuth,
+        namePrefix: 'chat-mcp',
+        onSave: onSaveMcp
+      }),
+      tools: []
+    });
+    for (const g of groups) {
+      if (!g.id.startsWith('mcp-')) continue;
+      const server = mcpServers.find((s) => s && s.id === g.id.slice(4));
+      const slug = (server && (server.slug || server.id)) || g.id.slice(4);
+      g.control = h(McpAuthSeg, {
+        name: g.name,
+        slug,
+        servers: mcpAuth.servers,
+        shared: mcpAuth,
+        namePrefix: 'chat-mcp',
+        onSave: onSaveMcp
+      });
+    }
+  }
+
   // Render the Preact ToolTree into a container div.
   const treeHost = document.createElement('div');
   treeHost.className = 'chat-view__tools-tree';
 
   function onToggleGroup(groupId, checked) {
+    // MCP default gate: the group checkbox is a quick Off ↔ Ask for the
+    // project's shared MCP fallback (same shortcut as native groups).
+    if (groupId === 'mcp') {
+      if (state._saveMcpAuth) state._saveMcpAuth({ mode: checked ? 'ask' : 'off' });
+      return;
+    }
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
     // MCP groups: the parent checkbox enables/disables the server
