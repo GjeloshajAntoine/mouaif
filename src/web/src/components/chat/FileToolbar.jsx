@@ -1,9 +1,10 @@
 // mouaif web — File/git toolbar button (inline inside composer pill)
 //
 // Sits as the first element inside .chat-view__composer: a round button
-// with a stacked ▲▼ icon. Opens a dropdown menu with two actions:
-// the file editor and the git changes modal. The menu is positioned
-// above the composer; the git modal is a full-screen overlay.
+// with a stacked ▲▼ icon. Opens a dropdown menu with three actions:
+// the file editor, the git changes modal, and the CLI command prompt.
+// The menu is positioned above the composer; the git and CLI modals are
+// full-screen overlays.
 //
 // The icon is built from inline SVGs, not text glyphs: ▲ (U+25B2) and
 // ▼ (U+25BC) render as color emoji on some mobile fonts, and a single
@@ -14,11 +15,13 @@
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { GitModal } from './GitModal.jsx';
+import { CliModal } from './CliModal.jsx';
 
 export function FileToolbar(props) {
   const { projectDir, onOpenFileEditor } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
+  const [cliOpen, setCliOpen] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -42,6 +45,11 @@ export function FileToolbar(props) {
     setGitOpen(true);
   }
 
+  function handleCli() {
+    setMenuOpen(false);
+    setCliOpen(true);
+  }
+
   return h('div', { class: 'file-toolbar' },
     h('button', {
       class: 'file-toolbar__trigger',
@@ -50,7 +58,7 @@ export function FileToolbar(props) {
       'aria-label': 'File tools',
       'aria-haspopup': 'true',
       'aria-expanded': String(menuOpen),
-      title: 'File and git tools'
+      title: 'File, git, and CLI tools'
     },
       h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
@@ -72,8 +80,13 @@ export function FileToolbar(props) {
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleGit },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4C1}'),
         h('span', null, 'Git')
+      ),
+      h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleCli },
+        h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F5A5}'),
+        h('span', null, 'Cli')
       )
     ),
-    gitOpen ? h(GitModal, { projectDir, onClose: () => setGitOpen(false) }) : null
+    gitOpen ? h(GitModal, { projectDir, onClose: () => setGitOpen(false) }) : null,
+    cliOpen ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
   );
 }

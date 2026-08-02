@@ -12,8 +12,117 @@ const {
   chats,
   mcp,
   shellTool,
-  ai
+  ai,
+  broadcast
 } = require('./server-shared.js');
+
+// ---- Interactive CLI session ------------------------------------------------
+//
+// A single persistent command-line child per project (the platform shell:
+// cmd.exe on Windows, the user's $SHELL or /bin/sh on POSIX) with
+// stdin/stdout/stderr piped over HTTP. All commands run in the project
+// directory ("default path to the project"). The session is created with
+// `windowsHide` and no window is ever shown; output streaming rides the
+// SSE endpoint (see startCliSession below).
+//
+// The child is intentionally spawned WITHOUT a TTY (pipe stdio). Commands
+// that require an interactive TTY (REPLs, `cmd.exe` interactive prompts
+// like `del` confirmation) will fail or exit immediately — a documented
+// limitation, same as the native `shell` tool. Everything non-interactive
+// works exactly like a real Command Prompt.
+
+const { spawn } = require('node:child_process');
+
+const cliSessions = new Map(); // projectDir -> { child, projectDir, id, startedAt }
+
+// Reap every live CLI child on parent exit so a server shutdown never
+// leaves orphaned cmd.exe processes behind (same pattern as the native
+// shell tool's liveChildren set).
+let cliExitHooked = false;
+function hookCliExit() {
+  if (cliExitHooked) return;
+  cliExitHooked = true;
+  const reap = () => {
+    for (const s of cliSessions.values()) {
+      try { if (s.child && !s.child.killed) s.child.kill(); } catch { /* already gone */ }
+    }
+    cliSessions.clear();
+  };
+  process.on('exit', reap);
+  process.on('SIGINT', () => { reap(); process.exit(130); });
+  process.on('SIGTERM', () => { reap(); process.exit(143); });
+}
+
+function cliShellMeta() {
+  if (process.platform === 'win32') {
+    // Windows Terminal Detection: if the session's env already has a WSL
+    // or PowerShell default, use it; otherwise cmd.exe (the classic prompt).
+    return {
+      exe: process.env.ComSpec || 'cmd.exe',
+      args: [],
+      label: 'Command Prompt (cmd.exe)',
+      windows: true
+    };
+  }
+  const shellPath = process.env.SHELL || '/bin/sh';
+  return {
+    exe: shellPath,
+    args: [],
+    label: 'Shell (' + shellPath + ')',
+    windows: false
+  };
+}
+
+// Start the persistent session (idempotent) and return the session handle.
+function ensureCliSession(projectDir) {
+  const key = String(projectDir || '');
+  const existing = cliSessions.get(key);
+  if (existing && existing.child && !existing.child.killed) return existing;
+  const meta = cliShellMeta();
+  const child = spawn(meta.exe, meta.args, {
+    cwd: projectDir,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  const session = {
+    id: 'cli_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    projectDir,
+    child,
+    startedAt: Date.now()
+  };
+  hookCliExit();
+  cliSessions.set(key, session);
+  // Reap on exit so a closed session doesn't leak.
+  child.on('exit', () => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
+  return session;
+}
+
+function closeCliSession(projectDir) {
+  const key = String(projectDir || '');
+  const session = cliSessions.get(key);
+  if (!session) return false;
+  try {
+    if (session.child && !session.child.killed) session.child.kill();
+  } catch { /* already gone */ }
+  cliSessions.delete(key);
+  return true;
+}
+
+// Forward a session's stdout/stderr to the SSE broadcast channel. The
+// browser opens GET /events, receives the session id, and listens for
+// `cli_output` frames tagged with that id.
+function attachCliStream(session, broadcast) {
+  if (!session || !session.child || !broadcast) return;
+  session.child.stdout.on('data', (d) => {
+    broadcast('cli_output', { id: session.id, stream: 'stdout', data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
+  });
+  session.child.stderr.on('data', (d) => {
+    broadcast('cli_output', { id: session.id, stream: 'stderr', data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
+  });
+  session.child.on('exit', (code) => {
+    broadcast('cli_output', { id: session.id, stream: 'exit', data: String(code) });
+  });
+}
 
 // ---- Tools API ---------------------------------------------------------------
 //
@@ -190,6 +299,69 @@ async function handleTools(req, res, parsed) {
     if (out && typeof out === 'object' && !out.identity) out.identity = 'mouaif shell';
     const status = out.ok ? 200 : (out.code === 'EOUTSIDE_PROJECT' || out.code === 'ENOENT' ? 400 : 200);
     return sendJSON(res, status, out);
+  }
+
+  // GET /api/tools/cli/session?projectDir=<abs>
+  // Start (or reuse) the persistent interactive terminal session for the
+  // project and return its id. The browser then opens GET /events and
+  // listens for `cli_output` frames tagged with that id.
+  if (urlPath === '/api/tools/cli/session' && method === 'GET') {
+    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const fs = require('node:fs');
+    let real;
+    try { real = fs.realpathSync(projectDir); } catch { return sendJSON(res, 400, { error: 'project directory not found', code: 'ENOENT' }); }
+    let st;
+    try { st = fs.statSync(real); } catch { return sendJSON(res, 400, { error: 'project directory not found', code: 'ENOENT' }); }
+    if (!st.isDirectory()) return sendJSON(res, 400, { error: 'projectDir is not a directory', code: 'ENOTDIR' });
+    const session = ensureCliSession(real);
+    // Attach the SSE output stream to the newly created (or reused)
+    // session. Re-used sessions already have their stream attached —
+    // attaching twice would double every output frame in the browser.
+    if (!session._streamAttached) {
+      session._streamAttached = true;
+      attachCliStream(session, broadcast);
+    }
+    const meta = cliShellMeta();
+    return sendJSON(res, 200, {
+      id: session.id,
+      projectDir: real,
+      shell: meta.label,
+      startedAt: session.startedAt,
+      defaultDir: real
+    });
+  }
+
+  // POST /api/tools/cli/command  body: { projectDir, cmd }
+  // Write one command to the persistent session's stdin. The session
+  // stays open; the next command appends after it.
+  if (urlPath === '/api/tools/cli/command' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const session = cliSessions.get(String(projectDir));
+    if (!session) return sendJSON(res, 404, { error: 'cli session not found — reopen the command prompt', code: 'ENOSESSION' });
+    try {
+      session.child.stdin.write(cmd + '\r\n');
+      return sendJSON(res, 200, { ok: true });
+    } catch (e) {
+      return sendJSON(res, 500, { ok: false, error: e.message });
+    }
+  }
+
+  // POST /api/tools/cli/close  body: { projectDir }
+  // Kill the persistent session (idempotent).
+  if (urlPath === '/api/tools/cli/close' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    closeCliSession(projectDir);
+    return sendJSON(res, 200, { ok: true });
   }
 
   // POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, modelId?, providerId? }
