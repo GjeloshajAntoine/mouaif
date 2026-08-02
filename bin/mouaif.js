@@ -11,7 +11,7 @@ const qr = require('../src/qr.js');
 
 const { name, version, description } = require('../package.json');
 
-const WATCH_CHILD_ENV = 'MOUAIF_WATCH_CHILD';
+const SERVE_CHILD_ENV = 'MOUAIF_SERVE_CHILD';
 const WATCH_EXTS = new Set(['.js', '.jsx', '.json', '.css', '.html']);
 
 function closeServer(server) {
@@ -55,7 +55,8 @@ function collectWatchFiles(dir, out = []) {
   return out;
 }
 
-function runWatchSupervisor(options) {
+function runSupervisor(options) {
+  const watch = !!options.watch;
   const port = String(parseInt(options.port, 10));
   const host = String(options.host || '127.0.0.1');
   const publicOrigin = String(options.publicOrigin || process.env.MOUAIF_PUBLIC_ORIGIN || '');
@@ -75,7 +76,7 @@ function runWatchSupervisor(options) {
     if (options.authSetup) args.push('--auth-setup');
     child = spawn(process.execPath, args, {
       stdio: 'inherit',
-      env: { ...process.env, [WATCH_CHILD_ENV]: '1', ...(options.password ? { MOUAIF_PASSWORD: options.password } : {}) }
+      env: { ...process.env, [SERVE_CHILD_ENV]: '1', ...(options.password ? { MOUAIF_PASSWORD: options.password } : {}) }
     });
     child.on('exit', (code, signal) => {
       child = null;
@@ -85,7 +86,8 @@ function runWatchSupervisor(options) {
         startChild();
         return;
       }
-      console.error(`[mouaif] server stopped (${signal || code}); waiting for changes...`);
+      const hint = watch ? 'waiting for changes...' : 'not restarting (use --watch or a manual restart to try again).';
+      console.error(`[mouaif] server stopped (${signal || code}); ${hint}`);
     });
   }
 
@@ -117,12 +119,70 @@ function runWatchSupervisor(options) {
     if (child) child.kill('SIGTERM');
   }
 
-  console.log('[mouaif] watch mode enabled');
-  refreshWatchFiles();
-  setInterval(refreshWatchFiles, 2000);
+  if (watch) {
+    console.log('[mouaif] watch mode enabled');
+    refreshWatchFiles();
+    setInterval(refreshWatchFiles, 2000);
+  }
   startChild();
   process.on('SIGINT', () => { stop(); process.exit(0); });
   process.on('SIGTERM', () => { stop(); process.exit(0); });
+}
+
+// Worker process — the actual HTTP server. Runs as a child of the supervisor
+// so POST /api/restart (or a --watch source change) can drop it and let the
+// supervisor spawn a brand-new process: every module is re-read from disk and
+// runtime state (MCP children, DB handles, OAuth flows) is re-initialized.
+function runWorker(options) {
+  const port = parseInt(options.port, 10);
+  const authEnabled = !!(options.auth || options.user || options.authSetup);
+  let server;
+  const lifecycle = {
+    restarting: false,
+    restart: async () => {
+      // Hand control back to the supervisor: close the listening socket,
+      // then exit with code 0 so the supervisor respawns a fresh worker.
+      await closeServer(server);
+      process.exit(0);
+    }
+  };
+
+  function start() {
+    server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin, authEnabled });
+    server.listen(port, options.host, () => {
+      const servedOrigin = displayOrigin(options, port);
+      console.log(`🚀 mouaif server running at ${servedOrigin}`);
+      console.log(`   Web:    /             — mobile UI`);
+      console.log(`   Web:    /web/         — mobile UI`);
+      console.log(`   REST:   GET  /data    — get data`);
+      console.log(`   REST:   POST /data    — update data`);
+      console.log(`   SSE:    GET  /events  — subscribe to events`);
+      console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
+      if (authEnabled && (options.authSetup || !accessAuth.configured())) {
+        const setup = accessAuth.createSetupCode();
+        const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(setup.code);
+        console.log('');
+        console.log('🔐 Set up app access (expires in 15 minutes)');
+        console.log(`   Link:   ${setupUrl}`);
+        console.log(`   Code:   ${setup.code}`);
+        try { console.log('\n' + qr.terminal(setupUrl)); } catch (_) { /* narrow terminals can use the link */ }
+        const securePasskeys = /^https:\/\//i.test(servedOrigin) || /^http:\/\/(localhost|127(?:\.\d+){3}|\[::1\])(?::|\/|$)/i.test(servedOrigin);
+        console.log(securePasskeys
+          ? '   The setup page can create a password and register a passkey.'
+          : '   Password setup is available. Passkeys require HTTPS for remote devices.');
+      }
+      console.log('   Press Ctrl+C to stop');
+    });
+  }
+
+  start();
+
+  function shutdown() {
+    console.log('\n⏹  Shutting down...');
+    closeServer(server).then(() => process.exit(0));
+  }
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 program
@@ -142,12 +202,14 @@ program
   .option('--auth-setup', 'Print a one-time setup link, QR code, and short code')
   .option('-w, --watch', 'Restart the server when local source files change')
   .action((options) => {
-    if (options.watch && process.env[WATCH_CHILD_ENV] !== '1') {
-      return runWatchSupervisor(options);
+    // `mouaif serve` always runs as a supervisor + worker pair. The
+    // supervisor (this process) stays alive and respawns a fresh worker
+    // process on POST /api/restart (and on source changes with --watch),
+    // so a restart always loads the latest code from disk.
+    if (process.env[SERVE_CHILD_ENV] === '1') {
+      return runWorker(options);
     }
 
-    const port = parseInt(options.port, 10);
-    const authEnabled = !!(options.auth || options.user || options.authSetup);
     const suppliedPassword = options.password || process.env.MOUAIF_PASSWORD || '';
     if ((options.user && !suppliedPassword) || (!options.user && suppliedPassword)) {
       console.error('❌ --user and --password (or MOUAIF_PASSWORD) must be supplied together');
@@ -164,52 +226,7 @@ program
         return;
       }
     }
-    let server;
-    const lifecycle = {
-      restarting: false,
-      restart: async () => {
-        await closeServer(server);
-        start();
-      }
-    };
-
-    function start() {
-      server = createServer(port, { lifecycle, publicOrigin: options.publicOrigin, authEnabled });
-      server.listen(port, options.host, () => {
-        const servedOrigin = displayOrigin(options, port);
-        console.log(`🚀 mouaif server running at ${servedOrigin}`);
-        console.log(`   Web:    /             — mobile UI`);
-        console.log(`   Web:    /web/         — mobile UI`);
-        console.log(`   REST:   GET  /data    — get data`);
-        console.log(`   REST:   POST /data    — update data`);
-        console.log(`   SSE:    GET  /events  — subscribe to events`);
-        console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
-        if (authEnabled && (options.authSetup || !accessAuth.configured())) {
-          const setup = accessAuth.createSetupCode();
-          const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(setup.code);
-          console.log('');
-          console.log('🔐 Set up app access (expires in 15 minutes)');
-          console.log(`   Link:   ${setupUrl}`);
-          console.log(`   Code:   ${setup.code}`);
-          try { console.log('\n' + qr.terminal(setupUrl)); } catch (_) { /* narrow terminals can use the link */ }
-          const securePasskeys = /^https:\/\//i.test(servedOrigin) || /^http:\/\/(localhost|127(?:\.\d+){3}|\[::1\])(?::|\/|$)/i.test(servedOrigin);
-          console.log(securePasskeys
-            ? '   The setup page can create a password and register a passkey.'
-            : '   Password setup is available. Passkeys require HTTPS for remote devices.');
-        }
-        console.log('   Press Ctrl+C to stop');
-      });
-    }
-
-    start();
-
-    // Graceful shutdown
-    function shutdown() {
-      console.log('\n⏹  Shutting down...');
-      closeServer(server).then(() => process.exit(0));
-    }
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+    return runSupervisor(options);
   });
 
 program
