@@ -7,9 +7,11 @@
 
 ## Overview
 
-`.mcp.json` ships a preset MCP server entry, **`chrome-debug`**, that wraps Anthropic's [`chrome-devtools-mcp`](https://www.npmjs.com/package/chrome-devtools-mcp) package and launches an isolated stable Chrome instance for browser automation. The result: the model gets a tool surface for driving a live page (`take_snapshot`, `click`, `type_text`, `navigate`, …) without requiring users to start Chrome with a debug port first.
+`.mcp.json` ships a preset MCP server entry, **`chrome-debug`**, that wraps Anthropic's [`chrome-devtools-mcp`](https://www.npmjs.com/package/chrome-devtools-mcp) package and launches an isolated **headless** stable Chrome instance for browser automation. The result: the model gets a tool surface for driving a live page (`take_snapshot`, `click`, `type_text`, `navigate`, …) without requiring users to start Chrome with a debug port first, and without needing a desktop display (works on servers, CI, and Docker).
 
-The entry is committed to `.mcp.json` so collaborators can review it, and starts Chrome through `chrome-devtools-mcp` with `--channel=stable --isolated`. It is the canonical pattern for "let the model touch a real browser" without inventing a new transport — the existing MCP client ([src/mcp.js](../../src/mcp.js)) already does stdio, JSON-RPC, discovery, and gating. New MCP entries are disabled by default; flip the preset off in **Settings → MCP** if you don't want it starting Chrome.
+The entry is committed to `.mcp.json` so collaborators can review it, and starts Chrome through `chrome-devtools-mcp` with `--channel=stable --isolated --headless`. It is the canonical pattern for "let the model touch a real browser" without inventing a new transport — the existing MCP client ([src/mcp.js](../../src/mcp.js)) already does stdio, JSON-RPC, discovery, and gating. New MCP entries are disabled by default; flip the preset off in **Settings → MCP** if you don't want it starting Chrome.
+
+> **Why headless?** On machines without an X server (headless Linux servers, containers), the headful launch fails with `Missing X server to start the headful browser`. The `--headless` flag makes the preset work there and everywhere. The `chrome-debug` tools operate through DevTools Protocol, so screenshots, snapshots, and page automation are identical either way.
 
 ## Usage
 
@@ -18,10 +20,10 @@ The entry is committed to `.mcp.json` so collaborators can review it, and starts
 No separate Chrome startup is required. The preset passes these flags to `chrome-devtools-mcp`:
 
 ```bash
---channel=stable --isolated
+--channel=stable --isolated --headless --no-usage-statistics
 ```
 
-That makes the MCP server launch stable Chrome with a temporary isolated profile on Linux, macOS, or Windows. If Chrome cannot be auto-detected on a machine, edit the row in **Settings → MCP** and add an explicit executable path, for example:
+That makes the MCP server launch stable Chrome headless with a temporary isolated profile on Linux, macOS, or Windows. **No display is required** — this is what makes the preset work on headless servers. If Chrome cannot be auto-detected on a machine, edit the row in **Settings → MCP** and add an explicit executable path, for example:
 
 ```bash
 --executablePath=C:\Program Files\Google\Chrome\Application\chrome.exe
@@ -42,6 +44,8 @@ or on Linux:
 
 Once enabled, every open chat (current and future) sees the tools. The child process is in-memory only, so a `mouaif` restart will need a fresh **Start**; the discovered tool list is persisted in the app SQLite store so the model still sees the surface on a stopped server.
 
+> **Heads-up:** if the server was started before the preset changed (e.g. the `--headless` fix was added to `.mcp.json`), restart `mouaif serve` once so the registry picks up the new args — the running process keeps the old in-memory config.
+
 ### Pairing with the Inspector
 
 By default, the Inspector tab and the `chrome-debug` MCP server use separate Chrome connections:
@@ -58,7 +62,7 @@ If you need both surfaces on the exact same browser, edit the MCP row back to an
 ## Behavior
 
 - **Preset ships enabled.** The entry in this repo's `.mcp.json` has `enabled: true` so the tools are available out of the box here; new MCP entries added through Settings are disabled by default. A `Start` while Chrome cannot be launched fails fast with `EMCP_START` and the inline error surfaces in the Settings row.
-- **Chrome auto-launches.** The `--channel=stable --isolated` flags make `chrome-devtools-mcp` start a stable Chrome with a temporary profile. Users with a non-standard install can edit the row in **Settings → MCP** and add `--executablePath=...`.
+- **Chrome auto-launches headless.** The `--channel=stable --isolated --headless` flags make `chrome-devtools-mcp` start a stable Chrome with a temporary profile and no window — so it runs on machines without a display. Users with a non-standard install can edit the row in **Settings → MCP** and add `--executablePath=...`. To see the browser (desktop only), drop `--headless` from the args and relaunch the server.
 - **No secrets in the entry.** The env block is empty; the package only needs the debug URL. Anything sensitive stays in the keyring ([docs/features/auth.md](./auth.md)).
 - **Authorization defaults to `ask`.** MCP tool calls go through the same gate as the native tools ([docs/features/tool-authorization.md](./tool-authorization.md)). The user approves each `click` / `type_text` / `navigate` call before the runner executes, or flips the **MCP tools** mode to **Allow** (or adds auto-approve patterns) at the top of **Settings → MCP**.
 - **Args are not shell-parsed.** Each flag is a single token passed straight to the child; the same rule as every other MCP server (decision §18).

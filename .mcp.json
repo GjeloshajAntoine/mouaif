@@ -29,6 +29,7 @@
         "chrome-devtools-mcp@latest",
         "--channel=stable",
         "--isolated",
+        "--headless",
         "--no-usage-statistics"
       ],
       "env": {},
