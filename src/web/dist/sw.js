@@ -34,7 +34,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = '1ffebf55';
+const CACHE_VERSION = 'd79eed39';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -185,8 +185,21 @@ self.addEventListener('push', (event) => {
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
     const chatVisible = windows.some((client) => {
-      if (!client.focused || !targetUrl) return false;
-      try { return new URL(client.url).hash === targetUrl.hash; } catch { return false; }
+      // Suppress only when the user is ACTUALLY looking at the app.
+      // `client.focused` alone is not enough: on mobile (iOS PWA in
+      // particular) a window can stay "focused" while the screen is
+      // locked or another app is on top, which would hide the
+      // notification the user should be seeing. `visibilityState`
+      // (supported on Chromium WindowClients) is the authoritative
+      // signal; when it's unavailable we fail OPEN (show the
+      // notification) because suppression is only an optimization
+      // and silently dropping an alert is the worse failure mode.
+      if (!targetUrl) return false;
+      try {
+        if (client.visibilityState !== undefined && client.visibilityState !== 'visible') return false;
+        if (client.visibilityState === undefined) return false; // no data: never suppress
+        return client.focused && new URL(client.url).hash === targetUrl.hash;
+      } catch { return false; }
     });
     if (chatVisible) return;
     await self.registration.showNotification(title || 'mouaif', {

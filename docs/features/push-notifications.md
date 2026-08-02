@@ -38,7 +38,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 
-Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert when that exact chat is already focused.
+Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen (focused **and** `visibilityState === 'visible'`); a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Engines that don't report `visibilityState` on their window clients always show the alert rather than risk silently dropping it.
 
 ### Clicking a notification
 
@@ -61,11 +61,16 @@ The app-level `notifications` setting stores:
 	"toolAuthorization": true,
 	"completion": true,
 	"errors": true,
+	"progress": true,
 	"quickActions": true
 }
 ```
 
 Browser permission and subscription are installation-specific. Event preferences are app-wide and are exposed through the normal `/api/settings/app` endpoint.
+
+### Progress notifications
+
+The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-progress`, so the OS replaces the previous notification for that chat instead of stacking a new one — the notification shows the live percentage / task title / token count as the run progresses. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
 
 ## Implementation notes
 
