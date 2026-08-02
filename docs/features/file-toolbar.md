@@ -4,7 +4,7 @@ The file toolbar sits as a round button next to the chat composer text box. It o
 
 ## Overview
 
-A single trigger button (folder + chevrons icon) next to the textarea opens a dropdown menu:
+A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu:
 
 - **Files** — opens the CodeMirror-based project file editor popup.
 - **Git** — opens a modal that shows the project's git state: staged changes, unstaged changes, and recent commits. Every section and every file row is collapsible; each changed file expands into its diff.
@@ -82,4 +82,4 @@ The older `POST /api/git` endpoint (status / diff / log / add / commit / branch 
 
 The toolbar is a stateless Preact component that receives `projectDir` and `onOpenFileEditor` as props. The git modal owns its own fetch state (loading / error / retry) and collapses each section, file, and commit independently.
 
-The trigger icon is a stack of three inline SVGs: a folder (Files) with an up-chevron and a down-chevron beneath it, all rendered with `fill: currentColor` like every other icon in the app. Each element is a separate SVG (folder 18×14, chevrons 12×6) with 2px gaps, so all three are clearly visible. Earlier attempts used `▲`/`▼` text glyphs (U+25B2/U+25BC), which render as color emoji on some mobile fonts and collapse into a single visible icon, and a single 14px two-triangle SVG, which was too small to read as two icons.
+The trigger icon is a stack of three inline SVGs: an up-chevron, the folder in the middle, and a down-chevron, all rendered with `fill: currentColor` like every other icon in the app. Each element is a separate SVG (folder 18×14, chevrons 12×6) with 2px gaps, so all three are clearly visible. Earlier attempts used `▲`/`▼` text glyphs (U+25B2/U+25BC), which render as color emoji on some mobile fonts and collapse into a single visible icon, and a single 14px two-triangle SVG, which was too small to read as two icons.

@@ -7,9 +7,9 @@
 //
 // The icon is built from inline SVGs, not text glyphs: ▲ (U+25B2) and
 // ▼ (U+25BC) render as color emoji on some mobile fonts, and a single
-// 14px two-triangle SVG is too small to read as two icons. A folder with
-// both an up and a down chevron beneath it, each a separate SVG with a
-// 2px gap, shows all icons clearly on every device.
+// 14px two-triangle SVG is too small to read as two icons. An up-chevron
+// above the folder and a down-chevron below it, each a separate SVG with
+// a 2px gap, shows all icons clearly on every device.
 
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
@@ -53,11 +53,11 @@ export function FileToolbar(props) {
       title: 'File and git tools'
     },
       h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
-        h('svg', { viewBox: '0 0 20 16', width: 18, height: 14 },
-          h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
-        ),
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
           h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
+        ),
+        h('svg', { viewBox: '0 0 20 16', width: 18, height: 14 },
+          h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
         ),
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
           h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
