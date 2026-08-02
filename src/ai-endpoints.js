@@ -974,10 +974,80 @@ function openAIContentToGeminiParts(content) {
   }).filter((part) => part.text || part.inlineData);
 }
 
-function buildAnthropicRequest(model, messages, stream) {
+// openAIToolsToAnthropic(specs) -> [{ name, description, input_schema }]
+// Converts the OpenAI-shaped tool specs ({ type:'function',
+// function:{ name, description, parameters } }) into Anthropic's native
+// tool form. The `parameters` block is already JSON Schema, which is
+// exactly what Anthropic's input_schema expects.
+function openAIToolsToAnthropic(specs) {
+  return (Array.isArray(specs) ? specs : [])
+    .map((s) => {
+      const fn = s && s.function;
+      if (!fn || typeof fn.name !== 'string' || !fn.name) return null;
+      return {
+        name: fn.name,
+        description: typeof fn.description === 'string' ? fn.description : '',
+        input_schema: fn.parameters || { type: 'object', properties: {} }
+      };
+    })
+    .filter(Boolean);
+}
+
+// openAIMessageToAnthropic(m) -> Anthropic message | null
+// Converts one OpenAI-shaped conversation message to the Anthropic shape:
+//   - assistant + tool_calls -> text block (when present) + tool_use blocks
+//   - role 'tool'            -> user message with a tool_result block
+//   - everything else        -> role + content converted via
+//                               openAIContentToAnthropic (images etc.)
+// Returns null for a message with no representable content.
+function openAIMessageToAnthropic(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (m.role === 'tool') {
+    // OpenAI tool-result -> Anthropic tool_result block inside a user
+    // message. tool_use_id must reference a prior tool_use block's id
+    // in the same conversation; the tool loop preserves the upstream id
+    // across the assistant(tool_use) -> tool_result round trip.
+    return {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: m.tool_call_id || m.toolCallId || '',
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content == null ? '' : m.content)
+      }]
+    };
+  }
+  if (m.role === 'assistant') {
+    const blocks = [];
+    if (typeof m.content === 'string' && m.content) blocks.push({ type: 'text', text: m.content });
+    else if (Array.isArray(m.content)) blocks.push(...openAIContentToAnthropic(m.content));
+    if (Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const fn = tc.function || {};
+        let input = {};
+        if (typeof fn.arguments === 'string') {
+          try { input = JSON.parse(fn.arguments); } catch { input = {}; }
+        } else if (fn.arguments && typeof fn.arguments === 'object') {
+          input = fn.arguments;
+        }
+        blocks.push({ type: 'tool_use', id: tc.id || undefined, name: fn.name || 'tool', input });
+      }
+    }
+    if (!blocks.length) return null;
+    return { role: 'assistant', content: blocks };
+  }
+  const content = openAIContentToAnthropic(m.content);
+  if (content == null || content === '') return null;
+  return { role: m.role || 'user', content };
+}
+
+function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
+  // Prompt caching is enabled for API-key models only. OAuth models
+  // carry the oauth-2025-04-20 beta gate instead (docs/features/
+  // oauth-anthropic.md), so their requests are left cache-marker-free.
+  const cacheable = !(model && model.auth === 'oauth');
   const body = {
     model: model.id,
     max_tokens: model.maxTokens || 1024,
@@ -988,11 +1058,31 @@ function buildAnthropicRequest(model, messages, stream) {
     // The system block is sent as an array so the cache_control field is
     // accepted; a plain string would silently ignore it.
     system: systemContent
-      ? [{ type: 'text', text: systemContent, cache_control: { type: 'ephemeral' } }]
+      ? [{ type: 'text', text: systemContent, ...(cacheable ? { cache_control: { type: 'ephemeral' } } : {}) }]
       : undefined,
-    messages: chatMessages.map(m => ({ role: m.role, content: openAIContentToAnthropic(m.content) })),
+    // Convert the conversation to Anthropic's native shape: assistant
+    // tool_calls become tool_use blocks, `tool` role messages become
+    // tool_result user messages. Without this conversion the multi-turn
+    // tool loop could never run against Claude.
+    messages: chatMessages.map(openAIMessageToAnthropic).filter(Boolean),
     stream: !!stream
   };
+  // Native Anthropic tools, converted from the same OpenAI-shaped specs
+  // the other providers advertise. Marking the LAST tool definition with
+  // cache_control extends the cached prefix far past the system block —
+  // Anthropic only honors a cache_control breakpoint when the prompt
+  // prefix before it exceeds the per-model minimum cacheable length
+  // (1024 tokens for Sonnet 3.5/3.7, 4096 for Sonnet 4 / Opus 4 /
+  // Haiku 4.5). A system block alone is usually below that, so without
+  // the tools the API silently ignores the marker and caching never
+  // happens.
+  const tools = openAIToolsToAnthropic(specs);
+  if (tools.length) {
+    body.tools = tools;
+    if (cacheable) {
+      body.tools[body.tools.length - 1].cache_control = { type: 'ephemeral' };
+    }
+  }
   // Inject thinking budget for Anthropic. The thinking level maps to
   // a budget_tokens value. When the level is a plain number string, use
   // it directly as budget_tokens. Known presets: "low"=2048, "medium"=8192, "high"=16384.
@@ -1275,7 +1365,21 @@ function parseMiniMaxTextToolCalls(text) {
   return { text: source.replace(blockRe, '').trim(), calls };
 }
 
-function* parseAnthropicSSE(eventName, data) {
+// parseAnthropicSSE(eventName, data, toolAcc) — Anthropic stream parser.
+//
+// The third argument is a shared per-turn accumulator for tool_use
+// blocks. Anthropic streams a tool call as three separate frames:
+//   content_block_start  (type: 'tool_use', id, name, input: {})
+//   content_block_delta  (type: 'input_json_delta', partial_json: '...')
+//   content_block_stop   (index of the finished block)
+// The caller in src/ai-stream.js re-creates the generator for every SSE
+// frame, so the accumulator must live outside the generator (one per
+// upstream turn); a per-generator map is used for direct one-shot usage
+// (tests). Each finished block is emitted as a `tool_call_delta` shaped
+// like the OpenAI accumulator expects: { index, id, function: { name,
+// arguments } }.
+function* parseAnthropicSSE(eventName, data, toolAcc) {
+  const acc = toolAcc || new Map();
   if (!data) return;
   let obj;
   try { obj = JSON.parse(data); } catch { yield { name: 'passthrough', data: { raw: data } }; return; }
@@ -1297,6 +1401,10 @@ function* parseAnthropicSSE(eventName, data) {
       }
       break;
     case 'content_block_start':
+      if (obj.content_block && obj.content_block.type === 'tool_use') {
+        const block = obj.content_block;
+        acc.set(obj.index, { id: block.id, name: block.name, partial: '' });
+      }
       break;
     case 'content_block_delta':
       if (obj.delta && obj.delta.type === 'text_delta' && typeof obj.delta.text === 'string') {
@@ -1305,10 +1413,26 @@ function* parseAnthropicSSE(eventName, data) {
         yield { name: 'reasoning', data: { delta: obj.delta.thinking } };
       } else if (obj.delta && obj.delta.type === 'signature_delta') {
         // Anthropic signs extended-thinking blocks; the signature is not user-facing.
+      } else if (obj.delta && obj.delta.type === 'input_json_delta' && typeof obj.delta.partial_json === 'string') {
+        const entry = acc.get(obj.index);
+        if (entry) entry.partial += obj.delta.partial_json;
       }
       break;
-    case 'content_block_stop':
+    case 'content_block_stop': {
+      const entry = acc.get(obj.index);
+      if (entry && entry.name) {
+        acc.delete(obj.index);
+        yield {
+          name: 'tool_call_delta',
+          data: {
+            index: obj.index,
+            id: entry.id || undefined,
+            function: { name: entry.name, arguments: entry.partial || '{}' }
+          }
+        };
+      }
       break;
+    }
     case 'message_delta':
       if (obj.usage && typeof obj.usage.output_tokens === 'number') {
         yield { name: 'usage_output', data: { completionTokens: obj.usage.output_tokens } };

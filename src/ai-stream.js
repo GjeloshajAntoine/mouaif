@@ -402,10 +402,12 @@ async function streamChat(opts) {
   //      loop without requiring an MCP server.
   //   6. MCP-discovered tools (decision §18), which use the
   //      mcp__<serverSlug>__<toolName> name convention.
-  // Tool calling and the multi-turn loop below are wired only for the
-  // OpenAI-compatible tool shape (openai-compatible + github-copilot).
-  // Other providers stream normally and never see a `tools` field, so
-  // their happy path is unchanged.
+  // Tool calling and the multi-turn loop are wired for the OpenAI-
+  // compatible tool shape (openai-compatible + github-copilot + openrouter)
+  // and for Anthropic's native tool_use shape (buildAnthropicRequest
+  // converts the specs and the parser emits tool_call_delta for tool_use
+  // blocks). Other providers stream normally and never see a `tools`
+  // field, so their happy path is unchanged.
   const toolSpecs = [];
   try { toolSpecs.push(require('./tools/shell.js').SPEC); }
   catch { /* shell tool module unavailable; skip */ }
@@ -563,8 +565,14 @@ async function streamChat(opts) {
       // output, while the retry cap prevents a silent model from looping.
       if (completedToolRound && !String(result.assistantText || '').trim() && emptyPostToolRetries < FINAL_ANSWER_RETRIES) {
         emptyPostToolRetries++;
+        // Anthropic merges every system-role message into the cached
+        // system block, so a mid-conversation system reminder would
+        // change the cache prefix and invalidate the warm cache for the
+        // rest of the chat. Ride it as a user message instead — the
+        // alternating user/assistant pattern stays valid and the system
+        // block (the cache breakpoint) stays byte-identical.
         convo.push({
-          role: 'system',
+          role: model.provider === 'anthropic' ? 'user' : 'system',
           content: 'Your previous response was empty. Return the final user-facing answer now. Do not call a tool and do not return an empty response.'
         });
         continue;
@@ -679,7 +687,7 @@ async function streamChat(opts) {
   // or { ok: false, error }. `done` is NOT emitted here — the caller
   // decides when the whole exchange is finished.
   async function runUpstreamTurn(convoMessages, specs) {
-  const req = build(model, convoMessages, true);
+  const req = build(model, convoMessages, true, specs);
   const supportsOpenAITools = model.provider === 'openai-compatible'
     || model.provider === 'openrouter'
     || model.provider === 'github-copilot';
@@ -689,6 +697,15 @@ async function streamChat(opts) {
       builderBody.tools = specs;
     }
   }
+  // Anthropic streams a tool_use block's arguments as input_json_delta
+  // frames across multiple SSE events. The parser generator is re-created
+  // for every frame, so the tool_use accumulator lives here — one map per
+  // upstream turn, shared by every parser call of that turn. Other
+  // providers pass the accumulator-less parser through untouched.
+  const anthropicToolAcc = model.provider === 'anthropic' ? new Map() : null;
+  const parseTurn = (eventName, data) => anthropicToolAcc
+    ? parse(eventName, data, anthropicToolAcc)
+    : parse(eventName, data);
   // Idle watchdog on the upstream request. The provider can accept the
   // socket and then go silent (dead gateway, stalled network, overloaded
   // model): without a deadline the server waits forever, the chat shows
@@ -790,14 +807,14 @@ async function streamChat(opts) {
     if (isNDJSON) {
       for await (const obj of readNDJSON(stream)) {
         resetIdle(); // any upstream byte proves the provider is alive
-        for (const ev of parse('', JSON.stringify(obj))) {
+        for (const ev of parseTurn('', JSON.stringify(obj))) {
           apply(ev);
         }
       }
     } else {
       for await (const ev of readSSE(stream)) {
         resetIdle(); // any upstream byte proves the provider is alive
-        for (const out of parse(ev.eventName, ev.data)) {
+        for (const out of parseTurn(ev.eventName, ev.data)) {
           apply(out);
         }
       }

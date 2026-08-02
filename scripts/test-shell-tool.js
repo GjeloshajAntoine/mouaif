@@ -361,9 +361,12 @@ async function main() {
   server2.close();
   check('shell remains advertised for authorization gating', advertisedWhenDisabled === true, String(advertisedWhenDisabled));
 
-  // Non-OpenAI providers use different tool declaration schemas. Until
-  // their native loops are implemented, they must not receive the OpenAI
-  // `type:function` specs collected above or strict APIs return HTTP 400.
+  // Non-OpenAI providers use different tool declaration schemas. The
+  // collected OpenAI `type:function` specs must be converted to the
+  // provider's native form — Anthropic expects { name, description,
+  // input_schema } — never sent verbatim, or strict APIs return HTTP 400.
+  // The converted tools double as the prompt-cache prefix extension
+  // (cache_control on the last tool), see docs/features/prompt-caching.md.
   let anthropicBody = null;
   const serverAnthropic = http.createServer((req, res) => {
     let body = '';
@@ -390,8 +393,15 @@ async function main() {
     onEvent: () => {}
   });
   serverAnthropic.close();
-  check('Anthropic request succeeds without OpenAI tool specs', anthropicResult.ok === true, JSON.stringify(anthropicResult));
-  check('Anthropic request omits OpenAI tool specs', anthropicBody && !Object.hasOwn(anthropicBody, 'tools'), JSON.stringify(anthropicBody && anthropicBody.tools));
+  check('Anthropic request succeeds with native tools', anthropicResult.ok === true, JSON.stringify(anthropicResult));
+  check('Anthropic request converts specs to native tool form',
+    Array.isArray(anthropicBody.tools) && anthropicBody.tools.length > 0
+      && anthropicBody.tools.every((t) => t && t.name && t.input_schema && !t.type && !('function' in t)),
+    JSON.stringify(anthropicBody && anthropicBody.tools));
+  check('Anthropic request marks the last tool for prompt caching',
+    Array.isArray(anthropicBody.tools) && anthropicBody.tools[anthropicBody.tools.length - 1].cache_control
+      && anthropicBody.tools[anthropicBody.tools.length - 1].cache_control.type === 'ephemeral',
+    JSON.stringify(anthropicBody && anthropicBody.tools && anthropicBody.tools[anthropicBody.tools.length - 1]));
 
   fs.rmSync(projectDir, { recursive: true, force: true });
   settings.close();
