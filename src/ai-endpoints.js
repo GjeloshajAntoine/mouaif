@@ -1040,6 +1040,29 @@ function openAIMessageToAnthropic(m) {
   return { role: m.role || 'user', content };
 }
 
+// markPenultimateMessage(messages) — add a cache_control breakpoint to the
+// second-to-last converted message. The penultimate message is the deepest
+// point of the stable, replayed prefix: everything before the current turn
+// (system, tools, and the full history) is re-sent byte-identically on every
+// request — each tool round and every follow-up user turn — so the next
+// request reads it from cache at the discounted rate. The FINAL message is
+// never marked: a breakpoint on the current turn is ignored by the API and
+// its content is not part of the stable prefix anyway. Plain-text messages
+// are wrapped in a text block because cache_control is only honored on
+// object blocks.
+function markPenultimateMessage(messages) {
+  const target = messages[messages.length - 2];
+  if (!target || !target.content) return;
+  if (!Array.isArray(target.content)) {
+    target.content = [{ type: 'text', text: String(target.content), cache_control: { type: 'ephemeral' } }];
+    return;
+  }
+  const last = target.content[target.content.length - 1];
+  if (last && typeof last === 'object' && !last.cache_control) {
+    last.cache_control = { type: 'ephemeral' };
+  }
+}
+
 function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
@@ -1048,6 +1071,24 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   // carry the oauth-2025-04-20 beta gate instead (docs/features/
   // oauth-anthropic.md), so their requests are left cache-marker-free.
   const cacheable = !(model && model.auth === 'oauth');
+  // Convert the conversation to Anthropic's native shape: assistant
+  // tool_calls become tool_use blocks, `tool` role messages become
+  // tool_result user messages. Without this conversion the multi-turn
+  // tool loop could never run against Claude. Conversion happens first
+  // because empty segments drop out — the penultimate breakpoint below
+  // must target the array actually sent upstream.
+  const convertedMessages = chatMessages.map(openAIMessageToAnthropic).filter(Boolean);
+  // Cache breakpoint on the penultimate message. Anthropic only honors a
+  // cache_control marker when the prompt prefix before it exceeds the
+  // per-model minimum cacheable length (1024 tokens for Sonnet 3.5/3.7,
+  // 4096 for Sonnet 4 / Opus 4 / Haiku 4.5). The system block alone — and
+  // even the system block plus a small tool set — is usually below that,
+  // so a system-only breakpoint is silently ignored and caching never
+  // happens. The penultimate-message breakpoint guarantees the cached
+  // prefix (system + tools + history) clears the minimum whenever there
+  // is any history to replay: caching engages from the second request of
+  // a conversation, even with every tool switched off.
+  if (cacheable && convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
   const body = {
     model: model.id,
     max_tokens: model.maxTokens || 1024,
@@ -1060,22 +1101,15 @@ function buildAnthropicRequest(model, messages, stream, specs) {
     system: systemContent
       ? [{ type: 'text', text: systemContent, ...(cacheable ? { cache_control: { type: 'ephemeral' } } : {}) }]
       : undefined,
-    // Convert the conversation to Anthropic's native shape: assistant
-    // tool_calls become tool_use blocks, `tool` role messages become
-    // tool_result user messages. Without this conversion the multi-turn
-    // tool loop could never run against Claude.
-    messages: chatMessages.map(openAIMessageToAnthropic).filter(Boolean),
+    messages: convertedMessages,
     stream: !!stream
   };
   // Native Anthropic tools, converted from the same OpenAI-shaped specs
   // the other providers advertise. Marking the LAST tool definition with
-  // cache_control extends the cached prefix far past the system block —
-  // Anthropic only honors a cache_control breakpoint when the prompt
-  // prefix before it exceeds the per-model minimum cacheable length
-  // (1024 tokens for Sonnet 3.5/3.7, 4096 for Sonnet 4 / Opus 4 /
-  // Haiku 4.5). A system block alone is usually below that, so without
-  // the tools the API silently ignores the marker and caching never
-  // happens.
+  // cache_control extends the cached prefix far past the system block, so
+  // the tool marker alone usually clears the minimum cacheable length.
+  // The penultimate-message breakpoint above still applies for requests
+  // whose prefix is short (no tools, or a small tool set).
   const tools = openAIToolsToAnthropic(specs);
   if (tools.length) {
     body.tools = tools;

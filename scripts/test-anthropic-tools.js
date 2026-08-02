@@ -49,6 +49,16 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   check('builder: system block cacheable', req.body.system[0].cache_control && req.body.system[0].cache_control.type === 'ephemeral');
   check('builder: assistant tool_calls -> tool_use block', req.body.messages[1].role === 'assistant' && req.body.messages[1].content[0].type === 'tool_use' && req.body.messages[1].content[0].id === 'toolu_01abc' && req.body.messages[1].content[0].input.title === 'T');
   check('builder: tool role -> user tool_result', req.body.messages[2].role === 'user' && req.body.messages[2].content[0].type === 'tool_result' && req.body.messages[2].content[0].tool_use_id === 'toolu_01abc');
+  // The penultimate message (the deepest stable, replayed point) carries
+  // the breakpoint that guarantees the cached prefix clears the per-model
+  // minimum cacheable length even when the system + tools prefix is short.
+  check('builder: penultimate message cacheable (tool_result block)',
+    req.body.messages.length === 4 && req.body.messages[2].content[0].cache_control
+      && req.body.messages[2].content[0].cache_control.type === 'ephemeral',
+    JSON.stringify(req.body.messages));
+  check('builder: final message never marked',
+    !req.body.messages[req.body.messages.length - 1].cache_control
+      && !(req.body.messages[req.body.messages.length - 1].content && req.body.messages[req.body.messages.length - 1].content[0] && req.body.messages[req.body.messages.length - 1].content[0].cache_control));
 
   // OAuth models keep the oauth beta gate and must NOT carry cache markers.
   const oauthReq = BUILDERS.anthropic(Object.assign({}, MODEL, { auth: 'oauth' }), messages, true, SPECS);
@@ -58,6 +68,37 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   // Empty specs -> no tools field at all (system-only request stays valid).
   const noToolsReq = BUILDERS.anthropic(MODEL, [{ role: 'user', content: 'hi' }], true, undefined);
   check('builder: no specs -> no tools field', !('tools' in noToolsReq.body));
+  check('builder: single-message request has no message marker',
+    typeof noToolsReq.body.messages[0].content === 'string'
+      || !('cache_control' in (Array.isArray(noToolsReq.body.messages[0].content) ? noToolsReq.body.messages[0].content[0] : {})));
+
+  // With NO tools and a short system block, the penultimate-message
+  // breakpoint is what makes the cache engage — the exact "every tool
+  // switched off" case.
+  const bareReq = BUILDERS.anthropic(MODEL, [
+    { role: 'system', content: 'You are a coding assistant.' },
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'Hello!' },
+    { role: 'user', content: 'run the tools' }
+  ], true, undefined);
+  check('builder: no-tools request marks the penultimate message',
+    !('tools' in bareReq.body) && bareReq.body.messages.length === 3
+      && bareReq.body.messages[1].content[0].cache_control
+      && bareReq.body.messages[1].content[0].cache_control.type === 'ephemeral',
+    JSON.stringify(bareReq.body.messages));
+  // A plain-text penultimate message is wrapped into an object text block
+  // so the cache_control field is honored.
+  const textReq = BUILDERS.anthropic(MODEL, [
+    { role: 'user', content: 'first' },
+    { role: 'assistant', content: 'answer' },
+    { role: 'user', content: 'second' }
+  ], true, undefined);
+  check('builder: plain-text penultimate wrapped as text block',
+    textReq.body.messages.length === 3
+      && textReq.body.messages[1].content[0].type === 'text'
+      && textReq.body.messages[1].content[0].text === 'answer'
+      && textReq.body.messages[1].content[0].cache_control,
+    JSON.stringify(textReq.body.messages[1]));
 }
 
 // ---- 2. Parser ----------------------------------------------------------
@@ -145,6 +186,13 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     check('loop: request 1 last tool cacheable', capturedBodies[0].tools[capturedBodies[0].tools.length - 1].cache_control !== undefined);
     check('loop: request 2 carries tool_use block', capturedBodies[1].messages.some((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_use' && c.id === 'toolu_01')), JSON.stringify(capturedBodies[1].messages));
     check('loop: request 2 carries tool_result block', capturedBodies[1].messages.some((m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'tool_result' && c.tool_use_id === 'toolu_01')), JSON.stringify(capturedBodies[1].messages));
+    // Request 2's penultimate message (the assistant tool_use turn) carries
+    // the cache breakpoint that guarantees the prefix clears the minimum.
+    check('loop: request 2 penultimate message cacheable',
+      capturedBodies[1].messages.length === 3
+        && capturedBodies[1].messages[1].content[0].cache_control
+        && capturedBodies[1].messages[1].content[0].cache_control.type === 'ephemeral',
+      JSON.stringify(capturedBodies[1].messages));
     check('loop: cache_creation folded into done usage', usage && usage.cacheCreationTokens === 5000, JSON.stringify(usage));
     check('loop: cache_read folded into done usage', usage && usage.cacheReadTokens === 5200, JSON.stringify(usage));
     check('loop: prompt tokens last-round-wins', usage && usage.promptTokens === 5600, JSON.stringify(usage));
