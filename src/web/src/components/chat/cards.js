@@ -484,7 +484,64 @@ export function removePendingAuthorizationCards(refs) {
   }
 }
 
-export function authorizationCard(request, projectDir, chatId, refs, resume) {
+// buildAuthModelPicker(state, request) -> HTMLElement | null
+//
+// The authorization card's per-run model picker. Only shown for
+// `subagent` calls: while approving the delegated run the user can
+// pick which model executes it (this call only — nothing is
+// persisted on the chat or an agent). The list is the same union
+// the main chat model picker shows: project-defined models plus the
+// per-provider live catalog, deduped by (provider, id). The chat's
+// current model is preselected, prefixed with "(chat default)".
+// Returns null when there is nothing to pick from.
+function buildAuthModelPicker(state, request) {
+  if (!state || request.tool !== 'subagent') return null;
+  const out = new Map();
+  for (const m of (state.models || [])) {
+    if (!m || !m.id || !m.provider) continue;
+    out.set(m.provider + '\u0000' + m.id, { id: m.id, provider: m.provider, label: m.label || '' });
+  }
+  const live = state.liveByProvider || {};
+  for (const provider of Object.keys(live)) {
+    for (const m of (live[provider] || [])) {
+      if (!m || !m.id) continue;
+      const key = provider + '\u0000' + m.id;
+      if (out.has(key)) continue;
+      out.set(key, { id: m.id, provider, label: m.label || '' });
+    }
+  }
+  const list = Array.from(out.values()).sort((a, b) =>
+    (a.provider + a.id).localeCompare(b.provider + b.id));
+  if (!list.length) return null;
+
+  const host = document.createElement('div');
+  host.className = 'tool-card__auth-model';
+  const label = document.createElement('label');
+  label.className = 'tool-card__auth-model-label';
+  label.textContent = 'Run this subagent on';
+  const sel = document.createElement('select');
+  sel.className = 'input tool-card__auth-model-select';
+  sel.setAttribute('aria-label', 'Model for this subagent run');
+  const chat = state.chat || {};
+  const currentKey = (chat.providerId && chat.modelId) ? chat.providerId + '\u0000' + chat.modelId : null;
+  const chatItem = currentKey ? out.get(currentKey) : null;
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = chatItem ? '(chat default) ' + chatItem.id : '(chat default)';
+  sel.appendChild(defaultOpt);
+  for (const m of list) {
+    const opt = document.createElement('option');
+    opt.value = m.provider + '\u0000' + m.id;
+    opt.textContent = m.id + (m.label && m.label !== m.id ? ' — ' + m.label : '') + ' · ' + m.provider;
+    sel.appendChild(opt);
+  }
+  sel.value = '';
+  host.appendChild(label);
+  host.appendChild(sel);
+  return host;
+}
+
+export function authorizationCard(request, projectDir, chatId, refs, resume, state) {
   return new Promise((resolve) => {
     if (!refs.transcript.current) return resolve('deny');
     const card = document.createElement('div');
@@ -507,6 +564,10 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
     detail.className = 'tool-card__body';
     detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
       .filter(Boolean).join('\n');
+    // Per-run model picker for subagent calls. When the user picks a
+    // model here, the decision payload carries it so the delegated run
+    // executes on that model (this call only; see buildAuthModelPicker).
+    const modelPicker = buildAuthModelPicker(state, request);
     const actions = document.createElement('div');
     actions.className = 'tool-card__actions';
     const buttons = [];
@@ -524,10 +585,27 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
       button.dataset.shortcut = shortcut;
       button.addEventListener('click', async () => {
         for (const child of actions.querySelectorAll('button')) child.disabled = true;
+        const body = { projectDir, chatId, callId: request.callId, decision };
+        // Fold the picked model into the decision payload so the
+        // subagent dispatcher can run this call on it. Only when the
+        // card showed a picker and the user chose a non-default option.
+        if (modelPicker && modelPicker.querySelector('.tool-card__auth-model-select')) {
+          const sel = modelPicker.querySelector('.tool-card__auth-model-select');
+          const raw = sel && sel.value;
+          const sep = raw ? raw.indexOf('\u0000') : -1;
+          if (sep > 0 && decision !== 'deny') {
+            body.payload = {
+              modelOverride: {
+                providerId: raw.slice(0, sep),
+                modelId: raw.slice(sep + 1)
+              }
+            };
+          }
+        }
         const r = await fetchJson('/api/tools/authorization/decision', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision })
+          body: JSON.stringify(body)
         });
         if (r.status !== 200) {
           for (const child of actions.querySelectorAll('button')) child.disabled = false;
@@ -553,7 +631,9 @@ export function authorizationCard(request, projectDir, chatId, refs, resume) {
     card.addEventListener('keydown', onKey);
     // Auto-focus the first button so keyboard shortcuts work immediately.
     if (buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
-    card.appendChild(head); card.appendChild(detail); card.appendChild(actions);
+    card.appendChild(head); card.appendChild(detail);
+    if (modelPicker) card.appendChild(modelPicker);
+    card.appendChild(actions);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);
   });

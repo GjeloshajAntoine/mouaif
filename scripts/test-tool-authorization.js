@@ -105,6 +105,29 @@ async function main() {
     { code: 'ETOOL_DISABLED' }
   );
 
+  // ---- Structured payload channel (model override for subagent) ----
+  // The authorization gate is payload-agnostic: the chat UI attaches an
+  // opaque `payload` object (here a per-run model override) and the
+  // decision resolves the wait with the same object so the AI runner can
+  // read it. Same contract the ask_user card uses for { choice, extra }.
+  settings.setProject(projectDir, { tools: { subagent: { mode: 'ask' } } });
+  const subAsk = await authz.authorize({
+    projectDir, chatId: 'a1b2c3d4', callId: 'call_sub_model', tool: 'subagent', summary: 'review the diff'
+  });
+  assert.equal(subAsk.decision, 'prompt', 'subagent asks by default');
+  let subPayload = null;
+  subAsk.wait.then((resolved) => { subPayload = resolved; });
+  authz.recordDecision(projectDir, 'a1b2c3d4', 'call_sub_model', 'allow-once', {
+    modelOverride: { providerId: 'anthropic', modelId: 'claude-sonnet-4' }
+  });
+  await subAsk.wait;
+  assert.ok(subPayload && subPayload.decision === 'allow', 'payload resolves with decision allow');
+  assert.deepEqual(
+    subPayload.payload && subPayload.payload.modelOverride,
+    { providerId: 'anthropic', modelId: 'claude-sonnet-4' },
+    'decision payload carries the model override to the runner'
+  );
+
   settings.setProject(projectDir, { tools: { report_progress: { mode: 'allow' } } });
   const progressAllowed = await authz.authorize({
     projectDir, chatId: 'a1b2c3d4', callId: 'call_progress', tool: 'report_progress', summary: 'Build 50%'
@@ -194,7 +217,7 @@ async function main() {
     projectDir, chatId: mcpChat, callId: 'call_mcp_beat', tool: 'mcp__db__list_tables', summary: 'mcp__db__list_tables'
   });
   assert.equal(mcpToolBeatsOff.decision, 'allow', 'per-tool allow overrides the shared off');
-  console.log('tool authorization: 35 assertions passed');
+  console.log('tool authorization: ' + (35 + 4) + ' assertions passed');
 }
 
 main().finally(() => {

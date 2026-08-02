@@ -126,6 +126,12 @@ async function runSingleToolCall(c, cx) {
   // `ask_user` call. The runner reads it to fold the user's
   // structured answer into the `tool` message it returns.
   let callOptsAnswerPayload = null;
+  // Captured when the authorization gate resolves a prompt for a
+  // `subagent` call whose card carried a user-picked model. The
+  // payload is { modelOverride: { providerId, modelId } }; the
+  // subagent dispatcher resolves it to a hydrated model so the
+  // delegated run executes on the chosen model for this call only.
+  let callOptsModelOverride = null;
   const pushToolMessage = (name, content) => {
     if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name, content });
   };
@@ -309,8 +315,16 @@ async function runSingleToolCall(c, cx) {
         // For every other tool the payload is undefined and the
         // runner ignores it.
         const authDecision = await authResult.wait;
-        if (c.name === 'ask_user' && authDecision && authDecision.payload) {
-          callOptsAnswerPayload = authDecision.payload;
+        if (authDecision && authDecision.payload) {
+          if (c.name === 'ask_user') {
+            callOptsAnswerPayload = authDecision.payload;
+          } else if (c.name === 'subagent' && authDecision.payload.modelOverride) {
+            // The authorization card let the user pick a model for
+            // this delegated run. Hand it to the subagent dispatcher,
+            // which resolves it to a hydrated model and runs the
+            // nested call on it (per-call override, never persisted).
+            callOptsModelOverride = authDecision.payload.modelOverride;
+          }
         }
       }
       // Only announce a running tool after authorization has completed.
@@ -320,7 +334,7 @@ async function runSingleToolCall(c, cx) {
       // appeared permanently stuck on a tool call with no messages.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload }));
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride }));
     }
   } catch (e) {
     // Denied/disabled/error calls still need a call card immediately
@@ -1206,6 +1220,17 @@ async function streamChat(opts) {
       let agentTools = null;
       let nestedModel = model; // default: inherit the chat's model
       const nestedMessages = [];
+      // Per-call model override chosen on the authorization card.
+      // { providerId, modelId } — the user explicitly picked a model
+      // while approving this call, so it wins over the agent's pin
+      // and the chat's model. Resolved to a hydrated model below.
+      const chosenModel = (callOpts && callOpts.modelOverride && typeof callOpts.modelOverride === 'object')
+        ? callOpts.modelOverride
+        : null;
+      if (chosenModel && (!chosenModel.providerId || !chosenModel.modelId)) {
+        const r = { error: { code: 'EBADINPUT', message: 'Model override must set providerId and modelId' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
       if (agentName) {
         if (!callOpts || !callOpts.projectDir) {
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'No project context to resolve agent "' + agentName + '"', available: [] } };
@@ -1251,6 +1276,50 @@ async function streamChat(opts) {
           role: 'system',
           content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
         });
+      }
+      // Authorization-time model override. The user picked a model on
+      // the approval card for THIS delegated run, so it wins over both
+      // the chat's model and an agent's pin. Resolve it the same way
+      // the chat model is resolved: prefer the project model record,
+      // then fall back to a live-catalog entry for the provider, and
+      // hydrate either with the app-level provider connection. The
+      // project record may only contribute identity/selection metadata
+      // — committed project JSON must never redirect a credentialed
+      // provider connection candidate (mirrors resolveModel in
+      // server-shared.js).
+      if (chosenModel) {
+        try {
+          const settingsMod = require('./settings.js');
+          const resolved = settingsMod.getResolved(callOpts && callOpts.projectDir || null);
+          const models = Array.isArray(resolved.models) ? resolved.models : [];
+          let rec = models.find((x) => x && x.id === chosenModel.modelId && x.provider === chosenModel.providerId) || null;
+          if (!rec) {
+            // Live-catalog models (OpenRouter & co.) are resolved by
+            // provider id; the URL/credential come from the connection.
+            rec = { id: chosenModel.modelId, provider: chosenModel.providerId };
+          }
+          const safe = {};
+          for (const key of ['id', 'provider', 'label']) {
+            if (rec[key] !== undefined) safe[key] = rec[key];
+          }
+          if (rec.contextWindow !== undefined) safe.contextWindow = rec.contextWindow;
+          if (rec.thinking !== undefined) safe.thinking = rec.thinking;
+          if (rec.pricing && typeof rec.pricing === 'object') safe.pricing = rec.pricing;
+          const app = settingsMod.getApp();
+          const providers = Array.isArray(app.providers) ? app.providers : [];
+          const connection = providers.find((p) => p && p.id === rec.provider) || null;
+          if (!connection) {
+            const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
+            return { ok: false, content: JSON.stringify(r), result: r };
+          }
+          nestedModel = Object.assign({}, connection, safe, {
+            provider: rec.provider,
+            auth: safe.auth || connection.auth || 'apikey'
+          });
+        } catch (e) {
+          const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
+          return { ok: false, content: JSON.stringify(r), result: r };
+        }
       }
       nestedMessages.push({
         role: 'user',

@@ -35,6 +35,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.
+- [Per-run model choice on subagent approval](features/auth-model-picker.md) — the authorization card's model picker: pick which model executes a delegated `subagent` run, for that call only.
 - [Tool feedback compaction](features/tool-feedback-compaction.md) — preserve complete tool cards and transcripts while capping the copy returned to the model at 64 KiB per result.
 - [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
 - [File toolbar](features/file-toolbar.md) — a toolbar next to the composer with a dropdown for the file editor and a git modal (staged / unstaged / recent commits, all expandable).

@@ -85,7 +85,7 @@ export async function runShellCommand(cmd, state, refs) {
     r = await requestShell();
     if (r.status === 409 && r.body && r.body.code === 'EAUTH_REQUIRED') {
       let resumed = null;
-      const decision = await authorizationCard(r.body, projectDir, chatId, refs, async () => { resumed = await requestShell(); });
+      const decision = await authorizationCard(r.body, projectDir, chatId, refs, async () => { resumed = await requestShell(); }, state);
       if (decision === 'deny') {
         r = { status: 403, body: { ok: false, code: 'EDENIED', error: 'user denied' } };
       } else {
@@ -296,7 +296,7 @@ export async function loadPendingAuthorization(state, refs) {
     if (request.tool === 'ask_user' && request.args) {
       askUserCard(Object.assign({}, request.args, { callId: request.callId, tool: request.tool }), projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
     } else {
-      authorizationCard(request, projectDir, chatId, refs);
+      authorizationCard(request, projectDir, chatId, refs, null, state);
     }
   }
 }
@@ -546,7 +546,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {
-      authorizationCard(data, projectDir, chatId, refs);
+      authorizationCard(data, projectDir, chatId, refs, null, state);
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'ask_user_required') {
@@ -663,7 +663,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       assembled = '';
       reasoning = '';
     } else if (ev.eventName === 'authorization_required') {
-      authorizationCard(data, projectDir, chatId, refs);
+      authorizationCard(data, projectDir, chatId, refs, null, state);
     } else if (ev.eventName === 'ask_user_required') {
       askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
     } else if (ev.eventName === 'tool_call') {
