@@ -10,16 +10,34 @@ const {
   htmlPage,
   redirectMeta,
   finishOAuth,
+  expectedOrigin,
+  DEFAULT_PORT,
   auth,
   oauthAnthropic,
   oauthCopilot,
   oauthOpenRouter
 } = require('./server-shared.js');
 
-async function handleAuth(req, res, parsed) {
+// The URL the OAuth provider must redirect the user's browser back to.
+// The old hard-coded loopback (`http://127.0.0.1:<port>/oauth/callback`)
+// only works when the app is served from the same machine the user is on.
+// Behind a domain name (reverse proxy, --public-origin / MOUAIF_PUBLIC_ORIGIN)
+// the provider would bounce the browser to the *user's* localhost, which is
+// not the server. Derive the origin from the request instead: the public
+// origin wins when configured, otherwise the Host header (which a proxy
+// forwards by default). Falls back to 127.0.0.1 only when neither exists.
+function defaultCallbackUrl(req, publicOrigin) {
+  const origin = expectedOrigin(req, publicOrigin);
+  if (origin) return origin + '/oauth/callback';
+  const port = req.socket.address() && req.socket.address().port;
+  return 'http://127.0.0.1:' + (port || DEFAULT_PORT) + '/oauth/callback';
+}
+
+async function handleAuth(req, res, parsed, serverConfig) {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
+  const publicOrigin = serverConfig && serverConfig.publicOrigin;
 
   if (urlPath === '/api/auth/accounts' && method === 'GET') {
     return sendJSON(res, 200, { accounts: auth.listAccounts() });
@@ -68,7 +86,7 @@ async function handleAuth(req, res, parsed) {
 
     const state = oauthAnthropic.newState();
     const verifier = oauthAnthropic.newVerifier();
-    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    const callbackUrl = new URL(body.redirectUri || defaultCallbackUrl(req, publicOrigin));
     // The callback handler is shared by providers and therefore requires the
     // provider name. OAuth providers return our redirect URI verbatim, so
     // bind the provider into it before recording the pending exchange.
@@ -119,7 +137,7 @@ async function handleAuth(req, res, parsed) {
 
     const state = oauthCopilot.newState();
     const verifier = oauthCopilot.newVerifier();
-    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    const callbackUrl = new URL(body.redirectUri || defaultCallbackUrl(req, publicOrigin));
     if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'github-copilot');
     const redirectUri = callbackUrl.toString();
     const scope = body.scope || oauthCopilot.DEFAULT_SCOPE;
@@ -176,7 +194,7 @@ async function handleAuth(req, res, parsed) {
     // IdP echoes back faithfully. See finishOAuth()'s state parsing.
     const state = 'openrouter:' + rawState;
     const verifier = oauthOpenRouter.newVerifier();
-    const callbackUrl = new URL(body.redirectUri || ('http://127.0.0.1:' + (req.socket.address() && req.socket.address().port) + '/oauth/callback'));
+    const callbackUrl = new URL(body.redirectUri || defaultCallbackUrl(req, publicOrigin));
     if (!callbackUrl.searchParams.has('provider')) callbackUrl.searchParams.set('provider', 'openrouter');
     const redirectUri = callbackUrl.toString();
 

@@ -258,7 +258,12 @@ export function SettingsProviderEditView(props) {
       r = await fetchJson('/api/auth/sign-in/' + encodeURIComponent(provider), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}'
+        // Tell the server where the provider should redirect the user's
+        // browser back to. The browser knows its real origin even when the
+        // server only sees a proxied Host or plain-HTTP socket (HTTPS
+        // termination). The server falls back to the public origin / Host
+        // header when this is absent, so non-browser clients still work.
+        body: JSON.stringify({ redirectUri: new URL('/oauth/callback', window.location.href).toString() })
       });
     } catch (err) { setStatus(signInStatus, 'network error', 'error'); return; }
     if (r.status !== 200) { setStatus(signInStatus, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }

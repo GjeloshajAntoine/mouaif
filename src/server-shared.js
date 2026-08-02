@@ -30,6 +30,18 @@ const qr = require('./qr.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
 const oauthCopilot = require('./oauth-github-copilot.js');
 const oauthOpenRouter = require('./oauth-openrouter.js');
+
+// Register each per-provider exchange function with the auth skeleton.
+// Idempotent; safe to call from require-time side effects because
+// auth.registerExchange overwrites cleanly. This is the require-time
+// registration that used to live at the top of src/index.js (pre-split);
+// the refactor that split http-server.js into handler modules dropped it,
+// which made every POST /api/auth/sign-in/<provider> return 501
+// "<Provider> OAuth is not registered in this build". Without it the
+// OAuth sign-in button can never start a flow, loopback or domain-served.
+oauthAnthropic.register();
+oauthCopilot.register();
+oauthOpenRouter.register();
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');

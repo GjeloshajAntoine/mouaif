@@ -162,7 +162,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
 
   // Auth API (account list, sign-out, status polling, sign-in)
   if (urlPath.startsWith('/api/auth/')) {
-    return handleAuth(req, res, parsed);
+    return handleAuth(req, res, parsed, serverConfig);
   }
 
   // Usage / pricing (model id list, built-in pricing table).
