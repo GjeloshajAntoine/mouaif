@@ -53,6 +53,10 @@ export function useChatState(props) {
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
+  // Bumped after every successful tool/MCP authorization save. ChatView
+  // passes it to the ToolPopup so the popup re-renders with fresh auth
+  // segments (the chat tools card re-renders imperatively instead).
+  const [authStamp, setAuthStamp] = useState(0);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const chatSwitcherIdxRef = useRef(-1);
@@ -324,6 +328,8 @@ export function useChatState(props) {
       toolAuth.current = Object.assign({}, prev, { [tool]: { mode, allowlist: allowlist || [] } });
       // Re-render the tools card so the segment reflects the new mode.
       if (state._updateToolsCard) state._updateToolsCard();
+      // Re-render the composer ToolPopup (it reads the same auth state).
+      setAuthStamp((n) => n + 1);
     }
   };
 
@@ -348,6 +354,8 @@ export function useChatState(props) {
         tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : prev.tools
       };
       if (state._updateToolsCard) state._updateToolsCard();
+      // Re-render the composer ToolPopup (it reads the same auth state).
+      setAuthStamp((n) => n + 1);
     }
   };
 
@@ -430,6 +438,7 @@ export function useChatState(props) {
             if (t.file) auth.file = { mode: t.file.mode || 'ask', allowlist: Array.isArray(t.file.allowlist) ? t.file.allowlist : [] };
             if (t.subagent) auth.subagent = { mode: t.subagent.mode || 'ask', allowlist: Array.isArray(t.subagent.allowlist) ? t.subagent.allowlist : [] };
             if (t.task) auth.task = { mode: t.task.mode || 'ask', allowlist: Array.isArray(t.task.allowlist) ? t.task.allowlist : [] };
+            if (t.report_progress) auth.report_progress = { mode: t.report_progress.mode || 'ask', allowlist: Array.isArray(t.report_progress.allowlist) ? t.report_progress.allowlist : [] };
             if (t.ask_user) auth.ask_user = { mode: t.ask_user.mode === 'off' ? 'off' : 'ask' };
             toolAuth.current = auth;
           }
@@ -573,7 +582,7 @@ export function useChatState(props) {
 
   return {
     state, refs,
-    chat, providers, imageAttachments, composerText, fileEditorOpen, loading, runningVisible,
+    chat, providers, imageAttachments, composerText, fileEditorOpen, loading, runningVisible, authStamp,
     setImageAttachments, setFileEditorOpen,
     // Actions bound for direct use in the JSX
     send,

@@ -9,11 +9,11 @@ A floating popover opened from a button in the chat composer toolbar that lets t
 1. Tap the globe icon (🌐) in the composer toolbar, left of the textarea.
 2. The popup appears above the composer showing the same hierarchical tool tree that is also rendered in the chat transcript's Tools card.
 3. Each tool group can be expanded/collapsed with the chevron; each tool has a checkbox to toggle it on/off for the current chat.
-4. For built-in tool groups (shell, subagent, ask_user, file tools), an Off/Ask/Allow segment control is shown inline.
-5. MCP servers appear as their own group; the parent checkbox enables/disables the server itself.
+4. For built-in tool groups (shell, subagent, ask_user, task, progress updates, file tools), an Off/Ask/Allow segment control is shown inline.
+5. MCP servers appear as their own group; the parent checkbox enables/disables the server itself. MCP authorization renders exactly like the chat Tools card and project settings: an **MCP default** row edits the project's shared gate, and each server row carries an Off/Ask/Allow segment for that server's override (with a ↺ reset when an override is set).
 6. Agent files found at the project root appear as a group with a single toggle.
 7. Tools that have been called in the current chat session show a dot badge (●).
-8. Changes are persisted immediately — there is no "Save" button.
+8. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
 
 ## Implementation notes
 

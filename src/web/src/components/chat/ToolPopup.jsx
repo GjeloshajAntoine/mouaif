@@ -11,8 +11,11 @@
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
+import { McpAuthSeg } from '../settings/toolAuth.js';
 
 // Segment control for Off / Ask / Allow, same model as cards.js.
+// Picking Allow clears any allowlist; any other mode keeps it, so an
+// ask→off→ask round-trip never loses the patterns.
 function AuthSegment({ toolName, current, onSave }) {
   const active = current && current.mode;
   if (!active) return null;
@@ -36,7 +39,8 @@ function AuthSegment({ toolName, current, onSave }) {
           checked: active === m.value,
           onChange: () => {
             if (onSave) {
-              onSave(toolName, m.value);
+              const allowlist = m.value === 'allow' ? [] : (Array.isArray(current.allowlist) ? current.allowlist : []);
+              onSave(toolName, m.value, allowlist);
             }
           }
         }),
@@ -54,12 +58,14 @@ export function ToolPopup(props) {
     agentFiles,
     skills,
     toolAuth,
+    mcpAuth,
     onToggleTool,
     onToggleToolGroup,
     onToggleMcpServer,
     onToggleAgentFiles,
     onToggleSkills,
-    onSaveToolAuth
+    onSaveToolAuth,
+    onSaveMcpAuth
   } = props;
 
   const [open, setOpen] = useState(false);
@@ -110,8 +116,48 @@ export function ToolPopup(props) {
       const cur = auth[authName] || { mode: 'ask' };
       g.control = h(AuthSegment, {
         toolName: authName,
-        current: { mode: segMode(cur.mode) },
+        current: { mode: segMode(cur.mode), allowlist: Array.isArray(cur.allowlist) ? cur.allowlist : [] },
         onSave: onSaveToolAuth
+      });
+    }
+  }
+
+  // MCP authorization — same layered model as the chat Tools card and
+  // the project settings tree: an "MCP default" gate row (the project's
+  // shared fallback) plus one Off/Ask/Allow segment per MCP server group
+  // (the per-server override; shows the effective mode and gains a ↺
+  // reset when an override is set). Writes go through onSaveMcpAuth so
+  // the card and the settings page pick the change up too.
+  const mcpAuthState = mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
+  const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));
+  if (firstMcp >= 0) {
+    const onSaveMcp = (patch) => onSaveMcpAuth && onSaveMcpAuth(patch);
+    groups.splice(firstMcp, 0, {
+      id: 'mcp',
+      name: 'MCP default',
+      description: 'gate for servers without an override',
+      checked: (mcpAuthState.mode || 'ask') !== 'off',
+      control: h(McpAuthSeg, {
+        name: 'MCP default',
+        slug: null,
+        servers: mcpAuthState.servers,
+        shared: mcpAuthState,
+        namePrefix: 'popup-mcp',
+        onSave: onSaveMcp
+      }),
+      tools: []
+    });
+    for (const g of groups) {
+      if (!g.id.startsWith('mcp-')) continue;
+      const server = mcpServers.find((s) => s && s.id === g.id.slice(4));
+      const slug = (server && (server.slug || server.id)) || g.id.slice(4);
+      g.control = h(McpAuthSeg, {
+        name: g.name,
+        slug,
+        servers: mcpAuthState.servers,
+        shared: mcpAuthState,
+        namePrefix: 'popup-mcp',
+        onSave: onSaveMcp
       });
     }
   }
@@ -123,6 +169,12 @@ export function ToolPopup(props) {
     }
     if (groupId === 'skills') {
       if (onToggleSkills) onToggleSkills(checked);
+      return;
+    }
+    // MCP default gate: the group checkbox is a quick Off ↔ Ask for the
+    // project's shared MCP fallback (same shortcut as the chat card).
+    if (groupId === 'mcp') {
+      if (onSaveMcpAuth) onSaveMcpAuth({ mode: checked ? 'ask' : 'off' });
       return;
     }
     if (groupId.startsWith('mcp-')) {

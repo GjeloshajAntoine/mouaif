@@ -16,7 +16,7 @@ export function ChatView(props) {
   const s = useChatState(props);
   const {
     refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp,
     chatSwitcherOpen, chatSwitcherList,
     setFileEditorOpen,
     setChatSwitcherOpen,
@@ -219,12 +219,17 @@ export function ChatView(props) {
         agentFiles: s.state.agentFiles,
         skills: s.state.skills,
         toolAuth: s.state.toolAuth,
+        mcpAuth: s.state.mcpAuth,
         onToggleTool: s.state._toggleTool,
         onToggleToolGroup: s.state._toggleToolGroup,
         onToggleMcpServer: s.state._toggleMcpServer,
         onToggleAgentFiles: s.state._toggleAgentFiles,
         onToggleSkills: s.state._toggleSkills,
-        onSaveToolAuth: s.state._saveToolAuth
+        onSaveToolAuth: s.state._saveToolAuth,
+        onSaveMcpAuth: s.state._saveMcpAuth,
+        // Bumped on every successful auth save so ChatView re-renders and
+        // the popup picks up fresh toolAuth/mcpAuth props.
+        authStamp
       })
     ),
     h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
