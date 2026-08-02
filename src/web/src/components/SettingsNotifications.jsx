@@ -51,20 +51,26 @@ export function SettingsNotificationsView() {
 
   async function toggleDelivery() {
     setBusy(true);
-    if (pushEnabled.value) {
-      await unsubscribePush();
-      setStatus('Notifications disabled on this browser.');
-      setStatusState('success');
-    } else {
-      const ok = await requestPushPermission();
-      setStatus(ok
-        ? 'Notifications enabled on this browser.'
-        : (pushPermission.value === 'denied'
-            ? 'Permission is blocked. Allow notifications in browser settings, then try again.'
-            : 'Could not enable notifications.'));
-      setStatusState(ok ? 'success' : 'error');
+    try {
+      if (pushEnabled.value) {
+        await unsubscribePush();
+        setStatus('Notifications disabled on this browser.');
+        setStatusState('success');
+      } else {
+        const ok = await requestPushPermission();
+        setStatus(ok
+          ? 'Notifications enabled on this browser.'
+          : (pushPermission.value === 'denied'
+              ? 'Permission is blocked. Allow notifications in browser settings, then try again.'
+              : 'Could not enable notifications.'));
+        setStatusState(ok ? 'success' : 'error');
+      }
+    } finally {
+      // Always release the controls: requestPushPermission / unsubscribePush
+      // can return without enabling (timeout, blocked permission, SW failure)
+      // and the screen must not stay locked.
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function changePreference(key, checked) {

@@ -17,6 +17,34 @@ export const pushEnabled = signal(false); // whether we have a registered subscr
 let _registration = null;
 let _subscription = null;
 
+// withTimeout(promise, ms, label) — resolve with null if the promise does not
+// settle in time. The browser permission prompt and `serviceWorker.ready`
+// can both hang forever (headless Chrome shows no prompt, some browsers
+// defer the prompt until the user interacts with a page element, and a
+// failed SW install never resolves `ready`). Without a deadline the
+// settings screen would stay stuck on `busy` with every control disabled.
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.warn('[mouaif-push] ' + label + ' timed out after ' + ms + 'ms');
+      resolve(null);
+    }, ms);
+    Promise.resolve(promise).then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } },
+      () => { if (!settled) { settled = true; clearTimeout(timer); resolve(null); } }
+    );
+  });
+}
+
+// How long to wait for the OS permission prompt. A real prompt resolves in
+// seconds; this only trips when the browser never shows one.
+const PERMISSION_PROMPT_TIMEOUT_MS = 30_000;
+// How long to wait for the service worker to reach the active state.
+const SW_READY_TIMEOUT_MS = 10_000;
+
 async function registerSubscription(sub) {
   const subData = sub && sub.toJSON ? sub.toJSON() : null;
   if (!subData || !subData.endpoint || !subData.keys || !subData.keys.p256dh || !subData.keys.auth) return false;
@@ -37,7 +65,8 @@ export async function syncPushState() {
 
   try {
     pushPermission.value = Notification.permission;
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await withTimeout(navigator.serviceWorker.ready, SW_READY_TIMEOUT_MS, 'serviceWorker.ready (sync)');
+    if (!reg) return false;
     _registration = reg;
     const sub = await reg.pushManager.getSubscription();
     _subscription = sub;
@@ -68,9 +97,12 @@ export async function requestPushPermission() {
   if (!pushSupported.value) return false;
 
   try {
-    const perm = await Notification.requestPermission();
-    pushPermission.value = perm;
-    if (perm !== 'granted') return false;
+    const perm = await withTimeout(Notification.requestPermission(), PERMISSION_PROMPT_TIMEOUT_MS, 'Notification.requestPermission');
+    if (perm !== 'granted') {
+      pushPermission.value = Notification.permission;
+      return false;
+    }
+    pushPermission.value = 'granted';
 
     // Already subscribed? Make sure the server still has this endpoint.
     if (pushEnabled.value && await syncPushState()) return true;
@@ -82,7 +114,8 @@ export async function requestPushPermission() {
     const vapidPublicKey = keyRes.body.publicKey;
     const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
 
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await withTimeout(navigator.serviceWorker.ready, SW_READY_TIMEOUT_MS, 'serviceWorker.ready (subscribe)');
+    if (!reg) return false;
     _registration = reg;
 
     const sub = await reg.pushManager.subscribe({
@@ -114,7 +147,11 @@ export async function unsubscribePush() {
       _subscription = await _registration.pushManager.getSubscription();
     }
     if (!_subscription && typeof navigator !== 'undefined' && navigator.serviceWorker) {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await withTimeout(navigator.serviceWorker.ready, SW_READY_TIMEOUT_MS, 'serviceWorker.ready (unsubscribe)');
+      if (!reg) {
+        pushEnabled.value = false;
+        return;
+      }
       _registration = reg;
       _subscription = await reg.pushManager.getSubscription();
     }
