@@ -690,8 +690,35 @@ export function appendToolResultCard(toolResult, refs) {
   }
   if (isSubagent) card.classList.add('tool-card--subagent');
   const body = card.querySelector('.tool-card__body');
-  if (body) renderToolResultBody(body, toolResult, isSubagentTool);
-  if (isSubagent) renderSubagentChat(card, toolResult);
+  if (body) {
+    // Defer the full result-body build until the card is first
+    // expanded. The collapsed header (verb + args + status + summary)
+    // is all the user sees by default; building the structured preview
+    // (coerceToolResult + per-tool renderers + diff rows) for every
+    // result is the dominant per-row DOM cost on tool-heavy chats. The
+    // result payload is stashed on the card and rendered once, on the
+    // first expand, then the listener is removed.
+    const lazyBody = () => {
+      if (card._resultBodyBuilt) return;
+      card._resultBodyBuilt = true;
+      renderToolResultBody(body, toolResult, isSubagentTool);
+      if (isSubagent) renderSubagentChat(card, toolResult);
+      afterTranscriptAppend(refs, false);
+    };
+    card._lazyBody = lazyBody;
+    if (card.classList.contains('is-expanded') || !toolResult.ok) {
+      // Errors auto-expand — build immediately so the failure is visible.
+      lazyBody();
+    } else {
+      body.dataset.lazyResult = '1';
+      card.addEventListener('click', function onExpand() {
+        if (card.classList.contains('is-expanded')) {
+          lazyBody();
+          card.removeEventListener('click', onExpand);
+        }
+      });
+    }
+  }
   // Expand errors automatically so the user sees what went wrong
   // without an extra tap. Successful results stay collapsed.
   if (!toolResult.ok) card.classList.add('is-expanded');
