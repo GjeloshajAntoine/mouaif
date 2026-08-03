@@ -29,7 +29,8 @@
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  padding: 0;
+  /* Fixed overlays sit outside the safe-area-padded app shell. */
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
   animation: fe__fade-in 120ms ease-out;
 }
 @keyframes fe__fade-in { from { opacity: 0; } to { opacity: 1; } }

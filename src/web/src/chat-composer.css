@@ -535,7 +535,8 @@
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  padding: 0;
+  /* Fixed overlays do not inherit the app shell's safe-area padding. */
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
   animation: gm__fade-in 120ms ease-out;
 }
 .cli__sheet {
@@ -719,7 +720,8 @@
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  padding: 0;
+  /* Keep the modal header below the notch/status bar on mobile. */
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
   animation: gm__fade-in 120ms ease-out;
 }
 @keyframes gm__fade-in { from { opacity: 0; } to { opacity: 1; } }
