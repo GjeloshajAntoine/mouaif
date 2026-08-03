@@ -233,6 +233,28 @@ async function handleChats(req, res, parsed, sessionToken) {
     }
   }
 
+  // GET /api/chats/:id/revision?projectDir= -> { count, ts }
+  // Lightweight "has this transcript changed?" marker for the 1 s
+  // reconcile poll. The old poll re-fetched the FULL message list every
+  // second just to JSON.stringify it and compare — on a long tool-heavy
+  // transcript that's megabytes of rows per tick. count + latest ts is
+  // a cheap indexed aggregate that changes exactly when the transcript
+  // changes (append-only store: rows are never edited in place).
+  const revMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/revision$/);
+  if (revMatch && method === 'GET') {
+    const id = decodeURIComponent(revMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const rev = messages.messageRevision(dir, id);
+      return sendJSON(res, 200, rev);
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id/system-prompt?projectDir= -> { profile, agentFiles, skills, prompt, text }
   // Returns the effective system context for a chat as it will be sent
   // upstream: the resolved prompt-size profile system message, the

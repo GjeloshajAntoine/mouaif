@@ -798,23 +798,37 @@ export async function send(state, refs, { content, attachments, clearComposerDra
 // reconcileRunningChat — one tick of the "another tab is running
 // this chat" poller. Re-renders the transcript if the persisted
 // rows changed and surfaces the running flag as a busy status.
+//
+// Cheap tick: fetch the chat record (small) + a transcript revision
+// marker ({ count, ts }) instead of the full message list. The old
+// implementation re-fetched every message every second just to
+// JSON.stringify and compare — multi-MB per tick on long transcripts.
+// The full message list is only fetched when the revision actually
+// changed (or a run is active and we need to catch up).
 export async function reconcileRunningChat(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!chatId || !projectDir) return;
   if (state.streaming) return; // don't reconcile over our own stream
   try {
-    const [rChat, synced] = await Promise.all([
+    const [rChat, rRev] = await Promise.all([
       fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir))
+      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir))
     ]);
-    if (synced.status !== 200 || !Array.isArray(synced.body.messages)) return;
+    if (rRev.status !== 200 || rRev.body == null) return;
+    const rev = rRev.body;
     const running = !!(rChat.status === 200 && rChat.body.chat && rChat.body.chat.running);
-
-    const signature = JSON.stringify(synced.body.messages);
-    if (signature !== state.transcriptSignature) {
-      state.messages = synced.body.messages;
-      state.transcriptSignature = signature;
-      if (state._renderTranscript) state._renderTranscript();
+    const revKey = rev.count + ':' + (rev.ts || '');
+    if (revKey !== state.transcriptRevision) {
+      // Transcript changed on disk (this tab is a follower, or the
+      // stream finished while we were backgrounded). Pull the
+      // authoritative rows and re-render.
+      const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+      if (synced.status === 200 && Array.isArray(synced.body.messages)) {
+        state.transcriptRevision = revKey;
+        state.messages = synced.body.messages;
+        state.transcriptSignature = JSON.stringify(state.messages);
+        if (state._renderTranscript) state._renderTranscript();
+      }
     }
 
     if (running) {

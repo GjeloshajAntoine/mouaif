@@ -136,6 +136,28 @@ function getMessage(projectDir, chatId, index) {
   return listMessages(projectDir, chatId)[index] || null;
 }
 
+// messageRevision(projectDir, chatId) -> { count, ts }
+//
+// Cheap change marker for a chat's transcript: message count + the
+// latest message timestamp. Messages are append-only (rows are never
+// edited in place), so count + ts changes exactly when the transcript
+// changes. Used by the client's 1 s reconcile poll to decide whether
+// a full /messages re-fetch + re-render is needed — the alternative
+// re-serialized the whole transcript every tick (multi-MB on long
+// tool-heavy chats).
+function messageRevision(projectDir, chatId) {
+  if (useDb(projectDir)) {
+    return getChatDb().messageRevisionDb(projectDir, chatId);
+  }
+  const raw = readRaw(projectDir, chatId);
+  const list = Array.isArray(raw.messages) ? raw.messages : [];
+  let ts = null;
+  for (const m of list) {
+    if (m && typeof m.ts === 'string' && (ts == null || m.ts > ts)) ts = m.ts;
+  }
+  return { count: list.length, ts };
+}
+
 function appendMessage(projectDir, chatId, msg) {
   if (!msg || typeof msg !== 'object') {
     throw new TypeError('msg must be an object');
@@ -282,6 +304,7 @@ module.exports = {
   messagesFilePath,
   listMessages,
   getMessage,
+  messageRevision,
   appendMessage,
   replaceMessages,
   clearMessages,

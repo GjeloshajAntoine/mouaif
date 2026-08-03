@@ -319,6 +319,20 @@ function getMessageCount(projectDir, chatId) {
   return row ? row.count : 0;
 }
 
+// messageRevisionDb(projectDir, chatId) -> { count, ts }
+//
+// Cheap change marker: COUNT + MAX(ts) in one indexed scan (no row
+// data). The 1 s reconcile poll compares this instead of re-fetching
+// and JSON-stringifying the whole transcript.
+function messageRevisionDb(projectDir, chatId) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  const row = d.prepare(
+    'SELECT COUNT(*) AS count, MAX(ts) AS ts FROM message_store WHERE project_dir = ? AND chat_id = ?'
+  ).get(projectDir, chatId);
+  return { count: row ? row.count : 0, ts: row && row.ts ? row.ts : null };
+}
+
 // ---- Cost aggregation (SQL, no full-transcript reads) ---------------------
 
 // One aggregate row per chat of a project: the known assistant-turn cost
@@ -463,6 +477,7 @@ module.exports = {
   replaceMessages,
   clearMessages,
   getMessageCount,
+  messageRevisionDb,
   // Cost aggregation
   projectCostTotals,
   chatTotalCostDb,

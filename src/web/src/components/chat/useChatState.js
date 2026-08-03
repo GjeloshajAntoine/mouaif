@@ -92,6 +92,11 @@ export function useChatState(props) {
   const pendingCount = useRef(0);
   const streaming = useRef(false);
   const transcriptSignature = useRef('');
+  // Cheap change marker for the reconcile poll (see stream.js):
+  // "count:latestTs" from GET /api/chats/:id/revision. Kept in sync
+  // with the full transcript so the 1 s poll never re-fetches
+  // everything unless the marker actually moved.
+  const transcriptRevision = useRef('');
   const messages = useRef([]);
   const models = useRef([]);
   const liveByProvider = useRef({});
@@ -164,6 +169,8 @@ export function useChatState(props) {
     set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
     get transcriptSignature() { return transcriptSignature.current; },
     set transcriptSignature(v) { transcriptSignature.current = v; },
+    get transcriptRevision() { return transcriptRevision.current; },
+    set transcriptRevision(v) { transcriptRevision.current = v; },
     get streaming() { return streaming.current; },
     set streaming(v) { streaming.current = v; },
     reconnect: reconnect.current,
@@ -387,6 +394,10 @@ export function useChatState(props) {
         state.chat = c;
         messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
         transcriptSignature.current = JSON.stringify(messages.current);
+        // Seed the reconcile marker so the first 1 s tick is a no-op
+        // (no redundant full-list fetch right after load).
+        const lastMsg = messages.current[messages.current.length - 1];
+        transcriptRevision.current = messages.current.length + ':' + (lastMsg && lastMsg.ts ? lastMsg.ts : '');
         models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
         state.providers = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
         // Seed the per-provider live cache with the project-level
