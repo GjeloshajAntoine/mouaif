@@ -205,9 +205,15 @@
    short fade + lift on mount gives a sense of place; the stagger
    on .chat-msg children makes a streaming reply feel conversational
    rather than dumpy. All animations are transform/opacity-only to
-   stay on the compositor thread. */
+   stay on the compositor thread. Flush routes opt out (see the
+   .app__main--flush rule below) so a transformed ancestor never
+   becomes the containing block for the chat view's fixed
+   model-picker sheet. */
 .app__main > section {
   animation: mouaif-view-in var(--dur) var(--ease-out) both;
+}
+.app__main--flush > section {
+  animation: none;
 }
 
 /* On drill-in screens (--flush: chat, picker, project settings, ...)
@@ -236,7 +242,13 @@
        rubber-banding at the top/bottom of the section.
      - The chat view is excluded (`.chat-view` has its own
        internal transcript scroll and its own min-height/flex
-       contract; we don't want to double-scope it). */
+       contract; we don't want to double-scope it).
+   Also skip the view-enter animation on flush sections: the
+   transform on the section (a containing block) turns the fixed
+   model-picker sheet into a positioned-relative box whose top/bottom
+   are computed from the transformed ancestor instead of the visual
+   viewport, which is exactly why the sheet appeared "too low" —
+   its bottom was already 48px above the real viewport bottom. */
 .app__main--flush > section:not(.chat-view) {
   flex: 1 1 0;
   min-height: 0;
@@ -245,6 +257,7 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+  animation: none;
 }
 
 @keyframes mouaif-view-in {
