@@ -31,6 +31,8 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.
 - [File tagging](features/file-tagging.md) — annotate project files with tags, pin excerpts, and auto-inject them into new chat messages; tags live in the project's `.mouaif.json`.
 - [Progress tool (`report_progress`)](features/progress-tool.md) — live progress bar in transcript for long-running model operations.
+- [Legacy `report_progress` tool](features/legacy-progress-tool.md) — compatibility path for persisted or external `report_progress` calls.
+- [Trace to file](features/trace.md) — per-chat NDJSON export to `<projectDir>/.mouaif/traces/<chatId>.ndjson`, independent of chat storage.
 - [Anthropic prompt caching](features/prompt-caching.md) — cacheable system block + discounted cache-aware cost for Claude API-key models.
 - [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.

@@ -188,5 +188,5 @@ await mcp.stopServer(projectDir, server.id);
 
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE events, the parse path that accumulates OpenAI-compatible deltas.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — the gate every tool call passes through.
-- [docs/features/trace.md](./trace.md) (decision §5) — `tool_call` and `tool_result` lines on the NDJSON trace.
+- [docs/features/trace.md](./trace.md) — `tool_call` and `tool_result` lines on the NDJSON trace (decision §5).
 - Decision: [docs/decisions.md §18](../decisions.md) (this feature) and §10 (AI client wire format), §16 (the shell tool that established the tool model).
