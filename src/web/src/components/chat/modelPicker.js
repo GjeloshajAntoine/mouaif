@@ -510,35 +510,32 @@ function renderPickerEmpty(state, refs, list, q, providerFilter) {
   list.appendChild(empty);
 }
 
-// The fixed sheet must end above the on-screen keyboard. The browser
-// keyboard shrinks the visual viewport (vv), while fixed-position
-// elements are sized against the layout viewport, so we publish the
-// keyboard's height as a CSS var and let the sheet subtract it from
-// its own height (see .chat-view__picker in chat-view.css).
+// The fixed sheet must sit inside the visible viewport. iOS keeps
+// position:fixed sized against the layout viewport while the keyboard
+// and browser chrome shrink the visual viewport (vv); we publish the
+// vv metrics as CSS vars and let the sheet size itself from them.
 //
-// Three vars are set together so they can't drift out of sync:
-//   --model-picker-layout-height  layout viewport height (innerHeight,
-//                                 a px fallback for engines without dvh)
-//   --model-picker-viewport-top   vv.offsetTop (browser chrome on iOS)
-//   --model-picker-keyboard-inset keys height = innerHeight - vv height
-//                                 - top; 0 when the keyboard is closed
-//
-// Never use vv.height as the layout height: vv.height already excludes
-// the keyboard, so subtracting the inset from it would double-shrink
-// the sheet (the original bug — the sheet kept its pre-keyboard height
-// and only padded the list, hiding the last rows under the keys).
+//   --model-picker-viewport-height  vv.height — the visible height.
+//                                   The sheet's bottom lands exactly
+//                                   on vv.offsetTop + vv.height, the
+//                                   visible bottom edge. (NOT
+//                                   innerHeight − inset: that would
+//                                   put the bottom one vv.offsetTop
+//                                   lower than the screen.)
+//   --model-picker-viewport-top     vv.offsetTop (browser chrome)
+//   --model-picker-keyboard-inset   keys height (for desktop max-height
+//                                   and the list's bottom clearance)
 function syncKeyboardInset(pop) {
   if (!pop) return;
   const vv = window.visualViewport;
-  const layoutHeight = window.innerHeight;
-  if (!vv || !layoutHeight) {
-    pop.style.removeProperty('--model-picker-layout-height');
+  if (!vv || !vv.height) {
+    pop.style.removeProperty('--model-picker-viewport-height');
     pop.style.removeProperty('--model-picker-viewport-top');
     pop.style.removeProperty('--model-picker-keyboard-inset');
     return;
   }
-  const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
-  pop.style.setProperty('--model-picker-layout-height', layoutHeight.toFixed(0) + 'px');
+  const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  pop.style.setProperty('--model-picker-viewport-height', vv.height.toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-keyboard-inset', keyboardInset.toFixed(0) + 'px');
 }
@@ -579,7 +576,7 @@ function bindKeyboardInset(pop) {
 function unbindKeyboardInset(pop) {
   if (!pop) return;
   if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
-  pop.style.removeProperty('--model-picker-layout-height');
+  pop.style.removeProperty('--model-picker-viewport-height');
   pop.style.removeProperty('--model-picker-viewport-top');
   pop.style.removeProperty('--model-picker-keyboard-inset');
 }
