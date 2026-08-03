@@ -123,9 +123,9 @@ function renderListFilesToolResult(body, r) {
   renderToolMeta(body, meta);
   if (!Array.isArray(r.entries)) {
     const lines = String(r.body || '').split('\n');
-    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matching files)', 'tool-preview__pre');
   }
-  if (!r.entries.length) return renderPreviewPre(body, '(no matching files)', 'tool-preview__pre tool-preview__pre--list');
+  if (!r.entries.length) return renderPreviewPre(body, '(no matching files)', 'tool-preview__pre');
   const wrap = document.createElement('div');
   wrap.className = 'tool-preview__grouped';
   const sorted = [...r.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
@@ -171,9 +171,9 @@ function renderSearchFilesToolResult(body, r) {
   renderToolMeta(body, meta);
   if (!Array.isArray(r.matches)) {
     const lines = String(r.body || '').split('\n');
-    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+    return renderPreviewPre(body, lines.length && lines[0] ? lines.join('\n') : '(no matches)', 'tool-preview__pre');
   }
-  if (!r.matches.length) return renderPreviewPre(body, '(no matches)', 'tool-preview__pre tool-preview__pre--list');
+  if (!r.matches.length) return renderPreviewPre(body, '(no matches)', 'tool-preview__pre');
   const wrap = document.createElement('div');
   wrap.className = 'tool-preview__grouped';
   let currentPath = null;
