@@ -79,6 +79,8 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 
 ## Implementation notes
 
+The mobile agent editor sheet reserves the top safe area at its fixed overlay so it cannot extend beneath the device status bar.
+
 - Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
 - The model pin resolves at dispatch time: `agents.resolveModel()` finds the project model by id, and the subagent dispatch hydrates it with the app-level provider connection (same sanitization as chat model resolution — credentials never come from the project file).
 - Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
