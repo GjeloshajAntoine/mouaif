@@ -18,8 +18,9 @@ A floating popover opened from a button in the chat composer toolbar that lets t
 ## Implementation notes
 
 - **File:** `src/web/src/components/chat/ToolPopup.jsx` — Preact component with two states (closed trigger button, open popup).
-- **CSS:** `src/web/src/chat.css` (`.tool-popup*` classes at the end).
+- **CSS:** `src/web/src/chat-composer.css` (`.tool-popup*` classes under the *Tool popup* section).
 - Reuses the existing `ToolTree` Preact component from `src/web/src/components/ToolTree.jsx` and the `buildToolGroups` helper.
 - Auth segments reuse the same `.seg` / `.seg__item` / `.seg__pill` classes from `src/web/src/settings.css`, with compact overrides scoped under `.tool-popup`.
 - Outside-click and Escape-key close the popup.
-- Positioned above the composer (`bottom: calc(100% + 8px)`), capped at `92vw` wide and `60dvh` tall with a scrollable body.
+- **Positioning:** the dialog opens *upward* from the trigger (`bottom: calc(100% + 6px)`), because the trigger sits in the chat head row, directly above the status bar — opening downward would clip the dialog into the status bar. It is capped at `92vw` wide and `60dvh` tall with a scrollable body.
+- **Mobile (< 480 px):** the dialog becomes a fixed bottom sheet filling the visible viewport below the head row. It is mounted in a dedicated full-viewport layer (`.tool-popup__layer`) so `position: fixed` works regardless of ancestor transforms, and its bounds track the visual viewport through `--tool-popup-viewport-top` / `--tool-popup-viewport-height` (same technique as the model picker) so the sheet never under- or over-shoots when the on-screen keyboard is open and never intrudes into the status bar's reserved strip.

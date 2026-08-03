@@ -404,8 +404,13 @@
 
 .tool-popup__popup {
   position: absolute;
-  top: calc(100% + 4px);
+  /* Open upward from the trigger (the trigger sits in the head row,
+     just above the status bar) so the dialog never overlaps or clips
+     into the status line below the composer. */
+  bottom: calc(100% + 6px);
   right: 0;
+  left: auto;
+  top: auto;
   min-width: 280px;
   max-width: min(380px, 92vw);
   max-height: min(60dvh, 400px);
@@ -456,6 +461,37 @@
   overscroll-behavior: contain;
   padding: 4px 0;
   min-height: 0;
+}
+
+/* On mobile the dialog becomes a fixed bottom sheet. It lives in a
+   dedicated full-viewport layer (.tool-popup__layer) so position:
+   fixed works regardless of any ancestor transform/containment. The
+   sheet is bound to the *visual* viewport through
+   --tool-popup-viewport-* so it never under- or over-shoots when the
+   on-screen keyboard is open, and it never ends up inside the status
+   bar's reserved strip. */
+@media (max-width: 480px) {
+  .tool-popup__layer {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+  }
+  .tool-popup__popup {
+    position: absolute;
+    top: calc(var(--tool-popup-viewport-top, 0px) + 48px + var(--safe-top, 0px));
+    left: 0;
+    right: 0;
+    bottom: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    height: calc(var(--tool-popup-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+    touch-action: none;
+    overscroll-behavior: none;
+  }
 }
 
 .tool-popup__tree {

@@ -92,6 +92,34 @@ export function ToolPopup(props) {
     };
   }, [open]);
 
+  // Keep the mobile bottom sheet flush with the visible viewport.
+  // Uses the same visual-viewport technique as the model picker:
+  // --tool-popup-viewport-top / --tool-popup-viewport-height track
+  // vv.offsetTop / vv.height so the sheet ends exactly on the visible
+  // bottom edge and never intrudes into the status bar or behind the
+  // on-screen keyboard (which is an overlay on iOS and would not move
+  // the 100dvh box).
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    function sync() {
+      const h = Math.max(0, vv.height - (vv.offsetTop || 0));
+      document.documentElement.style.setProperty('--tool-popup-viewport-top', (vv.offsetTop || 0) + 'px');
+      document.documentElement.style.setProperty('--tool-popup-viewport-height', h + 'px');
+    }
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    window.addEventListener('resize', sync);
+    return () => {
+      vv.removeEventListener('resize', sync);
+      vv.removeEventListener('scroll', sync);
+      document.documentElement.style.removeProperty('--tool-popup-viewport-top');
+      document.documentElement.style.removeProperty('--tool-popup-viewport-height');
+    };
+  }, [open]);
+
   // Build the groups for the tool tree. Same logic as cards.js.
   const catalog = (tools && tools.catalog) || [];
   const filter = tools && tools.filter;
@@ -239,31 +267,36 @@ export function ToolPopup(props) {
     ),
     open && h('div', {
       ref: popupRef,
-      class: 'tool-popup__popup',
-      role: 'dialog',
+      class: 'tool-popup__layer',
       'aria-label': 'Tool settings'
     },
-      h('div', { class: 'tool-popup__head' },
-        h('span', { class: 'tool-popup__title' }, 'Tools'),
-        h('button', {
-          class: 'tool-popup__close',
-          type: 'button',
-          onClick: () => setOpen(false),
-          'aria-label': 'Close'
-        }, '\u00D7')
-      ),
-      h('div', { class: 'tool-popup__body' },
-        h(ToolTree, {
-          groups,
-          onToggleGroup: handleToggleGroup,
-          onToggleTool: handleToggleTool,
-          collapsedByDefault: true,
-          class: 'tool-popup__tree'
-        })
-      ),
-      h('div', { class: 'tool-popup__foot' },
-        h('span', { class: 'tool-popup__foot-note' },
-          'Tools marked \u25CF have been used in this chat.'
+      h('div', {
+        class: 'tool-popup__popup',
+        role: 'dialog',
+        'aria-label': 'Tool settings'
+      },
+        h('div', { class: 'tool-popup__head' },
+          h('span', { class: 'tool-popup__title' }, 'Tools'),
+          h('button', {
+            class: 'tool-popup__close',
+            type: 'button',
+            onClick: () => setOpen(false),
+            'aria-label': 'Close'
+          }, '\u00D7')
+        ),
+        h('div', { class: 'tool-popup__body' },
+          h(ToolTree, {
+            groups,
+            onToggleGroup: handleToggleGroup,
+            onToggleTool: handleToggleTool,
+            collapsedByDefault: true,
+            class: 'tool-popup__tree'
+          })
+        ),
+        h('div', { class: 'tool-popup__foot' },
+          h('span', { class: 'tool-popup__foot-note' },
+            'Tools marked \u25CF have been used in this chat.'
+          )
         )
       )
     )
