@@ -116,7 +116,17 @@ html {
      indicator. html/body are now locked to the viewport (height
      100%, overflow hidden) and the shell carries the insets itself
      (see .app__shell in layout.css). */
-  height: 100%;
+  /* Match the shell's viewport unit. `height: 100%` on the root would
+     resolve against the initial containing block, which on iOS Safari
+     is the *large* viewport (taller than the visible area when the
+     browser toolbar is up). The shell sizes itself with 100dvh (the
+     small/dynamic viewport), so if html/body were taller than the
+     shell the page would sit at the top with a gap at the bottom.
+     Using the same dynamic unit here keeps the whole document exactly
+     the shell's height. The 100vh line is the fallback for iOS
+     < 15.4, which does not understand dvh. */
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -146,8 +156,11 @@ body {
   /* The shell owns the safe-area padding now (layout.css); body just
      fills the viewport. min-height: 100dvh stays for the standalone
      auth pages (access-auth), which render their own full-height
-     frame and scroll internally. */
-  height: 100%;
+     frame and scroll internally. Body uses the same dynamic viewport
+     unit as html (see the html comment above) so the two never end up
+     different heights. */
+  height: 100dvh;
+  height: 100vh;
   overflow: hidden;
   min-height: 100dvh;
 }
