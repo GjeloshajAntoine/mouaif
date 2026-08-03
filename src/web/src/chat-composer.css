@@ -491,6 +491,10 @@
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
     touch-action: none;
     overscroll-behavior: none;
+    /* The viewport layer ignores taps outside the sheet, but controls
+       inside the sheet (including those beside checkboxes) must remain
+       interactive. */
+    pointer-events: auto;
   }
 }
 
