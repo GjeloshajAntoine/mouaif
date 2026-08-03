@@ -1002,6 +1002,143 @@ function snapshotExpandedState(root) {
 //
 // Re-apply the expanded state captured by snapshotExpandedState to a
 // freshly rebuilt transcript.
+//
+// Chunked transcript rendering.
+//
+// A long agentic transcript can be hundreds of messages, and
+// renderTranscript builds every bubble + tool card + a full markdown
+// parse per assistant message. Built synchronously that's one long,
+// blocking pass that keeps the chat blank and the UI frozen for the
+// duration. For long transcripts we now render progressively: the
+// head (system prompt, tools card, first screen of messages) paints
+// immediately, then the remaining rows are appended a few at a time
+// on animation frames so the browser can paint and stay responsive
+// while the transcript fills in. The transcript is already fetched
+// in one request — this is purely a rendering concern.
+//
+//   - renderTranscriptChunked(state, refs): kick off a chunked pass.
+//     Cancels any in-flight chunked pass first (so a rebuild triggered
+//     by a stream reconcile never double-renders the same transcript),
+//     and bumps the module-level renderToken so a superseded pass
+//     silently stops appending.
+//   - renderTranscriptChunk(state, refs, token): one animation-frame
+//     step. Appends up to TRANSCRIPT_CHUNK_ROWS messages, then either
+//     schedules another frame or finalizes (scroll + usage summary).
+//
+// While a chunked pass is active the per-append scroll pinning in
+// afterTranscriptAppend is suppressed (see the guard there), because
+// each chunk's scrollTop = scrollHeight would otherwise yank the
+// scrollbar down dozens of times while the transcript is still
+// growing. The finalize step re-pins once at the end.
+
+const TRANSCRIPT_CHUNK_ROWS = 40;   // rows appended per animation frame
+const TRANSCRIPT_CHUNK_THRESHOLD = 120; // render progressively above this many rows
+let _renderToken = 0;
+
+function resetTranscriptRender(refs) {
+  _renderToken++;
+  if (refs._pendingTranscriptChunk) {
+    cancelAnimationFrame(refs._pendingTranscriptChunk);
+    refs._pendingTranscriptChunk = null;
+  }
+  // A cancelled or superseded pass must not leave the scroll-pin
+  // suppress flag stuck on, or later live appends would stop pinning.
+  refs._suspendScrollPin = false;
+}
+
+// cancelTranscriptRender(refs)
+//
+// Abort any in-flight chunked transcript render. Called by a rebuild
+// (renderTranscript) so a freshly started pass never races a stale
+// one, and by the owning view's cleanup so a navigate-away can't leak
+// a scheduled frame that writes into a detached transcript.
+export function cancelTranscriptRender(refs) {
+  resetTranscriptRender(refs);
+}
+
+// renderMessageRow(state, refs, m)
+//
+// Render a single persisted message into a transcript row. Extracted
+// from the old renderTranscript loop body so the chunked pass and the
+// empty-transcript case can share the exact same rendering.
+function renderMessageRow(state, refs, m) {
+  if (m.role === 'tool' && m.phase === 'call') {
+    appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
+  } else if (m.role === 'tool' && m.phase === 'result') {
+    appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
+  } else {
+    appendMessageToTranscript(m, false, refs, state);
+  }
+}
+
+function renderTranscriptChunked(state, refs, expanded) {
+  const transcriptEl = refs.transcript.current;
+  if (!transcriptEl) return;
+  // Cancel any previous chunked pass so two overlapping renders can't
+  // append the same rows twice.
+  resetTranscriptRender(refs);
+  const token = _renderToken;
+
+  // First visible screen paints immediately: the system prompt, the
+  // tools card, and enough messages to fill the viewport. Each append
+  // calls afterTranscriptAppend, but while chunking is armed that
+  // helper suppresses its scroll pin (transcript can't be scrolled to
+  // a stable bottom yet) — the finalize step re-pins.
+  refs._suspendScrollPin = true;
+
+  const headRows = Math.min(state.messages.length, TRANSCRIPT_CHUNK_ROWS);
+  for (let i = 0; i < headRows; i++) {
+    const m = state.messages[i];
+    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
+    renderMessageRow(state, refs, m);
+  }
+  if (state.messages.length <= headRows) {
+    refs._suspendScrollPin = false;
+    restoreExpandedState(expanded, transcriptEl);
+    scrollTranscriptToBottomImpl(refs);
+    updateUsageSummary(state, null, refs);
+    return;
+  }
+  // Short transcripts finish in a single continuation frame so the box
+  // paints before we pin and scroll; long ones keep chunking.
+  if (state.messages.length < TRANSCRIPT_CHUNK_THRESHOLD) {
+    refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded }));
+    return;
+  }
+  refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded }));
+}
+
+function renderTranscriptChunk(state, refs, chunk) {
+  if (chunk.token !== _renderToken) return; // superseded by a newer render
+  const transcriptEl = refs.transcript.current;
+  if (!transcriptEl) {
+    refs._suspendScrollPin = false;
+    return;
+  }
+  refs._pendingTranscriptChunk = null;
+  let rendered = 0;
+  while (chunk.index < state.messages.length && rendered < TRANSCRIPT_CHUNK_ROWS) {
+    const m = state.messages[chunk.index];
+    chunk.index++;
+    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
+    renderMessageRow(state, refs, m);
+    rendered++;
+  }
+  if (chunk.index < state.messages.length) {
+    refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, chunk));
+    return;
+  }
+  // Done: re-pin to the bottom and restore the user's expanded cards.
+  refs._suspendScrollPin = false;
+  restoreExpandedState(chunk.expanded, transcriptEl);
+  scrollTranscriptToBottomImpl(refs);
+  updateUsageSummary(state, null, refs);
+}
+
+// restoreExpandedState(state, root)
+//
+// Re-apply the expanded state captured by snapshotExpandedState to a
+// freshly rebuilt transcript.
 function restoreExpandedState(exp, root) {
   if (!root) return;
   for (const card of root.querySelectorAll('.tool-card')) {
@@ -1026,6 +1163,11 @@ export function renderTranscript(state, refs) {
   // element re-runs renderTranscript from disk, which would otherwise
   // collapse every tool/result card the user had opened.
   const expanded = snapshotExpandedState(refs.transcript.current);
+  // Cancel any in-flight chunked render before rebuilding — a stream
+  // reconcile can call renderTranscript while the previous chunked
+  // pass is still mid-flight, and without this the two would append
+  // the same rows twice.
+  resetTranscriptRender(refs);
   refs.transcript.current.innerHTML = '';
   refs.setupCard.current = null;
   if (!state.messages.length) {
@@ -1042,17 +1184,17 @@ export function renderTranscript(state, refs) {
   renderSystemPromptMessage(refs, state.systemPrompt);
   mountToolsCard(refs, state);
   mountAgentFilesCard(refs, state);
+  // Long transcripts render progressively so the first screen paints
+  // immediately instead of blocking on a full DOM+markdown rebuild.
+  if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD) {
+    renderTranscriptChunked(state, refs, expanded);
+    return;
+  }
   for (const m of state.messages) {
     if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) {
       continue;
     }
-    if (m.role === 'tool' && m.phase === 'call') {
-      appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
-    } else if (m.role === 'tool' && m.phase === 'result') {
-      appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
-    } else {
-      appendMessageToTranscript(m, false, refs, state);
-    }
+    renderMessageRow(state, refs, m);
   }
   restoreExpandedState(expanded, refs.transcript.current);
   scrollTranscriptToBottomImpl(refs);

@@ -21,7 +21,7 @@ import {
   renderModelPicker, refreshActiveProvider, refreshAllProviders, openModelPicker, closeModelPicker, onPickerSearch, activeProviderId, touchRecent
 } from './modelPicker.js';
 import {
-  renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard
+  renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
 import { buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
@@ -569,7 +569,12 @@ export function useChatState(props) {
   }, [projectDir, chatId]);
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
-  useEffect(() => () => stopStreamRecovery(state, refs), [projectDir, chatId]);
+  useEffect(() => () => {
+    stopStreamRecovery(state, refs);
+    // Cancel any in-flight chunked transcript render so a navigate-away
+    // can't write into a detached transcript.
+    if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
+  }, [projectDir, chatId]);
 
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;

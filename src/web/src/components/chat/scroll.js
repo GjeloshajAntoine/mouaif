@@ -73,6 +73,11 @@ export function updateJumpButton(refs) {
 export function afterTranscriptAppend(refs, countNew) {
   const el = refs.transcript.current;
   if (!el) return;
+  // While a chunked transcript render is filling in, don't pin to the
+  // bottom on every chunk — the transcript is still growing and
+  // scrollTop = scrollHeight on each step would yank the scrollbar
+  // down dozens of times. The chunked pass re-pins once at the end.
+  if (refs._suspendScrollPin) return;
   if (refs.pinnedToBottom.current || isNearBottom(el)) {
     scrollTranscriptToBottom(refs);
   } else if (countNew) {
