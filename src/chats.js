@@ -333,18 +333,12 @@ function clearPromptId(projectDir, promptId) {
 
 function chatTotalCost(projectDir, chatId, app) {
   if (useDb(projectDir)) {
-    // Sum costs from the DB message store.
-    const msgs = getChatDb().listMessages(projectDir, chatId);
-    let total = 0;
-    let any = false;
-    for (const m of msgs) {
-      if (!m || m.role !== 'assistant' || !m.cost || typeof m.cost !== 'object') continue;
-      if (m.cost.known !== true) continue;
-      const t = Number(m.cost.total);
-      if (isFinite(t) && t >= 0) { total += t; any = true; }
-    }
+    // Single indexed SQL aggregation — avoids a full listMessages
+    // (which on a long tool-heavy transcript reads every row just to
+    // sum a handful of assistant cost blocks).
+    const agg = getChatDb().chatTotalCostDb(projectDir, chatId);
     void app;
-    return { total, known: any, currency: 'USD' };
+    return { total: agg.total, known: agg.known, currency: 'USD' };
   }
 
   const cacheKey = projectDir + '::' + chatId;
@@ -375,14 +369,16 @@ function chatTotalCost(projectDir, chatId, app) {
 
 function recomputeProjectTotalCost(projectDir) {
   if (useDb(projectDir)) {
-    const chats = listChats(projectDir);
+    // One GROUP BY scan over the whole project's message store instead
+    // of a full listMessages per chat (166 ms -> ~5 ms on a large
+    // project with long transcripts).
+    const totals = getChatDb().projectCostTotals(projectDir);
     let total = 0;
     let hasKnown = false;
-    for (const c of chats) {
-      if (!c || !c.id) continue;
-      const tc = chatTotalCost(projectDir, c.id, null);
-      if (tc.known && typeof tc.total === 'number' && tc.total >= 0) {
-        total += tc.total;
+    for (const chatId of Object.keys(totals)) {
+      const t = totals[chatId];
+      if (t.known && typeof t.total === 'number' && t.total >= 0) {
+        total += t.total;
         hasKnown = true;
       }
     }

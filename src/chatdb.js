@@ -319,6 +319,68 @@ function getMessageCount(projectDir, chatId) {
   return row ? row.count : 0;
 }
 
+// ---- Cost aggregation (SQL, no full-transcript reads) ---------------------
+
+// One aggregate row per chat of a project: the known assistant-turn cost
+// total and whether any known cost exists. Matches the JS loop in
+// chats.chatTotalCost exactly (cost.known === true && total >= 0), but in
+// a single indexed scan instead of one full listMessages per chat.
+// json_extract is a SQLite JSON1 builtin — present in every Node.js
+// better-sqlite3 build (verified).
+const PROJECT_COST_SQL = `
+  SELECT chat_id,
+         SUM(CASE WHEN role = 'assistant'
+                   AND cost IS NOT NULL
+                   AND json_extract(cost, '$.known') = 1
+                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                  THEN CAST(json_extract(cost, '$.total') AS REAL) ELSE 0 END) AS total,
+         MAX(CASE WHEN role = 'assistant'
+                   AND cost IS NOT NULL
+                   AND json_extract(cost, '$.known') = 1
+                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                  THEN 1 ELSE 0 END) AS known
+  FROM message_store
+  WHERE project_dir = ?
+  GROUP BY chat_id
+`;
+
+function projectCostTotals(projectDir) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  const rows = d.prepare(PROJECT_COST_SQL).all(projectDir);
+  const out = {};
+  for (const r of rows) {
+    out[r.chat_id] = {
+      total: typeof r.total === 'number' ? r.total : 0,
+      known: r.known === 1
+    };
+  }
+  return out;
+}
+
+function chatTotalCostDb(projectDir, chatId) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  const row = d.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN role = 'assistant'
+                   AND cost IS NOT NULL
+                   AND json_extract(cost, '$.known') = 1
+                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                  THEN CAST(json_extract(cost, '$.total') AS REAL) ELSE 0 END), 0) AS total,
+           MAX(CASE WHEN role = 'assistant'
+                   AND cost IS NOT NULL
+                   AND json_extract(cost, '$.known') = 1
+                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                  THEN 1 ELSE 0 END) AS known
+    FROM message_store
+    WHERE project_dir = ? AND chat_id = ?
+  `).get(projectDir, chatId);
+  return {
+    total: typeof row.total === 'number' ? row.total : 0,
+    known: row.known === 1
+  };
+}
+
 // ---- Import from JSON files ------------------------------------------------
 //
 // Scans <projectDir> for .mouaif.messages.*.json files and imports them
@@ -401,6 +463,9 @@ module.exports = {
   replaceMessages,
   clearMessages,
   getMessageCount,
+  // Cost aggregation
+  projectCostTotals,
+  chatTotalCostDb,
   // Import
   importFromJson
 };

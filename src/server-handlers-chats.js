@@ -71,12 +71,27 @@ async function handleChats(req, res, parsed, sessionToken) {
       // is read from the persisted `totalCost` field on the project
       // record (maintained by recomputeProjectTotalCost which is
       // called after every stream, chat delete, or message delete).
+      //
+      // DB backend: one GROUP BY over the project's message store
+      // covers every chat on the page (30 chats = 1 query instead of
+      // 30 full-transcript reads).
       let app;
       try { app = settings.getApp(); } catch { app = null; }
+      let costTotals = null;
+      try {
+        const chatdb = require('./chatdb.js');
+        if (chatdb.projectCostTotals) costTotals = chatdb.projectCostTotals(dir);
+      } catch { /* fall back to per-chat below */ }
       for (const c of page) {
         let totalCost;
-        try { totalCost = chats.chatTotalCost(dir, c.id, app); }
-        catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
+        try {
+          if (costTotals && Object.prototype.hasOwnProperty.call(costTotals, c.id)) {
+            const agg = costTotals[c.id];
+            totalCost = { total: agg.total, known: agg.known, currency: 'USD' };
+          } else {
+            totalCost = chats.chatTotalCost(dir, c.id, app);
+          }
+        } catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
         c.totalCost = totalCost;
         if (runningChats.has(runningKey(dir, c.id))) c.running = true;
       }
