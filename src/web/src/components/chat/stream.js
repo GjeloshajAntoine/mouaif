@@ -591,7 +591,13 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
-      refreshChatTitle(state, refs);
+      // The title only ever changes on the first user turn (the server
+      // derives it from the first prompt). Skip the full GET /api/chats/:id
+      // round-trip on every subsequent done — refreshChatTitle is only
+      // needed when the chat still has a default title.
+      const c = state.chat;
+      const isDefaultTitle = !c || !c.title || c.title === 'New chat';
+      if (isDefaultTitle) refreshChatTitle(state, refs);
     } else if (ev.eventName === 'usage_input') {
       // Per-round prompt footprint (fires on each tool round for
       // Anthropic; the final `done` carries the authoritative sum).
@@ -771,11 +777,21 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // browser showing only the last tool card when a delta was
   // missed, reordered, or failed to render.
   try {
-    const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-    if (synced.status === 200 && Array.isArray(synced.body.messages)) {
-      state.messages = synced.body.messages;
-      state.transcriptSignature = JSON.stringify(state.messages);
-      if (state._renderTranscript) state._renderTranscript();
+    // Cheap first: only pull the full transcript when the revision
+    // marker moved (this client appended messages itself, so the
+    // common case is a no-op without a multi-MB round-trip).
+    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
+    const revKey = (rRev.status === 200 && rRev.body)
+      ? (rRev.body.count + ':' + (rRev.body.ts || ''))
+      : '';
+    if (revKey && revKey !== state.transcriptRevision) {
+      const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+      if (synced.status === 200 && Array.isArray(synced.body.messages)) {
+        state.transcriptRevision = revKey;
+        state.messages = synced.body.messages;
+        state.transcriptSignature = JSON.stringify(state.messages);
+        if (state._renderTranscript) state._renderTranscript();
+      }
     }
   } catch (syncError) {
     console.error('chat transcript reconciliation failed', syncError);
