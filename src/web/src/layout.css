@@ -10,6 +10,11 @@
      chat view in --flush mode) can scroll internally instead of
      growing the whole page. min-height keeps short pages from
      collapsing. */
+  /* 100vh keeps the shell bounded on iOS 14/15.0–15.3, which do not
+     understand dynamic viewport units. Supporting Safari replaces it
+     with 100dvh so browser-chrome expansion and rotation use the live
+     visual viewport. */
+  height: 100vh;
   height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
@@ -31,6 +36,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   /* Bottom padding so the last row of a scrolling view (chats list,
      settings home, inspector) clears the tab bar. The tab bar itself
      sits above the shell's home-indicator padding, so only the tab
@@ -233,7 +240,9 @@
   min-height: 0;
   height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 @keyframes mouaif-view-in {

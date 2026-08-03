@@ -8,7 +8,9 @@ On iOS Safari, dragging the chat transcript with a finger used to do nothing: th
 
 2. **The document itself was scrollable** — the safe-area insets (`env(safe-area-inset-*)` for the iPhone notch / home indicator) lived on `<html>` as padding while the app shell was `height: 100dvh`. On a notched iPhone that pushed the document 47+34 px past the bottom of the screen, making the *page* scrollable alongside the transcript. The two fought for the touch gesture: iOS Safari would hand the pan to the page (or rubber-band it), the transcript's `scroll` events fired late or never, and the composer / status line ended up below the home indicator. The fix locks the document to the viewport (`html/body { height: 100%; overflow: hidden }`) and moves the safe-area padding onto the shell (border-box, so `100dvh` + insets still fills exactly the visible area).
 
-The transcript keeps the iOS-specific hooks (`-webkit-overflow-scrolling: touch`, `overscroll-behavior: contain`, `touch-action: pan-y`) so momentum and gesture ownership are explicit, and the flex sizing is the standard "flex child owns the scroll" pattern (`flex: 1 1 0; min-height: 0;` on the section, `flex: 1 1 auto; min-height: 0;` on the transcript).
+The transcript keeps the iOS-specific hooks (`-webkit-overflow-scrolling: touch`, `overscroll-behavior: contain`, `touch-action: pan-y`) so momentum and gesture ownership are explicit, and the flex sizing is the standard "flex child owns the scroll" pattern (`flex: 1 1 0; min-height: 0;` on the section, `flex: 1 1 auto; min-height: 0;` on the transcript). The same momentum/containment hooks apply to the main list scroller and non-chat drill-in sections.
+
+The shell uses `height: 100vh` followed by `height: 100dvh`: older iOS releases get a bounded fallback, while current Safari uses the dynamic viewport as its top and bottom browser chrome changes. The shell alone owns `safe-area-inset-top` and `safe-area-inset-bottom`; the compact header and 50 px tab bar do not add those insets a second time.
 
 ## Usage
 
