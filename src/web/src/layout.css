@@ -391,8 +391,8 @@
   justify-content: center;
   gap: 2px;
   min-height: var(--tabbar-h);
-  padding: 8px 2px 0;
-  transform: translateY(4px);
+  padding: 4px 2px 0;
+  transform: translateY(2px);
   border-radius: var(--r-sm);
   text-decoration: none;
   color: var(--tab-label);

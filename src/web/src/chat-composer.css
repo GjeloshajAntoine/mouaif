@@ -351,7 +351,7 @@
   /* No --safe-bottom here: the shell's padding-bottom reserves the
      home-indicator area (see .app__shell), so the status line sits
      above it with just a little breathing room. */
-  padding: 2px 0 14px;
+  padding: 2px 0 6px;
 }
 .chat-view__status {
   display: block;
