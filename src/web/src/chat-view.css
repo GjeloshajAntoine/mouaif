@@ -185,6 +185,13 @@
   height: 60vh;
   min-height: 280px;
   max-height: 60vh;
+  /* Desktop: when the search input is focused, the browser keyboard
+     shrinks/overlays the visual viewport, so tighten the cap to the
+     visible height to keep the last rows reachable. min() preserves
+     the 60vh cap while the keyboard is closed (inset = 0), and lets
+     the keyboard shrink the popover below it when focused. Overridden
+     by the fixed sheet below 480 px. */
+  max-height: min(60vh, calc(100dvh - 48px - var(--safe-top, 0px) - var(--model-picker-keyboard-inset, 0px)));
   overflow: hidden;
 }
 @media (max-width: 480px) {
@@ -195,12 +202,29 @@
     right: 0;
     bottom: auto;
     max-height: none;
-    height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
+    min-height: 0;
+    /* Height = layout viewport (below the fixed head) minus the
+       keyboard. syncKeyboardInset() publishes the layout height
+       (--model-picker-layout-height, a px fallback for engines
+       without dvh) and the keyboard size
+       (--model-picker-keyboard-inset) from visualViewport, so the
+       sheet shrinks live while the search keyboard animates in and
+       its list stays fully scrollable instead of extending under
+       the keys. Never use vv.height here: it already excludes the
+       keyboard, so subtracting the inset from it double-shrinks. */
+    height: calc(var(--model-picker-layout-height, 100dvh) - 48px - var(--safe-top, 0px) - var(--model-picker-keyboard-inset, 0px));
     overflow: hidden;
     touch-action: none;
     overscroll-behavior: none;
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .chat-view__picker-list {
+    /* The sheet itself already ends above the keyboard (its height
+       subtracts the keyboard inset), so don't pad the list again —
+       that would leave the last row floating a full keyboard-height
+       above the sheet bottom when scrolled to the end. */
+    padding-bottom: calc(4px + var(--safe-bottom, 0px));
   }
 }
 

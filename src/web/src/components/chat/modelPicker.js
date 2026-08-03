@@ -510,21 +510,35 @@ function renderPickerEmpty(state, refs, list, q, providerFilter) {
   list.appendChild(empty);
 }
 
-// iOS keeps fixed-position sheets sized to the layout viewport while
-// the on-screen keyboard shrinks the visual viewport. Size this sheet
-// from visualViewport.height instead, so its own list is the only
-// scroll container and bottom rows can be reached with the keyboard up.
+// The fixed sheet must end above the on-screen keyboard. The browser
+// keyboard shrinks the visual viewport (vv), while fixed-position
+// elements are sized against the layout viewport, so we publish the
+// keyboard's height as a CSS var and let the sheet subtract it from
+// its own height (see .chat-view__picker in chat-view.css).
+//
+// Three vars are set together so they can't drift out of sync:
+//   --model-picker-layout-height  layout viewport height (innerHeight,
+//                                 a px fallback for engines without dvh)
+//   --model-picker-viewport-top   vv.offsetTop (browser chrome on iOS)
+//   --model-picker-keyboard-inset keys height = innerHeight - vv height
+//                                 - top; 0 when the keyboard is closed
+//
+// Never use vv.height as the layout height: vv.height already excludes
+// the keyboard, so subtracting the inset from it would double-shrink
+// the sheet (the original bug — the sheet kept its pre-keyboard height
+// and only padded the list, hiding the last rows under the keys).
 function syncKeyboardInset(pop) {
   if (!pop) return;
   const vv = window.visualViewport;
-  if (!vv) {
-    pop.style.removeProperty('--model-picker-viewport-height');
+  const layoutHeight = window.innerHeight;
+  if (!vv || !layoutHeight) {
+    pop.style.removeProperty('--model-picker-layout-height');
     pop.style.removeProperty('--model-picker-viewport-top');
     pop.style.removeProperty('--model-picker-keyboard-inset');
     return;
   }
-  const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  pop.style.setProperty('--model-picker-viewport-height', vv.height.toFixed(0) + 'px');
+  const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
+  pop.style.setProperty('--model-picker-layout-height', layoutHeight.toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
   pop.style.setProperty('--model-picker-keyboard-inset', keyboardInset.toFixed(0) + 'px');
 }
@@ -532,15 +546,31 @@ function syncKeyboardInset(pop) {
 function bindKeyboardInset(pop) {
   if (!pop || pop._modelPickerKeyboardCleanup) return;
   const vv = window.visualViewport;
-  if (!vv) return;
   const update = () => syncKeyboardInset(pop);
-  vv.addEventListener('resize', update);
-  vv.addEventListener('scroll', update);
+  const onFocusIn = (ev) => {
+    // visualViewport resize fires unreliably during the keyboard
+    // animation on iOS; focusin/focusout fire for sure when the
+    // search input gains/loses the keyboard.
+    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) update();
+  };
+  if (vv) {
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+  }
   window.addEventListener('orientationchange', update);
+  // focusout must run after the next tick so the inset reflects the
+  // collapsed keyboard, not the one still closing.
+  pop.addEventListener('focusin', onFocusIn);
+  pop.addEventListener('focusout', (ev) => {
+    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) setTimeout(update, 0);
+  });
   pop._modelPickerKeyboardCleanup = () => {
-    vv.removeEventListener('resize', update);
-    vv.removeEventListener('scroll', update);
+    if (vv) {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    }
     window.removeEventListener('orientationchange', update);
+    pop.removeEventListener('focusin', onFocusIn);
     pop._modelPickerKeyboardCleanup = null;
   };
   update();
@@ -549,7 +579,7 @@ function bindKeyboardInset(pop) {
 function unbindKeyboardInset(pop) {
   if (!pop) return;
   if (pop._modelPickerKeyboardCleanup) pop._modelPickerKeyboardCleanup();
-  pop.style.removeProperty('--model-picker-viewport-height');
+  pop.style.removeProperty('--model-picker-layout-height');
   pop.style.removeProperty('--model-picker-viewport-top');
   pop.style.removeProperty('--model-picker-keyboard-inset');
 }
