@@ -1323,6 +1323,16 @@ function* parseOpenAISSE(eventName, data) {
       obj.usage.completionTokens,
       obj.usage.outputTokens
     );
+    // OpenAI and OpenAI-shaped providers report cache hits as a subset
+    // of prompt_tokens. Accept both snake_case and camelCase variants;
+    // OpenRouter and compatible gateways may preserve either shape.
+    const promptDetails = obj.usage.prompt_tokens_details || obj.usage.promptTokensDetails || {};
+    const cacheReadTokens = firstFiniteNumber(
+      promptDetails.cached_tokens,
+      promptDetails.cachedTokens,
+      obj.usage.cached_tokens,
+      obj.usage.cachedTokens
+    );
     const providerCost = firstFiniteNumberOrNull(
       obj.usage.cost,
       obj.usage.total_cost,
@@ -1349,7 +1359,7 @@ function* parseOpenAISSE(eventName, data) {
     yield {
       name: 'done',
       data: {
-        usage: { promptTokens, completionTokens },
+        usage: { promptTokens, completionTokens, cacheReadTokens },
         providerCost,
         providerCostInput,
         providerCostOutput
@@ -1497,9 +1507,16 @@ function* parseGeminiSSE(eventName, data) {
   }
   if (cand && cand.finishReason) yield { name: 'finish', data: { reason: cand.finishReason } };
   if (obj.usageMetadata) {
+    const metadata = obj.usageMetadata;
     yield {
       name: 'done',
-      data: { usage: { promptTokens: obj.usageMetadata.promptTokenCount || 0, completionTokens: obj.usageMetadata.candidatesTokenCount || 0 } }
+      data: { usage: {
+        // Gemini includes cachedContentTokenCount in promptTokenCount, so
+        // it maps directly to the provider-neutral cache-read subset.
+        promptTokens: metadata.promptTokenCount || 0,
+        completionTokens: metadata.candidatesTokenCount || 0,
+        cacheReadTokens: metadata.cachedContentTokenCount || 0
+      } }
     };
   }
   if (obj.error) {
