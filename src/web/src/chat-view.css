@@ -330,7 +330,11 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior: contain;
-  padding: 4px 0 calc(4px + var(--safe-bottom, 0px) + var(--model-picker-keyboard-inset, 0px));
+  /* No keyboard inset here: the sheet's own height already shrinks to
+     end above the keyboard (see the mobile rule), so an inset would
+     leave a dead zone at the end of the scroll. Only the
+     home-indicator clearance remains. */
+  padding: 4px 0 calc(4px + var(--safe-bottom, 0px));
   scrollbar-width: thin;
 }
 .chat-view__picker-list::-webkit-scrollbar { width: 6px; }

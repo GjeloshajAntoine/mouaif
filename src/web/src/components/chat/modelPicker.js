@@ -540,37 +540,52 @@ function syncKeyboardInset(pop) {
   pop.style.setProperty('--model-picker-keyboard-inset', keyboardInset.toFixed(0) + 'px');
 }
 
-function bindKeyboardInset(pop) {
+function bindKeyboardInset(pop, list) {
   if (!pop || pop._modelPickerKeyboardCleanup) return;
   const vv = window.visualViewport;
   const update = () => syncKeyboardInset(pop);
+  // When the keyboard opens the sheet shrinks (its height is
+  // vv.height − head), which changes the visible list region. The
+  // last row can end up hidden past the new bottom if the user was
+  // scrolled up; restore the bottom anchor so the end of the list
+  // stays reachable without an extra flick. Only while the keyboard
+  // is actually out (inset > 0) — a plain resize from chrome
+  // collapse shouldn't yank the scroll position.
+  let lastInset = 0;
+  const onResize = () => {
+    syncKeyboardInset(pop);
+    const inset = parseFloat(pop.style.getPropertyValue('--model-picker-keyboard-inset')) || 0;
+    if (inset > 0 && lastInset === 0 && list) list.scrollTop = list.scrollHeight;
+    lastInset = inset;
+  };
   const onFocusIn = (ev) => {
     // visualViewport resize fires unreliably during the keyboard
     // animation on iOS; focusin/focusout fire for sure when the
     // search input gains/loses the keyboard.
-    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) update();
+    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) onResize();
   };
   if (vv) {
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
   }
-  window.addEventListener('orientationchange', update);
+  window.addEventListener('orientationchange', onResize);
   // focusout must run after the next tick so the inset reflects the
   // collapsed keyboard, not the one still closing.
   pop.addEventListener('focusin', onFocusIn);
   pop.addEventListener('focusout', (ev) => {
-    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) setTimeout(update, 0);
+    if (ev.target && ev.target === pop.querySelector('.chat-view__picker-search')) setTimeout(onResize, 0);
   });
   pop._modelPickerKeyboardCleanup = () => {
     if (vv) {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
     }
-    window.removeEventListener('orientationchange', update);
+    window.removeEventListener('orientationchange', onResize);
     pop.removeEventListener('focusin', onFocusIn);
     pop._modelPickerKeyboardCleanup = null;
   };
   update();
+  lastInset = parseFloat(pop.style.getPropertyValue('--model-picker-keyboard-inset')) || 0;
 }
 
 function unbindKeyboardInset(pop) {
@@ -621,7 +636,7 @@ export async function openModelPicker(state, refs) {
   const trig = refs.modelPickerTrigger.current;
   if (!pop || !trig) return;
   pop.hidden = false;
-  bindKeyboardInset(pop);
+  bindKeyboardInset(pop, refs.modelPickerList.current);
   bindPickerScrollLock(pop, refs.modelPickerList.current);
   trig.setAttribute('aria-expanded', 'true');
   // Render immediately so opening the picker never waits on the network.
