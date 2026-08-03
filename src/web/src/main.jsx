@@ -13,7 +13,7 @@
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { AccessGate } from './components/AccessAuth.jsx';
-import { registerServiceWorker } from './sw-registration.js';
+import { registerServiceWorker, refreshProjectsOnVisible } from './sw-registration.js';
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
@@ -27,6 +27,9 @@ if (root) render(h(AccessGate, null, h(App, null)), root);
 // for the production-only path). Deferred until after first paint so
 // the SW install doesn't block the entry bundle download.
 registerServiceWorker();
+// Refresh the project list when a push-notification click brings the
+// app back to the foreground (see sw-registration.js).
+refreshProjectsOnVisible();
 
 // Sync push notification state when the service worker is ready.
 if ('serviceWorker' in navigator) {

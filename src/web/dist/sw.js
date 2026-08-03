@@ -34,7 +34,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'dd748357';
+const CACHE_VERSION = 'c5e647c0';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -168,6 +168,11 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
   // Navigate to a specific URL (e.g. deep link from notification click).
+  // Clients that want to move an EXISTING app window (iOS PWA: no
+  // WindowClient.navigate()) post the full target URL here; the page
+  // swaps its own hash. This handler only opens a window when the
+  // caller knows no client exists (notification click with no
+  // matching window falls back to clients.openWindow itself).
   if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
     clients.openWindow(event.data.url);
   }

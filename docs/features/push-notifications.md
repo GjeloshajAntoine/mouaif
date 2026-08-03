@@ -35,8 +35,8 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 |-------|------|---------|
 | `ask_user_required` | The model pauses for a structured answer | Question; exactly two single-choice answers can be tapped directly |
 | `authorization_required` | A tool is waiting for approval | Tool name with **Allow once** and **Deny** actions |
-| `done` | A chat turn completes successfully | Chat title + "Response complete" |
-| `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
+| `done` | A chat turn completes successfully | Chat title + "Response complete — tap to open chat" |
+| `error` | A chat turn fails (stream error, upstream error) | Chat title + error message, "tap to open chat" |
 
 Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen (focused **and** `visibilityState === 'visible'`); a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Engines that don't report `visibilityState` on their window clients always show the alert rather than risk silently dropping it.
 
@@ -45,9 +45,12 @@ On iOS Safari, the OS keeps a replaced notification visible until the user acts 
 ### Clicking a notification
 
 - Tapping the notification body opens the exact chat and restores its pending question or authorization card. If the app is already open, the service worker posts the target URL to the existing window (a `NAVIGATE` message) and focuses it; only when no app window exists does it call `clients.openWindow()`. iOS Safari has no `WindowClient.navigate()`, so the page itself swaps its hash — the click lands in the running window, not in a second tab.
+- The chat URL travels in the notification payload (`data.url`, `chatId`, `projectDir`); the service worker derives `/web/#/chat/<id>?projectDir=<dir>` when the payload lacks an explicit URL. The notification body text invites the tap ("tap to open chat" on completion/error, "tap to review" on authorization) so the affordance is discoverable on platforms that render actions poorly.
+- When a tap brings the app back to the foreground, the page refreshes the project list so a chat that was created or renamed while backgrounded shows up with its current title.
 - **Allow once** and **Deny** post to the existing authorization-decision API without opening the app.
 - A simple two-choice question submits the selected value through the same API.
 - Multi-select questions, long option lists, and free-form answers open the full chat UI.
+- The `data.url` / `chatId` / `projectDir` payload fields are always included (per-chat pushes set them in `src/server-handlers-chats.js`; generic pushes fall back to `/web/`), so every notification click — body or action — has a valid chat target.
 
 ### Subscription sync
 
@@ -72,7 +75,7 @@ Browser permission and subscription are installation-specific. Event preferences
 
 ### Progress notifications
 
-The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-progress`, so the OS replaces the previous notification for that chat instead of stacking a new one — the notification shows the live percentage / task title / token count as the run progresses. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
+The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-progress`, so the OS replaces the previous notification for that chat instead of stacking a new one — the notification shows the live percentage / task title / token count as the run progresses. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on. Tapping a progress notification opens the same chat URL as every other per-chat alert.
 
 ## Implementation notes
 
@@ -87,7 +90,7 @@ The model's `report_progress` calls and task updates (`update_progress` / `compl
 | `src/web/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
 | `src/web/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
 | `src/web/src/main.jsx` | Push state sync on startup |
-| `src/web/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
+| `src/web/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages + foreground project-list refresh |
 
 ### API endpoints
 

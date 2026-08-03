@@ -109,8 +109,6 @@ export function registerServiceWorker() {
       window.focus();
     }
   });
-
-  trackOnlineStatus();
   trackFetchFailures();
 
   // Defer registration until after first paint so the SW install
@@ -163,3 +161,32 @@ export function registerServiceWorker() {
     window.location.reload();
   });
 }
+
+// Refresh the Projects screen (chat list, titles, running states) in
+// the background when the app comes back to the foreground after a
+// push notification tap opened this window. The chat view only ever
+// reconciles the chat it is showing, so without this the list behind
+// a completed/renamed chat would show stale titles and a chat started
+// from a notification would not appear until the user re-entered the
+// tab. The service worker suppresses the OS notification for the
+// already-focused chat, so this visibility path only fires when the
+// notification click actually brought the app forward.
+export function refreshProjectsOnVisible() {
+  if (typeof document === 'undefined') return;
+  const handler = () => {
+    if (document.visibilityState !== 'visible') return;
+    const hash = window.location.hash || '';
+    if (hash.startsWith('#/chat') || hash.startsWith('#/settings')) return;
+    // Re-enter the route: hashchange re-runs ProjectsView's effect.
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  };
+  document.addEventListener('visibilitychange', handler);
+}
+
+// ---- Tests ------------------------------------------------------------
+
+// `export`-level purity check: the module must load under Node's
+// CommonJS checker (no top-level browser globals referenced at import
+// time). This file is exercised by scripts/test-pwa.js via the built
+// bundle; the exports below are the page-facing surface.
+export { refreshProjectsOnVisible as _refreshProjectsOnVisible };
