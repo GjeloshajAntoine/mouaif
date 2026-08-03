@@ -368,7 +368,14 @@ function regexMatch(pattern, value, timeoutMs = 1) {
     };
     let timer = null;
     worker.once('online', () => {
-      timer = setTimeout(() => finish(false), timeoutMs);
+      // The timeout guards against catastrophic backtracking inside the
+      // worker's RegExp — it is NOT a deadline for worker startup. A
+      // freshly spawned worker thread can take tens of milliseconds to
+      // come online on a loaded machine; starting the timeout before
+      // the pattern is even posted would reject legitimate patterns
+      // that simply lost the startup race. Start the clock only once
+      // the worker is actually running the regex.
+      timer = setTimeout(() => finish(false), Math.max(timeoutMs, 1000));
       worker.postMessage({ pattern: anchored, value: String(value || '') });
     });
     worker.once('message', finish);
