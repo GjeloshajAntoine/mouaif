@@ -221,7 +221,6 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
       if (m.phase !== 'call') continue;
       const result = source[i + 1];
       if (!result || result.role !== 'tool' || result.phase !== 'result') continue;
-
       const callId = typeof m.toolCallId === 'string' ? m.toolCallId : '';
       const resultId = typeof result.toolCallId === 'string' ? result.toolCallId : '';
       if (callId !== resultId) continue;
@@ -236,27 +235,29 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
         wireId = 'call_history_' + pairNumber.toString(36);
       }
       usedIds.add(wireId);
-
       let args = '{}';
       try { args = JSON.stringify(m.args || {}); } catch { /* keep empty object */ }
       const name = m.name || result.name || 'tool';
       const storedContent = typeof result.content === 'string' ? result.content : JSON.stringify(result.content || {});
       let storedResult = null;
       try { storedResult = JSON.parse(storedContent); } catch { /* plain-text result */ }
+      // During the live tool loop, explanatory text and tool_calls share
+      // one assistant message. Persistence keeps the text as a separate UI
+      // segment immediately before the call card; merge that segment back
+      // on replay so resumed chats serialize the same provider-cache prefix.
+      const previous = out[out.length - 1];
+      const mergePreviousAssistant = previous && previous.role === 'assistant'
+        && !previous.tool_calls && typeof previous.content === 'string' && previous.content.trim();
+      if (mergePreviousAssistant) out.pop();
       out.push({
         role: 'assistant',
-        content: null,
+        content: mergePreviousAssistant ? previous.content : null,
         tool_calls: [{ id: wireId, type: 'function', function: { name, arguments: args } }]
       });
       out.push({
-        role: 'tool',
-        tool_call_id: wireId,
-        name,
+        role: 'tool', tool_call_id: wireId, name,
         content: toolFeedback.compactToolFeedback({
-          name,
-          content: storedContent,
-          result: storedResult,
-          maxBytes: toolFeedbackMaxBytes
+          name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes
         })
       });
       i++;

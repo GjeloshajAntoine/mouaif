@@ -45,6 +45,20 @@ try {
   assert.equal(reconstructed.some((m) => JSON.stringify(m).includes('call_without_result')), false);
   assert.equal(reconstructed.some((m) => m.role === 'assistant' && !String(m.content || '').trim() && !m.tool_calls), false);
 
+  // Text emitted before a tool call is persisted as a separate assistant UI
+  // segment. Replay must merge it back with tool_calls to preserve the exact
+  // live request shape (and therefore the provider's cached prompt prefix).
+  const mergedToolTurn = messages.reconstructUpstreamHistory([
+    { role: 'user', content: 'inspect it' },
+    { role: 'assistant', content: 'I will inspect the file.' },
+    { role: 'tool', phase: 'call', toolCallId: 'call_merge', name: 'read_file', args: { path: 'a.js' } },
+    { role: 'tool', phase: 'result', toolCallId: 'call_merge', name: 'read_file', content: '{"body":"ok"}' },
+    { role: 'assistant', content: 'Done.' }
+  ]);
+  assert.deepEqual(mergedToolTurn.map((m) => m.role), ['user', 'assistant', 'tool', 'assistant']);
+  assert.equal(mergedToolTurn[1].content, 'I will inspect the file.');
+  assert.equal(mergedToolTurn[1].tool_calls[0].function.name, 'read_file');
+
   const longId = 'tool_search_files_' + 'x'.repeat(40);
   const portable = messages.reconstructUpstreamHistory([
     { role: 'tool', phase: 'call', toolCallId: longId, name: 'search_files', args: { query: 'x' }, content: '{}' },
