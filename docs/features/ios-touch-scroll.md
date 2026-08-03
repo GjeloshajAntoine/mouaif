@@ -10,7 +10,7 @@ On iOS Safari, dragging the chat transcript with a finger used to do nothing: th
 
 The transcript keeps the iOS-specific hooks (`-webkit-overflow-scrolling: touch`, `overscroll-behavior: contain`, `touch-action: pan-y`) so momentum and gesture ownership are explicit, and the flex sizing is the standard "flex child owns the scroll" pattern (`flex: 1 1 0; min-height: 0;` on the section, `flex: 1 1 auto; min-height: 0;` on the transcript). The same momentum/containment hooks apply to the main list scroller and non-chat drill-in sections.
 
-The shell uses `height: 100vh` followed by `height: 100dvh`: older iOS releases get a bounded fallback, while current Safari uses the dynamic viewport as its top and bottom browser chrome changes. The shell alone owns `safe-area-inset-top` and `safe-area-inset-bottom`; the compact header and 50 px tab bar do not add those insets a second time.
+The shell uses `height: 100vh` followed by `height: 100dvh`: older iOS releases get a bounded fallback, while current Safari uses the dynamic viewport as its top and bottom browser chrome changes. The shell alone owns `safe-area-inset-top` and `safe-area-inset-bottom`; the compact header and 50 px tab bar do not add those insets a second time. The tab bar is a normal flex sibling of the main region, so the main scroller does not reserve another tab-bar height as bottom padding; this avoids a duplicate 50 px void above the bar.
 
 ## Usage
 

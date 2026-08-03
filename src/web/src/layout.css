@@ -38,12 +38,11 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  /* Bottom padding so the last row of a scrolling view (chats list,
-     settings home, inspector) clears the tab bar. The tab bar itself
-     sits above the shell's home-indicator padding, so only the tab
-     bar height (plus a little air) is needed here — the safe-area
-     inset is owned by .app__shell. */
-  padding: 4px 0 calc(var(--tabbar-h) + 4px);
+  /* The tab bar is a normal flex sibling, not an overlay, so it already
+     reduces the main region's height. Reserve only a small content gap;
+     adding --tabbar-h here created a duplicate 50px void above the bar
+     on iOS. The shell separately owns the home-indicator inset. */
+  padding: 4px 0;
   /* The view inside the main region fades + lifts in on every
      route change. The animation is on the <section> child, not
      on .app__main itself, so re-layout during the transition
