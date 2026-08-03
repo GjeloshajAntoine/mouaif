@@ -59,6 +59,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Thinking level](features/thinking-level.md) — per-chat dropdown for model reasoning/thinking effort, with options sourced from the provider when available (OpenAI `reasoning_effort`, Anthropic `thinking.budget_tokens`, Gemini `thinkingConfig`, Ollama `think`) plus fallback presets.
 - [Restart API](features/restart-api.md) — `POST /api/restart` respawns a fresh worker via the CLI supervisor, or exits with code 0 when no launcher is available.
 - [Chat streaming performance](features/chat-streaming-performance.md) — streaming assistant text appends per-token text nodes instead of rebuilding the bubble, removing O(n²) work on long turns.
+- [Chat load performance](features/chat-load-performance.md) — SQL-side cost aggregation, a cheap transcript revision marker for polling, lazy collapsed tool-result bodies, and fewer redundant refreshes keep long chats fast to open.
 
 ## Architectural decisions
 
