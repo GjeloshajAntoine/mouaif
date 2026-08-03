@@ -14,6 +14,7 @@ import { nav } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg } from './settings/toolAuth.js';
+import { AgentFilePicker } from './AgentFilePicker.jsx';
 
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main' } = {}) {
   const statusEl = useRef(null);
@@ -51,6 +52,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const agentFilesStatus = useRef(null);
   const agentFilesToggle = useRef(null);
   const agentFileNames = useRef(null);
+  // Agent file picker overlay (browse + append a project-relative path).
+  const [agentFilePickerOpen, setAgentFilePickerOpen] = useState(false);
   const skillsToggle = useRef(null);
   const disabledSkills = useRef(null);
   const skillsStatus = useRef(null);
@@ -492,6 +495,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   async function saveSkills() {
     const ids = ((disabledSkills.current && disabledSkills.current.value) || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     await patchProject({ skills: skillsToggle.current ? !!skillsToggle.current.checked : true, disabledSkills: ids }, skillsStatus, 'saved');
+  }
+
+  // Agent file picker: append a picked file's project-relative path to
+  // the "File names to look for" textarea (deduped), then autosave.
+  function onAgentFilePicked(relPath) {
+    if (!relPath || !agentFileNames.current) { setAgentFilePickerOpen(false); return; }
+    const current = (agentFileNames.current.value || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (!current.includes(relPath)) current.push(relPath);
+    agentFileNames.current.value = current.join('\n');
+    setAgentFilePickerOpen(false);
+    saveAgentFiles();
   }
 
   // Debounced version for the file-names textarea.
@@ -997,15 +1011,22 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'
               )
             ),
-            h('textarea', {
-              ref: agentFileNames,
-              class: 'input settings-project__mono',
-              id: 'sp-agent-file-names',
-              rows: 3,
-              spellcheck: false,
-              placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
-              onInput: function () { saveAgentFilesDebounced.current(); }
-            })
+            h('div', { class: 'settings-project__afn-row' },
+              h('textarea', {
+                ref: agentFileNames,
+                class: 'input settings-project__mono settings-project__afn-text',
+                id: 'sp-agent-file-names',
+                rows: 3,
+                spellcheck: false,
+                placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
+                onInput: function () { saveAgentFilesDebounced.current(); }
+              }),
+              h('button', {
+                class: 'btn btn--ghost settings-project__afn-pick',
+                type: 'button',
+                onClick: () => setAgentFilePickerOpen(true)
+              }, 'Pick file…')
+            )
           )
         )
       ),
@@ -1129,7 +1150,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             )
           )
         )
-      )
+      ),
+
+      // Agent file picker overlay (browse the project and append a
+      // relative path to the file-names list).
+      agentFilePickerOpen && h(AgentFilePicker, {
+        projectDir: dir(),
+        onPick: onAgentFilePicked,
+        onClose: () => setAgentFilePickerOpen(false)
+      })
     )
   );
 }
