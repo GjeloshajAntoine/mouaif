@@ -124,6 +124,7 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   const tcd = events.find((e) => e.name === 'tool_call_delta');
   const usageOutput = events.find((e) => e.name === 'usage_output');
   check('parser: usage_input carries cache_creation tokens', usageInput && usageInput.data.cacheCreationTokens === 5000);
+  check('parser: prompt total includes uncached and cache-created input', usageInput && usageInput.data.promptTokens === 10200, JSON.stringify(usageInput));
   check('parser: tool_call_delta emitted on block stop', tcd && tcd.data.id === 'toolu_xyz' && tcd.data.function.name === 'report_progress');
   check('parser: input_json_delta frames accumulated', tcd && tcd.data.function.arguments === '{"title":"T","current":1}', tcd && tcd.data.function.arguments);
   check('parser: usage_output from message_delta', usageOutput && usageOutput.data.completionTokens === 60);
@@ -195,7 +196,7 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
       JSON.stringify(capturedBodies[1].messages));
     check('loop: cache_creation folded into done usage', usage && usage.cacheCreationTokens === 5000, JSON.stringify(usage));
     check('loop: cache_read folded into done usage', usage && usage.cacheReadTokens === 5200, JSON.stringify(usage));
-    check('loop: prompt tokens last-round-wins', usage && usage.promptTokens === 5600, JSON.stringify(usage));
+    check('loop: prompt tokens include uncached and cached input (last round wins)', usage && usage.promptTokens === 10800, JSON.stringify(usage));
     check('loop: completion tokens summed across rounds', usage && usage.completionTokens === 55, JSON.stringify(usage));
   } finally {
     global.fetch = realFetch;

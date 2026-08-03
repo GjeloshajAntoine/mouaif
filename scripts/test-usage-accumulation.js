@@ -169,12 +169,12 @@ async function main() {
     check('anthropic: ok', result.ok === true, JSON.stringify(result.error || {}));
     check('anthropic: repeated message_delta usage not summed (7, not 10)',
       result.usage.completionTokens === 7, 'got ' + result.usage.completionTokens);
-    check('anthropic: promptTokens from message_start (120)',
-      result.usage.promptTokens === 120, 'got ' + result.usage.promptTokens);
+    check('anthropic: promptTokens sums uncached/read/created input (240)',
+      result.usage.promptTokens === 240, 'got ' + result.usage.promptTokens);
     const roundUsages = events.filter(e => e.name === '_roundUsage');
     check('anthropic: one snapshot per usage_output delta', roundUsages.length === 2, 'got ' + roundUsages.length);
     check('anthropic: last snapshot carries the cumulative round total',
-      roundUsages.length && roundUsages[roundUsages.length - 1].data.promptTokens === 120 &&
+      roundUsages.length && roundUsages[roundUsages.length - 1].data.promptTokens === 240 &&
         roundUsages[roundUsages.length - 1].data.completionTokens === 7,
       JSON.stringify(roundUsages[roundUsages.length - 1] && roundUsages[roundUsages.length - 1].data));
   }

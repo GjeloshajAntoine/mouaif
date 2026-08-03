@@ -51,10 +51,10 @@ Anthropic reports cache usage on the `message_start` frame:
 } } }
 ```
 
-The AI client folds these into the per-round usage snapshots and the final `done` usage block:
+Anthropic's three input fields are disjoint buckets: `input_tokens` is uncached input, while the two cache fields are read and newly-created input. The AI client normalizes them into the provider-neutral contract by setting `promptTokens` to their sum, then folds the result into per-round usage snapshots and the final `done` usage block:
 
 ```jsonc
-{ "usage": { "promptTokens": 1200, "completionTokens": 400,
+{ "usage": { "promptTokens": 2400, "completionTokens": 400,
              "cacheReadTokens": 900, "cacheCreationTokens": 300 } }
 ```
 

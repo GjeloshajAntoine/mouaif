@@ -1422,15 +1422,17 @@ function* parseAnthropicSSE(eventName, data, toolAcc) {
       // usage is reported here for input tokens.
       if (obj.message && obj.message.usage) {
         const usage = obj.message.usage;
+        const uncachedInputTokens = Number(usage.input_tokens) || 0;
+        const cacheReadTokens = Number(usage.cache_read_input_tokens) || 0;
+        const cacheCreationTokens = Number(usage.cache_creation_input_tokens) || 0;
         yield { name: 'usage_input', data: {
-          promptTokens: usage.input_tokens || 0,
-          // Anthropic cache metrics: cache_read_input_tokens tells us how
-          // many tokens were served from cache (billed at ~10% rate), and
-          // cache_creation_input_tokens tells us how many were written into
-          // cache on this request (full price). The chat UI can surface
-          // these in the cost line.
-          cacheReadTokens: usage.cache_read_input_tokens || 0,
-          cacheCreationTokens: usage.cache_creation_input_tokens || 0
+          // Anthropic reports three disjoint input buckets. Normalize them
+          // to the provider-neutral contract where promptTokens is the full
+          // prompt total; computeCost subtracts the cache buckets to recover
+          // the full-rate, uncached portion.
+          promptTokens: uncachedInputTokens + cacheReadTokens + cacheCreationTokens,
+          cacheReadTokens,
+          cacheCreationTokens
         } };
       }
       break;
