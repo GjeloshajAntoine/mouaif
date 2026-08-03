@@ -159,10 +159,13 @@ async function handleTools(req, res, parsed) {
     // this as "open a chat that references a stopped server" — without
     // it, the tool list comes back empty after a server restart even
     // though the servers are enabled, which reads as "not saved".
-    // Fire asynchronously so slow/blocked MCP servers don't delay the
-    // chat load — the tool list will reflect the previous session state
-    // (or re-fetched on the next tools/list call).
-    mcp.ensureEnabledServers(projectDir).catch(() => {});
+    // Wait for discovery so this response is authoritative. Returning
+    // before enabled servers finish starting makes a fresh .mcp.json
+    // configuration disappear from the first tool catalog (there may be
+    // no cache yet), and callers have no completion signal to know when
+    // to retry. ensureEnabledServers isolates failures per server, so one
+    // broken MCP process does not fail the native-tool catalog.
+    await mcp.ensureEnabledServers(projectDir).catch(() => []);
     const tools = [];
     try {
       const shell = require('./tools/shell.js');

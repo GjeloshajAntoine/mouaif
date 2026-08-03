@@ -11,8 +11,22 @@ const os = require('os');
 
 const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-tl-'));
 
-// Minimal .mouaif.json so the project is discoverable.
+// Minimal project config plus an enabled MCP server loaded directly from
+// the project file. The first tools/list response must wait for startup and
+// include its discovered tools; requiring a second poll is a startup race.
 fs.writeFileSync(path.join(projDir, '.mouaif.json'), JSON.stringify({ name: 'tools-test' }, null, 2) + '\n');
+fs.writeFileSync(path.join(projDir, '.mcp.json'), JSON.stringify({
+  servers: [{
+    id: 'file-config-server',
+    name: 'File Config Server',
+    slug: 'file_config_server',
+    command: process.execPath,
+    args: [path.join(__dirname, 'test-mcp-server.js')],
+    env: {},
+    cwd: '',
+    enabled: true
+  }]
+}, null, 2) + '\n');
 
 const { createServer } = require('../src/index.js');
 
@@ -48,6 +62,9 @@ server.listen(0, '127.0.0.1', () => {
       const names = r1.body.tools.map((t) => t.name);
       for (const expected of ['shell', 'report_progress', 'subagent', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file']) {
         if (names.indexOf(expected) < 0) throw new Error('missing tool: ' + expected);
+      }
+      for (const expected of ['mcp__file_config_server__echo', 'mcp__file_config_server__add']) {
+        if (names.indexOf(expected) < 0) throw new Error('missing file-config MCP tool on first list: ' + expected);
       }
 
       // 2. Create a chat.
