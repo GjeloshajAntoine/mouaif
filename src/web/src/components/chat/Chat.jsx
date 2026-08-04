@@ -24,7 +24,7 @@ export function ChatView(props) {
     onRefreshAllProviders, onOpenModelPicker, onCloseModelPicker,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
-    onToggleChatSwitcher, onSwitchChat
+    onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat
   } = s;
 
   const { projectDir, chatId } = props;
@@ -84,7 +84,11 @@ export function ChatView(props) {
           class: 'chat-view__chat-switcher-pop',
           hidden: !chatSwitcherOpen,
           role: 'listbox',
-          'aria-label': 'Switch to a chat'
+          'aria-label': 'Switch to a chat',
+          onScroll: onChatSwitcherScroll,
+          'data-loading': '0',
+          'data-offset': String(chatSwitcherList.length),
+          'data-total': '0'
         },
           chatSwitcherList.map((c) =>
             h('button', {
@@ -96,10 +100,17 @@ export function ChatView(props) {
               onClick: () => onSwitchChat(c.id)
             },
               h('span', { class: 'chat-view__chat-switcher-item-title' }, (c.title && c.title.trim()) ? c.title : 'New chat'),
-              h('span', { class: 'chat-view__chat-switcher-item-model' }, c.modelId || '')
+              h('span', { class: 'chat-view__chat-switcher-item-model' }, c.modelId || ''),
+              c.id === chatId && runningVisible
+                ? h('span', { class: 'chat-view__chat-switcher-running', 'aria-hidden': 'true' })
+                : null
             )
           ),
-          !chatSwitcherList.length ? h('div', { class: 'chat-view__chat-switcher-empty' }, 'No other chats') : null
+          !chatSwitcherList.length ? h('div', { class: 'chat-view__chat-switcher-empty' }, 'No other chats') : null,
+          h('div', {
+            class: 'chat-view__chat-switcher-more',
+            hidden: !chatSwitcherList.length || chatSwitcherList.length >= 100
+          }, 'Loading more…')
         ),
         h('div', { ref: refs.usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage and provider credit' },
           h('span', null, 'Context --'),

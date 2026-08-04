@@ -619,6 +619,25 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-view__chat-switcher-running {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-switcher-pulse 1.2s ease-in-out infinite;
+}
+@keyframes chat-switcher-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.chat-view__chat-switcher-more {
+  padding: 10px 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+.chat-view__chat-switcher-more[hidden] { display: none; }
 .chat-view__chat-switcher-empty {
   padding: 12px 8px;
   color: var(--muted);

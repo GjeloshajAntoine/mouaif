@@ -593,6 +593,17 @@ export function useChatState(props) {
     if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
   }, [projectDir, chatId]);
 
+  // Preload the chat switcher list so the dropdown opens instantly
+  // with cached rows (no network wait on first open). Refresh when
+  // the chat changes or a run in this chat ends so the rows stay
+  // current (recently auto-titled chats, stale running flags).
+  useEffect(() => {
+    if (!projectDir) return;
+    let cancelled = false;
+    loadChatListForSwitcher(projectDir, (rows) => { if (!cancelled) setChatSwitcherList(rows); });
+    return () => { cancelled = true; };
+  }, [projectDir, chatId, runningVisible]);
+
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
     let stopped = false;
@@ -666,14 +677,29 @@ export function useChatState(props) {
     setChatSwitcherOpen,
     chatSwitcherList,
     onToggleChatSwitcher: useCallback(() => {
-      setChatSwitcherOpen((prev) => {
-        if (!prev) {
-          // Load the chat list when opening
-          loadChatListForSwitcher(projectDir, chatId, setChatSwitcherList);
-        }
-        return !prev;
+      setChatSwitcherOpen((prev) => !prev);
+    }, []),
+    // Scroll pagination: the switcher dropdown loads the first page
+    // up front (preload); scrolling near the bottom fetches the next
+    // page. No-op while a page is already in flight. The preload
+    // effect bumps the list to the first page whenever the chat or
+    // running state changes, so offset 0 is the safe baseline.
+    onChatSwitcherScroll: useCallback((e) => {
+      if (!projectDir) return;
+      const el = e.currentTarget;
+      if (!el || el.dataset.loading === '1') return;
+      const offset = parseInt(el.dataset.offset || '0', 10) || 0;
+      if (offset >= (parseInt(el.dataset.total || '0', 10) || 0)) return;
+      el.dataset.loading = '1';
+      loadChatListForSwitcher(projectDir, (rows) => {
+        el.dataset.loading = '0';
+        if (!rows.length) return;
+        setChatSwitcherList((prev) => {
+          const seen = new Set(prev.map((c) => c && c.id));
+          return prev.concat(rows.filter((c) => c && !seen.has(c.id)));
+        });
       });
-    }, [projectDir, chatId]),
+    }, [projectDir]),
     onSwitchChat: useCallback((targetChatId) => {
       setChatSwitcherOpen(false);
       if (targetChatId && targetChatId !== chatId) {
@@ -683,15 +709,23 @@ export function useChatState(props) {
   };
 }
 
-// Load the chat list for the chat switcher dropdown.
-async function loadChatListForSwitcher(projectDir, currentChatId, setList) {
+// Load the chat list for the chat switcher dropdown. Paginated: the
+// API caps every page at 100 rows, so chat counts beyond that need
+// multiple pages. `refresh(rows)` is called with each page as it
+// arrives; callers that only want the final list (or the first page
+// for an instant preload) can ignore intermediate pages.
+async function loadChatListForSwitcher(projectDir, refresh, opts = {}) {
   if (!projectDir) return;
+  const pageSize = 100;
+  const pages = Math.max(1, Math.min(4, opts.pages || 1));
   try {
-    const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(projectDir) + '&offset=0&limit=50');
-    const chats = r.status === 200 && r.body ? (r.body.chats || []) : [];
-    // Mark current chat and limit to 50 items
-    setList(chats.slice(0, 50));
+    for (let page = 0; page < pages; page++) {
+      const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(projectDir) + '&offset=' + (page * pageSize) + '&limit=' + pageSize);
+      const chats = r.status === 200 && r.body ? (r.body.chats || []) : [];
+      refresh(chats);
+      if (chats.length < pageSize) break;
+    }
   } catch {
-    setList([]);
+    refresh([]);
   }
 }
