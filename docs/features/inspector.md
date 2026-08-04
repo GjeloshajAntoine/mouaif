@@ -46,6 +46,8 @@ The view starts in `setup`. Each phase has a per-screen back button that walks t
 
 The **Targets** screen also has a **Page URL** field for one-step inspect: type a page URL (e.g. `http://localhost:3000`, or bare `localhost:3000` — the scheme is added for you), tap **Open & inspect** (or press Enter), and the server tells Chrome to open that page in a **new tab**, then attaches the inspector straight to it. No need to open the tab yourself or pick from the target list. The manual list below remains available for tabs that are already open.
 
+While inspecting a target, the page's URL in the header is a link: tapping it asks the server to open that same URL in a **new Chrome tab** (`POST /api/inspector/open`, the same endpoint behind **Open & inspect**). The result is reported on the status line — no new button, no re-attachment; the current connection keeps its target. This is the "open this page in a new tab" action for the page you're already looking at.
+
 ## Preview panel
 
 The Preview panel shows what the attached page actually looks like, live. It polls `Page.captureScreenshot` (JPEG, quality 55) roughly every 1.2 s while the tab is active and paints the result into an `<img>` via an object URL. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects, so an idle inspector never burns CDP cycles. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.

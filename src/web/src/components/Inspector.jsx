@@ -146,6 +146,33 @@ export function InspectorView() {
     rerender();
   }
 
+  // openAttachedPageInNewTab — "open in a new tab" for the page currently
+  // being inspected. The header URL of the attached target is an anchor;
+  // tapping it opens that same URL in a FRESH Chrome tab via
+  // POST /api/inspector/open (Chrome /json/new) and reports the outcome
+  // on the status line. We do NOT attach to the new tab and do NOT switch
+  // the current connection — the user asked for a new tab, not a new
+  // inspection. No new button: the existing URL line is the affordance.
+  async function openAttachedPageInNewTab() {
+    const target = currentTarget.current;
+    if (!target || !target.url) return;
+    const url = target.url;
+    if (statusEl.current) statusEl.current.textContent = 'opening ' + url + ' in a new tab…';
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    } catch (e) {
+      if (statusEl.current) statusEl.current.textContent = 'network error opening new tab';
+      return;
+    }
+    if (r.status !== 200 || !r.body || !r.body.target) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = 'new tab failed: ' + msg;
+      return;
+    }
+    if (statusEl.current) statusEl.current.textContent = 'opened ' + url + ' in a new tab';
+  }
+
   // attachByPageUrl — one-step inspect: the user types a page URL and
   // the server tells Chrome to OPEN it in a fresh tab (Chrome /json/new),
   // then we attach straight to that brand-new target. No pre-opening the
@@ -277,7 +304,21 @@ export function InspectorView() {
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
     ),
     h('section', null,
-      h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ', h('code', null, t && t.url || '')),
+      h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ',
+        h('a', {
+          href: (t && t.url) || '#',
+          class: 'inspector__target-url inspector__target-url--link',
+          title: 'Open this page in a new Chrome tab',
+          'aria-label': 'Open ' + ((t && t.url) || 'the page') + ' in a new Chrome tab',
+          onClick: (e) => {
+            // Don't navigate the inspector / app away — this is a
+            // Chrome-side action performed through the mouaif server.
+            e.preventDefault();
+            e.stopPropagation();
+            openAttachedPageInNewTab();
+          }
+        }, (t && t.url) || '')
+      ),
       h('div', { class: 'inspector__subtabs', role: 'tablist' },
         subtab('preview', 'Preview'),
         subtab('console', 'Console'),
