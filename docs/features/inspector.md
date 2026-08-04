@@ -39,7 +39,7 @@ On a physical device, Chrome runs on the phone and `mouaif` runs on a laptop. Fo
 The view is a 3-state machine. State is held in refs (not Preact state) so a CDP message burst does not thrash the tree.
 
 1. **Setup** — input the Chrome debugger URL, save, and discover.
-2. **Targets** — list of discoverable pages / service workers / etc. with title, type chip, URL, and a Connect button per row.
+2. **Targets** — list of discoverable pages / service workers / etc. with title, URL, and a Connect button per row.
 3. **Inspect** — connected to a specific target, with **Preview**, **Console**, **Network**, and **Info** sub-tabs. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
 
 The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
@@ -54,7 +54,7 @@ The Inspector can **reload**, **navigate**, and **close** tabs of the debug Chro
 
 ### Targets list rows
 
-Each page row in the targets list shows **Reload** and **Close** buttons next to **Connect**. Reload refreshes that tab in place; Close deletes the tab — a confirmation prompt appears first because closing cannot be undone. Closing an inspected tab also re-runs the discovery so the tab vanishes from the list.
+Each page row in the targets list shows compact icon buttons for **Reload** (⟳) and **Close** (✕, danger-tinted) next to the **Connect** button. Reload refreshes that tab in place; Close deletes the tab — a confirmation prompt appears first because closing cannot be undone. Closing an inspected tab also re-runs the discovery so the tab vanishes from the list. The icon buttons keep a ≥ 36 px touch target and carry `aria-label`s.
 
 ### Inspect header
 

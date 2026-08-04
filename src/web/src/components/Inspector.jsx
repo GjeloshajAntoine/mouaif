@@ -352,43 +352,42 @@ export function InspectorView() {
       for (const t of targets.current) {
         const li = document.createElement('li');
         li.className = 'inspector__target';
-        const top = document.createElement('div');
-        top.className = 'inspector__target-top';
+        const main = document.createElement('div');
+        main.className = 'inspector__target-main';
         const title = document.createElement('div');
         title.className = 'inspector__target-title';
         title.textContent = t.title || t.url || t.id;
-        const type = document.createElement('span');
-        type.className = 'inspector__target-type';
-        type.textContent = t.type || 'page';
-        top.appendChild(title); top.appendChild(type);
         const url = document.createElement('div');
         url.className = 'inspector__target-url';
         url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
+        main.appendChild(title); main.appendChild(url);
         const actions = document.createElement('div');
         actions.className = 'inspector__target-actions';
         const connectBtn = document.createElement('button');
-        connectBtn.className = 'inspector__target-btn btn btn--primary';
+        connectBtn.className = 'btn btn--primary btn--small';
         connectBtn.type = 'button';
         connectBtn.textContent = 'Connect';
         connectBtn.addEventListener('click', () => connect(t));
         actions.appendChild(connectBtn);
         if (t.type === 'page' && t.id) {
           const reloadBtn = document.createElement('button');
-          reloadBtn.className = 'btn btn--small';
+          reloadBtn.className = 'icon-btn';
           reloadBtn.type = 'button';
-          reloadBtn.textContent = 'Reload';
+          reloadBtn.textContent = '⟳';
           reloadBtn.title = 'Reload this tab';
+          reloadBtn.setAttribute('aria-label', 'Reload this tab');
           reloadBtn.addEventListener('click', () => actionTarget(t, 'reload'));
           actions.appendChild(reloadBtn);
           const closeBtn = document.createElement('button');
-          closeBtn.className = 'btn btn--small btn--danger';
+          closeBtn.className = 'icon-btn icon-btn--danger';
           closeBtn.type = 'button';
-          closeBtn.textContent = 'Close';
+          closeBtn.textContent = '✕';
           closeBtn.title = 'Close this tab';
+          closeBtn.setAttribute('aria-label', 'Close this tab');
           closeBtn.addEventListener('click', () => actionTarget(t, 'close'));
           actions.appendChild(closeBtn);
         }
-        li.appendChild(top); li.appendChild(url); li.appendChild(actions);
+        li.appendChild(main); li.appendChild(actions);
         targetsList.current.appendChild(li);
       }
     }
