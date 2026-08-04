@@ -233,7 +233,7 @@ async function handleChats(req, res, parsed, sessionToken) {
     }
   }
 
-  // GET /api/chats/:id/revision?projectDir= -> { count, ts }
+  // GET /api/chats/:id/revision?projectDir= -> { count, ts, running }
   // Lightweight "has this transcript changed?" marker for the 1 s
   // reconcile poll. The old poll re-fetched the FULL message list every
   // second just to JSON.stringify it and compare — on a long tool-heavy
@@ -248,6 +248,10 @@ async function handleChats(req, res, parsed, sessionToken) {
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const rev = messages.messageRevision(dir, id);
+      // Include the in-memory running flag so the 1 s reconcile poll
+      // gets the change marker AND the liveness state in one request
+      // (previously two requests per tick: chat GET + revision GET).
+      rev.running = runningChats.has(runningKey(dir, id));
       return sendJSON(res, 200, rev);
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;

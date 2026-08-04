@@ -18,6 +18,7 @@ import {
   finalizeLiveMessage,
   handleShellOutputEvent,
   handleSubagentStreamEvent,
+  syncTranscriptAppend,
   updateProgressCard,
   whenTranscriptSettled
 } from './transcript.js';
@@ -192,6 +193,34 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 
+// syncFromRevision(state, refs, revKey, synced) -> 'appended' | 'rebuilt' | null
+//
+// Bring the on-screen transcript in line with the authoritative rows
+// after a revision-marker change. The store is append-only (rows are
+// never edited in place; edits/delete go through replaceMessages or
+// clearMessages, which always change the row count), so when only the
+// tail grew we render just the new rows incrementally instead of
+// rebuilding the whole transcript — a full rebuild re-parses every
+// message's markdown and collapses/scroll-jumps the view, and the
+// follower-tab poll hits this path once a second while a run is
+// active. A changed prefix (unreachable today; defensive only) falls
+// back to the full rebuild. Returns how the sync was applied, or null
+// when the payload wasn't usable.
+export function syncFromRevision(state, refs, revKey, synced) {
+  if (!Array.isArray(synced)) return null;
+  const prev = state.messages;
+  const prefixIntact = synced.length >= prev.length
+    && synced.slice(0, prev.length).every((m, i) => m === prev[i]);
+  state.transcriptRevision = revKey;
+  state.messages = synced;
+  if (prefixIntact) {
+    syncTranscriptAppend(state, refs, prev.length);
+    return 'appended';
+  }
+  if (state._renderTranscript) state._renderTranscript();
+  return 'rebuilt';
+}
+
 // startStreamRecovery / scheduleRecoveryTick / runRecoveryTick /
 // finishStreamRecovery / stopStreamRecovery
 //
@@ -225,26 +254,34 @@ async function runRecoveryTick(state, refs) {
   const st = state.reconnect;
   if (st.stopped || !st.active) return;
   st.attempts += 1;
-  let synced = null;
+  // Cheap first: the revision marker ({count, ts}) tells us whether the
+  // transcript moved at all. The full message list is fetched only when
+  // it did — no multi-MB round-trip on a stalled or finished run.
+  let revKey = null;
   try {
-    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-    if (r.status === 200 && Array.isArray(r.body.messages)) synced = r.body.messages;
-  } catch { synced = null; }
+    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
+    if (rRev.status === 200 && rRev.body != null) revKey = rRev.body.count + ':' + (rRev.body.ts || '');
+  } catch { revKey = null; }
 
-  if (!synced) {
+  if (revKey == null) {
     // Server unreachable — keep trying while attempts remain.
     if (st.attempts < 6) return scheduleRecoveryTick(state, refs, st.attempts);
     return finishStreamRecovery(state, refs, 'could not reconnect — tap to retry', true);
   }
 
-  const signature = JSON.stringify(synced);
-  const grew = signature !== state.transcriptSignature;
-  if (grew) {
-    // New content landed on disk. Swap in the authoritative rows and
+  if (revKey !== state.transcriptRevision) {
+    // New content landed on disk. Sync the authoritative rows and
     // reset the stability counter — the run is clearly still going.
-    state.messages = synced;
-    state.transcriptSignature = signature;
-    if (state._renderTranscript) state._renderTranscript();
+    let synced = null;
+    try {
+      const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+      if (r.status === 200 && Array.isArray(r.body.messages)) synced = r.body.messages;
+    } catch { synced = null; }
+    if (synced == null) {
+      if (st.attempts < 6) return scheduleRecoveryTick(state, refs, st.attempts);
+      return finishStreamRecovery(state, refs, 'could not reconnect — tap to retry', true);
+    }
+    syncFromRevision(state, refs, revKey, synced);
     st.stableTicks = 0;
     setChatStatus(refs, 'reconnected — syncing…', 'busy');
     return scheduleRecoveryTick(state, refs, st.attempts);
@@ -253,7 +290,7 @@ async function runRecoveryTick(state, refs) {
   // Transcript is stable. A run is done when the last message is no
   // longer a bare tool call (a call with no result yet means the agent
   // is mid-tool) and we've seen a couple of identical polls.
-  const last = synced[synced.length - 1];
+  const last = state.messages[state.messages.length - 1];
   const midTool = last && last.role === 'tool' && last.phase === 'call';
   st.stableTicks = (st.stableTicks || 0) + 1;
   if (!midTool && st.stableTicks >= 2) {
@@ -421,8 +458,14 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   state.streaming = true;
 
   // Persist the pair before sending so reopening this chat keeps
-  // the exact provider/model choice.
-  await updateChat({ providerId, modelId }, state, refs);
+  // the exact provider/model choice. Skipped when the server record
+  // already carries this pair (state._persistedModelPair is updated
+  // on load and after every successful PATCH) — the picker persists
+  // on selection, so the common case is a no-op and a PATCH here
+  // would be a wasted round-trip on every send.
+  if (state._persistedModelPair !== providerId + '|' + modelId) {
+    await updateChat({ providerId, modelId }, state, refs);
+  }
 
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
@@ -792,10 +835,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     if (revKey && revKey !== state.transcriptRevision) {
       const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
       if (synced.status === 200 && Array.isArray(synced.body.messages)) {
-        state.transcriptRevision = revKey;
-        state.messages = synced.body.messages;
-        state.transcriptSignature = JSON.stringify(state.messages);
-        if (state._renderTranscript) state._renderTranscript();
+        syncFromRevision(state, refs, revKey, synced.body.messages);
       }
     }
   } catch (syncError) {
@@ -817,38 +857,32 @@ export async function send(state, refs, { content, attachments, clearComposerDra
 }
 
 // reconcileRunningChat — one tick of the "another tab is running
-// this chat" poller. Re-renders the transcript if the persisted
-// rows changed and surfaces the running flag as a busy status.
+// this chat" poller. Syncs the transcript if the persisted rows
+// changed and surfaces the running flag as a busy status.
 //
-// Cheap tick: fetch the chat record (small) + a transcript revision
-// marker ({ count, ts }) instead of the full message list. The old
-// implementation re-fetched every message every second just to
-// JSON.stringify and compare — multi-MB per tick on long transcripts.
-// The full message list is only fetched when the revision actually
-// changed (or a run is active and we need to catch up).
+// Cheap tick: ONE request — /revision returns the {count, ts} marker
+// plus the chat's running flag (the old version fetched the chat
+// record and the marker separately, two round-trips per second).
+// The full message list is only fetched when the marker actually
+// moved, and then the transcript is updated incrementally (the store
+// is append-only) instead of re-rendering every row.
 export async function reconcileRunningChat(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!chatId || !projectDir) return;
   if (state.streaming) return; // don't reconcile over our own stream
   try {
-    const [rChat, rRev] = await Promise.all([
-      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir))
-    ]);
+    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
     if (rRev.status !== 200 || rRev.body == null) return;
     const rev = rRev.body;
-    const running = !!(rChat.status === 200 && rChat.body.chat && rChat.body.chat.running);
+    const running = !!rev.running;
     const revKey = rev.count + ':' + (rev.ts || '');
     if (revKey !== state.transcriptRevision) {
       // Transcript changed on disk (this tab is a follower, or the
       // stream finished while we were backgrounded). Pull the
-      // authoritative rows and re-render.
+      // authoritative rows and sync them in.
       const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
       if (synced.status === 200 && Array.isArray(synced.body.messages)) {
-        state.transcriptRevision = revKey;
-        state.messages = synced.body.messages;
-        state.transcriptSignature = JSON.stringify(state.messages);
-        if (state._renderTranscript) state._renderTranscript();
+        syncFromRevision(state, refs, revKey, synced.body.messages);
       }
     }
 

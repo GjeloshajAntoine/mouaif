@@ -22,7 +22,6 @@ export function InspectorView() {
   const debuggerUrl = useRef('');
   const defaultUrl = useRef('');
   const targets = useRef([]);
-  const targetsFailed = useRef(false);
   const currentTarget = useRef(null);
   const panel = useRef('console');
   const detailItem = useRef(null);
@@ -138,14 +137,9 @@ export function InspectorView() {
     if (r.status !== 200) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
       if (statusEl.current) statusEl.current.textContent = msg;
-      targets.current = [];
-      targetsFailed.current = true;
-      phase.current = 'targets';
-      rerender();
       return;
     }
     targets.current = r.body.targets || [];
-    targetsFailed.current = false;
     phase.current = 'targets';
     if (statusEl.current) statusEl.current.textContent = targets.current.length + ' targets';
     rerender();
@@ -153,30 +147,19 @@ export function InspectorView() {
 
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
 
-  // Shared URL editing controls used by both the setup phase and the
-  // targets phase. The targets screen reuses the same input so the user
-  // can type a new debugger URL (or fix a typo) without going back to
-  // the setup screen — an empty target list previously left them stuck
-  // with no way to type.
-  function urlControls(showDiscoverHint) {
-    return h(Fragment, null,
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
-        h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
-      ),
-      h('div', { class: 'row row--actions' },
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
-        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
-        h('button', { class: 'btn', type: 'button', onClick: loadTargets }, showDiscoverHint ? 'Discover' : 'Refresh targets')
-      )
-    );
-  }
-
   if (phase.current === 'setup') {
     return h(Fragment, null,
       h('section', null,
         h('p', { class: 'hint' }, 'Start Chrome with ', h('code', null, '--remote-debugging-port=9222'), ' and paste its debugger URL below.'),
-        urlControls(true)
+        h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
+          h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
+        ),
+        h('div', { class: 'row row--actions' },
+          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
+          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
+        )
       ),
       h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.')
     );
@@ -189,9 +172,7 @@ export function InspectorView() {
       if (!targets.current.length) {
         const li = document.createElement('li');
         li.className = 'inspector__empty';
-        li.textContent = targetsFailed.current
-          ? 'Chrome is not reachable at this URL. Check that Chrome is running with --remote-debugging-port=9222, fix the URL above, then tap "Save & discover".'
-          : 'No targets found. Open a tab in Chrome and tap "Refresh targets".';
+        li.textContent = 'no targets. Open a tab in Chrome and tap "Refresh targets".';
         targetsList.current.appendChild(li);
         return;
       }
@@ -227,7 +208,10 @@ export function InspectorView() {
       ),
       h('section', null,
         h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
-        urlControls(false),
+        h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
+        ),
+        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
         h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
       )
     );

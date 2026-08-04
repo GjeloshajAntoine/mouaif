@@ -91,12 +91,17 @@ export function useChatState(props) {
   const pinnedToBottom = useRef(true);
   const pendingCount = useRef(0);
   const streaming = useRef(false);
-  const transcriptSignature = useRef('');
   // Cheap change marker for the reconcile poll (see stream.js):
   // "count:latestTs" from GET /api/chats/:id/revision. Kept in sync
-  // with the full transcript so the 1 s poll never re-fetches
-  // everything unless the marker actually moved.
+  // with the full transcript so the poll never re-fetches everything
+  // unless the marker actually moved. (The old design also kept a
+  // full JSON.stringify signature of every message for the recovery
+  // poll — the revision marker replaced it.)
   const transcriptRevision = useRef('');
+  // "providerId|modelId" of the pair last persisted on the server
+  // (from the load response or a successful PATCH). Lets send() skip
+  // the redundant per-turn PATCH when the record is already current.
+  const persistedModelPair = useRef('');
   const messages = useRef([]);
   const models = useRef([]);
   const liveByProvider = useRef({});
@@ -167,10 +172,10 @@ export function useChatState(props) {
     set agents(v) { agents.current = Array.isArray(v) ? v : []; },
     get usedTools() { return usedTools.current; },
     set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
-    get transcriptSignature() { return transcriptSignature.current; },
-    set transcriptSignature(v) { transcriptSignature.current = v; },
     get transcriptRevision() { return transcriptRevision.current; },
     set transcriptRevision(v) { transcriptRevision.current = v; },
+    get _persistedModelPair() { return persistedModelPair.current; },
+    set _persistedModelPair(v) { persistedModelPair.current = v; },
     get streaming() { return streaming.current; },
     set streaming(v) { streaming.current = v; },
     reconnect: reconnect.current,
@@ -219,6 +224,7 @@ export function useChatState(props) {
       return;
     }
     state.chat = r.body.chat;
+    state._persistedModelPair = (r.body.chat.providerId || '') + '|' + (r.body.chat.modelId || '');
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
     updateModelTriggerLocal();
@@ -392,8 +398,8 @@ export function useChatState(props) {
         }
         const c = rChat.body.chat;
         state.chat = c;
+        persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
         messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
-        transcriptSignature.current = JSON.stringify(messages.current);
         // Seed the reconcile marker so the first 1 s tick is a no-op
         // (no redundant full-list fetch right after load).
         const lastMsg = messages.current[messages.current.length - 1];
@@ -590,10 +596,38 @@ export function useChatState(props) {
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
     let stopped = false;
-    const timer = setInterval(() => {
-      if (!stopped && !streaming.current) reconcileRunningChat(state, refs);
-    }, 1000);
-    return () => { stopped = true; clearInterval(timer); };
+    let timer = null;
+    // Poll cadence: 1 s while the tab is visible (the user is watching
+    // the chat, possibly following a run from another tab); 5 s while
+    // hidden — a backgrounded tab only needs eventual consistency and
+    // a per-second tick is pure battery/network cost there.
+    function schedule() {
+      if (stopped) return;
+      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      const delay = (hidden && !watchingRun.current) ? 5000 : 1000;
+      timer = setTimeout(tick, delay);
+    }
+    async function tick() {
+      if (stopped) return;
+      if (!streaming.current) await reconcileRunningChat(state, refs);
+      schedule();
+    }
+    function onVisibility() {
+      // Becoming visible: tick immediately instead of waiting out the
+      // slow interval, then resume the fast cadence. Becoming hidden:
+      // just reschedule at the slow cadence (no immediate tick).
+      if (stopped) return;
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (document.visibilityState === 'visible') tick();
+      else schedule();
+    }
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [chatId, projectDir]);
 
   return {
