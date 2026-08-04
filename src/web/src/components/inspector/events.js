@@ -136,6 +136,90 @@ export function createEventHandlers(state) {
     pushNetwork();
   }
 
+  // backfill — Chrome does not replay requests that finished before the
+  // Network domain was enabled (Network.enable on an already-loaded page
+  // emits nothing, and there is no getRequestHistory API). The only
+  // client-visible record of the page's existing resources is the DOM
+  // resource tree: Page.getResourceTree gives the main frame + subframe
+  // documents and their resource URLs. We surface those as rows so an
+  // attach to a tab that is already open (the common case) does not show
+  // an empty Network panel. Rows are tagged `backfilled: true` so the
+  // detail sheet can say the entry is pre-attach and per-resource sizes /
+  // bodies stay unavailable (Chrome has no API to fetch body or size for
+  // a resource without a live requestId). Live traffic keeps flowing on
+  // top; a subsequent navigation replaces these entries with real events.
+  async function backfillResources() {
+    if (!state.cdpSend) return;
+    let tree = null;
+    try {
+      const r = await state.cdpSend('Page.getResourceTree');
+      tree = r && r.frameTree;
+    } catch { /* Page domain unavailable — skip the backfill */ return; }
+    if (!tree) return;
+    const seen = new Set();
+    const pending = [];
+    (function walk(node) {
+      if (!node || typeof node !== 'object') return;
+      const frame = node.frame;
+      const url = frame && typeof frame.url === 'string' && frame.url ? frame.url : null;
+      if (url && !seen.has(url)) { seen.add(url); pending.push({ url, type: 'document' }); }
+      const resources = Array.isArray(node.resources) ? node.resources : [];
+      for (const r of resources) {
+        const u = r && typeof r.url === 'string' ? r.url : '';
+        if (!u || seen.has(u)) continue;
+        seen.add(u);
+        pending.push({
+          url: u,
+          type: (r.type || 'other').toLowerCase()
+        });
+      }
+      for (const child of Array.isArray(node.childFrames) ? node.childFrames : []) walk(child);
+    })(tree);
+    if (!pending.length) return;
+    const host = (typeof window !== 'undefined' && window.location && window.location.host) || '';
+    const entries = pending
+      .map((p) => ({
+        id: 'bf' + p.url + '-' + reqMap.current.size,
+        requestId: null,
+        kind: 'request',
+        method: 'GET',
+        url: p.url,
+        status: 'backfilled',
+        type: p.type,
+        initiator: null,
+        requestHeaders: null,
+        ts: Date.now(),
+        _start: null,
+        duration: null,
+        size: null,
+        encodedSize: null,
+        mimeType: null,
+        ip: null, port: null, protocol: null,
+        fromCache: false,
+        body: null,
+        bodyLoading: false,
+        backfilled: true,
+        host: (function () {
+          try {
+            const u = new URL(p.url);
+            return u.host;
+          } catch { return null; }
+        })()
+      }))
+      .filter((e) => !host || e.host !== host)
+      .slice(-500);
+    if (!entries.length) return;
+    // Insert the backfill BEFORE any live events captured in the race
+    // between Network.enable and this call, so the timeline stays
+    // chronological: pre-attach resources first, live traffic after.
+    networkEntries.current = entries.concat(networkEntries.current);
+    pushNetwork();
+    if (statusEl.current) {
+      const n = entries.length;
+      statusEl.current.textContent = 'connected · ' + n + ' pre-attach resource' + (n === 1 ? '' : 's') + ' backfilled from the loaded page';
+    }
+  }
+
   function captureScreenshot() {
     return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55, captureBeyondViewport: true });
   }
@@ -193,6 +277,6 @@ export function createEventHandlers(state) {
     onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
     onResponseReceived, onLoadingFinished, onLoadingFailed,
     pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
-    loadResponseBody
+    loadResponseBody, backfillResources
   };
 }

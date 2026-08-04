@@ -17,7 +17,7 @@ export function NetworkPanel(props) {
         const sig = item.id + '|' + (item.rev || 0) + '|' + String(item.status) + '|' + String(item.size) + '|' + String(item.duration);
         if (node.__sig === sig) return;
         node.__sig = sig;
-        node.className = 'inspector__row inspector__row--network inspector__row--expandable';
+        node.className = 'inspector__row inspector__row--network inspector__row--expandable' + (item.backfilled ? ' inspector__row--backfilled' : '');
         const top = document.createElement('div');
         top.className = 'inspector__net-top';
         const method = document.createElement('span');
@@ -38,6 +38,7 @@ export function NetworkPanel(props) {
         if (item.size != null) bits.push(fmtBytes(item.size));
         if (item.duration != null) bits.push(fmtDur(item.duration));
         if (item.ip) bits.push(item.ip);
+        if (item.backfilled) bits.push('pre-attach');
         meta.textContent = bits.join(' · ');
         node.replaceChildren(top, meta);
       },

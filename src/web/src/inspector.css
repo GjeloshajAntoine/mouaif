@@ -124,6 +124,20 @@
 .inspector__row-status--error,
 .inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
 .inspector__row-status--pending { color: var(--muted); }
+.inspector__row-status--backfilled { color: var(--accent); border-color: rgba(110,168,254,.3); }
+.inspector__row--backfilled .inspector__row-text { color: var(--muted); }
+.inspector__row--backfilled .inspector__net-meta { color: var(--accent); }
+
+.inspector__sheet-note {
+  margin: 6px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+}
 
 .inspector__targets {
   list-style: none;
