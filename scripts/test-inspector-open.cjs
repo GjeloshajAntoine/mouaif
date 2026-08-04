@@ -20,6 +20,7 @@ function mockChrome({ mode }) {
   // mode: 'cdp' — /json/version has webSocketDebuggerUrl, /json/new 404s
   //       'legacy' — /json/version has NO webSocketDebuggerUrl, /json/new PUT works
   //       'broken' — /json/version 500s
+  //       'noBrowserWsNoNew' — /json/version has NO webSocketDebuggerUrl AND /json/new 404s
   const wss = new WebSocketServer({ noServer: true });
   const server = http.createServer((req, res) => {
     if (req.url.startsWith('/json/version')) {
@@ -31,7 +32,7 @@ function mockChrome({ mode }) {
       return;
     }
     if (req.url.startsWith('/json/new')) {
-      if (mode === 'cdp') { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+      if (mode === 'cdp' || mode === 'noBrowserWsNoNew') { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
       if (req.method === 'PUT') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 'legacy-tab', type: 'page', url: req.url.split('?')[1] ? decodeURIComponent(req.url.split('?')[1]) : '', title: '', webSocketDebuggerUrl: 'ws://127.0.0.1:' + server.address().port + '/devtools/page/legacy-tab' }));
@@ -82,6 +83,17 @@ async function main() {
     try { await inspector.openInspectorTarget(base, 'http://example.com/c'); }
     catch (e) { caught = e; }
     assert(caught && caught.code === 'EUPSTREAM', 'broken Chrome surfaces EUPSTREAM (not masked)');
+    server.close(); wss.close();
+  }
+  // 4. Modern Chrome WITHOUT /json/new (CDP path also impossible): the raw
+  //    "not found" from Chrome must be replaced with a clear error.
+  {
+    const { server, wss, base } = await mockChrome({ mode: 'noBrowserWsNoNew' });
+    let caught = null;
+    try { await inspector.openInspectorTarget(base, 'http://example.com/d'); }
+    catch (e) { caught = e; }
+    assert(caught && caught.code === 'EUPSTREAM', 'no-browser-WS + no /json/new surfaces EUPSTREAM');
+    assert(caught && caught.message.indexOf('not found') === -1, 'raw "not found" from Chrome is replaced with a clear error');
     server.close(); wss.close();
   }
   console.log('ALL OK');

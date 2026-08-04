@@ -151,15 +151,30 @@ async function fetchInspectorTargets(debuggerUrl) {
 // dropped for CSRF reasons, so only PUT is ever attempted.
 async function openInspectorTarget(debuggerUrl, pageUrl) {
   const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
-  try {
-    return await openTargetViaCdp(base, pageUrl);
-  } catch (cdpErr) {
-    // Fall back to the classic HTTP endpoint for older Chrome builds —
-    // but only when the CDP path itself isn't the thing that's broken
-    // (e.g. Chrome reachable but /json/version lacks a browser WS, or a
-    // real network failure). Masking a genuine CDP error with a /json/new
-    // 404 would make the modern-path failure harder to diagnose.
-    if (cdpErr && cdpErr.__cdpFallback) {
+  // The CDP browser WS id is read fresh from /json/version each call,
+  // but Chrome may have restarted between that fetch and the moment we
+  // open the WS — the old browser-level id then returns 404 "not found"
+  // from Chrome itself. Retry once with a freshly re-fetched id before
+  // giving up; this covers the real-world "Chrome restarted" race.
+  let cdpErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await openTargetViaCdp(base, pageUrl);
+    } catch (e) {
+      cdpErr = e;
+      // The fallback path is handled below; retryable errors get one
+      // more CDP attempt, everything else surfaces immediately.
+      if (!e || !e.__cdpRetryable) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  // Fall back to the classic HTTP endpoint for older Chrome builds —
+  // but only when the CDP path itself isn't the thing that's broken
+  // (e.g. Chrome reachable but /json/version lacks a browser WS, or a
+  // real network failure). Masking a genuine CDP error with a /json/new
+  // 404 would make the modern-path failure harder to diagnose.
+  if (cdpErr && cdpErr.__cdpFallback) {
+    try {
       const target = await httpRequestJson(base + '/json/new?' + encodeURIComponent(pageUrl), { method: 'PUT' }, 5000);
       if (!target || typeof target !== 'object' || !target.id) {
         const err = new Error('Unexpected /json/new response: ' + typeof target);
@@ -167,9 +182,19 @@ async function openInspectorTarget(debuggerUrl, pageUrl) {
         throw err;
       }
       return target;
+    } catch (e) {
+      // Modern Chrome 137+ removed /json/new — it 404s with "not found".
+      // If the fallback also fails, surface a clear, actionable error
+      // instead of the raw "not found" from Chrome.
+      if (e && e.status === 404) {
+        const err = new Error('This Chrome build does not expose the /json/new endpoint. Open the page manually in the debug Chrome, or use an existing tab from the target list.');
+        err.code = 'EUPSTREAM';
+        throw err;
+      }
+      throw e;
     }
-    throw cdpErr;
   }
+  throw cdpErr;
 }
 
 // openTargetViaCdp — sends Target.createTarget over the browser-level
@@ -179,12 +204,6 @@ async function openInspectorTarget(debuggerUrl, pageUrl) {
 async function openTargetViaCdp(base, pageUrl) {
   const info = await httpGetJson(base + '/json/version', 5000);
   const wsUrl = info && info.webSocketDebuggerUrl;
-  // A fresh tab from Target.createTarget shows up with an EMPTY title
-  // in /json/version's webSocketDebuggerUrl until its first navigation
-  // commits; connecting to the browser-level WS there is fine for
-  // /json/list but unusable as a target. Treat empty (not just
-  // missing) as "not a usable browser WS" and let the caller fall
-  // back to the classic /json/new for old Chrome.
   if (!wsUrl || !String(wsUrl).trim()) {
     // Old Chrome may expose /json/version without a browser-level WS (or
     // a remote-debugging mode where only per-page WS is offered). That's
@@ -227,6 +246,10 @@ async function openTargetViaCdp(base, pageUrl) {
       if (msg.error) {
         const err = new Error('Target.createTarget failed: ' + (msg.error.message || 'unknown CDP error'));
         err.code = 'EUPSTREAM';
+        // A stale browser WS id (Chrome restarted between /json/version
+        // and the WS open) fails with an error like "not found" — retry
+        // once with a fresh id from /json/version.
+        err.__cdpRetryable = true;
         reject(err);
         return;
       }
@@ -251,6 +274,9 @@ async function openTargetViaCdp(base, pageUrl) {
       clearTimeout(timer);
       const err = new Error('Browser WebSocket error: ' + (e && e.message || e));
       err.code = 'ECHROME_UNREACHABLE';
+      // 404 from Chrome for an unknown /devtools/browser/<id> also means
+      // the id went stale — retry with a fresh one.
+      err.__cdpRetryable = true;
       reject(err);
     });
     ws.on('close', () => {

@@ -67,8 +67,7 @@ export function InspectorView() {
     if (conn.current) disconnect();
     const c = initCdp();
     const handlers = eventHandlers.current;
-    currentTarget.current = target;
-    panel.current = 'console';
+    currentTarget.current = target;    panel.current = 'console';
     phase.current = 'inspect';
     consoleEntries.current = [];
     networkEntries.current = [];
@@ -98,7 +97,11 @@ export function InspectorView() {
       }
     });
     result.ws.addEventListener('error', () => {
-      if (statusEl.current) statusEl.current.textContent = 'WebSocket error';
+      // The browser WS error event carries no message. If the server
+      // rejected the upgrade it sent a typed JSON body as the close
+      // reason — show that instead of the generic "WebSocket error".
+      const proxyMsg = c.lastProxyError && c.lastProxyError.current;
+      if (statusEl.current) statusEl.current.textContent = proxyMsg || 'WebSocket error';
     });
     rerender();
   }

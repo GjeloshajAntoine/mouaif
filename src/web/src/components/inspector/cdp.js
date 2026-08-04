@@ -3,6 +3,7 @@
 
 export function createCdpConnection() {
   const wsRef = { current: null };
+  const lastProxyError = { current: null };
   const cmdId = { current: 1 };
   const pending = new Map();
   const listeners = new Map();
@@ -69,8 +70,23 @@ export function createCdpConnection() {
     catch (e) { return { error: 'WebSocket open failed: ' + (e.message || e) }; }
     wsRef.current = ws;
     ws.addEventListener('message', wsOnMessage);
+    // Surface the server's typed error body when the proxy rejects the
+    // upgrade (e.g. "target not found"). The raw WebSocket error event
+    // carries no message, so without this the UI can only say "WebSocket
+    // error". The proxy writes a small JSON body before closing, which we
+    // read as a text message on the erroring socket.
+    ws.addEventListener('error', () => {
+      // Nothing useful in the event itself; the server's body arrives as
+      // a text frame or via the close reason. See close handler below.
+    });
+    ws.addEventListener('close', (ev) => {
+      if (ev && typeof ev.reason === 'string' && ev.reason && ev.reason !== 'client disconnect') {
+        wsRef.current = null;
+        lastProxyError.current = ev.reason;
+      }
+    });
     return { ws, cdpSend, cdpOn, disconnect: () => disconnect() };
   }
 
-  return { wsRef, cdpSend, cdpOn, connect, disconnect, pending, listeners, cmdId };
+  return { wsRef, cdpSend, cdpOn, connect, disconnect, pending, listeners, cmdId, lastProxyError };
 }
