@@ -52,6 +52,10 @@ While inspecting a target, the header shows the page's URL in a code chip plus a
 
 The Preview panel shows what the attached page actually looks like, live. It polls `Page.captureScreenshot` (JPEG, quality 55) roughly every 1.2 s while the tab is active and paints the result into an `<img>` via an object URL. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects, so an idle inspector never burns CDP cycles. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.
 
+The screenshot is a **full-page capture** (`captureBeyondViewport: true`), so the shot is as tall as the page's scrollable content rather than just the visible viewport. The frame that hosts the image is a scroll container (`overflow: auto`, `56dvh` tall) and the image keeps its natural pixel size, so panning through the frame scrolls the real page content — vertically for tall pages, horizontally for wide ones — instead of a viewport-sized thumbnail. If the user is scrolled inside the frame when a fresh screenshot arrives, their position is preserved instead of snapping to the top.
+
+Tapping or clicking anywhere on the preview **forwards a click to the page**: the tap coordinates are translated from the frame into page coordinates (scaled by the image's natural size) and sent as `Input.dispatchMouseEvent` (`mousePressed` + `mouseReleased`, left button) over the same CDP connection. A tap below the fold therefore lands at the right scroll position of the real page — the preview behaves like a remote tap surface, not just a picture.
+
 ## Console panel
 
 The Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), the formatted message text, and a source link (`file:line`) when a stack trace is attached. Object arguments render as compact inline previews (`{a: 1, b: 2, …}`) built from the CDP `preview` payload rather than a bare `Object` description.

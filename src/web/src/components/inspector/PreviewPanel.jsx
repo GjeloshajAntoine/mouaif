@@ -1,4 +1,10 @@
 // Inspector PreviewPanel — live page screenshot capture
+//
+// The capture loop grabs the full-page screenshot (captureBeyondViewport,
+// so the shot is as tall as the page's scrollable content, not just the
+// viewport) and displays it inside a scrollable frame. The image is
+// rendered at its natural pixel size, so panning through the frame
+// scrolls the actual page content.
 import { h } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 
@@ -22,7 +28,14 @@ export function PreviewPanel(props) {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           const blob = new Blob([bytes], { type: 'image/jpeg' });
           const next = URL.createObjectURL(blob);
-          if (imgRef.current) imgRef.current.src = next;
+          if (imgRef.current) {
+            // If the user is scrolled inside the preview frame, keep their
+            // position when a new screenshot replaces the old one. Without
+            // this the frame would snap back to the top on every refresh.
+            const prev = imgRef.current.scrollTop || 0;
+            imgRef.current.src = next;
+            imgRef.current.scrollTop = prev;
+          }
           if (objUrl) URL.revokeObjectURL(objUrl);
           objUrl = next;
           if (noteRef.current) noteRef.current.textContent = 'live · ' + new Date().toLocaleTimeString();
@@ -41,9 +54,22 @@ export function PreviewPanel(props) {
       if (objUrl) URL.revokeObjectURL(objUrl);
     };
   }, []);
+  // Clicking/tapping the preview pokes the page at that point: translate
+  // the tap coordinates (frame-relative, scaled to the full-page image)
+  // back to page coordinates and send Input.dispatchMouseEvent. The
+  // captured frame is sized to the actual image so 1:1 mapping holds.
+  function onPreviewClick(ev) {
+    const img = imgRef.current;
+    if (!img || !props.clickAt || !img.naturalWidth) return;
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = Math.round((ev.clientX - rect.left) * (img.naturalWidth / rect.width));
+    const y = Math.round((ev.clientY - rect.top) * (img.naturalHeight / rect.height));
+    props.clickAt(x, y);
+  }
   return h('div', { class: 'inspector__preview' },
-    h('div', { class: 'inspector__preview-frame' },
-      h('img', { ref: imgRef, class: 'inspector__preview-img', alt: 'Live page preview' })
+    h('div', { ref: imgRef, class: 'inspector__preview-frame', role: 'group', 'aria-label': 'Live page preview, scrollable', onClick: onPreviewClick },
+      h('img', { class: 'inspector__preview-img', alt: 'Live page preview' })
     ),
     h('div', { ref: noteRef, class: 'status inspector__status', 'aria-live': 'polite' }, 'capturing…')
   );

@@ -203,11 +203,35 @@
   gap: 6px;
 }
 .inspector__preview-frame {
+  /* The preview shows the page at its natural size and scrolls inside
+     the frame (the screenshot is a full-page capture, taller than the
+     frame). This is a mobile-first "scroll through the page" preview:
+     the image keeps its intrinsic dimensions, so a wide page is pannable
+     horizontally, a tall page vertically, and tapping any visible pixel
+     forwards a click to the page. */
   width: 100%;
   height: 56dvh;
+  overflow: auto;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+}
+.inspector__preview-frame::-webkit-scrollbar { width: 6px; height: 6px; }
+.inspector__preview-frame::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-sm);
+}
+.inspector__preview-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  /* The full-page capture is a single JPEG, so the browser can decode
+     it natively at natural size without client-side tiling. */
 }
 
 /* ---- Inspector: console extras ------------------------------------ */

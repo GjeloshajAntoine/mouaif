@@ -137,7 +137,17 @@ export function createEventHandlers(state) {
   }
 
   function captureScreenshot() {
-    return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55 });
+    return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55, captureBeyondViewport: true });
+  }
+
+  // clickAt — forward a tap on the live preview to the page. Coordinates
+  // are page coordinates computed from the full-page screenshot, so a tap
+  // below the fold lands at the right scroll position.
+  function clickAt(x, y) {
+    return cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+      .then(() => cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }))
+      .then(() => true)
+      .catch((e) => { throw e; });
   }
 
   async function fetchMetrics() {
@@ -182,7 +192,7 @@ export function createEventHandlers(state) {
   return {
     onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
     onResponseReceived, onLoadingFinished, onLoadingFailed,
-    pushConsole, pushNetwork, captureScreenshot, fetchMetrics,
+    pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
     loadResponseBody
   };
 }
