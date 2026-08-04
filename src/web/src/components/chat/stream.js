@@ -18,7 +18,8 @@ import {
   finalizeLiveMessage,
   handleShellOutputEvent,
   handleSubagentStreamEvent,
-  updateProgressCard
+  updateProgressCard,
+  whenTranscriptSettled
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -290,6 +291,10 @@ export async function loadPendingAuthorization(state, refs) {
     r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
   } catch { return; }
   if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return;
+  // Wait for any in-flight chunked transcript render to finish so the
+  // card lands at the bottom instead of between message chunks.
+  await whenTranscriptSettled(refs);
+  if (!refs.transcript.current) return;
   for (const request of r.body.pending) {
     if (!request || !request.callId) continue;
     if (refs.transcript.current.querySelector('[data-auth-call-id="' + String(request.callId).replace(/"/g, '\\"') + '"]')) continue;
@@ -546,7 +551,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {
-      authorizationCard(data, projectDir, chatId, refs, null, state);
+      whenTranscriptSettled(refs).then(() => authorizationCard(data, projectDir, chatId, refs, null, state));
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'ask_user_required') {
@@ -669,7 +674,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       assembled = '';
       reasoning = '';
     } else if (ev.eventName === 'authorization_required') {
-      authorizationCard(data, projectDir, chatId, refs, null, state);
+      whenTranscriptSettled(refs).then(() => authorizationCard(data, projectDir, chatId, refs, null, state));
     } else if (ev.eventName === 'ask_user_required') {
       askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
     } else if (ev.eventName === 'tool_call') {

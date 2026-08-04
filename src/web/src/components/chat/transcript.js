@@ -1073,6 +1073,24 @@ function resetTranscriptRender(refs) {
   refs._suspendScrollPin = false;
 }
 
+// whenTranscriptSettled(refs) -> Promise
+//
+// Resolve once any in-flight chunked transcript render has finished.
+// Authorization and ask_user cards append outside the message flow —
+// if they land while a chunked pass is still filling in, later chunks
+// are appended after the card and it ends up stranded mid-transcript
+// (or is wiped by a rebuild). Callers that append overlay cards await
+// this first so the card always lands at the bottom.
+export function whenTranscriptSettled(refs) {
+  return new Promise((resolve) => {
+    function check() {
+      if (!refs._pendingTranscriptChunk) return resolve();
+      requestAnimationFrame(check);
+    }
+    check();
+  });
+}
+
 // cancelTranscriptRender(refs)
 //
 // Abort any in-flight chunked transcript render. Called by a rebuild
