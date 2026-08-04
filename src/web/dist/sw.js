@@ -34,7 +34,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = '698f61e7';
+const CACHE_VERSION = '5ab6aae8';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -161,11 +161,64 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+// ---- Page-reported visibility (notification suppression) -------------
+//
+// Suppressing an OS notification because "the user is already looking
+// at this chat" cannot rely on WindowClient.focused / visibilityState
+// alone: Safari (and the iOS PWA window in particular) reports stale or
+// missing values through clients.matchAll(), which made notifications
+// appear even while the chat was open on screen. The page itself always
+// knows document.visibilityState exactly, so each controlled page keeps
+// a persistent MessageChannel to the worker and reports { hash,
+// visible, focused } on load, on visibilitychange/focus/blur, and on
+// hashchange (see sw-registration.js — startVisibilityReporting). The
+// push handler below consults this table first and only falls back to
+// client-reported properties for a client that never checked in.
+const clientViews = new Map(); // clientId -> { hash, visible, focused, at }
+const CLIENT_VIEW_TTL = 5 * 60 * 1000; // stale entries are ignored
+
+function updateClientView(clientId, data) {
+  if (!clientId) return;
+  clientViews.set(clientId, {
+    hash: typeof data.hash === 'string' ? data.hash : '',
+    visible: data.visible === true,
+    focused: data.focused === true,
+    at: Date.now()
+  });
+  // Keep the map bounded: tabs that closed without a clean goodbye.
+  for (const [id, view] of clientViews) {
+    if (Date.now() - view.at > CLIENT_VIEW_TTL) clientViews.delete(id);
+  }
+}
+
+function reportedClientMatchesChat(clientId, targetUrl) {
+  const view = clientViews.get(clientId);
+  if (!view || Date.now() - view.at > CLIENT_VIEW_TTL) return false;
+  if (!view.visible) return false;
+  return view.hash === targetUrl.hash;
+}
+
 self.addEventListener('message', (event) => {
   // The page may post `{ type: 'SKIP_WAITING' }` after the user
   // accepts an "Update available — reload" prompt.
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  // Persistent reporting channel (see sw-registration.js). The first
+  // state snapshot arrives on the transferred port immediately, so a
+  // push that lands right after page load is already suppressible.
+  if (event.data && event.data.type === 'VISIBILITY_PORT' && event.ports && event.ports[0]) {
+    const clientId = event.data.clientId;
+    const port = event.ports[0];
+    port.onmessage = (msg) => {
+      if (msg.data && msg.data.type === 'VISIBILITY_STATE') updateClientView(clientId, msg.data);
+    };
+    if (typeof port.start === 'function') port.start();
+  }
+  // One-shot state snapshot (fallback for engines without
+  // navigator.serviceWorker.controller at registration time).
+  if (event.data && event.data.type === 'VISIBILITY_STATE' && event.source && event.source.id) {
+    updateClientView(event.source.id, event.data);
   }
   // Navigate to a specific URL (e.g. deep link from notification click).
   // Clients that want to move an EXISTING app window (iOS PWA: no
@@ -191,15 +244,20 @@ self.addEventListener('push', (event) => {
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
     const chatVisible = windows.some((client) => {
       // Suppress only when the user is ACTUALLY looking at the app.
-      // `client.focused` alone is not enough: on mobile (iOS PWA in
-      // particular) a window can stay "focused" while the screen is
-      // locked or another app is on top, which would hide the
-      // notification the user should be seeing. `visibilityState`
+      if (!targetUrl) return false;
+      // The page's own report is authoritative — it always knows
+      // document.visibilityState exactly, on every engine.
+      if (reportedClientMatchesChat(client.id, targetUrl)) return true;
+      // Fallback for a client that never checked in (old bundle,
+      // browser without SW controller): use the client-reported
+      // properties. `client.focused` alone is not enough: on mobile
+      // (iOS PWA in particular) a window can stay "focused" while the
+      // screen is locked or another app is on top, which would hide
+      // the notification the user should be seeing. `visibilityState`
       // (supported on Chromium WindowClients) is the authoritative
       // signal; when it's unavailable we fail OPEN (show the
-      // notification) because suppression is only an optimization
-      // and silently dropping an alert is the worse failure mode.
-      if (!targetUrl) return false;
+      // notification) because suppression is only an optimization and
+      // silently dropping an alert is the worse failure mode.
       try {
         if (client.visibilityState !== undefined && client.visibilityState !== 'visible') return false;
         if (client.visibilityState === undefined) return false; // no data: never suppress

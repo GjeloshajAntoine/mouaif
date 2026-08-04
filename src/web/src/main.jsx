@@ -13,7 +13,7 @@
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { AccessGate } from './components/AccessAuth.jsx';
-import { registerServiceWorker, refreshProjectsOnVisible, consumePendingNotificationClick } from './sw-registration.js';
+import { registerServiceWorker, refreshProjectsOnVisible, consumePendingNotificationClick, startVisibilityReporting } from './sw-registration.js';
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
@@ -34,6 +34,10 @@ refreshProjectsOnVisible();
 // relaunch) by a notification click that the SW stored in IndexedDB
 // (see sw-registration.js — consumePendingNotificationClick).
 consumePendingNotificationClick();
+// Report this page's visibility/hash to the service worker so it can
+// suppress push notifications for the chat the user is already
+// looking at (see sw-registration.js — startVisibilityReporting).
+startVisibilityReporting();
 
 // Sync push notification state when the service worker is ready.
 if ('serviceWorker' in navigator) {

@@ -187,6 +187,91 @@ export function refreshProjectsOnVisible() {
   document.addEventListener('visibilitychange', handler);
 }
 
+// ---- Visibility reporting (notification suppression) ---------------
+//
+// The service worker suppresses a push notification when the user is
+// already looking at that chat, but WindowClient.focused /
+// visibilityState are unreliable on some engines (Safari, iOS PWA).
+// The page always knows its own document.visibilityState exactly, so
+// we report { hash, visible, focused } to the worker on a persistent
+// MessageChannel — on load, whenever visibility or focus changes, and
+// on every hash change (the app is hash-routed). The worker keeps the
+// last report per client and consults it in the push handler (see
+// sw-src.js — clientViews).
+
+let _visibilityReporting = false;
+
+export function startVisibilityReporting() {
+  if (_visibilityReporting) return;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  _visibilityReporting = true;
+
+  let port = null;
+
+  const snapshot = () => ({
+    type: 'VISIBILITY_STATE',
+    hash: window.location.hash || '',
+    visible: document.visibilityState === 'visible',
+    focused: typeof document.hasFocus === 'function' ? document.hasFocus() : false
+  });
+
+  const report = () => {
+    const state = snapshot();
+    try { if (port) port.postMessage(state); } catch { port = null; }
+    // Fallback for the window before the channel is established (or
+    // engines where controller is briefly null): a one-shot message.
+    // Safe to send alongside the port — both write the same table.
+    try {
+      const sw = navigator.serviceWorker.controller;
+      if (sw) sw.postMessage(state);
+    } catch { /* best-effort */ }
+  };
+
+  const openChannel = () => {
+    const sw = navigator.serviceWorker.controller;
+    if (!sw || port) return;
+    try {
+      const channel = new MessageChannel();
+      port = channel.port1;
+      port.onmessage = (event) => {
+        // The worker does not talk back today; keep the handler so
+        // future pings don't surface as unhandled messages.
+        void event;
+      };
+      // Client.id is not exposed to pages; the worker identifies us by
+      // event.source for one-shot messages and by the clientId we send
+      // with the port. crypto.randomUUID gives us a stable per-page id
+      // the worker stores alongside the report.
+      sw.postMessage({ type: 'VISIBILITY_PORT', clientId: _pageClientId() }, [channel.port2]);
+      report();
+    } catch { port = null; }
+  };
+
+  const onVisibility = () => report();
+  const onHashChange = () => report();
+
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', report);
+  window.addEventListener('blur', report);
+  window.addEventListener('hashchange', onHashChange);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    port = null;
+    openChannel();
+  });
+
+  openChannel();
+  report();
+}
+
+let _uuid = null;
+function _pageClientId() {
+  if (_uuid) return _uuid;
+  try {
+    _uuid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now();
+  } catch { _uuid = String(Math.random()).slice(2) + Date.now(); }
+  return _uuid;
+}
+
 // ---- Notification-click handoff (iOS PWA) --------------------------
 //
 // When the app is closed or suspended, iOS Safari relaunches the
