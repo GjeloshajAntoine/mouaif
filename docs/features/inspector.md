@@ -16,7 +16,7 @@ The Inspector is the last piece of the spec from [decisions.md §6](../decisions
 +--------------------+        +--------------------+        +--------------------+
 ```
 
-- **REST surface** — `GET /api/inspector/config`, `PUT /api/inspector/config`, `GET /api/inspector/version`, `GET /api/inspector/targets`. The mobile UI calls these over plain `fetch()`.
+- **REST surface** — `GET /api/inspector/config`, `PUT /api/inspector/config`, `GET /api/inspector/version`, `GET /api/inspector/targets`, `POST /api/inspector/open`. The mobile UI calls these over plain `fetch()`.
 - **WebSocket proxy** — `WS /api/inspector/proxy?host=<httpBase>&targetId=<id>`. The browser opens this URL; the server resolves the target id against the Chrome `/json/list` payload, opens a second WebSocket upstream to `webSocketDebuggerUrl`, and pipes frames in both directions until either side closes.
 - **Per-connection, no shared state.** The proxy is a per-connection relay; the server does not parse, buffer, or transform CDP frames. That keeps the surface tiny and means future CDP domains are free.
 
@@ -44,7 +44,7 @@ The view is a 3-state machine. State is held in refs (not Preact state) so a CDP
 
 The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
 
-The **Targets** screen also has a **Page URL** field for direct attach: paste a page URL (e.g. `http://localhost:3000`), tap **Attach to URL** (or press Enter), and the inspector fetches the target list, finds the matching tab, and connects straight to it — skipping the manual pick. Exact URL match wins; otherwise a unique prefix/substring match is accepted. Zero matches ("no tab found…") and ambiguous matches ("N tabs match…") are reported on the status line, and the regular target list below remains available as the fallback.
+The **Targets** screen also has a **Page URL** field for one-step inspect: type a page URL (e.g. `http://localhost:3000`, or bare `localhost:3000` — the scheme is added for you), tap **Open & inspect** (or press Enter), and the server tells Chrome to open that page in a **new tab**, then attaches the inspector straight to it. No need to open the tab yourself or pick from the target list. The manual list below remains available for tabs that are already open.
 
 ## Preview panel
 
@@ -82,6 +82,7 @@ The Info panel shows live page vitals from `Performance.getMetrics`: open docume
 | PUT    | `/api/inspector/config` | `{ url }` | `{ url }` (rejected with 400 if `url` is not http(s)) |
 | GET    | `/api/inspector/version` | — | Chrome `/json/version` payload |
 | GET    | `/api/inspector/targets` | — | `{ targets: ChromeListItem[] }` |
+| POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab (`/json/new`) and returns the fresh target |
 
 Errors from the upstream Chrome are mapped to typed status codes:
 

@@ -367,6 +367,31 @@ async function handleInspector(req, res, parsed) {
     }
   }
 
+  // POST /api/inspector/open  body: { url }  -> { target }
+  // Opens the page URL in a NEW tab of the debug Chrome (Chrome
+  // /json/new) and returns the fresh target record. The UI then
+  // attaches straight to it — the "inspect this URL" one-step flow.
+  if (urlPath === '/api/inspector/open' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body.url !== 'string' || !body.url.trim()) {
+      return sendJSON(res, 400, { error: 'url is required' });
+    }
+    let parsedUrl;
+    try { parsedUrl = new URL(body.url.trim()); }
+    catch { return sendJSON(res, 400, { error: 'url is not a valid URL' }); }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return sendJSON(res, 400, { error: 'url must be http or https' });
+    }
+    try {
+      const target = await inspector.openInspectorTarget(inspector.getDebuggerUrl(), parsedUrl.href);
+      return sendJSON(res, 200, { target });
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
 }
 

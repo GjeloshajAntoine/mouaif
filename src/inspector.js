@@ -139,6 +139,70 @@ async function fetchInspectorTargets(debuggerUrl) {
   return list;
 }
 
+// PUT /json/new?<url> opens a fresh tab in the debug Chrome and returns
+// its target record ({ id, url, webSocketDebuggerUrl, ... }). Used by
+// the "inspect this URL" flow: the user types a page URL, Chrome opens
+// it, and the inspector attaches to the brand-new tab in one step —
+// no manual target picking. (Newer Chrome versions only accept PUT
+// here; GET on /json/new was dropped for CSRF reasons.)
+async function openInspectorTarget(debuggerUrl, pageUrl) {
+  const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
+  const target = await httpRequestJson(base + '/json/new?' + encodeURIComponent(pageUrl), { method: 'PUT' }, 5000);
+  if (!target || typeof target !== 'object' || !target.id) {
+    const err = new Error('Unexpected /json/new response: ' + typeof target);
+    err.code = 'EPARSE';
+    throw err;
+  }
+  return target;
+}
+
+// httpRequestJson — httpGetJson generalized to any method (Chrome's
+// /json/new requires PUT). Same typed-error behavior as httpGetJson.
+function httpRequestJson(targetUrl, opts, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(targetUrl); }
+    catch (e) { const err = new Error('Invalid URL: ' + targetUrl); err.code = 'EBADURL'; reject(err); return; }
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const req = lib.request(parsed, { method: (opts && opts.method) || 'GET' }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const err = new Error('Chrome returned HTTP ' + res.statusCode + ' for ' + parsed.pathname);
+          err.code = 'EUPSTREAM';
+          err.status = res.statusCode;
+          err.body = text.slice(0, 2000);
+          reject(err);
+          return;
+        }
+        let json;
+        try { json = JSON.parse(text); }
+        catch (e) {
+          const err = new Error('Chrome returned non-JSON for ' + parsed.pathname + ': ' + e.message);
+          err.code = 'EPARSE';
+          reject(err);
+          return;
+        }
+        resolve(json);
+      });
+    });
+    req.on('error', (e) => {
+      const err = new Error('Could not reach Chrome at ' + targetUrl + ': ' + e.message);
+      err.code = 'ECHROME_UNREACHABLE';
+      err.cause = e;
+      reject(err);
+    });
+    if (timeoutMs) {
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error('timeout after ' + timeoutMs + 'ms'));
+      });
+    }
+    req.end();
+  });
+}
+
 function stripTrailingSlash(s) { return String(s || '').replace(/\/+$/, ''); }
 
 // ---- Proxy: WebSocket <-> WebSocket ------------------------------------
@@ -322,6 +386,7 @@ module.exports = {
   // fetchers (used by REST routes and tests)
   fetchInspectorInfo,
   fetchInspectorTargets,
+  openInspectorTarget,
   // WS proxy
   handleProxy,
   makeNoServerWss,

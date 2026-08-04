@@ -146,40 +146,29 @@ export function InspectorView() {
     rerender();
   }
 
-  // attachByPageUrl — direct attach: fetch the target list, find the
-  // tab whose URL matches what the user typed, and connect without
-  // picking from the list. Exact match wins; otherwise a unique
-  // prefix/substring match is accepted; zero or ambiguous matches are
-  // reported on the status line.
+  // attachByPageUrl — one-step inspect: the user types a page URL and
+  // the server tells Chrome to OPEN it in a fresh tab (Chrome /json/new),
+  // then we attach straight to that brand-new target. No pre-opening the
+  // tab yourself, no picking from the target list.
   async function attachByPageUrl() {
     const input = pageUrlInput.current;
     if (!input) return;
-    const wanted = (input.value || '').trim();
+    let wanted = (input.value || '').trim();
     if (!wanted) { if (statusEl.current) statusEl.current.textContent = 'enter a page url first'; return; }
-    if (statusEl.current) statusEl.current.textContent = 'looking up ' + wanted + '…';
+    // Convenience: bare hosts like "localhost:3000" get http:// so the
+    // user doesn't have to type the scheme.
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(wanted)) wanted = 'http://' + wanted;
+    if (statusEl.current) statusEl.current.textContent = 'opening ' + wanted + '…';
     let r;
-    try { r = await fetchJson('/api/inspector/targets'); }
-    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
-    if (r.status !== 200) {
+    try {
+      r = await fetchJson('/api/inspector/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: wanted }) });
+    } catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    if (r.status !== 200 || !r.body || !r.body.target) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
       if (statusEl.current) statusEl.current.textContent = msg;
       return;
     }
-    const list = (r.body.targets || []).filter((t) => t.url);
-    let match = list.find((t) => t.url === wanted);
-    if (!match) {
-      const fuzzy = list.filter((t) => t.url.startsWith(wanted) || t.url.includes(wanted));
-      if (fuzzy.length === 1) match = fuzzy[0];
-      else if (fuzzy.length > 1) {
-        if (statusEl.current) statusEl.current.textContent = fuzzy.length + ' tabs match — pick one from the list below';
-        return;
-      }
-    }
-    if (!match) {
-      if (statusEl.current) statusEl.current.textContent = 'no tab found for that url — open it in Chrome or pick a target below';
-      return;
-    }
-    connect(match);
+    connect(r.body.target);
   }
 
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
@@ -244,13 +233,13 @@ export function InspectorView() {
         h('h2', { class: 'view-title' }, 'Pick a target')
       ),
       h('section', null,
-        h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it, or paste a page URL to attach directly. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
+        h('p', { class: 'hint' }, 'Type a page URL and Chrome opens it in a new tab with the inspector attached. Or tap a target below. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
         h('div', { class: 'row' },
           h('label', { class: 'label', for: 'inspectorPageUrl' }, 'Page URL'),
           h('input', { ref: pageUrlInput, class: 'input', id: 'inspectorPageUrl', type: 'url', placeholder: 'http://localhost:3000', onKeydown: (e) => { if (e.key === 'Enter') attachByPageUrl(); } })
         ),
         h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn btn--primary', type: 'button', onClick: attachByPageUrl }, 'Attach to URL'),
+          h('button', { class: 'btn btn--primary', type: 'button', onClick: attachByPageUrl }, 'Open & inspect'),
           h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
         ),
         h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
