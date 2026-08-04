@@ -36,12 +36,15 @@ On a physical device, Chrome runs on the phone and `mouaif` runs on a laptop. Fo
 
 ## UI flow
 
-The view is a 2-state machine. State is held in refs (not Preact state) so a CDP message burst does not thrash the tree.
+The view is a 3-state machine. State is held in refs (not Preact state) so a CDP message burst does not thrash the tree.
 
-1. **Setup** — a single screen: the Chrome debugger URL input sits at the top with the action row (`Save & discover` / `Discover` / `Refresh targets`). Once discovery has run, the target list renders *below the same input* under a "Pick a target" heading.
-2. **Inspect** — connected to a specific target, with **Preview**, **Console**, **Network**, and **Info** sub-tabs. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
+1. **Setup** — input the Chrome debugger URL, save, and discover.
+2. **Targets** — list of discoverable pages / service workers / etc. with title, type chip, URL, and a Connect button per row.
+3. **Inspect** — connected to a specific target, with **Preview**, **Console**, **Network**, and **Info** sub-tabs. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
 
-There is exactly **one** URL field in the whole flow. Earlier builds used a separate setup → targets transition, which re-rendered the same-looking URL input on a second screen — users read that as two identical fields. Merging the two screens keeps a single, unambiguous input; the Inspect screen is the only other state, reached by tapping Connect, and its back arrow returns to the merged screen with the URL value preserved.
+The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
+
+The URL input and its action row (`Save & discover` / `Discover` / `Refresh targets`) are shared between the **Setup** and **Targets** phases (`urlControls`). That way, when discovery fails — for example Chrome is not running, or the URL has a typo — the user lands on the Targets screen with the editable URL input and a clear "Chrome is not reachable at this URL…" empty state right in front of them, instead of an empty list with no way to type a new URL. The error state is tracked with a `targetsFailed` flag so the empty list can distinguish "Chrome unreachable" from "Chrome reachable but no tabs open".
 
 ## Preview panel
 
