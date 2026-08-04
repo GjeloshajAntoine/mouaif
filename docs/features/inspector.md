@@ -16,7 +16,7 @@ The Inspector is the last piece of the spec from [decisions.md §6](../decisions
 +--------------------+        +--------------------+        +--------------------+
 ```
 
-- **REST surface** — `GET /api/inspector/config`, `PUT /api/inspector/config`, `GET /api/inspector/version`, `GET /api/inspector/targets`, `POST /api/inspector/open`. The mobile UI calls these over plain `fetch()`.
+- **REST surface** — `GET /api/inspector/config`, `PUT /api/inspector/config`, `GET /api/inspector/version`, `GET /api/inspector/targets`, `POST /api/inspector/open`, `POST /api/inspector/close`, `POST /api/inspector/reload`, `POST /api/inspector/navigate`. The mobile UI calls these over plain `fetch()`.
 - **WebSocket proxy** — `WS /api/inspector/proxy?host=<httpBase>&targetId=<id>`. The browser opens this URL; the server resolves the target id against the Chrome `/json/list` payload, opens a second WebSocket upstream to `webSocketDebuggerUrl`, and pipes frames in both directions until either side closes.
 - **Per-connection, no shared state.** The proxy is a per-connection relay; the server does not parse, buffer, or transform CDP frames. That keeps the surface tiny and means future CDP domains are free.
 
@@ -47,6 +47,24 @@ The view starts in `setup`. Each phase has a per-screen back button that walks t
 The **Targets** screen also has a **Page URL** field for one-step inspect: type a page URL (e.g. `http://localhost:3000`, or bare `localhost:3000` — the scheme is added for you), tap **Open & inspect** (or press Enter), and the server tells Chrome to open that page in a **new tab**, then attaches the inspector straight to it. No need to open the tab yourself or pick from the target list. The manual list below remains available for tabs that are already open.
 
 While inspecting a target, the header shows the page's URL in a code chip plus a **New tab** button (`POST /api/inspector/open`, the same endpoint behind **Open & inspect**). Tapping the button opens that same URL in a fresh Chrome tab; the outcome is reported on the status line. The button is a 44 px+ touch target (the previous URL-as-link affordance was ambiguous and hard to tap), and the current connection keeps its target — no re-attachment.
+
+## Tab management
+
+The Inspector can **reload**, **navigate**, and **close** tabs of the debug Chrome — both from the targets list and, for the page being inspected, from the inspect header. The server talks CDP directly to Chrome (`Page.reload` / `Page.navigate` on the target's WebSocket, `Target.closeTarget` on the browser-level WebSocket), so these actions work without an active inspector connection.
+
+### Targets list rows
+
+Each page row in the targets list shows **Reload** and **Close** buttons next to **Connect**. Reload refreshes that tab in place; Close deletes the tab — a confirmation prompt appears first because closing cannot be undone. Closing an inspected tab also re-runs the discovery so the tab vanishes from the list.
+
+### Inspect header
+
+While inspecting, a toolbar under the header offers:
+
+- **Reload** — reloads the attached page (`POST /api/inspector/reload`). The connection survives; the preview, console, and network panels keep streaming.
+- **URL field + Go** — navigates the attached tab to a new URL (`POST /api/inspector/navigate`). Bare hosts like `localhost:3000` get `http://` added automatically, matching the "Open & inspect" flow. The field is pre-filled with the current page URL and submits on Enter.
+- **Close** — closes the attached tab (`POST /api/inspector/close`), after a confirmation. The inspector disconnects, walks back to the targets list, and refreshes it.
+
+These replace the old URL-as-link affordance: the URL now lives in an editable field, and destructive actions are explicit buttons instead of hidden gestures.
 
 ## Preview panel
 
@@ -91,6 +109,9 @@ The Info panel shows live page vitals from `Performance.getMetrics`: open docume
 | GET    | `/api/inspector/version` | — | Chrome `/json/version` payload |
 | GET    | `/api/inspector/targets` | — | `{ targets: ChromeListItem[] }` |
 | POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab and returns the fresh target. Primary path is the CDP `Target.createTarget` command over the browser-level WebSocket (from `/json/version`); falls back to the classic `PUT /json/new` for Chrome builds that still expose it (modern Chrome 137+ removed the HTTP endpoint and returns 404). If the CDP browser WS id went stale (Chrome restarted between the `/json/version` fetch and the WS open — Chrome answers "not found"), the call retries once with a freshly re-fetched id. If `/json/version` has no browser WS **and** `/json/new` 404s, a clear actionable error is returned instead of Chrome's raw "not found" |
+| POST   | `/api/inspector/close` | `{ targetId }` | `{ ok: true }` — closes a tab (`Target.closeTarget` on the browser-level WebSocket) |
+| POST   | `/api/inspector/reload` | `{ targetId }` | `{ ok: true }` — reloads a tab (`Page.reload` on the target's WebSocket) |
+| POST   | `/api/inspector/navigate` | `{ targetId, url }` | `{ frameId, loaderId }` — navigates a tab to a new URL (`Page.navigate` on the target's WebSocket). `url` must be http(s) |
 
 Errors from the upstream Chrome are mapped to typed status codes:
 

@@ -1,7 +1,9 @@
-// One-shot test for src/inspector.js openInspectorTarget() against a mock
-// Chrome. Verifies both the modern CDP Target.createTarget path and the
-// classic PUT /json/new fallback, and that a genuinely broken Chrome does
-// NOT get masked by the fallback.
+// One-shot test for src/inspector.js openInspectorTarget(),
+// closeInspectorTarget(), reloadInspectorTarget(), and
+// navigateInspectorTarget() against a mock Chrome. Verifies both the
+// modern CDP Target.createTarget path and the classic PUT /json/new
+// fallback, and that a genuinely broken Chrome does NOT get masked by
+// the fallback.
 //
 // Not part of `npm test` (needs no real Chrome, but keeps ws dependency
 // and a local listener). Run: node scripts/test-inspector-open.cjs
@@ -41,6 +43,11 @@ function mockChrome({ mode }) {
       res.writeHead(405); res.end();
       return;
     }
+    if (req.url.startsWith('/json/list')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([{ id: 'cdp-tab', type: 'page', url: 'http://example.com/a', title: 'A', webSocketDebuggerUrl: 'ws://127.0.0.1:' + server.address().port + '/devtools/page/cdp-tab' }]));
+      return;
+    }
     res.writeHead(404); res.end();
   });
   server.on('upgrade', (req, socket, head) => {
@@ -50,6 +57,19 @@ function mockChrome({ mode }) {
           const msg = JSON.parse(data.toString());
           if (msg.method === 'Target.createTarget') {
             ws.send(JSON.stringify({ id: msg.id, result: { targetId: 'cdp-tab' } }));
+          } else if (msg.method === 'Target.closeTarget') {
+            ws.send(JSON.stringify({ id: msg.id, result: {} }));
+          }
+        });
+      });
+    } else if (req.url.startsWith('/devtools/page/')) {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on('message', (data) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.method === 'Page.reload') {
+            ws.send(JSON.stringify({ id: msg.id, result: {} }));
+          } else if (msg.method === 'Page.navigate') {
+            ws.send(JSON.stringify({ id: msg.id, result: { frameId: 'f1', loaderId: 'l1' } }));
           }
         });
       });
@@ -94,6 +114,23 @@ async function main() {
     catch (e) { caught = e; }
     assert(caught && caught.code === 'EUPSTREAM', 'no-browser-WS + no /json/new surfaces EUPSTREAM');
     assert(caught && caught.message.indexOf('not found') === -1, 'raw "not found" from Chrome is replaced with a clear error');
+    server.close(); wss.close();
+  }
+  // 5. Tab management on the mock Chrome:
+  //    closeInspectorTarget -> Target.closeTarget on the browser WS
+  //    reloadInspectorTarget -> Page.reload on the target WS
+  //    navigateInspectorTarget -> Page.navigate on the target WS
+  {
+    const { server, wss, base } = await mockChrome({ mode: 'cdp' });
+    const res = await inspector.closeInspectorTarget(base, 'cdp-tab');
+    assert(res && res.ok === true, 'closeInspectorTarget returns { ok: true }');
+    await inspector.reloadInspectorTarget(base, 'cdp-tab');
+    const nav = await inspector.navigateInspectorTarget(base, 'cdp-tab', 'http://example.com/nav');
+    assert(nav && nav.frameId === 'f1', 'navigateInspectorTarget returns the navigation result');
+    let caught = null;
+    try { await inspector.reloadInspectorTarget(base, 'nope'); }
+    catch (e) { caught = e; }
+    assert(caught && caught.code === 'ETARGET_NOT_FOUND', 'unknown targetId surfaces ETARGET_NOT_FOUND');
     server.close(); wss.close();
   }
   console.log('ALL OK');

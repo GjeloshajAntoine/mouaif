@@ -15,6 +15,7 @@ import { createEventHandlers } from './inspector/events.js';
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
+  const navUrlInput = useRef(null);
   const saveBtn = useRef(null);
   const statusEl = useRef(null);
   const targetsList = useRef(null);
@@ -159,6 +160,36 @@ export function InspectorView() {
     rerender();
   }
 
+  // actionTarget — Reload / Close for a row in the targets list. Works
+  // from the target record alone (no connection needed); the server
+  // talks CDP directly to the debug Chrome.
+  async function actionTarget(t, action) {
+    if (!t || !t.id) return;
+    if (action === 'close') {
+      const name = t.title || t.url || 'this tab';
+      if (!window.confirm('Close tab “' + name + '”?')) return;
+    }
+    if (statusEl.current) statusEl.current.textContent = (action === 'close' ? 'closing ' : 'reloading ') + (t.title || t.url || 'tab') + '…';
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/' + (action === 'close' ? 'close' : 'reload'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: t.id }) });
+    } catch (e) {
+      if (statusEl.current) statusEl.current.textContent = 'network error';
+      return;
+    }
+    if (r.status !== 200 || !r.body || !r.body.ok) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = (action === 'close' ? 'close' : 'reload') + ' failed: ' + msg;
+      return;
+    }
+    if (action === 'close') {
+      if (statusEl.current) statusEl.current.textContent = 'closed';
+      loadTargets(); // the closed tab disappears from the list
+    } else if (statusEl.current) {
+      statusEl.current.textContent = 'reloaded';
+    }
+  }
+
   // openAttachedPageInNewTab — "open in a new tab" for the page currently
   // being inspected. The header's "New tab" button sends the target's URL
   // to POST /api/inspector/open (Chrome Target.createTarget / json/new)
@@ -183,6 +214,87 @@ export function InspectorView() {
       return;
     }
     if (statusEl.current) statusEl.current.textContent = 'opened ' + url + ' in a new tab';
+  }
+
+  // closeAttachedTarget — deletes the tab being inspected. Confirms with
+  // the user first (deleting a tab cannot be undone), then asks the
+  // server to close it (POST /api/inspector/close), walks back to the
+  // targets list and refreshes it. While the close is in flight the
+  // current connection stays open so we can report the outcome; it is
+  // torn down right before going back to the target list.
+  async function closeAttachedTarget() {
+    const target = currentTarget.current;
+    if (!target || !target.id) return;
+    const name = target.title || target.url || 'this tab';
+    if (!window.confirm('Close tab “' + name + '”?')) return;
+    if (statusEl.current) statusEl.current.textContent = 'closing tab…';
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+    } catch (e) {
+      if (statusEl.current) statusEl.current.textContent = 'network error closing tab';
+      return;
+    }
+    if (r.status !== 200 || !r.body || !r.body.ok) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = 'close failed: ' + msg;
+      return;
+    }
+    disconnect();
+    phase.current = 'targets';
+    rerender();
+    loadTargets();
+  }
+
+  // reloadAttachedTarget — reloads the tab being inspected (POST
+  // /api/inspector/reload, CDP Page.reload on the target). The existing
+  // connection survives; the page is gone for a moment, then comes back
+  // and the preview / console / network panels keep streaming.
+  async function reloadAttachedTarget() {
+    const target = currentTarget.current;
+    if (!target || !target.id) return;
+    if (statusEl.current) statusEl.current.textContent = 'reloading…';
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/reload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+    } catch (e) {
+      if (statusEl.current) statusEl.current.textContent = 'network error reloading';
+      return;
+    }
+    if (r.status !== 200 || !r.body || !r.body.ok) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = 'reload failed: ' + msg;
+      return;
+    }
+    if (statusEl.current) statusEl.current.textContent = 'reloaded';
+  }
+
+  // navigateAttachedTarget — navigates the tab being inspected to a new
+  // URL (POST /api/inspector/navigate, CDP Page.navigate on the target).
+  // The connection survives the navigation; the panels keep streaming.
+  async function navigateAttachedTarget() {
+    const target = currentTarget.current;
+    const input = navUrlInput.current;
+    if (!target || !target.id || !input) return;
+    let wanted = (input.value || '').trim();
+    if (!wanted) { if (statusEl.current) statusEl.current.textContent = 'enter a url first'; return; }
+    // Convenience: bare hosts like "localhost:3000" get http:// so the
+    // user doesn't have to type the scheme.
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(wanted)) wanted = 'http://' + wanted;
+    if (statusEl.current) statusEl.current.textContent = 'navigating to ' + wanted + '…';
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/navigate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id, url: wanted }) });
+    } catch (e) {
+      if (statusEl.current) statusEl.current.textContent = 'network error navigating';
+      return;
+    }
+    if (r.status !== 200 || !r.body || (typeof r.body.frameId !== 'string' && !r.body.errorText)) {
+      const msg = (r.body && (r.body.error || r.body.errorText)) ? (r.body.error || r.body.errorText) : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = 'navigate failed: ' + msg;
+      return;
+    }
+    if (statusEl.current) statusEl.current.textContent = 'navigating to ' + wanted + '…';
   }
 
   // attachByPageUrl — one-step inspect: the user types a page URL and
@@ -256,12 +368,31 @@ export function InspectorView() {
         const url = document.createElement('div');
         url.className = 'inspector__target-url';
         url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
-        const btn = document.createElement('button');
-        btn.className = 'inspector__target-btn btn btn--primary';
-        btn.type = 'button';
-        btn.textContent = 'Connect';
-        btn.addEventListener('click', () => connect(t));
-        li.appendChild(top); li.appendChild(url); li.appendChild(btn);
+        const actions = document.createElement('div');
+        actions.className = 'inspector__target-actions';
+        const connectBtn = document.createElement('button');
+        connectBtn.className = 'inspector__target-btn btn btn--primary';
+        connectBtn.type = 'button';
+        connectBtn.textContent = 'Connect';
+        connectBtn.addEventListener('click', () => connect(t));
+        actions.appendChild(connectBtn);
+        if (t.type === 'page' && t.id) {
+          const reloadBtn = document.createElement('button');
+          reloadBtn.className = 'btn btn--small';
+          reloadBtn.type = 'button';
+          reloadBtn.textContent = 'Reload';
+          reloadBtn.title = 'Reload this tab';
+          reloadBtn.addEventListener('click', () => actionTarget(t, 'reload'));
+          actions.appendChild(reloadBtn);
+          const closeBtn = document.createElement('button');
+          closeBtn.className = 'btn btn--small btn--danger';
+          closeBtn.type = 'button';
+          closeBtn.textContent = 'Close';
+          closeBtn.title = 'Close this tab';
+          closeBtn.addEventListener('click', () => actionTarget(t, 'close'));
+          actions.appendChild(closeBtn);
+        }
+        li.appendChild(top); li.appendChild(url); li.appendChild(actions);
         targetsList.current.appendChild(li);
       }
     }
@@ -325,6 +456,38 @@ export function InspectorView() {
           'aria-label': 'Open ' + ((t && t.url) || 'the page') + ' in a new Chrome tab',
           onClick: openAttachedPageInNewTab
         }, 'New tab')
+      ),
+      h('div', { class: 'inspector__nav' },
+        h('button', {
+          class: 'btn btn--small',
+          type: 'button',
+          title: 'Reload this tab',
+          'aria-label': 'Reload this tab',
+          onClick: reloadAttachedTarget
+        }, 'Reload'),
+        h('input', {
+          ref: navUrlInput,
+          class: 'input inspector__nav-input',
+          type: 'url',
+          placeholder: 'http://localhost:3000',
+          enterkeyhint: 'go',
+          value: (t && t.url) || '',
+          onKeydown: (e) => { if (e.key === 'Enter') navigateAttachedTarget(); }
+        }),
+        h('button', {
+          class: 'btn btn--small btn--primary',
+          type: 'button',
+          title: 'Go to this URL in the inspected tab',
+          'aria-label': 'Go to this URL in the inspected tab',
+          onClick: navigateAttachedTarget
+        }, 'Go'),
+        h('button', {
+          class: 'btn btn--small btn--danger',
+          type: 'button',
+          title: 'Close this tab',
+          'aria-label': 'Close this tab',
+          onClick: closeAttachedTarget
+        }, 'Close')
       ),
       h('div', { class: 'inspector__subtabs', role: 'tablist' },
         subtab('preview', 'Preview'),

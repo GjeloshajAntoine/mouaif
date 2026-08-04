@@ -193,7 +193,29 @@
   min-height: var(--tap, 44px);
   align-self: flex-start;
 }
+.inspector__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.inspector__nav .btn { flex-shrink: 0; }
+.inspector__nav-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 0 8px;
+  min-height: var(--tap-sm);
+}
 .inspector__target-btn { align-self: flex-start; min-width: 92px; }
+.inspector__target-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.inspector__target-actions .btn { flex-shrink: 0; }
 
 /* ---- Inspector: page preview -------------------------------------- */
 

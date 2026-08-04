@@ -285,6 +285,153 @@ async function openTargetViaCdp(base, pageUrl) {
   });
 }
 
+// sendBrowserCommand — sends a single CDP method over the browser-level
+// WebSocket (from /json/version) and resolves with the result. Used for
+// browser-domain commands such as Target.closeTarget. Mirrors
+// openTargetViaCdp's retry behavior for a stale browser WS id (Chrome
+// restarted) — retries once with a freshly re-fetched id.
+async function sendBrowserCommand(debuggerUrl, method, params) {
+  const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
+  let lastErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await sendBrowserCommandOnce(base, method, params);
+    } catch (e) {
+      lastErr = e;
+      if (!e || !e.__cdpRetryable) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  throw lastErr;
+}
+
+async function sendBrowserCommandOnce(base, method, params) {
+  const info = await httpGetJson(base + '/json/version', 5000);
+  const wsUrl = info && info.webSocketDebuggerUrl;
+  if (!wsUrl || !String(wsUrl).trim()) {
+    const err = new Error('Chrome /json/version has no webSocketDebuggerUrl; cannot send browser command');
+    err.code = 'EUPSTREAM';
+    throw err;
+  }
+  const { WebSocket } = require('ws');
+  return new Promise((resolve, reject) => {
+    let ws;
+    try { ws = new WebSocket(wsUrl, { perMessageDeflate: false }); }
+    catch (e) {
+      const err = new Error('Could not open browser WebSocket at ' + wsUrl + ': ' + e.message);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err); return;
+    }
+    const timer = setTimeout(() => {
+      try { ws.terminate(); } catch { /* ignore */ }
+      const err = new Error('Timeout waiting for browser WebSocket at ' + wsUrl);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err);
+    }, 5000);
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ id: 1, method, params: params || {} }));
+    });
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data.toString()); }
+      catch { return; }
+      if (msg.id !== 1) return;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      if (msg.error) {
+        const err = new Error(method + ' failed: ' + (msg.error.message || 'unknown CDP error'));
+        err.code = 'EUPSTREAM';
+        err.__cdpRetryable = true;
+        reject(err);
+        return;
+      }
+      resolve(msg.result || {});
+    });
+    ws.on('error', (e) => {
+      clearTimeout(timer);
+      const err = new Error('Browser WebSocket error: ' + (e && e.message || e));
+      err.code = 'ECHROME_UNREACHABLE';
+      err.__cdpRetryable = true;
+      reject(err);
+    });
+    ws.on('close', () => { clearTimeout(timer); });
+  });
+}
+
+// sendTargetCommand — sends a single CDP method over a *target*-level
+// WebSocket (resolved from the targetId via /json/list). Used for
+// page-domain commands such as Page.reload and Page.navigate. Rejects
+// with a typed error when the target is gone or unreachable.
+async function sendTargetCommand(debuggerUrl, targetId, method, params) {
+  const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
+  const list = await httpGetJson(base + '/json/list', 5000);
+  const t = list.find((x) => x && x.id === targetId);
+  if (!t || !t.webSocketDebuggerUrl) {
+    const err = new Error('target not found: ' + targetId);
+    err.code = 'ETARGET_NOT_FOUND';
+    throw err;
+  }
+  const { WebSocket } = require('ws');
+  return new Promise((resolve, reject) => {
+    let ws;
+    try { ws = new WebSocket(t.webSocketDebuggerUrl, { perMessageDeflate: false }); }
+    catch (e) {
+      const err = new Error('Could not open target WebSocket: ' + e.message);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err); return;
+    }
+    const timer = setTimeout(() => {
+      try { ws.terminate(); } catch { /* ignore */ }
+      const err = new Error('Timeout waiting for target WebSocket at ' + t.webSocketDebuggerUrl);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err);
+    }, 5000);
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ id: 1, method, params: params || {} }));
+    });
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data.toString()); }
+      catch { return; }
+      if (msg.id !== 1) return;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      if (msg.error) {
+        const err = new Error(method + ' failed: ' + (msg.error.message || 'unknown CDP error'));
+        err.code = 'EUPSTREAM';
+        reject(err);
+        return;
+      }
+      resolve(msg.result || {});
+    });
+    ws.on('error', (e) => {
+      clearTimeout(timer);
+      const err = new Error('Target WebSocket error: ' + (e && e.message || e));
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err);
+    });
+    ws.on('close', () => { clearTimeout(timer); });
+  });
+}
+
+// closeInspectorTarget — closes a tab (Target.closeTarget, browser-level).
+async function closeInspectorTarget(debuggerUrl, targetId) {
+  await sendBrowserCommand(debuggerUrl, 'Target.closeTarget', { targetId });
+  return { ok: true };
+}
+
+// reloadInspectorTarget — reloads a tab (Page.reload, target-level).
+async function reloadInspectorTarget(debuggerUrl, targetId) {
+  await sendTargetCommand(debuggerUrl, targetId, 'Page.reload', { ignoreCache: false });
+  return { ok: true };
+}
+
+// navigateInspectorTarget — navigates a tab to a new URL (Page.navigate,
+// target-level). Returns the navigation result (frameId, loaderId).
+async function navigateInspectorTarget(debuggerUrl, targetId, url) {
+  return sendTargetCommand(debuggerUrl, targetId, 'Page.navigate', { url });
+}
+
 // httpRequestJson — httpGetJson generalized to any method (Chrome's
 // /json/new requires PUT). Same typed-error behavior as httpGetJson.
 function httpRequestJson(targetUrl, opts, timeoutMs) {
@@ -516,6 +663,9 @@ module.exports = {
   fetchInspectorInfo,
   fetchInspectorTargets,
   openInspectorTarget,
+  closeInspectorTarget,
+  reloadInspectorTarget,
+  navigateInspectorTarget,
   // WS proxy
   handleProxy,
   makeNoServerWss,

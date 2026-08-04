@@ -392,6 +392,69 @@ async function handleInspector(req, res, parsed) {
     }
   }
 
+  // POST /api/inspector/close  body: { targetId }  -> { ok: true }
+  // Closes a tab of the debug Chrome (Target.closeTarget on the
+  // browser-level WebSocket).
+  if (urlPath === '/api/inspector/close' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    try {
+      const result = await inspector.closeInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
+  // POST /api/inspector/reload  body: { targetId }  -> { ok: true }
+  // Reloads a tab of the debug Chrome (Page.reload on the target's
+  // WebSocket).
+  if (urlPath === '/api/inspector/reload' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    try {
+      const result = await inspector.reloadInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
+  // POST /api/inspector/navigate  body: { targetId, url } -> { frameId, loaderId }
+  // Navigates a tab of the debug Chrome to a new URL (Page.navigate on
+  // the target's WebSocket).
+  if (urlPath === '/api/inspector/navigate' && method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    if (typeof body.url !== 'string' || !body.url.trim()) {
+      return sendJSON(res, 400, { error: 'url is required' });
+    }
+    let parsedUrl;
+    try { parsedUrl = new URL(body.url.trim()); }
+    catch { return sendJSON(res, 400, { error: 'url is not a valid URL' }); }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return sendJSON(res, 400, { error: 'url must be http or https' });
+    }
+    try {
+      const result = await inspector.navigateInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim(), parsedUrl.href);
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
 }
 
