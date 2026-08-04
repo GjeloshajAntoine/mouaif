@@ -413,7 +413,7 @@
   top: auto;
   min-width: 280px;
   max-width: min(380px, 92vw);
-  max-height: min(60dvh, 400px);
+  max-height: min(var(--tool-popup-available-height, 60dvh), 60dvh, 400px);
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
@@ -475,7 +475,7 @@
   .tool-popup__popup {
     min-width: min(280px, calc(100vw - 20px));
     max-width: calc(100vw - 20px);
-    max-height: min(60dvh, 400px);
+    max-height: min(var(--tool-popup-available-height, 60dvh), 60dvh, 400px);
     pointer-events: auto;
     touch-action: pan-y;
   }

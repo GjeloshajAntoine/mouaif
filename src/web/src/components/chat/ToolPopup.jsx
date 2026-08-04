@@ -92,6 +92,34 @@ export function ToolPopup(props) {
     };
   }, [open]);
 
+  // Cap the upward-opening popup to the real space above its trigger. A
+  // percentage of viewport height can still overflow on short mobile screens
+  // because the composer itself occupies part of that viewport.
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    function syncAvailableHeight() {
+      if (!popupRef.current || !triggerRef.current) return;
+      const triggerTop = triggerRef.current.getBoundingClientRect().top;
+      const viewportTop = vv ? vv.offsetTop : 0;
+      const available = Math.max(0, Math.floor(triggerTop - viewportTop - 10));
+      popupRef.current.style.setProperty('--tool-popup-available-height', available + 'px');
+    }
+    syncAvailableHeight();
+    window.addEventListener('resize', syncAvailableHeight);
+    if (vv) {
+      vv.addEventListener('resize', syncAvailableHeight);
+      vv.addEventListener('scroll', syncAvailableHeight);
+    }
+    return () => {
+      window.removeEventListener('resize', syncAvailableHeight);
+      if (vv) {
+        vv.removeEventListener('resize', syncAvailableHeight);
+        vv.removeEventListener('scroll', syncAvailableHeight);
+      }
+    };
+  }, [open]);
+
   // Build the groups for the tool tree. Same logic as cards.js.
   const catalog = (tools && tools.catalog) || [];
   const filter = tools && tools.filter;
