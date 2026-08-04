@@ -95,9 +95,6 @@
 
 html {
   touch-action: manipulation;
-}
-
-html {
   margin: 0;
   padding: 0;
   /* The background lives on html too (not only body): with the

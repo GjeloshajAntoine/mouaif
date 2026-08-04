@@ -45,9 +45,6 @@
 }
 .file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
 .file-toolbar__trigger:active { background: var(--surface); }
-.file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); background: var(--surface-3); }
-.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
-.file-toolbar__trigger:active { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] {
   color: var(--accent);
   background: var(--surface-3);
