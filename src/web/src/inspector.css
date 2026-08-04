@@ -227,11 +227,15 @@
 }
 .inspector__preview-img {
   display: block;
-  width: auto;
+  width: 100%;
   height: auto;
   max-width: none;
-  /* The full-page capture is a single JPEG, so the browser can decode
-     it natively at natural size without client-side tiling. */
+  /* The image must fill the frame width (not render at device pixels —
+     on high-DPR captures the raw shot is 2–3× wider than the frame and
+     the user would see only a blank corner). Height flows from the
+     aspect ratio; the frame scrolls vertically for tall pages and the
+     tap-to-click mapping in PreviewPanel scales coordinates back via
+     naturalWidth/naturalHeight. */
 }
 
 /* ---- Inspector: console extras ------------------------------------ */

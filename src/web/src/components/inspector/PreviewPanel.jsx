@@ -9,6 +9,7 @@ import { h } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 
 export function PreviewPanel(props) {
+  const frameRef = useRef(null);
   const imgRef = useRef(null);
   const noteRef = useRef(null);
   useEffect(() => {
@@ -28,13 +29,20 @@ export function PreviewPanel(props) {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           const blob = new Blob([bytes], { type: 'image/jpeg' });
           const next = URL.createObjectURL(blob);
-          if (imgRef.current) {
+          const img = imgRef.current;
+          const frame = frameRef.current;
+          if (img && frame) {
             // If the user is scrolled inside the preview frame, keep their
             // position when a new screenshot replaces the old one. Without
             // this the frame would snap back to the top on every refresh.
-            const prev = imgRef.current.scrollTop || 0;
-            imgRef.current.src = next;
-            imgRef.current.scrollTop = prev;
+            const prevTop = frame.scrollTop || 0;
+            const prevLeft = frame.scrollLeft || 0;
+            img.onload = () => {
+              frame.scrollTop = prevTop;
+              frame.scrollLeft = prevLeft;
+              img.onload = null;
+            };
+            img.src = next;
           }
           if (objUrl) URL.revokeObjectURL(objUrl);
           objUrl = next;
@@ -68,8 +76,8 @@ export function PreviewPanel(props) {
     props.clickAt(x, y);
   }
   return h('div', { class: 'inspector__preview' },
-    h('div', { ref: imgRef, class: 'inspector__preview-frame', role: 'group', 'aria-label': 'Live page preview, scrollable', onClick: onPreviewClick },
-      h('img', { class: 'inspector__preview-img', alt: 'Live page preview' })
+    h('div', { ref: frameRef, class: 'inspector__preview-frame', role: 'group', 'aria-label': 'Live page preview, scrollable', onClick: onPreviewClick },
+      h('img', { ref: imgRef, class: 'inspector__preview-img', alt: 'Live page preview' })
     ),
     h('div', { ref: noteRef, class: 'status inspector__status', 'aria-live': 'polite' }, 'capturing…')
   );
