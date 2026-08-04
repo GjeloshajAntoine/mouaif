@@ -265,15 +265,13 @@ async function handleTools(req, res, parsed) {
     if (!chatId || !callId) return sendJSON(res, 400, { error: 'chatId and callId are required' });
     if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
 
-    // Gate on the per-project enable flag.
-    let enabled = false;
-    try {
-      const resolved = settings.getResolved(projectDir || null);
-      enabled = !!(resolved && resolved.tools && resolved.tools.shell && resolved.tools.shell.enabled);
-    } catch { /* stays disabled */ }
-    if (!enabled) {
-      return sendJSON(res, 403, { ok: false, error: 'shell tool is disabled for this project', code: 'ETOOL_DISABLED' });
-    }
+    // The authorization gate owns enablement. A legacy `tools.shell.enabled`
+    // check used to short-circuit here, but the authorization refactor
+    // stores enablement as `mode` (off = disabled, ask/allow/allowlist =
+    // enabled) with no `enabled` field — so that stale check always read
+    // `false` and every direct `/shell` call failed with ETOOL_DISABLED
+    // before ever reaching the prompt. authorize() below rejects `off` mode
+    // itself (defense-in-depth), so the pre-check is dropped entirely.
 
     let authorization;
     try {
