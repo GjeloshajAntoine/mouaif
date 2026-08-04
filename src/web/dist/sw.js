@@ -34,7 +34,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'c5e647c0';
+const CACHE_VERSION = '524329ac';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -258,7 +258,87 @@ async function openNotificationTarget(data) {
     appWindow.postMessage({ type: 'NAVIGATE', url: target.href });
     return appWindow.focus();
   }
-  return clients.openWindow(target.href);
+  // No matchable window: persist the click target BEFORE attempting to
+  // open one. iOS PWA: when the app is closed or suspended, tapping the
+  // notification relaunches the installed app at its start_url (/web/),
+  // and clients.openWindow() is not supported there — the click would
+  // land on the home screen. Writing the URL to IndexedDB lets the
+  // freshly launched page consume it and navigate to the chat (see
+  // src/web/src/sw-registration.js — consumePendingNotificationClick).
+  await writeClickTarget(target.href);
+  try {
+    const opened = await clients.openWindow(target.href);
+    // openWindow succeeded (desktop / non-iOS): the click landed in the
+    // new window directly, so the stored target must not redirect a
+    // later manual launch. iOS PWA throws here instead, leaving the
+    // target for the freshly launched page to consume.
+    await clearClickTarget();
+    return opened;
+  } catch {
+    // Fall through; the launched page consumes the IndexedDB click target.
+    return undefined;
+  }
+}
+
+// ---- IndexedDB click-target handoff --------------------------------
+//
+// The service worker and the page share a tiny store of the most recent
+// notification click URL. iOS PWA cannot rely on clients.openWindow()
+// when the app is closed; the SW writes the URL here, the page reads
+// and clears it on load (or on visibilitychange when the app comes
+// back), and navigates if it points at a chat.
+const CLICK_DB = 'mouaif-push-click';
+const CLICK_STORE = 'clicks';
+const CLICK_KEY = 'latest';
+
+function clickDb() {
+  return new Promise((resolve, reject) => {
+    if (!self.indexedDB) return reject(new Error('no indexedDB'));
+    const req = self.indexedDB.open(CLICK_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(CLICK_STORE)) db.createObjectStore(CLICK_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('indexedDB open failed'));
+  });
+}
+
+function writeClickTarget(url) {
+  return clickDb().then((db) => new Promise((resolve) => {
+    const tx = db.transaction(CLICK_STORE, 'readwrite');
+    tx.objectStore(CLICK_STORE).put({ url, at: Date.now() }, CLICK_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  })).catch(() => {});
+}
+
+function clearClickTarget() {
+  return clickDb().then((db) => new Promise((resolve) => {
+    const tx = db.transaction(CLICK_STORE, 'readwrite');
+    tx.objectStore(CLICK_STORE).delete(CLICK_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  })).catch(() => {});
+}
+
+function readAndClearClickTarget() {
+  return clickDb().then((db) => new Promise((resolve) => {
+    const tx = db.transaction(CLICK_STORE, 'readwrite');
+    const store = tx.objectStore(CLICK_STORE);
+    const get = store.get(CLICK_KEY);
+    get.onsuccess = () => {
+      const row = get.result;
+      if (row && row.url && Date.now() - (row.at || 0) < 60 * 1000) {
+        store.delete(CLICK_KEY);
+        resolve(row.url);
+      } else {
+        if (row) store.delete(CLICK_KEY);
+        resolve(null);
+      }
+    };
+    get.onerror = () => resolve(null);
+  })).catch(() => null);
 }
 
 async function submitNotificationDecision(data, action) {

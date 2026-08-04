@@ -197,7 +197,7 @@ export function SettingsNotificationsView() {
         )
       ),
       h('p', { class: 'hint hint--compact' },
-        'When the target chat is already focused, the service worker suppresses its OS notification. Tapping a notification body opens the exact chat; longer questions and multi-select answers open the full chat UI. On iPhone and iPad, install mouaif to the Home Screen before enabling notifications.')
+        'When the target chat is already focused, the service worker suppresses its OS notification. Longer questions and multi-select answers open the full chat. On iPhone and iPad, install mouaif to the Home Screen before enabling notifications.')
     )
   );
 }

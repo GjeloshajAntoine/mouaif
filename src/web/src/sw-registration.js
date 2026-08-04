@@ -107,6 +107,10 @@ export function registerServiceWorker() {
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       }
       window.focus();
+      // This NAVIGATE was delivered to an already-open window: the click
+      // target (if any) was consumed here, so clear it to stop a later
+      // cold launch from redirecting into a stale chat.
+      clearStoredClickTarget();
     }
   });
   trackFetchFailures();
@@ -181,6 +185,95 @@ export function refreshProjectsOnVisible() {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   };
   document.addEventListener('visibilitychange', handler);
+}
+
+// ---- Notification-click handoff (iOS PWA) --------------------------
+//
+// When the app is closed or suspended, iOS Safari relaunches the
+// installed PWA at its start_url on a notification tap and does not
+// support clients.openWindow() from the service worker. The SW writes
+// the click URL to IndexedDB (CLICK_DB in sw-src.js) before attempting
+// to open a window; the freshly launched page reads it here and
+// navigates to the chat. The target is cleared after one read so a
+// later manual launch never jumps into a stale chat.
+
+const CLICK_DB = 'mouaif-push-click';
+const CLICK_STORE = 'clicks';
+const CLICK_KEY = 'latest';
+
+function readPendingNotificationClick() {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve(null);
+    let db;
+    const req = indexedDB.open(CLICK_DB, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(CLICK_STORE)) d.createObjectStore(CLICK_STORE);
+    };
+    req.onsuccess = () => {
+      db = req.result;
+      const tx = db.transaction(CLICK_STORE, 'readwrite');
+      const store = tx.objectStore(CLICK_STORE);
+      const get = store.get(CLICK_KEY);
+      get.onsuccess = () => {
+        const row = get.result;
+        if (row && row.url && Date.now() - (row.at || 0) < 60 * 1000) {
+          store.delete(CLICK_KEY);
+          resolve(row.url);
+        } else {
+          if (row) store.delete(CLICK_KEY);
+          resolve(null);
+        }
+      };
+      get.onerror = () => resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+
+// Clear the stored click target without navigating. Called when an
+// already-open window consumed a NAVIGATE message, so a later cold
+// launch cannot redirect into a stale chat.
+function clearStoredClickTarget() {
+  if (typeof indexedDB === 'undefined') return;
+  const req = indexedDB.open(CLICK_DB, 1);
+  req.onsuccess = () => {
+    const db = req.result;
+    try {
+      const tx = db.transaction(CLICK_STORE, 'readwrite');
+      tx.objectStore(CLICK_STORE).delete(CLICK_KEY);
+    } catch { /* best-effort */ }
+  };
+  req.onerror = () => { /* best-effort */ };
+}
+
+function applyPendingNotificationClick(url) {
+  if (!url) return;
+  let parsed;
+  try { parsed = new URL(url, window.location.origin); } catch { return; }
+  if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith('/web/')) return;
+  const hash = parsed.hash || '#/projects';
+  if (window.location.hash === hash) {
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  } else {
+    window.location.hash = hash;
+  }
+  window.focus();
+}
+
+// Consume a click target left by the service worker: on startup (a cold
+// launch from a closed app) and whenever the app becomes visible again
+// (an OS relaunch that did not produce a window the SW could reach).
+// Only fires for a target written within the last minute, so a normal
+// manual launch is never redirected.
+export function consumePendingNotificationClick() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const check = () => {
+    if (document.visibilityState !== 'visible') return;
+    readPendingNotificationClick().then((url) => applyPendingNotificationClick(url));
+  };
+  check();
+  document.addEventListener('visibilitychange', check);
 }
 
 // ---- Tests ------------------------------------------------------------

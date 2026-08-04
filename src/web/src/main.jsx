@@ -13,7 +13,7 @@
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { AccessGate } from './components/AccessAuth.jsx';
-import { registerServiceWorker, refreshProjectsOnVisible } from './sw-registration.js';
+import { registerServiceWorker, refreshProjectsOnVisible, consumePendingNotificationClick } from './sw-registration.js';
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
@@ -30,6 +30,10 @@ registerServiceWorker();
 // Refresh the project list when a push-notification click brings the
 // app back to the foreground (see sw-registration.js).
 refreshProjectsOnVisible();
+// Navigate to a chat when this page was launched (cold start / OS
+// relaunch) by a notification click that the SW stored in IndexedDB
+// (see sw-registration.js — consumePendingNotificationClick).
+consumePendingNotificationClick();
 
 // Sync push notification state when the service worker is ready.
 if ('serviceWorker' in navigator) {

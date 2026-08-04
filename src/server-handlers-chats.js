@@ -987,7 +987,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         };
         sendChatPush('tool_authorization', {
           title: 'Authorization needed',
-          body: (data && data.tool ? data.tool : 'A tool') + ' is waiting for approval — tap to review.',
+          body: (data && data.tool ? data.tool : 'A tool') + ' is waiting for approval.',
           tag: 'chat-' + chatId + '-attention',
           data: notificationData,
           actions: attentionActions('tool_authorization', data),
@@ -1045,7 +1045,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           });
         }
       } else if (name === 'done') {
-        sendChatPush('completion', { body: 'Response complete — tap to open chat', tag: 'chat-' + chatId + '-status' });
+        sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1113,7 +1113,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed') + ' — tap to open chat', tag: 'chat-' + chatId + '-status' });
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: 'chat-' + chatId + '-status' });
     res.end();
     return;
   }
@@ -1140,7 +1140,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error') + ' — tap to open chat', tag: 'chat-' + chatId + '-status' });
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: 'chat-' + chatId + '-status' });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);

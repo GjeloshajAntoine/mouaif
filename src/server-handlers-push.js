@@ -78,7 +78,7 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
     if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
     push.sendPushToSession(sid, {
       title: 'mouaif notifications',
-      body: 'Notifications are ready on this browser. Tapping a chat notification opens that chat.',
+      body: 'Notifications are ready on this browser.',
       tag: 'mouaif-notification-test',
       data: { kind: 'test', url: '/web/#/settings/notifications' }
     });
