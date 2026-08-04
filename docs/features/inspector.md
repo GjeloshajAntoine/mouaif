@@ -84,7 +84,7 @@ The Info panel shows live page vitals from `Performance.getMetrics`: open docume
 | PUT    | `/api/inspector/config` | `{ url }` | `{ url }` (rejected with 400 if `url` is not http(s)) |
 | GET    | `/api/inspector/version` | — | Chrome `/json/version` payload |
 | GET    | `/api/inspector/targets` | — | `{ targets: ChromeListItem[] }` |
-| POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab (`/json/new`) and returns the fresh target |
+| POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab and returns the fresh target. Primary path is the CDP `Target.createTarget` command over the browser-level WebSocket (from `/json/version`); falls back to the classic `PUT /json/new` for Chrome builds that still expose it (modern Chrome 137+ removed the HTTP endpoint and returns 404) |
 
 Errors from the upstream Chrome are mapped to typed status codes:
 

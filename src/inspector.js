@@ -139,21 +139,118 @@ async function fetchInspectorTargets(debuggerUrl) {
   return list;
 }
 
-// PUT /json/new?<url> opens a fresh tab in the debug Chrome and returns
-// its target record ({ id, url, webSocketDebuggerUrl, ... }). Used by
-// the "inspect this URL" flow: the user types a page URL, Chrome opens
-// it, and the inspector attaches to the brand-new tab in one step —
-// no manual target picking. (Newer Chrome versions only accept PUT
-// here; GET on /json/new was dropped for CSRF reasons.)
+// openInspectorTarget — opens `pageUrl` in a fresh tab of the debug
+// Chrome and returns its target record ({ id, url, webSocketDebuggerUrl,
+// ... }). Used by the "inspect this URL" flow and by the inspector
+// header's "open in a new tab" action.
+//
+// Modern Chrome (137+) removed the /json/new HTTP endpoint (it 404s),
+// so the primary path is the CDP `Target.createTarget` command sent over
+// the browser-level WebSocket from /json/version. Older Chrome still
+// accepts PUT /json/new?<url>, kept as a fallback. GET on /json/new was
+// dropped for CSRF reasons, so only PUT is ever attempted.
 async function openInspectorTarget(debuggerUrl, pageUrl) {
   const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
-  const target = await httpRequestJson(base + '/json/new?' + encodeURIComponent(pageUrl), { method: 'PUT' }, 5000);
-  if (!target || typeof target !== 'object' || !target.id) {
-    const err = new Error('Unexpected /json/new response: ' + typeof target);
-    err.code = 'EPARSE';
+  try {
+    return await openTargetViaCdp(base, pageUrl);
+  } catch (cdpErr) {
+    // Fall back to the classic HTTP endpoint for older Chrome builds —
+    // but only when the CDP path itself isn't the thing that's broken
+    // (e.g. Chrome reachable but /json/version lacks a browser WS, or a
+    // real network failure). Masking a genuine CDP error with a /json/new
+    // 404 would make the modern-path failure harder to diagnose.
+    if (cdpErr && cdpErr.__cdpFallback) {
+      const target = await httpRequestJson(base + '/json/new?' + encodeURIComponent(pageUrl), { method: 'PUT' }, 5000);
+      if (!target || typeof target !== 'object' || !target.id) {
+        const err = new Error('Unexpected /json/new response: ' + typeof target);
+        err.code = 'EPARSE';
+        throw err;
+      }
+      return target;
+    }
+    throw cdpErr;
+  }
+}
+
+// openTargetViaCdp — sends Target.createTarget over the browser-level
+// CDP WebSocket. Requires /json/version to expose webSocketDebuggerUrl;
+// returns the fresh target record (Chrome /json/new would return the
+// same shape). Rejects with a typed error on any failure.
+async function openTargetViaCdp(base, pageUrl) {
+  const info = await httpGetJson(base + '/json/version', 5000);
+  const wsUrl = info && info.webSocketDebuggerUrl;
+  if (!wsUrl) {
+    // Old Chrome may expose /json/version without a browser-level WS (or
+    // a remote-debugging mode where only per-page WS is offered). That's
+    // exactly when the PUT /json/new fallback is the right call.
+    const err = new Error('Chrome /json/version has no webSocketDebuggerUrl; cannot open a tab via CDP');
+    err.code = 'EUPSTREAM';
+    err.__cdpFallback = true;
     throw err;
   }
-  return target;
+  const { WebSocket } = require('ws');
+  return new Promise((resolve, reject) => {
+    let ws;
+    try { ws = new WebSocket(wsUrl, { perMessageDeflate: false }); }
+    catch (e) {
+      const err = new Error('Could not open browser WebSocket at ' + wsUrl + ': ' + e.message);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err); return;
+    }
+    const timer = setTimeout(() => {
+      try { ws.terminate(); } catch { /* ignore */ }
+      const err = new Error('Timeout waiting for browser WebSocket at ' + wsUrl);
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err);
+    }, 5000);
+    ws.on('open', () => {
+      const id = 1;
+      ws.send(JSON.stringify({
+        id,
+        method: 'Target.createTarget',
+        params: { url: pageUrl, newWindow: false }
+      }));
+    });
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data.toString()); }
+      catch { return; }
+      if (msg.id !== 1) return;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      if (msg.error) {
+        const err = new Error('Target.createTarget failed: ' + (msg.error.message || 'unknown CDP error'));
+        err.code = 'EUPSTREAM';
+        reject(err);
+        return;
+      }
+      const targetId = msg.result && msg.result.targetId;
+      if (!targetId) {
+        const err = new Error('Target.createTarget returned no targetId');
+        err.code = 'EPARSE';
+        reject(err);
+        return;
+      }
+      // Return the same shape /json/new would have returned, so callers
+      // (REST handler, UI) treat both paths identically.
+      resolve({
+        id: targetId,
+        type: 'page',
+        url: pageUrl,
+        title: '',
+        webSocketDebuggerUrl: base + '/devtools/page/' + encodeURIComponent(targetId)
+      });
+    });
+    ws.on('error', (e) => {
+      clearTimeout(timer);
+      const err = new Error('Browser WebSocket error: ' + (e && e.message || e));
+      err.code = 'ECHROME_UNREACHABLE';
+      reject(err);
+    });
+    ws.on('close', () => {
+      clearTimeout(timer);
+    });
+  });
 }
 
 // httpRequestJson — httpGetJson generalized to any method (Chrome's
