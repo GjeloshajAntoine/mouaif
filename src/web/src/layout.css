@@ -395,16 +395,21 @@
 .app__tablist {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* The list item is transparent to layout so each tab link fills its
-   grid cell (touch target) exactly as before. */
-.app__tabitem { display: contents; }
+/* Each list item is a grid cell; the tab link fills it so the touch
+   target stays exactly as before. Avoid `display: contents` — it is
+   broken on older iOS Safari and can hide the whole tab bar. */
+.app__tabitem {
+  display: flex;
+  min-width: 0;
+}
+.app__tabitem .app__tab { width: 100%; }
 
 .app__tab {
   font: inherit;
