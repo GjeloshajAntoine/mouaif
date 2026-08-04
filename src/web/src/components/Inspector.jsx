@@ -14,6 +14,7 @@ import { createEventHandlers } from './inspector/events.js';
 
 export function InspectorView() {
   const urlInput = useRef(null);
+  const pageUrlInput = useRef(null);
   const saveBtn = useRef(null);
   const statusEl = useRef(null);
   const targetsList = useRef(null);
@@ -145,6 +146,42 @@ export function InspectorView() {
     rerender();
   }
 
+  // attachByPageUrl — direct attach: fetch the target list, find the
+  // tab whose URL matches what the user typed, and connect without
+  // picking from the list. Exact match wins; otherwise a unique
+  // prefix/substring match is accepted; zero or ambiguous matches are
+  // reported on the status line.
+  async function attachByPageUrl() {
+    const input = pageUrlInput.current;
+    if (!input) return;
+    const wanted = (input.value || '').trim();
+    if (!wanted) { if (statusEl.current) statusEl.current.textContent = 'enter a page url first'; return; }
+    if (statusEl.current) statusEl.current.textContent = 'looking up ' + wanted + '…';
+    let r;
+    try { r = await fetchJson('/api/inspector/targets'); }
+    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    if (r.status !== 200) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      if (statusEl.current) statusEl.current.textContent = msg;
+      return;
+    }
+    const list = (r.body.targets || []).filter((t) => t.url);
+    let match = list.find((t) => t.url === wanted);
+    if (!match) {
+      const fuzzy = list.filter((t) => t.url.startsWith(wanted) || t.url.includes(wanted));
+      if (fuzzy.length === 1) match = fuzzy[0];
+      else if (fuzzy.length > 1) {
+        if (statusEl.current) statusEl.current.textContent = fuzzy.length + ' tabs match — pick one from the list below';
+        return;
+      }
+    }
+    if (!match) {
+      if (statusEl.current) statusEl.current.textContent = 'no tab found for that url — open it in Chrome or pick a target below';
+      return;
+    }
+    connect(match);
+  }
+
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
 
   if (phase.current === 'setup') {
@@ -207,8 +244,13 @@ export function InspectorView() {
         h('h2', { class: 'view-title' }, 'Pick a target')
       ),
       h('section', null,
-        h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
+        h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it, or paste a page URL to attach directly. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
+        h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'inspectorPageUrl' }, 'Page URL'),
+          h('input', { ref: pageUrlInput, class: 'input', id: 'inspectorPageUrl', type: 'url', placeholder: 'http://localhost:3000', onKeydown: (e) => { if (e.key === 'Enter') attachByPageUrl(); } })
+        ),
         h('div', { class: 'row row--actions' },
+          h('button', { class: 'btn btn--primary', type: 'button', onClick: attachByPageUrl }, 'Attach to URL'),
           h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
         ),
         h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),

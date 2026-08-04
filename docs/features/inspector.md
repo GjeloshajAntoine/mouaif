@@ -44,7 +44,7 @@ The view is a 3-state machine. State is held in refs (not Preact state) so a CDP
 
 The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
 
-The URL input and its action row (`Save & discover` / `Discover` / `Refresh targets`) are shared between the **Setup** and **Targets** phases (`urlControls`). That way, when discovery fails — for example Chrome is not running, or the URL has a typo — the user lands on the Targets screen with the editable URL input and a clear "Chrome is not reachable at this URL…" empty state right in front of them, instead of an empty list with no way to type a new URL. The error state is tracked with a `targetsFailed` flag so the empty list can distinguish "Chrome unreachable" from "Chrome reachable but no tabs open".
+The **Targets** screen also has a **Page URL** field for direct attach: paste a page URL (e.g. `http://localhost:3000`), tap **Attach to URL** (or press Enter), and the inspector fetches the target list, finds the matching tab, and connects straight to it — skipping the manual pick. Exact URL match wins; otherwise a unique prefix/substring match is accepted. Zero matches ("no tab found…") and ambiguous matches ("N tabs match…") are reported on the status line, and the regular target list below remains available as the fallback.
 
 ## Preview panel
 
