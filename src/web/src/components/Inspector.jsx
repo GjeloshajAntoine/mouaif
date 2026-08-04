@@ -1,9 +1,9 @@
 // mouaif web — InspectorView (main component)
 //
-// Three-phase UI:
-//   1. Setup — configure the Chrome debugger URL
-//   2. Targets — pick a tab to attach to
-//   3. Inspect — live console, network, preview, and overview tabs
+// Two-state UI:
+//   1. Setup — one screen: configure the Chrome debugger URL at the top,
+//      discover targets below it (single URL field, always visible)
+//   2. Inspect — live console, network, preview, and overview tabs
 //
 // Sub-modules live in the inspector/ directory.
 import { h, Fragment } from 'preact';
@@ -18,10 +18,11 @@ export function InspectorView() {
   const statusEl = useRef(null);
   const targetsList = useRef(null);
 
-  const phase = useRef('setup');
   const debuggerUrl = useRef('');
   const defaultUrl = useRef('');
   const targets = useRef([]);
+  const targetsFailed = useRef(false);
+  const discovered = useRef(false);
   const currentTarget = useRef(null);
   const panel = useRef('console');
   const detailItem = useRef(null);
@@ -68,7 +69,6 @@ export function InspectorView() {
     const handlers = eventHandlers.current;
     currentTarget.current = target;
     panel.current = 'console';
-    phase.current = 'inspect';
     consoleEntries.current = [];
     networkEntries.current = [];
     if (statusEl.current) statusEl.current.textContent = 'connecting…';
@@ -137,17 +137,65 @@ export function InspectorView() {
     if (r.status !== 200) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
       if (statusEl.current) statusEl.current.textContent = msg;
+      targets.current = [];
+      targetsFailed.current = true;
+      discovered.current = true;
+      rerender();
       return;
     }
     targets.current = r.body.targets || [];
-    phase.current = 'targets';
+    targetsFailed.current = false;
+    discovered.current = true;
     if (statusEl.current) statusEl.current.textContent = targets.current.length + ' targets';
     rerender();
   }
 
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
 
-  if (phase.current === 'setup') {
+  // Single Inspector screen: the URL input always sits at the top, and
+  // the discovered targets (if any) render below it. There is exactly
+  // one URL field — the old setup → targets transition re-rendered the
+  // same-looking field on a second screen, which read as "twice the
+  // same field". Merging them keeps a single, unambiguous input.
+  function renderTargets() {
+    if (!targetsList.current) return;
+    targetsList.current.innerHTML = '';
+    if (!targets.current.length) {
+      const li = document.createElement('li');
+      li.className = 'inspector__empty';
+      li.textContent = targetsFailed.current
+        ? 'Chrome is not reachable at this URL. Check that Chrome is running with --remote-debugging-port=9222, fix the URL above, then tap "Save & discover".'
+        : 'No targets found. Open a tab in Chrome and tap "Refresh targets".';
+      targetsList.current.appendChild(li);
+      return;
+    }
+    for (const t of targets.current) {
+      const li = document.createElement('li');
+      li.className = 'inspector__target';
+      const top = document.createElement('div');
+      top.className = 'inspector__target-top';
+      const title = document.createElement('div');
+      title.className = 'inspector__target-title';
+      title.textContent = t.title || t.url || t.id;
+      const type = document.createElement('span');
+      type.className = 'inspector__target-type';
+      type.textContent = t.type || 'page';
+      top.appendChild(title); top.appendChild(type);
+      const url = document.createElement('div');
+      url.className = 'inspector__target-url';
+      url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
+      const btn = document.createElement('button');
+      btn.className = 'inspector__target-btn btn btn--primary';
+      btn.type = 'button';
+      btn.textContent = 'Connect';
+      btn.addEventListener('click', () => connect(t));
+      li.appendChild(top); li.appendChild(url); li.appendChild(btn);
+      targetsList.current.appendChild(li);
+    }
+  }
+  setTimeout(renderTargets, 0);
+
+  if (!currentTarget.current) {
     return h(Fragment, null,
       h('section', null,
         h('p', { class: 'hint' }, 'Start Chrome with ', h('code', null, '--remote-debugging-port=9222'), ' and paste its debugger URL below.'),
@@ -158,61 +206,16 @@ export function InspectorView() {
         h('div', { class: 'row row--actions' },
           h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
           h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
-        )
-      ),
-      h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.')
-    );
-  }
-
-  if (phase.current === 'targets') {
-    function renderTargets() {
-      if (!targetsList.current) return;
-      targetsList.current.innerHTML = '';
-      if (!targets.current.length) {
-        const li = document.createElement('li');
-        li.className = 'inspector__empty';
-        li.textContent = 'no targets. Open a tab in Chrome and tap "Refresh targets".';
-        targetsList.current.appendChild(li);
-        return;
-      }
-      for (const t of targets.current) {
-        const li = document.createElement('li');
-        li.className = 'inspector__target';
-        const top = document.createElement('div');
-        top.className = 'inspector__target-top';
-        const title = document.createElement('div');
-        title.className = 'inspector__target-title';
-        title.textContent = t.title || t.url || t.id;
-        const type = document.createElement('span');
-        type.className = 'inspector__target-type';
-        type.textContent = t.type || 'page';
-        top.appendChild(title); top.appendChild(type);
-        const url = document.createElement('div');
-        url.className = 'inspector__target-url';
-        url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
-        const btn = document.createElement('button');
-        btn.className = 'inspector__target-btn btn btn--primary';
-        btn.type = 'button';
-        btn.textContent = 'Connect';
-        btn.addEventListener('click', () => connect(t));
-        li.appendChild(top); li.appendChild(url); li.appendChild(btn);
-        targetsList.current.appendChild(li);
-      }
-    }
-    setTimeout(renderTargets, 0);
-    return h(Fragment, null,
-      h('div', { class: 'view-head' },
-        h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'setup'; rerender(); } }, '←'),
-        h('h2', { class: 'view-title' }, 'Pick a target')
-      ),
-      h('section', null,
-        h('p', { class: 'hint' }, 'Tap a target to attach the inspector to it. Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
-        h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
+          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, discovered.current ? 'Refresh targets' : 'Discover')
         ),
-        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
-        h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
+        h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.'),
+        discovered.current
+          ? h(Fragment, null,
+              h('h3', { class: 'inspector__targets-heading' }, 'Pick a target'),
+              h('p', { class: 'hint' }, 'Connection is over ', h('code', null, 'ws://'), ' via mouaif (port ' + String(window.location.port || 5732) + '); data flows both ways in real time.'),
+              h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
+            )
+          : null
       )
     );
   }
@@ -242,7 +245,7 @@ export function InspectorView() {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'targets'; rerender(); } }, '←'),
+      h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector', onClick: (e) => { e.preventDefault(); disconnect(); rerender(); setTimeout(() => { if (urlInput.current) urlInput.current.value = debuggerUrl.current; }, 0); } }, '←'),
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
     ),
     h('section', null,
