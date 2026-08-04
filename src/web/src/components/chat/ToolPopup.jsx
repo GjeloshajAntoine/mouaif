@@ -70,6 +70,7 @@ export function ToolPopup(props) {
 
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
+  const dialogRef = useRef(null);
   const triggerRef = useRef(null);
 
   // Close on outside click
@@ -99,11 +100,13 @@ export function ToolPopup(props) {
     if (!open) return;
     const vv = window.visualViewport;
     function syncAvailableHeight() {
-      if (!popupRef.current || !triggerRef.current) return;
+      if (!dialogRef.current || !triggerRef.current) return;
+      // getBoundingClientRect() already uses the visible viewport coordinate
+      // space on mobile Safari. Subtracting visualViewport.offsetTop again
+      // under-counts (or destabilizes) the available space while scrolling.
       const triggerTop = triggerRef.current.getBoundingClientRect().top;
-      const viewportTop = vv ? vv.offsetTop : 0;
-      const available = Math.max(0, Math.floor(triggerTop - viewportTop - 10));
-      popupRef.current.style.setProperty('--tool-popup-available-height', available + 'px');
+      const available = Math.max(80, Math.floor(triggerTop - 10));
+      dialogRef.current.style.maxHeight = available + 'px';
     }
     syncAvailableHeight();
     window.addEventListener('resize', syncAvailableHeight);
@@ -271,6 +274,7 @@ export function ToolPopup(props) {
       'aria-label': 'Tool settings'
     },
       h('div', {
+        ref: dialogRef,
         class: 'tool-popup__popup',
         role: 'dialog',
         'aria-label': 'Tool settings'
