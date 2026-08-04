@@ -82,6 +82,16 @@ export function InspectorView() {
       c.cdpSend('Runtime.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Runtime.enable failed: ' + err.message; });
       c.cdpSend('Network.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Network.enable failed: ' + err.message; });
       c.cdpSend('Page.enable').catch(() => { /* preview unavailable */ });
+      // Match the captured page's own color-scheme preference instead of
+      // the devtools UI's. The preview is a raw screenshot from Chrome's
+      // compositor: if the inspected page asked for light mode but this
+      // app (dark) is the one driving the capture, the screenshot comes
+      // out as the page's dark fallback — a dark JPEG that no CSS can
+      // fix. Emulation.setEmulatedMedia pins the media type and
+      // prefers-color-scheme used for rendering + screenshots to the
+      // page's own request, so the preview shows the page as it intends
+      // to look. No-op on targets that don't support the domain.
+      c.cdpSend('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] }).catch(() => { /* emulation unavailable */ });
       c.cdpSend('Performance.enable').catch(() => { /* metrics unavailable */ });
       c.cdpOn('Runtime.consoleAPICalled', handlers.onConsoleEvent);
       c.cdpOn('Runtime.exceptionThrown', handlers.onExceptionEvent);
