@@ -80,7 +80,7 @@
   max-width: 140px;
   max-height: 140px;
   border-radius: var(--r-sm);
-  object-fit: cover;
+  object-fit: contain;
   border: 1px solid rgba(255,255,255,0.35);
 }
 .chat-msg__body[data-error="1"] {
