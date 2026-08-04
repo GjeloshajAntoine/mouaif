@@ -404,13 +404,13 @@
 
 .tool-popup__popup {
   position: absolute;
-  /* Open upward from the trigger (the trigger sits in the head row,
-     just above the status bar) so the dialog never overlaps or clips
-     into the status line below the composer. */
-  bottom: calc(100% + 6px);
+  /* Open downward from the trigger (the trigger sits in the chat head
+     row near the top of the viewport), matching the model picker and
+     chat switcher popovers in the same head row. */
+  top: calc(100% + 4px);
   right: 0;
   left: auto;
-  top: auto;
+  bottom: auto;
   min-width: 280px;
   max-width: min(380px, 92vw);
   max-height: min(var(--tool-popup-available-height, 60dvh), 60dvh, 400px);

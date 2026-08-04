@@ -93,9 +93,11 @@ export function ToolPopup(props) {
     };
   }, [open]);
 
-  // Cap the upward-opening popup to the real space above its trigger. A
-  // percentage of viewport height can still overflow on short mobile screens
-  // because the composer itself occupies part of that viewport.
+  // Cap the downward-opening popup to the real space below its trigger. The
+  // trigger sits in the chat head row near the top of the viewport, so the
+  // dialog opens downward; a percentage of viewport height could still
+  // overflow past the bottom on short screens because the composer and tab
+  // bar occupy part of that viewport.
   useEffect(() => {
     if (!open) return;
     const vv = window.visualViewport;
@@ -104,8 +106,9 @@ export function ToolPopup(props) {
       // getBoundingClientRect() already uses the visible viewport coordinate
       // space on mobile Safari. Subtracting visualViewport.offsetTop again
       // under-counts (or destabilizes) the available space while scrolling.
-      const triggerTop = triggerRef.current.getBoundingClientRect().top;
-      const available = Math.max(80, Math.floor(triggerTop - 10));
+      const triggerBottom = triggerRef.current.getBoundingClientRect().bottom;
+      const vh = vv ? vv.height : window.innerHeight;
+      const available = Math.max(80, Math.floor(vh - triggerBottom - 10));
       dialogRef.current.style.maxHeight = available + 'px';
     }
     syncAvailableHeight();
