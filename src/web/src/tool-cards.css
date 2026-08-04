@@ -115,11 +115,12 @@
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
 .tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress):not(.tool-card--subagent)) .tool-card__body { display: none; }
-/* Subagent and shell call cards keep a live body while running so the
-   user can expand the card and watch nested activity / command output
-   stream in before the result arrives. */
-.tool-card--subagent .tool-card__body,
-.tool-card--call[data-tool-name="shell"] .tool-card__body { display: block; }
+/* Subagent cards keep their body visible even when collapsed: the
+   card auto-expands while the subagent runs, and on completion it
+   collapses but the final nested chat stays visible so the user can
+   read the result without an extra tap. Shell call cards only show
+   their live output while expanded. */
+.tool-card--subagent .tool-card__body { display: block; }
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
   margin: 0;

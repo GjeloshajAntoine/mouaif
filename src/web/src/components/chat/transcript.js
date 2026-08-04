@@ -429,7 +429,12 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   head.appendChild(pill);
   head.addEventListener('click', () => {
     const card = head.closest('.tool-card');
-    if (card) card.classList.toggle('is-expanded');
+    if (!card) return;
+    card.classList.toggle('is-expanded');
+    // Remember that the user drove the state: a collapsed shell card
+    // the user closed stays collapsed when the successful result
+    // lands (see appendToolResultCard).
+    card._userCollapsed = !card.classList.contains('is-expanded');
   });
   return head;
 }
@@ -454,6 +459,9 @@ export function appendToolCallCard(toolCall, refs) {
   card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running'));
   if (isSubagentTool(toolCall.name)) {
     card.classList.add('tool-card--subagent');
+    // Auto-expand so the streamed nested activity is visible live
+    // instead of updating inside a closed card.
+    card.classList.add('is-expanded');
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     const live = document.createElement('div');
@@ -464,9 +472,6 @@ export function appendToolCallCard(toolCall, refs) {
     live.appendChild(hint);
     body.appendChild(live);
     card.appendChild(body);
-    // The subagent body stays visible while running (the CSS hides
-    // bodies only for generic call cards) so tapping the header
-    // reveals live progress immediately.
   } else if (normalizeToolName(toolCall.name) === 'shell') {
     const body = document.createElement('div');
     body.className = 'tool-card__body';
@@ -481,6 +486,9 @@ export function appendToolCallCard(toolCall, refs) {
     live.appendChild(pre);
     body.appendChild(live);
     card.appendChild(body);
+    // Auto-expand so stdout/stderr chunks show as they stream in
+    // instead of filling a hidden body.
+    card.classList.add('is-expanded');
   }
   refs.transcript.current.appendChild(card);
   afterTranscriptAppend(refs, true);
@@ -711,17 +719,31 @@ export function appendToolResultCard(toolResult, refs) {
       lazyBody();
     } else {
       body.dataset.lazyResult = '1';
-      card.addEventListener('click', function onExpand() {
-        if (card.classList.contains('is-expanded')) {
-          lazyBody();
-          card.removeEventListener('click', onExpand);
-        }
-      });
+      // Build on the first head tap, in the same gesture that toggles
+      // the card open. A delegated card-click listener can't be used
+      // here: it fires after the head's own toggle, so it would also
+      // build on collapse (when the class is already gone) and is
+      // dropped entirely by the rebuildToolCardHead above (which
+      // replaces the head on every result, taking any listener the
+      // user armed while expanding the running call card with it).
+      const head = card.querySelector('.tool-card__head');
+      if (head) {
+        head.addEventListener('click', function onExpand() {
+          if (!card.classList.contains('is-expanded')) lazyBody();
+          head.removeEventListener('click', onExpand);
+        });
+      }
     }
   }
   // Expand errors automatically so the user sees what went wrong
   // without an extra tap. Successful results stay collapsed.
   if (!toolResult.ok) card.classList.add('is-expanded');
+  // Collapse on success: a card the user never touched (the running
+  // card auto-expanded to stream live output) folds away on success,
+  // keeping the transcript compact. For subagents the body stays
+  // visible even collapsed (see the .tool-card--subagent CSS rule),
+  // so the final nested chat is still readable; shell folds fully.
+  else if (!card._userCollapsed) card.classList.remove('is-expanded');
   afterTranscriptAppend(refs, true);
 }
 
@@ -1189,6 +1211,10 @@ function restoreExpandedState(exp, root) {
   for (const card of root.querySelectorAll('.tool-card')) {
     if (card.dataset && card.dataset.toolId && exp.toolIds.has(card.dataset.toolId)) {
       card.classList.add('is-expanded');
+      // Result bodies render lazily on first expand (see
+      // appendToolResultCard); restoring the class alone would show
+      // an empty body for a card the user had open before a rebuild.
+      if (typeof card._lazyBody === 'function') card._lazyBody();
     }
   }
   for (const card of root.querySelectorAll('.tool-card--progress')) {
@@ -1200,6 +1226,42 @@ function restoreExpandedState(exp, root) {
     const cls = d.className || '';
     if (exp.details.includes(cls)) d.open = true;
   });
+}
+
+// syncTranscriptAppend(state, refs, prevCount)
+//
+// Incremental transcript update: the server store is append-only
+// (rows are never edited in place), so when the authoritative rows
+// grow from prevCount to state.messages.length the DOM can be
+// brought up to date by rendering just the new tail — no full
+// rebuild, no re-parsing markdown for messages the user already
+// has on screen. Used by the 1 s reconcile poll while following a
+// run started in another tab. Callers must verify the prefix is
+// unchanged before calling (a changed prefix requires renderTranscript).
+export function syncTranscriptAppend(state, refs, prevCount) {
+  const transcriptEl = refs.transcript.current;
+  if (!transcriptEl) return;
+  const total = state.messages.length;
+  if (total <= prevCount) return;
+  // Any in-flight chunked render is superseded: its rows are part of
+  // the prefix and the tail is rendered here instead.
+  resetTranscriptRender(refs);
+  // If the transcript is still in its empty state (setup card + empty
+  // state only), fall back to a full render so the setup card and
+  // system prompt mount in the right order.
+  if (prevCount === 0) {
+    renderTranscript(state, refs);
+    return;
+  }
+  for (let i = prevCount; i < total; i++) {
+    const m = state.messages[i];
+    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
+    renderMessageRow(state, refs, m);
+  }
+  // One scroll decision for the whole batch (countNew drives the
+  // jump-to-bottom counter while unpinned).
+  afterTranscriptAppend(refs, true);
+  updateUsageSummary(state, null, refs);
 }
 
 export function renderTranscript(state, refs) {

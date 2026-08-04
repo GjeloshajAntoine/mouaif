@@ -23,11 +23,27 @@ The legacy JSON-file backend keeps its original JS loop (no SQL available there)
 
 ### Transcript revision marker (`src/messages.js`, `src/chatdb.js`, `GET /api/chats/:id/revision`)
 
-The client's 1-second "another tab is running this chat" poll and the post-stream reconciliation used to re-fetch the **full** message list every tick just to `JSON.stringify` it and compare signatures. New endpoint returns `{ count, ts }` (one indexed `COUNT(*) + MAX(ts)`), which changes exactly when the append-only transcript changes. The client polls the marker; it only pulls the full `/messages` list (and re-renders) when the marker actually moved.
+The client's "another tab is running this chat" poll and the post-stream reconciliation used to re-fetch the **full** message list every tick just to `JSON.stringify` it and compare signatures. The endpoint returns `{ count, ts, running }` (one indexed `COUNT(*) + MAX(ts)`, plus the in-memory running flag) which changes exactly when the append-only transcript changes. The client polls the marker; it only pulls the full `/messages` list when the marker actually moved. The `running` flag rides the same response so the poll is a single request per tick (previously chat GET + revision GET). The client no longer keeps a full-transcript `JSON.stringify` signature at all — the recovery poll after a dropped SSE connection is revision-gated the same way.
+
+### Incremental transcript sync (`src/web/src/components/chat/stream.js` → `syncFromRevision`, `transcript.js` → `syncTranscriptAppend`)
+
+When the marker moves, the synced rows used to replace `state.messages` and trigger a full `renderTranscript` rebuild — re-parsing every message's markdown and scroll-jumping the view, once a second while following a run from another tab. The message store is append-only (edits go through `replaceMessages`/`clearMessages`, which change the row count), so the client now compares the prefix by identity: unchanged prefix → render just the new tail rows; prefix changed (defensive; unreachable today) → full rebuild.
+
+### Visibility-aware poll cadence (`src/web/src/components/chat/useChatState.js`)
+
+The reconcile poll ticks every 1 s while the tab is visible and drops to 5 s while `document.visibilityState === 'hidden'` (a backgrounded tab needs only eventual consistency; the per-second tick is battery/network cost). Becoming visible ticks immediately. A run being followed from another tab (`watchingRun`) keeps the 1 s cadence even when hidden so the "done" flip isn't delayed.
+
+### No redundant model PATCH per send (`src/web/src/components/chat/stream.js`)
+
+`send()` used to PATCH `{providerId, modelId}` on every turn even though the model picker already persists the pair on selection. The hook tracks the last pair the server confirmed (`state._persistedModelPair`, seeded from the load response and updated after every successful PATCH); `send()` skips the PATCH when it matches.
 
 ### Lazy collapsed tool-result bodies (`src/web/src/components/chat/transcript.js`)
 
 `appendToolResultCard` previously built the full structured preview (result parse + per-tool renderer + diff/terminal rows) for every result even though the card is collapsed by default. The result payload is now stashed on the card and the body is built on first expand (errors still build immediately because they auto-expand). Measured on a 968-row tool-heavy transcript: DOM build 295 → 189 ms, scaling with result size.
+
+The build-on-expand hook is a listener on the card **head** (not the card): the head is replaced on every result (`rebuildToolCardHead`), so a listener armed while expanding the running call card must be re-armed on the fresh head, and it checks the pre-toggle expanded state so collapsing never triggers the build. When a rebuild restores the user's expanded cards (`restoreExpandedState`), cards with a pending lazy body are built immediately — restoring the class alone would show an empty body.
+
+Shell and subagent call cards auto-expand while running (live output/nested activity is only visible when expanded since the CSS exception for always-visible call bodies was removed) and fold back on a successful result unless the user manually collapsed them; errors auto-expand as before. Subagent cards keep their body visible even when collapsed (`.tool-card--subagent` rule), so the final nested chat is still readable without a tap.
 
 ### Fewer redundant refreshes (`src/web/src/components/chat/stream.js`)
 
