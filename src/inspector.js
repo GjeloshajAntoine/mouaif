@@ -179,7 +179,13 @@ async function openInspectorTarget(debuggerUrl, pageUrl) {
 async function openTargetViaCdp(base, pageUrl) {
   const info = await httpGetJson(base + '/json/version', 5000);
   const wsUrl = info && info.webSocketDebuggerUrl;
-  if (!wsUrl) {
+  // A fresh tab from Target.createTarget shows up with an EMPTY title
+  // in /json/version's webSocketDebuggerUrl until its first navigation
+  // commits; connecting to the browser-level WS there is fine for
+  // /json/list but unusable as a target. Treat empty (not just
+  // missing) as "not a usable browser WS" and let the caller fall
+  // back to the classic /json/new for old Chrome.
+  if (!wsUrl || !String(wsUrl).trim()) {
     // Old Chrome may expose /json/version without a browser-level WS (or
     // a remote-debugging mode where only per-page WS is offered). That's
     // exactly when the PUT /json/new fallback is the right call.

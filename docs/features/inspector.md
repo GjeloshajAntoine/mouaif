@@ -46,7 +46,7 @@ The view starts in `setup`. Each phase has a per-screen back button that walks t
 
 The **Targets** screen also has a **Page URL** field for one-step inspect: type a page URL (e.g. `http://localhost:3000`, or bare `localhost:3000` — the scheme is added for you), tap **Open & inspect** (or press Enter), and the server tells Chrome to open that page in a **new tab**, then attaches the inspector straight to it. No need to open the tab yourself or pick from the target list. The manual list below remains available for tabs that are already open.
 
-While inspecting a target, the page's URL in the header is a link: tapping it asks the server to open that same URL in a **new Chrome tab** (`POST /api/inspector/open`, the same endpoint behind **Open & inspect**). The result is reported on the status line — no new button, no re-attachment; the current connection keeps its target. This is the "open this page in a new tab" action for the page you're already looking at.
+While inspecting a target, the header shows the page's URL in a code chip plus a **New tab** button (`POST /api/inspector/open`, the same endpoint behind **Open & inspect**). Tapping the button opens that same URL in a fresh Chrome tab; the outcome is reported on the status line. The button is a 44 px+ touch target (the previous URL-as-link affordance was ambiguous and hard to tap), and the current connection keeps its target — no re-attachment.
 
 ## Preview panel
 
@@ -84,7 +84,7 @@ The Info panel shows live page vitals from `Performance.getMetrics`: open docume
 | PUT    | `/api/inspector/config` | `{ url }` | `{ url }` (rejected with 400 if `url` is not http(s)) |
 | GET    | `/api/inspector/version` | — | Chrome `/json/version` payload |
 | GET    | `/api/inspector/targets` | — | `{ targets: ChromeListItem[] }` |
-| POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab and returns the fresh target. Primary path is the CDP `Target.createTarget` command over the browser-level WebSocket (from `/json/version`); falls back to the classic `PUT /json/new` for Chrome builds that still expose it (modern Chrome 137+ removed the HTTP endpoint and returns 404) |
+| POST   | `/api/inspector/open` | `{ url }` | `{ target: ChromeListItem }` — opens the URL in a new Chrome tab and returns the fresh target. Primary path is the CDP `Target.createTarget` command over the browser-level WebSocket (from `/json/version`); falls back to the classic `PUT /json/new` for Chrome builds that still expose it (modern Chrome 137+ removed the HTTP endpoint and returns 404). A `/json/version` whose `webSocketDebuggerUrl` is missing **or empty** (a fresh tab's WS shows an empty title until its first navigation commits) takes the fallback too |
 
 Errors from the upstream Chrome are mapped to typed status codes:
 

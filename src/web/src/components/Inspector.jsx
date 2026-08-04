@@ -147,12 +147,11 @@ export function InspectorView() {
   }
 
   // openAttachedPageInNewTab — "open in a new tab" for the page currently
-  // being inspected. The header URL of the attached target is an anchor;
-  // tapping it opens that same URL in a FRESH Chrome tab via
-  // POST /api/inspector/open (Chrome /json/new) and reports the outcome
-  // on the status line. We do NOT attach to the new tab and do NOT switch
-  // the current connection — the user asked for a new tab, not a new
-  // inspection. No new button: the existing URL line is the affordance.
+  // being inspected. The header's "New tab" button sends the target's URL
+  // to POST /api/inspector/open (Chrome Target.createTarget / json/new)
+  // and reports the outcome on the status line. We do NOT attach to the
+  // new tab and do NOT switch the current connection — the user asked for
+  // a new tab, not a new inspection.
   async function openAttachedPageInNewTab() {
     const target = currentTarget.current;
     if (!target || !target.url) return;
@@ -304,20 +303,15 @@ export function InspectorView() {
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
     ),
     h('section', null,
-      h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ',
-        h('a', {
-          href: (t && t.url) || '#',
-          class: 'inspector__target-url inspector__target-url--link',
+      h('div', { class: 'inspector__head' },
+        h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ', h('code', null, (t && t.url) || '')),
+        h('button', {
+          class: 'btn inspector__newtab',
+          type: 'button',
           title: 'Open this page in a new Chrome tab',
           'aria-label': 'Open ' + ((t && t.url) || 'the page') + ' in a new Chrome tab',
-          onClick: (e) => {
-            // Don't navigate the inspector / app away — this is a
-            // Chrome-side action performed through the mouaif server.
-            e.preventDefault();
-            e.stopPropagation();
-            openAttachedPageInNewTab();
-          }
-        }, (t && t.url) || '')
+          onClick: openAttachedPageInNewTab
+        }, 'New tab')
       ),
       h('div', { class: 'inspector__subtabs', role: 'tablist' },
         subtab('preview', 'Preview'),
