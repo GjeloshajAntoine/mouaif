@@ -380,10 +380,6 @@
 .app__tabbar {
   position: sticky;
   bottom: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  align-items: center;
-  gap: 0;
   /* Extend the bar surface through the home-indicator area. Controls remain
      in the 50px content row; only the background/padding reaches the edge. */
   padding: 0 4px calc(2px + var(--safe-bottom));
@@ -395,6 +391,20 @@
   /* Subtle top border using CSS variable */
   box-shadow: 0 -1px 0 var(--border);
 }
+
+.app__tablist {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The list item is transparent to layout so each tab link fills its
+   grid cell (touch target) exactly as before. */
+.app__tabitem { display: contents; }
 
 .app__tab {
   font: inherit;

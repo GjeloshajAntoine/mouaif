@@ -35,18 +35,24 @@ const TabIcon = {
 
 function BottomNav() {
   const view = route.value;
-  const tab = (to, name, label) => h('a', {
-    href: '#/' + to,
-    class: 'app__tab' + (view.name === name ? ' is-active' : ''),
-    'aria-current': view.name === name ? 'page' : null
-  },
-    h('span', { class: 'app__tab-icon' }, TabIcon[name]),
-    h('span', { class: 'app__tab-label' }, label)
-  );
+  const tabs = [
+    { to: 'projects', name: 'chats', label: 'Chats' },
+    { to: 'inspector', name: 'inspector', label: 'Inspector' },
+    { to: 'settings', name: 'settings', label: 'Settings' }
+  ];
   return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
-    tab('projects', 'chats', 'Chats'),
-    tab('inspector', 'inspector', 'Inspector'),
-    tab('settings', 'settings', 'Settings')
+    h('ul', { class: 'app__tablist' },
+      tabs.map(t => h('li', { class: 'app__tabitem' },
+        h('a', {
+          href: '#/' + t.to,
+          class: 'app__tab' + (view.name === t.name ? ' is-active' : ''),
+          'aria-current': view.name === t.name ? 'page' : null
+        },
+          h('span', { class: 'app__tab-icon' }, TabIcon[t.name]),
+          h('span', { class: 'app__tab-label' }, t.label)
+        )
+      ))
+    )
   );
 }
 
