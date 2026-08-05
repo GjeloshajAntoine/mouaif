@@ -2,12 +2,12 @@
 //
 // Rendered on top of the chat view when the user taps the git button
 // in the composer toolbar. Fetches parsed git data from
-// GET /api/git/info and renders a header plus a tabbed body.
+// GET /api/git/info and renders a header plus collapsible sections.
 //
-// Header: a branch dropdown + Push / Pull buttons + refresh / close.
-// Tabs:   Staged changes · Unstaged changes · Recent commits · Stash.
-// Sections and rows keep their own open/closed state so the user can
-// drill into exactly what they need without leaving the composer.
+// Header: branch dropdown + Pull button (with behind count) + Push button
+//         (with ahead count) + refresh + close.
+// Body:   Staged changes · Unstaged changes · Recent commits (paginated)
+//         · Stash (with Stash up / Apply / Pop / Drop).
 
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
@@ -26,8 +26,7 @@ async function runGit(projectDir, action, args, message) {
   return r.body || { ok: false, stderr: 'no response' };
 }
 
-// Diff line rendering: colour +/-/@@ header lines. Rendered as a
-// <pre> with per-line classes for simple, dependency-free syntax.
+// Diff line rendering: colour +/-/@@ header lines.
 function DiffView({ diff }) {
   if (!diff) return null;
   const lines = diff.split('\n');
@@ -45,8 +44,7 @@ function DiffView({ diff }) {
   );
 }
 
-// A single changed-file row: path + status chip on the left, a
-// chevron on the right; tapping toggles the inline diff.
+// A single changed-file row.
 function FileRow({ file, defaultOpen }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const hasDiff = !!(file.diff && file.diff.trim());
@@ -66,8 +64,7 @@ function FileRow({ file, defaultOpen }) {
   );
 }
 
-// A single commit: short hash + subject + author/date on the head;
-// expands into its changed files, each of which expands into a diff.
+// A single commit row.
 function CommitRow({ commit }) {
   const [open, setOpen] = useState(false);
   const files = commit.files || [];
@@ -95,7 +92,6 @@ function CommitRow({ commit }) {
   );
 }
 
-// 2026-07-31T16:51:38+02:00 -> "31 Jul 2026, 16:51" (local time).
 function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -104,7 +100,6 @@ function formatDate(iso) {
   try { return d.toLocaleString(undefined, opts); } catch { return iso; }
 }
 
-// Short status from a stash ref label like "stash@{0}" -> "0".
 function stashNum(ref) {
   const m = /stash@\{(\d+)\}/.exec(ref || '');
   return m ? m[1] : ref;
@@ -117,6 +112,12 @@ export function GitModal(props) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
+  const [commitOffset, setCommitOffset] = useState(0);
+  const [allCommits, setAllCommits] = useState([]);
+  const [commitTotal, setCommitTotal] = useState(0);
+  const [loadingCommits, setLoadingCommits] = useState(false);
+  const [commitSectionOpen, setCommitSectionOpen] = useState(false);
+  const [stashSectionOpen, setStashSectionOpen] = useState(false);
   const loadingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -126,6 +127,9 @@ export function GitModal(props) {
     setLoading(true);
     setError('');
     setNotice('');
+    setAllCommits([]);
+    setCommitOffset(0);
+    setCommitTotal(0);
     try {
       const params = new URLSearchParams();
       params.set('projectDir', projectDir);
@@ -136,6 +140,8 @@ export function GitModal(props) {
         setError((r.body && r.body.error) || 'Not a git repository');
       } else {
         setData(r.body);
+        setAllCommits(r.body.commits || []);
+        setCommitOffset((r.body.commits && r.body.commits.length) || 0);
       }
     } catch (err) {
       setError(String(err));
@@ -146,9 +152,6 @@ export function GitModal(props) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Close on Escape; stop the chat view's own Escape handler from
-  // fighting us. (useChatState also closes the file editor on Escape,
-  // but this modal is not tracked there.)
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') {
@@ -160,7 +163,6 @@ export function GitModal(props) {
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
-  // Run a git action, then refresh the info payload.
   async function doGit(action, args, message) {
     if (busy) return;
     setBusy(action);
@@ -180,12 +182,32 @@ export function GitModal(props) {
     doGit('checkout', name);
   }
 
+  async function loadMoreCommits() {
+    if (loadingCommits) return;
+    setLoadingCommits(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('projectDir', projectDir);
+      params.set('offset', String(commitOffset));
+      params.set('count', '20');
+      const r = await fetchJson('/api/git/commits?' + params.toString());
+      if (r.status === 200 && r.body && r.body.ok) {
+        setAllCommits((prev) => prev.concat(r.body.commits || []));
+        setCommitTotal(r.body.total || 0);
+        setCommitOffset((prev) => prev + (r.body.commits ? r.body.commits.length : 0));
+      }
+    } catch (_) {}
+    setLoadingCommits(false);
+  }
+
   const staged = (data && data.staged) || [];
   const unstaged = (data && data.unstaged) || [];
-  const commits = (data && data.commits) || [];
   const stashes = (data && data.stashes) || [];
   const branch = (data && data.branch) || '';
   const branches = (data && data.branches) || [];
+  const ahead = (data && data.ahead) || 0;
+  const behind = (data && data.behind) || 0;
+  const hasMoreCommits = commitTotal > 0 ? allCommits.length < commitTotal : allCommits.length >= 20;
 
   return h('div', { class: 'gm__overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Git' },
     h('div', { class: 'gm__sheet' },
@@ -205,39 +227,29 @@ export function GitModal(props) {
           )
         ),
         h('button', {
-          class: 'gm__iconbtn',
+          class: 'gm__iconbtn' + (behind > 0 ? ' gm__iconbtn--has-count' : ''),
           type: 'button',
           onClick: () => doGit('pull'),
           disabled: !!busy,
-          'aria-label': 'Pull from remote',
-          title: 'Pull'
+          'aria-label': 'Pull from remote' + (behind > 0 ? ' (' + behind + ' behind)' : ''),
+          title: 'Pull' + (behind > 0 ? ' (' + behind + ' behind)' : '')
         },
+          behind > 0 ? h('span', { class: 'gm__iconbtn-badge' }, behind) : null,
           h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
             h('path', { d: 'M11 3v9.6L8.4 10 7 11.4l5 5 5-5L15.6 10 13 12.6V3h-2Zm-7 15h16v2H4v-2Z', fill: 'currentColor' })
           )
         ),
         h('button', {
-          class: 'gm__iconbtn',
+          class: 'gm__iconbtn' + (ahead > 0 ? ' gm__iconbtn--has-count' : ''),
           type: 'button',
           onClick: () => doGit('push'),
           disabled: !!busy,
-          'aria-label': 'Push to remote',
-          title: 'Push'
+          'aria-label': 'Push to remote' + (ahead > 0 ? ' (' + ahead + ' ahead)' : ''),
+          title: 'Push' + (ahead > 0 ? ' (' + ahead + ' ahead)' : '')
         },
+          ahead > 0 ? h('span', { class: 'gm__iconbtn-badge' }, ahead) : null,
           h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
             h('path', { d: 'M12 3a1 1 0 0 1 .7.3l5 5-1.4 1.4L13 7.4V20h-2V7.4L7.7 9.7 6.3 8.3l5-5A1 1 0 0 1 12 3Z', fill: 'currentColor' })
-          )
-        ),
-        h('button', {
-          class: 'gm__iconbtn',
-          type: 'button',
-          onClick: () => doGit('stash'),
-          disabled: !!busy,
-          'aria-label': 'Stash working changes',
-          title: 'Stash up'
-        },
-          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-            h('path', { d: 'M12 4v9.6L9.4 11 8 12.4l5 5 5-5-1.4-1.4L14 13.6V4h-2ZM5 20h14v2H5v-2Z', fill: 'currentColor' })
           )
         ),
         h('button', {
@@ -288,30 +300,79 @@ export function GitModal(props) {
                   defaultOpen: unstaged.length > 0,
                   emptyText: 'Working tree clean'
                 }),
-                h(Section, {
-                  id: 'commits',
-                  title: 'Recent commits',
-                  files: commits,
-                  defaultOpen: false,
-                  emptyText: 'No commits yet',
-                  renderFile: (c, i) => h(CommitRow, { key: c.hash || i, commit: c })
-                }),
-                h(Section, {
-                  id: 'stash',
-                  title: 'Stash',
-                  files: stashes,
-                  defaultOpen: false,
-                  emptyText: 'No stashed changes',
-                  renderFile: (s, i) => h(StashRow, { key: i, stash: s, busy, onApply: (r) => doGit('stash-apply', r), onPop: (r) => doGit('stash-pop', r), onDrop: (r) => doGit('stash-drop', r) })
-                })
+                h('div', { class: 'gm__section' },
+                  h('button', {
+                    class: 'gm__section-head',
+                    type: 'button',
+                    onClick: () => setCommitSectionOpen(!commitSectionOpen),
+                    'aria-expanded': String(commitSectionOpen),
+                    'aria-controls': 'gm-section-commits'
+                  },
+                    h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, commitSectionOpen ? '\u25BE' : '\u25B8'),
+                    h('span', { class: 'gm__section-title' }, 'Recent commits'),
+                    h('span', { class: 'gm__section-count' }, commitTotal || allCommits.length || '')
+                  ),
+                  commitSectionOpen && h('div', { id: 'gm-section-commits', class: 'gm__section-body' },
+                    allCommits.length === 0
+                      ? h('div', { class: 'gm__empty' }, 'No commits yet')
+                      : h(Fragment, null,
+                          allCommits.map((c, ci) => h(CommitRow, { key: c.hash || ci, commit: c })),
+                          hasMoreCommits
+                            ? h('button', {
+                                class: 'gm__load-more',
+                                type: 'button',
+                                disabled: loadingCommits,
+                                onClick: loadMoreCommits
+                              }, loadingCommits ? 'Loading\u2026' : 'Load more')
+                            : null
+                        )
+                  )
+                ),
+                h('div', { class: 'gm__section' },
+                  h('button', {
+                    class: 'gm__section-head',
+                    type: 'button',
+                    onClick: () => setStashSectionOpen(!stashSectionOpen),
+                    'aria-expanded': String(stashSectionOpen),
+                    'aria-controls': 'gm-section-stash'
+                  },
+                    h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, stashSectionOpen ? '\u25BE' : '\u25B8'),
+                    h('span', { class: 'gm__section-title' }, 'Stash'),
+                    h('span', { class: 'gm__section-count' }, stashes.length || '')
+                  ),
+                  stashSectionOpen && h('div', { id: 'gm-section-stash', class: 'gm__section-body' },
+                    h('div', { class: 'gm__stash-toolbar' },
+                      h('button', {
+                        class: 'gm__stash-btn gm__stash-btn--stashup',
+                        type: 'button',
+                        disabled: !!busy,
+                        onClick: () => doGit('stash'),
+                        'aria-label': 'Stash working changes',
+                        title: 'Stash up'
+                      },
+                        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+                          h('path', { d: 'M12 4v9.6L9.4 11 8 12.4l5 5 5-5-1.4-1.4L14 13.6V4h-2ZM5 20h14v2H5v-2Z', fill: 'currentColor' })
+                        ),
+                        ' Stash up'
+                      )
+                    ),
+                    stashes.length === 0
+                      ? h('div', { class: 'gm__empty' }, 'No stashed changes')
+                      : stashes.map((s, i) => h(StashRow, {
+                          key: i, stash: s, busy,
+                          onApply: (r) => doGit('stash-apply', r),
+                          onPop: (r) => doGit('stash-pop', r),
+                          onDrop: (r) => doGit('stash-drop', r)
+                        }))
+                  )
+                )
               )
       )
     )
   );
 }
 
-// One collapsible section (e.g. "Staged changes"): header row with a
-// count + chevron, then the file rows.
+// One collapsible section.
 function Section({ id, title, files, defaultOpen, emptyText, renderFile }) {
   const [open, setOpen] = useState(defaultOpen);
   const count = files ? files.length : 0;

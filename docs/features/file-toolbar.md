@@ -7,7 +7,7 @@ The file toolbar sits as a round button next to the chat composer text box. It o
 A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu:
 
 - **Files** — opens the CodeMirror-based project file editor popup.
-- **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Stash up**, **Push** and **Pull** buttons, plus refresh and close. The body shows four stacked collapsible sections — **Staged changes**, **Unstaged changes**, **Recent commits**, and **Stash**. Every file row, commit, and stash is collapsible; each changed file expands into its diff.
+- **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Staged changes**, **Unstaged changes**, **Recent commits** (paginated — load more via `GET /api/git/commits`), and **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
 
 The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. The modal is read-only except for the header controls (branch checkout, push, pull) and the stash section (apply / pop / drop).
@@ -24,14 +24,14 @@ Tap the arrow button next to the text box to expand the menu:
 
 ### Git modal
 
-The modal header has no title — the branch name is the primary element, shown as a dropdown so you can switch branches (a checkout) from the header itself. Next to it are **Stash up** (stashes working changes), **Push** and **Pull** buttons (icon-only), a refresh button, and the close button.
+The modal header has no title — the branch name is the primary element, shown as a dropdown so you can switch branches (a checkout) from the header itself. Next to it are **Pull** and **Push** buttons — each shows a red badge with the behind/ahead count when the branch diverges from its upstream. A refresh button and close button complete the header.
 
-Below the header are four stacked collapsible sections:
+Below the header are four collapsible sections:
 
 - **Staged changes** — files staged with `git add`, each expanding into its cached diff.
 - **Unstaged changes** — modifications to tracked files.
-- **Recent commits** — recent commits (`git log -20`); each expands into its changed files and diffs.
-- **Stash** — stash list (`git stash list`), one row per stash with **Apply**, **Pop**, and **Drop** actions.
+- **Recent commits** — the most recent commits (20 on first load). Tap **Load more** at the bottom to fetch the next 20, backed by `GET /api/git/commits?projectDir=...&offset=N&count=20`.
+- **Stash** — the stash list. A **Stash up** button at the top creates a new stash (`git stash`). Each stash entry has **Apply**, **Pop**, and **Drop** actions.
 
 A transient notice bar under the header shows the result of push / pull / checkout / stash operations (success or the raw git stderr).
 
@@ -45,7 +45,9 @@ Note: the session is a **piped** (non-TTY) child process, so interactive program
 
 ## Backend API
 
-`GET /api/git/info?projectDir=<abs>` returns `branch`, `branches` (local + remote), `stashes` (each `{ index, subject, date }`), `staged`, `unstaged`, and `commits` (see [src/server-handlers-git.js](../../src/server-handlers-git.js)).
+`GET /api/git/info?projectDir=<abs>` returns `branch`, `branches` (local + remote), `ahead`/`behind` (counts against upstream), `stashes` (each `{ index, subject, date }`), `staged`, `unstaged`, and the first 20 `commits` (see [src/server-handlers-git.js](../../src/server-handlers-git.js)).
+
+`GET /api/git/commits?projectDir=<abs>&offset=0&count=20` returns paginated commits with `{ ok, commits, total, offset, count }`. The first page (offset=0) includes per-commit diffs; subsequent pages return only commit metadata.
 
 `POST /api/git` accepts `{ projectDir, action, args?, message? }`. Actions: `status`, `diff`, `log`, `add`, `commit`, `branch`, `checkout`, `stash`, `stash-apply`, `stash-pop`, `stash-drop`, `push`, `pull`.
 

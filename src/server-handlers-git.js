@@ -143,6 +143,20 @@ async function handleGitInfo(req, res, parsed) {
   const branchRes = await run(['symbolic-ref', '--short', '-q', 'HEAD']);
   const branch = (branchRes.ok ? branchRes.stdout : '').trim();
 
+  // ---- Ahead / behind counts against upstream ---------------------------
+  let ahead = 0, behind = 0;
+  if (branch) {
+    // `git rev-list --count --left-right HEAD...@{upstream}` gives
+    // "<ahead>\t<behind>" on stdout (or "0\t0" and exits non-zero when
+    // no upstream is configured).
+    const abRes = await run(['rev-list', '--count', '--left-right', 'HEAD...@{upstream}']);
+    if (abRes.ok) {
+      const parts = abRes.stdout.trim().split('\t');
+      ahead = parseInt(parts[0], 10) || 0;
+      behind = parseInt(parts[1], 10) || 0;
+    }
+  }
+
   // ---- Branches (local + remote) --------------------------------------
   const branchesRes = await run(['branch', '-a', '--format=%(refname:short)']);
   const branches = branchesRes.ok
@@ -275,6 +289,8 @@ async function handleGitInfo(req, res, parsed) {
   return sendJSON(res, 200, {
     ok: true,
     branch,
+    ahead,
+    behind,
     branches,
     stashes,
     staged,
@@ -287,4 +303,102 @@ async function handleGitInfo(req, res, parsed) {
   });
 }
 
-module.exports = { handleGit, handleGitInfo };
+// ---- Paginated commits ----------------------------------------------------
+//
+// GET /api/git/commits?projectDir=<abs>&offset=0&count=20
+//   -> { ok: true, commits: [ ... ], total: <count of all commits> }
+//   Each commit: { hash, short, subject, author, date, files: [] }
+//   Diffs on the first page only (same cap as handleGitInfo).
+async function handleGitLog(req, res, parsed) {
+  const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
+  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+
+  const queryOffset = parseInt(parsed.query.offset, 10);
+  const offset = isFinite(queryOffset) && queryOffset >= 0 ? queryOffset : 0;
+  const queryCount = parseInt(parsed.query.count, 10);
+  const count = isFinite(queryCount) && queryCount >= 1 && queryCount <= 100 ? queryCount : 20;
+  const firstPage = offset === 0;
+
+  const run = (args) => new Promise((resolve) => {
+    const child = spawn('git', ['-C', projectDir].concat(args), {
+      cwd: projectDir,
+      timeout: 15000,
+      env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
+      windowsHide: true
+    });
+    let stdout = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.on('error', () => resolve({ ok: false, stdout: '', exitCode: -1 }));
+    child.on('close', (code) => resolve({ ok: code === 0, stdout, exitCode: code }));
+  });
+
+  // Get total commit count
+  const totalRes = await run(['rev-list', '--count', 'HEAD']);
+  const total = totalRes.ok ? parseInt(totalRes.stdout.trim(), 10) || 0 : 0;
+
+  // Fetch the page of commits
+  const logRes = await run([
+    'log', '--format=%H%x00%h%x00%s%x00%an%x00%aI%x00',
+    '--skip=' + offset,
+    '-' + count,
+    '--'
+  ]);
+  const commits = [];
+  if (logRes.ok) {
+    const logFields = logRes.stdout.split('\0');
+    for (let i = 0; i + 4 < logFields.length; i += 5) {
+      commits.push({
+        hash: logFields[i].trim(),
+        short: logFields[i + 1].trim(),
+        subject: logFields[i + 2].trim(),
+        author: logFields[i + 3].trim(),
+        date: logFields[i + 4].trim()
+      });
+    }
+  }
+
+  // Per-commit diffs only on the first page (same as handleGitInfo)
+  const capDiff = (text) => {
+    const lines = text.split('\n');
+    if (lines.length > 120) return lines.slice(0, 120).join('\n') + '\n… diff truncated';
+    return text;
+  };
+  const parseFileDiffs = (text) => {
+    const files = [];
+    let cur = null;
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
+      if (m) {
+        if (cur) files.push(cur);
+        cur = { path: m[2], status: 'M', statusText: 'Modified', diff: line + '\n' };
+        continue;
+      }
+      if (!cur) continue;
+      if (line.startsWith('new file mode ')) { cur.status = 'A'; cur.statusText = 'Added'; }
+      else if (line.startsWith('deleted file mode ')) { cur.status = 'D'; cur.statusText = 'Deleted'; }
+      else if (line.startsWith('rename from ')) { cur.status = 'R'; cur.statusText = 'Renamed'; }
+      else if (line.startsWith('similarity index ')) { cur.statusText = 'Renamed'; }
+      cur.diff += line + '\n';
+    }
+    if (cur) files.push(cur);
+    return files;
+  };
+
+  const MAX_COMMIT_DIFFS = 3;
+  await Promise.all(commits.slice(0, MAX_COMMIT_DIFFS).map(async (c) => {
+    const r = await run(['show', '--format=', c.hash]);
+    if (r.ok) {
+      c.files = parseFileDiffs(capDiff(r.stdout));
+      c.filesTruncated = r.stdout.split('\n').length > 120;
+    }
+  }));
+  for (const c of commits) {
+    if (!c.files) c.files = [];
+    if (!c.filesTruncated) c.filesTruncated = false;
+  }
+
+  return sendJSON(res, 200, { ok: true, commits, total, offset, count });
+}
+
+module.exports = { handleGit, handleGitInfo, handleGitLog };
