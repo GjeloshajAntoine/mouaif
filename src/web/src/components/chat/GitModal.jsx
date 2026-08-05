@@ -111,9 +111,6 @@ function stashNum(ref) {
 }
 
 const TABS = [
-  { id: 'staged', label: 'Staged' },
-  { id: 'unstaged', label: 'Changes' },
-  { id: 'commits', label: 'Commits' },
   { id: 'stash', label: 'Stash' }
 ];
 
@@ -123,7 +120,7 @@ export function GitModal(props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
-  const [tab, setTab] = useState('staged');
+  const [tab, setTab] = useState('');
   const [notice, setNotice] = useState('');
   const loadingRef = useRef(false);
 
@@ -178,7 +175,6 @@ export function GitModal(props) {
       setNotice((res.stderr || 'git ' + action + ' failed').trim() || 'git ' + action + ' failed');
     } else {
       setNotice('git ' + action + ' ok');
-      if (action === 'checkout') setTab('staged');
       await load();
     }
     setBusy('');
@@ -280,31 +276,31 @@ export function GitModal(props) {
                 h('p', null, error),
                 h('button', { class: 'btn', type: 'button', onClick: load }, 'Retry')
               )
-            : tab === 'staged'
-              ? h(Fragment, null,
-                  h(Section, {
-                    id: 'staged',
-                    title: 'Staged changes',
-                    files: staged,
-                    defaultOpen: true,
-                    emptyText: 'Nothing staged'
-                  })
-                )
-              : tab === 'unstaged'
-                ? h(Section, {
-                    id: 'unstaged',
-                    title: 'Unstaged changes',
-                    files: unstaged,
-                    defaultOpen: true,
-                    emptyText: 'Working tree clean'
-                  })
-                : tab === 'commits'
-                  ? h(Fragment, null,
-                      commits.length === 0
-                        ? h('div', { class: 'gm__empty' }, 'No commits yet')
-                        : commits.map((c, ci) => h(CommitRow, { key: c.hash || ci, commit: c }))
-                    )
-                  : h(StashTab, { stashes, busy, onApply: (r) => doGit('stash-apply', r), onPop: (r) => doGit('stash-pop', r), onDrop: (r) => doGit('stash-drop', r) })
+            : h(Fragment, null,
+                h(Section, {
+                  id: 'staged',
+                  title: 'Staged changes',
+                  files: staged,
+                  defaultOpen: staged.length > 0,
+                  emptyText: 'Nothing staged'
+                }),
+                h(Section, {
+                  id: 'unstaged',
+                  title: 'Unstaged changes',
+                  files: unstaged,
+                  defaultOpen: unstaged.length > 0,
+                  emptyText: 'Working tree clean'
+                }),
+                h(Section, {
+                  id: 'commits',
+                  title: 'Recent commits',
+                  files: commits,
+                  defaultOpen: false,
+                  emptyText: 'No commits yet',
+                  renderFile: (c, i) => h(CommitRow, { key: c.hash || i, commit: c })
+                }),
+                tab === 'stash' ? h(StashTab, { stashes, busy, onApply: (r) => doGit('stash-apply', r), onPop: (r) => doGit('stash-pop', r), onDrop: (r) => doGit('stash-drop', r) }) : null
+              )
       )
     )
   );
@@ -312,9 +308,10 @@ export function GitModal(props) {
 
 // One collapsible section (e.g. "Staged changes"): header row with a
 // count + chevron, then the file rows.
-function Section({ id, title, files, defaultOpen, emptyText }) {
+function Section({ id, title, files, defaultOpen, emptyText, renderFile }) {
   const [open, setOpen] = useState(defaultOpen);
   const count = files ? files.length : 0;
+  const renderRow = renderFile || ((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }));
   return h('div', { class: 'gm__section' },
     h('button', {
       class: 'gm__section-head' + (open ? ' is-open' : ''),
@@ -330,7 +327,7 @@ function Section({ id, title, files, defaultOpen, emptyText }) {
     open && h('div', { id: 'gm-section-' + id, class: 'gm__section-body' },
       count === 0
         ? h('div', { class: 'gm__empty' }, emptyText || 'Nothing here')
-        : files.map((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }))
+        : files.map((f, i) => renderRow(f, i))
     )
   );
 }
