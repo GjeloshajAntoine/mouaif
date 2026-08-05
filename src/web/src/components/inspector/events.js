@@ -224,12 +224,52 @@ export function createEventHandlers(state) {
     return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55, captureBeyondViewport: true });
   }
 
-  // clickAt — forward a tap on the live preview to the page. Coordinates
-  // are page coordinates computed from the full-page screenshot, so a tap
-  // below the fold lands at the right scroll position.
-  function clickAt(x, y) {
-    return cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
-      .then(() => cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }))
+  // clickAt — forward a tap on the live preview to the page. The x/y here
+  // are device-pixel coordinates within the full-page screenshot
+  // (captureBeyondViewport), computed by PreviewPanel from the image's
+  // naturalWidth/naturalHeight. Input.dispatchMouseEvent expects CSS
+  // pixels relative to the viewport, so we (1) divide by the page's
+  // devicePixelRatio to get page CSS coordinates, then (2) offset by the
+  // page's current scroll position to get viewport coordinates. Anything
+  // tapped outside the current viewport (e.g. below the fold) is first
+  // scrolled into view so the click actually lands on the target element.
+  async function clickAt(x, y) {
+    let scrollX = 0, scrollY = 0, dpr = 1;
+    try {
+      const r = await cdpSend('Runtime.evaluate', {
+        expression: '({ sx: window.scrollX || 0, sy: window.scrollY || 0, dpr: window.devicePixelRatio || 1 })',
+        returnByValue: true
+      });
+      const o = r && r.result && r.result.value;
+      if (o && typeof o === 'object') {
+        scrollX = o.sx || 0;
+        scrollY = o.sy || 0;
+        dpr = o.dpr || 1;
+      }
+    } catch { /* keep defaults */ }
+
+    const pageX = x / dpr;
+    const pageY = y / dpr;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
+
+    let vx = Math.round(pageX - scrollX);
+    let vy = Math.round(pageY - scrollY);
+    let targetScrollY = scrollY;
+
+    // If the tapped point is outside the live viewport, scroll it into
+    // view (roughly centered) so the dispatched click hits the element.
+    if (vh > 0 && (vy < 0 || vy > vh)) {
+      targetScrollY = Math.max(0, Math.round(pageY - vh / 2));
+    }
+    if (targetScrollY !== scrollY) {
+      try {
+        await cdpSend('Runtime.evaluate', { expression: 'window.scrollTo(0, ' + targetScrollY + ')' });
+        vy = Math.round(pageY - targetScrollY);
+      } catch { /* fall through with the original vy */ }
+    }
+
+    return cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x: vx, y: vy, button: 'left', clickCount: 1 })
+      .then(() => cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x: vx, y: vy, button: 'left', clickCount: 1 }))
       .then(() => true)
       .catch((e) => { throw e; });
   }

@@ -74,7 +74,13 @@ The screenshot is a **full-page capture** (`captureBeyondViewport: true`), so th
 
 Because the preview is a raw compositor screenshot, the captured page is rendered with the **emulated color-scheme preference**, not the devtools UI's. On connection the inspector sends `Emulation.setEmulatedMedia` with `prefers-color-scheme: light` (the CDP default; older Chrome requires an explicit override — the empty `Emulation.setEmulatedMedia` that used to be sent left the emulated preference as `no-preference`, which dark-mode pages could resolve to their dark stylesheet). Without this, a page that requested light mode but got captured by the dark UI came out as a dark JPEG that no CSS filter could repair. If the target doesn't support the Emulation domain the override is a no-op and the other tabs keep working.
 
-Tapping or clicking anywhere on the preview **forwards a click to the page**: the tap coordinates are translated from the frame into page coordinates (scaled by the image's natural size) and sent as `Input.dispatchMouseEvent` (`mousePressed` + `mouseReleased`, left button) over the same CDP connection. A tap below the fold therefore lands at the right scroll position of the real page — the preview behaves like a remote tap surface, not just a picture.
+Tapping or clicking anywhere on the preview **forwards a click to the page**. The tap coordinates go through a three-step mapping so the click lands exactly where the user tapped:
+
+1. **Frame → image** — the preview frame is a scroll container, so the tap's client coordinates are first shifted by the frame's `scrollLeft`/`scrollTop` (this matters for pages wider than the frame, where the user panned horizontally before tapping).
+2. **Image CSS → natural pixels** — the image is scaled to the frame width, so the frame-relative CSS coordinates are scaled by `naturalWidth`/`naturalHeight` to produce device-pixel coordinates within the full-page screenshot (`captureBeyondViewport` returns device pixels).
+3. **Full-page device pixels → viewport CSS pixels** — `Input.dispatchMouseEvent` wants coordinates relative to the live viewport, so `clickAt` (in `inspector/events.js`) first divides by the page's `devicePixelRatio` (queried via `Runtime.evaluate`) to get page CSS coordinates, then subtracts the page's `scrollX`/`scrollY`. If the tapped point is outside the live viewport (e.g. below the fold), the page is first scrolled to bring it roughly centered into view (`window.scrollTo`), then the click is dispatched at the corrected viewport coordinates.
+
+The click is sent as `Input.dispatchMouseEvent` (`mousePressed` + `mouseReleased`, left button) over the same CDP connection. The preview behaves like a remote tap surface, not just a picture — a tap below the fold scrolls the real page and clicks the element the user aimed at.
 
 ## Console panel
 

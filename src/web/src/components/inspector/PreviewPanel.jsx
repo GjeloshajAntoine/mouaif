@@ -62,17 +62,24 @@ export function PreviewPanel(props) {
       if (objUrl) URL.revokeObjectURL(objUrl);
     };
   }, []);
-  // Clicking/tapping the preview pokes the page at that point: translate
-  // the tap coordinates (frame-relative, scaled to the full-page image)
-  // back to page coordinates and send Input.dispatchMouseEvent. The
-  // captured frame is sized to the actual image so 1:1 mapping holds.
+  // Clicking/tapping the preview pokes the page at that point. The frame
+  // is a scroll container (the image is a full-page capture, wider and/or
+  // taller than the frame), so the tap coordinates inside the image must
+  // first be shifted by the frame's scroll offsets to become image
+  // coordinates, then scaled from CSS pixels to the image's natural
+  // (device-pixel) size. clickAt() then converts those full-page device
+  // pixels into viewport CSS pixels and scrolls the target into view if
+  // needed — see events.js.
   function onPreviewClick(ev) {
     const img = imgRef.current;
     if (!img || !props.clickAt || !img.naturalWidth) return;
     const rect = img.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const x = Math.round((ev.clientX - rect.left) * (img.naturalWidth / rect.width));
-    const y = Math.round((ev.clientY - rect.top) * (img.naturalHeight / rect.height));
+    const frame = frameRef.current;
+    const sx = frame ? (frame.scrollLeft || 0) : 0;
+    const sy = frame ? (frame.scrollTop || 0) : 0;
+    const x = Math.round((ev.clientX - rect.left + sx) * (img.naturalWidth / rect.width));
+    const y = Math.round((ev.clientY - rect.top + sy) * (img.naturalHeight / rect.height));
     props.clickAt(x, y);
   }
   return h('div', { class: 'inspector__preview' },
