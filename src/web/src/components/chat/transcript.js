@@ -447,7 +447,12 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
 // is still running and watch nested tool activity stream in. Shell
 // calls get an empty live body that fills as stdout/stderr chunks
 // arrive (see handleShellOutputEvent).
-export function appendToolCallCard(toolCall, refs) {
+//
+// When `isReplay` is true (called from persisted-data rebuild with no
+// live SSE stream), shell call cards show "Waiting for results…" instead
+// of "Running…" and stay collapsed. There is no `shell_output` stream to
+// fill them, so an auto-expanded empty body is confusing.
+export function appendToolCallCard(toolCall, refs, isReplay) {
   if (!refs.transcript.current) return;
   const empty = refs.transcript.current.querySelector('.chat-view__empty');
   if (empty) empty.remove();
@@ -479,16 +484,17 @@ export function appendToolCallCard(toolCall, refs) {
     live.className = 'tool-card__shell-live';
     const hint = document.createElement('div');
     hint.className = 'tool-card__shell-live-hint';
-    hint.textContent = 'Running…';
+    hint.textContent = isReplay ? 'Waiting for results…' : 'Running…';
     const pre = document.createElement('pre');
     pre.className = 'tool-card__shell-live-pre';
     live.appendChild(hint);
     live.appendChild(pre);
     body.appendChild(live);
     card.appendChild(body);
-    // Auto-expand so stdout/stderr chunks show as they stream in
-    // instead of filling a hidden body.
-    card.classList.add('is-expanded');
+    // Only auto-expand when the card was created by a live stream
+    // (shell_output chunks need the body visible). From replayed
+    // persisted data the result soon replaces the card anyway.
+    if (!isReplay) card.classList.add('is-expanded');
   }
   refs.transcript.current.appendChild(card);
   afterTranscriptAppend(refs, true);
@@ -729,7 +735,10 @@ export function appendToolResultCard(toolResult, refs) {
       const head = card.querySelector('.tool-card__head');
       if (head) {
         head.addEventListener('click', function onExpand() {
-          if (!card.classList.contains('is-expanded')) lazyBody();
+          // The head's own toggle handler (from buildToolCardHead) fires
+          // first and flips is-expanded, so by the time this listener runs
+          // the class is already set. Check IS-expanded, not !is-expanded.
+          if (card.classList.contains('is-expanded')) lazyBody();
           head.removeEventListener('click', onExpand);
         });
       }
@@ -1130,7 +1139,7 @@ export function cancelTranscriptRender(refs) {
 // empty-transcript case can share the exact same rendering.
 function renderMessageRow(state, refs, m) {
   if (m.role === 'tool' && m.phase === 'call') {
-    appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs);
+    appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
   } else if (m.role === 'tool' && m.phase === 'result') {
     appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
   } else {

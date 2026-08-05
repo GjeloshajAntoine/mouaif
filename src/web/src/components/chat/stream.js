@@ -237,6 +237,19 @@ export function startStreamRecovery(state, refs, partialText) {
   st.partialText = partialText || '';
   state.streaming = true; // still "in a turn" for the poller
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+  // When starting recovery, update any shell call cards that are on
+  // screen to show "reconnecting" instead of "Running…". The live
+  // SSE stream is gone, so their output preview stays empty until the
+  // final tool_result arrives via the reconcile poll. Without this
+  // hint the user sees a spinner with zero output and no feedback.
+  if (refs.transcript && refs.transcript.current) {
+    const shellCards = refs.transcript.current.querySelectorAll(
+      '.tool-card--call[data-tool-name="shell"]:not(.tool-card--result) .tool-card__shell-live-hint'
+    );
+    for (const hint of shellCards) {
+      hint.textContent = 'Reconnecting — waiting for output…';
+    }
+  }
   setChatStatus(refs, 'connection lost — reconnecting…', 'busy');
   scheduleRecoveryTick(state, refs, 0);
 }
