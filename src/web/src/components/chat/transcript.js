@@ -435,6 +435,15 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
     // the user closed stays collapsed when the successful result
     // lands (see appendToolResultCard).
     card._userCollapsed = !card.classList.contains('is-expanded');
+    // Result bodies build lazily on first expand (see
+    // appendToolResultCard). Triggering the build here — inside the
+    // toggle handler that always runs on tap — is robust regardless of
+    // listener registration order or head replacement, which a
+    // separate click listener was not: in several paths (rebuilt head,
+    // restored cards) it never fired and the expanded card showed empty.
+    if (card.classList.contains('is-expanded') && typeof card._lazyBody === 'function') {
+      card._lazyBody();
+    }
   });
   return head;
 }
@@ -724,24 +733,13 @@ export function appendToolResultCard(toolResult, refs) {
       // Errors auto-expand — build immediately so the failure is visible.
       lazyBody();
     } else {
+      // Build on the first head tap. The head's own toggle handler
+      // (buildToolCardHead) calls card._lazyBody() when it opens the
+      // card, so no separate listener is needed here. A separate
+      // listener was fragile: rebuildToolCardHead replaces the head on
+      // every result — dropping any listener armed on the old head —
+      // and the ordering vs. the toggle handler was easy to get wrong.
       body.dataset.lazyResult = '1';
-      // Build on the first head tap, in the same gesture that toggles
-      // the card open. A delegated card-click listener can't be used
-      // here: it fires after the head's own toggle, so it would also
-      // build on collapse (when the class is already gone) and is
-      // dropped entirely by the rebuildToolCardHead above (which
-      // replaces the head on every result, taking any listener the
-      // user armed while expanding the running call card with it).
-      const head = card.querySelector('.tool-card__head');
-      if (head) {
-        head.addEventListener('click', function onExpand() {
-          // The head's own toggle handler (from buildToolCardHead) fires
-          // first and flips is-expanded, so by the time this listener runs
-          // the class is already set. Check IS-expanded, not !is-expanded.
-          if (card.classList.contains('is-expanded')) lazyBody();
-          head.removeEventListener('click', onExpand);
-        });
-      }
     }
   }
   // Expand errors automatically so the user sees what went wrong
