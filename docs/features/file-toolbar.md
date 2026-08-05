@@ -7,7 +7,7 @@ The file toolbar sits as a round button next to the chat composer text box. It o
 A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu:
 
 - **Files** — opens the CodeMirror-based project file editor popup.
-- **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Push** and **Pull** buttons, plus refresh and close. The body shows four stacked collapsible sections — **Staged changes**, **Unstaged changes**, **Recent commits**, and **Stash**. Every file row, commit, and stash is collapsible; each changed file expands into its diff.
+- **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Stash up**, **Push** and **Pull** buttons, plus refresh and close. The body shows four stacked collapsible sections — **Staged changes**, **Unstaged changes**, **Recent commits**, and **Stash**. Every file row, commit, and stash is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
 
 The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. The modal is read-only except for the header controls (branch checkout, push, pull) and the stash section (apply / pop / drop).
@@ -24,7 +24,7 @@ Tap the arrow button next to the text box to expand the menu:
 
 ### Git modal
 
-The modal header has no title — the branch name is the primary element, shown as a dropdown so you can switch branches (a checkout) from the header itself. Next to it are **Push** and **Pull** buttons (icon-only), a refresh button, and the close button.
+The modal header has no title — the branch name is the primary element, shown as a dropdown so you can switch branches (a checkout) from the header itself. Next to it are **Stash up** (stashes working changes), **Push** and **Pull** buttons (icon-only), a refresh button, and the close button.
 
 Below the header are four stacked collapsible sections:
 

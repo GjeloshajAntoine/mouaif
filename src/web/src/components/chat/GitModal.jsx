@@ -231,6 +231,18 @@ export function GitModal(props) {
         h('button', {
           class: 'gm__iconbtn',
           type: 'button',
+          onClick: () => doGit('stash'),
+          disabled: !!busy,
+          'aria-label': 'Stash working changes',
+          title: 'Stash up'
+        },
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M12 4v9.6L9.4 11 8 12.4l5 5 5-5-1.4-1.4L14 13.6V4h-2ZM5 20h14v2H5v-2Z', fill: 'currentColor' })
+          )
+        ),
+        h('button', {
+          class: 'gm__iconbtn',
+          type: 'button',
           onClick: load,
           disabled: loading || !!busy,
           'aria-label': 'Refresh git status',
