@@ -1,16 +1,16 @@
 # File toolbar
 
-The file toolbar sits as a round button next to the chat composer text box. It opens a dropdown menu with three actions: **Files** (the project file editor), **Git** (a full-screen git changes modal), and **Cli** (an interactive command prompt running in the project directory).
+The file toolbar sits as a round button next to the chat composer text box. It opens a dropdown menu with three actions: **Files** (the project file editor), **Git** (a full-screen git modal), and **Cli** (an interactive command prompt running in the project directory).
 
 ## Overview
 
 A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu:
 
 - **Files** — opens the CodeMirror-based project file editor popup.
-- **Git** — opens a modal that shows the project's git state: staged changes, unstaged changes, and recent commits. Every section and every file row is collapsible; each changed file expands into its diff.
+- **Git** — opens a modal with a header and a tabbed body. The header holds a **branch dropdown**, **Push** and **Pull** buttons, plus refresh and close. The body tabs are **Staged**, **Changes** (unstaged), **Commits**, and **Stash**. Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
 
-The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. Mutating git actions (add, commit) are intentionally not exposed from the composer; the modal is read-only.
+The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. The modal is read-only except for the header controls (branch checkout, push, pull) and the stash tab (apply / pop / drop).
 
 ## Usage
 
@@ -19,8 +19,21 @@ Tap the arrow button next to the text box to expand the menu:
 | Item | Action |
 |------|--------|
 | Files | Opens the existing in-app CodeMirror editor for the project |
-| Git | Opens the git changes modal |
+| Git | Opens the git modal |
 | Cli | Opens the interactive command prompt session |
+
+### Git modal
+
+The modal header has no title — the branch name is the primary element, shown as a dropdown so you can switch branches (a checkout) from the header itself. Next to it are **Push** and **Pull** buttons (icon-only), a refresh button, and the close button.
+
+Below the header are four tabs:
+
+- **Staged** — files staged with `git add`, each expanding into its cached diff.
+- **Changes** — unstaged modifications to tracked files.
+- **Commits** — recent commits (`git log -20`); each expands into its changed files and diffs.
+- **Stash** — the stash list, one row per stash with **Apply**, **Pop**, and **Drop** actions.
+
+A transient notice bar under the header shows the result of push / pull / checkout / stash operations (success or the raw git stderr).
 
 ### CLI prompt
 
@@ -31,6 +44,10 @@ Output streams in as the command runs; the prompt line stays at the bottom and r
 Note: the session is a **piped** (non-TTY) child process, so interactive programs (REPLs, prompts that read from a terminal) will not work — the same limitation as the model-facing `shell` tool. Non-interactive commands behave like a real Command Prompt.
 
 ## Backend API
+
+`GET /api/git/info?projectDir=<abs>` returns `branch`, `branches` (local + remote), `stashes` (each `{ index, subject, date }`), `staged`, `unstaged`, and `commits` (see [src/server-handlers-git.js](../../src/server-handlers-git.js)).
+
+`POST /api/git` accepts `{ projectDir, action, args?, message? }`. Actions: `status`, `diff`, `log`, `add`, `commit`, `branch`, `checkout`, `stash`, `stash-apply`, `stash-pop`, `stash-drop`, `push`, `pull`.
 
 ### `GET /api/tools/cli/session?projectDir=<abs>`
 

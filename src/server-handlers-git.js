@@ -13,9 +13,10 @@ const { sendJSON, readJsonBody, xyToText } = require('./server-shared.js');
 //   POST /api/git  body: { projectDir, action, args? }
 //     -> { ok, stdout, stderr, exitCode }
 //
-// Supported actions: status, diff, log, add, commit, branch, checkout, stash
+// Supported actions: status, diff, log, add, commit, branch, checkout, stash,
+// stash-apply, stash-pop, stash-drop, push, pull
 // These are read-safe or explicit-save commands. `commit` and `add` require
-// an extra `message` field. No remote push/pull for safety.
+// an extra `message` field. `push` and `pull` talk to the configured remote.
 async function handleGit(req, res, parsed) {
   let body;
   try { body = await readJsonBody(req); }
@@ -28,7 +29,7 @@ async function handleGit(req, res, parsed) {
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!action) return sendJSON(res, 400, { error: 'action is required' });
 
-  const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'commit', 'branch', 'checkout', 'stash']);
+  const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'commit', 'branch', 'checkout', 'stash', 'stash-apply', 'stash-pop', 'stash-drop', 'push', 'pull']);
   if (!SAFE_ACTIONS.has(action)) {
     return sendJSON(res, 400, { error: 'unsupported action: ' + action, supported: [...SAFE_ACTIONS] });
   }
@@ -62,6 +63,21 @@ async function handleGit(req, res, parsed) {
     case 'stash':
       cmd = 'git stash' + (args ? ' ' + args : '');
       break;
+    case 'stash-apply':
+      cmd = 'git stash apply' + (args ? ' ' + args : '');
+      break;
+    case 'stash-pop':
+      cmd = 'git stash pop' + (args ? ' ' + args : '');
+      break;
+    case 'stash-drop':
+      cmd = 'git stash drop' + (args ? ' ' + args : '');
+      break;
+    case 'push':
+      cmd = 'git push' + (args ? ' ' + args : '');
+      break;
+    case 'pull':
+      cmd = 'git pull' + (args ? ' ' + args : '');
+      break;
     default:
       return sendJSON(res, 400, { error: 'unsupported action' });
   }
@@ -91,6 +107,8 @@ async function handleGit(req, res, parsed) {
 //   -> {
 //        ok: true,
 //        branch: 'master',
+//        branches: [ 'master', 'dev', ... ],      // local + remote branches
+//        stashes:  [ { index, subject, date } ],
 //        staged:  [ { path, status, statusText, diff } ],   // staged changes
 //        unstaged: [ { path, status, statusText, diff } ],  // unstaged changes
 //        commits: [ { hash, short, subject, author, date, files: [ { path, status, diff } ] } ]
@@ -124,6 +142,30 @@ async function handleGitInfo(req, res, parsed) {
 
   const branchRes = await run(['symbolic-ref', '--short', '-q', 'HEAD']);
   const branch = (branchRes.ok ? branchRes.stdout : '').trim();
+
+  // ---- Branches (local + remote) --------------------------------------
+  const branchesRes = await run(['branch', '-a', '--format=%(refname:short)']);
+  const branches = branchesRes.ok
+    ? branchesRes.stdout.split('\n').map((b) => b.trim()).filter(Boolean)
+    : [];
+
+  // ---- Stashes ---------------------------------------------------------
+  // `git stash list --format=...` gives one entry per stash:
+  //   stash@{0} :: subject :: author-relative-date
+  const stashRes = await run([
+    'stash', 'list', '--format=%S%x00%s%x00%ad'
+  ]);
+  const stashes = [];
+  if (stashRes.ok) {
+    const fields = stashRes.stdout.split('\0');
+    for (let i = 0; i + 2 < fields.length; i += 3) {
+      stashes.push({
+        index: fields[i].trim(),            // "stash@{0}"
+        subject: fields[i + 1].trim(),
+        date: fields[i + 2].trim()
+      });
+    }
+  }
 
   // ---- Parse porcelain v1 -z status -------------------------------------
   // One record per change. A renamed file is `XY old\0new\0` (the path
@@ -233,6 +275,8 @@ async function handleGitInfo(req, res, parsed) {
   return sendJSON(res, 200, {
     ok: true,
     branch,
+    branches,
+    stashes,
     staged,
     unstaged,
     commits,
