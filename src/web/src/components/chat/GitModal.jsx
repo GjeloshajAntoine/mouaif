@@ -110,17 +110,12 @@ function stashNum(ref) {
   return m ? m[1] : ref;
 }
 
-const TABS = [
-  { id: 'stash', label: 'Stash' }
-];
-
 export function GitModal(props) {
   const { projectDir, onClose } = props;
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
-  const [tab, setTab] = useState('');
   const [notice, setNotice] = useState('');
   const loadingRef = useRef(false);
 
@@ -258,16 +253,6 @@ export function GitModal(props) {
         )
       ),
       notice ? h('div', { class: 'gm__notice' }, notice) : null,
-      h('div', { class: 'gm__tabs', role: 'tablist', 'aria-label': 'Git sections' },
-        TABS.map((t) => h('button', {
-          key: t.id,
-          class: 'gm__tab' + (tab === t.id ? ' is-active' : ''),
-          type: 'button',
-          role: 'tab',
-          'aria-selected': String(tab === t.id),
-          onClick: () => setTab(t.id)
-        }, t.label))
-      ),
       h('div', { class: 'gm__body' },
         loading
           ? h('div', { class: 'gm__empty' }, 'Loading git status\u2026')
@@ -299,7 +284,14 @@ export function GitModal(props) {
                   emptyText: 'No commits yet',
                   renderFile: (c, i) => h(CommitRow, { key: c.hash || i, commit: c })
                 }),
-                tab === 'stash' ? h(StashTab, { stashes, busy, onApply: (r) => doGit('stash-apply', r), onPop: (r) => doGit('stash-pop', r), onDrop: (r) => doGit('stash-drop', r) }) : null
+                h(Section, {
+                  id: 'stash',
+                  title: 'Stash',
+                  files: stashes,
+                  defaultOpen: false,
+                  emptyText: 'No stashed changes',
+                  renderFile: (s, i) => h(StashRow, { key: i, stash: s, busy, onApply: (r) => doGit('stash-apply', r), onPop: (r) => doGit('stash-pop', r), onDrop: (r) => doGit('stash-drop', r) })
+                })
               )
       )
     )
@@ -332,22 +324,18 @@ function Section({ id, title, files, defaultOpen, emptyText, renderFile }) {
   );
 }
 
-// Stash tab: one row per stash with Apply / Pop / Drop actions.
-function StashTab({ stashes, busy, onApply, onPop, onDrop }) {
-  return h('div', { class: 'gm__stash' },
-    stashes.length === 0
-      ? h('div', { class: 'gm__empty' }, 'No stashed changes')
-      : stashes.map((st, i) => h('div', { key: i, class: 'gm__stash-row' },
-          h('span', { class: 'gm__stash-index' }, stashNum(st.index)),
-          h('span', { class: 'gm__stash-main' },
-            h('span', { class: 'gm__stash-subject', title: st.subject }, st.subject),
-            st.date ? h('span', { class: 'gm__stash-date' }, st.date) : null
-          ),
-          h('div', { class: 'gm__stash-actions' },
-            h('button', { class: 'gm__stash-btn', type: 'button', disabled: !!busy, onClick: () => onApply(st.index), title: 'Apply stash without removing it' }, 'Apply'),
-            h('button', { class: 'gm__stash-btn', type: 'button', disabled: !!busy, onClick: () => onPop(st.index), title: 'Apply stash and remove it' }, 'Pop'),
-            h('button', { class: 'gm__stash-btn gm__stash-btn--danger', type: 'button', disabled: !!busy, onClick: () => onDrop(st.index), title: 'Delete stash' }, 'Drop')
-          )
-        ))
+// Stash row: one stash with Apply / Pop / Drop actions.
+function StashRow({ stash, busy, onApply, onPop, onDrop }) {
+  return h('div', { class: 'gm__stash-row' },
+    h('span', { class: 'gm__stash-index' }, stashNum(stash.index)),
+    h('span', { class: 'gm__stash-main' },
+      h('span', { class: 'gm__stash-subject', title: stash.subject }, stash.subject),
+      stash.date ? h('span', { class: 'gm__stash-date' }, stash.date) : null
+    ),
+    h('div', { class: 'gm__stash-actions' },
+      h('button', { class: 'gm__stash-btn', type: 'button', disabled: !!busy, onClick: () => onApply(stash.index), title: 'Apply stash without removing it' }, 'Apply'),
+      h('button', { class: 'gm__stash-btn', type: 'button', disabled: !!busy, onClick: () => onPop(stash.index), title: 'Apply stash and remove it' }, 'Pop'),
+      h('button', { class: 'gm__stash-btn gm__stash-btn--danger', type: 'button', disabled: !!busy, onClick: () => onDrop(stash.index), title: 'Delete stash' }, 'Drop')
+    )
   );
 }
