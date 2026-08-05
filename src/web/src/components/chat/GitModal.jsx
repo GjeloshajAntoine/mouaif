@@ -286,6 +286,44 @@ export function GitModal(props) {
                 h('button', { class: 'btn', type: 'button', onClick: load }, 'Retry')
               )
             : h(Fragment, null,
+                h('div', { class: 'gm__section' },
+                  h('button', {
+                    class: 'gm__section-head',
+                    type: 'button',
+                    onClick: () => setStashSectionOpen(!stashSectionOpen),
+                    'aria-expanded': String(stashSectionOpen),
+                    'aria-controls': 'gm-section-stash'
+                  },
+                    h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, stashSectionOpen ? '\u25BE' : '\u25B8'),
+                    h('span', { class: 'gm__section-title' }, 'Stash'),
+                    h('span', { class: 'gm__section-count' }, stashes.length || '')
+                  ),
+                  stashSectionOpen && h('div', { id: 'gm-section-stash', class: 'gm__section-body' },
+                    h('div', { class: 'gm__stash-toolbar' },
+                      h('button', {
+                        class: 'gm__stash-btn gm__stash-btn--stashup',
+                        type: 'button',
+                        disabled: !!busy,
+                        onClick: () => doGit('stash'),
+                        'aria-label': 'Stash working changes',
+                        title: 'Stash up'
+                      },
+                        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+                          h('path', { d: 'M12 4v9.6L9.4 11 8 12.4l5 5 5-5-1.4-1.4L14 13.6V4h-2ZM5 20h14v2H5v-2Z', fill: 'currentColor' })
+                        ),
+                        ' Stash up'
+                      )
+                    ),
+                    stashes.length === 0
+                      ? h('div', { class: 'gm__empty' }, 'No stashed changes')
+                      : stashes.map((s, i) => h(StashRow, {
+                          key: i, stash: s, busy,
+                          onApply: (r) => doGit('stash-apply', r),
+                          onPop: (r) => doGit('stash-pop', r),
+                          onDrop: (r) => doGit('stash-drop', r)
+                        }))
+                  )
+                ),
                 h(Section, {
                   id: 'staged',
                   title: 'Staged changes',
@@ -326,44 +364,6 @@ export function GitModal(props) {
                               }, loadingCommits ? 'Loading\u2026' : 'Load more')
                             : null
                         )
-                  )
-                ),
-                h('div', { class: 'gm__section' },
-                  h('button', {
-                    class: 'gm__section-head',
-                    type: 'button',
-                    onClick: () => setStashSectionOpen(!stashSectionOpen),
-                    'aria-expanded': String(stashSectionOpen),
-                    'aria-controls': 'gm-section-stash'
-                  },
-                    h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, stashSectionOpen ? '\u25BE' : '\u25B8'),
-                    h('span', { class: 'gm__section-title' }, 'Stash'),
-                    h('span', { class: 'gm__section-count' }, stashes.length || '')
-                  ),
-                  stashSectionOpen && h('div', { id: 'gm-section-stash', class: 'gm__section-body' },
-                    h('div', { class: 'gm__stash-toolbar' },
-                      h('button', {
-                        class: 'gm__stash-btn gm__stash-btn--stashup',
-                        type: 'button',
-                        disabled: !!busy,
-                        onClick: () => doGit('stash'),
-                        'aria-label': 'Stash working changes',
-                        title: 'Stash up'
-                      },
-                        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-                          h('path', { d: 'M12 4v9.6L9.4 11 8 12.4l5 5 5-5-1.4-1.4L14 13.6V4h-2ZM5 20h14v2H5v-2Z', fill: 'currentColor' })
-                        ),
-                        ' Stash up'
-                      )
-                    ),
-                    stashes.length === 0
-                      ? h('div', { class: 'gm__empty' }, 'No stashed changes')
-                      : stashes.map((s, i) => h(StashRow, {
-                          key: i, stash: s, busy,
-                          onApply: (r) => doGit('stash-apply', r),
-                          onPop: (r) => doGit('stash-pop', r),
-                          onDrop: (r) => doGit('stash-drop', r)
-                        }))
                   )
                 )
               )
