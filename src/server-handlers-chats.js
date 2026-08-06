@@ -754,6 +754,12 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   let turnTokens = 0;
   let turnCost = 0;
   let turnCostKnown = false;
+  // Cost already persisted on intermediate segments (assistant_turn_end).
+  // The final message must carry only the REMAINING cost so the chat
+  // total (segment costs + final cost) equals the true per-round sum —
+  // otherwise segment completion tokens are billed twice (once on the
+  // segment, once inside the final aggregate).
+  let persistedSegmentCost = 0;
   function accumulateRoundUsage(roundUsage) {
     if (!roundUsage) return;
     turnTokens += (Number(roundUsage.promptTokens) || 0) + (Number(roundUsage.completionTokens) || 0);
@@ -940,6 +946,9 @@ async function handleChatStream(req, res, chatId, sessionToken) {
         if (assistantContent.trim() || assistantReasoning.trim()) {
           try {
             segmentCost = computeSegmentCost(pendingRoundUsage);
+            if (segmentCost && segmentCost.known && typeof segmentCost.total === 'number') {
+              persistedSegmentCost += segmentCost.total;
+            }
             segmentUsage = pendingRoundUsage
               ? {
                   promptTokens: pendingRoundUsage.promptTokens,
@@ -953,13 +962,16 @@ async function handleChatStream(req, res, chatId, sessionToken) {
               usage: segmentUsage,
               cost: segmentCost || undefined
             });
-            pendingRoundUsage = null;
             if (traceStream && assistantMsg) {
               const event = trace.eventForMessage(assistantMsg);
               trace.write(traceStream, event.type, event.payload);
             }
           } catch { /* non-fatal */ }
         }
+        // The snapshot is consumed whether or not this segment had text.
+        // Leaving it set on a no-text round would leak round N's tokens
+        // into round N+1's segment (double-counted cost in the totals).
+        pendingRoundUsage = null;
         assistantContent = '';
         assistantReasoning = '';
         // Emit the enriched frame (cost + usage attached) and skip the
@@ -1080,19 +1092,56 @@ async function handleChatStream(req, res, chatId, sessionToken) {
             modelId: model.id
           });
         } catch { /* keep data as-is on any pricing resolution error */ }
+        // Cost and usage on the final row are REMAINDER values, not the
+        // turn aggregate:
+        //   - Intermediate segments (assistant_turn_end) already carry
+        //     their own round's usage + cost.
+        //   - `turnCost` accumulated EVERY round's real cost — including
+        //     tool rounds that produced no text and would otherwise
+        //     vanish from the chat total.
+        //   - Charging the full aggregate here would double-bill the
+        //     segment completion tokens; charging only this round's
+        //     snapshot would drop the no-text rounds entirely.
+        // So: final cost = turnCost − persistedSegmentCost, and the
+        // usage block shows this round's own footprint (the aggregate
+        // stays on the SSE event's usage block for the live "Context"
+        // display). The SAME remainder rides the SSE `done` cost so the
+        // in-flight chat total (segments + live final) matches the
+        // persisted total exactly — no jump on reload.
+        const finalRoundUsage = pendingRoundUsage;
+        pendingRoundUsage = null;
+        let remainderCost = enriched.cost;
+        if (turnCostKnown && enriched.cost && enriched.cost.known) {
+          const remaining = Math.max(0, turnCost - persistedSegmentCost);
+          remainderCost = {
+            known: true,
+            input: 0,
+            output: 0,
+            total: remaining,
+            currency: (enriched.cost && enriched.cost.currency) || 'USD'
+          };
+          enriched = Object.assign({}, enriched, { cost: remainderCost });
+        }
         lastEnrichment = enriched;
-        pendingRoundUsage = null; // consumed by the final `done` cost
-        // Persist the assistant message with the same enrichment so
-        // a chat that is later reopened renders the same numbers
-        // (decision §14 — the usage block rides the message).
+        // Persist the assistant message so a chat that is later
+        // reopened renders the same numbers (decision §14 — the usage
+        // block rides the message).
         if (assistantContent.trim() || assistantReasoning.trim()) {
           try {
+            const persistUsage = finalRoundUsage
+              ? {
+                  promptTokens: finalRoundUsage.promptTokens,
+                  completionTokens: finalRoundUsage.completionTokens,
+                  cacheReadTokens: finalRoundUsage.cacheReadTokens || 0,
+                  cacheCreationTokens: finalRoundUsage.cacheCreationTokens || 0
+                }
+              : (data && data.usage);
             assistantMsg = messages.appendMessage(projectDir, chatId, {
               role: 'assistant',
               content: assistantContent,
               reasoning: assistantReasoning,
-              usage: data && data.usage,
-              cost: enriched.cost,
+              usage: persistUsage,
+              cost: remainderCost,
               streamingMs: enriched.streamingMs,
               modelId: enriched.modelId
             });
