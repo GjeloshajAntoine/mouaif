@@ -28,8 +28,8 @@
 //     Designed for low-latency replies and tight context budgets.
 //   - average    : identity + concise guidance on how to answer
 //     (be terse, use markdown) + agentic tool-loop rules (read/edit/
-//     run loop, non-interactive shell, ask when unclear). The
-//     recommended default.
+//     run loop, non-interactive shell, progress reporting, ask when
+//     unclear). The recommended default.
 //   - extensive  : identity + the same guidance + a few worked
 //     examples and an explicit reminder about the tool/trace story.
 //     For users who want the model to behave more deliberately and
@@ -68,6 +68,7 @@ const PROFILES = Object.freeze({
       '- Follow the user\'s custom prompt where it does not conflict with this one.\n\n' +
       'Working in the project:\n' +
       '- Use enabled tools (see the feature list): read_file to inspect, edit_file with an exact unique oldText block to edit, shell to run.\n' +
+      '- For long-running work, report progress via report_progress (or task).\n' +
       '- Shell has no stdin — run one-shot/flagged commands, never a REPL.\n' +
       '- Loop: inspect, change, run, read the error, iterate until done or cancelled; report each step in plain language.\n' +
       '- Ask before destructive actions (delete, rewrite, push, install, unknown commands). When unclear, ask a clarifying question first; proceed only on an obvious assumption, stated in one line.'

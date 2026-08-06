@@ -645,7 +645,18 @@
   color: var(--fg-soft);
 }
 .tool-preview__task-item--done .tool-preview__task-check { color: var(--success); }
-.tool-preview__task-label { font-weight: 600; flex: 1; }
+.tool-preview__task-label {
+  font-weight: 600;
+  flex: 1;
+  /* Long task titles must not blow up the card on a phone: clamp to
+     two lines with an ellipsis and break anywhere if a single token
+     is unbroken. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .tool-preview__task-inner { flex: 1; }
 .tool-preview__task-bar {
   margin-top: 3px;

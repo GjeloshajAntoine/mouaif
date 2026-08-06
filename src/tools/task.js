@@ -28,7 +28,7 @@ function nextId() {
   return crypto.randomBytes(4).toString('hex');
 }
 
-const MAX_TITLE_CHARS = 200;
+const MAX_TITLE_CHARS = 60;
 const MAX_DESC_CHARS = 2000;
 const MAX_SUBTASK_TITLE_CHARS = 200;
 const MAX_TASKS_PER_CHAT = 50;
@@ -48,7 +48,7 @@ const SPEC = {
         },
         title: {
           type: 'string',
-          description: 'Task title (required when action is "create", max 200 chars).'
+          description: 'Task title (required when action is "create", max 60 chars). Keep it short — a few words.'
         },
         description: {
           type: 'string',
