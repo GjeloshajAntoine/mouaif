@@ -135,7 +135,9 @@ function attachCliStream(session, broadcast) {
 //        this to render the per-chat tool toggles shown below the
 //        system prompt on a brand-new chat.
 //   POST /api/tools/shell  body: { projectDir, cmd, timeoutMs? }
-//     -> { ok, stdout, stderr, exitCode, durationMs } | { ok:false, error, code }
+//     -> NDJSON stream (application/x-ndjson): `output` lines while the
+//        command runs, then `result` line with
+//        { ok, stdout, stderr, exitCode, durationMs } | { ok:false, error, code }
 // The tool is off unless the project's resolved settings enable it
 // (settings.tools.shell.enabled). A disabled project returns
 // ETOOL_DISABLED with HTTP 403.
@@ -295,12 +297,40 @@ async function handleTools(req, res, parsed) {
       });
     }
 
-    const out = await shellTool.runShell({ projectDir, cmd, shell: shellOverride || undefined, timeoutMs: authorization.timeoutMs });
+    // Streamed NDJSON response (Content-Type: application/x-ndjson):
+    // one line per live output chunk while the command is still running,
+    // then a final `result` line with the complete tool result. The chat
+    // composer's /shell card renders the output lines into its live
+    // preview, so a direct run behaves exactly like a model-driven run
+    // (which streams `shell_output` SSE frames). Error frames never
+    // appear here — the pre-run failures above (authorization, bad
+    // input) are plain JSON responses; only the run itself streams.
+    // The client treats a non-NDJSON body as a fallback and reads it as
+    // JSON, so an older server still works.
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    const out = await shellTool.runShell({
+      projectDir, cmd,
+      shell: shellOverride || undefined,
+      timeoutMs: authorization.timeoutMs,
+      // Live output deltas for the composer card, mirroring the
+      // `shell_output` SSE event of the model-driven path.
+      onOutput: (stream, delta) => {
+        try {
+          res.write(JSON.stringify({ type: 'output', stream, delta }) + '\n');
+        } catch { /* client disconnected; the run keeps going server-side */ }
+      }
+    });
     // Same identity header the model-facing tool message carries, so a
     // composer /shell run reads exactly like a model-driven run.
     if (out && typeof out === 'object' && !out.identity) out.identity = 'mouaif shell';
-    const status = out.ok ? 200 : (out.code === 'EOUTSIDE_PROJECT' || out.code === 'ENOENT' ? 400 : 200);
-    return sendJSON(res, status, out);
+    try {
+      res.end(JSON.stringify({ type: 'result', result: out }) + '\n');
+    } catch { /* client gone */ }
+    return;
   }
 
   // GET /api/tools/cli/session?projectDir=<abs>

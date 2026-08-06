@@ -547,6 +547,14 @@ export function handleShellOutputEvent(data, refs) {
   if (!card) return false;
   const pre = card.querySelector('.tool-card__shell-live-pre');
   if (!pre) return false;
+  // A card rebuilt from persisted data mid-run (syncFromRevision or the
+  // reconnect poll) is collapsed and labeled "Waiting for results…" —
+  // there was no live stream when it was created. If the stream is in
+  // fact still alive, the first delta flips it back to a live "Running…"
+  // card so the preview is visible again instead of a stale waiting hint.
+  if (!card.classList.contains('is-expanded')) card.classList.add('is-expanded');
+  const hint = card.querySelector('.tool-card__shell-live-hint');
+  if (hint && hint.textContent !== 'Running…') hint.textContent = 'Running…';
   if (data.stream === 'stderr') {
     pre.dataset.hasStderr = '1';
     const marker = '\n── stderr ──\n';

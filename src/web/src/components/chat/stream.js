@@ -76,11 +76,50 @@ export async function runShellCommand(cmd, state, refs) {
   setChatStatus(refs, 'running shell…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   async function requestShell() {
-    return fetchJson('/api/tools/shell', {
+    const resp = await fetch('/api/tools/shell', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir, chatId, callId, cmd })
     });
+    if (resp.status === 409) return { status: 409, body: await resp.json() };
+    const ct = (resp.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('ndjson')) {
+      // Plain JSON response (older server or a pre-run error such as
+      // ETOOL_DISABLED / EDENIED): fall back to the one-shot read.
+      return { status: resp.status, body: await resp.json() };
+    }
+    // NDJSON stream: `output` lines fill the shell card's live preview
+    // while the command is running (same DOM path as the model-driven
+    // shell_output SSE events); the final `result` line is the tool
+    // result rendered by appendToolResultCard below.
+    if (!resp.body) return { status: 500, body: { ok: false, error: 'empty shell response' } };
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buf = '';
+    let resultBody = null;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          if (!line) continue;
+          let frame;
+          try { frame = JSON.parse(line); } catch { continue; }
+          if (frame.type === 'output' && typeof frame.delta === 'string') {
+            handleShellOutputEvent({ id: callId, stream: frame.stream, delta: frame.delta }, refs);
+          } else if (frame.type === 'result' && frame.result) {
+            resultBody = frame.result;
+          }
+        }
+      }
+    } finally {
+      try { reader.releaseLock(); } catch { /* already released */ }
+    }
+    if (!resultBody) resultBody = { ok: false, error: 'empty shell response' };
+    return { status: 200, body: resultBody };
   }
   let r;
   try {
@@ -95,7 +134,7 @@ export async function runShellCommand(cmd, state, refs) {
       }
     }
   } catch (err) {
-    appendToolResultCard({ id: null, name: 'shell', args: { cmd }, ok: false, result: { error: String(err) } }, refs);
+    appendToolResultCard({ id: callId, name: 'shell', args: { cmd }, ok: false, result: { error: String(err) } }, refs);
     setChatStatus(refs, 'shell error', 'error');
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;

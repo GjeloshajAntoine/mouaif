@@ -59,13 +59,23 @@ data: { "id": "call_abc123", "name": "shell", "ok": true, "result": { "stdout": 
 
 `shell_output` frames are live, best-effort output deltas emitted while the command is still running. They are never persisted to the transcript; the final `tool_result` carries the complete (truncated) output. The `identity` field names the software (`mouaif shell`) plus the OS and the exact shell that ran the command; the same line is prepended to the first model-facing `tool` message so the model always knows which environment executed its command.
 
-The chat composer also accepts a `/shell <cmd>` slash command that runs the tool directly without going through the model. The output is rendered in the chat as a `tool_result` block. This is the same code path as a model-initiated call — the only difference is that there is no prior `tool_call` from the model and the result is shown without a follow-up assistant message.
+The chat composer also accepts a `/shell <cmd>` slash command that runs the tool directly without going through the model. The output is rendered in the chat as a `tool_result` block, with the same live preview as a model-initiated call: the endpoint streams each stdout/stderr chunk to the card while the command is still running. This is the same code path as a model-initiated call — the only difference is that there is no prior `tool_call` from the model and the result is shown without a follow-up assistant message.
 
 ### REST
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs?, shell? }` | `{ ok, stdout, stderr, exitCode, durationMs, identity }` or `{ ok: false, error, code }` |
+| `POST` | `/api/tools/shell` | `{ projectDir, cmd, timeoutMs?, shell? }` | NDJSON stream (see below) |
+
+A successful run streams `application/x-ndjson` lines — one `output` frame per live chunk while the command runs, then a final `result` frame with the complete tool result:
+
+```
+{"type":"output","stream":"stdout","delta":"> project@1.0.0 test\n"}
+{"type":"output","stream":"stderr","delta":"npm warn ...\n"}
+{"type":"result","result":{"ok":true,"stdout":"...","stderr":"","exitCode":0,"durationMs":4213,"identity":"mouaif shell · macOS · zsh (/bin/zsh)"}}
+```
+
+`result` carries the same shape the endpoint returned before streaming: `{ ok, stdout, stderr, exitCode, durationMs, identity }` or `{ ok: false, error, code }`. Error responses that happen *before* the run (authorization `409 EAUTH_REQUIRED`, `403` disabled/denied, bad input) are plain JSON, not NDJSON; clients should fall back to reading a non-NDJSON body as JSON.
 
 The REST endpoint is the same path the model-initiated call goes through. The chat composer uses it for `/shell`. It also runs through the authorization gate: in `ask` mode a call without a prior grant returns HTTP `409` with `{ code: 'EAUTH_REQUIRED', chatId, callId, ... }`; the caller records a decision via `POST /api/tools/authorization/decision` and retries the call with the same `callId` (see [docs/features/tool-authorization.md](./tool-authorization.md)). The call requires `chatId` and `callId` to resolve the session.
 
