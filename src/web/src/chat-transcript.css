@@ -113,10 +113,14 @@
 /* ---- System prompt message --------------------------------------- */
 
 .chat-msg--system {
-  align-self: center;
+  /* Full-bleed card, not a bubble: line up edge-to-edge with the
+     sibling full-width transcript cards (setup select, tools card,
+     agent-files card). align-self: stretch fills the flex cross
+     axis; max-width: none cancels the .chat-msg 92% bubble cap. */
+  align-self: stretch;
   align-items: stretch;
-  width: 100%;
-  max-width: 96%;
+  width: auto;
+  max-width: none;
 }
 .chat-msg--system .chat-msg__role {
   color: var(--muted);
@@ -124,6 +128,11 @@
 }
 .chat-msg--system .chat-msg__body {
   align-self: stretch;
+  /* Un-capped: the generic @media (max-width: 360px)
+     .chat-msg__body { max-width: 78% } squeeze targets chat bubbles
+     only — the system card must keep its full width so it stays
+     flush with the tools / agent-files cards below it. */
+  max-width: none;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
