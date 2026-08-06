@@ -10,6 +10,13 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+
+// Isolate the app store BEFORE any src module is required (settings.js
+// captures MOUAIF_HOME at require time). Setting it later would make
+// streamChat / setProject write through the real ~/.mouaif store.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-usage-acc-'));
+process.env.MOUAIF_HOME = path.join(tmp, 'home');
+
 const ai = require('../src/ai.js');
 const settings = require('../src/settings.js');
 
@@ -20,8 +27,6 @@ function check(name, cond, detail) {
   else { failed++; console.log('FAIL  ' + name + (detail ? '  -- ' + detail : '')); }
 }
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-usage-acc-'));
-process.env.MOUAIF_HOME = path.join(tmp, 'home');
 const projectDir = path.join(tmp, 'project');
 fs.mkdirSync(projectDir, { recursive: true });
 settings.setProject(projectDir, { tools: { shell: { enabled: true, mode: 'allow' } } });

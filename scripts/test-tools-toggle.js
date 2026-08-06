@@ -3,12 +3,19 @@
 // a tool chip on a brand-new chat.
 'use strict';
 
-const c = require('../src/chats.js');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Isolate the app store BEFORE requiring any src module: with the default
+// chatStorage the chats createChat/updateChat round-trip through the app
+// SQLite store, which is rooted at MOUAIF_HOME captured when settings.js
+// loads. Without isolation this test writes test chats into the real
+// ~/.mouaif/store.sqlite.
 const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-tools-'));
+process.env.MOUAIF_HOME = path.join(d, 'home');
+
+const c = require('../src/chats.js');
 try {
   const created = c.createChat(d, { title: 'T1' });
   console.log('create no tools ->', JSON.stringify(created));

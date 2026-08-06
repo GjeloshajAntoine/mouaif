@@ -11,6 +11,16 @@
 // print a summary, exit non-zero on any failure.
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// Isolate the app store BEFORE requiring any src module: settings.js
+// captures MOUAIF_HOME at require time. This test calls settings.setApp
+// below, and without an isolated home it would overwrite the real
+// ~/.mouaif/store.sqlite (openRouter block, provider connections, ...).
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-openrouter-'));
+process.env.MOUAIF_HOME = path.join(TMP, 'home');
+
 const ai = require(path.resolve(__dirname, '..', 'src', 'ai.js'));
 const auth = require(path.resolve(__dirname, '..', 'src', 'auth.js'));
 const oauthOpenRouter = require(path.resolve(__dirname, '..', 'src', 'oauth-openrouter.js'));

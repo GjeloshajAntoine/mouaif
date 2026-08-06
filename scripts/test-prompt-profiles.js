@@ -11,12 +11,15 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 
-const pp = require('../src/promptProfiles.js');
-const settings = require('../src/settings.js');
-
 // Use a temp MOUAIF_HOME so the test never touches a real project file.
+// Must be set BEFORE requiring any src module: settings.js captures the
+// home at require time, so setting it below the requires would route the
+// test's setProject/setApp writes through the real ~/.mouaif store.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-pp-test-'));
 process.env.MOUAIF_HOME = TMP;
+
+const pp = require('../src/promptProfiles.js');
+const settings = require('../src/settings.js');
 
 let passed = 0;
 let failed = 0;

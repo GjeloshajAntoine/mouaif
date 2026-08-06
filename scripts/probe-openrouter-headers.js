@@ -5,6 +5,15 @@
 // X-Title (and the new X-OpenRouter-Title) reach the upstream.
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// Isolate the app store before requiring src modules (settings.js captures
+// MOUAIF_HOME at require time). This probe calls settings.setApp repeatedly;
+// without isolation it would mutate the real ~/.mouaif/store.sqlite.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-openrouter-probe-'));
+process.env.MOUAIF_HOME = path.join(TMP, 'home');
+
 const ai = require(path.resolve(__dirname, '..', 'src', 'ai.js'));
 const settings = require(path.resolve(__dirname, '..', 'src', 'settings.js'));
 

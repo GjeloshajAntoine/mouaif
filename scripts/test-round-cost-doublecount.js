@@ -12,6 +12,16 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+
+// Isolate the app store BEFORE any src module is required: settings.js
+// captures MOUAIF_HOME at require time, and server-handlers-chats /
+// messages / chats / settings all write through that captured home.
+// Setting the env var later (e.g. inside main) makes this test wipe the
+// real ~/.mouaif/store.sqlite — the setApp({ providers }) fixture below
+// replaces every configured provider connection on the machine.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-dblcost-'));
+process.env.MOUAIF_HOME = path.join(tmp, 'home');
+
 const { handleChatStream } = require('../src/server-handlers-chats.js');
 const messages = require('../src/messages.js');
 const chats = require('../src/chats.js');
@@ -86,8 +96,6 @@ function mockRes() {
 }
 
 (async function main() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-dblcost-'));
-  process.env.MOUAIF_HOME = path.join(tmp, 'home');
   const projectDir = path.join(tmp, 'project');
   fs.mkdirSync(projectDir, { recursive: true });
 
