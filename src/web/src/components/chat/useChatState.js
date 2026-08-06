@@ -287,7 +287,7 @@ export function useChatState(props) {
 
   const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
   const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
-  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound), [chat]);
+  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs)), [chat]);
   const onToggleSkills = useCallback((next) => {
     state.skills = Object.assign({}, state.skills, { enabled: next });
     updateChatBound({ skills: next });
@@ -429,7 +429,7 @@ export function useChatState(props) {
         const projectGate = rSys.status === 200 ? rSys.body.projectAgentFiles : null;
         const afEnabled = projectGate === false
           ? false
-          : (typeof c.agentFiles === 'boolean') ? c.agentFiles : (c.promptSize !== 'very-small');
+          : (typeof c.agentFiles === 'boolean') ? c.agentFiles : true;
         agentFiles.current = {
           files: (rSys.status === 200 && Array.isArray(rSys.body.agentFiles)) ? rSys.body.agentFiles.map(f => f.name) : [],
           enabled: afEnabled,

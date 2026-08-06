@@ -232,8 +232,7 @@ export function mountToolsCard(refs, state) {
 // .github/copilot-instructions.md) were found at the project root
 // and whether they are being injected into the model context. One
 // toggle flips the per-chat `agentFiles` boolean; the default
-// (no explicit choice) follows the prompt-size profile:
-// very-small = OFF, average/extensive = ON.
+// (no explicit choice) is ON regardless of the prompt-size profile.
 // When `projectLocked` is true, the project has the master switch off
 // and the per-chat toggle is disabled.
 function buildAgentFilesCard(state) {
@@ -333,18 +332,21 @@ export function updateAgentFilesCard(refs, state) {
   refs.agentFilesCard.current = fresh;
 }
 
-// toggleAgentFiles(next, state, refs, updateChat)
+// toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt)
 //
 // Flip the per-chat agent-files toggle and persist it. The first
 // time the user interacts we write an explicit boolean; after that
 // the chat carries the user's choice until they reset it (by
 // switching to the profile default, which we do not expose in the
-// UI — the toggle is sticky).
-export async function toggleAgentFiles(next, state, refs, updateChat) {
+// UI — the toggle is sticky). After the PATCH lands we re-fetch the
+// resolved system prompt so the transcript card reflects the change
+// immediately (agent files are part of the injected system context).
+export async function toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt) {
   const cur = state.agentFiles || { files: [], enabled: true, explicit: false };
   state.agentFiles = { files: cur.files, enabled: next, explicit: true };
   updateAgentFilesCard(refs, state);
   await updateChat({ agentFiles: next });
+  if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
 }
 
 // updateToolsCard(refs, state)
