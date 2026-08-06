@@ -4,7 +4,7 @@
 
 `mouaif` ships three hand-written system prompts — `very-small`, `average`, and `extensive` — that the chat stream prepends to the upstream `messages` array, in front of any custom prompt and the transcript. Every chat carries a `promptSize` field, so each chat can pick its own profile. The same field is also stored on the project (`<projectDir>/.mouaif.json`) and the app store, so projects and the app itself can pin a default. The active profile is resolved at request time, per the same `defaults → app → project → chat` order as the rest of the settings stack.
 
-This feature implements the "Three prompt-size profiles" entry in `.github/copilot-instructions.md` §4. The profile text is intentionally a single static block per size; the goal is **predictability** and **a small prompt budget**, not a per-provider conversation about identity. The `average` profile keeps only the mouaif identity and practical answer rules, avoiding project-settings and server details that rarely change model behavior.
+This feature implements the "Three prompt-size profiles" entry in `.github/copilot-instructions.md` §4. The profile text is intentionally a single static block per size; the goal is **predictability** and **a small prompt budget**, not a per-provider conversation about identity. The `average` profile keeps the mouaif identity, practical answer rules, and the agentic tool-loop rules (read/edit/run loop, non-interactive shell, ask-when-unclear), while avoiding project-settings and server details that rarely change model behavior.
 
 ## Usage
 
@@ -23,7 +23,7 @@ The resolved system prompt (the active profile's text, plus any custom prompt) i
 | ID | Label | When to use it |
 |---|---|---|
 | `very-small` | Very small | Tight context budgets, low-latency replies, or when the model is already well-aligned and you want a tiny floor prompt. |
-| `average` | Average | The recommended default. Identity + concise guidance on how to answer. |
+| `average` | Average | The recommended default. Identity + concise guidance on how to answer + agentic tool-loop rules (read/edit/run loop, non-interactive shell, ask when unclear). |
 | `extensive` | Extensive | When you want the model to be deliberate, follow the trace / tool guidelines, and use worked examples. |
 
 The default is `average`. The chat, the project, and the app can each override it; the most specific one wins.

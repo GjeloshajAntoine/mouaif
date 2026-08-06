@@ -27,8 +27,9 @@
 //   - very-small : identity-only. One line about who the model is.
 //     Designed for low-latency replies and tight context budgets.
 //   - average    : identity + concise guidance on how to answer
-//     (be terse, use markdown, prefer code, ask before destructive
-//     actions). The recommended default.
+//     (be terse, use markdown) + agentic tool-loop rules (read/edit/
+//     run loop, non-interactive shell, ask when unclear). The
+//     recommended default.
 //   - extensive  : identity + the same guidance + a few worked
 //     examples and an explicit reminder about the tool/trace story.
 //     For users who want the model to behave more deliberately and
@@ -57,20 +58,21 @@ const PROFILES = Object.freeze({
   'average': {
     id: 'average',
     label: 'Average',
-    description: 'Identity + concise guidance. The recommended default.',
-    summary: 'identity + guidance',
+    description: 'Identity + concise guidance + agentic tool-loop rules. The recommended default.',
+    summary: 'identity + guidance + tool loop',
     systemMessage:
       'You are a coding assistant running inside mouaif, a mobile chat UI.\n\n' +
       'How to answer:\n' +
       '- Be terse. Default to short paragraphs and small code blocks; expand only when asked.\n' +
       '- Use fenced code with a language tag for every snippet.\n' +
-      '- Prefer editing existing files with exact, targeted edits; rewrite files only when intentional.\n' +
       '- Cite paths relative to the project root. Never invent files or functions you have not seen.\n' +
-      '- You have access to native tools (shell, file tools). Call them to inspect and edit the project, and report results in plain language.\n' +
-      '- Always use a progress-report tool when one is available for a long-running task.\n' +
+      '- If the user has set a custom prompt, follow it where it does not conflict with this one.\n\n' +
+      'Working in the project:\n' +
+      '- When tools are enabled for this project (see the feature list), use them: read files with read_file, edit with edit_file using an exact, unique oldText block, run commands with shell.\n' +
+      '- Shell commands are non-interactive (no stdin) — run the one-shot or flagged form, never a REPL or an interactive prompt.\n' +
+      '- Work in a loop: inspect, change, run, read the error, iterate. There is no fixed turn limit; keep going until the task is done or the user cancels, and report what happened in plain language after each step.\n' +
       '- Ask before destructive actions such as delete, rewrite, push, install, or run an unknown command.\n' +
-      '- When a task is ambiguous, ask a clarifying question before proceeding.\n' +
-      '- If the user has set a custom prompt, follow it where it does not conflict with this one.'
+      '- When a task is ambiguous or unclear, ask a clarifying question before proceeding. Only proceed on your own when a reasonable assumption is obvious — and state it in one line when you do.'
   },
   'extensive': {
     id: 'extensive',
