@@ -497,7 +497,9 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // fixed).
   if (state._updateSetupVisibility) state._updateSetupVisibility();
 
-  // Live per-turn counter. The chat UI runs this on every delta;
+  // Live per-turn counter. The chat UI runs this on every message AND
+  // reasoning delta (thinking tokens count toward the upstream's
+  // completionTokens, so the window must span the thinking phase too);
   // the server's authoritative completionTokens (sent on `done`)
   // replaces the heuristic on the final tick.
   const counter = createCounter();
@@ -625,6 +627,13 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       }
     } else if (ev.eventName === 'reasoning' && typeof data.delta === 'string') {
       reasoning += data.delta;
+      // Feed thinking deltas into the live counter too. Upstream
+      // completionTokens (which replace the heuristic on `done`)
+      // include thinking tokens, so the counter's window must span
+      // the thinking phase — otherwise a reasoning-heavy turn divides
+      // the full token count by the answer-only window and over-reports
+      // tok/s by the think/answer ratio.
+      counter.add(data.delta);
       appendReasoningToLive(data.delta, refs, state);
       const now = performance.now ? performance.now() : Date.now();
       if (now - lastRepaintAt > 120) {
@@ -652,6 +661,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
+      // Snap the live tok/s line to the authoritative number now that
+      // the upstream reported its real completionTokens (they include
+      // thinking tokens, matching the counter's window). Without this
+      // repaint the meta line keeps the character-based estimate until
+      // the final render after the stream closes.
+      repaintLiveRate();
       // The title only ever changes on the first user turn (the server
       // derives it from the first prompt). Skip the full GET /api/chats/:id
       // round-trip on every subsequent done — refreshChatTitle is only
