@@ -516,9 +516,32 @@ function htmlPage(title, body) {
 // PWA standalone mode where there is no tab bar and the user cannot
 // manually "close this tab". The delay is long enough for the user to read
 // the status message before the redirect fires.
+// Tiny redirect snippet included in OAuth callback pages so the page gets
+// the user back into the app after sign-in completes. Critical on iOS PWA
+// standalone mode where there is no tab bar and the user cannot manually
+// "close this tab".
+//
+// The JS runs immediately (no 2s wait):
+//   - popup flow (window.open without noopener): close the popup; the
+//     opener app polls the account list and reports success itself.
+//   - full-page flow (iOS PWA redirect-back): replace the current page
+//     with the app so the user lands straight back in the UI.
+// The meta refresh is a no-JS fallback (identical destination), and a
+// manual "Return to the app" link is always available as a tap target.
 function redirectMeta(url) {
   const safe = String(url).replace(/["<>]/g, '');
-  return '<meta http-equiv="refresh" content="2; url=' + safe + '"><p>Redirecting back to the app…</p>';
+  const js = '<script>'
+    + 'try{'
+    + 'if(window.opener&&window.opener!==window&&!window.opener.closed){'
+    + 'window.close();'
+    + '}else{'
+    + 'location.replace(' + JSON.stringify(safe) + ');'
+    + '}'
+    + '}catch(e){location.replace(' + JSON.stringify(safe) + ');}'
+    + '</script>';
+  return '<meta http-equiv="refresh" content="2; url=' + safe + '">'
+    + js
+    + '<p>Redirecting back to the app… <a href="' + safe + '" style="color:#7bd88f">Return now</a>.</p>';
 }
 
 async function finishOAuth({ provider, state, code, errorParam, format }) {

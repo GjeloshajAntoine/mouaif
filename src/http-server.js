@@ -93,8 +93,17 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   if (method === 'OPTIONS') {
     return sendJSON(res, 403, { error: 'Cross-origin preflight is not allowed', code: 'EORIGIN' });
   }
+  // `/oauth/callback` is exempt from the same-origin browser gate: the OAuth
+  // provider (openrouter.ai, anthropic.com, github.com, ...) redirects the
+  // user's browser back here in a top-level navigation, so the Origin header
+  // is legitimately the provider's, not ours. Rejecting on that mismatch is
+  // what broke iOS PWA sign-in ("shows in provider" = the redirect-back
+  // arrived in the web preview tab, and the app never got the token). The
+  // callback is safe to admit because it is not authenticated: it only
+  // exchanges a one-time code bound to a pending `state` + PKCE verifier that
+  // the user started in the app, then writes the result into the keyring.
+  // The session/CSRF gates below still protect every `/api/*` route.
   const browserProtected = urlPath === '/events'
-    || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/');
   if (browserProtected && requestHasBrowserOrigin(req) && !authorizeBrowserRequest(req, res, sessionToken, serverConfig.publicOrigin)) {
     return;
@@ -112,7 +121,13 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     || urlPath === '/oauth/callback'
     || urlPath.startsWith('/api/')
     || urlPath === '/data';
-  if (accessProtected && !authorizeAccessRequest(req, res, serverConfig.authEnabled)) return;
+  // The OAuth loopback callback is the one exception to the access gate: a
+  // browser redirected back from the IdP has no reason to hold an access
+  // cookie (iOS PWA popup flow, fresh Safari context, or the popup being
+  // denied entirely). It must be reachable to complete the code exchange;
+  // `finishOAuth` still validates the state against a pending record the
+  // user created inside the authenticated app.
+  if (accessProtected && urlPath !== '/oauth/callback' && !authorizeAccessRequest(req, res, serverConfig.authEnabled)) return;
 
   // SSE endpoint
   if (urlPath === '/events' && method === 'GET') {
