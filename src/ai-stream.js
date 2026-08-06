@@ -876,7 +876,10 @@ async function streamChat(opts) {
     }
   }
   if (model.provider === 'openrouter') {
-    if (reasoningText) onEvent('reasoning', { delta: reasoningText });
+    // Reasoning already streamed live as it arrived (see apply()).
+    // Only the assistant text is buffered for MiniMax tool-call
+    // compatibility; replaying it here would duplicate every thinking
+    // delta the client already rendered.
     if (assistantText) onEvent('message', { delta: assistantText });
   }
   return { ok: true, assistantText, toolCalls };
@@ -890,7 +893,13 @@ async function streamChat(opts) {
     }
     else if (ev.name === 'reasoning') {
       if (ev.data && typeof ev.data.delta === 'string') reasoningText += ev.data.delta;
-      if (model.provider !== 'openrouter') onEvent('reasoning', ev.data);
+      // Reasoning deltas stream live for every provider, OpenRouter
+      // included. Unlike `content`, reasoning text never carries a
+      // MiniMax-style serialized tool call, so there is no compat
+      // reason to buffer it — streaming keeps the client's
+      // "Thinking…" block filling in real time instead of popping
+      // in as one burst at turn end.
+      onEvent('reasoning', ev.data);
     }
     else if (ev.name === 'done') {
       // Record the round's usage into per-round trackers; committed once
