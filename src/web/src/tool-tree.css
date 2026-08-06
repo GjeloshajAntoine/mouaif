@@ -166,3 +166,20 @@
 /* Disabled */
 .tool-tree__row:has(.checkbox:disabled) { opacity: 0.55; }
 .checkbox--sm:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Disabled-state explanation. A greyed control with no reason is a
+   dead end; when a row is locked (MCP server off, project lock, …)
+   the tree says why, right under the row. */
+.tool-tree__row.is-disabled { opacity: 0.6; }
+.tool-tree__row.is-disabled .tool-tree__name { text-decoration: line-through; text-decoration-thickness: 1px; text-decoration-color: var(--muted); }
+.tool-tree__reason {
+  margin: 0 0 3px 24px;
+  font-size: 0.64rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.tool-tree__leaf-reason {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  color: var(--muted);
+}

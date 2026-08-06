@@ -12,6 +12,9 @@
 .mcp__row-name { font-weight: 600; font-size: 0.88rem; }
 .mcp__row-sub { font-size: 0.72rem; color: var(--fg-soft); }
 .mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; flex-basis: 100%; }
+/* Disabled-server notice: the Start button is unavailable and the row
+   explains why instead of leaving a dead control. */
+.mcp__row-off { color: var(--muted); }
 .mcp__row-actions { display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; flex-shrink: 0; }
 .mcp__row-actions .btn { min-height: var(--tap-sm); padding: 0 8px; font-size: 0.72rem; }
 .mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }

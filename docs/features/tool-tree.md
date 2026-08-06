@@ -43,16 +43,21 @@ The settings tree replaces the old "Tool permissions" list — the UI is identic
 ```jsx
 {
   groups: Array<{
-    id, name, description?, checked, disabled?, title?,
+    id, name, description?, checked, disabled?, disabledReason?, title?,
     control?: any,                 // right-aligned Preact node (e.g. auth segment)
     extra?: any,                   // below-row node (e.g. allowlist disclosure)
-    tools: Array<{ id, name, description?, title?, checked, disabled?, used? }>
+    tools: Array<{ id, name, description?, title?, checked,
+                   disabled?, disabledReason?, used? }>
   }>,
   onToggleGroup: (groupId, checked) => void,
   onToggleTool: (groupId, toolId, checked) => void,
   collapsedByDefault?: boolean
 }
 ```
+
+### Disabled rows explain themselves
+
+A greyed-out control with no reason is a dead end, so every `disabled` row carries a `disabledReason` string that the tree renders under the row (`.tool-tree__reason` for groups, `.tool-tree__leaf-reason` for leaves) and in the row's `title` tooltip. The most common case is a **disabled MCP server**: `buildToolGroups` locks the whole group — the group checkbox becomes inert (it cannot re-enable the server, so it does not pretend to toggle), the leaf checkboxes are disabled, and the reason reads "Server is off — enable it in the row above or in Settings → MCP to use its tools." The same pattern covers project-locked groups (agent files, skills) in the chat popup.
 
 ### Short descriptions
 
@@ -101,4 +106,4 @@ Checking every tool collapses the filter back to `null`; unchecking from `null` 
 
 ### Styling
 
-`src/web/src/tool-tree.css` — thin rows (`min-height: 26px` groups, `24px` leaves), `0.72rem` font, name and description on the same line separated by a space, ellipsis truncation. The `.tool-tree__control .seg__pill` override shrinks the auth segment to fit inside a row.
+`src/web/src/tool-tree.css` — thin rows (`min-height: 26px` groups, `24px` leaves), `0.72rem` font, name and description on the same line separated by a space, ellipsis truncation. The `.tool-tree__control .seg__pill` override shrinks the auth segment to fit inside a row. Disabled rows get `.is-disabled` (reduced opacity, struck-through name) plus the inline `.tool-tree__reason` / `.tool-tree__leaf-reason` explanation text.

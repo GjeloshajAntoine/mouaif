@@ -136,7 +136,8 @@ export function SettingsMcpView(props = {}) {
 
   function serverRow(s) {
     const status = s.status || 'stopped';
-    const enabledBit = s.enabled === false ? 'disabled' : 'enabled';
+    const disabled = s.enabled === false;
+    const enabledBit = disabled ? 'disabled' : 'enabled';
     const toolBit = (s.tools && s.tools.length) ? s.tools.length + ' tool' + (s.tools.length === 1 ? '' : 's') : 'no tools';
     const isBusy = busyIds.has(s.id);
     // The editor link carries the list's own context: the app list
@@ -147,6 +148,13 @@ export function SettingsMcpView(props = {}) {
       : '?scope=app';
     const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     const showStop = status === 'ready' || status === 'errored' || status === 'starting';
+    // Why is Start unavailable? A disabled server cannot start from the
+    // list — the user must re-enable it first. Say so instead of
+    // leaving a dead button with no explanation.
+    const startDisabled = disabled || status === 'starting' || isBusy;
+    const startTitle = disabled
+      ? 'Server is off — enable it in the editor (tap the row) to start it.'
+      : (status === 'starting' ? 'Starting…' : 'Start this server');
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
         h('span', { class: 'group__row-body' },
@@ -158,7 +166,9 @@ export function SettingsMcpView(props = {}) {
       h('div', { class: 'mcp__row-actions', onClick: (e) => e.stopPropagation() },
         h('button', {
           class: 'btn btn--small', type: 'button',
-          disabled: s.enabled === false || status === 'starting' || isBusy,
+          disabled: startDisabled,
+          title: startTitle,
+          'aria-label': startTitle,
           onClick: () => callLifecycle('start', s.id)
         }, status === 'ready' ? 'Restart' : 'Start'),
         showStop
@@ -176,6 +186,10 @@ export function SettingsMcpView(props = {}) {
             }, '↻')
           : null
       ),
+      disabled
+        ? h('div', { class: 'mcp__row-err mcp__row-off' },
+            'Server is off — the model does not see its tools. Tap the row to edit and re-enable it.')
+        : null,
       (s.status === 'errored' && s.error)
         ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
         : null

@@ -22,10 +22,10 @@
 //
 // Props:
 //   groups: Array<{
-//     id, name, description?, checked, disabled?, title?,
+//     id, name, description?, checked, disabled?, disabledReason?, title?,
 //     control?: any,                 // right-aligned Preact node
 //     tools: Array<{ id, name, description?, title?, checked,
-//                    disabled?, used? }>
+//                    disabled?, disabledReason?, used? }>
 //   }>
 //   onToggleGroup: (groupId, checked) => void
 //   onToggleTool: (groupId, toolId, checked) => void
@@ -61,7 +61,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
       const onCount = kids.filter((t) => t.checked).length;
 
       return h('li', { key: group.id, class: 'tool-tree__group', role: 'treeitem', 'aria-expanded': collapsible ? String(!isCollapsed) : undefined },
-        h('div', { class: 'tool-tree__row', title: group.title || undefined },
+        h('div', { class: 'tool-tree__row' + (group.disabled ? ' is-disabled' : ''), title: group.title || (group.disabled && group.disabledReason ? group.disabledReason : undefined) },
           collapsible
             ? h('button', {
                 type: 'button',
@@ -77,6 +77,8 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
             : h('span', { class: 'tool-tree__chew', 'aria-hidden': 'true' }),
           // The checkbox is its own click target — the row is NOT a
           // <label>, so tapping the name text does not flip anything.
+          // A disabled group is a hard lock (server off, project
+          // locked, …): the checkbox is inert and the row explains why.
           h('input', {
             type: 'checkbox',
             class: 'checkbox checkbox--sm',
@@ -90,11 +92,16 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
           kids.length > 1 ? h('span', { class: 'tool-tree__count' }, onCount + '/' + kids.length) : null,
           group.control ? h('span', { class: 'tool-tree__control' }, group.control) : null
         ),
+        // Below-row extra content. A disabled row explains itself
+        // here — a dead grey checkbox without a reason helps nobody.
+        group.disabled && group.disabledReason
+          ? h('div', { class: 'tool-tree__reason' }, group.disabledReason)
+          : null,
         collapsible && !isCollapsed
           ? h('ul', { class: 'tool-tree__children', role: 'group' },
               kids.map((tool) =>
                 h('li', { key: tool.id, class: 'tool-tree__item', role: 'treeitem' },
-                  h('div', { class: 'tool-tree__row tool-tree__row--leaf' + (tool.used ? ' is-used' : ''), title: tool.title || undefined },
+                  h('div', { class: 'tool-tree__row tool-tree__row--leaf' + (tool.used ? ' is-used' : '') + (tool.disabled ? ' is-disabled' : ''), title: tool.title || (tool.disabled && tool.disabledReason ? tool.disabledReason : undefined) },
                     h('input', {
                       type: 'checkbox',
                       class: 'checkbox checkbox--sm',
@@ -105,7 +112,10 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                     }),
                     h('span', { class: 'tool-tree__name' }, tool.name),
                     tool.description ? h('span', { class: 'tool-tree__desc' }, tool.description) : null,
-                    tool.used ? h('span', { class: 'tool-tree__used', title: 'Used in this chat' }, '●') : null
+                    tool.used ? h('span', { class: 'tool-tree__used', title: 'Used in this chat' }, '●') : null,
+                    tool.disabled && tool.disabledReason
+                      ? h('span', { class: 'tool-tree__leaf-reason' }, tool.disabledReason)
+                      : null
                   )
                 )
               )
@@ -276,6 +286,12 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       }).filter(Boolean);
     }
     const off = server.enabled === false;
+    // A disabled server is a hard lock, not a per-chat filter choice:
+    // the whole group (checkbox included) goes inert and the row says
+    // why, so a greyed-out control never appears unexplained.
+    const disabledReason = off
+      ? 'Server is off — enable it in the row above or in Settings → MCP to use its tools.'
+      : '';
     // Group checkbox mirrors the SERVER enable state (not the
     // per-chat filter) — the cards.js handler dispatches mcp-*
     // toggles to toggleMcpServer.
@@ -284,10 +300,11 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       name: server.name || server.id,
       description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
       checked: !off,
-      disabled: false,
+      disabled: off,
+      disabledReason,
       tools: serverTools.map((t) => {
         const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
-        return leaf(t, { name: short, disabled: off });
+        return leaf(t, { name: short, disabled: off, disabledReason });
       })
     });
   }
