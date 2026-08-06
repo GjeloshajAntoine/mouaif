@@ -14,8 +14,6 @@
 
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { GitModal } from './GitModal.jsx';
-import { CliModal } from './CliModal.jsx';
 
 export function FileToolbar(props) {
   const { projectDir, onOpenFileEditor } = props;
@@ -23,6 +21,35 @@ export function FileToolbar(props) {
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
   const menuRef = useRef(null);
+
+  // Lazy-load the git and CLI modals on first open, mirroring how the
+  // chat view lazy-loads the file editor: the modal chunks are fetched
+  // only when the user actually opens them, keeping them out of the
+  // main entry bundle.
+  const [GitModal, setGitModal] = useState(null);
+  const [CliModal, setCliModal] = useState(null);
+
+  useEffect(() => {
+    if (!gitOpen || GitModal) return;
+    let cancelled = false;
+    import('./GitModal.jsx').then((mod) => {
+      if (!cancelled) setGitModal(() => mod.GitModal);
+    }).catch(() => {
+      if (!cancelled) setGitModal(null);
+    });
+    return () => { cancelled = true; };
+  }, [gitOpen, GitModal]);
+
+  useEffect(() => {
+    if (!cliOpen || CliModal) return;
+    let cancelled = false;
+    import('./CliModal.jsx').then((mod) => {
+      if (!cancelled) setCliModal(() => mod.CliModal);
+    }).catch(() => {
+      if (!cancelled) setCliModal(null);
+    });
+    return () => { cancelled = true; };
+  }, [cliOpen, CliModal]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -86,7 +113,7 @@ export function FileToolbar(props) {
         h('span', null, 'Cli')
       )
     ),
-    gitOpen ? h(GitModal, { projectDir, onClose: () => setGitOpen(false) }) : null,
-    cliOpen ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
+    gitOpen && GitModal ? h(GitModal, { projectDir, onClose: () => setGitOpen(false) }) : null,
+    cliOpen && CliModal ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
   );
 }
