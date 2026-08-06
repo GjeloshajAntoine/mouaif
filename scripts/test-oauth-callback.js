@@ -20,8 +20,6 @@
 // "KeyRevoked"), so we stub src/auth.js with an in-memory implementation
 // before requiring the server — same technique as test-oauth-refresh.js.
 
-'use strict';
-
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -140,7 +138,14 @@ async function main() {
       '/oauth/callback?provider=openrouter&state=openrouter%3Anope&code=mockcode3',
       { Origin: 'https://openrouter.ai' });
     assert.equal(bad.status, 400, 'forged state is rejected');
-    assert.match(await bad.text(), /No pending sign-in/);
+    const badBody = await bad.text();
+    assert.match(badBody, /No pending sign-in/);
+    // Error pages must NOT close the popup / redirect instantly — the user
+    // needs to read the failure message first. They keep the plain 2s meta
+    // refresh plus the manual return link.
+    assert.doesNotMatch(badBody, /window\.opener/, 'error page has no instant popup-close JS');
+    assert.doesNotMatch(badBody, /location\.replace/, 'error page has no instant redirect JS');
+    assert.match(badBody, /Return now/, 'error page still offers the manual return link');
 
     // --- 4. The callback page carries the popup-close + fallback JS. ---
     stub.recordPending('openrouter', {

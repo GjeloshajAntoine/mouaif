@@ -273,12 +273,16 @@ export function SettingsProviderEditView(props) {
     // page. The OAuth callback page now auto-redirects back to /web/ after
     // sign-in completes, so the user lands back at the app.
     //
-    // Deliberately no `noopener`: the callback page closes the popup via
-    // `window.opener.close()` when it loads, so the sign-in doesn't leave a
-    // dead "web preview" tab behind. The opener window keeps polling the
-    // account list, so it is the one that reports success. (An opener
-    // reference from the same origin we just navigated to is not a
-    // security concern — the popup only ever runs our own callback page.)
+    // Deliberately no `noopener`: on success the callback page closes the
+    // popup itself (`window.close()`, allowed because the callback page is
+    // same-origin with the opener), so the sign-in doesn't leave a dead
+    // "web preview" tab behind. The opener window keeps polling the account
+    // list, so it is the one that reports success. Omitting noopener does
+    // mean the popup's first document — the IdP's own page — holds an opener
+    // reference it could in theory use to navigate the app; the IdP is a
+    // trusted third party the user just chose to sign in with, and the popup
+    // ends at our own callback page, so that is the standard trade-off every
+    // OAuth popup flow makes.
     const win = window.open(authorizeUrl, '_blank');
     if (!win) {
       // Popup blocked (iOS PWA, aggressive Safari, etc.). Redirect the current

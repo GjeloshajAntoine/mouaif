@@ -235,13 +235,16 @@ async function handleOAuthCallback(req, res, parsed) {
   res.writeHead(result.status, { 'Content-Type': 'text/html; charset=utf-8' });
   // On iOS (especially PWA standalone mode) the popup that opened the OAuth
   // provider may be the current page itself — there is no other tab to close.
-  // Auto-redirect back to the app after a brief pause so the user sees the
-  // result and lands back at the UI. The redirect is relative (same origin)
-  // so the existing session cookie carries over.
+  // The redirect is relative (same origin) so the existing session cookie
+  // carries over.
   const returnUrl = '/web/';
+  // Success pages return instantly: close the popup (the opener app polls
+  // the account list and reports success), or location.replace the full
+  // page back into the app. Error pages keep only the plain 2s meta refresh
+  // so the user can read what went wrong before the page returns to the app.
   if (result.status === 200) {
     res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + result.account + '</code>.</p>'
-      + redirectMeta(returnUrl)));
+      + redirectMeta(returnUrl, true)));
   } else if (result.code === 'EPROVIDER_ERROR') {
     res.end(htmlPage('Sign-in failed', '<p class="err">' + result.error + '</p>'
       + redirectMeta(returnUrl)));

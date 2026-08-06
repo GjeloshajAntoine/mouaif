@@ -511,34 +511,37 @@ function htmlPage(title, body) {
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + safe(title) + '</title><style>body{font:16px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px;max-width:480px}h1{font-size:1.1rem;margin:0 0 12px}p{color:#aaa;margin:0 0 12px}.ok{color:#7bd88f}.err{color:#ff8a8a}</style></head><body><h1>' + safe(title) + '</h1>' + body + '</body></html>';
 }
 
-// Tiny meta-refresh snippet included in OAuth callback pages so the page
-// auto-redirects back to the app after sign-in completes. Critical on iOS
-// PWA standalone mode where there is no tab bar and the user cannot
-// manually "close this tab". The delay is long enough for the user to read
-// the status message before the redirect fires.
-// Tiny redirect snippet included in OAuth callback pages so the page gets
-// the user back into the app after sign-in completes. Critical on iOS PWA
-// standalone mode where there is no tab bar and the user cannot manually
-// "close this tab".
+// Return-page snippet for OAuth callback pages so the page gets the user
+// back into the app after sign-in completes. Critical on iOS PWA standalone
+// mode where there is no tab bar and the user cannot manually "close this
+// tab".
 //
-// The JS runs immediately (no 2s wait):
-//   - popup flow (window.open without noopener): close the popup; the
-//     opener app polls the account list and reports success itself.
+// When `closePopup` is set (success pages) the JS runs immediately (no 2s
+// wait):
+//   - popup flow (window.open without noopener): close the popup via
+//     window.close(); the opener app polls the account list and reports
+//     success itself.
 //   - full-page flow (iOS PWA redirect-back): replace the current page
 //     with the app so the user lands straight back in the UI.
+// Error pages pass no `closePopup`: the instant close would hide the
+// failure message before the user could read it, so they keep the plain 2s
+// meta refresh instead.
 // The meta refresh is a no-JS fallback (identical destination), and a
 // manual "Return to the app" link is always available as a tap target.
-function redirectMeta(url) {
+function redirectMeta(url, closePopup) {
   const safe = String(url).replace(/["<>]/g, '');
-  const js = '<script>'
-    + 'try{'
-    + 'if(window.opener&&window.opener!==window&&!window.opener.closed){'
-    + 'window.close();'
-    + '}else{'
-    + 'location.replace(' + JSON.stringify(safe) + ');'
-    + '}'
-    + '}catch(e){location.replace(' + JSON.stringify(safe) + ');}'
-    + '</script>';
+  let js = '';
+  if (closePopup) {
+    js = '<script>'
+      + 'try{'
+      + 'if(window.opener&&window.opener!==window&&!window.opener.closed){'
+      + 'window.close();'
+      + '}else{'
+      + 'location.replace(' + JSON.stringify(safe) + ');'
+      + '}'
+      + '}catch(e){location.replace(' + JSON.stringify(safe) + ');}'
+      + '</script>';
+  }
   return '<meta http-equiv="refresh" content="2; url=' + safe + '">'
     + js
     + '<p>Redirecting back to the app… <a href="' + safe + '" style="color:#7bd88f">Return now</a>.</p>';
