@@ -305,6 +305,56 @@ export function syncFromRevision(state, refs, revKey, synced) {
   return 'rebuilt';
 }
 
+// fetchMessagesSince(projectDir, chatId, since) -> { body, status }
+//
+// Fetch only the transcript tail after index `since` (the number of
+// rows the client already has). Returns null when the transcript was
+// cleared/replaced on the server (base < since) — the caller must
+// then fall back to a full /messages fetch and rebuild.
+async function fetchMessagesSince(projectDir, chatId, since) {
+  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&since=' + since);
+  if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return { body: null, status: r.status };
+  if (typeof r.body.base === 'number' && r.body.base < since) return { body: null, status: r.status };
+  return { body: r.body, status: r.status };
+}
+
+// fetchMessagesFull(projectDir, chatId) -> messages[] | null
+async function fetchMessagesFull(projectDir, chatId) {
+  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
+  return (r.status === 200 && r.body && Array.isArray(r.body.messages)) ? r.body.messages : null;
+}
+
+// applyTailSync(state, refs, revKey, tail) -> 'appended' | null
+//
+// Fast path for the common append-only change: the server sent only
+// the rows after our known prefix, so concat them and render just
+// those rows. No prefix re-verification needed — the store is
+// append-only, and a non-append change is caught upstream by the
+// base < since check in fetchMessagesSince.
+function applyTailSync(state, refs, revKey, tail) {
+  if (!Array.isArray(tail)) return null;
+  const prevLen = state.messages.length;
+  state.transcriptRevision = revKey;
+  state.messages = state.messages.concat(tail);
+  if (!tail.length) return 'appended';
+  syncTranscriptAppend(state, refs, prevLen);
+  return 'appended';
+}
+
+// syncTailOrFull(state, refs, revKey) -> 'appended' | 'rebuilt' | null
+//
+// Shared catch-up for the reconcile/recovery polls: try the cheap
+// tail fetch first; on a non-append change (or a failed tail fetch)
+// fall back to the full transcript and the prefix-checking sync.
+async function syncTailOrFull(state, refs, revKey) {
+  const { projectDir, chatId } = state.props;
+  const t = await fetchMessagesSince(projectDir, chatId, state.messages.length);
+  if (t.body) return applyTailSync(state, refs, revKey, t.body.messages);
+  const full = await fetchMessagesFull(projectDir, chatId);
+  if (full == null) return null;
+  return syncFromRevision(state, refs, revKey, full);
+}
+
 // startStreamRecovery / scheduleRecoveryTick / runRecoveryTick /
 // finishStreamRecovery / stopStreamRecovery
 //
@@ -352,8 +402,9 @@ async function runRecoveryTick(state, refs) {
   if (st.stopped || !st.active) return;
   st.attempts += 1;
   // Cheap first: the revision marker ({count, ts}) tells us whether the
-  // transcript moved at all. The full message list is fetched only when
-  // it did — no multi-MB round-trip on a stalled or finished run.
+  // transcript moved at all. Rows are fetched only when it did — and
+  // then just the tail after our known prefix (?since=), not the
+  // whole transcript.
   let revKey = null;
   try {
     const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
@@ -367,18 +418,18 @@ async function runRecoveryTick(state, refs) {
   }
 
   if (revKey !== state.transcriptRevision) {
-    // New content landed on disk. Sync the authoritative rows and
-    // reset the stability counter — the run is clearly still going.
-    let synced = null;
+    // New content landed on disk. Sync the authoritative rows (tail
+    // fetch first — only the rows after our known prefix cross the
+    // wire) and reset the stability counter — the run is clearly
+    // still going.
+    let applied = null;
     try {
-      const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-      if (r.status === 200 && Array.isArray(r.body.messages)) synced = r.body.messages;
-    } catch { synced = null; }
-    if (synced == null) {
+      applied = await syncTailOrFull(state, refs, revKey);
+    } catch { applied = null; }
+    if (applied == null) {
       if (st.attempts < 6) return scheduleRecoveryTick(state, refs, st.attempts);
       return finishStreamRecovery(state, refs, 'could not reconnect — tap to retry', true);
     }
-    syncFromRevision(state, refs, revKey, synced);
     st.stableTicks = 0;
     setChatStatus(refs, 'reconnected — syncing…', 'busy');
     return scheduleRecoveryTick(state, refs, st.attempts);
@@ -943,18 +994,16 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // browser showing only the last tool card when a delta was
   // missed, reordered, or failed to render.
   try {
-    // Cheap first: only pull the full transcript when the revision
-    // marker moved (this client appended messages itself, so the
-    // common case is a no-op without a multi-MB round-trip).
+    // Cheap first: only pull anything when the revision marker moved
+    // (this client appended messages itself, so the common case is a
+    // no-op without a round-trip). When it did move, fetch just the
+    // rows after our known prefix — not the whole transcript.
     const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
     const revKey = (rRev.status === 200 && rRev.body)
       ? (rRev.body.count + ':' + (rRev.body.ts || ''))
       : '';
     if (revKey && revKey !== state.transcriptRevision) {
-      const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-      if (synced.status === 200 && Array.isArray(synced.body.messages)) {
-        syncFromRevision(state, refs, revKey, synced.body.messages);
-      }
+      await syncTailOrFull(state, refs, revKey);
     }
   } catch (syncError) {
     console.error('chat transcript reconciliation failed', syncError);
@@ -981,9 +1030,10 @@ export async function send(state, refs, { content, attachments, clearComposerDra
 // Cheap tick: ONE request — /revision returns the {count, ts} marker
 // plus the chat's running flag (the old version fetched the chat
 // record and the marker separately, two round-trips per second).
-// The full message list is only fetched when the marker actually
-// moved, and then the transcript is updated incrementally (the store
-// is append-only) instead of re-rendering every row.
+// Rows are fetched only when the marker actually moved, and then just
+// the tail after the known prefix (?since=) — the store is
+// append-only, so the transcript updates incrementally instead of
+// re-rendering every row.
 export async function reconcileRunningChat(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!chatId || !projectDir) return;
@@ -996,12 +1046,10 @@ export async function reconcileRunningChat(state, refs) {
     const revKey = rev.count + ':' + (rev.ts || '');
     if (revKey !== state.transcriptRevision) {
       // Transcript changed on disk (this tab is a follower, or the
-      // stream finished while we were backgrounded). Pull the
-      // authoritative rows and sync them in.
-      const synced = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-      if (synced.status === 200 && Array.isArray(synced.body.messages)) {
-        syncFromRevision(state, refs, revKey, synced.body.messages);
-      }
+      // stream finished while we were backgrounded). Pull just the
+      // rows after our known prefix and sync them in; a non-append
+      // change falls back to the full fetch inside syncTailOrFull.
+      await syncTailOrFull(state, refs, revKey);
     }
 
     if (running) {

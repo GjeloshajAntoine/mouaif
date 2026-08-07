@@ -218,7 +218,16 @@ async function handleChats(req, res, parsed, sessionToken) {
   }
 
   // ---- Per-chat messages -------------------------------------------
-  // GET /api/chats/:id/messages?projectDir= -> { messages }
+  // GET /api/chats/:id/messages?projectDir=[&since=<index>] -> { messages, base }
+  //
+  // `since` is the number of rows the caller already has (its prefix
+  // length). When present, the response carries only the rows appended
+  // after that index — the 1 s reconcile poll and the stream-recovery
+  // poll then transfer just the missing tail instead of the whole
+  // transcript on every change. `base` echoes the server-side row
+  // count the slice was taken from; a base smaller than `since` means
+  // the transcript was cleared/replaced (not pure append) and the
+  // caller must re-fetch without `since` and rebuild.
   const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
   if (getMsgsMatch && method === 'GET') {
     const id = decodeURIComponent(getMsgsMatch[1]);
@@ -226,7 +235,16 @@ async function handleChats(req, res, parsed, sessionToken) {
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
-      return sendJSON(res, 200, { messages: messages.listMessages(dir, id) });
+      const all = messages.listMessages(dir, id);
+      const since = typeof q.since === 'string' ? parseInt(q.since, 10) : NaN;
+      if (isFinite(since) && since >= 0) {
+        // If since > all.length the transcript shrank on the server
+        // (clearMessages) — return an empty tail with the smaller base
+        // so the client detects the non-append change and rebuilds.
+        const tail = since <= all.length ? all.slice(since) : [];
+        return sendJSON(res, 200, { messages: tail, base: all.length });
+      }
+      return sendJSON(res, 200, { messages: all, base: all.length });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -235,11 +253,10 @@ async function handleChats(req, res, parsed, sessionToken) {
 
   // GET /api/chats/:id/revision?projectDir= -> { count, ts, running }
   // Lightweight "has this transcript changed?" marker for the 1 s
-  // reconcile poll. The old poll re-fetched the FULL message list every
-  // second just to JSON.stringify it and compare — on a long tool-heavy
-  // transcript that's megabytes of rows per tick. count + latest ts is
-  // a cheap indexed aggregate that changes exactly when the transcript
-  // changes (append-only store: rows are never edited in place).
+  // reconcile poll. count + latest ts is a cheap indexed aggregate
+  // that changes exactly when the transcript changes (append-only
+  // store: rows are never edited in place). When the marker moved,
+  // the client fetches just the tail via /messages?since=<prefixLen>.
   const revMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/revision$/);
   if (revMatch && method === 'GET') {
     const id = decodeURIComponent(revMatch[1]);

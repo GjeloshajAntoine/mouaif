@@ -6,7 +6,7 @@ Opening a long, tool-heavy chat should feel instant even when the transcript run
 
 ## Usage
 
-No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the 1-second reconcile poll and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed.
+No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the 1-second reconcile poll and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed — and when it did, they transfer only the rows appended after the client's known prefix.
 
 ## Implementation notes
 
@@ -28,6 +28,10 @@ The client's "another tab is running this chat" poll and the post-stream reconci
 ### Incremental transcript sync (`src/web/src/components/chat/stream.js` → `syncFromRevision`, `transcript.js` → `syncTranscriptAppend`)
 
 When the marker moves, the synced rows used to replace `state.messages` and trigger a full `renderTranscript` rebuild — re-parsing every message's markdown and scroll-jumping the view, once a second while following a run from another tab. The message store is append-only (edits go through `replaceMessages`/`clearMessages`, which change the row count), so the client now compares the prefix by identity: unchanged prefix → render just the new tail rows; prefix changed (defensive; unreachable today) → full rebuild.
+
+### Tail-only fetch (`GET /api/chats/:id/messages?since=<index>`)
+
+Even with the revision gate, a moved marker used to mean re-downloading the **entire** transcript to learn what changed — megabytes on a long tool-heavy chat, once per second while following a run. The messages endpoint now accepts `since=<index>`, the number of rows the caller already has, and returns `{ messages, base }` with only the rows appended after that index; `base` echoes the server-side row count the slice was taken from. A `base` smaller than `since` means the transcript shrank on the server (`clearMessages` — not a pure append), and the client falls back to a full fetch + rebuild. All three catch-up paths use it via `syncTailOrFull` in `src/web/src/components/chat/stream.js`: the 1 s reconcile poll, the stream-recovery poll after a dropped SSE connection, and the post-stream reconciliation. Steady-state cost of following a run is now one tiny `/revision` GET per tick plus, only on change, the few new rows.
 
 ### Visibility-aware poll cadence (`src/web/src/components/chat/useChatState.js`)
 
