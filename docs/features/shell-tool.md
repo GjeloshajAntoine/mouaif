@@ -118,6 +118,7 @@ The model learns which shell will run its commands from three redundant sources,
 - **Tool spec.** The `shell` description embeds the OS + interpreter + dialect hint computed at module load, e.g. `Commands execute on Windows via Command Prompt (cmd.exe) — Windows command-line syntax (cmd.exe batch-style quoting and escaping; not POSIX sh/bash)`.
 - **Feature summary.** `src/agentFeatures.js` injects an extra `[shell] <dialect hint>` line into the per-project system context whenever the shell tool is enabled, next to the existing `[shell](off|ask|allow) → allow` line. The `list_features` tool returns the same detail structurally (`state.tools.shell.dialect`, `state.tools.shell.exe`).
 - **Result identity.** Every `tool_result` carries an `identity` field (`mouaif shell · Windows · Command Prompt (cmd.exe)`), and the same line is prepended to the first model-facing `tool` message. When a `shell` override runs, the identity names the interpreter that actually executed the command (e.g. `mouaif shell · Windows · Windows PowerShell (powershell)`).
+- **Live output respects explicit collapse.** `shell_output` chunks auto-open the call card so the preview is visible while running, but never re-open a card the user collapsed by tapping its header — a deliberate collapse wins over the live-output auto-open, so a late chunk can't pop a closed card back open.
 
 ## Implementation notes
 

@@ -28,6 +28,7 @@ import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
+import { cssEscape } from './utils.js';
 
 // markToolUsed(state, refs, toolName)
 //
@@ -37,6 +38,24 @@ import { queueComposerDraftSave } from './composer.js';
 //      used") — the model clearly has it, so the filter should
 //      reflect reality. Persisted via the normal toggle path.
 //   2. The tool gets the "used" dot badge in the tree.
+// authCardGuard(refs, callId) -> bool
+//
+// De-dupe authorization / ask_user cards. The live SSE stream and the
+// reconcile poll (loadPendingAuthorization) both read the SAME pending
+// authorization queue on the server, so one request can arrive twice —
+// once as an SSE frame and again as a polled pending item. Both card
+// types stamp `data-auth-call-id` on the card; if a card for this
+// callId is already on screen, skip (return false) instead of mounting
+// a duplicate.
+function authCardGuard(refs, callId) {
+  if (!callId || !refs.transcript || !refs.transcript.current) return true;
+  const existing = refs.transcript.current.querySelector(
+    '.tool-card--authorization[data-auth-call-id="' + cssEscape(String(callId)) + '"],' +
+    '.tool-card--ask-user[data-auth-call-id="' + cssEscape(String(callId)) + '"]'
+  );
+  return !existing;
+}
+
 function markToolUsed(state, refs, toolName) {
   if (!state || !toolName) return;
   const name = normalizeToolName(toolName);
@@ -783,10 +802,28 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       }
       assembled = '';
       reasoning = '';
-    } else if (ev.eventName === 'authorization_required') {
-      whenTranscriptSettled(refs).then(() => authorizationCard(data, projectDir, chatId, refs, null, state));
-    } else if (ev.eventName === 'ask_user_required') {
-      askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+    } else if (ev.eventName === 'authorization_required' || ev.eventName === 'ask_user_required') {
+      if (!authCardGuard(refs, data && data.callId)) return;
+      // Authorization and ask_user cards both read the SAME pending
+      // queue the reconcile poll (loadPendingAuthorization) drains, so
+      // the same request can arrive here as an SSE frame and again as
+      // a polled pending item. Guard by auth-call-id so a card that is
+      // already on screen is never mounted a second time.
+      //
+      // Wait for any in-flight chunked transcript render before
+      // mounting so the card always lands at the bottom of the
+      // transcript's present rows — without the wait, the card can be
+      // stranded between message chunks and look misordered. Both event
+      // types must wait consistently; ask_user previously mounted
+      // immediately while authorization waited.
+      whenTranscriptSettled(refs).then(() => {
+        if (!authCardGuard(refs, data && data.callId)) return;
+        if (ev.eventName === 'authorization_required') {
+          authorizationCard(data, projectDir, chatId, refs, null, state);
+        } else {
+          askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+        }
+      });
     } else if (ev.eventName === 'tool_call') {
       markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);

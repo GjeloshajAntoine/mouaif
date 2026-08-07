@@ -547,12 +547,16 @@ export function handleShellOutputEvent(data, refs) {
   if (!card) return false;
   const pre = card.querySelector('.tool-card__shell-live-pre');
   if (!pre) return false;
-  // A card rebuilt from persisted data mid-run (syncFromRevision or the
-  // reconnect poll) is collapsed and labeled "Waiting for results…" —
-  // there was no live stream when it was created. If the stream is in
-  // fact still alive, the first delta flips it back to a live "Running…"
-  // card so the preview is visible again instead of a stale waiting hint.
-  if (!card.classList.contains('is-expanded')) card.classList.add('is-expanded');
+  // Auto-expand the live preview the first time a real delta arrives —
+  // but never override an explicit user collapse. The user's collapse
+  // (head tap sets card._userCollapsed) is intent and must win over the
+  // live-output auto-open, otherwise an output chunk arriving after a
+  // deliberate collapse visibly pops the card back open. A card rebuilt
+  // from persisted data mid-run (syncFromRevision / reconnect poll) has
+  // _userCollapsed undefined, so it still opens on the first delta.
+  if (!card.classList.contains('is-expanded') && !card._userCollapsed) {
+    card.classList.add('is-expanded');
+  }
   const hint = card.querySelector('.tool-card__shell-live-hint');
   if (hint && hint.textContent !== 'Running…') hint.textContent = 'Running…';
   if (data.stream === 'stderr') {
