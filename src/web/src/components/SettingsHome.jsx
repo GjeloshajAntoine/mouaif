@@ -67,7 +67,7 @@ export function SettingsHomeView() {
         rowLi('settings/defaults', 'Chat defaults', { detailRef: promptSize, detail: 'prompt style' }),
         rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
-        rowLi('settings/mcp', 'MCP servers', { sub: 'servers & default permission' }),
+        rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
         rowLi('settings/pricing', 'Model pricing', { detailRef: pricingSummary, detail: 'cost table' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
