@@ -27,15 +27,29 @@ The client's "another tab is running this chat" poll and the post-stream reconci
 
 ### Incremental transcript sync (`src/web/src/components/chat/stream.js` → `syncFromRevision`, `transcript.js` → `syncTranscriptAppend`)
 
-When the marker moves, the synced rows used to replace `state.messages` and trigger a full `renderTranscript` rebuild — re-parsing every message's markdown and scroll-jumping the view, once a second while following a run from another tab. The message store is append-only (edits go through `replaceMessages`/`clearMessages`, which change the row count), so the client now compares the prefix by identity: unchanged prefix → render just the new tail rows; prefix changed (defensive; unreachable today) → full rebuild.
+When the marker moves, the synced rows used to replace `state.messages` and trigger a full `renderTranscript` rebuild — re-parsing every message's markdown and scroll-jumping the view, once a second while following a run from another tab. The message store is append-only (edits go through `replaceMessages`/`clearMessages`, which change the row count), so the client now compares the prefix — unchanged prefix → render just the new tail rows; prefix changed (defensive; unreachable today) → full rebuild.
+
+The prefix comparison uses **logical equality** (`sameMessage`: role + ts + toolCallId + phase), not object identity. The fallback path that reaches `syncFromRevision` carries a freshly `JSON.parse`d full fetch, so a reference `===` comparison was always false and forced a blank-and-repaint (and a scroll reset) on the first recovery/reconcile tick that hit the fallback — the "black screen" and "scroll jumps by itself" bug. Comparing by a stable key means an unchanged prefix keeps the cheap incremental tail path.
 
 ### Tail-only fetch (`GET /api/chats/:id/messages?since=<index>`)
 
-Even with the revision gate, a moved marker used to mean re-downloading the **entire** transcript to learn what changed — megabytes on a long tool-heavy chat, once per second while following a run. The messages endpoint now accepts `since=<index>`, the number of rows the caller already has, and returns `{ messages, base }` with only the rows appended after that index; `base` echoes the server-side row count the slice was taken from. A `base` smaller than `since` means the transcript shrank on the server (`clearMessages` — not a pure append), and the client falls back to a full fetch + rebuild. All three catch-up paths use it via `syncTailOrFull` in `src/web/src/components/chat/stream.js`: the 1 s reconcile poll, the stream-recovery poll after a dropped SSE connection, and the post-stream reconciliation. Steady-state cost of following a run is now one tiny `/revision` GET per tick plus, only on change, the few new rows.
+Even with the revision gate, a moved marker used to mean re-downloading the **entire** transcript to learn what changed — megabytes on a long tool-heavy chat, once per second while following a run. The messages endpoint now accepts `since=<index>`, the number of rows the caller already has, and returns `{ messages, base }` with only the rows appended after that index; `base` echoes the server-side row count the slice was taken from. A `base` smaller than `since` means the transcript shrank on the server (`clearMessages` — not a pure append), and the client falls back to a full fetch + rebuild. All three catch-up paths use it via `syncTailOrFull` in `src/web/src/components/chat/stream.js`: the reconcile poll, the stream-recovery poll after a dropped SSE connection, and the post-stream reconciliation. Steady-state cost of following a run is now one tiny `/revision` GET per tick plus, only on change, the few new rows.
 
 ### Visibility-aware poll cadence (`src/web/src/components/chat/useChatState.js`)
 
-The reconcile poll ticks every 1 s while the tab is visible and drops to 5 s while `document.visibilityState === 'hidden'` (a backgrounded tab needs only eventual consistency; the per-second tick is battery/network cost). Becoming visible ticks immediately. A run being followed from another tab (`watchingRun`) keeps the 1 s cadence even when hidden so the "done" flip isn't delayed.
+The reconcile poll is cadence-adaptive: **1 s while this tab is following a run from another tab** (`watchingRun`), **3 s while visible and idle**, and **6 s while `document.visibilityState === 'hidden'`**. An idle open chat used to hit `/revision` once a second forever (pure battery/network/CPU); it now backs off to a slow poll and only snaps back to 1 s when there is actually a run to follow. Becoming visible ticks immediately so the "done" flip isn't delayed beyond the next tick.
+
+### Torn-run settlement (`src/web/src/components/chat/stream.js` → `reconcileRunningChat`, `useChatState.js`)
+
+When the SSE socket dies but the run survives on the server, a **reloaded** page used to keep `'streaming…'` forever: the reconcile poll saw `running:true`, set the busy state, and re-fetched `/revision` (and `/pending`) every second with no way to settle a run whose transcript had stopped moving. `reconcileRunningChat` now carries a `watchingStableTicks` counter: if the transcript is stable (not mid-tool) across a couple of identical polls, it clears the busy state like `runRecoveryTick` does on the same page. The pending-authorization queue is also drained only when the run just started or rows arrived — not on every tick (it was an extra `GET /pending` per second).
+
+### Scroll preservation on rebuild (`src/web/src/components/chat/transcript.js` → `scrollTranscriptToBottomImpl`)
+
+A full transcript rebuild no longer unconditionally pins the view to the bottom. `scrollTranscriptToBottomImpl` only forces `scrollTop = scrollHeight` when the user was already pinned; a mid-view rebuild (recovery/reconcile) leaves an unpinned user's reading position alone instead of yanking them down. The initial load still pins because `pinnedToBottom` defaults to true.
+
+### Overlay-card anchoring (`src/web/src/components/chat/transcript.js` → `reanchorOverlayCards`)
+
+Authorization / ask_user overlay cards are modal-ish and live at the bottom of the transcript. After a tail sync renders new message rows they could get stranded mid-transcript (the card floats "at a random place" above content that arrived later). `syncTranscriptAppend` now re-anchors any standing overlay card to the very bottom after appending rows.
 
 ### No redundant model PATCH per send (`src/web/src/components/chat/stream.js`)
 

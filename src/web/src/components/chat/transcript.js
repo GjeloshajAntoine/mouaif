@@ -1303,6 +1303,26 @@ function restoreExpandedState(exp, root) {
   });
 }
 
+// reanchorOverlayCards(refs) — move any standing ask_user /
+// authorization overlay cards to the very bottom of the transcript.
+// They are appended (and reattached after a rebuild) at the end, but a
+// reconcile / recovery tail sync renders message rows AFTER that point,
+// stranding the card mid-transcript — it would then float "at a random
+// place" above content that arrived later. Re-anchoring after every
+// batch keeps the live question the user must answer always on top.
+function reanchorOverlayCards(refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  const cards = el.querySelectorAll('.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]');
+  // Detach into how we append them below to avoid churn; we must
+  // iterate a live NodeList backwards since each detach mutates it.
+  for (let i = cards.length - 1; i >= 0; i--) {
+    const card = cards[i];
+    if (card.parentNode) card.parentNode.removeChild(card);
+  }
+  for (const card of cards) el.appendChild(card);
+}
+
 // syncTranscriptAppend(state, refs, prevCount)
 //
 // Incremental transcript update: the server store is append-only
@@ -1333,6 +1353,8 @@ export function syncTranscriptAppend(state, refs, prevCount) {
     if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
     renderMessageRow(state, refs, m);
   }
+  // Don't let newly appended rows bury a pending auth/ask card.
+  reanchorOverlayCards(refs);
   // One scroll decision for the whole batch (countNew drives the
   // jump-to-bottom counter while unpinned).
   afterTranscriptAppend(refs, true);
@@ -1428,11 +1450,31 @@ function buildEmptyState() {
 // renderTranscript. Same semantics as the scroll.js helper, kept
 // inline so renderTranscript doesn't need to import the whole
 // module.
+//
+// Unlike a hard `scrollTop = scrollHeight` on every rebuild, only pin
+// when the user was already pinned to the bottom (or near it) BEFORE
+// the rebuild. A full render can be triggered mid-view by recovery /
+// reconcile — force-pinning then yanks the user to the bottom and
+// discards their reading position. `pinnedToBottom` defaults to true,
+// so the initial load still pins.
 function scrollTranscriptToBottomImpl(refs) {
   const el = refs.transcript.current;
   if (!el) return;
+  const wasPinned = refs.pinnedToBottom.current;
+  // The rebuild has already reflowed the transcript; judge "near
+  // bottom" before we are allowed to pin, using the pre-rebuild state.
+  // After a full innerHTML='' the scrollHeight is reset, so compare
+  // against the saved decision from before clear instead of a live
+  // isNearBottom() read (which would always look "near").
+  if (!wasPinned) {
+    // User had scrolled up — preserve their position. The innerHTML
+    // wipe already reset scrollTop to 0; leave it and let the pin/
+    // jump button reflect reality (don't fabricate a scroll change).
+    refs.pendingCount.current = 0;
+    updateJumpButton(refs);
+    return;
+  }
   el.scrollTop = el.scrollHeight;
-  refs.pinnedToBottom.current = true;
   refs.pendingCount.current = 0;
   updateJumpButton(refs);
 }

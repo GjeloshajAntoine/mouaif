@@ -131,6 +131,13 @@ export function useChatState(props) {
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
+  // Stable-tick counter for the reload follow poll (reconcileRunningChat).
+  // When a reloaded chat shows the server's `running` flag but the
+  // transcript has stopped moving, we must settle instead of looping
+  // "streaming…" forever (the SSE was cut; the server-side run may have
+  // finished without clearing the marker visibly). Mirrors the backoff
+  // stability logic used by stream recovery (runRecoveryTick).
+  const watchingStableTicks = useRef(0);
   const watchingRun = useRef(false);
   const chatCurrent = useRef(null);
   const providersCurrent = useRef([]);
@@ -181,6 +188,8 @@ export function useChatState(props) {
     reconnect: reconnect.current,
     get watchingRun() { return watchingRun.current; },
     set watchingRun(v) { watchingRun.current = v; },
+    get watchingStableTicks() { return watchingStableTicks.current; },
+    set watchingStableTicks(v) { watchingStableTicks.current = v; },
     mcpToggleBusy: mcpToggleBusy.current,
     get providerCredit() { return providerCredit.current; },
     set providerCredit(v) { providerCredit.current = v; },
@@ -586,6 +595,7 @@ export function useChatState(props) {
   }, [projectDir, chatId]);
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
+  useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state, refs);
     // Cancel any in-flight chunked transcript render so a navigate-away
@@ -614,8 +624,18 @@ export function useChatState(props) {
     // a per-second tick is pure battery/network cost there.
     function schedule() {
       if (stopped) return;
-      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
-      const delay = (hidden && !watchingRun.current) ? 5000 : 1000;
+      // Cadence:
+      //  - watchingRun: 1 s — another tab is running THIS chat and the
+      //    user is (or was) following it live; keep it snappy.
+      //  - visible, idle: 3 s — still responsive enough to notice a
+      //    run starting elsewhere, but an idle chat is no longer
+      //    hammering /revision once a second forever.
+      //  - hidden: 6 s — a backgrounded tab only needs eventual
+      //    consistency and a slow tick is pure battery/CPU cost.
+      let delay;
+      if (watchingRun.current) delay = 1000;
+      else if (typeof document !== 'undefined' && document.visibilityState === 'hidden') delay = 6000;
+      else delay = 3000;
       timer = setTimeout(tick, delay);
     }
     async function tick() {

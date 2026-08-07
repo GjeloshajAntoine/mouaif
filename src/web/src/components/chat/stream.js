@@ -290,11 +290,29 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
 // active. A changed prefix (unreachable today; defensive only) falls
 // back to the full rebuild. Returns how the sync was applied, or null
 // when the payload wasn't usable.
+// sameMessage(a, b) -> bool
+//
+// Logical-equality for two transcript rows. The fallback path that
+// reaches syncFromRevision carries a freshly `JSON.parse`d full fetch,
+// so reference `===` is always false even when the rows are unchanged
+// — that forced a full blank-and-repaint (and a scroll reset) on the
+// very first recovery/reconcile tick that hit the fallback. Compare
+// by a stable key instead: the store is append-only, so an unchanged
+// prefix matches on role + ts (+ toolCallId/phase for tool rows).
+function sameMessage(a, b) {
+  if (!a || !b) return a === b;
+  if (a.role !== b.role) return false;
+  if ((a.ts || '') !== (b.ts || '')) return false;
+  if ((a.toolCallId || '') !== (b.toolCallId || '')) return false;
+  if ((a.phase || '') !== (b.phase || '')) return false;
+  return true;
+}
+
 export function syncFromRevision(state, refs, revKey, synced) {
   if (!Array.isArray(synced)) return null;
   const prev = state.messages;
   const prefixIntact = synced.length >= prev.length
-    && synced.slice(0, prev.length).every((m, i) => m === prev[i]);
+    && synced.slice(0, prev.length).every((m, i) => sameMessage(m, prev[i]));
   state.transcriptRevision = revKey;
   state.messages = synced;
   if (prefixIntact) {
@@ -1044,11 +1062,14 @@ export async function reconcileRunningChat(state, refs) {
     const rev = rRev.body;
     const running = !!rev.running;
     const revKey = rev.count + ':' + (rev.ts || '');
+    const prevWatching = state.watchingRun;
+    let moved = false;
     if (revKey !== state.transcriptRevision) {
       // Transcript changed on disk (this tab is a follower, or the
       // stream finished while we were backgrounded). Pull just the
       // rows after our known prefix and sync them in; a non-append
       // change falls back to the full fetch inside syncTailOrFull.
+      moved = true;
       await syncTailOrFull(state, refs, revKey);
     }
 
@@ -1056,13 +1077,45 @@ export async function reconcileRunningChat(state, refs) {
       state.watchingRun = true;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
       setChatStatus(refs, 'streaming…', 'busy');
-      loadPendingAuthorization(state, refs);
+      // Only drain the pending-authorization queue on an actual state
+      // change (a run just started here, or new rows arrived), not on
+      // every 1 s tick — it is an extra GET /pending round-trip per
+      // second while a long run spins, and the queue only grows on
+      // new requests. authCardGuard dedups the cards themselves.
+      if (!prevWatching || moved) loadPendingAuthorization(state, refs);
+
+      // Settle a torn run. On a reloaded page the server may report
+      // `running` true while the SSE socket that would have cleared it
+      // is gone (the client lost the stream, not the run). If the
+      // transcript has stopped moving AND the last row isn't a bare
+      // mid-tool call, the turn is done — clear the busy state after a
+      // couple of identical stable polls instead of looping
+      // "streaming…" and re-fetching /revision forever.
+      const last = state.messages[state.messages.length - 1];
+      const midTool = last && last.role === 'tool' && last.phase === 'call';
+      // Require at least one persisted row: a reloaded run that has
+      // produced nothing yet must keep the busy state (it may still be
+      // pre-stream). Only a stable, non-empty, not-mid-tool transcript
+      // is a finished-then-torn run.
+      if (!moved && !midTool && state.messages.length > 0) {
+        state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
+        if (state.watchingStableTicks >= 2) {
+          state.watchingRun = false;
+          state.watchingStableTicks = 0;
+          if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+          setChatStatus(refs, 'done', 'success');
+        }
+      } else {
+        state.watchingStableTicks = 0;
+      }
     } else if (state.watchingRun) {
       state.watchingRun = false;
+      state.watchingStableTicks = 0;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       setChatStatus(refs, 'done', 'success');
     } else if (typeof state._setRunningVisible === 'function') {
       state._setRunningVisible(false);
+      state.watchingStableTicks = 0;
     }
   } catch { /* the next tick retries */ }
 }
