@@ -15,6 +15,9 @@
 /* Disabled-server notice: the Start button is unavailable and the row
    explains why instead of leaving a dead control. */
 .mcp__row-off { color: var(--muted); }
+/* In-flight lifecycle feedback (starting… / refreshing…) — same slot
+   as the error, but neutral. */
+.mcp__row-busy { color: var(--fg-soft); }
 .mcp__row-actions { display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; flex-shrink: 0; }
 .mcp__row-actions .btn { min-height: var(--tap-sm); padding: 0 8px; font-size: 0.72rem; }
 .mcp__row-actions .btn--danger { color: var(--danger); border-color: var(--danger); }

@@ -11,7 +11,6 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
-import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 
 function projectQS(projectDir) {
   return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
@@ -31,53 +30,19 @@ export function SettingsMcpView(props = {}) {
   const [serversList, setServersList] = useState([]);
   const [listStatus, setListStatus] = useState({ text: '', kind: '' });
   const [busyIds, setBusyIds] = useState(new Set()); // server ids being acted on
-  // App-level MCP gate (mcp.authorization in the app store) — the
-  // fallback for every project without its own gate (layer 4 of the
-  // MCP authorization layering). Shown on the app list only; the app
-  // store has no server registry, so it carries just mode + allowlist.
-  const [appMcpAuth, setAppMcpAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [appMcpStatus, setAppMcpStatus] = useState('');
-  const appMcpAuthRef = useRef(appMcpAuth);
-  appMcpAuthRef.current = appMcpAuth;
+  // Per-row lifecycle status: a start/stop/refresh error belongs to the
+  // row the user tapped, not to a global line far from the action. Keyed
+  // by server id; cleared on the next action on that row or on reload.
+  const [rowStatus, setRowStatus] = useState({}); // { [id]: { text, kind } }
 
-  // Save the app-level gate. No projectDir: the PUT is scoped with
-  // { scope: 'app' } and rejects server/tool maps.
-  async function saveAppMcpAuth(patch) {
-    setAppMcpStatus('saving…');
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: 'app', mcp: patch })
+  function setRow(id, text, kind) {
+    setRowStatus((prev) => {
+      const next = Object.assign({}, prev);
+      if (!text) delete next[id];
+      else next[id] = { text, kind };
+      return next;
     });
-    if (r.status === 200) {
-      setAppMcpStatus('saved');
-      const m = r.body && r.body.mcp;
-      if (m) {
-        setAppMcpAuth({
-          mode: (m && m.mode) || appMcpAuthRef.current.mode,
-          allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : appMcpAuthRef.current.allowlist
-        });
-      }
-    } else {
-      setAppMcpStatus('HTTP ' + r.status);
-    }
   }
-
-  // Debounced allowlist editor for the app gate (typing a regex must
-  // not fire a PUT per keystroke).
-  const saveAppMcpAllowlistDebounced = useRef((() => {
-    let t = null;
-    return (text) => {
-      if (t) clearTimeout(t);
-      setAppMcpStatus('…');
-      t = setTimeout(() => {
-        const allowlist = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        const mode = allowlist.length ? 'allowlist' : 'ask';
-        setAppMcpAuth({ mode, allowlist });
-        saveAppMcpAuth({ mode, allowlist });
-      }, 350);
-    };
-  })());
 
   async function load() {
     if (openBtn.current) openBtn.current.disabled = true;
@@ -100,21 +65,10 @@ export function SettingsMcpView(props = {}) {
     }
     setServersList(r.body.servers || []);
     setListStatus({ text: (r.body.servers || []).length + ' configured', kind: 'success' });
-    // App list only: read the app-level MCP gate (the shared fallback
-    // every project inherits until it sets its own).
-    if (!projectDir) {
-      try {
-        const ar = await fetchJson('/api/tools/authorization?scope=app');
-        const m = ar.status === 200 && ar.body && ar.body.mcp;
-        if (m) {
-          setAppMcpAuth({
-            mode: (m && m.mode) || 'ask',
-            allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : []
-          });
-          setAppMcpStatus('');
-        }
-      } catch { /* keep defaults */ }
-    }
+    // A successful reload reconciles row state with the server, so any
+    // stale per-row status (e.g. a "starting…" from before the reload)
+    // is dropped.
+    setRowStatus({});
   }
 
   // App list convenience: jump into a project's list without going back
@@ -155,6 +109,18 @@ export function SettingsMcpView(props = {}) {
     const startTitle = disabled
       ? 'Server is off — enable it in the editor (tap the row) to start it.'
       : (status === 'starting' ? 'Starting…' : 'Start this server');
+    const row = rowStatus[s.id];
+    // One inline message slot per row, most urgent first: a failed
+    // action the user just took, then the server's own typed error,
+    // then the disabled notice. The slot sits under the action buttons
+    // so the feedback lands next to the tap that caused it.
+    const rowMessage = row && row.text
+      ? { text: row.text, kind: row.kind || 'error' }
+      : (s.status === 'errored' && s.error)
+        ? { text: (s.error.code || 'ERR') + ': ' + (s.error.message || '') + ' — tap Start to retry, or tap the row to edit the command.', kind: 'error' }
+        : disabled
+          ? { text: 'Server is off — the model does not see its tools. Tap the row to edit and re-enable it.', kind: 'off' }
+          : null;
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
         h('span', { class: 'group__row-body' },
@@ -186,12 +152,11 @@ export function SettingsMcpView(props = {}) {
             }, '↻')
           : null
       ),
-      disabled
-        ? h('div', { class: 'mcp__row-err mcp__row-off' },
-            'Server is off — the model does not see its tools. Tap the row to edit and re-enable it.')
-        : null,
-      (s.status === 'errored' && s.error)
-        ? h('div', { class: 'mcp__row-err' }, (s.error.code || 'ERR') + ': ' + (s.error.message || ''))
+      rowMessage
+        ? h('div', {
+            class: 'mcp__row-err' + (rowMessage.kind === 'off' ? ' mcp__row-off' : '') + (rowMessage.kind === 'busy' ? ' mcp__row-busy' : ''),
+            role: rowMessage.kind === 'error' ? 'alert' : null
+          }, rowMessage.text)
         : null
     );
   }
@@ -199,7 +164,7 @@ export function SettingsMcpView(props = {}) {
   async function callLifecycle(action, id) {
     if (busyIds.has(id)) return;
     setBusyIds(prev => new Set(prev).add(id));
-    setListStatus({ text: action + '…', kind: 'busy' });
+    setRow(id, action === 'start' ? 'starting…' : 'stopping…', 'busy');
     let r;
     try {
       r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/' + action, {
@@ -207,13 +172,23 @@ export function SettingsMcpView(props = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectDir })
       });
-    } catch (e) { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; }); setListStatus({ text: 'network error', kind: 'error' }); return; }
+    } catch (e) {
+      setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+      setRow(id, 'Could not reach mouaif — check the app is still running, then try again.', 'error');
+      return;
+    }
     if (r.status !== 200) {
       setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
-      setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
+      const detail = (r.body && r.body.error) ? String(r.body.error) : ('HTTP ' + r.status);
+      // The failed start may still have marked the server errored
+      // server-side; reload so the row status reflects reality, but
+      // keep the just-set row message (load clears rowStatus).
+      await load();
+      setRow(id, detail + ' — tap the row to check the command/URL, then try again.', 'error');
       return;
     }
     setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    setRow(id, '');
     setListStatus({ text: action + 'ed', kind: 'success' });
     load();
   }
@@ -221,18 +196,24 @@ export function SettingsMcpView(props = {}) {
   async function refreshTools(id) {
     if (busyIds.has(id)) return;
     setBusyIds(prev => new Set(prev).add(id));
-    setListStatus({ text: 'refreshing tools…', kind: 'busy' });
+    setRow(id, 'refreshing tools…', 'busy');
     const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
     try {
       r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/tools' + qs);
-    } catch (e) { setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; }); setListStatus({ text: 'network error', kind: 'error' }); return; }
+    } catch (e) {
+      setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+      setRow(id, 'Could not reach mouaif — check the app is still running, then try again.', 'error');
+      return;
+    }
     if (r.status !== 200) {
       setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
-      setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
+      const detail = (r.body && r.body.error) ? String(r.body.error) : ('HTTP ' + r.status);
+      setRow(id, detail, 'error');
       return;
     }
     setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    setRow(id, '');
     setListStatus({ text: (r.body.tools || []).length + ' tools', kind: 'success' });
     load();
   }
@@ -251,49 +232,12 @@ export function SettingsMcpView(props = {}) {
       projectDir
         ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
         : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
-    // ---- App-level permission default (app list only) -------------------
-    // The app store has no server registry, so the app list shows only
-    // the single shared gate — the default every project starts from. A
-    // project can override it from Settings → Project → Tools.
-    !projectDir
-      ? h('div', { class: 'group' },
-          h('div', { class: 'group__title' }, 'Default permission', h('span', { class: 'group__title-note' }, 'Starting point for every project')),
-          h('ul', { class: 'group__list' },
-            h('li', { class: 'settings-project__tool' },
-              h('div', { class: 'settings-project__tool-head' },
-                h('div', { class: 'settings-project__item-title' }, 'All MCP tools'),
-                h('div', { class: 'settings-project__item-note' },
-                  'How MCP tool calls are handled by default in every project. A project can change this or set per-server rules from its own project settings. ',
-                  segMode(appMcpAuth.mode) === 'off' ? 'Off means MCP tools are hidden from the model and cost no tokens. ' : null,
-                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, appMcpStatus)
-                )
-              ),
-              h(McpAuthSeg, {
-                name: 'MCP app default',
-                slug: null,
-                servers: {},
-                shared: appMcpAuth,
-                namePrefix: 'app-mcp',
-                onSave: (patch) => {
-                  if (!patch) return;
-                  const mode = patch.mode || 'ask';
-                  const allowlist = Array.isArray(patch.allowlist) ? patch.allowlist : [];
-                  setAppMcpAuth({ mode, allowlist });
-                  saveAppMcpAuth({ mode, allowlist });
-                }
-              }),
-              segMode(appMcpAuth.mode) === 'ask'
-                ? h('details', { class: 'settings-project__allowlist' },
-                    h('summary', null, appMcpAuth.allowlist.length ? ('Auto-approve list (' + appMcpAuth.allowlist.length + ')') : 'Auto-approve list'),
-                    h('p', { class: 'settings-project__help' }, 'Calls whose summary matches one of these regexes run without asking; everything else still asks. One per line, auto-saves.'),
-                    h('textarea', { class: 'input settings-project__mono', rows: 3, spellcheck: false, placeholder: '^navigate$\n^take_snapshot$', value: appMcpAuth.allowlist.join('\n'), onInput: (e) => saveAppMcpAllowlistDebounced.current(e.target.value) })
-                  )
-                : null
-            )
-          )
-        )
-      : null,
     // ---- Server list -----------------------------------------------------
+    // Tool-call permissions (Off/Ask/Allow) deliberately do NOT live on
+    // this page: they are per project and sit with the other tool
+    // checkboxes in Settings → Project → Tools and the chat tools card.
+    // A permission seg here read as a per-server toggle and duplicated
+    // the real one.
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Servers', h('span', { class: 'group__title-note' }, serversList.length + ' configured')),
       h('ul', { class: 'group__list mcp__list', 'aria-label': 'MCP servers' },
