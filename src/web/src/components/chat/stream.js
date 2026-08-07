@@ -56,6 +56,32 @@ function authCardGuard(refs, callId) {
   return !existing;
 }
 
+// mountOverlayCard(refs, mountFn)
+//
+// Mount an ask_user / authorization overlay card so it actually lands
+// on screen: wait for any in-flight chunked transcript render, skip
+// the mount while the transcript is still empty (a rebuild would wipe
+// the card), de-dupe by auth-call-id, and scroll the card into view.
+// Used by every overlay-card path (SSE events, nested subagent events,
+// and the pending-auth poll) so all of them behave identically.
+function mountOverlayCard(refs, callId, mountFn) {
+  whenTranscriptSettled(refs).then(() => {
+    if (!refs.transcript || !refs.transcript.current) return;
+    if (!authCardGuard(refs, callId)) return;
+    const t = refs.transcript.current;
+    const hasContent = t.children.length > 0
+      && !(t.children.length === 1 && t.querySelector(':scope > .chat-view__empty'));
+    if (!hasContent) {
+      // The transcript hasn't painted yet (chat still loading, or a
+      // rebuild is about to wipe it). Mounting now would lose the card;
+      // the loadPendingAuthorization poll re-mounts it once the
+      // transcript is up.
+      return;
+    }
+    mountFn();
+  });
+}
+
 function markToolUsed(state, refs, toolName) {
   if (!state || !toolName) return;
   const name = normalizeToolName(toolName);
@@ -399,17 +425,13 @@ export async function loadPendingAuthorization(state, refs) {
     r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
   } catch { return; }
   if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return;
-  // Wait for any in-flight chunked transcript render to finish so the
-  // card lands at the bottom instead of between message chunks.
-  await whenTranscriptSettled(refs);
-  if (!refs.transcript.current) return;
   for (const request of r.body.pending) {
     if (!request || !request.callId) continue;
-    if (refs.transcript.current.querySelector('[data-auth-call-id="' + String(request.callId).replace(/"/g, '\\"') + '"]')) continue;
     if (request.tool === 'ask_user' && request.args) {
-      askUserCard(Object.assign({}, request.args, { callId: request.callId, tool: request.tool }), projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+      const data = Object.assign({}, request.args, { callId: request.callId, tool: request.tool });
+      mountOverlayCard(refs, request.callId, () => askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st)));
     } else {
-      authorizationCard(request, projectDir, chatId, refs, null, state);
+      mountOverlayCard(refs, request.callId, () => authorizationCard(request, projectDir, chatId, refs, null, state));
     }
   }
 }
@@ -667,11 +689,11 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {
-      whenTranscriptSettled(refs).then(() => authorizationCard(data, projectDir, chatId, refs, null, state));
+      mountOverlayCard(refs, data && data.callId, () => authorizationCard(data, projectDir, chatId, refs, null, state));
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'ask_user_required') {
-      askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+      mountOverlayCard(refs, data && data.callId, () => askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st)));
       return;
     }
     if (ev.eventName === 'message' && typeof data.delta === 'string') {
@@ -803,21 +825,13 @@ export async function send(state, refs, { content, attachments, clearComposerDra
       assembled = '';
       reasoning = '';
     } else if (ev.eventName === 'authorization_required' || ev.eventName === 'ask_user_required') {
-      if (!authCardGuard(refs, data && data.callId)) return;
       // Authorization and ask_user cards both read the SAME pending
       // queue the reconcile poll (loadPendingAuthorization) drains, so
       // the same request can arrive here as an SSE frame and again as
-      // a polled pending item. Guard by auth-call-id so a card that is
-      // already on screen is never mounted a second time.
-      //
-      // Wait for any in-flight chunked transcript render before
-      // mounting so the card always lands at the bottom of the
-      // transcript's present rows — without the wait, the card can be
-      // stranded between message chunks and look misordered. Both event
-      // types must wait consistently; ask_user previously mounted
-      // immediately while authorization waited.
-      whenTranscriptSettled(refs).then(() => {
-        if (!authCardGuard(refs, data && data.callId)) return;
+      // a polled pending item. mountOverlayCard de-dupes by
+      // auth-call-id, waits for the chunked render, skips the mount
+      // while the transcript is empty, and scrolls the card into view.
+      mountOverlayCard(refs, data && data.callId, () => {
         if (ev.eventName === 'authorization_required') {
           authorizationCard(data, projectDir, chatId, refs, null, state);
         } else {

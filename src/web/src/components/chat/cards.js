@@ -638,6 +638,10 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     card.appendChild(actions);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);
+    // The card must be visible the moment it lands — a question or
+    // authorization prompt that mounts below the fold is the same as
+    // not mounting it at all.
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* non-fatal */ }
   });
 }
 

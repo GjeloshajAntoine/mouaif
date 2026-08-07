@@ -1079,10 +1079,19 @@ export function updateProgressCard(refs, data) {
 // every card the user expanded whenever a new element is added to
 // the transcript (e.g. the reconcile pass after a tool completes).
 function snapshotExpandedState(root) {
-  const state = { toolIds: new Set(), progressIds: new Set(), details: [] };
+  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [] };
   if (!root) return state;
-  for (const card of root.querySelectorAll('.tool-card.is-expanded')) {
-    if (card.dataset && card.dataset.toolId) state.toolIds.add(card.dataset.toolId);
+  for (const card of root.querySelectorAll('.tool-card')) {
+    if (!(card.dataset && card.dataset.toolId)) continue;
+    if (card.classList.contains('is-expanded')) state.toolIds.add(card.dataset.toolId);
+    // Cards the user explicitly collapsed carry _userCollapsed; preserve
+    // that intent across the rebuild so a finished shell card the user
+    // opened doesn't fold away again on the next reconcile tick.
+    else if (card._userCollapsed) state.collapsedToolIds.add(card.dataset.toolId);
+    // Result bodies build lazily on first expand; remember which cards
+    // already built theirs so the rebuild can build them up front
+    // instead of showing an empty body on the next expand.
+    if (card._resultBodyBuilt) state.builtToolIds.add(card.dataset.toolId);
   }
   for (const card of root.querySelectorAll('.tool-card--progress.is-expanded')) {
     if (card.dataset && card.dataset.progressId) state.progressIds.add(card.dataset.progressId);
@@ -1127,6 +1136,16 @@ function snapshotExpandedState(root) {
 const TRANSCRIPT_CHUNK_ROWS = 40;   // rows appended per animation frame
 const TRANSCRIPT_CHUNK_THRESHOLD = 120; // render progressively above this many rows
 let _renderToken = 0;
+
+// reattachOverlayCards(refs, cards)
+//
+// Re-append preserved ask_user / authorization overlay cards at the
+// bottom of a freshly rebuilt transcript. They outlive the rebuild
+// because they are not part of state.messages.
+function reattachOverlayCards(refs, cards) {
+  if (!refs.transcript.current || !Array.isArray(cards) || !cards.length) return;
+  for (const card of cards) refs.transcript.current.appendChild(card);
+}
 
 function resetTranscriptRender(refs) {
   _renderToken++;
@@ -1182,7 +1201,7 @@ function renderMessageRow(state, refs, m) {
   }
 }
 
-function renderTranscriptChunked(state, refs, expanded) {
+function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   const transcriptEl = refs.transcript.current;
   if (!transcriptEl) return;
   // Cancel any previous chunked pass so two overlapping renders can't
@@ -1206,17 +1225,14 @@ function renderTranscriptChunked(state, refs, expanded) {
   if (state.messages.length <= headRows) {
     refs._suspendScrollPin = false;
     restoreExpandedState(expanded, transcriptEl);
+    reattachOverlayCards(refs, overlayCards);
     scrollTranscriptToBottomImpl(refs);
     updateUsageSummary(state, null, refs);
     return;
   }
   // Short transcripts finish in a single continuation frame so the box
   // paints before we pin and scroll; long ones keep chunking.
-  if (state.messages.length < TRANSCRIPT_CHUNK_THRESHOLD) {
-    refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded }));
-    return;
-  }
-  refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded }));
+  refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded, overlayCards }));
 }
 
 function renderTranscriptChunk(state, refs, chunk) {
@@ -1242,6 +1258,7 @@ function renderTranscriptChunk(state, refs, chunk) {
   // Done: re-pin to the bottom and restore the user's expanded cards.
   refs._suspendScrollPin = false;
   restoreExpandedState(chunk.expanded, transcriptEl);
+  reattachOverlayCards(refs, chunk.overlayCards);
   scrollTranscriptToBottomImpl(refs);
   updateUsageSummary(state, null, refs);
 }
@@ -1253,12 +1270,26 @@ function renderTranscriptChunk(state, refs, chunk) {
 function restoreExpandedState(exp, root) {
   if (!root) return;
   for (const card of root.querySelectorAll('.tool-card')) {
-    if (card.dataset && card.dataset.toolId && exp.toolIds.has(card.dataset.toolId)) {
+    if (!(card.dataset && card.dataset.toolId)) continue;
+    if (exp.toolIds.has(card.dataset.toolId)) {
       card.classList.add('is-expanded');
       // Result bodies render lazily on first expand (see
       // appendToolResultCard); restoring the class alone would show
       // an empty body for a card the user had open before a rebuild.
       if (typeof card._lazyBody === 'function') card._lazyBody();
+    } else if (exp.collapsedToolIds && exp.collapsedToolIds.has(card.dataset.toolId)) {
+      // The user deliberately collapsed this card before the rebuild —
+      // keep it collapsed (appendToolResultCard auto-collapses clean
+      // results, but an errored card re-adds is-expanded; the user's
+      // intent wins).
+      card._userCollapsed = true;
+      card.classList.remove('is-expanded');
+    }
+    // A card whose body was already built before the rebuild builds it
+    // again up front so the transcript is identical after the rebuild —
+    // not an empty body waiting for a tap that already happened.
+    if (exp.builtToolIds && exp.builtToolIds.has(card.dataset.toolId) && typeof card._lazyBody === 'function') {
+      card._lazyBody();
     }
   }
   for (const card of root.querySelectorAll('.tool-card--progress')) {
@@ -1314,6 +1345,16 @@ export function renderTranscript(state, refs) {
   // element re-runs renderTranscript from disk, which would otherwise
   // collapse every tool/result card the user had opened.
   const expanded = snapshotExpandedState(refs.transcript.current);
+  // Preserve pending ask_user / authorization overlay cards: they are
+  // NOT part of state.messages (they're mounted from the pending-auth
+  // queue / SSE events), so a rebuild that wipes the transcript would
+  // silently delete an unanswered question the user is looking at.
+  // Detach them first and re-append at the bottom afterwards.
+  const overlayCards = [];
+  for (const card of refs.transcript.current.querySelectorAll('.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]')) {
+    overlayCards.push(card);
+    card.remove();
+  }
   // Cancel any in-flight chunked render before rebuilding — a stream
   // reconcile can call renderTranscript while the previous chunked
   // pass is still mid-flight, and without this the two would append
@@ -1330,6 +1371,7 @@ export function renderTranscript(state, refs) {
     renderSystemPromptMessage(refs, state.systemPrompt);
     mountToolsCard(refs, state);
     mountAgentFilesCard(refs, state);
+    reattachOverlayCards(refs, overlayCards);
     return;
   }
   renderSystemPromptMessage(refs, state.systemPrompt);
@@ -1338,7 +1380,7 @@ export function renderTranscript(state, refs) {
   // Long transcripts render progressively so the first screen paints
   // immediately instead of blocking on a full DOM+markdown rebuild.
   if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD) {
-    renderTranscriptChunked(state, refs, expanded);
+    renderTranscriptChunked(state, refs, expanded, overlayCards);
     return;
   }
   for (const m of state.messages) {
@@ -1348,9 +1390,12 @@ export function renderTranscript(state, refs) {
     renderMessageRow(state, refs, m);
   }
   restoreExpandedState(expanded, refs.transcript.current);
+  reattachOverlayCards(refs, overlayCards);
   scrollTranscriptToBottomImpl(refs);
   updateUsageSummary(state, null, refs);
 }
+
+
 
 // buildSetupCardForMount(refs, state)
 //
