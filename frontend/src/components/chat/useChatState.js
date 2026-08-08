@@ -60,6 +60,7 @@ export function useChatState(props) {
   // passes it to the ToolPopup so the popup re-renders with fresh auth
   // segments (the chat tools card re-renders imperatively instead).
   const [authStamp, setAuthStamp] = useState(0);
+  const [toolDataStamp, setToolDataStamp] = useState(0);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
@@ -552,6 +553,10 @@ export function useChatState(props) {
         // background — they update the picker when they arrive, but must
         // not block the initial render (the upstream can take up to 8 s).
         if (cancelled) return;
+        // Tool catalog, MCP servers, agent files, skills, and authorization
+        // live in refs for the imperative transcript renderer. Notify Preact
+        // once after loading so ToolPopup receives those populated values.
+        setToolDataStamp((value) => value + 1);
         renderModelPicker(state, refs);
         renderTranscriptBound();
         // Fire live model fetches in the background (no await).
@@ -782,7 +787,7 @@ export function useChatState(props) {
 
   return {
     state, refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
     setImageAttachments, setFileEditorOpen,
     // Actions bound for direct use in the JSX
     send,

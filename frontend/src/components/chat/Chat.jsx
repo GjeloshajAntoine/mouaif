@@ -16,7 +16,7 @@ export function ChatView(props) {
   const s = useChatState(props);
   const {
     refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
     chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
     setFileEditorOpen,
     setChatSwitcherOpen,
@@ -234,9 +234,9 @@ export function ChatView(props) {
         onToggleSkills: s.state._toggleSkills,
         onSaveToolAuth: s.state._saveToolAuth,
         onSaveMcpAuth: s.state._saveMcpAuth,
-        // Bumped on every successful auth save so ChatView re-renders and
-        // the popup picks up fresh toolAuth/mcpAuth props.
-        authStamp
+        // Render stamps keep ref-backed authorization and catalog data fresh.
+        authStamp,
+        toolDataStamp
       })
     ),
     h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),

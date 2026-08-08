@@ -17,6 +17,8 @@ A floating popover opened from a button in the chat composer toolbar that lets t
 
 ## Implementation notes
 
+The chat keeps tool catalogs, MCP servers, agent files, skills, and authorization data in refs because the transcript renderer also consumes them imperatively. After the initial chat load populates those refs, a lightweight render stamp refreshes the popup props so opening it cannot show a stale “No tools available” state.
+
 - **File:** `frontend/src/components/chat/ToolPopup.jsx` — Preact component with two states (closed trigger button, open popup).
 - **CSS:** `frontend/src/chat-composer.css` (`.tool-popup*` classes under the *Tool popup* section).
 - Reuses the existing `ToolTree` Preact component from `frontend/src/components/ToolTree.jsx` and the `buildToolGroups` helper.
