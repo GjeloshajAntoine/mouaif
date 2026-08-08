@@ -46,12 +46,14 @@ export function useChatState(props) {
   const { projectDir, chatId } = props;
 
   // ---- useState values that drive re-renders -----------------
-  const [chat, setChat] = useState(null);
-  const [providers, setProviders] = useState([]);
-  const [imageAttachments, setImageAttachments] = useState([]);
+  // `imageAttachments` and `composerText` are the reference reactive
+  // state for the composer. `chat` / `providers` / `loading` used to be
+  // useState too, but nothing rendered from them (ChatView never reads
+  // them) — they only existed to force pointless re-renders of the whole
+  // view. They now live purely on the imperative `state` bag below.
+  const [imageAttachments, setImageAttachmentsState] = useState([]);
   const [composerText, setComposerText] = useState('');
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
   // Bumped after every successful tool/MCP authorization save. ChatView
   // passes it to the ToolPopup so the popup re-renders with fresh auth
@@ -60,6 +62,17 @@ export function useChatState(props) {
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const chatSwitcherIdxRef = useRef(-1);
+
+  // imageAttachments gets a ref mirror so the imperative `state`
+  // bag can read the live value on demand (stream.js:send reads
+  // `state.imageAttachments` without a re-render). Functional
+  // updater form is supported: both the ref and the useState mirror
+  // are updated together.
+  const imageAttachmentsRef = useRef([]);
+  function setImageAttachments(v) {
+    imageAttachmentsRef.current = typeof v === 'function' ? v(imageAttachmentsRef.current) : v;
+    setImageAttachmentsState(imageAttachmentsRef.current);
+  }
 
   // ---- DOM refs ----------------------------------------------
   const back = useRef(null);
@@ -138,66 +151,86 @@ export function useChatState(props) {
   // stability logic used by stream recovery (runRecoveryTick).
   const watchingStableTicks = useRef(0);
   const watchingRun = useRef(false);
-  const chatCurrent = useRef(null);
-  const providersCurrent = useRef([]);
+  // Chat + provider WILL data. These were formerly dual (ref + useState)
+  // to drive whole-view re-renders; nothing renders from them, so they
+  // live only here and are exposed on `state` as plain accessors.
+  const chat = useRef(null);
+  const providers = useRef([]);
   const providerCredit = useRef(null);
 
   // ---- The mutable `state` bag for the imperative modules ----
-  // The other modules read/write fields on this object directly.
-  // Chat/providers live in refs plus useState: refs give imperative
-  // helpers same-tick values, useState still drives JSX re-renders.
-  const state = {
-    props: { projectDir, chatId },
-    _setRunningVisible: setRunningVisible,
-    get chat() { return chatCurrent.current; },
-    set chat(v) { chatCurrent.current = v; setChat(v); },
-    get providers() { return providersCurrent.current; },
-    set providers(v) { providersCurrent.current = Array.isArray(v) ? v : []; setProviders(providersCurrent.current); },
-    get imageAttachments() { return imageAttachments; },
-    get messages() { return messages.current; },
-    set messages(v) { messages.current = v; },
-    get models() { return models.current; },
-    set models(v) { models.current = v; },
-    get liveByProvider() { return liveByProvider.current; },
-    set liveByProvider(v) { liveByProvider.current = v; },
-    get prompts() { return prompts.current; },
-    set prompts(v) { prompts.current = v; },
-    get pickerFilter() { return pickerFilter.current; },
-    set pickerFilter(v) { pickerFilter.current = v; },
-    get systemPrompt() { return systemPrompt.current; },
-    set systemPrompt(v) { systemPrompt.current = v; },
-    get tools() { return tools.current; },
-    set tools(v) { tools.current = v; },
-    get agentFiles() { return agentFiles.current; },
-    set agentFiles(v) { agentFiles.current = v; },
-    get skills() { return skills.current; },
-    set skills(v) { skills.current = v; },
-    get mcpServers() { return mcpServers.current; },
-    set mcpServers(v) { mcpServers.current = v; },
-    get agents() { return agents.current; },
-    set agents(v) { agents.current = Array.isArray(v) ? v : []; },
-    get usedTools() { return usedTools.current; },
-    set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
-    get transcriptRevision() { return transcriptRevision.current; },
-    set transcriptRevision(v) { transcriptRevision.current = v; },
-    get _persistedModelPair() { return persistedModelPair.current; },
-    set _persistedModelPair(v) { persistedModelPair.current = v; },
-    get streaming() { return streaming.current; },
-    set streaming(v) { streaming.current = v; },
-    reconnect: reconnect.current,
-    get watchingRun() { return watchingRun.current; },
-    set watchingRun(v) { watchingRun.current = v; },
-    get watchingStableTicks() { return watchingStableTicks.current; },
-    set watchingStableTicks(v) { watchingStableTicks.current = v; },
-    get providerCredit() { return providerCredit.current; },
-    set providerCredit(v) { providerCredit.current = v; },
-    get toolAuth() { return toolAuth.current; },
-    set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; },
-    get mcpAuth() { return mcpAuth.current; },
-    set mcpAuth(v) { mcpAuth.current = (v instanceof Object && !Array.isArray(v)) ? v : { mode: 'ask', allowlist: [], servers: {}, tools: {} }; },
-    get thinkingLevel() { return thinkingLevelRef.current; },
-    set thinkingLevel(v) { thinkingLevelRef.current = v; }
-  };
+  // The chat is imperative by design (DOM writes for the stream, transcript,
+  // model picker, tool cards). `state` is the single data bag those modules
+  // share. It is created ONCE per mount (lazily below) with accessor
+  // properties backed by the refs above, so:
+  //   - `state.<field>` reads the live value on demand (no re-render);
+  //   - `state.<field> = v` writes it in place (no re-render);
+  //   - ad-hoc dynamic props helpers assign (state.recentModels,
+  //     state.providerCredit, …) PERSIST across renders instead of being
+  //     wiped when the object used to be rebuilt every render.
+  // Only `state.props` is refreshed each render below so a chat/project
+  // change without remount keeps the new identity. The few values that
+  // actually drive JSX (imageAttachments, composerText, runningVisible, …)
+  // live in useState and are returned separately — `state` never triggers
+  // a render.
+  const stateRef = useRef(null);
+  if (!stateRef.current) {
+    stateRef.current = {
+      props: { projectDir, chatId },
+      _setRunningVisible: setRunningVisible,
+      get chat() { return chat.current; },
+      set chat(v) { chat.current = v; },
+      get providers() { return providers.current; },
+      set providers(v) { providers.current = Array.isArray(v) ? v : []; },
+      get imageAttachments() { return imageAttachmentsRef.current; },
+      set imageAttachments(v) { imageAttachmentsRef.current = v; },
+      get messages() { return messages.current; },
+      set messages(v) { messages.current = v; },
+      get models() { return models.current; },
+      set models(v) { models.current = v; },
+      get liveByProvider() { return liveByProvider.current; },
+      set liveByProvider(v) { liveByProvider.current = v; },
+      get prompts() { return prompts.current; },
+      set prompts(v) { prompts.current = v; },
+      get pickerFilter() { return pickerFilter.current; },
+      set pickerFilter(v) { pickerFilter.current = v; },
+      get systemPrompt() { return systemPrompt.current; },
+      set systemPrompt(v) { systemPrompt.current = v; },
+      get tools() { return tools.current; },
+      set tools(v) { tools.current = v; },
+      get agentFiles() { return agentFiles.current; },
+      set agentFiles(v) { agentFiles.current = v; },
+      get skills() { return skills.current; },
+      set skills(v) { skills.current = v; },
+      get mcpServers() { return mcpServers.current; },
+      set mcpServers(v) { mcpServers.current = v; },
+      get agents() { return agents.current; },
+      set agents(v) { agents.current = Array.isArray(v) ? v : []; },
+      get usedTools() { return usedTools.current; },
+      set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
+      get transcriptRevision() { return transcriptRevision.current; },
+      set transcriptRevision(v) { transcriptRevision.current = v; },
+      get _persistedModelPair() { return persistedModelPair.current; },
+      set _persistedModelPair(v) { persistedModelPair.current = v; },
+      get streaming() { return streaming.current; },
+      set streaming(v) { streaming.current = v; },
+      reconnect: reconnect.current,
+      get watchingRun() { return watchingRun.current; },
+      set watchingRun(v) { watchingRun.current = v; },
+      get watchingStableTicks() { return watchingStableTicks.current; },
+      set watchingStableTicks(v) { watchingStableTicks.current = v; },
+      get providerCredit() { return providerCredit.current; },
+      set providerCredit(v) { providerCredit.current = v; },
+      get toolAuth() { return toolAuth.current; },
+      set toolAuth(v) { toolAuth.current = v instanceof Object && !Array.isArray(v) ? v : {}; },
+      get mcpAuth() { return mcpAuth.current; },
+      set mcpAuth(v) { mcpAuth.current = (v instanceof Object && !Array.isArray(v)) ? v : { mode: 'ask', allowlist: [], servers: {}, tools: {} }; },
+      get thinkingLevel() { return thinkingLevelRef.current; },
+      set thinkingLevel(v) { thinkingLevelRef.current = v; }
+    };
+  }
+  const state = stateRef.current;
+  state.props = { projectDir, chatId };
 
   const chatSwitcherTrigger = useRef(null);
   const chatSwitcherPop = useRef(null);
@@ -216,9 +249,10 @@ export function useChatState(props) {
 
   // ---- Bound action creators --------------------------------
   // Most actions need to be stable (so the same identity is
-  // passed to the JSX on every render). useCallback with the
-  // chat+providers+imageAttachments deps is enough since those
-  // are the only useState values the action closures read.
+  // passed to the JSX on every render). They only close over
+  // refs, `state`, `refs`, and `updateChatBound`, so their
+  // useCallback deps shrink to the props/identities that can
+  // actually change: projectDir/chatId and updateChatBound.
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
@@ -290,15 +324,15 @@ export function useChatState(props) {
       // send button's disabled state matches the actual composer content.
       setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
     }
-  }, [projectDir, chatId, chat, providers, imageAttachments]);
+  }, [projectDir, chatId, updateChatBound]);
 
-  const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [chat]);
-  const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [chat]);
-  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs)), [chat]);
+  const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [updateChatBound]);
+  const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [updateChatBound]);
+  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs)), [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
     state.skills = Object.assign({}, state.skills, { enabled: next });
     updateChatBound({ skills: next });
-  }, [chat]);
+  }, [updateChatBound]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
     if (!providerId || !modelId) return;
@@ -310,7 +344,7 @@ export function useChatState(props) {
     updateModelTriggerLocal();
     refreshProviderCredit(state, refs);
     updateChatBound({ providerId, modelId });
-  }, [chat, providers]);
+  }, [updateChatBound]);
   state._onPickerPick = onPickerPickBound;
   state._updateChat = updateChatBound;
 
@@ -321,7 +355,7 @@ export function useChatState(props) {
   const renderTranscriptBound = useCallback(() => {
     renderTranscript(state, refs);
     updateSwitch(activeProfileId(state), refs);
-  }, [chat, providers]);
+  }, []);
   state._renderTranscript = renderTranscriptBound;
   state._updateSetupVisibility = () => updateSetupVisibility(state, refs);
   state._toggleTool = onToggleTool;
@@ -382,7 +416,6 @@ export function useChatState(props) {
     let cancelled = false;
     async function load() {
       if (!projectDir || !chatId) return;
-      setLoading(true);
       try {
         const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rAgents] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
@@ -517,11 +550,11 @@ export function useChatState(props) {
         }
         updateSetupVisibility(state, refs);
         updateSwitch(activeProfileId(state), refs);
-      } finally {
-        if (!cancelled) setLoading(false);
+      } catch (err) {
+        if (status.current) status.current.textContent = 'load failed';
       }
     }
-    load().catch((err) => { if (status.current) status.current.textContent = 'load failed'; });
+    load();
     return () => { cancelled = true; };
   }, [projectDir, chatId]);
 
@@ -709,7 +742,7 @@ export function useChatState(props) {
 
   return {
     state, refs,
-    chat, providers, imageAttachments, composerText, fileEditorOpen, loading, runningVisible, authStamp,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp,
     setImageAttachments, setFileEditorOpen,
     // Actions bound for direct use in the JSX
     send,
