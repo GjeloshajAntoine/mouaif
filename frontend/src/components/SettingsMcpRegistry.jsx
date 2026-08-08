@@ -5,10 +5,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus } from '../api.js';
 import { nav } from '../router.js';
-
-function projectQS(projectDir) {
-  return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
-}
+import { projectQS } from './settings/projectQS.js';
 
 // Visual popularity bar
 function popularityBar(score) {

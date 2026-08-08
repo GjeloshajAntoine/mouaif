@@ -11,10 +11,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
-
-function projectQS(projectDir) {
-  return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
-}
+import { projectQS } from './settings/projectQS.js';
 
 export function SettingsMcpView(props = {}) {
   // Scope comes from the URL, never from local tab state: the route
