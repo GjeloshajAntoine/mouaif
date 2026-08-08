@@ -253,7 +253,7 @@
   min-width: var(--tap-sm);
   min-height: var(--tap-sm);
   font: inherit;
-  font-size: 1rem;
+  font-size: 1.15rem;
   line-height: 1;
   color: var(--fg-soft);
   background: transparent;
@@ -269,7 +269,6 @@
 .chat-view__picker-refresh:hover,
 .chat-view__picker-close:hover { background: var(--surface-3); color: var(--fg); }
 .chat-view__picker-refresh:disabled { opacity: 0.5; cursor: wait; }
-.chat-view__picker-close { font-size: 1.15rem; }
 
 .chat-view__picker-chips {
   display: flex;

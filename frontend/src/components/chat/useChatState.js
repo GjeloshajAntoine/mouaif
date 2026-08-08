@@ -73,7 +73,7 @@ export function useChatState(props) {
   // initialized statically (`data-total="0"`), which the scroll guard
   // misread as "all loaded" — and the fetch always started at page 0,
   // so rows beyond the first 100 could never be reached.
-  const chatSwitcherPager = useRef({ offset: 0, total: Infinity, loading: false });
+  const chatSwitcherPager = useRef({ projectDir: '', offset: 0, total: Infinity, loading: false });
 
   // imageAttachments gets a ref mirror so the imperative `state`
   // bag can read the live value on demand (stream.js:send reads
@@ -729,12 +729,12 @@ export function useChatState(props) {
   // it is regenerated.
   useEffect(() => {
     if (!projectDir) return;
-    const pager = chatSwitcherPager.current;
-    pager.offset = 0;
-    pager.total = Infinity;
-    pager.loading = false;
+    const pager = { projectDir, offset: 0, total: Infinity, loading: false };
+    chatSwitcherPager.current = pager;
     let cancelled = false;
-    loadChatListForSwitcher(projectDir, chatSwitcherPager, (rows) => { if (!cancelled) setChatSwitcherList(rows); });
+    loadChatListForSwitcher(projectDir, pager, (rows) => {
+      if (!cancelled && chatSwitcherPager.current === pager) setChatSwitcherList(rows);
+    });
     return () => { cancelled = true; };
   }, [projectDir, chatId, runningVisible]);
 
@@ -834,11 +834,13 @@ export function useChatState(props) {
     onChatSwitcherScroll: useCallback((e) => {
       if (!projectDir) return;
       const pager = chatSwitcherPager.current;
+      if (pager.projectDir !== projectDir) return;
       if (pager.loading) return;
       if (pager.offset >= pager.total) return;
       pager.loading = true;
       setChatSwitcherLoading(true);
       loadChatListForSwitcher(projectDir, pager, (rows) => {
+        if (chatSwitcherPager.current !== pager || pager.projectDir !== projectDir) return;
         pager.loading = false;
         setChatSwitcherLoading(false);
         if (!rows.length) return;

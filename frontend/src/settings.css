@@ -248,6 +248,11 @@
 .settings-project__path code,
 .settings-project__code {
   font-family: var(--font-mono);
+  margin: 4px 10px 0;
+  width: calc(100% - 20px);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  min-height: 160px;
 }
 .settings-project__path code {
   display: block;
@@ -275,8 +280,6 @@
   justify-content: flex-start;
   gap: 6px;
   margin: 0 4px 4px;
-}
-.settings-project__section-title {
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -386,11 +389,8 @@
 .settings-project__tool {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: 6px;
   padding: 8px 10px;
-}
-.settings-project__tool {
   flex-wrap: wrap;
   align-items: flex-start;
 }
@@ -419,7 +419,7 @@
   font-size: 0.7rem;
   line-height: 1.35;
   margin-top: 2px;
-  min-height: 1em;
+  min-height: 0;
 }
 .settings-project__tool-head .settings-project__item-status {
   margin-top: 0;
@@ -448,8 +448,6 @@
   padding: 4px 8px;
   min-height: 32px;
 }
-/* Status line reserves no space until it has text. */
-.settings-project__item-status { min-height: 0; }
 .settings-project__item-status:empty { display: none; }
 .settings-project__help {
   color: var(--muted);
@@ -619,13 +617,6 @@
 }
 .settings-project__advanced > .label,
 .settings-project__advanced > .settings__out { margin-left: 10px; margin-right: 10px; }
-.settings-project__code {
-  margin: 4px 10px 0;
-  width: calc(100% - 20px);
-  font-size: 0.8rem;
-  line-height: 1.45;
-  min-height: 160px;
-}
 .settings-project__subhead {
   margin: 14px 10px 4px;
   color: var(--muted);

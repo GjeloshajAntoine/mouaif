@@ -1,6 +1,7 @@
 // mouaif web — App shell, Header, BottomTab
 import { h, Fragment } from 'preact';
 import { lazy, Suspense } from 'preact/compat';
+import { useEffect } from 'preact/hooks';
 import { route, activeProject, setActiveProject } from '../api.js';
 import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
@@ -77,9 +78,10 @@ export function App() {
   // the user sees the signed-in account without having to find the provider
   // manually. The marker is removed after one read so a subsequent page
   // reload doesn't re-trigger the navigation.
-  try {
-    const raw = sessionStorage.getItem('oauthPending');
-    if (raw) {
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('oauthPending');
+      if (!raw) return;
       sessionStorage.removeItem('oauthPending');
       const pending = JSON.parse(raw);
       if (pending && pending.provider && Date.now() - (pending.started || 0) < 10 * 60 * 1000) {
@@ -89,8 +91,8 @@ export function App() {
           nav('settings/providers/' + encodeURIComponent(pending.provider));
         }
       }
-    }
-  } catch (_) { /* sessionStorage unavailable */ }
+    } catch (_) { /* sessionStorage unavailable */ }
+  }, []);
 
   // Track the active project so SettingsPrompts (and any other
   // project-scoped view reached from Settings) can resolve the
@@ -98,7 +100,9 @@ export function App() {
   // route is the authoritative source; the picker route is a
   // tentative "the user is browsing this folder" signal.
   const chatDir = (view.name === 'chat' && view.projectDir) || '';
-  if (chatDir && chatDir !== activeProject.value.dir) setActiveProject(chatDir, '');
+  useEffect(() => {
+    if (chatDir && chatDir !== activeProject.value.dir) setActiveProject(chatDir, '');
+  }, [chatDir]);
   const showTabBar = view.name !== 'chat' && view.name !== 'picker'
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'

@@ -7,10 +7,11 @@
 // '0' statically. Net effect: chats beyond the first 100 could never
 // be reached by scrolling the switcher dropdown.
 //
-// The fix: a shared pager ref { offset, total, loading } is advanced
-// by every call — the fetch starts from pager.offset and records the
-// server total — so the preload and the scroll handler walk the
-// pages in order.
+// The fix: a shared pager ref { projectDir, offset, total, loading } is
+// advanced by every call — the fetch starts from pager.offset and records
+// the server total — so the preload and the scroll handler walk the pages
+// in order. Replacing the current pager on project changes also gives async
+// callbacks an identity check that prevents stale rows from being applied.
 //
 // This test re-implements the exact logic of loadChatListForSwitcher
 // and the scroll guard (the function is not exported; it lives inside
@@ -69,7 +70,7 @@ function scrollGuardFires(pager) {
 
 async function main() {
   let list = [];
-  const pager = { offset: 0, total: Infinity, loading: false };
+  const pager = { projectDir: '/p', offset: 0, total: Infinity, loading: false };
   const refresh = (rows) => { list = list.concat(rows); };
 
   // 1. Preload (like the useEffect): loads the first page.
@@ -102,7 +103,19 @@ async function main() {
   assert.equal(pager.offset, 250, 'offset reaches total');
   assert.equal(scrollGuardFires(pager), false, 'guard stops at total');
 
-  // 4. A short list (fewer than one page) stops after one fetch.
+  // 4. A response from an old project pager must not update the current list.
+  let currentPager = { projectDir: '/old', offset: 0, total: Infinity, loading: true };
+  const stalePager = currentPager;
+  const staleRequest = loadChatListForSwitcher('/old', stalePager, (rows) => {
+    if (currentPager === stalePager) list = list.concat(rows);
+  });
+  currentPager = { projectDir: '/new', offset: 0, total: Infinity, loading: false };
+  const lengthBeforeStaleResponse = list.length;
+  await staleRequest;
+  assert.equal(list.length, lengthBeforeStaleResponse, 'old project response is ignored after pager replacement');
+  assert.equal(currentPager.loading, false, 'old project response cannot change current loading state');
+
+  // 5. A short list (fewer than one page) stops after one fetch.
   const p2 = { offset: 0, total: Infinity, loading: false };
   let short = [];
   const shortFetch = () => Promise.resolve({ status: 200, body: { chats: [{ id: 'a' }, { id: 'b' }], total: 2 } });

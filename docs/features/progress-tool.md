@@ -47,7 +47,7 @@ Each `progress_update` also drives a per-chat updatable browser push notificatio
 
 ## Model guidance
 
-The `average` and `extensive` prompt profiles instruct the model to call `report_progress` periodically for any multi-step or slow task, and to send a final `status: "completed"` report (with `current` equal to `total`) when the work is done, so long-running agentic turns actually surface a progress card and a completion notification.
+The `average` and `extensive` prompt profiles instruct the model to call `report_progress` at the start and on completion of every task — not only long or multi-step ones — and to send a final `status: "completed"` report (with `current` equal to `total`) so the card turns green and the completion notification fires at the end of every turn.
 
 ## Implementation notes
 

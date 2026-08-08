@@ -198,13 +198,13 @@
 .project-card__chats-empty,
 .project-card__chats-more {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   padding: 12px 14px;
   text-align: center;
   border-top: 1px solid var(--border);
   background: transparent;
+  cursor: default;
 }
-.project-card__chats-more { cursor: default; font-size: 0.72rem; }
 .project-card__chats-more:hover { background: transparent; }
 .project-card__new {
   font: inherit;

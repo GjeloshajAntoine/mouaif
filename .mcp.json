@@ -43,6 +43,11 @@
   "authorization": {
     "mode": "ask",
     "defaultTimeoutMs": 30000,
-    "maxTimeoutMs": 600000
+    "maxTimeoutMs": 600000,
+    "servers": {
+      "chrome_debug": {
+        "mode": "ask"
+      }
+    }
   }
 }
