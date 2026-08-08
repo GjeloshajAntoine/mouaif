@@ -37,31 +37,22 @@ export function initVisualViewportInset() {
     // Also, if the keyboard pushes up past the bottom safe area (home indicator),
     // we don't want to double-count `--safe-bottom` which the shell padding
     // already adds. So we clamp the inset to at least 0.
-    const rawInset = window.innerHeight - (vv.offsetTop || 0) - vv.height;
     
-    // In standalone PWAs on iOS, `innerHeight` can be *larger* than the screen height 
-    // excluding the keyboard, making the inset too big. The `env(safe-area-inset-bottom)`
-    // is often included in the difference.
+    // Fallback: visual viewport is fully available.
+    // window.innerHeight doesn't shrink when keyboard appears on iOS,
+    // but vv.height DOES shrink. The difference is the keyboard height!
+    // Offset is ignored since it reflects scrolling due to input focus, 
+    // but the actual height delta between the full window and visual viewport 
+    // is what is covered by the keyboard.
+    const inset = Math.max(0, window.innerHeight - vv.height);
     
-    // Simple heuristic: if the raw inset is positive, the keyboard is open.
-    // If the keyboard is open, the bottom safe area is covered, but our app 
-    // container has `padding-bottom: var(--safe-bottom)` which adds space 
-    // back. So we should *subtract* that safe area from the inset, but only 
-    // if we can compute it. A simpler fix for the "too much margin" is that 
-    // we only use this visual viewport trick if it's strictly greater than a threshold,
-    // and adjust it. Let's start with rawInset.
-    
-    const inset = Math.max(0, rawInset);
     const prev = root.style.getPropertyValue('--kb-inset');
     const val = Math.round(inset) + 'px';
     if (prev !== val) {
-      // In CSS, `height: calc(100dvh - var(--kb-inset, 0px))` handles the reduction.
-      // But PWA standalone mode on iOS can have bugs where 100dvh is already shrunk,
-      // and then we double-shrink it. If `interactive-widget=resizes-content` works,
-      // inset is 0. If it doesn't, inset is > 0.
-      root.style.setProperty('--kb-inset', val);
+      // In CSS, `height: calc(100vh - var(--kb-inset, 0px))` handles the reduction.
       // We also expose a boolean flag to let CSS know if the keyboard is open,
       // which is useful for removing safe-area-inset-bottom padding.
+      root.style.setProperty('--kb-inset', val);
       if (inset > 40) root.classList.add('keyboard-open');
       else root.classList.remove('keyboard-open');
     }

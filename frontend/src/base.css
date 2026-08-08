@@ -123,7 +123,9 @@ html {
      the shell's height. The 100vh line is the fallback for iOS
      < 15.4, which does not understand dvh. */
   height: 100vh;
-  height: 100dvh;
+  /* The shell shrinks by var(--kb-inset) from layout.css, but html/body
+     should remain at least the height of the shell. */
+  height: calc(100vh - var(--kb-inset, 0px));
   overflow: hidden;
 }
 
@@ -156,10 +158,8 @@ body {
      frame and scroll internally. Body uses the same dynamic viewport
      unit as html (see the html comment above) so the two never end up
      different heights. */
-  height: 100dvh;
-  height: 100vh;
+  height: calc(100vh - var(--kb-inset, 0px));
   overflow: hidden;
-  min-height: 100dvh;
 }
 
 ::selection { background: var(--accent-soft); color: var(--fg); }

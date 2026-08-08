@@ -10,23 +10,16 @@
      chat view in --flush mode) can scroll internally instead of
      growing the whole page. min-height keeps short pages from
      collapsing. */
-  /* 100vh keeps the shell bounded on iOS 14/15.0–15.3, which do not
-     understand dynamic viewport units. Supporting Safari replaces it
-     with 100dvh so browser-chrome expansion and rotation use the live
-     visual viewport. */
+  /* In PWA mode on iOS, if we subtract --kb-inset from 100dvh, but 
+     100dvh has ALREADY been shrunk by the system (which sometimes happens
+     if Apple decides to treat `interactive-widget` differently in standalone mode
+     or if the keyboard pushes the PWA up entirely), we might get double-shrinking.
+     For this reason, we apply the inset subtraction to 100vh instead. 100vh 
+     represents the full static height of the window, so subtracting the keyboard 
+     inset from it works reliably across standalone mode where browser chrome isn't 
+     resizing. */
   height: 100vh;
-  height: 100dvh;
-  /* When the on-screen keyboard covers the bottom of the visual
-     viewport, iOS does not shrink the layout viewport (it ignores
-     `interactive-widget=resizes-content`), so 100dvh is taller than
-     the visible area and the bottom-anchored composer / inputs hide
-     behind the keyboard (PWA) or push the page up leaving a gap
-     (browser). viewport.js publishes the keyboard inset as
-     --kb-inset; subtract it here so the shell (and the composer it
-     pins) rises above the keyboard. On Android/Chrome the inset
-     computes to 0 (the meta directive already shrinks vv), so this
-     is a no-op there. */
-  height: calc(100dvh - var(--kb-inset, 0px));
+  height: calc(100vh - var(--kb-inset, 0px));
   max-width: 480px;
   margin: 0 auto;
   position: relative;
