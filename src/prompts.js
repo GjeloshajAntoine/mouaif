@@ -19,13 +19,27 @@
 //                                            // would have to be prepended
 //                                            // before the transcript, which
 //                                            // is not the intended use.
+//     preset:    { tools?: ['shell','file',...],
+//                  agentFiles?: boolean },   // OPTIONAL chat preset: when a
+//                                            // chat references this prompt,
+//                                            // these tool + agent-file
+//                                            // settings apply to that chat.
+//                                            // See server-handlers-chats.js
+//                                            // resolveChatPreset. The preset
+//                                            // only *enables* a tool via the
+//                                            // per-chat allowlist and turns
+//                                            // agent files on — it never
+//                                            // overrides the project's
+//                                            // authorization gate (off stays
+//                                            // off).
 //     createdAt: '2026-07-15T12:00Z',
 //     updatedAt: '2026-07-15T12:00Z'
 //   }
 //
 // Each chat can reference a prompt via its `promptId` field (see chats.js).
 // At stream time, the server prepends the prompt as a `system` message
-// before the user message.
+// before the user message. If the prompt carries a `preset`, the chat's
+// tool / agent-file settings also pick it up (see below).
 
 const crypto = require('crypto');
 const settings = require('./settings.js');
@@ -42,6 +56,42 @@ function newPromptId() {
 // anything else to 'system' so the field stays valid.
 const VALID_ROLES = new Set(['system']);
 
+// The tool names a prompt preset may list, and the file / agent-file
+// family that the prompt preset's agentFiles flag maps to. Presets
+// manipulate the per-chat allowlist only — the project's authorization
+// gate (off/ask/allow for `file`, `shell`, ...) stays authoritative, so
+// listing a tool here can never turn on something the project turned off.
+const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user']);
+
+// normalizePreset(raw) -> { tools, agentFiles } | null
+//
+// A preset is an OPTIONAL attachment to a prompt. It is normalized to a
+// small, stable shape:
+//   - `tools` is a de-duped array of tool *family* names (shell, file,
+//     subagent, report_progress, task, ask_user). An empty array means
+//     "this preset grants no additional tools" — equivalent to omitting
+//     the field, but kept when the user explicitly cleared it. File tools
+//     are listed as their family name `file` (read_file / write_file / ...
+//     all resolve through it).
+//   - `agentFiles` is a boolean: when true the chat referencing this
+//     prompt turns agent-file injection on.
+// Anything not an object, or with neither a tools array nor an agentFiles
+// boolean, collapses to null (treated as "no preset").
+function normalizePreset(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const tools = Array.isArray(raw.tools)
+    ? Array.from(new Set(raw.tools
+        .filter((t) => typeof t === 'string' && PRESET_TOOL_NAMES.has(t))
+        .map((t) => t)))
+    : undefined;
+  const agentFiles = typeof raw.agentFiles === 'boolean' ? raw.agentFiles : undefined;
+  if ((!tools || !tools.length) && agentFiles === undefined) return null;
+  return {
+    tools: tools || undefined,
+    agentFiles
+  };
+}
+
 function normalizePrompt(raw) {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof raw.id !== 'string' || !raw.id) return null;
@@ -51,6 +101,7 @@ function normalizePrompt(raw) {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : raw.id,
     content: raw.content,
     role: 'system',
+    preset: normalizePreset(raw.preset),
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
@@ -87,6 +138,7 @@ function createPrompt(projectDir, opts) {
     title: typeof opts.title === 'string' && opts.title.trim() ? opts.title.trim() : '',
     content: opts.content,
     role: 'system',
+    preset: normalizePreset(opts.preset),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
@@ -113,6 +165,12 @@ function updatePrompt(projectDir, promptId, patch) {
   }
   if (patch && typeof patch.content === 'string' && patch.content.trim()) {
     current.content = patch.content;
+  }
+  // `preset` accepts an object (set/overwrite), null/undefined (clear), or
+  // an explicit { preset: null } to remove the preset entirely. Absent key
+  // leaves it untouched so PATCH stays partial.
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'preset')) {
+    current.preset = patch.preset == null ? null : normalizePreset(patch.preset);
   }
   // role is locked to 'system'. Accept and ignore any patch.role so a
   // hand-edited .mouaif.json with a non-system role round-trips safely.
@@ -144,11 +202,60 @@ function deletePrompt(projectDir, promptId, opts) {
   return true;
 }
 
+// getPromptPreset(projectDir, promptId) -> { tools, agentFiles } | null
+//
+// Convenience for the chat pipeline: resolves a prompt's preset without
+// callers having to reach into getPrompt()'s shape. Returns null when the
+// prompt is missing or carries no preset. Missing/corrupt project files
+// resolve to null so a bad preset never breaks the tool loop.
+function getPromptPreset(projectDir, promptId) {
+  if (!projectDir || !promptId) return null;
+  try {
+    const p = getPrompt(projectDir, promptId);
+    return p && p.preset ? p.preset : null;
+  } catch { return null; }
+}
+
+// effectivePresetConfig(chat, preset) -> { tools?, agentFiles? }
+//
+// Merge a prompt's preset onto a chat's own per-chat config. Returns a
+// partial update object the chat pipeline reads as the effective values.
+//
+// Tools are ADDITIVE, never downgrading: a chat with no per-chat
+// allowlist already inherits every project tool, so emitting the preset's
+// list here would silently restrict the chat to just those tools — the
+// opposite of "enable". Only when the chat already restricts its tools
+// does the preset union its list in. Absent preset fields are ignored, so
+// a preset granting only tools leaves the chat's agentFiles untouched and
+// vice-versa.
+//
+// The preset is a convenience layer over the existing per-chat settings —
+// it never relaxes the project's authorization gate (a tool the project
+// turned `off` stays off; agent files silently follow the project lock).
+function effectivePresetConfig(chat, preset) {
+  const out = {};
+  if (chat && typeof chat === 'object' && preset && typeof preset === 'object') {
+    if (Array.isArray(preset.tools)) {
+      // Merge ONLY onto an existing per-chat allowlist. `chat.tools`
+      // being undefined means "all project tools" — leave it that way.
+      if (Array.isArray(chat.tools)) {
+        out.tools = Array.from(new Set(chat.tools.concat(preset.tools)));
+      }
+    }
+    if (typeof preset.agentFiles === 'boolean') out.agentFiles = preset.agentFiles;
+  }
+  return out;
+}
+
 module.exports = {
   newPromptId,
   VALID_ROLES,
+  PRESET_TOOL_NAMES,
+  normalizePreset,
   listPrompts,
   getPrompt,
+  getPromptPreset,
+  effectivePresetConfig,
   createPrompt,
   updatePrompt,
   deletePrompt

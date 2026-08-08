@@ -299,10 +299,19 @@ async function handleChats(req, res, parsed, sessionToken) {
         if (p) profile = { id: p.id, label: p.label, description: p.description, systemMessage: p.systemMessage };
       } catch { /* profile stays null; the stream would fall through too */ }
       let prompt = null;
+      // The prompt's optional `preset` (tools + agent-files) is part of
+      // the chat's effective config for this request — the same shape the
+      // stream uses (see resolveChatEffective). It only ADDS to the
+      // per-chat toggle (see prompts.effectivePresetConfig), never
+      // overrides the project's authorization gate.
+      let effectiveChat = chat;
       if (chat.promptId) {
         try {
           const cp = prompts.getPrompt(dir, chat.promptId);
-          if (cp) prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content };
+          if (cp) {
+            prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content, preset: cp.preset || null };
+            if (cp.preset) effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, cp.preset));
+          }
         } catch { /* custom prompt stays null */ }
       }
       // The combined text mirrors the order handleChatStream uses:
@@ -312,8 +321,8 @@ async function handleChats(req, res, parsed, sessionToken) {
       if (profile && profile.systemMessage) parts.push(profile.systemMessage);
       let agentFilesList = null;
       try {
-        if (agentFiles.resolveEnabled({ chat, projectDir: dir })) {
-          const names = agentFiles.resolveFileNames({ chat, projectDir: dir });
+        if (agentFiles.resolveEnabled({ chat: effectiveChat, projectDir: dir })) {
+          const names = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir: dir });
           agentFilesList = agentFiles.load(dir, names);
           for (const af of agentFilesList) parts.push(af.content);
         }
@@ -587,6 +596,20 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
+  // The chat's effective per-chat config. A custom prompt with a `preset`
+  // (tools + agent-files) rides on the chat for THIS turn: it is merged
+  // into the per-chat tool filter and agent-files toggle (see
+  // prompts.effectivePresetConfig) without touching the persisted chat
+  // record or the project's authorization gate. Falls back to `chat`
+  // when the prompt has no preset.
+  let effectiveChat = chat;
+  try {
+    if (chat.promptId) {
+      const preset = prompts.getPromptPreset(projectDir, chat.promptId);
+      if (preset) effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, preset));
+    }
+  } catch { /* preset best-effort; fall back to plain chat */ }
+
   // Reject a second concurrent stream on the same chat. Two in-flight
   // runs interleave appendMessage read-modify-writes and both append
   // assistant messages, corrupting transcript order.
@@ -709,8 +732,8 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   // prompt, so they sit close to the identity block. Each file rides
   // as its own system message. A trace line records what was injected.
   try {
-    if (agentFiles.resolveEnabled({ chat, projectDir })) {
-      const names = agentFiles.resolveFileNames({ chat, projectDir });
+    if (agentFiles.resolveEnabled({ chat: effectiveChat, projectDir })) {
+      const names = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir });
       const injected = agentFiles.load(projectDir, names);
       for (const m of injected) upstreamMessages.push({ role: m.role, content: m.content });
       if (traceStream && injected.length) {
@@ -980,7 +1003,9 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
     // Chat tool filter wins; otherwise all project tools are offered.
-    enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
+    // `effectiveChat` folds in the prompt's preset tools (if any) the
+    // same way it feeds agent-files above.
+    enabledTools: Array.isArray(effectiveChat.tools) ? effectiveChat.tools : null,
     chat,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
