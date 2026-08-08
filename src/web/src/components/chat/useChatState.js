@@ -575,7 +575,14 @@ export function useChatState(props) {
   useEffect(() => {
     const el = transcript.current;
     if (!el) return undefined;
+    // Distinguish user scrolls from programmatic pin scrolls: a
+    // programmatic `scrollTop = scrollHeight` in the rAF re-pin fires a
+    // scroll event that would otherwise be indistinguishable from the
+    // user dragging. We only ever set pinned=false from a *user* scroll,
+    // so ignore the synthetic one we just caused.
+    let ignoreNextScroll = false;
     function onScroll() {
+      if (ignoreNextScroll) { ignoreNextScroll = false; return; }
       const near = isNearBottom(el);
       if (near && !pinnedToBottom.current) {
         pinnedToBottom.current = true;
@@ -587,7 +594,50 @@ export function useChatState(props) {
       }
     }
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+
+    // Keep a pinned transcript glued to the bottom when its content
+    // grows AFTER the append that triggered it: streaming token nodes,
+    // late-decoding images, and markdown/tool-card DOM that reflows a
+    // frame later all change scrollHeight without a new
+    // afterTranscriptAppend call. The single-rAF re-pin in
+    // scrollTranscriptToBottom missed all of these, so the view drifted
+    // a few (or many) pixels above the newest content — the "scroll
+    // issues" the user reported.
+    //
+    // A ResizeObserver on the scroll container itself won't fire here:
+    // its border box is fixed by the flex layout, only the *content*
+    // height changes. So watch the content two ways: a MutationObserver
+    // for streaming text nodes and DOM growth, and a capture-phase
+    // `load` listener for images that change layout when they decode.
+    // Either way, re-pin only while pinned and not during a chunked
+    // render/backfill (which manages the scroll itself).
+    let repinScheduled = false;
+    function repinIfPinned() {
+      if (repinScheduled) return;
+      repinScheduled = true;
+      requestAnimationFrame(() => {
+        repinScheduled = false;
+        if (!pinnedToBottom.current) return;
+        if (refs._suspendScrollPin || refs._insertAnchor) return;
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) return; // already at bottom
+        ignoreNextScroll = true;
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+    let mo = null;
+    if (typeof MutationObserver !== 'undefined') {
+      mo = new MutationObserver(repinIfPinned);
+      mo.observe(el, { childList: true, subtree: true, characterData: true });
+    }
+    function onLoadCapture(e) {
+      if (e && e.target && e.target.tagName === 'IMG') repinIfPinned();
+    }
+    el.addEventListener('load', onLoadCapture, true);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('load', onLoadCapture, true);
+      if (mo) mo.disconnect();
+    };
   }, [projectDir, chatId]);
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
