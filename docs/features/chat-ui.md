@@ -132,6 +132,8 @@ On narrow phones the composer keeps its 10 px side margin and the textarea has a
 
 ## Implementation notes
 
+The initial app shell only includes the projects list and lightweight top-level screens. The chat implementation and heavier secondary Settings screens are route-level dynamic imports behind one `Suspense` boundary. Vite emits separate chunks and downloads each feature only when its route is opened; screens exported from the same module share one request.
+
 When a chat page is reloaded while an agent run is still active on the
 server, the replacement page polls the persisted transcript once per second.
 New assistant segments, tool calls, and tool results therefore appear as they
