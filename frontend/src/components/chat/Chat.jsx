@@ -11,15 +11,6 @@ import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
-import '../../chat-view.css';
-import '../../chat-transcript.css';
-import '../../chat-cards.css';
-import '../../chat-markdown.css';
-import '../../chat-composer.css';
-import '../../chat-at-mention.css';
-import '../../tool-cards.css';
-import '../../file-editor.css';
-import '../../tool-tree.css';
 
 export function ChatView(props) {
   const s = useChatState(props);

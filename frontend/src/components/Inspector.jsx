@@ -11,7 +11,6 @@ import { useRef, useEffect } from 'preact/hooks';
 import { fetchJson, route } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
-import '../inspector.css';
 
 export function InspectorView() {
   const urlInput = useRef(null);

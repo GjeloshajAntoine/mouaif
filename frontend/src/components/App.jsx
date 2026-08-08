@@ -5,32 +5,25 @@ import { route, activeProject, setActiveProject } from '../api.js';
 import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
+import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
+import { SettingsProjectView } from './SettingsProject.jsx';
 import { SettingsDefaultsView } from './SettingsDefaults.jsx';
 import { SettingsNotificationsView } from './SettingsNotifications.jsx';
 import { SettingsAboutView } from './SettingsAbout.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
+import { SettingsPromptsView, SettingsPromptEditView } from './SettingsPrompts.jsx';
+import { SettingsAgentsView, SettingsAgentEditView } from './SettingsAgents.jsx';
+import { SettingsMcpView } from './SettingsMcp.jsx';
+import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
+import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
+import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsImportView } from './SettingsImport.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
 
-function lazyNamed(loader, name) {
-  return lazy(() => loader().then((module) => ({ default: module[name] })));
-}
-
-const InspectorView = lazyNamed(() => import('./Inspector.jsx'), 'InspectorView');
-const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
-const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
-const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
-const SettingsPromptsView = lazyNamed(() => import('./SettingsPrompts.jsx'), 'SettingsPromptsView');
-const SettingsPromptEditView = lazyNamed(() => import('./SettingsPrompts.jsx'), 'SettingsPromptEditView');
-const SettingsAgentsView = lazyNamed(() => import('./SettingsAgents.jsx'), 'SettingsAgentsView');
-const SettingsAgentEditView = lazyNamed(() => import('./SettingsAgents.jsx'), 'SettingsAgentEditView');
-const SettingsMcpView = lazyNamed(() => import('./SettingsMcp.jsx'), 'SettingsMcpView');
-const SettingsMcpEditView = lazyNamed(() => import('./SettingsMcpEdit.jsx'), 'SettingsMcpEditView');
-const SettingsMcpRegistryView = lazyNamed(() => import('./SettingsMcpRegistry.jsx'), 'SettingsMcpRegistryView');
-const SettingsTagsView = lazyNamed(() => import('./SettingsTags.jsx'), 'SettingsTagsView');
+const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
 
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {
@@ -143,11 +136,10 @@ export function App() {
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
   else if (view.name === 'settingsAccess') body = h(AccessSettingsView, null);
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
-  else if (view.name === 'inspector') body = h(InspectorView, null);
+  else if (view.name === 'inspector') body = h(Suspense, {
+    fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
+  }, h(InspectorView, null));
   else body = h(ProjectsView, null);
-  body = h(Suspense, {
-    fallback: h('p', { class: 'muted', role: 'status' }, 'Loading…')
-  }, body);
   return h('div', { class: 'app__shell' },
     h(Header, null),
     h(PwaBanners, null),

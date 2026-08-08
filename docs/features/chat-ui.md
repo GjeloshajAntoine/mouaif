@@ -132,8 +132,6 @@ On narrow phones the composer keeps its 10 px side margin and the textarea has a
 
 ## Implementation notes
 
-The chat implementation stays in the main application bundle so composer controls such as the Tool popup are immediately available and keep stable component state during navigation. The Inspector and heavier secondary Settings screens are route-level dynamic imports behind one `Suspense` boundary. Vite emits separate chunks and downloads each of those features only when its route is opened; screens exported from the same module share one request. Inspector CSS follows its lazy module instead of being part of the initial stylesheet.
-
 When a chat page is reloaded while an agent run is still active on the
 server, the replacement page polls the persisted transcript once per second.
 New assistant segments, tool calls, and tool results therefore appear as they
