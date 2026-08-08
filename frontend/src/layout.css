@@ -41,7 +41,7 @@
      Flush routes have no tab bar and add the inset to main below.
      When the keyboard is open, the system hides the home indicator, so
      we drop the padding to avoid double-spacing. */
-  padding-bottom: 0;
+  padding-bottom: var(--safe-bottom);
 }
 html.keyboard-open .app__shell {
   padding-bottom: 0;
