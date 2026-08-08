@@ -79,14 +79,16 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
           // <label>, so tapping the name text does not flip anything.
           // A disabled group is a hard lock (server off, project
           // locked, …): the checkbox is inert and the row explains why.
-          h('input', {
-            type: 'checkbox',
-            class: 'checkbox checkbox--sm',
-            checked: !!group.checked,
-            disabled: !!group.disabled,
-            onChange: (e) => onToggleGroup && onToggleGroup(group.id, e.target.checked),
-            'aria-label': group.name
-          }),
+          h('label', { class: 'tool-tree__check' },
+            h('input', {
+              type: 'checkbox',
+              class: 'checkbox checkbox--sm',
+              checked: !!group.checked,
+              disabled: !!group.disabled,
+              onChange: (e) => onToggleGroup && onToggleGroup(group.id, e.target.checked),
+              'aria-label': group.name
+            })
+          ),
           h('span', { class: 'tool-tree__name tool-tree__name--group' }, group.name),
           group.description ? h('span', { class: 'tool-tree__desc' }, group.description) : null,
           kids.length > 1 ? h('span', { class: 'tool-tree__count' }, onCount + '/' + kids.length) : null,
@@ -102,14 +104,16 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
               kids.map((tool) =>
                 h('li', { key: tool.id, class: 'tool-tree__item', role: 'treeitem' },
                   h('div', { class: 'tool-tree__row tool-tree__row--leaf' + (tool.used ? ' is-used' : '') + (tool.disabled ? ' is-disabled' : ''), title: tool.title || (tool.disabled && tool.disabledReason ? tool.disabledReason : undefined) },
-                    h('input', {
-                      type: 'checkbox',
-                      class: 'checkbox checkbox--sm',
-                      checked: !!tool.checked,
-                      disabled: !!tool.disabled || !!group.disabled,
-                      onChange: (e) => onToggleTool && onToggleTool(group.id, tool.id, e.target.checked),
-                      'aria-label': tool.name
-                    }),
+                    h('label', { class: 'tool-tree__check' },
+                      h('input', {
+                        type: 'checkbox',
+                        class: 'checkbox checkbox--sm',
+                        checked: !!tool.checked,
+                        disabled: !!tool.disabled || !!group.disabled,
+                        onChange: (e) => onToggleTool && onToggleTool(group.id, tool.id, e.target.checked),
+                        'aria-label': tool.name
+                      })
+                    ),
                     h('span', { class: 'tool-tree__name' }, tool.name),
                     tool.description ? h('span', { class: 'tool-tree__desc' }, tool.description) : null,
                     tool.used ? h('span', { class: 'tool-tree__used', title: 'Used in this chat' }, '●') : null,

@@ -332,8 +332,20 @@
 .settings-project__info > summary {
   list-style: none;
   cursor: pointer;
-  width: 22px;
-  height: 22px;
+  width: var(--tap);
+  height: var(--tap);
+  color: transparent;
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.settings-project__info > summary::before {
+  content: '?';
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
   color: var(--muted);
@@ -342,12 +354,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-transform: none;
-  letter-spacing: 0;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .settings-project__info > summary::-webkit-details-marker { display: none; }
-.settings-project__info[open] > summary { color: var(--accent); border-color: var(--accent); }
+.settings-project__info[open] > summary::before { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .settings-project__info-body {
   position: absolute;
   right: 0;
@@ -389,10 +399,15 @@
 .settings-project__tool {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  align-items: stretch;
+}
+.settings-project__tool--switch {
+  min-height: var(--tap);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 .settings-project__item--col { flex-direction: column; align-items: stretch; }
 .settings-project__item-row {
@@ -445,8 +460,8 @@
   min-width: 0;
   max-width: none;
   font-size: 0.82rem;
-  padding: 4px 8px;
-  min-height: 32px;
+  padding: 6px 10px;
+  min-height: var(--tap);
 }
 .settings-project__item-status:empty { display: none; }
 .settings-project__help {
@@ -457,21 +472,18 @@
 }
 
 .settings-project__tool-head {
-  flex: 1 1 50%;
+  min-width: 0;
   overflow: hidden;
 }
 .settings-project__tool-head .settings-project__item-note {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .settings-project__tools-tree {
-  padding: 2px 6px 4px;
-  background: var(--surface-2);
+  padding: 4px 6px;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  margin: 2px 6px 4px;
+  border-radius: var(--r-md);
 }
 
 .settings-project__allowlist {
@@ -545,8 +557,8 @@
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
-  width: 42px;
-  height: 26px;
+  width: var(--tap);
+  height: var(--tap);
   cursor: pointer;
 }
 .switch input {
@@ -558,7 +570,10 @@
 }
 .switch__track {
   position: absolute;
-  inset: 0;
+  left: 1px;
+  right: 1px;
+  top: 9px;
+  height: 26px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);

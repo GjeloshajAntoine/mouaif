@@ -971,7 +971,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           )
         ),
         h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__tool' },
+          h('li', { class: 'settings-project__tool settings-project__tool--switch' },
             h('div', { class: 'settings-project__tool-head' },
               h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
               h('div', { class: 'settings-project__item-note' },
@@ -991,7 +991,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
             )
           ),
-          h('li', { class: 'settings-project__tool' },
+          h('li', { class: 'settings-project__tool settings-project__tool--switch' },
             h('div', { class: 'settings-project__tool-head' },
               h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Skills'),
               h('div', { class: 'settings-project__item-note' }, 'Inject .agents/skills/*/SKILL.md files. Disable the family here or in the chat Tools popup. ', h('span', { ref: skillsStatus, class: 'settings-project__item-status' }))
