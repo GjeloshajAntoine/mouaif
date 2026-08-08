@@ -64,7 +64,7 @@ const ENDPOINTS = {
           'anthropic-beta': 'oauth-2025-04-20'
         };
       }
-      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' };
+      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01' };
     }
   },
   'gemini': {
@@ -1067,10 +1067,9 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
-  // Prompt caching is enabled for API-key models only. OAuth models
-  // carry the oauth-2025-04-20 beta gate instead (docs/features/
-  // oauth-anthropic.md), so their requests are left cache-marker-free.
-  const cacheable = !(model && model.auth === 'oauth');
+  // Prompt caching is generally available on the Messages API, so cache
+  // markers work with both API-key and OAuth authentication. OAuth keeps its
+  // required oauth-2025-04-20 beta header; API-key requests need no beta.
   // Convert the conversation to Anthropic's native shape: assistant
   // tool_calls become tool_use blocks, `tool` role messages become
   // tool_result user messages. Without this conversion the multi-turn
@@ -1088,7 +1087,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   // prefix (system + tools + history) clears the minimum whenever there
   // is any history to replay: caching engages from the second request of
   // a conversation, even with every tool switched off.
-  if (cacheable && convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
+  if (convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
   const body = {
     model: model.id,
     max_tokens: model.maxTokens || 1024,
@@ -1099,7 +1098,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
     // The system block is sent as an array so the cache_control field is
     // accepted; a plain string would silently ignore it.
     system: systemContent
-      ? [{ type: 'text', text: systemContent, ...(cacheable ? { cache_control: { type: 'ephemeral' } } : {}) }]
+      ? [{ type: 'text', text: systemContent, cache_control: { type: 'ephemeral' } }]
       : undefined,
     messages: convertedMessages,
     stream: !!stream
@@ -1113,9 +1112,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   const tools = openAIToolsToAnthropic(specs);
   if (tools.length) {
     body.tools = tools;
-    if (cacheable) {
-      body.tools[body.tools.length - 1].cache_control = { type: 'ephemeral' };
-    }
+    body.tools[body.tools.length - 1].cache_control = { type: 'ephemeral' };
   }
   // Inject thinking budget for Anthropic. The thinking level maps to
   // a budget_tokens value. When the level is a plain number string, use

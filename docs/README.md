@@ -33,7 +33,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Progress tool (`report_progress`)](features/progress-tool.md) — live progress bar in transcript for long-running model operations.
 - [Legacy `report_progress` tool](features/legacy-progress-tool.md) — compatibility path for persisted or external `report_progress` calls.
 - [Trace to file](features/trace.md) — per-chat NDJSON export to `<projectDir>/.mouaif/traces/<chatId>.ndjson`, independent of chat storage.
-- [Anthropic prompt caching](features/prompt-caching.md) — cacheable system block + discounted cache-aware cost for Claude API-key models.
+- [Anthropic prompt caching](features/prompt-caching.md) — cacheable system block + discounted cache-aware cost for Claude models, including OAuth.
 - [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.

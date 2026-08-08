@@ -60,10 +60,10 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
     !req.body.messages[req.body.messages.length - 1].cache_control
       && !(req.body.messages[req.body.messages.length - 1].content && req.body.messages[req.body.messages.length - 1].content[0] && req.body.messages[req.body.messages.length - 1].content[0].cache_control));
 
-  // OAuth models keep the oauth beta gate and must NOT carry cache markers.
+  // Prompt caching is generally available and works alongside OAuth's beta gate.
   const oauthReq = BUILDERS.anthropic(Object.assign({}, MODEL, { auth: 'oauth' }), messages, true, SPECS);
   const oauthBody = JSON.stringify(oauthReq.body);
-  check('builder: OAuth model carries no cache_control', oauthBody.indexOf('cache_control') < 0);
+  check('builder: OAuth model carries cache_control', oauthBody.indexOf('cache_control') >= 0);
 
   // Empty specs -> no tools field at all (system-only request stays valid).
   const noToolsReq = BUILDERS.anthropic(MODEL, [{ role: 'user', content: 'hi' }], true, undefined);
