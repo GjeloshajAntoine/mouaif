@@ -27,7 +27,8 @@ const {
   tags,
   mcp,
   shellTool,
-  ai
+  ai,
+  liveChat
 } = require('./server-shared.js');
 
 async function handleChats(req, res, parsed, sessionToken) {
