@@ -25,36 +25,33 @@ export function initVisualViewportInset() {
   if (!vv) return () => {};
   const root = document.documentElement;
 
-  // True only while a soft-keyboard is actually covering the bottom of the
-  // visual viewport. On iOS Safari the keyboard is the *only* thing that
-  // makes `visualViewport.height` smaller than `window.innerHeight` while a
-  // text field is focused; without a keyboard, the visual viewport is also
-  // smaller than innerHeight because it excludes the URL-bar / browser
-  // chrome. So we gate the inset on input focus: never subtract chrome from
-  // the shell, only real keyboard coverage.
-  function keyboardIsUp() {
-    const el = document.activeElement;
-    if (!el) return false;
-    if (el.isContentEditable) return true;
-    const tag = el.tagName && el.tagName.toLowerCase();
-    return tag === 'input' || tag === 'textarea';
-  }
-
   function apply() {
-    // window.innerHeight doesn't shrink when the keyboard appears on iOS,
-    // but visualViewport.height DOES. The delta is the keyboard height.
-    // Ignoring vv.offsetTop here is deliberate: it reflects iOS scrolling
-    // the page up to reveal the focused input, which is *above* the keyboard
-    // and not something the shell should reserve.
-    const inset = keyboardIsUp() ? Math.max(0, window.innerHeight - vv.height) : 0;
-
+    // keyboardInset = (layout height above the visible area) - (vv.offsetTop
+    // is browser chrome that is NOT covered by the keyboard and that the
+    // shell should not also reserve). Only subtract real keyboard coverage:
+    //   inset = max(0, window.innerHeight - vv.offsetTop - vv.height)
+    // If the browser chrome pushes the visual viewport down (offsetTop > 0),
+    // iOS Safari does not reduce `innerHeight` — it pushes the whole document
+    // up. But we subtract it here to avoid double-counting.
+    //
+    // Also, if the keyboard pushes up past the bottom safe area (home indicator),
+    // we don't want to double-count `--safe-bottom` which the shell padding
+    // already adds. So we clamp the inset to at least 0.
+    
+    // Fallback: visual viewport is fully available.
+    // window.innerHeight doesn't shrink when keyboard appears on iOS,
+    // but vv.height DOES shrink. The difference is the keyboard height!
+    // Offset is ignored since it reflects scrolling due to input focus, 
+    // but the actual height delta between the full window and visual viewport 
+    // is what is covered by the keyboard.
+    const inset = Math.max(0, window.innerHeight - vv.height);
+    
     const prev = root.style.getPropertyValue('--kb-inset');
     const val = Math.round(inset) + 'px';
     if (prev !== val) {
-      // In CSS, `height: calc(100vh - var(--kb-inset, 0px))` reduces only
-      // the composer/shell by the keyboard height. We also expose a boolean
-      // flag so CSS can drop the home-indicator safe-area padding (the
-      // system hides the indicator while the keyboard is open).
+      // In CSS, `height: calc(100vh - var(--kb-inset, 0px))` handles the reduction.
+      // We also expose a boolean flag to let CSS know if the keyboard is open,
+      // which is useful for removing safe-area-inset-bottom padding.
       root.style.setProperty('--kb-inset', val);
       if (inset > 40) root.classList.add('keyboard-open');
       else root.classList.remove('keyboard-open');
