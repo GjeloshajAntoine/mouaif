@@ -1,5 +1,6 @@
 // mouaif web — App shell, Header, BottomTab
 import { h, Fragment } from 'preact';
+import { lazy, Suspense } from 'preact/compat';
 import { route, activeProject, setActiveProject } from '../api.js';
 import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
@@ -18,10 +19,11 @@ import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
 import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsImportView } from './SettingsImport.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
-import { InspectorView } from './Inspector.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
+
+const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
 
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {
@@ -134,7 +136,9 @@ export function App() {
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
   else if (view.name === 'settingsAccess') body = h(AccessSettingsView, null);
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
-  else if (view.name === 'inspector') body = h(InspectorView, null);
+  else if (view.name === 'inspector') body = h(Suspense, {
+    fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
+  }, h(InspectorView, null));
   else body = h(ProjectsView, null);
   return h('div', { class: 'app__shell' },
     h(Header, null),
