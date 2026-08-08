@@ -3,7 +3,7 @@
 // A small trigger button in the composer toolbar that opens a popup
 // with the same hierarchical tool tree shown in the transcript's
 // tools card. Changes are persisted immediately via the existing
-// toggleTool / toggleToolGroup / toggleMcpServer / toggleAgentFiles
+// toggleTool / toggleToolGroup / toggleAgentFiles
 // callbacks. The popup re-uses the Preact ToolTree component and
 // mirrors the state from the chat's tools/agentFiles/mcpServers
 // objects.
@@ -61,7 +61,6 @@ export function ToolPopup(props) {
     mcpAuth,
     onToggleTool,
     onToggleToolGroup,
-    onToggleMcpServer,
     onToggleAgentFiles,
     onToggleSkills,
     onSaveToolAuth,
@@ -209,10 +208,6 @@ export function ToolPopup(props) {
     // project's shared MCP fallback (same shortcut as the chat card).
     if (groupId === 'mcp') {
       if (onSaveMcpAuth) onSaveMcpAuth({ mode: checked ? 'ask' : 'off' });
-      return;
-    }
-    if (groupId.startsWith('mcp-')) {
-      if (onToggleMcpServer) onToggleMcpServer(groupId.slice(4), checked);
       return;
     }
     if (onToggleToolGroup) {

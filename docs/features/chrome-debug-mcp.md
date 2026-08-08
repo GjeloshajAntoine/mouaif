@@ -39,10 +39,10 @@ or on Linux:
 
 1. Open a chat in this project (or any project whose root is the repo containing `.mcp.json`).
 2. **Settings → Project features → MCP servers**.
-3. Find the **`chrome-debug`** row. Toggle **Enabled** on, tap **Start**.
+3. Find the **`chrome-debug`** row. Tap **Start**.
 4. Open a new chat. The transcript's **Tools available to the model** card shows the new tools, namespaced as `mcp__chrome_debug__<tool>`.
 
-Once enabled, every open chat (current and future) sees the tools. The child process is in-memory only, so a `mouaif` restart will need a fresh **Start**; the discovered tool list is persisted in the app SQLite store so the model still sees the surface on a stopped server.
+Configured servers are always on (there is no separate **Enabled** switch), so once started, every open chat (current and future) sees the tools. The child process is in-memory only, so a `mouaif` restart will need a fresh **Start**; the discovered tool list is persisted in the app SQLite store so the model still sees the surface on a stopped server.
 
 > **Heads-up:** if the server was started before the preset changed (e.g. the `--headless` fix was added to `.mcp.json`), restart `mouaif serve` once so the registry picks up the new args — the running process keeps the old in-memory config.
 
@@ -61,7 +61,7 @@ If you need both surfaces on the exact same browser, edit the MCP row back to an
 
 ## Behavior
 
-- **Preset ships enabled.** The entry in this repo's `.mcp.json` has `enabled: true` so the tools are available out of the box here; new MCP entries added through Settings are disabled by default. A `Start` while Chrome cannot be launched fails fast with `EMCP_START` and the inline error surfaces in the Settings row.
+- **Preset ships always-on.** The entry in this repo's `.mcp.json` is always-on (there is no `enabled` flag on MCP servers anymore), so the tools are available out of the box here. A `Start` while Chrome cannot be launched fails fast with `EMCP_START` and the inline error surfaces in the Settings row.
 - **Chrome auto-launches headless.** The `--channel=stable --isolated --headless` flags make `chrome-devtools-mcp` start a stable Chrome with a temporary profile and no window — so it runs on machines without a display. Users with a non-standard install can edit the row in **Settings → MCP** and add `--executablePath=...`. To see the browser (desktop only), drop `--headless` from the args and relaunch the server.
 - **No secrets in the entry.** The env block is empty; the package only needs the debug URL. Anything sensitive stays in the keyring ([docs/features/auth.md](./auth.md)).
 - **Authorization defaults to `ask`.** MCP tool calls go through the same gate as the native tools ([docs/features/tool-authorization.md](./tool-authorization.md)). The user approves each `click` / `type_text` / `navigate` call before the runner executes, or flips the **MCP tools** mode to **Allow** (or adds auto-approve patterns) at the top of **Settings → MCP**.
@@ -73,7 +73,7 @@ If you need both surfaces on the exact same browser, edit the MCP row back to an
 
 - Source: this is a **config-only change** — `.mcp.json` carries the new entry; no source code is touched. The runtime surface is the existing [src/mcp.js](../../src/mcp.js) (registry + stdio client) and [src/tools/authorization.js](../../src/tools/authorization.js) (the authorization gate that wraps every tool call).
 - Inspector host source: [src/inspector.js](../../src/inspector.js) → `defaultDebuggerUrl()` resolves to `MOUAIF_CHROME_URL` or `http://127.0.0.1:9222`. The MCP preset intentionally does not mirror that default; it favors zero-setup browser launch unless the user opts back into `--browser-url=...`.
-- MCP preset shape: see [docs/features/mcp.md](./mcp.md) for the full server-entry contract (`name`, `slug`, `command`, `args`, `env`, `cwd`, `enabled`, `createdAt`; the last-known tool list is cached in the app store, not in the file).
+- MCP preset shape: see [docs/features/mcp.md](./mcp.md) for the full server-entry contract (`name`, `slug`, `command`, `args`, `env`, `cwd`, `createdAt`; the last-known tool list is cached in the app store, not in the file).
 - Tool routing: when the model emits a `tool_call` whose name starts with `mcp__chrome_debug__`, [src/ai.js](../../src/ai.js) `streamChat()` parses the slug, dispatches through `mcp.callTool()`, and the result rides the same `tool_call` / `tool_result` SSE events as any other tool.
 
 ## Related

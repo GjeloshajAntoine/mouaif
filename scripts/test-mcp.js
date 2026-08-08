@@ -56,8 +56,7 @@ async function main() {
       name: 'Test Server',
       command: process.execPath,
       args: [serverScript],
-      env: {},
-      enabled: true
+      env: {}
     });
     check('addServer returns record', !!server && server.id && server.slug);
     check('addServer slug is "test_server"', server && server.slug === 'test_server', 'got: ' + (server && server.slug));

@@ -15,7 +15,7 @@ The tree sits below the system prompt. It shows one group per tool family:
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file
 - **MCP default** — the project's shared MCP authorization gate (rendered when at least one MCP server is configured)
-- **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox enables/disables the server itself (project-level); leaf checkboxes flip the per-chat tool filter.
+- **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
 
 Each group row has:
 
@@ -30,7 +30,7 @@ Leaf rows are individual tools. Only the checkbox is clickable — the row text 
 
 ### Project settings
 
-Settings → Project shows the same tree, with each group row carrying its **authorization segment** on the same line: `Off / Ask / Allow` (or `Off / Ask` for binary tools like `ask_user`). The group checkbox is a shortcut for `Off ↔ Ask`; the segment is the only way to pick `Allow`. MCP renders exactly like the chat view: an **MCP default** row (the project gate) and one row per configured MCP server — the checkbox toggles the server's enabled flag, and the segment edits the per-server override with a ↺ reset. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Auto-approve patterns (the `allowlist` mode) are still honored when present in the project file, but the settings tree no longer renders a textarea for them — edit them from the raw `.mouaif.json` / `.mcp.json` in Technical details.
+Settings → Project shows the same tree, with each group row carrying its **authorization segment** on the same line: `Off / Ask / Allow` (or `Off / Ask` for binary tools like `ask_user`). The group checkbox is a shortcut for `Off ↔ Ask`; the segment is the only way to pick `Allow`. MCP renders exactly like the chat view: an **MCP default** row (the project gate) and one row per configured MCP server — the checkbox is that server's override's `Off ↔ Ask` shortcut, and the segment edits the per-server override with a ↺ reset. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Auto-approve patterns (the `allowlist` mode) are still honored when present in the project file, but the settings tree no longer renders a textarea for them — edit them from the raw `.mouaif.json` / `.mcp.json` in Technical details.
 
 The settings tree replaces the old "Tool permissions" list — the UI is identical to the chat view so the mental model is the same: one tree, one place to look.
 
@@ -57,7 +57,7 @@ The settings tree replaces the old "Tool permissions" list — the UI is identic
 
 ### Disabled rows explain themselves
 
-A greyed-out control with no reason is a dead end, so every `disabled` row carries a `disabledReason` string that the tree renders under the row (`.tool-tree__reason` for groups, `.tool-tree__leaf-reason` for leaves) and in the row's `title` tooltip. The most common case is a **disabled MCP server**: `buildToolGroups` locks the whole group — the group checkbox becomes inert (it cannot re-enable the server, so it does not pretend to toggle), the leaf checkboxes are disabled, and the reason reads "Server is off — enable it in the row above or in Settings → MCP to use its tools." The same pattern covers project-locked groups (agent files, skills) in the chat popup.
+A greyed-out control with no reason is a dead end, so every `disabled` row carries a `disabledReason` string that the tree renders under the row (`.tool-tree__reason` for groups, `.tool-tree__leaf-reason` for leaves) and in the row's `title` tooltip. MCP server groups are **no longer disabled** — servers are always on and their group/leaf checkboxes flip the per-chat or per-server tool filter. The `disabled` pattern still covers project-locked groups (agent files, skills) in the chat popup.
 
 ### Short descriptions
 
@@ -88,9 +88,9 @@ Authorization keys in the project file:
 | ask_user | `tools.ask_user` | off / ask (binary) |
 | File tools | `tools.file` | off / ask / allowlist / allow |
 | MCP default | `mcp.authorization` (project gate in `.mcp.json`) | off / ask / allowlist / allow |
-| (each MCP server) | server `enabled` flag in `.mcp.json` (group checkbox) + `mcp.authorization.servers.<slug>` (segment) | on / off + off / ask / allowlist / allow |
+| (each MCP server) | `mcp.authorization.servers.<slug>` (segment + group checkbox) | off / ask / allowlist / allow |
 
-The settings tree renders one group per configured MCP server (checkbox = server enable, segment = per-server authorization override showing the effective mode) plus a single **MCP default** row carrying the shared Off/Ask/Allow gate — every MCP tool call passes through it. Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.
+The settings tree renders one group per configured MCP server (group checkbox = that server's override's `Off ↔ Ask`, segment = the full per-server authorization override showing the effective mode) plus a single **MCP default** row carrying the shared Off/Ask/Allow gate — every MCP tool call passes through it. Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.
 
 `buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege. MCP segments are shared with the chat view through `McpAuthSeg` in `src/web/src/components/settings/toolAuth.js` (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
 

@@ -23,7 +23,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
-import { buildToolsCard, toggleMcpServer, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
+import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -85,7 +85,6 @@ export function useChatState(props) {
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
-  const mcpToggleBusy = useRef(new Set());
 
   // ---- High-frequency mutable state (refs, not useState) -----
   const pinnedToBottom = useRef(true);
@@ -190,7 +189,6 @@ export function useChatState(props) {
     set watchingRun(v) { watchingRun.current = v; },
     get watchingStableTicks() { return watchingStableTicks.current; },
     set watchingStableTicks(v) { watchingStableTicks.current = v; },
-    mcpToggleBusy: mcpToggleBusy.current,
     get providerCredit() { return providerCredit.current; },
     set providerCredit(v) { providerCredit.current = v; },
     get toolAuth() { return toolAuth.current; },
@@ -301,7 +299,6 @@ export function useChatState(props) {
     state.skills = Object.assign({}, state.skills, { enabled: next });
     updateChatBound({ skills: next });
   }, [chat]);
-  const onToggleMcpServer = useCallback((id, enabled) => toggleMcpServer(id, enabled, state, refs, updateChatBound, (txt, st) => setChatStatus(refs, txt, st), projectDir, chatId), [projectDir, chatId]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
     if (!providerId || !modelId) return;
@@ -331,7 +328,6 @@ export function useChatState(props) {
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleSkills = onToggleSkills;
-  state._toggleMcpServer = onToggleMcpServer;
 
   // Save tool authorization (Off/Ask/Allow) directly to the server.
   // Used by the inline segment control in the chat tools card.

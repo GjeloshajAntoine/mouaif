@@ -30,7 +30,6 @@ async function main() {
     name: 'Shared FS',
     command: process.execPath,
     args: ['srv.js'],
-    enabled: true,
     scope: 'app'
   });
   check('app addServer returns record', !!appSrv && appSrv.id && appSrv.slug === 'shared_fs', 'got: ' + (appSrv && appSrv.slug));
@@ -49,8 +48,7 @@ async function main() {
   const projSrv = mcp.addServer(projectDir, {
     name: 'Proj Tool',
     command: process.execPath,
-    args: ['p.js'],
-    enabled: true
+    args: ['p.js']
   });
   check('project addServer defaults to project scope', projSrv && projSrv.scope === 'project');
   check('.mcp.json written for project add', fs.existsSync(mcp.getMcpPath(projectDir)));
@@ -70,8 +68,7 @@ async function main() {
   const shadow = mcp.addServer(projectDir, {
     name: 'Shared FS',
     command: process.execPath,
-    args: ['other.js'],
-    enabled: false
+    args: ['other.js']
   });
   check('project shadow entry added with same slug', shadow && shadow.slug === appSrv.slug);
   const merged2 = mcp.listServers(projectDir);
@@ -83,11 +80,13 @@ async function main() {
   check('app-only listing still shows the app entry', mcp.listServers(null).some(s => s.id === appSrv.id));
 
   // 7) Update routes by id: patching the app entry lands in the app
-  //    store; the project file does not gain a copy.
-  const upd = mcp.updateServer(projectDir, appSrv.id, { enabled: false });
-  check('update app entry returns scope app', upd && upd.scope === 'app' && upd.enabled === false);
+  //    store; the project file does not gain a copy. There is no
+  //    `enabled` flag anymore — patch a leaf field (env) and assert
+  //    the scope is preserved.
+  const upd = mcp.updateServer(projectDir, appSrv.id, { cwd: 'tools' });
+  check('update app entry returns scope app', upd && upd.scope === 'app' && upd.cwd === 'tools');
   const appEntryAfter = (settings.getApp().mcp.servers || []).find(s => s.id === appSrv.id);
-  check('app store reflects the update', appEntryAfter && appEntryAfter.enabled === false);
+  check('app store reflects the update', appEntryAfter && appEntryAfter.cwd === 'tools');
 
   // 8) Remove the app entry by id.
   check('removeServer app entry true', mcp.removeServer(projectDir, appSrv.id) === true);

@@ -14,7 +14,6 @@
       ],
       "env": {},
       "cwd": "",
-      "enabled": false,
       "createdAt": "2026-07-17T23:45:00.000Z"
     },
     {
@@ -34,7 +33,6 @@
       ],
       "env": {},
       "cwd": "",
-      "enabled": true,
       "createdAt": "2026-07-17T23:45:00.000Z"
     }
   ],

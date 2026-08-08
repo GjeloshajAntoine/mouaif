@@ -23,8 +23,7 @@ The **MCP Registry Browser** integrates the official community-owned registry at
    - Command (`uvx`, `npx`, or the package's declared command)
    - Arguments from the first package
    - Environment variables (defaults, if any)
-   - Enabled = on
-6. After adding, the view navigates to the new server's edit screen.
+6. After adding, the view navigates to the new server's edit screen. The new server is always on — there is no `enabled` flag to set.
 
 ## Popularity Scoring
 

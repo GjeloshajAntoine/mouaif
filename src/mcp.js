@@ -25,7 +25,7 @@
 //
 // Public surface:
 //
-//   listServers(projectDir)         -> [{ id, name, command, args, env, cwd, enabled, scope, status, tools? }]
+//   listServers(projectDir)         -> [{ id, name, command, args, env, cwd, scope, status, tools? }]
 //   getServer(projectDir, serverId) -> the server record or null
 //   addServer(projectDir, opts)     -> the new server record (opts.scope: 'project'|'app')
 //   updateServer(projectDir, id, patch) -> the updated record or null
@@ -38,7 +38,7 @@
 //   listDiscoveredTools(projectDir, serverId) -> [{ name, description, inputSchema }]
 //   callTool(projectDir, serverSlug, toolName, args) -> { ok, content, isError? }
 //
-// Errors are typed: EMCP_NOTFOUND, EMCP_DISABLED, EMCP_DUPLICATE,
+// Errors are typed: EMCP_NOTFOUND, EMCP_DUPLICATE,
 // EMCP_START, EMCP_TRANSPORT, EMCP_RPC, EMCP_TIMEOUT, EMCP_NOSESSION.
 //
 // The SDK is loaded lazily so the rest of the server boots even when
@@ -345,7 +345,6 @@ function normalizeServerEntry(raw, usedSlugs) {
     args,
     env,
     cwd,
-    enabled: raw.enabled === true, // default off
     createdAt: raw.createdAt || new Date().toISOString()
   };
   // Only persist the transport field for HTTP — stdio is the implicit
@@ -837,7 +836,6 @@ async function startServer(projectDir, serverId) {
   const found = findServerAnyScope(projectDir, serverId);
   if (!found) throw err('EMCP_NOTFOUND', 'Server not found', { serverId });
   const entry = found.normalized[found.idx];
-  if (entry.enabled === false) throw err('EMCP_DISABLED', 'Server is disabled', { serverId });
 
   // Reject overlapping starts.
   const existing = getSession(projectDir, serverId);
@@ -1174,27 +1172,25 @@ function composedToolNameFor(serverEntry, tool) {
   return composedToolName(serverEntry.slug, tool.name);
 }
 
-// ensureEnabledServers(projectDir) -> Promise<[{ id, name, status, tools }]>
+// ensureServersRunning(projectDir) -> Promise<[{ id, name, status, tools }]>
 //
-// Called when the user opens a chat (via /api/tools/list) so a project
-// whose MCP servers are enabled starts them lazily — the same behavior
+// Called when the user opens a chat (via /api/tools/list) so the
+// project's configured MCP servers start lazily — the same behavior
 // the Settings UI documents ("open a chat that references a stopped
 // server"). Without this, the child process and tool cache are
 // in-memory only, so a server restart (or a new chat after one) leaves
 // `status: 'stopped'` and `/api/tools/list` returns an empty MCP tool
-// list. We only auto-start servers that are both configured *and*
-// enabled; a disabled server stays stopped even on chat open.
+// list. Every configured server is always on; it starts on chat open.
 //
 // Each start is fire-and-forget: failures are captured in the result
 // (never thrown) so one bad server does not block the chat from
 // loading. A server that fails to start is recorded as 'errored' and
-// surfaced in the Settings UI; the rest of the enabled set still
-// starts.
-async function ensureEnabledServers(projectDir) {
-  const enabled = resolveMerged(projectDir).filter(r => r.entry && r.entry.enabled === true);
-  if (!enabled.length) return [];
+// surfaced in the Settings UI; the rest of the set still starts.
+async function ensureServersRunning(projectDir) {
+  const configured = resolveMerged(projectDir);
+  if (!configured.length) return [];
   const results = [];
-  for (const { entry, scope } of enabled) {
+  for (const { entry, scope } of configured) {
     const existing = getSession(projectDir, entry.id);
     if (existing && existing.status === 'ready') {
       results.push(decorate(Object.assign({}, entry, { scope }), projectDir));
@@ -1237,7 +1233,7 @@ function listComposedToolSpecs(projectDir) {
     for (const serverId of (_byProject.get(ctxKey) || new Set())) {
       if (seen.has(serverId)) continue;
       const session = _sessions.get(ctxKey + '::' + serverId);
-      if (!session || session.status !== 'ready' || !session.entry.enabled) continue;
+      if (!session || session.status !== 'ready') continue;
       seen.add(serverId);
       const entry = session.entry;
       for (const tool of session.tools) {
@@ -1257,7 +1253,7 @@ function listComposedToolSpecs(projectDir) {
   //    user starts it again, which is the honest signal.
   try {
     for (const { entry, raw } of resolveMerged(projectDir)) {
-      if (!entry || entry.enabled !== true || seen.has(entry.id)) continue;
+      if (!entry || seen.has(entry.id)) continue;
       const cache = loadToolCache(projectDir, raw || entry);
       if (!cache.length) continue;
       for (const tool of cache) {
@@ -1312,7 +1308,7 @@ module.exports = {
   stopServer,
   stopAll,
   installShutdown,
-  ensureEnabledServers,
+  ensureServersRunning,
   // discovery + dispatch
   listDiscoveredTools,
   callTool,

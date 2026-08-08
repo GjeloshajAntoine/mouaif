@@ -215,8 +215,10 @@ export function shortDesc(text, max = 40) {
 // buildToolGroups(catalog, mcpServers, filter, usedTools) -> groups
 //
 // Chat-view flavour: checked state comes from the per-chat tools
-// filter (null = all on). MCP groups are disabled when the server
-// is off. Used tools get the dot badge.
+// filter (null = all on). MCP groups are always on — there is no
+// separate "enabled" server switch — and their checkbox flips the
+// per-chat tool filter for the whole server. Used tools get the
+// dot badge.
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
   const groups = [];
   const isOn = (name) => filter == null || filter.includes(name);
@@ -285,26 +287,14 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
         };
       }).filter(Boolean);
     }
-    const off = server.enabled === false;
-    // A disabled server is a hard lock, not a per-chat filter choice:
-    // the whole group (checkbox included) goes inert and the row says
-    // why, so a greyed-out control never appears unexplained.
-    const disabledReason = off
-      ? 'Server is off — enable it in the row above or in Settings → MCP to use its tools.'
-      : '';
-    // Group checkbox mirrors the SERVER enable state (not the
-    // per-chat filter) — the cards.js handler dispatches mcp-*
-    // toggles to toggleMcpServer.
     groups.push({
       id: 'mcp-' + server.id,
       name: server.name || server.id,
       description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
-      checked: !off,
-      disabled: off,
-      disabledReason,
+      checked: true,
       tools: serverTools.map((t) => {
         const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
-        return leaf(t, { name: short, disabled: off, disabledReason });
+        return leaf(t, { name: short });
       })
     });
   }

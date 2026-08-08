@@ -90,7 +90,7 @@ async function main() {
     // 2) Add
     r = await fetchJson('POST', `${base}/api/mcp/servers`, {
       projectDir: PROJECT_DIR, name: 'Test', command: process.execPath,
-      args: [srv], enabled: true
+      args: [srv]
     });
     check('POST /api/mcp/servers adds', r.status === 201 && r.body.server && r.body.server.id, JSON.stringify(r).slice(0, 200));
     const id = r.body.server && r.body.server.id;
@@ -131,26 +131,15 @@ async function main() {
     const mcpToolsStopped = (r.body.tools || []).filter(t => t && t.kind === 'mcp');
     check('tools/list has no MCP tools when stopped', r.status === 200 && mcpToolsStopped.length === 0, 'got: ' + mcpToolsStopped.length);
 
-    // 9c) /api/tools/list auto-starts the enabled server and returns
-    //     its tools (this is what a new chat calls on load).
+    // 9c) /api/tools/list auto-starts the server and returns its tools
+    //     (this is what a new chat calls on load).
     r = await fetchJson('GET', `${base}/api/tools/list?${qp}`);
     const mcpToolsLive = (r.body.tools || []).filter(t => t && t.kind === 'mcp');
-    check('tools/list auto-starts enabled server', r.status === 200 && mcpToolsLive.length === 2, 'got: ' + mcpToolsLive.length + ' ' + JSON.stringify(r.body.tools || []));
+    check('tools/list auto-starts server', r.status === 200 && mcpToolsLive.length === 2, 'got: ' + mcpToolsLive.length + ' ' + JSON.stringify(r.body.tools || []));
 
     // 9d) The server now shows as ready again
     r = await fetchJson('GET', `${base}/api/mcp/servers?${qp}`);
     check('GET /api/mcp/servers ready after auto-start', r.body.servers[0].status === 'ready');
-
-    // 9e) A disabled server is not auto-started
-    r = await fetchJson('PATCH', `${base}/api/mcp/servers/${encodeURIComponent(id)}`, {
-      projectDir: PROJECT_DIR, enabled: false
-    });
-    check('PATCH disables server', r.status === 200 && r.body.server && r.body.server.enabled === false);
-    r = await fetchJson('GET', `${base}/api/tools/list?${qp}`);
-    const mcpToolsDisabled = (r.body.tools || []).filter(t => t && t.kind === 'mcp');
-    check('tools/list leaves disabled server stopped', r.status === 200 && mcpToolsDisabled.length === 0, 'got: ' + mcpToolsDisabled.length);
-    // Re-enable for the rest of the flow (PATCH already stopped the session)
-    await fetchJson('PATCH', `${base}/api/mcp/servers/${encodeURIComponent(id)}`, { projectDir: PROJECT_DIR, enabled: true });
 
     // 10) PATCH rename
     r = await fetchJson('PATCH', `${base}/api/mcp/servers/${encodeURIComponent(id)}`, {

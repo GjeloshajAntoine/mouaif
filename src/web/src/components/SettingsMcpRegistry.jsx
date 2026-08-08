@@ -118,8 +118,7 @@ export function SettingsMcpRegistryView(props = {}) {
       name: displayName,
       command: pkgInfo.command,
       args: pkgInfo.args,
-      env: pkgInfo.env,
-      enabled: true
+      env: pkgInfo.env
     };
     try {
       const r = await fetchJson('/api/mcp/servers', {

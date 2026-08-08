@@ -36,7 +36,6 @@ function mcpErrorStatus(err) {
   switch (err && err.code) {
     case 'EBADINPUT':          return 400;
     case 'EMCP_NOTFOUND':      return 404;
-    case 'EMCP_DISABLED':      return 409;
     case 'EOUTSIDE_PROJECT':   return 403;
     case 'EMCP_START':         return 502;
     case 'EMCP_RPC':           return 502;

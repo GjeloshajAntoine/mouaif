@@ -181,12 +181,6 @@ function buildToolsCard(state) {
     }
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
-    // MCP groups: the parent checkbox enables/disables the server
-    // itself (project-level), not the per-chat tool filter.
-    if (groupId.startsWith('mcp-')) {
-      if (state._toggleMcpServer) state._toggleMcpServer(groupId.slice(4), checked);
-      return;
-    }
     if (state._toggleToolGroup) state._toggleToolGroup(group.tools.map((tool) => tool.id), checked);
   }
 
@@ -403,74 +397,6 @@ export async function toggleTool(name, next, state, refs, updateChat) {
   await updateChat({ tools: nextFilter == null ? null : nextFilter });
   // updateChat already syncs state.chat from the server
   // response, so the persisted value matches the local mirror.
-}
-
-// toggleMcpServer(id, enabled, state, refs, updateChat, setChatStatus, projectDir, chatId)
-//
-// Quick project-level MCP enable switch from the chat tool card.
-// PATCH stops any running session when the server config changes;
-// refresh the catalog after so the tool chips immediately reflect
-// enabled/ready MCP tools.
-export async function toggleMcpServer(id, enabled, state, refs, updateChat, setChatStatus, projectDir, chatId) {
-  if (!id || !projectDir || state.mcpToggleBusy.has(id)) return;
-  state.mcpToggleBusy.add(id);
-  const servers = state.mcpServers || [];
-  const idx = servers.findIndex((s) => s && s.id === id);
-  const prev = idx >= 0 ? servers[idx].enabled !== false : null;
-  if (idx >= 0) {
-    const next = servers.slice();
-    next[idx] = Object.assign({}, next[idx], { enabled });
-    state.mcpServers = next;
-    updateToolsCard(refs, state);
-  }
-  try {
-    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, enabled })
-    });
-    if (r.status !== 200) {
-      if (idx >= 0 && prev !== null) {
-        const rollback = (state.mcpServers || []).slice();
-        rollback[idx] = Object.assign({}, rollback[idx], { enabled: prev });
-        state.mcpServers = rollback;
-      }
-      setChatStatus('MCP update failed: HTTP ' + r.status, 'error');
-      return;
-    }
-    // The PATCH resolved, so the flag is persisted. Show the cached
-    // state right away instead of blocking on the server boot: the
-    // freshly-PATCHed server record carries the persisted tool cache
-    // from its last run, which is enough to paint the child tool
-    // rows. Merge it into local state and repaint immediately…
-    if (r.body && r.body.server) {
-      const servers2 = (state.mcpServers || []).slice();
-      const i2 = servers2.findIndex((s) => s && s.id === id);
-      if (i2 >= 0) servers2[i2] = r.body.server; else servers2.push(r.body.server);
-      state.mcpServers = servers2;
-    }
-    state.mcpToggleBusy.delete(id);
-    updateToolsCard(refs, state);
-    setChatStatus(enabled ? 'MCP enabled' : 'MCP disabled', 'success');
-    // …then refresh in the background. /api/tools/list awaits
-    // ensureEnabledServers (i.e. the actual child-process boot),
-    // which is the slow part; when it lands we swap in the live
-    // catalog and repaint once more. The user never sees a frozen
-    // switch — they see the cached tools instantly, then the live
-    // set a moment later.
-    Promise.all([
-      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
-      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
-    ]).then((rr) => {
-      if (rr[0].status === 200 && Array.isArray(rr[0].body.servers)) state.mcpServers = rr[0].body.servers;
-      if (rr[1].status === 200 && Array.isArray(rr[1].body.tools)) {
-        state.tools = Object.assign({}, state.tools || {}, { catalog: rr[1].body.tools });
-      }
-      updateToolsCard(refs, state);
-    }).catch(() => {});
-  } finally {
-    state.mcpToggleBusy.delete(id);
-  }
 }
 
 // authorizationCard(request, projectDir, chatId, refs, resume)

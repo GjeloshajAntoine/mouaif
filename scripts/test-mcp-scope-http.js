@@ -52,7 +52,7 @@ async function main() {
   try {
     // 1) App-scope POST without projectDir.
     let r = await fetchJson(port, 'POST', '/api/mcp/servers', {
-      scope: 'app', name: 'App Echo', command: process.execPath, args: [srv], enabled: true
+      scope: 'app', name: 'App Echo', command: process.execPath, args: [srv]
     });
     check('POST app server 201', r.status === 201, JSON.stringify(r).slice(0, 200));
     const appId = r.body && r.body.server && r.body.server.id;
@@ -71,7 +71,7 @@ async function main() {
 
     // 4) Project-scope POST with projectDir.
     r = await fetchJson(port, 'POST', '/api/mcp/servers', {
-      projectDir: PROJECT_DIR, name: 'Proj Echo', command: process.execPath, args: [srv], enabled: true
+      projectDir: PROJECT_DIR, name: 'Proj Echo', command: process.execPath, args: [srv]
     });
     check('POST project server 201', r.status === 201, JSON.stringify(r).slice(0, 200));
     const projId = r.body && r.body.server && r.body.server.id;
@@ -95,9 +95,10 @@ async function main() {
     const toolNames = (r.body && r.body.tools || []).map(t => t.name);
     check('tools/list includes mcp__app_echo__echo', toolNames.includes('mcp__app_echo__echo'), toolNames.filter(n => n.startsWith('mcp__')).join(','));
 
-    // 8) PATCH the app server (disable) via merged view with projectDir.
-    r = await fetchJson(port, 'PATCH', '/api/mcp/servers/' + appId, { projectDir: PROJECT_DIR, enabled: false });
-    check('PATCH app server via merged view 200', r.status === 200 && r.body.server.enabled === false, JSON.stringify(r).slice(0, 200));
+    // 8) PATCH the app server via merged view with projectDir. There is
+    //    no `enabled` flag anymore — patch a leaf field (cwd) instead.
+    r = await fetchJson(port, 'PATCH', '/api/mcp/servers/' + appId, { projectDir: PROJECT_DIR, cwd: 'tools' });
+    check('PATCH app server via merged view 200', r.status === 200 && r.body.server.cwd === 'tools', JSON.stringify(r).slice(0, 200));
 
     // 9) DELETE the app server without projectDir.
     r = await fetchJson(port, 'DELETE', '/api/mcp/servers/' + appId);

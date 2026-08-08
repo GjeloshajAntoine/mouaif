@@ -27,7 +27,6 @@ export function SettingsMcpEditView(props) {
   const envEl = useRef(null);
   const headersEl = useRef(null);
   const cwdEl = useRef(null);
-  const enabledEl = useRef(null);
   const statusEl = useRef(null);
   const saveBtn = useRef(null);
   const deleteBtn = useRef(null);
@@ -74,7 +73,6 @@ export function SettingsMcpEditView(props) {
           : 'Authorization: Bearer ...';
       }
       if (cwdEl.current) cwdEl.current.value = current.cwd || '';
-      if (enabledEl.current) enabledEl.current.checked = current.enabled === true;
       if (deleteBtn.current) deleteBtn.current.hidden = false;
       setToolsState(current.tools || []);
       if (current.scope !== 'app' && projectDir) {
@@ -87,7 +85,6 @@ export function SettingsMcpEditView(props) {
       }
     } else {
       if (deleteBtn.current) deleteBtn.current.hidden = true;
-      if (enabledEl.current) enabledEl.current.checked = true;
     }
     setStatus(statusEl, '');
   }
@@ -179,8 +176,7 @@ export function SettingsMcpEditView(props) {
       command: transport === 'stdio' ? (commandEl.current.value || '').trim() : '',
       url: transport === 'http' ? (urlEl.current.value || '').trim() : '',
       args: transport === 'stdio' ? parseArgs(argsEl.current.value) : [],
-      cwd: transport === 'stdio' ? (cwdEl.current.value || '').trim() : '',
-      enabled: enabledEl.current.checked !== false
+      cwd: transport === 'stdio' ? (cwdEl.current.value || '').trim() : ''
     };
     const envText = envEl.current.value || '';
     const headersText = headersEl.current.value || '';
@@ -304,10 +300,6 @@ export function SettingsMcpEditView(props) {
             )
           : null
       )
-    ),
-    h('div', { class: 'row row--inline' },
-      h('input', { ref: enabledEl, class: 'checkbox', id: 'mcp-enabled', type: 'checkbox' }),
-      h('label', { class: 'label', for: 'mcp-enabled' }, 'Enabled')
     ),
     id && currentScope !== 'app' && projectDir ? h('div', { class: 'row' },
       h('h3', { class: 'mcp__tools-h' }, 'Discovered tools'),

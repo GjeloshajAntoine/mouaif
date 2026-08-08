@@ -11,7 +11,7 @@ const os = require('os');
 
 const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-tl-'));
 
-// Minimal project config plus an enabled MCP server loaded directly from
+// Minimal project config plus an MCP server loaded directly from
 // the project file. The first tools/list response must wait for startup and
 // include its discovered tools; requiring a second poll is a startup race.
 fs.writeFileSync(path.join(projDir, '.mouaif.json'), JSON.stringify({ name: 'tools-test' }, null, 2) + '\n');
@@ -23,8 +23,7 @@ fs.writeFileSync(path.join(projDir, '.mcp.json'), JSON.stringify({
     command: process.execPath,
     args: [path.join(__dirname, 'test-mcp-server.js')],
     env: {},
-    cwd: '',
-    enabled: true
+    cwd: ''
   }]
 }, null, 2) + '\n');
 

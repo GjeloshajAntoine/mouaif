@@ -59,8 +59,7 @@ async function main() {
       name: 'HTTP Test',
       transport: 'http',
       url,
-      headers: { 'X-Test': 'ok' },
-      enabled: true
+      headers: { 'X-Test': 'ok' }
     });
     check('addServer accepts http transport', server && server.transport === 'http' && server.url === url);
     check('headers are redacted', server && server.headers && server.headers['X-Test'] && server.headers['X-Test'].configured === true);

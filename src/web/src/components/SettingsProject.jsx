@@ -456,18 +456,21 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveMcpAuthorization({ servers: { [slug]: null } });
   }
 
-  // Quick project-level enable switch for an MCP server row (same
-  // semantics as the chat tools card): PATCH the server, then refresh
-  // the list so the checkbox stays honest.
-  async function toggleMcpServerEnabled(id, enabled) {
-    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), enabled })
-    });
-    if (r.status !== 200) { setMcpAuthStatusMsg('server update failed: HTTP ' + r.status); return; }
-    setMcpServers((prev) => prev.map((s) => (s && s.id === id) ? Object.assign({}, s, { enabled }) : s));
-    setMcpAuthStatusMsg(enabled ? 'server enabled' : 'server disabled');
+  // Quick Off/Ask toggle for a per-server MCP override (the group
+  // checkbox is the same shortcut the "MCP default" gate and native
+  // groups use: check -> ask, uncheck -> off). The server itself is
+  // always on — there is no separate enable flag.
+  function toggleMcpServerAuth(slug, checked) {
+    if (checked) {
+      const servers = Object.assign({}, mcpAuth.servers);
+      delete servers[slug];
+      setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+      saveMcpAuthorization({ servers: { [slug]: null } });
+      setMcpAuthStatusMsg('server override cleared (defaults to ' + segMode(mcpAuth.mode || 'ask') + ')');
+    } else {
+      pickServerAuthMode(slug, 'off');
+      setMcpAuthStatusMsg('server override off');
+    }
   }
 
   // Agent files: project-level enable/disable and custom file list.
@@ -683,8 +686,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     // The shared gate row ("MCP default") is the project-wide fallback
     // for every MCP call; each configured server gets its own row with
     // an Off/Ask/Allow segment for the per-server override. The group
-    // checkbox is the server's enabled flag (on/off), exactly like the
-    // chat tools card. Per-tool overrides stay in the server editor's
+    // checkbox is that override's Off ↔ Ask shortcut, matching the
+    // shared gate and the native tool groups. The server itself is
+    // always on. Per-tool overrides stay in the server editor's
     // "Discovered tools" section.
     const servers = (mcpServers || []).filter((s) => s && s.id);
     if (servers.length) {
@@ -723,7 +727,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           name: server.name || server.id,
           description: (server.status || 'stopped') + (toolCount ? ' · ' + toolCount + (toolCount === 1 ? ' tool' : ' tools') : '')
             + (overridden ? ' · override: ' + segMode(effMode) : ' · default (' + segMode(effMode) + ')'),
-          checked: server.enabled !== false,
+          checked: effMode !== 'off',
           control: h(McpAuthSeg, {
             name: server.name || server.id,
             slug,
@@ -757,8 +761,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   //   check   -> save mode 'ask' (the safe default)
   // The segment remains the only way to pick 'allow'.
   // MCP groups: the shared gate checkbox is Off ↔ Ask of `mcp.mode`;
-  // a per-server group checkbox is the server's enabled flag (on/off),
-  // matching the chat tools card.
+  // a per-server group checkbox is that server's override Off ↔ Ask,
+  // matching the shared gate and the native tool groups.
   function toggleSettingsGroup(groupId, checked) {
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'shell') pickShellMode(mode);
@@ -768,7 +772,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') pickFileMode(mode);
     else if (groupId === 'mcp') pickMcpMode(mode);
-    else if (groupId.startsWith('mcp-')) toggleMcpServerEnabled(groupId.slice(4), checked);
+    else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
 
   // ---- Agent handlers -------------------------------------------------
