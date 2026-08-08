@@ -4,7 +4,7 @@
 
 The chat view's **model picker** is the popover that opens from the head's `Pick model` trigger. It is the single screen the user spends the most time in inside the chat view (every new chat needs a model, every switch costs a tap), so its empty / loading / active states need to read at a glance on a phone. This doc covers the picker's behavior, the three states (loaded, empty, ghost), and the mobile-first layout rules that govern it.
 
-The picker code lives in [frontend/src/components/chat/modelPicker.js](../../frontend/src/components/chat/modelPicker.js). The head's trigger button and the popover shell are declared in [frontend/src/components/chat/Chat.jsx](../../frontend/src/components/chat/Chat.jsx). Styles are in [frontend/src/chat.css](../../frontend/src/chat.css) under the `chat-view__picker*` selectors.
+The picker code lives in [frontend/src/components/chat/modelPicker.js](../../frontend/src/components/chat/modelPicker.js). The head's trigger button and the popover shell are declared in [frontend/src/components/chat/Chat.jsx](../../frontend/src/components/chat/Chat.jsx). Styles are in [frontend/src/chat-view.css](../../frontend/src/chat-view.css) under the `chat-view__picker*` selectors.
 
 ## Usage
 

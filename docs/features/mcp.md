@@ -181,10 +181,10 @@ await mcp.stopServer(projectDir, server.id);
 
 - Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`, `resolveMerged`. The merged app + project view comes from `resolveMerged(projectDir)`; scope-aware writes route through `findServerAnyScope` so a shadowed app entry stays editable. `startServer()` picks `StdioClientTransport` or `StreamableHTTPClientTransport` from the SDK based on `entry.transport`.
 - Server wiring: [src/ai.js](../../src/ai.js) → `streamChat()`. After the upstream finishes streaming, accumulated `tool_call` deltas are dispatched through `mcp.callTool()`. Tool results are surfaced as `tool_result` SSE events, not fed back into the same stream.
-- HTTP wiring: [src/index.js](../../src/index.js) → `handleMcp()`. The Settings UI hits the REST surface; the AI client never goes through HTTP.
+- HTTP wiring: [src/http-server.js](../../src/http-server.js) → `handleMcp()` in [src/server-handlers-misc.js](../../src/server-handlers-misc.js). The Settings UI hits the REST surface; the AI client never goes through HTTP.
 - SDK isolation: the `@modelcontextprotocol/sdk` is loaded lazily in `getSdk()`. A failure to load the SDK (e.g. a fresh checkout with no `node_modules`) surfaces as `EMODULE` on every server action — the rest of the server boots cleanly without MCP.
-- Frontend: [frontend/src/components/SettingsMcp.jsx](../../frontend/src/components/SettingsMcp.jsx) (list + editor views) and the home card on [frontend/src/components/SettingsHome.jsx](../../frontend/src/components/SettingsHome.jsx). Tool cards in the chat live in [frontend/src/components/Chat.jsx](../../frontend/src/components/Chat.jsx) → `appendToolCallCard` / `appendToolResultCard`.
-- Lifecycle hookup: `mcp.installShutdown()` registers `process.once('exit' | 'SIGINT' | 'SIGTERM', ...)` to stop every running server child cleanly. Called from [src/index.js](../../src/index.js) at require time.
+- Frontend: [frontend/src/components/SettingsMcp.jsx](../../frontend/src/components/SettingsMcp.jsx) (list + editor views) and the home card on [frontend/src/components/SettingsHome.jsx](../../frontend/src/components/SettingsHome.jsx). Tool cards in the chat are rendered by `appendToolCallCard` / `appendToolResultCard` in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js).
+- Lifecycle: running MCP server children are stopped on `/api/restart` (`mcp.stopAll()` inside `handleRestart` in [src/server-handlers-misc.js](../../src/server-handlers-misc.js)).
 
 ## Related
 

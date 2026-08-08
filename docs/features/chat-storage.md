@@ -67,7 +67,8 @@ Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
 | `prompt_id` | TEXT | Nullable |
 | `provider_id` | TEXT | Nullable |
 | `model_id` | TEXT | Nullable |
-| `draft` | TEXT | |
+| `thinking_level` | TEXT | `''` default; the per-chat reasoning-effort override from the thinking dropdown (see [thinking-level.md](./thinking-level.md)) |
+| `draft` | TEXT | Defaults to `''` |
 | `tools` | TEXT | JSON array or NULL |
 | `agent_id` | TEXT | Legacy — always NULL; kept for old DBs, no longer read or written |
 | `agent_files` | INTEGER | 0, 1, or NULL (=undefined) |

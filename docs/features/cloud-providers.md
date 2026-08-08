@@ -2,7 +2,7 @@
 
 ## Overview
 
-`mouaif` ships with four additional first-class API-key providers on top of the original six: **Azure OpenAI**, **Mistral**, **Groq**, and **DeepSeek**. All four are OpenAI-shaped at the wire level — the same `/chat/completions` SSE contract and the same `/models` catalog shape — so they reuse the existing openai-compatible request builder, SSE parser, tool loop, and usage accounting. Adding them was a localized change: one `ENDPOINTS` entry (with a `listModels` adapter) in `src/ai.js`, a row in the Settings providers list, and a keyring-namespace mapping in `src/auth.js`.
+`mouaif` ships with four additional first-class API-key providers on top of the original six: **Azure OpenAI**, **Mistral**, **Groq**, and **DeepSeek**. All four are OpenAI-shaped at the wire level — the same `/chat/completions` SSE contract and the same `/models` catalog shape — so they reuse the existing openai-compatible request builder, SSE parser, tool loop, and usage accounting. Adding them was a localized change: one `ENDPOINTS` entry (with a `listModels` adapter) in `src/ai-endpoints.js`, a row in the Settings providers list, and a keyring-namespace mapping in `src/auth.js`.
 
 ## Usage
 
@@ -49,9 +49,9 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 
 ## Implementation notes
 
-- Source: [src/ai.js](../../src/ai.js) — four new `ENDPOINTS` entries with `chatPath`, `authHeader`, `listModels`, plus `BUILDERS` / `PARSERS` rows pointing at the existing OpenAI-shaped builder/parser. Azure additionally appends `api-version` in `buildOpenAIRequest`.
+- Source: [src/ai-endpoints.js](../../src/ai-endpoints.js) — four new `ENDPOINTS` entries with `chatPath`, `authHeader`, `listModels`, plus `BUILDERS` / `PARSERS` rows pointing at the existing OpenAI-shaped builder/parser. Azure additionally appends `api-version` in `buildOpenAIRequest`.
 - Settings list: [frontend/src/api.js](../../frontend/src/api.js) `SETTINGS_PROVIDERS` — one row per provider with `label`, `defaultBaseUrl`, `hint` (no `oauth` flag).
-- Auth mapping: [src/auth.js](../../src/auth.js) `AI_TO_AUTH_PROVIDER` — the new namespaces are added to `SUPPORTED_PROVIDERS`.
+- Auth mapping: [src/auth.js](../../src/auth.js) `AI_TO_AUTH_PROVIDER` — each maps to its own keyring namespace; there is **no** `SUPPORTED_PROVIDERS` entry for these API-key-only providers (they are never offered an OAuth / keychain account, so `serviceName` is never called on them).
 - No new REST endpoints; the server wiring (`/api/ai/models/live`, `/api/ai/chat`) iterates `ai.ENDPOINTS` and needs no provider-specific code.
 - Tests: [scripts/test-model-lists.js](../../scripts/test-model-lists.js) covers the new adapters (URLs, headers, error mapping, builder shape).
 

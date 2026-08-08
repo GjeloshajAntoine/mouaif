@@ -73,7 +73,7 @@ Writes one command to the session's stdin. The session stays open.
 
 Kills the session (idempotent).
 
-Output rides the existing `GET /api/events` SSE channel as `cli_output` frames:
+Output rides the existing `GET /events` SSE channel as `cli_output` frames:
 
 ```json
 { "id": "cli_lx3k2p", "stream": "stdout", "data": "hello" }
