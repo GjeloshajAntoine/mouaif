@@ -695,6 +695,15 @@ async function handleChatStream(req, res, chatId, sessionToken) {
       }
     }
   } catch { /* non-fatal; stream proceeds without a profile system message */ }
+  // Resolve the per-project tool output profile (size + structure). The
+  // resolved settings are defaults → app → project, so an unset project
+  // gets the built-in `{ size: 'average', structure: 'full' }`. This
+  // drives how much of each tool result the model sees on BOTH the live
+  // tool loop (streamChat) and the reconstructed history (below).
+  let resolvedToolOutput = null;
+  try {
+    resolvedToolOutput = settings.getResolved(projectDir).toolOutput;
+  } catch { /* non-fatal; fall back to the defaults in toolFeedback */ }
   // Agent files (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).
   // Injected after the profile but before tagged files and the custom
   // prompt, so they sit close to the identity block. Each file rides
@@ -780,7 +789,8 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   try { toolFeedbackMaxBytes = settings.getApp().toolFeedbackMaxBytes; } catch { /* default applies */ }
   upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {
     includeTools: supportsOpenAIToolHistory,
-    toolFeedbackMaxBytes
+    toolFeedbackMaxBytes,
+    toolOutput: resolvedToolOutput
   }));
 
   let assistantContent = '';
@@ -962,6 +972,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     fileToolsEnabled,
     appSettings,
     promptSize: resolvedProfileId,
+    toolOutput: resolvedToolOutput,
     thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
     signal: runController.signal,
     // Per-chat tool filter (decisions: chat.tools). null/undefined

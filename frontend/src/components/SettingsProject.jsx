@@ -877,27 +877,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('li', { class: 'settings-project__item' },
           h('div', { class: 'settings-project__item-main' },
             h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Output size'),
-            h('div', { class: 'settings-project__item-note' }, 'How much of a result is fed back to the model.'),
+            h('div', { class: 'settings-project__item-note' }, 'How much of a tool result the model sees before truncation.'),
             h('div', { ref: outputStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
           ),
           h('select', { ref: outputSizeSel, class: 'input settings-project__select', id: 'sp-output-size', disabled: true, onChange: onOutputSize },
-            h('option', { value: 'very-small' }, 'Very small — head/tail only'),
-            h('option', { value: 'average' }, 'Average — most of the result'),
-            h('option', { value: 'full' }, 'Full — the complete result'),
-            h('option', { value: 'extensive' }, 'Extensive — full + context')
+            h('option', { value: 'very-small' }, 'Very small — a quarter of the cap'),
+            h('option', { value: 'average' }, 'Average — the standard cap (default)'),
+            h('option', { value: 'full' }, 'Full — up to four times the cap'),
+            h('option', { value: 'extensive' }, 'Extensive — never truncate')
           )
         ),
-        // Structure — reserved for how results are laid out. Only the
-        // built-in "full" is available today; kept as a select so the
-        // shape is stable for future values.
+        // Structure — how the result body is laid out for the model.
+        // `full` keeps the raw body; `concise` re-serializes JSON to a
+        // single line and collapses blank runs in plain text, so the
+        // same content costs fewer tokens before the size cap applies.
         h('li', { class: 'settings-project__item' },
           h('div', { class: 'settings-project__item-main' },
             h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Output structure'),
-            h('div', { class: 'settings-project__item-note' }, 'How the result body is arranged (reserved; only the built-in shape ships).'),
+            h('div', { class: 'settings-project__item-note' }, 'How the result body is arranged for the model.'),
             h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
           ),
           h('select', { ref: outputStructureSel, class: 'input settings-project__select', id: 'sp-output-structure', disabled: true, onChange: onOutputStructure },
-            h('option', { value: 'full' }, 'Full — standard layout')
+            h('option', { value: 'full' }, 'Full — keep the raw body'),
+            h('option', { value: 'concise' }, 'Concise — compact JSON, no blank runs')
           )
         )
       ),

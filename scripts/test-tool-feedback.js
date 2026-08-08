@@ -69,5 +69,24 @@ const imageHistory = messages.reconstructUpstreamHistory([
 check('historical image payload is omitted', imageHistory[1] && !imageHistory[1].content.includes('A'.repeat(100)), imageHistory[1] && imageHistory[1].content.slice(0, 200));
 check('historical image omission marker is present', imageHistory[1] && imageHistory[1].content.includes('image payload omitted'), imageHistory[1] && imageHistory[1].content);
 
+// ---- toolOutput profile (size + structure) ------------------------------
+const bigJson = JSON.stringify({ ok: true, items: Array.from({ length: 50 }, (_, i) => ({ id: i, name: 'item ' + i, data: 'x'.repeat(100) })) }, null, 2);
+const base = 262144;
+const avgOut = feedback.compactToolFeedback({ name: 'shell', content: bigJson, maxBytes: base, toolOutput: { size: 'average', structure: 'full' } });
+check('average size caps at base', Buffer.byteLength(avgOut, 'utf8') <= base, String(Buffer.byteLength(avgOut, 'utf8')));
+const vsOut = feedback.compactToolFeedback({ name: 'shell', content: 'x'.repeat(base * 2), maxBytes: base, toolOutput: { size: 'very-small', structure: 'full' } });
+check('very-small caps at base/4', Buffer.byteLength(vsOut, 'utf8') <= Math.floor(base / 4) + 8, String(Buffer.byteLength(vsOut, 'utf8')));
+const extOut = feedback.compactToolFeedback({ name: 'shell', content: 'y'.repeat(60000), maxBytes: base, toolOutput: { size: 'extensive', structure: 'full' } });
+check('extensive never truncates', extOut.length === 60000, String(extOut.length));
+const rawLong = 'HEAD\n\n\n  mid\n\nTAIL';
+const conciseOut = feedback.compactToolFeedback({ name: 'shell', content: rawLong, maxBytes: base, toolOutput: { size: 'average', structure: 'concise' } });
+check('concise collapses blank runs', !conciseOut.includes('\n\n\n'), conciseOut);
+check('concise minifies json', feedback.compactToolFeedback({ name: 'shell', content: bigJson, maxBytes: base, toolOutput: { size: 'average', structure: 'concise' } }).length < bigJson.length);
+check('resolveToolOutput defaults', feedback.resolveToolOutput(undefined).size === 'average' && feedback.resolveToolOutput(undefined).structure === 'full');
+check('history honors toolOutput', messages.reconstructUpstreamHistory([
+  { role: 'tool', phase: 'call', toolCallId: 'call_to', name: 'shell', args: {}, content: '{}' },
+  { role: 'tool', phase: 'result', toolCallId: 'call_to', name: 'shell', ok: true, content: bigJson }
+], null, { maxBytes: undefined, toolOutput: { size: 'average', structure: 'concise' } })[1].content.length < bigJson.length);
+
 console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
 process.exit(failed ? 1 : 0);

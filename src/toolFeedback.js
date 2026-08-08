@@ -13,10 +13,54 @@ const DEFAULT_MAX_BYTES = 64 * 1024;
 const MIN_MAX_BYTES = 4 * 1024;
 const MAX_MAX_BYTES = 1024 * 1024;
 
+// Tool output profile (per-project `toolOutput`). `size` picks how much of
+// a result the model sees before the truncation marker; `structure` picks
+// how the serialized body is laid out. Only defined values are honored —
+// anything else falls back to the safe default (`average` / `full`).
+const SIZE_MULTIPLIER = Object.freeze({
+  'very-small': 0.25, // a quarter of the cap: head/tail only
+  average: 1,         // the cap itself (default, 64 KiB)
+  full: 4,            // four times the cap: bigger results pass through
+  extensive: Infinity // never truncate
+});
+const STRUCTURES = Object.freeze(['full', 'concise']);
+const DEFAULT_SIZE = 'average';
+const DEFAULT_STRUCTURE = 'full';
+
+function resolveToolOutput(raw) {
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const size = Object.prototype.hasOwnProperty.call(SIZE_MULTIPLIER, o.size) ? o.size : DEFAULT_SIZE;
+  const structure = STRUCTURES.includes(o.structure) ? o.structure : DEFAULT_STRUCTURE;
+  return { size, structure };
+}
+
+// Effective byte cap for a size profile, against the configured base cap.
+// `null` / `undefined` base uses the module default. `Infinity` (extensive)
+// returns Infinity so the truncator passes the result through unchanged.
+function effectiveMaxForSize(size, baseMaxBytes) {
+  const mult = SIZE_MULTIPLIER[size] === undefined ? 1 : SIZE_MULTIPLIER[size];
+  if (mult === Infinity) return Infinity;
+  const base = resolveMaxBytes(baseMaxBytes);
+  return Math.max(MIN_MAX_BYTES, Math.floor(base * mult));
+}
+
 function resolveMaxBytes(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_BYTES;
   return Math.max(MIN_MAX_BYTES, Math.min(MAX_MAX_BYTES, Math.floor(n)));
+}
+
+// Compact a JSON-ish string to its minimal single-line form, so the model
+// pays once for keys/whitespace instead of re-reading an indented blob.
+// Plain (non-JSON) text is returned with runs of blank lines collapsed.
+function conciseLayout(text) {
+  const s = String(text == null ? '' : text);
+  if (!s.trim()) return s;
+  try {
+    const parsed = JSON.parse(s);
+    return JSON.stringify(parsed);
+  } catch { /* not JSON — fall through */ }
+  return s.replace(/\n[ \t]*\n+/g, '\n').replace(/^[ \t]+/gm, '').replace(/\s+$/gm, '');
 }
 
 function utf8Bytes(value) {
@@ -39,6 +83,9 @@ function utf8Suffix(buffer, bytes) {
 
 function truncateUtf8HeadTail(value, requestedMaxBytes) {
   const text = String(value == null ? '' : value);
+  // Explicit `Infinity` means "no cap" (the `extensive` output size).
+  // resolveMaxBytes would clamp it to MAX_MAX_BYTES, losing the intent.
+  if (requestedMaxBytes === Infinity) return text;
   const maxBytes = resolveMaxBytes(requestedMaxBytes);
   const originalBytes = utf8Bytes(text);
   if (originalBytes <= maxBytes) return text;
@@ -127,13 +174,21 @@ function compactToolFeedback(options) {
     }
   }
 
-  return truncateUtf8HeadTail(content, opts.maxBytes);
+  // Apply the per-project tool output profile: `structure` before `size`,
+  // so a concise layout is compacted first and then bounded by the size
+  // budget. Defaults keep legacy behavior (full body, `average` cap).
+  const profile = resolveToolOutput(opts.toolOutput);
+  const layout = profile.structure === 'concise' ? conciseLayout(content) : content;
+  const maxBytes = effectiveMaxForSize(profile.size, opts.maxBytes);
+  return truncateUtf8HeadTail(layout, maxBytes);
 }
 
 module.exports = {
   compactToolFeedback,
   truncateUtf8HeadTail,
   resolveMaxBytes,
+  effectiveMaxForSize,
+  resolveToolOutput,
   DEFAULT_MAX_BYTES,
   MIN_MAX_BYTES,
   MAX_MAX_BYTES

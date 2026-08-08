@@ -230,6 +230,7 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
     : (m) => m && m.content;
   const includeTools = !options || options.includeTools !== false;
   const toolFeedbackMaxBytes = options && options.toolFeedbackMaxBytes;
+  const toolOutput = options && options.toolOutput;
   const out = [];
   const usedIds = new Set();
   let pairNumber = 0;
@@ -279,7 +280,7 @@ function reconstructUpstreamHistory(list, contentForMessage, options) {
       out.push({
         role: 'tool', tool_call_id: wireId, name,
         content: toolFeedback.compactToolFeedback({
-          name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes
+          name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes, toolOutput
         })
       });
       i++;

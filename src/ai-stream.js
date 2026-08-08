@@ -556,7 +556,8 @@ async function streamChat(opts) {
       name,
       content: exec && exec.content,
       result: exec && exec.result,
-      maxBytes: opts && opts.appSettings && opts.appSettings.toolFeedbackMaxBytes
+      maxBytes: opts && opts.appSettings && opts.appSettings.toolFeedbackMaxBytes,
+      toolOutput: opts && opts.toolOutput
     });
   }
 
@@ -1366,6 +1367,7 @@ async function streamChat(opts) {
         chatId: callOpts && callOpts.chatId,
         appSettings: callOpts && callOpts.appSettings,
         promptSize: callOpts && callOpts.promptSize,
+        toolOutput: callOpts && callOpts.toolOutput,
         enabledTools: nestedEnabled,
         // Marker the shell dispatcher reads to re-emit live output
         // chunks as subagent_event so they render inside this card.
