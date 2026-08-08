@@ -22,6 +22,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Structured controls
   const promptSizeSel = useRef(null);
   const promptSizeStatus = useRef(null);
+  // Tool output profile (size / structure). Set during load() from the
+  // resolved settings so the File tool options page has defaults even
+  // when the project never set a toolOutput key.
+  const outputSizeSel = useRef(null);
+  const outputStructureSel = useRef(null);
+  const outputStatus = useRef(null);
+  const outputJson = useRef(null);
   const [traceCardVisible, setTraceCardVisible] = useState(!!(initialChatId && initialChatId.trim()));
   const chatTraceToggle = useRef(null);
   const chatTraceStatus = useRef(null);
@@ -111,6 +118,27 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       promptSizeSel.current.disabled = false;
     }
     if (promptSizeStatus.current) promptSizeStatus.current.textContent = '';
+
+    // Tool output profile. The source of truth is the *resolved*
+    // settings (defaults → app → project), so an empty project still
+    // gets a working default and a project override shows through.
+    const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
+    const to = (resolved && resolved.toolOutput && typeof resolved.toolOutput === 'object') ? resolved.toolOutput : {};
+    const outSize = (to && to.size) || 'average';
+    const outStruct = (to && to.structure) || 'full';
+    if (outputSizeSel.current) {
+      outputSizeSel.current.value = outSize;
+      outputSizeSel.current.disabled = false;
+    }
+    if (outputStructureSel.current) {
+      outputStructureSel.current.value = outStruct;
+      outputStructureSel.current.disabled = false;
+    }
+    if (outputJson.current) {
+      const show = { size: outSize, structure: outStruct };
+      outputJson.current.textContent = JSON.stringify(show, null, 2);
+    }
+    if (outputStatus.current) outputStatus.current.textContent = '';
 
     setTraceCardVisible(!!chatId());
     if (chatTraceStatus.current) chatTraceStatus.current.textContent = '';
@@ -307,6 +335,23 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       promptSizeStatus.current.textContent = 'HTTP ' + r.status;
     }
   }
+
+  // Save the tool output profile (size / structure) into .mouaif.json
+  // key `toolOutput`. Both selects read from the resolved value, but the
+  // stored project key holds the whole { size, structure } object so a
+  // change to one keeps the other. The handler reads the sibling select's
+  // live value to merge.
+  async function saveToolOutput() {
+    const size = outputSizeSel.current ? outputSizeSel.current.value : 'average';
+    const structure = outputStructureSel.current ? outputStructureSel.current.value : 'full';
+    if (outputStatus.current) outputStatus.current.textContent = 'saving…';
+    const ok = await patchProject({ toolOutput: { size, structure } }, outputStatus, 'saved');
+    if (ok && outputJson.current) {
+      outputJson.current.textContent = JSON.stringify({ size, structure }, null, 2);
+    }
+  }
+  function onOutputSize() { saveToolOutput(); }
+  function onOutputStructure() { saveToolOutput(); }
 
   async function onChatTraceChange() {
     if (!chatId() || !chatTraceToggle.current) return;
@@ -812,6 +857,58 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     if (created) nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()));
   }
 
+  if (page === 'output') return h(Fragment, null,
+    h('div', { class: 'view-head' },
+      h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+      h('h2', { class: 'view-title' }, 'File tool options')
+    ),
+    h('section', { class: 'settings-project' },
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('tools'),
+          h('span', null, 'Tool output')
+        ),
+        h('p', { class: 'hint hint--compact' }, 'How much of a tool result the model sees, and how the result is structured. Applies to file tools and all native/MCP tool output.')
+      ),
+      h('ul', { class: 'group__list' },
+        // Output size — mirrors the Prompt style select (very-small /
+        // average / extensive), stranded at "average" so a small result
+        // stays token-frugal while a full read still gets through.
+        h('li', { class: 'settings-project__item' },
+          h('div', { class: 'settings-project__item-main' },
+            h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Output size'),
+            h('div', { class: 'settings-project__item-note' }, 'How much of a result is fed back to the model.'),
+            h('div', { ref: outputStatus, class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
+          ),
+          h('select', { ref: outputSizeSel, class: 'input settings-project__select', id: 'sp-output-size', disabled: true, onChange: onOutputSize },
+            h('option', { value: 'very-small' }, 'Very small — head/tail only'),
+            h('option', { value: 'average' }, 'Average — most of the result'),
+            h('option', { value: 'full' }, 'Full — the complete result'),
+            h('option', { value: 'extensive' }, 'Extensive — full + context')
+          )
+        ),
+        // Structure — reserved for how results are laid out. Only the
+        // built-in "full" is available today; kept as a select so the
+        // shape is stable for future values.
+        h('li', { class: 'settings-project__item' },
+          h('div', { class: 'settings-project__item-main' },
+            h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Output structure'),
+            h('div', { class: 'settings-project__item-note' }, 'How the result body is arranged (reserved; only the built-in shape ships).'),
+            h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, '')
+          ),
+          h('select', { ref: outputStructureSel, class: 'input settings-project__select', id: 'sp-output-structure', disabled: true, onChange: onOutputStructure },
+            h('option', { value: 'full' }, 'Full — standard layout')
+          )
+        )
+      ),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title' }, 'Stored value'),
+        h('p', { class: 'hint hint--compact' }, 'Written to ', h('code', null, '.mouaif.json'), ' under ', h('code', null, 'toolOutput'), '. Leave a control to inherit the app default.'),
+        h('pre', { ref: outputJson, class: 'settings__out' }, '')
+      )
+    )
+  );
+
   if (page === 'technical') return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
@@ -955,6 +1052,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 collapsedByDefault: true
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
+        ),
+        h('a', {
+          class: 'group__row settings-project__link-row settings-project__options-link',
+          'aria-label': 'File tool options',
+          href: '#/settings/project/output?projectDir=' + encodeURIComponent(dir())
+        },
+          h('span', { class: 'group__row-body' },
+            h('span', { class: 'group__row-label' }, 'File tool options'),
+            h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
+          ),
+          h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
         )
       ),
 

@@ -166,6 +166,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
   'chatStorage',    // app-wide chat persistence backend
   'toolFeedbackMaxBytes', // model-facing tool-result byte cap
+  'toolOutput',     // per-project tool output profile { size, structure } — non-secret
   'notifications',  // browser notification event preferences
   'flags'           // server-side feature toggles (non-secret)
 ]);

@@ -107,6 +107,7 @@ export function App() {
     && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
     && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
     && view.name !== 'settingsProjectTechnical'
+    && view.name !== 'settingsProjectOutput'
     && view.name !== 'settingsDefaults' && view.name !== 'settingsNotifications'
     && view.name !== 'settingsPrompts' && view.name !== 'settingsPromptEdit'
     && view.name !== 'settingsAgents' && view.name !== 'settingsAgentEdit'
@@ -126,6 +127,7 @@ export function App() {
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
   else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical' });
+  else if (view.name === 'settingsProjectOutput') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'output' });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
   else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir });

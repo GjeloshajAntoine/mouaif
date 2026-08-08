@@ -63,6 +63,7 @@ Each card's summary line reflects live state (e.g. `1 connected`, `3 models pric
 | `#/settings/providers/<id>` | `SettingsProviderEditView` | Edit / delete an existing provider. |
 | `#/settings/defaults` | `SettingsDefaultsView` | `Default prompt style` (select). Save writes to `PUT /api/settings/app`. |
 | `#/settings/project[?projectDir=<abs path>]` | `SettingsProjectView` | Per-project overrides (prompt style, tool authorization, agent files, agents) + a "This chat" group for the chat the user came from (`?chatId=…`). Raw `<projectDir>/.mouaif.json` editor and resolved view live in a collapsed Advanced section. Seeds the directory from `?projectDir=` or the active project and auto-loads. |
+| `#/settings/project/output[?projectDir=<abs path>]` | `SettingsProjectView` (`page: 'output'`) | **File tool options** — the `toolOutput` profile (output size + structure) with a live JSON readout, a sibling of Technical details under Settings → Project. |
 | `#/settings/copilot` | — (legacy alias) | Old GitHub Copilot OAuth screen. The `client_id` field now lives in the Copilot provider form; this hash redirects to `#/settings/providers/github-copilot`. |
 | `#/settings/tags[?projectDir=<abs path>]` | `SettingsTagsView` | Per-project file tagging (decisions §15). Resolves the registered project id from `projectDir` when no `projectId` is passed. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |

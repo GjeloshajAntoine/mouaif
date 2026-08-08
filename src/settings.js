@@ -56,6 +56,11 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
+  // Tool output profile for file/result text fed back to the model. `size`
+  // mirrors promptSize (how much of a result the model sees); `structure`
+  // is reserved for a future "how results are laid out" switch. Lives in
+  // the same default floor so projects without a key resolve to a sane value.
+  toolOutput: { size: 'average', structure: 'full' },
   // Chat storage backend: 'db' (SQLite, default) or 'json' (file-based, legacy).
   // When 'db', chat metadata and messages live in ~/.mouaif/store.sqlite.
   // When 'json', they live in <projectDir>/.mouaif.json and .mouaif.messages.*.json.
