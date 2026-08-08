@@ -57,7 +57,9 @@
 
   /* Layout */
   --safe-top:    env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Halved so the home-indicator inset reserves only half the bottom
+     margin (the full inset reads as a large empty strip on iOS). */
+  --safe-bottom: calc(env(safe-area-inset-bottom, 0px) / 2);
   --pad-x: 10px;
   --pad-y: 6px;
   --gap: 6px;
