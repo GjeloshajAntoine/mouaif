@@ -523,6 +523,31 @@ async function handleChats(req, res, parsed, sessionToken) {
     }
   }
 
+  // GET /api/chats/:id/live?projectDir=  (SSE)
+  // Per-chat live-replay stream. While a chat is running, a follower
+  // client (another tab/device, or this UI returning to a running chat)
+  // subscribes here and immediately receives the buffered transient tool
+  // events (shell_output / subagent_event / progress_update) for the
+  // in-flight run, then continues to receive them as they occur. The
+  // stream closes with a `run_end` event when the run finishes. Requires
+  // the chat to actually be running — a 404 prevents a client from
+  // holding a dead connection waiting for content that will never come.
+  const liveMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/live$/);
+  if (liveMatch && method === 'GET') {
+    const id = decodeURIComponent(liveMatch[1]);
+    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const rk = runningKey(dir, id);
+      if (!runningChats.has(rk)) return sendJSON(res, 404, { error: 'No live run for this chat', id });
+      return liveChat.addSubscriber(rk, req, res);
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // POST /api/chats/:id/messages/stream  body: { projectDir, modelId, content }
   // Appends the user message, calls ai.streamChat, streams the
   // response back as SSE, appends the assistant message on done, and
@@ -602,6 +627,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const runController = new AbortController();
   runningChats.add(runKey);
   runningChatCancels.set(runKey, runController);
+  liveChat.ensureLiveChat(runKey);
 
   // Open SSE.
   res.writeHead(200, {
@@ -619,6 +645,18 @@ async function handleChatStream(req, res, chatId, sessionToken) {
       res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
     } catch { /* socket closed */ }
     if (traceStream) trace.write(traceStream, name, data);
+    // Fan transient tool streams out to followers (live-chat.js) so a
+    // returning page or a second tab renders them in real time. These
+    // are exactly the events that never reach the persisted transcript
+    // on their own: buffered until the matching tool_result lands (or
+    // the run ends), replayed to late subscribers, and pushed live to
+    // connected ones. Conveniently, the run entry also gives us the
+    // toolResultId for a later prune on `tool_result`.
+    if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_update') {
+      liveChat.pushLive(runKey, name, data);
+    } else if (name === 'tool_result') {
+      liveChat.pruneLive(runKey, data && data.id);
+    }
   }
   if (traceStream) {
     const event = trace.eventForMessage(userMsg);
@@ -1189,6 +1227,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
+    liveChat.finishLiveChat(runKey);
     sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: 'chat-' + chatId + '-status' });
     res.end();
     return;
@@ -1221,6 +1260,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
   runningChatCancels.delete(runKey);
+  liveChat.finishLiveChat(runKey);
   // Refresh the persisted project total cost after a stream completes.
   try { chats.recomputeProjectTotalCost(projectDir); } catch { /* non-fatal */ }
   res.end();

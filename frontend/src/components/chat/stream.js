@@ -28,6 +28,7 @@ import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
+import { subscribeLive } from './live.js';
 import { cssEscape } from './utils.js';
 
 // markToolUsed(state, refs, toolName)
@@ -1081,6 +1082,11 @@ export async function reconcileRunningChat(state, refs) {
     if (running) {
       state.watchingRun = true;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+      // A second tab or a returning page stops seeing this chat as new
+      // and starts following the live stream. Subscribe once so its
+      // shell/subagent/progress tool cards render in flight instead of
+      // waiting for the settled transcript.
+      subscribeLive(state, refs);
       setChatStatus(refs, 'streaming…', 'busy');
       // Only drain the pending-authorization queue on an actual state
       // change (a run just started here, or new rows arrived), not on

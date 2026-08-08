@@ -100,6 +100,7 @@ const sseClients = new Set();
 const runningChats = new Set();
 const runningChatCancels = new Map();
 const accessAttempts = new Map();
+const liveChat = require('./live-chat.js');
 function runningKey(projectDir, chatId) {
   return String(projectDir) + '::' + String(chatId);
 }
@@ -633,6 +634,7 @@ module.exports = {
   runningChats,
   runningChatCancels,
   accessAttempts,
+  liveChat,
   store,
   MODEL_LIST_CACHE,
   // domain modules (re-exported so handlers + http-server share one instance)

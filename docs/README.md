@@ -62,6 +62,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Chat streaming performance](features/chat-streaming-performance.md) — streaming assistant text appends per-token text nodes instead of rebuilding the bubble, removing O(n²) work on long turns.
 - [Chat load performance](features/chat-load-performance.md) — SQL-side cost aggregation, a cheap transcript revision marker for polling, lazy collapsed tool-result bodies, and fewer redundant refreshes keep long chats fast to open.
 - [Run settle latch](features/run-settle-latch.md) — a returned-to chat with a stale server `running` flag settles at "done" once and stays settled, instead of oscillating between streaming and done on every poll.
+- [Live tool preview](features/live-tool-preview.md) — buffered per-chat replay of transient tool streams (`shell_output`, `subagent_event`, `progress_update`) so a second tab or a returning page renders a running chat's live tool output instead of "Waiting for results…".
 
 ## Architectural decisions
 

@@ -32,6 +32,7 @@ import {
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
 import { send as sendTurn, runShellCommand, runMcpCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles } from './imageInput.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
@@ -566,6 +567,12 @@ export function useChatState(props) {
         })();
         if (c.running) {
           setRunningVisible(true);
+          // Subscribe to the per-chat live stream so a reloaded page
+          // (returning to a chat that lost its SSE socket) still renders
+          // in-flight shell output and subagent activity into the tool
+          // cards, instead of pinning them on "Waiting for results…"
+          // until the run settles.
+          subscribeLive(state, refs);
           loadPendingAuthorization(state, refs);
         } else {
           setRunningVisible(false);
@@ -700,6 +707,10 @@ export function useChatState(props) {
   useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state, refs);
+    // Drop the per-chat live subscription so a backgrounded/closed tab
+    // doesn't hold a socket for a chat the user left. The owner stream
+    // keeps buffering regardless — returning re-subscribes and replays.
+    closeLive(state);
     // Cancel any in-flight chunked transcript render so a navigate-away
     // can't write into a detached transcript.
     if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
