@@ -43,9 +43,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tap);
-  height: var(--tap);
-  margin: calc((26px - var(--tap)) / 2) -8px calc((26px - var(--tap)) / 2) -6px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   font: inherit;
   color: var(--muted);
@@ -62,19 +61,7 @@
 .tool-tree__chev.is-collapsed svg { transform: rotate(-90deg); }
 
 /* Spacer for single-tool groups (no chevron). */
-.tool-tree__chew { flex: 0 0 auto; width: 30px; height: 18px; }
-
-/* Keep the visual checkbox compact while its label supplies a 44px tap area. */
-.tool-tree__check {
-  flex: 0 0 var(--tap);
-  width: var(--tap);
-  height: var(--tap);
-  margin: calc((26px - var(--tap)) / 2) -10px calc((26px - var(--tap)) / 2) -8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
+.tool-tree__chew { flex: 0 0 auto; width: 18px; height: 18px; }
 
 /* Text runs: name then desc on the SAME line, space separated. */
 .tool-tree__name {
@@ -120,7 +107,6 @@
    its own click target; pointer events are scoped to the control
    itself so row taps never reach it accidentally. */
 .tool-tree__control {
-  position: relative;
   flex: 0 0 auto;
   margin-left: auto;
   display: inline-flex;
@@ -129,34 +115,25 @@
 
 /* The Off/Ask/Allow segment shrinks to fit the tree row. */
 .tool-tree__control .seg { padding: 1px; gap: 1px; }
-.tool-tree__control .seg__item {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  display: inline-flex;
-  align-items: center;
-}
 .tool-tree__control .seg__pill {
-  width: 100%;
-  min-height: 26px;
+  min-height: 20px;
   padding: 0 8px;
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 500;
 }
 
 /* MCP server rows: segment plus a ↺ reset that appears only when a
-   per-server override is set. The reset sits above the segment so its
-   full-size tap target does not force the narrow row to overflow. */
+   per-server override is set. The reset is its own touch target
+   (≥26 px) and clears the override back to the shared gate. */
 .tool-tree__control-inline {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 .tool-tree__reset {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 4px);
-  min-width: var(--tap);
-  height: var(--tap);
+  flex: 0 0 auto;
+  min-width: 28px;
+  height: 26px;
   padding: 0 6px;
   font-size: 0.72rem;
   line-height: 1;

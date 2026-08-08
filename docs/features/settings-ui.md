@@ -79,7 +79,7 @@ Project settings use a regular, single-column form: a quiet path and scope intro
 
 The project view's groups are scoped on purpose: a **Chat defaults** group holds settings that live in `.mouaif.json` and apply to chats in this project (prompt style today; anything left on its default follows the app-level value), and a separate **This chat** group holds actions that apply to the chat the user came from (trace toggle, export trace, delete chat). The two scopes are never mixed in one group — a per-chat action next to a project setting reads as "this writes `.mouaif.json`", which it does not. The "This chat" group is hidden when the route carries no `?chatId=…`.
 
-The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. Project settings keeps compact visual controls inside full-size tap areas: help buttons, switches, tool checkboxes, disclosure chevrons, permission segments, selects, and MCP reset actions all remain comfortably tappable. Agent-file switch rows use a two-column grid so long descriptions wrap inside the card instead of overflowing it. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `frontend/dist/`.
+The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `frontend/dist/`.
 
 ## Behavior
 
