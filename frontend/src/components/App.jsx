@@ -13,12 +13,12 @@ import { SettingsImportView } from './SettingsImport.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
+import { ChatView } from './chat/Chat.jsx';
 
 function lazyNamed(loader, name) {
   return lazy(() => loader().then((module) => ({ default: module[name] })));
 }
 
-const ChatView = lazyNamed(() => import('./chat/Chat.jsx'), 'ChatView');
 const InspectorView = lazyNamed(() => import('./Inspector.jsx'), 'InspectorView');
 const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
 const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
