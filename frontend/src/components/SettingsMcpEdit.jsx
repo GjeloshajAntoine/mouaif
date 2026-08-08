@@ -222,6 +222,7 @@ export function SettingsMcpEditView(props) {
       h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, title)
     ),
+    h('section', null,
     id
       ? h('p', { class: 'hint hint--compact' },
           currentScope === 'app'
@@ -312,6 +313,7 @@ export function SettingsMcpEditView(props) {
     ),
     h('div', { class: 'row' },
       h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+    )
     )
   );
 }

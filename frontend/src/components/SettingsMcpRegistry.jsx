@@ -150,6 +150,9 @@ export function SettingsMcpRegistryView(props = {}) {
       h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
       h('h2', { class: 'view-title' }, 'MCP Registry' + (projectDir ? ' · ' + projectDir.split(/[/\\]/).pop() : ''))
     ),
+    // Scroll container (flush route) — see SettingsMcp for the same
+    // single-root-<section> rationale.
+    h('section', null,
     h('p', { class: 'hint hint--compact' },
       'Browse the ',
       h('a', { href: 'https://registry.modelcontextprotocol.io', target: '_blank', rel: 'noopener noreferrer' }, 'official MCP Registry'),
@@ -233,6 +236,7 @@ export function SettingsMcpRegistryView(props = {}) {
         onClick: doNextPage,
         'aria-label': 'Next page'
       }, 'Next →')
+    )
     )
   );
 }

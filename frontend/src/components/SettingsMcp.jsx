@@ -219,44 +219,49 @@ export function SettingsMcpView(props = {}) {
       h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '←'),
       h('h2', { class: 'view-title' }, projectDir ? 'MCP servers · ' + projectName : 'MCP servers · app defaults')
     ),
-    h('p', { class: 'hint hint--compact' },
-      projectDir
-        ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
-        : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
-    // ---- Server list -----------------------------------------------------
-    // Tool-call permissions (Off/Ask/Allow) deliberately do NOT live on
-    // this page: they are per project and sit with the other tool
-    // checkboxes in Settings → Project → Tools and the chat tools card.
-    // A permission seg here read as a per-server toggle and duplicated
-    // the real one.
-    h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Servers', h('span', { class: 'group__title-note' }, serversList.length + ' configured')),
-      h('ul', { class: 'group__list mcp__list', 'aria-label': 'MCP servers' },
-        serversList.length
-          ? serversList.map(serverRow)
-          : h('li', { class: 'mcp__empty' },
-              projectDir
-                ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
-                : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
-      )
-    ),
-    // App list only: deep-link into a project's list.
-    !projectDir
-      ? h('div', { class: 'row' },
-          h('label', { class: 'label', for: 'mcp-open-project' }, 'Project servers'),
-          h('div', { class: 'row row--inline' },
-            h('input', {
-              class: 'input', id: 'mcp-open-project', type: 'text',
-              placeholder: 'C:/path/to/project', value: dirInput,
-              onInput: (e) => setDirInput(e.target.value),
-              onKeyDown: (e) => { if (e.key === 'Enter') openProject(); }
-            }),
-            h('button', { ref: openBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
-          ),
-          h('span', { class: 'hint hint--compact' }, 'Project servers live with the project (committed to .mcp.json). Open a project to manage them.')
+    // The scroll container. Flush routes (no tab bar) rely on a single
+    // root <section> matching `.app__main--flush > section` to scroll
+    // internally; without it the list/page-bar below a tall set of
+    // servers gets clipped with no way to reach it.
+    h('section', null,
+      h('p', { class: 'hint hint--compact' },
+        projectDir
+          ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
+          : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
+      // ---- Server list -----------------------------------------------------
+      // Tool-call permissions (Off/Ask/Allow) deliberately do NOT live on
+      // this page: they are per project and sit with the other tool
+      // checkboxes in Settings → Project → Tools and the chat tools card.
+      // A permission seg here read as a per-server toggle and duplicated
+      // the real one.
+      h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Servers', h('span', { class: 'group__title-note' }, serversList.length + ' configured')),
+        h('ul', { class: 'group__list mcp__list', 'aria-label': 'MCP servers' },
+          serversList.length
+            ? serversList.map(serverRow)
+            : h('li', { class: 'mcp__empty' },
+                projectDir
+                  ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
+                  : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
         )
-      : null,
-    h('div', { class: 'page-bar' },
+      ),
+      // App list only: deep-link into a project's list.
+      !projectDir
+        ? h('div', { class: 'row' },
+            h('label', { class: 'label', for: 'mcp-open-project' }, 'Project servers'),
+            h('div', { class: 'row row--inline' },
+              h('input', {
+                class: 'input', id: 'mcp-open-project', type: 'text',
+                placeholder: 'C:/path/to/project', value: dirInput,
+                onInput: (e) => setDirInput(e.target.value),
+                onKeyDown: (e) => { if (e.key === 'Enter') openProject(); }
+              }),
+              h('button', { ref: openBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
+            ),
+            h('span', { class: 'hint hint--compact' }, 'Project servers live with the project (committed to .mcp.json). Open a project to manage them.')
+          )
+        : null,
+      h('div', { class: 'page-bar' },
       h('a', { href: '#/settings/mcp/registry' + projectQS(projectDir), class: 'btn btn--small', type: 'button' }, 'Browse Registry'),
       h('span', {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
@@ -268,6 +273,7 @@ export function SettingsMcpView(props = {}) {
         onClick: () => load()
       }, '↻'),
       h('a', { href: newHref, class: 'page-bar__add', 'aria-label': 'Add MCP server' }, '+')
+      )
     )
   );
 }
