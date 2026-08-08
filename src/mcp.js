@@ -686,8 +686,21 @@ function resolveMerged(projectDir) {
 }
 
 function listServers(projectDir) {
-  return resolveMerged(projectDir).map(({ entry, scope, raw }) =>
-    decorate(Object.assign({}, entry, { scope }), projectDir, raw));
+  // Stable alphabetical sort by display name within the existing
+  // app-before-project scope grouping (scope wins, then name), so the
+  // listing is deterministic and friendly to scan regardless of storage
+  // order. Case-insensitive, tie-broken by the raw name then storage
+  // order (Array.prototype.sort is stable).
+  return resolveMerged(projectDir)
+    .sort((a, b) => {
+      const na = (a.entry.name || '').toLowerCase();
+      const nb = (b.entry.name || '').toLowerCase();
+      if (na !== nb) return na < nb ? -1 : 1;
+      return (a.entry.name || '') < (b.entry.name || '') ? -1
+        : (a.entry.name || '') > (b.entry.name || '') ? 1 : 0;
+    })
+    .map(({ entry, scope, raw }) =>
+      decorate(Object.assign({}, entry, { scope }), projectDir, raw));
 }
 
 function getServer(projectDir, serverId) {
