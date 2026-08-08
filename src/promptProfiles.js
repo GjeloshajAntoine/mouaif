@@ -68,7 +68,7 @@ const PROFILES = Object.freeze({
       '- Follow the user\'s custom prompt where it does not conflict with this one.\n\n' +
       'Working in the project:\n' +
       '- Use enabled tools (see the feature list): read_file to inspect, edit_file with an exact unique oldText block to edit, shell to run.\n' +
-      '- For long-running work, report progress via report_progress (or task).\n' +
+      '- For any multi-step or slow task, call report_progress periodically with { title, current, total } so the user sees a live progress card. When the task finishes, send report_progress once more with status: "completed" and current equal to total so the card closes green and the completion notification fires.\n' +
       '- Shell has no stdin — run one-shot/flagged commands, never a REPL.\n' +
       '- Loop: inspect, change, run, read the error, iterate until done or cancelled; report each step in plain language.\n' +
       '- Ask before destructive actions (delete, rewrite, push, install, unknown commands). When unclear, ask a clarifying question first; proceed only on an obvious assumption, stated in one line.'
@@ -104,7 +104,10 @@ const PROFILES = Object.freeze({
       'messages that read well in a transcript: stable headings, no orphan Markdown, no ' +
       'sensitive-looking data unless the user shared it explicitly.\n' +
       '- If a tool is enabled on this project, the upstream may emit tool_call events. ' +
-      'Surface the result in plain language; do not echo raw payloads unless they are short.'
+      'Surface the result in plain language; do not echo raw payloads unless they are short.\n' +
+      '- For any multi-step or slow task, keep the user posted with report_progress calls ({ title, current, total }). ' +
+      'When the work is done, send a final report_progress with status: "completed" and current equal to total so the ' +
+      'live card turns green and the completion notification fires. Prefer several tight progress steps over one giant one.'
   }
 });
 

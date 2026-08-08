@@ -1071,8 +1071,14 @@ async function handleChatStream(req, res, chatId, sessionToken) {
             tag: 'chat-' + chatId + '-progress'
           });
         } else {
+          // Plain `report_progress` (non-task) update. Body shows the
+          // live percentage plus the running message; the chat title
+          // carries the cumulative token/cost label so the status line
+          // reads "progress + usage" even while the chat is open.
+          const usageLabel = pushUsageLabel();
+          const chatTitle = (chat && chat.title) || 'mouaif';
           sendChatPush('progress', {
-            title: data.title || 'Progress',
+            title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
             body: (pctNum != null ? pctNum + '% — ' : '') + (data.message || ''),
             tag: 'chat-' + chatId + '-progress'
           });

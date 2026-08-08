@@ -26,6 +26,8 @@ The resolved system prompt (the active profile's text, plus any custom prompt) i
 | `average` | Average | The recommended default. Identity + concise guidance on how to answer + agentic tool-loop rules (read/edit/run loop, non-interactive shell, progress reporting via `report_progress` / `task`, ask when unclear). |
 | `extensive` | Extensive | When you want the model to be deliberate, follow the trace / tool guidelines, and use worked examples. |
 
+The `average` and `extensive` profiles both tell the model to call `report_progress` periodically on multi-step or slow tasks **and to send a final `status: "completed"` report** when the work is done — so long agentic turns surface a live progress card plus the per-chat completion notification, rather than ending with no progress at all.
+
 The default is `average`. The chat, the project, and the app can each override it; the most specific one wins.
 
 ## Behavior
