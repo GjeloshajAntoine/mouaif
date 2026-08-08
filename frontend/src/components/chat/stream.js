@@ -1071,6 +1071,11 @@ export async function reconcileRunningChat(state, refs) {
       // change falls back to the full fetch inside syncTailOrFull.
       moved = true;
       await syncTailOrFull(state, refs, revKey);
+      // A revision change is the ONLY reliable signal that a fresh turn
+      // started. Clear the torn-run settle latch so a new run can show
+      // its busy state again; a previously-settled stale flag must not
+      // suppress a genuinely new turn.
+      if (state.runSettled) state.runSettled = false;
     }
 
     if (running) {
@@ -1090,18 +1095,23 @@ export async function reconcileRunningChat(state, refs) {
       // transcript has stopped moving AND the last row isn't a bare
       // mid-tool call, the turn is done — clear the busy state after a
       // couple of identical stable polls instead of looping
-      // "streaming…" and re-fetching /revision forever.
+      // "streaming…" and re-fetching /revision forever. The settle is
+      // latched (state.runSettled) so a stale server flag doesn't flip
+      // us back to streaming on the next tick; the latch only lifts on
+      // a revision change (a fresh turn).
       const last = state.messages[state.messages.length - 1];
       const midTool = last && last.role === 'tool' && last.phase === 'call';
-      // Require at least one persisted row: a reloaded run that has
-      // produced nothing yet must keep the busy state (it may still be
-      // pre-stream). Only a stable, non-empty, not-mid-tool transcript
-      // is a finished-then-torn run.
-      if (!moved && !midTool && state.messages.length > 0) {
+      if (state.runSettled) {
+        // Already settled this torn run — stay quiet. No busy state, no
+        // stop button, no oscillation.
+        state.watchingRun = false;
+        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+      } else if (!moved && !midTool && state.messages.length > 0) {
         state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
         if (state.watchingStableTicks >= 2) {
           state.watchingRun = false;
           state.watchingStableTicks = 0;
+          state.runSettled = true;
           if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
           setChatStatus(refs, 'done', 'success');
         }

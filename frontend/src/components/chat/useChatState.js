@@ -161,6 +161,16 @@ export function useChatState(props) {
   // stability logic used by stream recovery (runRecoveryTick).
   const watchingStableTicks = useRef(0);
   const watchingRun = useRef(false);
+  // Latch for a settled "torn" run. When a chat's server `running`
+  // flag is stale (the run finished while we were away, or its SSE
+  // socket died without clearing the flag), reconcileRunningChat
+  // settles it as done — but the server flag never clears, so the
+  // NEXT poll sees `running: true` and flips back to "streaming…"
+  // with the stop button, forever oscillating done/streaming. Once we
+  // settle a torn run, this latch keeps it settled UNTIL a genuinely
+  // new turn lands on disk (a revision change moves the latch to
+  // false), which is the only real signal that a fresh run started.
+  const runSettled = useRef(false);
   // Chat + provider WILL data. These were formerly dual (ref + useState)
   // to drive whole-view re-renders; nothing renders from them, so they
   // live only here and are exposed on `state` as plain accessors.
@@ -229,6 +239,8 @@ export function useChatState(props) {
       set watchingRun(v) { watchingRun.current = v; },
       get watchingStableTicks() { return watchingStableTicks.current; },
       set watchingStableTicks(v) { watchingStableTicks.current = v; },
+      get runSettled() { return runSettled.current; },
+      set runSettled(v) { runSettled.current = v; },
       get providerCredit() { return providerCredit.current; },
       set providerCredit(v) { providerCredit.current = v; },
       get toolAuth() { return toolAuth.current; },
@@ -685,6 +697,7 @@ export function useChatState(props) {
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
+  useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state, refs);
     // Cancel any in-flight chunked transcript render so a navigate-away
