@@ -8,6 +8,10 @@
       "url": "",
       "headers": {},
       "args": [
+        "--from",
+        "mcp-server-git",
+        "--with",
+        "mcp<2",
         "mcp-server-git",
         "--repository",
         "."
