@@ -58,7 +58,7 @@ The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=
 
 ## Implementation notes
 
-- Source: `src/web/src/components/chat/atMention.js` — standalone imperative module. Mounted and unmounted via `mountAtMention(textarea, popupEl, preactState, argBarEl)` which returns a cleanup function. The 4th argument is a `<div>` that receives parameter suggestion chips.
+- Source: `frontend/src/components/chat/atMention.js` — standalone imperative module. Mounted and unmounted via `mountAtMention(textarea, popupEl, preactState, argBarEl)` which returns a cleanup function. The 4th argument is a `<div>` that receives parameter suggestion chips.
 - `mountAtMention` accepts an optional 4th argument — the arg bar DOM node. When missing, no chips are shown.
 - The server's `/api/tools/list` now includes `parameters` (JSON Schema `{ properties, required }`) for every tool. File tool parameters come from `SPECS`; MCP tool parameters come from `listComposedToolSpecs` via the MCP SDK.
 - The popup `<div>` lives inside `.chat-view__composer` as its first child (before the buttons and textarea), positioned above the textarea with `position: absolute; bottom: 100%`.

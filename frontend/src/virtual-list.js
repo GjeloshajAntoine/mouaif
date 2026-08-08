@@ -7,7 +7,7 @@
 //     and fast; a variable-height pass is shaped to be additive later.
 //
 // Usage (browser, ES modules):
-//   import { createVirtualList } from '/web/virtual-list.js';
+//   import { createVirtualList } from '/virtual-list.js';
 //   const list = createVirtualList({ scroller, itemHeight: 44, overscan: 4, render, data });
 //
 // Public surface:

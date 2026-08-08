@@ -8,7 +8,7 @@ Implements the rule in [.github/copilot-instructions.md](../../.github/copilot-i
 
 ## Usage
 
-The module is an ES module at `src/web/src/virtual-list.js`. Vite bundles it into the committed `/web/` production assets.
+The module is an ES module at `frontend/src/virtual-list.js`. Vite bundles it into the committed `/` production assets.
 
 ```js
 import { createVirtualList } from './virtual-list.js';
@@ -52,8 +52,8 @@ list.destroy();
 
 ## Implementation notes
 
-- Source: [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Single ES module, no dependencies.
-- Preact + Vite is the build target for the mobile UI. The primitive is framework-agnostic and imported as a relative module by [src/web/src/main.jsx](../../src/web/src/main.jsx).
+- Source: [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Single ES module, no dependencies.
+- Preact + Vite is the build target for the mobile UI. The primitive is framework-agnostic and imported as a relative module by [frontend/src/main.jsx](../../frontend/src/main.jsx).
 - Inspector keeps at most 2,000 Console entries and 2,000 Network entries in its arrays, while this primitive bounds the live DOM node count to the viewport plus overscan.
 
 ## Related

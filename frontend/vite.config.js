@@ -1,8 +1,8 @@
 // Vite config for the mobile UI. Run `npm run build:web` to write
-// src/web/dist/; the Node server (src/index.js) serves that directory
-// at /web/. The dev script (`npm run dev:web`) starts Vite on :5173
-// with HMR for optional browser-side development; the Node server is
-// not involved in that path.
+// frontend/dist/; the Node server (src/index.js) serves that directory
+// at / (the root). The dev script (`npm run dev:web`) starts Vite on
+// :5173 with HMR for optional browser-side development; the Node server
+// is not involved in that path.
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import { fileURLToPath } from 'node:url';
@@ -49,22 +49,22 @@ function mouaifServiceWorkerPlugin() {
 }
 
 export default defineConfig({
-  // The config lives in src/web/ itself, so the project root for
+  // The config lives in frontend/ itself, so the project root for
   // Vite is the config file's directory. We resolve it to an
   // absolute path because Vite resolves `root` relative to the
   // config file's location when the config is passed via
-  // --config from the project root: a relative `root: 'src/web'`
-  // was double-prefixed to src/web/src/web/ (which doesn't exist)
+  // --config from the project root: a relative `root: 'frontend'`
+  // was double-prefixed to frontend/frontend/ (which doesn't exist)
   // and a relative `root: '.'` resolved against the CWD (the
   // project root) instead of the config directory. An absolute
   // path makes the resolution independent of where the user ran
   // the build from.
   root: __dirname,
-  base: '/web/',
+  base: '/',
   // public/ holds the PWA manifest and the icon PNGs. Vite copies
   // its contents verbatim into dist/ at build time, so the
-  // resulting bundle URL for the manifest is /web/manifest.webmanifest
-  // and the icons live at /web/icons/*.png — matching the absolute
+  // resulting bundle URL for the manifest is /manifest.webmanifest
+  // and the icons live at /icons/*.png — matching the absolute
   // paths declared in the manifest itself.
   publicDir: 'public',
   plugins: [preact(), mouaifServiceWorkerPlugin()],

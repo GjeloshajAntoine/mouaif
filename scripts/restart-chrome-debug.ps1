@@ -13,7 +13,7 @@ $args = @(
   '--no-first-run',
   '--no-default-browser-check',
   '--remote-allow-origins=*',
-  'http://127.0.0.1:5732/web/'
+  'http://127.0.0.1:5732/'
 )
 Start-Process -FilePath $chrome -ArgumentList $args
 Start-Sleep -Seconds 3

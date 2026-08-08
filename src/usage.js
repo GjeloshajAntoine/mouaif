@@ -13,7 +13,7 @@
 //   - formatted strings ready to drop into the chat UI
 //
 // No new SSE events, no new REST surface, no new runtime dependencies.
-// The chat UI (src/web/src/components/Chat.jsx) imports formatCost /
+// The chat UI (frontend/src/components/chat/Chat.jsx) imports formatCost /
 // formatTokPerSecond; the Settings UI lets the user edit the
 // app-level pricing table through the existing /api/settings/app
 // surface.

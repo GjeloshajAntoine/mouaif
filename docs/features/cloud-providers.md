@@ -50,7 +50,7 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 ## Implementation notes
 
 - Source: [src/ai.js](../../src/ai.js) — four new `ENDPOINTS` entries with `chatPath`, `authHeader`, `listModels`, plus `BUILDERS` / `PARSERS` rows pointing at the existing OpenAI-shaped builder/parser. Azure additionally appends `api-version` in `buildOpenAIRequest`.
-- Settings list: [src/web/src/api.js](../../src/web/src/api.js) `SETTINGS_PROVIDERS` — one row per provider with `label`, `defaultBaseUrl`, `hint` (no `oauth` flag).
+- Settings list: [frontend/src/api.js](../../frontend/src/api.js) `SETTINGS_PROVIDERS` — one row per provider with `label`, `defaultBaseUrl`, `hint` (no `oauth` flag).
 - Auth mapping: [src/auth.js](../../src/auth.js) `AI_TO_AUTH_PROVIDER` — the new namespaces are added to `SUPPORTED_PROVIDERS`.
 - No new REST endpoints; the server wiring (`/api/ai/models/live`, `/api/ai/chat`) iterates `ai.ENDPOINTS` and needs no provider-specific code.
 - Tests: [scripts/test-model-lists.js](../../scripts/test-model-lists.js) covers the new adapters (URLs, headers, error mapping, builder shape).

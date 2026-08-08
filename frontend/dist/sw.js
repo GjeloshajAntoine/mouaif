@@ -5,22 +5,22 @@
 //   This file is the source. A small Vite plugin in vite.config.js
 //   reads it, sets CACHE_VERSION to a content hash, and emits the
 //   result as sw.js at the dist root. The Node server serves it at
-//   /web/sw.js with Cache-Control: no-cache and
-//   Service-Worker-Allowed: /web/.
+//   /sw.js with Cache-Control: no-cache and
+//   Service-Worker-Allowed: /.
 //
 // Strategy:
 //   - install: precache the shell (index.html, manifest, icons).
 //   - activate: delete any old mouaif-v* caches.
 //   - fetch:
-//       * same-origin GET under /web/:
+//       * same-origin GET under the app scope (/):
 //           - navigation requests (HTML): network-first, fall back
 //             to the cached shell so a cold offline launch still
 //             renders the UI.
 //           - static assets (CSS/JS/PNG/icons/webmanifest):
 //             cache-first (they're fingerprinted, so cache hits
 //             are always valid).
-//       * anything else (cross-origin, /api/*, /events, POST, SSE,
-//         WebSocket): bypass the SW entirely. The chat UI is
+//       * anything else (cross-origin, /api/*, /events, /data, POST,
+//         SSE, WebSocket): bypass the SW entirely. The chat UI is
 //         fundamentally a live API surface; we cannot meaningfully
 //         cache SSE streams or live HTML pages, and serving a stale
 //         index.html from a previous version while the JS bundle
@@ -28,33 +28,34 @@
 //         UI bug.
 //
 // Scope:
-//   The registration is `scope: '/web/'` (see main.jsx). The SW
-//   only intercepts requests under that path; /api/* and /events
-//   are untouched.
+//   The registration is `scope: '/'` (see main.jsx). The SW intercepts
+//   same-origin GET requests under the root, so it must explicitly
+//   bypass every non-PWA surface: /api/*, /events, /data, /oauth/*.
+//   Those are checked in isShellAssetPath below.
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'da5dc0ca';
+const CACHE_VERSION = '360e473f';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
 // Files to precache on install. The routes are absolute-from-root
-// because the SW only runs over the /web/ scope. The hashed JS/CSS
+// because the SW runs over the root scope. The hashed JS/CSS
 // names aren't known at build time, so the precache list contains
 // only the stable, unhashed shell entries (HTML, manifest, icons).
 // Hashed assets are cached on first fetch via the cache-first
 // branch of the fetch handler.
 const SHELL_URLS = [
-  '/web/',
-  '/web/manifest.webmanifest',
-  '/web/icons/icon-192.png',
-  '/web/icons/icon-512.png',
-  '/web/icons/icon-maskable-512.png'
+  '/',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png'
 ];
 
 self.addEventListener('install', (event) => {
   // Precache the shell — best-effort. A failure on a single icon
-  // (e.g. the user opened /web/ once before icons were built) does
+  // (e.g. the user opened / once before icons were built) does
   // not block activation: we still want to skip waiting so a new
   // version can take over without a force-reload.
   event.waitUntil((async () => {
@@ -93,13 +94,18 @@ self.addEventListener('activate', (event) => {
 });
 
 function isShellAssetPath(pathname) {
-  // Same-origin static asset: anything under /web/ that isn't an
-  // API mount. /api/* (live data, SSE) is mounted at the root, so
-  // its paths don't start with /web/ at all and fall through
-  // without an event.respondWith() — the browser's network stack
-  // handles them. The /web/api/ check is a defensive belt-and-
-  // suspenders in case a future feature mounts an API under /web/.
-  return pathname.startsWith('/web/') && !pathname.startsWith('/web/api/');
+  // The SW scope is '/' (the whole origin), so be strict: intercept
+  // only the mobile UI's static shell. Every live API surface is
+  // signaled to fall through to the network untouched — /api/* (live
+  // data, SSE), /events (SSE), /data (REST), /oauth/* (redirect
+  // callbacks), and the favicon. Without this the root-scoped SW
+  // would cache API responses as static assets and serve stale data.
+  if (pathname === '/api' || pathname.startsWith('/api/')) return false;
+  if (pathname === '/events' || pathname.startsWith('/events')) return false;
+  if (pathname === '/data' || pathname.startsWith('/data')) return false;
+  if (pathname === '/oauth' || pathname.startsWith('/oauth/')) return false;
+  if (pathname === '/favicon.ico') return false;
+  return true;
 }
 
 function isNavigationRequest(request) {
@@ -117,11 +123,11 @@ async function networkFirstNavigation(request) {
   try {
     const fresh = await fetch(request);
     if (fresh && fresh.ok) {
-      cache.put('/web/', fresh.clone()).catch(() => {});
+      cache.put('/', fresh.clone()).catch(() => {});
     }
     return fresh;
   } catch (err) {
-    const cached = await cache.match('/web/');
+    const cached = await cache.match('/');
     if (cached) return cached;
     throw err;
   }
@@ -147,11 +153,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // cross-origin: bypass
 
-  // The SW scope is /web/, but be explicit — anything under
+  // The SW scope is /, so be explicit — anything under
   // /api/, /events, /data, /oauth/ must reach the server
   // untouched. The same-origin check above already excludes
-  // cross-origin traffic; this rule excludes any future same-
-  // origin endpoint that isn't a PWA asset.
+  // cross-origin traffic; this rule excludes any same-origin
+  // endpoint that isn't a PWA asset.
   if (!isShellAssetPath(url.pathname)) return;
 
   if (isNavigationRequest(request)) {
@@ -281,8 +287,8 @@ self.addEventListener('push', (event) => {
       body: body || '',
       tag: notifTag,
       renotify: renotify !== false,
-      icon: icon || '/web/icons/icon-192.png',
-      badge: badge || '/web/icons/favicon-32.png',
+      icon: icon || '/icons/icon-192.png',
+      badge: badge || '/icons/favicon-32.png',
       data: payload || {},
       actions: actions || [{ action: 'open', title: 'Open chat' }],
       requireInteraction: requireInteraction === true,
@@ -294,8 +300,8 @@ self.addEventListener('push', (event) => {
 async function openNotificationTarget(data) {
   const urlToOpen = data.url
     || (data.chatId && data.projectDir
-      ? '/web/#/chat/' + data.chatId + '?projectDir=' + encodeURIComponent(data.projectDir)
-      : '/web/');
+      ? '/#/chat/' + data.chatId + '?projectDir=' + encodeURIComponent(data.projectDir)
+      : '/');
   const target = new URL(urlToOpen, self.location.origin);
   const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
   // The client's URL always carries its *current* hash (never the one we
@@ -305,7 +311,7 @@ async function openNotificationTarget(data) {
   const isAppWindow = (client) => {
     let url;
     try { url = new URL(client.url); } catch { return false; }
-    return url.origin === self.location.origin && url.pathname.startsWith('/web/');
+    return url.origin === self.location.origin && url.pathname === '/';
   };
   const appWindow = clientList.find(isAppWindow);
   if (appWindow && 'focus' in appWindow) {
@@ -318,11 +324,11 @@ async function openNotificationTarget(data) {
   }
   // No matchable window: persist the click target BEFORE attempting to
   // open one. iOS PWA: when the app is closed or suspended, tapping the
-  // notification relaunches the installed app at its start_url (/web/),
+  // notification relaunches the installed app at its start_url (/),
   // and clients.openWindow() is not supported there — the click would
   // land on the home screen. Writing the URL to IndexedDB lets the
   // freshly launched page consume it and navigate to the chat (see
-  // src/web/src/sw-registration.js — consumePendingNotificationClick).
+  // frontend/src/sw-registration.js — consumePendingNotificationClick).
   await writeClickTarget(target.href);
   try {
     const opened = await clients.openWindow(target.href);

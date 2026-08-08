@@ -51,7 +51,7 @@ The same chain affected the other flush views (project settings, folder picker, 
 
 Three changes, all in CSS:
 
-1. **`src/web/src/layout.css`, `.app__main--flush`** — override the base `.app__main { overflow-y: auto; }` with `overflow: visible`. The base rule is correct for non-flush views (chats list, settings, inspector) where the main element itself is the page's scroll container; on flush views the inner section (or the chat-view's transcript) is the scroll container, so the outer overflow must go. The flex children are still bounded by `min-height: 0` and the parent's `height: 100dvh`, so removing the overflow doesn't let content escape the shell.
+1. **`frontend/src/layout.css`, `.app__main--flush`** — override the base `.app__main { overflow-y: auto; }` with `overflow: visible`. The base rule is correct for non-flush views (chats list, settings, inspector) where the main element itself is the page's scroll container; on flush views the inner section (or the chat-view's transcript) is the scroll container, so the outer overflow must go. The flex children are still bounded by `min-height: 0` and the parent's `height: 100dvh`, so removing the overflow doesn't let content escape the shell.
 
    ```css
    .app__main--flush {
@@ -63,7 +63,7 @@ Three changes, all in CSS:
    }
    ```
 
-2. **`src/web/src/components.css`, `.chat-view`** — drop the `overflow: hidden` and the `height: 0`. The chat view is a flex column with `flex: 1 1 0; min-height: 0;` so it's already bounded by the parent; the `overflow: hidden` was only there as defensive clipping for the absolutely-positioned jump-to-bottom FAB, and the FAB doesn't need it (it's positioned within the chat view's coordinate space via `position: relative` and the FAB's `bottom` is within the section's bounds). Without `overflow: hidden` on the chat view, the inner transcript's `overflow-y: auto` is the only scroll context inside the section, and iOS Safari delivers the pan gesture to it.
+2. **`frontend/src/components.css`, `.chat-view`** — drop the `overflow: hidden` and the `height: 0`. The chat view is a flex column with `flex: 1 1 0; min-height: 0;` so it's already bounded by the parent; the `overflow: hidden` was only there as defensive clipping for the absolutely-positioned jump-to-bottom FAB, and the FAB doesn't need it (it's positioned within the chat view's coordinate space via `position: relative` and the FAB's `bottom` is within the section's bounds). Without `overflow: hidden` on the chat view, the inner transcript's `overflow-y: auto` is the only scroll context inside the section, and iOS Safari delivers the pan gesture to it.
 
    ```css
    .chat-view {
@@ -77,7 +77,7 @@ Three changes, all in CSS:
    }
    ```
 
-3. **`src/web/src/components.css`, `.chat-view__transcript`** — keep the iOS-specific hooks so the scroll is smooth and contained:
+3. **`frontend/src/components.css`, `.chat-view__transcript`** — keep the iOS-specific hooks so the scroll is smooth and contained:
 
    ```css
    .chat-view__transcript {
@@ -146,8 +146,8 @@ The first attempt at this fix diagnosed the issue as `flex: 1 1 auto` on the cha
 
 - The non-flush `app__main` (chats list, settings, inspector) is unchanged. Its `overflow-y: auto` is that view's scroll container and works correctly on iOS for those views.
 - The head row and the composer are unchanged. Both are `flex: 0 0 auto` rows, the composer is pinned to the bottom of the chat view the same way it was before, and the FAB (`position: absolute`) is still anchored to the chat view via `position: relative`.
-- The transcript's auto-pin / jump-to-bottom logic in `src/web/src/components/chat/scroll.js` is unchanged. It only cares about `scrollTop` and `scrollHeight`, which behave identically once the box has a real height and the gesture actually reaches it.
-- The virtual list primitive in `src/web/src/virtual-list.js` is unaffected — it already assumes the caller's scroller has `overflow: auto` and a real height.
+- The transcript's auto-pin / jump-to-bottom logic in `frontend/src/components/chat/scroll.js` is unchanged. It only cares about `scrollTop` and `scrollHeight`, which behave identically once the box has a real height and the gesture actually reaches it.
+- The virtual list primitive in `frontend/src/virtual-list.js` is unaffected — it already assumes the caller's scroller has `overflow: auto` and a real height.
 - The standalone auth pages (`.access-auth`) are outside the app shell and keep their own `min-height: 100dvh` + safe-area padding; they are single scrollable pages by design.
 
 ### Verifying the fix

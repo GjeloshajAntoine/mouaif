@@ -2,7 +2,7 @@
 
 ## Overview
 
-The chat view renders AI responses as HTML using a zero-dependency, server-side-markdown-safe renderer (`src/web/src/markdown.js`). It handles a CommonMark-like subset suitable for LLM output without needing a full parser or DOMParser. Output is injected via `innerHTML` — all HTML special characters are escaped except those produced by recognised patterns.
+The chat view renders AI responses as HTML using a zero-dependency, server-side-markdown-safe renderer (`frontend/src/markdown.js`). It handles a CommonMark-like subset suitable for LLM output without needing a full parser or DOMParser. Output is injected via `innerHTML` — all HTML special characters are escaped except those produced by recognised patterns.
 
 ## Supported syntax
 
@@ -44,7 +44,7 @@ The chat view renders AI responses as HTML using a zero-dependency, server-side-
 
 Auto-linking bare URLs is the most security/UX-sensitive step, so it deliberately refuses several shapes that tool output and code fragments produce:
 
-- **Internal SPA routes** (`http(s)://…/web/#/…`) are never auto-linked. MCP/Chrome-debug tool results embed strings like `Page navigated to http://…/web/#/chat/<id>…`; wrapping them in anchors meant a stray tap navigated the app to another chat (a confusing "auto-redirect"). They now render as plain text.
+- **Internal SPA routes** (`http(s)://…/#/…`) are never auto-linked. MCP/Chrome-debug tool results embed strings like `Page navigated to http://…/#/chat/<id>…`; wrapping them in anchors meant a stray tap navigated the app to another chat (a confusing "auto-redirect"). They now render as plain text.
 - **Swallowed code/JSON punctuation** — if the matched URL already contains a `"`, `{`, `}`, `[`, `]`, or backslash, it is not linked. These are almost always JSON or template-literal fragments, not real URLs.
 - **JS concatenation fragments** (`+ … +`) that sneak through with dots or `@` are not linked.
 
@@ -52,17 +52,17 @@ Legitimate external links, markdown links, and query strings (including `&`) are
 
 ### Explicit links to internal routes
 
-The same-origin SPA-route guard is not limited to auto-linked bare URLs. **Explicit markdown links** (`[label](url)`) whose target resolves to an internal SPA route — `/web/#/…` or `http(s)://…/web/#/…` — are also stripped of their anchor and rendered as the plain label text. Without this, a tool result containing `[open](http://127.0.0.1:5732/web/#/chat/<id>)` produced a live anchor, and a stray tap navigated the app to another chat — the "auto-redirect on load" symptom that the earlier auto-link guard did not cover. Only the anchor is removed; the visible label is preserved.
+The same-origin SPA-route guard is not limited to auto-linked bare URLs. **Explicit markdown links** (`[label](url)`) whose target resolves to an internal SPA route — `/#/…` or `http(s)://…/#/…` — are also stripped of their anchor and rendered as the plain label text. Without this, a tool result containing `[open](http://127.0.0.1:5732/#/chat/<id>)` produced a live anchor, and a stray tap navigated the app to another chat — the "auto-redirect on load" symptom that the earlier auto-link guard did not cover. Only the anchor is removed; the visible label is preserved.
 
-Non-`/web/#/` targets (external links, API paths like `/api/…`, root-relative asset paths) are unaffected and still render as normal anchors.
+Non-`/#/` targets (external links, API paths like `/api/…`, root-relative asset paths) are unaffected and still render as normal anchors.
 
 ### Inline code is HTML-escaped
 
-Inline code (`` `…` ``) is extracted before the HTML-escape pass, but its **content is itself HTML-escaped** before being wrapped in `<code>`. This matters because a model's reasoning trace frequently *quotes* code fragments — e.g. `` `<img src="/web/+ safe +">` `` or `` `![alt](url)` `` — as part of its analysis. Without escaping, that quoted fragment became a **live `<img>`/`<a>` element** whose `src`/`href` the browser then loaded, navigating the SPA to a garbage path like `/web/+%20safe%20+` (the "auto-redirect on load" bug). Escaping the code content renders it as literal text inside `<code>`, never as a real element.
+Inline code (`` `…` ``) is extracted before the HTML-escape pass, but its **content is itself HTML-escaped** before being wrapped in `<code>`. This matters because a model's reasoning trace frequently *quotes* code fragments — e.g. `` `<img src="/+ safe +">` `` or `` `![alt](url)` `` — as part of its analysis. Without escaping, that quoted fragment became a **live `<img>`/`<a>` element** whose `src`/`href` the browser then loaded, navigating the SPA to a garbage path like `/+%20safe%20+` (the "auto-redirect on load" bug). Escaping the code content renders it as literal text inside `<code>`, never as a real element.
 
 ### Images to internal routes
 
-Markdown images (`![alt](url)`) whose target resolves to an internal SPA route (`/web/#/…` or `http(s)://…/web/#/…`) are rendered as their plain alt text instead of a live `<img>`. A live `<img src="/web/…">` would make the browser fetch the app shell as an image (and a quoted `![alt](url)` in a reasoning trace would otherwise load garbage paths).
+Markdown images (`![alt](url)`) whose target resolves to an internal SPA route (`/#/…` or `http(s)://…/#/…`) are rendered as their plain alt text instead of a live `<img>`. A live `<img src="/…">` would make the browser fetch the app shell as an image (and a quoted `![alt](url)` in a reasoning trace would otherwise load garbage paths).
 
 ## Mobile considerations
 

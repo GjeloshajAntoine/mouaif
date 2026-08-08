@@ -1,11 +1,13 @@
 // mouaif web — service worker registration and update flow.
 //
-// Scope: '/web/'. Anything outside the /web/ scope (API, SSE,
-// OAuth callback, /data) is never intercepted; the SW explicitly
-// bypasses non-/web/ traffic and non-GET requests.
+// Scope: '/'. The app now lives at the root, so the SW intercepts
+// the whole origin. Anything that is not a PWA static asset (API,
+// SSE, OAuth callback, /data) is explicitly bypassed by the SW; this
+// module mirrors that guard so the offline signal only reacts to the
+// app shell, not live data endpoints.
 //
 // Update strategy:
-//   - On every page load, register /web/sw.js.
+//   - On every page load, register /sw.js.
 //   - If a new SW is found (updateAvailable signal fires), show
 //     the "Update available — reload" banner.
 //   - The user is in control: we only call skipWaiting() once they
@@ -15,7 +17,7 @@
 // Offline signal:
 //   - Maintain an offline signal the UI can subscribe to. It's
    `true`
-//     whenever the last same-origin /web/ fetch failed (network-
+//     whenever the last same-origin app-shell fetch failed (network-
 //     first branch returned the cached shell) or the browser's
 //     navigator.onLine flips to false while a fetch is pending.
 
@@ -35,10 +37,17 @@ function isProduction() {
   catch { return false; }
 }
 
+// The app's own shell path = same-origin GET on the root that is not a
+// live API surface. The SW scope is '/', so an API fetch failing must
+// not flip the offline banner (the server is up, just that call failed).
 function sameOriginAppPath(url) {
   try {
     const u = new URL(url, location.href);
-    return u.origin === location.origin && u.pathname.startsWith('/web/');
+    if (u.origin !== location.origin) return false;
+    const p = u.pathname;
+    if (p === '/api' || p.startsWith('/api/')) return false;
+    if (p === '/events' || p === '/data' || p.startsWith('/oauth/')) return false;
+    return true;
   } catch { return false; }
 }
 
@@ -48,7 +57,7 @@ function trackOnlineStatus() {
   window.addEventListener('offline', set);
 }
 
-// Wrap fetch so a same-origin /web/ fetch failure flips the offline
+// Wrap fetch so a same-origin app-shell fetch failure flips the offline
 // signal back on. We don't want to wait for the next "online" event
 // when the browser is online but the mouaif server is down — the
 // "offline" banner is the right hint for both.
@@ -94,7 +103,11 @@ export function registerServiceWorker() {
     const msg = event.data || {};
     if (msg.type === 'NAVIGATE' && msg.url) {
       const url = new URL(msg.url, window.location.origin);
-      if (url.origin !== window.location.origin || !url.pathname.startsWith('/web/')) return;
+      if (url.origin !== window.location.origin) return;
+      // The app now lives at the root; only accept NAVIGATE targets
+      // that point at the app shell (pathname '/'), so a notification
+      // click can never move an open window to an API path.
+      if (url.pathname !== '/') return;
       const next = url.hash || '#/projects';
       // Only rewrite the hash when it actually changed. Safari treats
       // `location.hash = <same value>` as a no-op (no hashchange, no
@@ -124,7 +137,7 @@ export function registerServiceWorker() {
   };
 
   schedule(() => {
-    navigator.serviceWorker.register('/web/sw.js', { scope: '/web/' })
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then((reg) => {
         _registration = reg;
         if (reg.waiting && reg.active) {
@@ -336,7 +349,9 @@ function applyPendingNotificationClick(url) {
   if (!url) return;
   let parsed;
   try { parsed = new URL(url, window.location.origin); } catch { return; }
-  if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith('/web/')) return;
+  // The app lives at the root; only accept a click target whose pathname
+  // is the app shell ('/'), never an API path.
+  if (parsed.origin !== window.location.origin || parsed.pathname !== '/') return;
   const hash = parsed.hash || '#/projects';
   if (window.location.hash === hash) {
     window.dispatchEvent(new HashChangeEvent('hashchange'));

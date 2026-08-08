@@ -26,10 +26,10 @@ function autoLink(text) {
     // If it starts with www, prepend http
     const href = url.match(/^www\./i) ? 'http://' + url : url;
     // Never auto-link the app's own SPA routes. Tool output (e.g. the
-    // chrome-debug MCP "Page navigated to http://…/web/#/chat/<id>" text)
+    // chrome-debug MCP "Page navigated to http://…/#/chat/<id>" text)
     // embeds these URLs; wrapping them in anchors means a stray tap
     // navigates the SPA to another chat. Keep them as plain text.
-    if (/^https?:\/\/[^/]*\/web\/#\//i.test(href)) return match;
+    if (/^https?:\/\/[^/]*\/#\//i.test(href)) return match;
     // Reject URLs that swallowed surrounding code/JSON punctuation
     // (quotes, braces, brackets, backslash). These are almost always
     // tool JSON or template-literal fragments, not real links.
@@ -59,11 +59,11 @@ function renderInline(text) {
 
   // Step 1: extract inline code so its contents are never re-processed.
   // The code content is HTML-escaped here so that code fragments the model
-  // quotes (e.g. `<img src="/web/+ safe +">` or `![alt](url)` in a reasoning
+  // quotes (e.g. `<img src="/+ safe +">` or `![alt](url)` in a reasoning
   // trace) render as literal text, never as live <img>/<a> elements. Without
-  // this, a quoted `<img src="/web/+ safe +">` becomes a real <img> whose src
+  // this, a quoted `<img src="/+ safe +">` becomes a real <img> whose src
   // the browser loads — navigating the SPA to a garbage path like
-  // '/web/+%20safe%20+' (the "auto-redirect" bug).
+  // '/+%20safe%20+' (the "auto-redirect" bug).
   const codeSpans = [];
   s = s.replace(/`([^`]+)`/g, (m, code) => {
     codeSpans.push('<code>' + escapeHtml(code) + '</code>');
@@ -74,23 +74,23 @@ function renderInline(text) {
   s = escapeHtml(s);
 
   // Step 3: images (before links). Never let an image target the app's own
-  // SPA routes — a live <img src="/web/..."> makes the browser fetch the app
+  // SPA routes — a live <img src="/..."> makes the browser fetch the app
   // shell as an image (and a quoted `![alt](url)` in a reasoning trace would
   // otherwise load garbage paths). Render the alt text as plain text instead.
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
-    if (/^(https?:\/\/[^/]*)?\/web\/#\//i.test(url.trim())) return alt;
+    if (/^(https?:\/\/[^/]*)?\/#\//i.test(url.trim())) return alt;
     return '<img src="' + url + '" alt="' + alt + '" loading="lazy" />';
   });
 
   // Step 4: links. Never let an explicit link target the app's own SPA
-  // routes (http(s)://…/web/#/… or a root-relative /web/#/…). Tool output
+  // routes (http(s)://…/#/… or a root-relative /#/…). Tool output
   // embeds these URLs; a live anchor lets a stray tap navigate the SPA to
   // another chat/route (the "auto-redirect" bug). Render the label as plain
   // text instead. autoLink() already guards the bare-URL shape; this closes
   // the explicit-link shape it never covered. (label/url are already
   // HTML-escaped by step 2.)
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, label, url) => {
-    if (/^(https?:\/\/[^/]*)?\/web\/#\//i.test(url.trim())) return label;
+    if (/^(https?:\/\/[^/]*)?\/#\//i.test(url.trim())) return label;
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   });
 

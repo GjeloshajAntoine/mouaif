@@ -43,7 +43,7 @@ async function main() {
     const noSession = await fetch(ownOrigin + '/api/settings', { headers: { Origin: ownOrigin } });
     assert.equal(noSession.status, 401);
 
-    const page = await fetch(ownOrigin + '/web/');
+    const page = await fetch(ownOrigin + '/');
     assert.equal(page.status, 200);
     const cookie = String(page.headers.get('set-cookie') || '').split(';')[0];
     assert.match(cookie, /^mouaif_session=/);
@@ -66,7 +66,7 @@ async function main() {
   await new Promise((resolve) => proxiedServer.listen(0, '127.0.0.1', resolve));
   const proxiedAddress = 'http://127.0.0.1:' + proxiedServer.address().port;
   try {
-    const page = await fetch(proxiedAddress + '/web/');
+    const page = await fetch(proxiedAddress + '/');
     const setCookie = String(page.headers.get('set-cookie') || '');
     assert.match(setCookie, /; Secure(?:;|$)/, 'public HTTPS origin produces a Secure session cookie');
     const cookie = setCookie.split(';')[0];

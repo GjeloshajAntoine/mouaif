@@ -237,7 +237,7 @@ async function handleOAuthCallback(req, res, parsed) {
   // provider may be the current page itself — there is no other tab to close.
   // The redirect is relative (same origin) so the existing session cookie
   // carries over.
-  const returnUrl = '/web/';
+  const returnUrl = '/';
   // Success pages return instantly: close the popup (the opener app polls
   // the account list and reports success), or location.replace the full
   // page back into the app. Error pages keep only the plain 2s meta refresh

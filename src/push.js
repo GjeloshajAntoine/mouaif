@@ -143,9 +143,9 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actio
     body: body || '',
     tag: tag || (chatId ? `chat-${chatId}` : undefined),
     renotify: true,
-    icon: '/web/icons/icon-192.png',
-    badge: '/web/icons/favicon-32.png',
-    data: data || { chatId, projectDir, url: chatId && projectDir ? `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}` : '/web/' },
+    icon: '/icons/icon-192.png',
+    badge: '/icons/favicon-32.png',
+    data: data || { chatId, projectDir, url: chatId && projectDir ? `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}` : '/' },
     actions: Array.isArray(actions) && actions.length
       ? actions
       : [{ action: 'open', title: 'Open chat' }],

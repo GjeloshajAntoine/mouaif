@@ -102,4 +102,4 @@ Touch targets are at least 44 × 44 px (`--tap`); long lists scroll inside the p
 - Decision: [docs/decisions.md §4](../decisions.md).
 - Stored alongside the rest of app-level settings per [docs/features/app-and-project-settings.md](./app-and-project-settings.md).
 - The feature that consumes registered projects on the projects list is the **project card** ([docs/features/project-card.md](./project-card.md)).
-- The picker UI itself is implemented in [src/web/src/main.jsx](../../src/web/src/main.jsx) (the `ProjectPickerView` component and the `projects/new?dir=…` route).
+- The picker UI itself is implemented in [frontend/src/main.jsx](../../frontend/src/main.jsx) (the `ProjectPickerView` component and the `projects/new?dir=…` route).

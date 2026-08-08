@@ -38,7 +38,7 @@ The settings tree replaces the old "Tool permissions" list — the UI is identic
 
 ### Component
 
-`ToolTree.jsx` (`src/web/src/components/ToolTree.jsx`) renders the tree. Props:
+`ToolTree.jsx` (`frontend/src/components/ToolTree.jsx`) renders the tree. Props:
 
 ```jsx
 {
@@ -92,7 +92,7 @@ Authorization keys in the project file:
 
 The settings tree renders one group per configured MCP server (group checkbox = that server's override's `Off ↔ Ask`, segment = the full per-server authorization override showing the effective mode) plus a single **MCP default** row carrying the shared Off/Ask/Allow gate — every MCP tool call passes through it. Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.
 
-`buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege. MCP segments are shared with the chat view through `McpAuthSeg` in `src/web/src/components/settings/toolAuth.js` (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
+`buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege. MCP segments are shared with the chat view through `McpAuthSeg` in `frontend/src/components/settings/toolAuth.js` (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
 
 ### Filter semantics
 
@@ -106,4 +106,4 @@ Checking every tool collapses the filter back to `null`; unchecking from `null` 
 
 ### Styling
 
-`src/web/src/tool-tree.css` — thin rows (`min-height: 26px` groups, `24px` leaves), `0.72rem` font, name and description on the same line separated by a space, ellipsis truncation. The `.tool-tree__control .seg__pill` override shrinks the auth segment to fit inside a row. Disabled rows get `.is-disabled` (reduced opacity, struck-through name) plus the inline `.tool-tree__reason` / `.tool-tree__leaf-reason` explanation text.
+`frontend/src/tool-tree.css` — thin rows (`min-height: 26px` groups, `24px` leaves), `0.72rem` font, name and description on the same line separated by a space, ellipsis truncation. The `.tool-tree__control .seg__pill` override shrinks the auth segment to fit inside a row. Disabled rows get `.is-disabled` (reduced opacity, struck-through name) plus the inline `.tool-tree__reason` / `.tool-tree__leaf-reason` explanation text.

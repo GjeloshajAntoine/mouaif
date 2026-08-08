@@ -2,7 +2,7 @@
 // line text (unique anchors), confirm ordering + no overlap, then
 // report the exact char ranges. No files are written.
 const fs = require('fs');
-const src = fs.readFileSync('src/web/src/components/Chat.jsx', 'utf8');
+const src = fs.readFileSync('frontend/src/components/Chat.jsx', 'utf8');
 const lines = src.split('\r\n');
 console.log('lines:', lines.length);
 

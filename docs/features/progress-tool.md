@@ -49,8 +49,8 @@ Completed/failed statuses auto-expand the card; running cards stay collapsed. Th
 | `src/ai.js` | Tool advertised to models in `toolSpecs`; dispatch for `report_progress` calls |
 | `src/index.js` | Tool listed in `/api/tools/list` catalog and prompt-profile previews |
 | `src/tools/authorization.js` | Native authorization/visibility state for the Settings UI |
-| `src/web/src/components/chat/transcript.js` | `updateProgressCard` — progress card DOM construction and update |
-| `src/web/src/components/chat/stream.js` | SSE `progress_update` event handler |
-| `src/web/src/features.css` | Progress card styles (`.tool-card--progress`, progress bar, percentage, message) |
+| `frontend/src/components/chat/transcript.js` | `updateProgressCard` — progress card DOM construction and update |
+| `frontend/src/components/chat/stream.js` | SSE `progress_update` event handler |
+| `frontend/src/features.css` | Progress card styles (`.tool-card--progress`, progress bar, percentage, message) |
 
 The `progress_update` event does not produce a global toast or browser push alert.

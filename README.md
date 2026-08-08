@@ -1,12 +1,12 @@
 # mouaif 🚀
 
-A CLI tool with an integrated HTTP server, an in-app project picker, and a mobile-first web UI. The CLI serves a single Node process on `http://127.0.0.1:5732` that exposes a REST + SSE surface for AI chat, project management, settings, and auth. The mobile UI at `/web/` is a Preact + Vite bundle that talks to the server over the same origin — no API key ever leaves the box.
+A CLI tool with an integrated HTTP server, an in-app project picker, and a mobile-first web UI. The CLI serves a single Node process on `http://127.0.0.1:5732` that exposes a REST + SSE surface for AI chat, project management, settings, and auth. The mobile UI at `/` is a Preact + Vite bundle that talks to the server over the same origin — no API key ever leaves the box.
 
 ## What you get
 
 - **CLI**: `mouaif serve` (port 5732 by default), `mouaif info`.
 - **HTTP server**: REST + SSE. SSE for chat streaming (`POST /api/chats/:id/messages/stream`).
-- **Mobile UI** at `http://127.0.0.1:5732/web/`: projects, chats, settings, sign-in. Preact + Vite, served by the same Node process. No framework-specific state layer — `@preact/signals` only.
+- **Mobile UI** at `http://127.0.0.1:5732/`: projects, chats, settings, sign-in. Preact + Vite, served by the same Node process. No framework-specific state layer — `@preact/signals` only.
 - **Storage**: app-level settings in `~/.mouaif/store.sqlite` (better-sqlite3). Per-project settings + chats in `<projectDir>/.mouaif.json`. Per-chat transcripts in `<projectDir>/.mouaif.messages.<chatId>.json`. Trace streams in `<projectDir>/.mouaif/traces/<chatId>.ndjson`.
 - **Auth**: API keys live in the app SQLite store. OAuth tokens live in the OS keychain via `@napi-rs/keyring` (Windows Credential Manager / macOS Keychain / Linux Secret Service). A loopback callback at `GET /oauth/callback` completes provider sign-in; the UI polls `/api/auth/status` until the account is visible.
 - **Five AI providers** in the AI client: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are apikey-only in the bundled build; Anthropic supports OAuth via a per-provider flow. Copilot is reserved (auth flow lands in a follow-up).
@@ -18,11 +18,11 @@ git clone <repo-url>
 cd mouaif
 npm install
 npm link                  # puts `mouaif` on your PATH
-npm run build:web         # build the mobile UI into src/web/dist/
+npm run build:web         # build the mobile UI into frontend/dist/
 mouaif serve              # http://127.0.0.1:5732
 ```
 
-Open `http://127.0.0.1:5732/web/` on your phone (or any browser, mobile-first). Tap **+ Add project** to pick a folder, configure a provider in **Settings**, then define that project's model IDs in its `.mouaif.json`. The models appear in the chat picker; send a message and the response streams back over SSE.
+Open `http://127.0.0.1:5732/` on your phone (or any browser, mobile-first). Tap **+ Add project** to pick a folder, configure a provider in **Settings**, then define that project's model IDs in its `.mouaif.json`. The models appear in the chat picker; send a message and the response streams back over SSE.
 
 ## CLI commands
 
@@ -47,7 +47,7 @@ A live self-description lives at `GET /` and lists every route. Highlights:
 | AI | `GET /api/ai/models?projectDir=…`, `POST /api/ai/chat` (SSE) |
 | Auth | `GET /api/auth/accounts`, `GET /api/auth/status?provider=…`, `DELETE /api/auth/accounts/:provider/:account`, `POST /api/auth/sign-in/anthropic` |
 | OAuth | `GET /oauth/callback` (browser redirect), `POST /oauth/callback` (no-browser fallback) |
-| Mobile UI | `GET /web/` (serves `src/web/dist/`, falls back to `src/web/` for dev) |
+| Mobile UI | `GET /` (serves `frontend/dist/`, falls back to `frontend/` for dev) |
 
 The chat stream is the hot path: a single round-trip per user turn. The server appends the user message, calls the upstream provider, streams `message` / `done` / `error` events back as SSE, and appends the assistant message on `done`. If the chat's `trace` flag is on, every event is also written to `<projectDir>/.mouaif/traces/<chatId>.ndjson`.
 

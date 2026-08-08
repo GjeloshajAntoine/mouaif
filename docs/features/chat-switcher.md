@@ -17,7 +17,7 @@ A small down-chevron (`▾`) sits to the right of the chat title; it flips to `�
 
 ## Implementation notes
 
-- **Location**: `src/web/src/components/chat/Chat.jsx` (JSX), `src/web/src/components/chat/useChatState.js` (state + actions), `src/web/src/chat-view.css` (styles).
+- **Location**: `frontend/src/components/chat/Chat.jsx` (JSX), `frontend/src/components/chat/useChatState.js` (state + actions), `frontend/src/chat-view.css` (styles).
 - **Preloading**: the list is fetched from `GET /api/chats?projectDir=...&offset=0&limit=100` in a `useEffect` that runs on mount and whenever the current chat or its running state changes. The dropdown opens with cached rows — no fetch on open.
 - **Pagination**: scrolling near the bottom of the dropdown fetches the next page (`offset` advances by 100) and appends it, deduplicating by chat id. A "Loading more…" footer is shown while a page is in flight; the API caps pages at 100 rows, so chats beyond that are reached by scrolling.
 - **Streaming indicator**: the current chat's row shows a pulsing accent dot while `runningVisible` is true (the same state that swaps the send button for the stop button). The preload refresh on running-state change also clears stale `running` flags from the list.

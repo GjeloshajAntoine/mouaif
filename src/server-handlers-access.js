@@ -153,7 +153,7 @@ async function handleAccess(req, res, parsed, serverConfig) {
   if (urlPath === '/api/access/setup/qr' && method === 'GET') {
     const code = typeof parsed.query.code === 'string' ? parsed.query.code : '';
     if (!accessAuth.setupCodeValid(code)) return sendJSON(res, 404, { error: 'Setup code is missing or expired', code: 'ESETUP_CODE' });
-    const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(accessAuth.normalizeCode(code));
+    const setupUrl = servedOrigin + '/#/setup?code=' + encodeURIComponent(accessAuth.normalizeCode(code));
     const svg = qr.svg(setupUrl);
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(svg);

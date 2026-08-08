@@ -80,7 +80,7 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
       title: 'mouaif notifications',
       body: 'Notifications are ready on this browser.',
       tag: 'mouaif-notification-test',
-      data: { kind: 'test', url: '/web/#/settings/notifications' }
+      data: { kind: 'test', url: '/#/settings/notifications' }
     });
     return sendJSON(res, 200, { ok: true });
   }

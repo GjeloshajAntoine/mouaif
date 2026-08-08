@@ -40,7 +40,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 
 Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen; a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification.
 
-Because `WindowClient.focused` / `visibilityState` are unreliable on some engines (Safari, iOS PWA), the page is the authority on its own visibility: each open app window keeps a persistent `MessageChannel` to the worker and reports `{ hash, visible, focused }` on load, on `visibilitychange`/`focus`/`blur`, and on every hash change (`startVisibilityReporting` in `src/web/src/sw-registration.js`). The worker keeps the latest report per client (5-minute TTL) and consults it first in the push handler. For a client that never checked in — an old bundle, or a browser where the controller is briefly absent — the worker falls back to the client-reported `visibilityState`/`focused` properties, and engines that don't report those always show the alert rather than risk silently dropping it.
+Because `WindowClient.focused` / `visibilityState` are unreliable on some engines (Safari, iOS PWA), the page is the authority on its own visibility: each open app window keeps a persistent `MessageChannel` to the worker and reports `{ hash, visible, focused }` on load, on `visibilitychange`/`focus`/`blur`, and on every hash change (`startVisibilityReporting` in `frontend/src/sw-registration.js`). The worker keeps the latest report per client (5-minute TTL) and consults it first in the push handler. For a client that never checked in — an old bundle, or a browser where the controller is briefly absent — the worker falls back to the client-reported `visibilityState`/`focused` properties, and engines that don't report those always show the alert rather than risk silently dropping it.
 
 On iOS Safari, the OS keeps a replaced notification visible until the user acts on it, so the service worker prunes the old alert from the queue by tag (`getNotifications({ tag })` → `close()`) before calling `showNotification` with the same tag. This makes progress, completion, and attention alerts replace their predecessors in place on iPhone and iPad instead of stacking.
 
@@ -86,11 +86,11 @@ The model's `report_progress` calls and task updates (`update_progress` / `compl
 | `src/push.js` | Server-side VAPID key management, push subscription CRUD, push sending |
 | `src/index.js` | Push routes (`/api/push/*`) and hooks in `handleChatStream` |
 | `src/settings.js` | `push_subscriptions` and `push_vapid` SQLite tables |
-| `src/web/build/sw-src.js` | Service worker push/notificationclick/notificationclose event handlers |
-| `src/web/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
-| `src/web/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
-| `src/web/src/main.jsx` | Push state sync on startup |
-| `src/web/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
+| `frontend/build/sw-src.js` | Service worker push/notificationclick/notificationclose event handlers |
+| `frontend/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
+| `frontend/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
+| `frontend/src/main.jsx` | Push state sync on startup |
+| `frontend/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
 
 ### API endpoints
 
@@ -114,7 +114,7 @@ For an HTTPS public origin, the canonical served origin is used as the VAPID sub
 
 Safari on iOS and iPadOS exposes the standard Web Push API for installed Home Screen apps. Apple Push Notification service transports those pushes internally, but mouaif does **not** need an Apple Developer account, an APNs `.p8` key, a Team ID, a Key ID, or a bundle identifier. The VAPID pair generated in notification settings is sufficient. Networks with restricted egress must allow Apple's Web Push endpoints, including `*.push.apple.com`.
 
-The manifest uses the same-origin `id`, `start_url`, and `scope` value `/web/`, so the installed app identity follows whichever domain serves mouaif instead of embedding a build-time hostname.
+The manifest uses the same-origin `id`, `start_url`, and `scope` value `\/`, so the installed app identity follows whichever domain serves mouaif instead of embedding a build-time hostname.
 
 ### Dead subscription cleanup
 
@@ -130,4 +130,4 @@ The push event handlers are compiled into `dist/sw.js` via the Vite build plugin
 
 ### Permission prompt timeouts
 
-The frontend push manager (`src/web/src/components/push.js`) wraps `Notification.requestPermission()` and `navigator.serviceWorker.ready` in deadlines so the Notifications settings screen can never stay locked on `busy`. A permission prompt that never resolves (headless browser, a browser that defers the prompt until a user gesture, or a failed service-worker install) unblocks after 30 s for the prompt and 10 s for the worker, and the **Enable** control re-enables with an explanatory status. The settings screen also releases its `busy` flag in a `finally` block so every toggle path — including disable — always returns the UI to a usable state.
+The frontend push manager (`frontend/src/components/push.js`) wraps `Notification.requestPermission()` and `navigator.serviceWorker.ready` in deadlines so the Notifications settings screen can never stay locked on `busy`. A permission prompt that never resolves (headless browser, a browser that defers the prompt until a user gesture, or a failed service-worker install) unblocks after 30 s for the prompt and 10 s for the worker, and the **Enable** control re-enables with an explanatory status. The settings screen also releases its `busy` flag in a `finally` block so every toggle path — including disable — always returns the UI to a usable state.

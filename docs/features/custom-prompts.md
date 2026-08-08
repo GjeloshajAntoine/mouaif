@@ -71,7 +71,7 @@ When the server processes `POST /api/chats/:id/messages/stream`, if the chat rec
 - Routes: [src/index.js](../../src/index.js) — `handlePrompts()` function, mounted at `/api/prompts/*`. The DELETE handler calls [src/chats.js](../../src/chats.js) `clearPromptId()` to cascade-clear references in chats.
 - Chat schema: [src/chats.js](../../src/chats.js) — `promptId` field on the chat, allowed in `updateChat`. `normalizeChat` coerces empty / non-string values to `null`.
 - Stream injection: [src/index.js](../../src/index.js) `handleChatStream()` — prepends the prompt message before the transcript.
-- Frontend: [src/web/src/components/SettingsPrompts.jsx](../../src/web/src/components/SettingsPrompts.jsx) — list and edit views, project-scoped via the `activeProject` signal.
+- Frontend: [frontend/src/components/SettingsPrompts.jsx](../../frontend/src/components/SettingsPrompts.jsx) — list and edit views, project-scoped via the `activeProject` signal.
 - Chat UI: the chat's prompt is a per-chat selection, independent of agents (which are subagent delegation targets — see [agents.md](./agents.md)).
 - Prompts are per-project. Each project owns its own list. There is no app-level prompt library.
 - Deleting a prompt cascade-clears `promptId` on every chat in the project; the response includes a `clearedChats` count.

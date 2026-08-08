@@ -270,7 +270,7 @@ export function SettingsProviderEditView(props) {
     const authorizeUrl = r.body.authorizeUrl;
     // On iOS (especially PWA standalone mode) `window.open` is blocked — there
     // are no tabs. Detect the failure and fall back to redirecting the current
-    // page. The OAuth callback page now auto-redirects back to /web/ after
+    // page. The OAuth callback page now auto-redirects back to / after
     // sign-in completes, so the user lands back at the app.
     //
     // Deliberately no `noopener`: on success the callback page closes the
@@ -287,7 +287,7 @@ export function SettingsProviderEditView(props) {
     if (!win) {
       // Popup blocked (iOS PWA, aggressive Safari, etc.). Redirect the current
       // page to the OAuth provider. The provider redirects back to our callback
-      // endpoint, which handles the exchange and auto-redirects back to /web/.
+      // endpoint, which handles the exchange and auto-redirects back to /.
       // Stash the provider so the app can detect completion on reload.
       try { sessionStorage.setItem('oauthPending', JSON.stringify({ provider, started: Date.now() })); } catch (_) { /* storage unavailable */ }
       window.location.href = authorizeUrl;

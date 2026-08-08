@@ -51,7 +51,7 @@ Use `--auth-setup` to enable authentication and print a new setup invitation eve
 mouaif serve --host 0.0.0.0 --public-origin https://mouaif.example.test --auth-setup
 ```
 
-Open the link, scan the QR code on another device, or open `/web/#/setup` and enter the short code. Setup invitations expire after 15 minutes and are consumed after use. The setup form creates or replaces the user and password, then offers passkey enrollment.
+Open the link, scan the QR code on another device, or open `/#/setup` and enter the short code. Setup invitations expire after 15 minutes and are consumed after use. The setup form creates or replaces the user and password, then offers passkey enrollment.
 
 For another device to use the printed URL, the served origin must be reachable from that device. Prefer `--public-origin` behind HTTPS. A loopback origin such as `127.0.0.1` is only reachable on the machine running mouaif.
 
@@ -114,4 +114,4 @@ GET    /api/access/passkeys
 DELETE /api/access/passkeys/<credential-id>
 ```
 
-All browser requests remain subject to mouaif's same-origin and CSRF-session checks. When the process starts with authentication enabled, app APIs, SSE, push endpoints, and the Inspector WebSocket require an authenticated access session. When authentication is disabled, the UI and APIs remain open while retaining the same-origin browser boundary. Static `/web/` assets remain public so the Preact shell can render login and setup screens.
+All browser requests remain subject to mouaif's same-origin and CSRF-session checks. When the process starts with authentication enabled, app APIs, SSE, push endpoints, and the Inspector WebSocket require an authenticated access session. When authentication is disabled, the UI and APIs remain open while retaining the same-origin browser boundary. Static `/` assets remain public so the Preact shell can render login and setup screens.

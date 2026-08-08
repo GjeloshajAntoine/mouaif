@@ -19,7 +19,7 @@ From the project card's options menu, the user opens **File tags** and sees ever
 - **Excerpt** — the user can pin a specific line range (start/end inclusive) instead of including the whole file. Empty excerpt means "whole file."
 - **Include in chat** — a single switch, on by default. Off means the file stays tagged but is not auto-injected into new messages; it can still be referenced explicitly with `@path/to/file` in the composer.
 
-Tags are project-scoped. A tag named `api` on `src/api/users.js` is a different annotation from a tag named `api` on `src/web/api.js`; the chat injects both, each with its own context.
+Tags are project-scoped. A tag named `api` on `src/api/users.js` is a different annotation from a tag named `api` on `frontend/api.js`; the chat injects both, each with its own context.
 
 ### In a chat
 

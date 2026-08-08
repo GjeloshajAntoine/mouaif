@@ -65,7 +65,7 @@ push.sendPushToSession('session-b', {
     chatId: 'abcd1234',
     projectDir: 'C:\\project',
     callId: 'call-1',
-    url: '/web/#/chat/abcd1234'
+    url: '/#/chat/abcd1234'
   },
   actions: [
     { action: 'allow-once', title: 'Allow once' },

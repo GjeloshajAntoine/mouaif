@@ -69,7 +69,7 @@ export function App() {
   const view = route.value;
   // Detect OAuth sign-in completion from the redirect-back flow (iOS PWA /
   // popup-blocked fallback). When startSignIn() redirects the current page to
-  // the OAuth provider, the callback handler auto-redirects back to /web/
+  // the OAuth provider, the callback handler auto-redirects back to /
   // after the exchange completes. On mount, check sessionStorage for a
   // pending-oauth marker and, if found, navigate to the provider settings so
   // the user sees the signed-in account without having to find the provider

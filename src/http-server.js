@@ -22,7 +22,7 @@
 //   server-handlers-prompts.js  — /api/prompts/*, /api/features, /api/agents/*
 //   server-handlers-misc.js     — /api/mcp/*, /api/restart, /api/inspector/*,
 //                                 /api/tools/authorization
-//   server-web-static.js        — /web/ static serving
+//   server-web-static.js        — static frontend serving (at /)
 //
 // src/index.js is now a thin facade that re-exports this module.
 
@@ -85,7 +85,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   const method = req.method;
 
   // The UI and API are deliberately same-origin. A browser first loads
-  // /web/, which receives an HttpOnly SameSite cookie. API/SSE requests
+  // /, which receives an HttpOnly SameSite cookie. API/SSE requests
   // carrying an Origin must present that cookie and match Host exactly.
   // Requests without Origin remain available to local CLI clients and tests;
   // the CLI binds to loopback unless the user explicitly opts into a remote
@@ -134,17 +134,23 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleSSE(req, res);
   }
 
-  // Static /web/ (mobile UI bundle). Prefers the Vite build at
-  // src/web/dist/; falls back to src/web/ when the build hasn't run yet
-  // (e.g. during development before `npm run build:web`). This lets the
-  // repo keep working in either state without breaking.
-  if (urlPath === '/web' || urlPath === '/web/') {
+  // Static UI (mobile PWA bundle), served at the root. Prefers the Vite
+  // build at frontend/dist/; falls back to frontend/ when the build hasn't
+  // run yet (e.g. during development before `npm run build:web`). This lets
+  // the repo keep working in either state without breaking.
+  if (urlPath === '/') {
     const servedOrigin = expectedOrigin(req, serverConfig.publicOrigin);
     res.setHeader('Set-Cookie', sessionCookie(sessionToken, !!servedOrigin && servedOrigin.startsWith('https://')));
     return serveWebFile(res, 'index.html', { preferDist: true });
   }
-  if (urlPath.startsWith('/web/')) {
-    return serveWebRequest(res, urlPath.slice('/web/'.length));
+  // Legacy /web/ alias: the app now lives at the root; a simple redirect
+  // keeps old bookmarks and installed PWAs working. The browser preserves
+  // the hash fragment across the redirect, so /web/#/chat/<id> lands on
+  // /#/chat/<id>. No static bundle is served under /web/ anymore.
+  if (urlPath === '/web' || urlPath === '/web/') {
+    res.writeHead(301, { Location: '/' });
+    res.end();
+    return;
   }
 
   // Browser auto-requests a favicon. Serve the real one now that
@@ -290,13 +296,9 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleInspector(req, res, parsed);
   }
 
-  // Root opens the mobile UI. Keep the actual static bundle under
-  // /web/ so asset URLs and the browser session cookie stay consistent.
-  if (urlPath === '/' && method === 'GET') {
-    res.writeHead(302, { Location: '/web/' });
-    res.end();
-    return;
-  }
+  // Root serves the mobile UI directly (served above in the static
+  // branch). The old 302 / -> /web/ redirect is gone — the app now
+  // lives at the root; /web/ is only a legacy alias.
 
   // REST: GET /data
   if (urlPath === '/data' && method === 'GET') {
@@ -324,6 +326,23 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // Push notification API — managed by the browser push subsystem.
   if (urlPath.startsWith('/api/push/')) {
     return handlePush(req, res, parsed, sessionToken, expectedOrigin(req, serverConfig.publicOrigin));
+  }
+
+  // Static frontend fallback. Every API/SSE/REST route is dispatched
+  // above; anything left on a GET is a frontend asset (manifest, sw.js,
+  // icons, hashed /assets/*) or a deep-link path, so serve from
+  // frontend/dist/ (or the source tree during development). For a
+  // GET with no known asset extension the hash router owns routing, so
+  // we serve index.html (SPA fallback) — but only for HTML-accepting
+  // navigations, never for API-looking paths.
+  if (method === 'GET') {
+    // Never treat an unknown /api/* or /oauth path as a frontend asset.
+    if (urlPath === '/api' || urlPath.startsWith('/api/')
+      || urlPath === '/oauth' || urlPath.startsWith('/oauth/')
+      || urlPath === '/events' || urlPath === '/data') {
+      return sendJSON(res, 404, { error: 'Not found' });
+    }
+    return serveWebRequest(res, urlPath === '/' ? '' : urlPath.slice(1));
   }
 
   // 404

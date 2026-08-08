@@ -839,7 +839,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     progress: true,
     quickActions: true
   }, appSettings.notifications || {});
-  const chatUrl = `/web/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
+  const chatUrl = `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
 
   function sendChatPush(kind, options = {}) {
     if (!_pushSessionId) return;

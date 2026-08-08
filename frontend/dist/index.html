@@ -1,25 +1,25 @@
 <!doctype html>
 <!--
-  mouaif web entry. Served by `mouaif serve` at /web/.
+  mouaif web entry. Served by `mouaif serve` at / (the root).
 
   Build:
-    npm run build:web      # writes src/web/dist/
+    npm run build:web      # writes frontend/dist/
 
   Dev (with HMR):
     npm run dev:web        # vite dev server on :5173 (optional)
 
   The script and style references are relative so Vite can resolve and
-  hash them at build time. The base URL in vite.config.js adds the
-  /web/ prefix when the bundle is served.
+  hash them at build time. The base URL in vite.config.js keeps the
+  bundle absolute at the root when it is served.
 
   This page is the mobile UI for mouaif. It is a Preact + Vite app
-  served from /web/dist/ by the Node server. See docs/decisions.md
+  served from frontend/dist/ by the Node server. See docs/decisions.md
   sections 7 and 8.
 
   PWA plumbing:
     - <link rel="manifest"> declares the app metadata. Served from
       public/manifest.webmanifest (Vite copies public/ verbatim into
-      dist/, so the absolute URL /web/manifest.webmanifest matches
+      dist/, so the absolute URL /manifest.webmanifest matches
       what the browser expects).
     - apple-mobile-web-app-* meta tags make the page installable on
       iOS Safari (Apple doesn't honour the manifest scope field, so
@@ -43,12 +43,12 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="mouaif" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="manifest" href="/web/manifest.webmanifest" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/web/icons/favicon-32.png" />
-  <link rel="apple-touch-icon" href="/web/icons/icon-180-apple.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-180-apple.png" />
   <title>mouaif</title>
-  <script type="module" crossorigin src="/web/assets/index-MINyz-eO.js"></script>
-  <link rel="stylesheet" crossorigin href="/web/assets/index-Cmmz2jHO.css">
+  <script type="module" crossorigin src="/assets/index-g9kMUgzj.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Cmmz2jHO.css">
 </head>
 <body>
   <main id="app"></main>

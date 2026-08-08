@@ -5,7 +5,7 @@ description: Write React and Preact code following modern best practices — hoo
 
 # React & Preact development
 
-Use these rules when writing or reviewing UI components in this repository. The web frontend runs Preact + Vite (`src/web/`), which implements the React API, so all standard React patterns apply.
+Use these rules when writing or reviewing UI components in this repository. The web frontend runs Preact + Vite (`frontend/`), which implements the React API, so all standard React patterns apply.
 
 ## Components
 
@@ -47,5 +47,5 @@ Use these rules when writing or reviewing UI components in this repository. The 
 - Mobile first: primary viewport 360–430 px, touch targets ≥ 44 × 44 px, safe-area insets respected, no hover-only affordances.
 - Responsive units only (`rem`, `%`, `dvh`); no fixed pixel widths for containers.
 - Prefer tab bars, bottom sheets, and stacked cards over multi-pane desktop layouts.
-- Import Preact from the app's `preact` alias; follow existing component style in `src/web/src/`.
+- Import Preact from the app's `preact` alias; follow existing component style in `frontend/src/`.
 - Run the project lint on touched files before finishing.

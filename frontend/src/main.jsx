@@ -1,12 +1,12 @@
-// mouaif web entry. Built by Vite into /web/assets/index.js and
-// served by the Node server at /web/.
+// mouaif web entry. Built by Vite into /assets/index.js and
+// served by the Node server at /.
 //
 // Architecture:
 //   - One Preact tree, mounted into <main id="app"> from index.html.
 //   - A small hash router (no history API; the Node server doesn't
 //     rewrite unknown paths to index.html, so deep links would 404
 //     anyway; the hash is enough for our views).
-//   - Per-feature components live in src/web/src/components/,
+//   - Per-feature components live in frontend/src/components/,
 //     imported below. Each file is one view or a small set of tightly
 //     coupled views.
 

@@ -2,7 +2,7 @@
 // counting, and report the byte ranges for the planned extraction
 // blocks. Read-only sanity check before the mechanical split.
 const fs = require('fs');
-const s = fs.readFileSync('src/web/src/components/Chat.jsx', 'utf8');
+const s = fs.readFileSync('frontend/src/components/Chat.jsx', 'utf8');
 
 function findLine(needle, from) {
   const i = s.indexOf(needle, from || 0);

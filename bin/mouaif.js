@@ -153,14 +153,13 @@ function runWorker(options) {
       const servedOrigin = displayOrigin(options, port);
       console.log(`🚀 mouaif server running at ${servedOrigin}`);
       console.log(`   Web:    /             — mobile UI`);
-      console.log(`   Web:    /web/         — mobile UI`);
       console.log(`   REST:   GET  /data    — get data`);
       console.log(`   REST:   POST /data    — update data`);
       console.log(`   SSE:    GET  /events  — subscribe to events`);
       console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
       if (authEnabled && (options.authSetup || !accessAuth.configured())) {
         const setup = accessAuth.createSetupCode();
-        const setupUrl = servedOrigin + '/web/#/setup?code=' + encodeURIComponent(setup.code);
+        const setupUrl = servedOrigin + '/#/setup?code=' + encodeURIComponent(setup.code);
         console.log('');
         console.log('🔐 Set up app access (expires in 15 minutes)');
         console.log(`   Link:   ${setupUrl}`);

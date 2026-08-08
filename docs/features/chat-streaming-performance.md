@@ -10,7 +10,7 @@ No user-visible controls — the behavior is automatic. Open a chat and watch a 
 
 ## Implementation notes
 
-The hot path lives in [src/web/src/components/chat/transcript.js](../../src/web/src/components/chat/transcript.js).
+The hot path lives in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js).
 
 - The first delta of a turn calls `ensureLiveStreamingBody(row)`, which renders the assistant body once (reasoning `<details>` + empty `.chat-msg__answer`), then marks the row as "streaming".
 - Subsequent `appendDeltaToLive` / `appendReasoningToLive` calls append a `Text` node to the streaming answer / reasoning block. Appending a text node touches only the new bytes — it never re-encodes the accumulated string, unlike `textContent = fullString`.

@@ -1,7 +1,8 @@
 'use strict';
 
-// Static /web/ serving. Extracted from the original single-file
-// http-server.js. Shared helpers + constants live in src/server-shared.js.
+// Static frontend serving. The mobile UI lives in frontend/ (built by
+// Vite into frontend/dist/) and is served at the root /. Shared
+// helpers + constants live in src/server-shared.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -27,9 +28,9 @@ const WEB_MIME = {
 const LONG_LIVED = new Set(['.js', '.css', '.png', '.webp', '.svg', '.ico']);
 
 // Headers the service worker script needs to be installed for the
-// /web/ scope. SW scripts normally inherit their scope from their
+// root scope. SW scripts normally inherit their scope from their
 // script URL's directory, but `Service-Worker-Allowed` lets the
-// /web/sw.js script claim the entire /web/ prefix (which is what
+// /sw.js script claim the entire / prefix (which is what
 // we want so navigation + static requests are both handled).
 // `Cache-Control: no-cache` keeps the browser from serving a stale
 // SW after a redeploy; the activate handler then evicts the old
@@ -38,7 +39,7 @@ function applyPwaHeaders(res, absPath, relPath) {
   const ext = path.extname(absPath).toLowerCase();
   const isSw = relPath === 'sw.js';
   if (isSw) {
-    res.setHeader('Service-Worker-Allowed', '/web/');
+    res.setHeader('Service-Worker-Allowed', '/');
     res.setHeader('Cache-Control', 'no-cache');
     return;
   }
@@ -65,7 +66,7 @@ function serveWebFile(res, absOrRel, opts) {
   if (path.isAbsolute(absOrRel)) {
     abs = absOrRel;
   } else if (opt.preferDist) {
-    // Look in src/web/dist/<relPath> first, fall back to src/web/<relPath>.
+    // Look in frontend/dist/<relPath> first, fall back to frontend/<relPath>.
     const inDist = path.join(WEB_DIST, absOrRel);
     if (fs.existsSync(inDist)) abs = inDist;
     else abs = path.join(WEB_DIR, absOrRel);
@@ -91,7 +92,7 @@ function serveWebRequest(res, relPath) {
   // SPA fallback: if the path is not a known asset type (no extension
   // or an unknown extension), serve index.html so the client-side hash
   // router can handle it. This prevents 404 JSON pages when navigation
-  // resolves to a garbage path like '/web/+ safe +'.
+  // resolves to a garbage path like '/+ safe +'.
   const ext = path.extname(relPath).toLowerCase();
   if (!ext || !WEB_MIME[ext]) {
     return serveWebFile(res, 'index.html', { preferDist: true });

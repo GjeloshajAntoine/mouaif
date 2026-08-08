@@ -62,10 +62,11 @@ const files = require('./files.js');
 const DEFAULT_PORT = 5732;
 const SESSION_COOKIE = 'mouaif_session';
 const ACCESS_COOKIE = 'mouaif_access';
-const WEB_DIR = path.join(__dirname, 'web');
-// Vite builds the mobile UI into src/web/dist/. The /web/ route serves
-// that directory when it exists; otherwise it falls back to the
-// pre-build src/web/ source for the dev cycle (no Vite build run yet).
+// The mobile UI lives at frontend/ (repo root, not under src/). Vite
+// builds it into frontend/dist/. The server serves that directory at
+// the root /; it falls back to the pre-build frontend/ source for the
+// dev cycle (no Vite build run yet).
+const WEB_DIR = path.join(__dirname, '..', 'frontend');
 const WEB_DIST = path.join(WEB_DIR, 'dist');
 
 // ---- Socket + connection tracking --------------------------------------
@@ -290,7 +291,7 @@ function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
     // A server restart generates a new in-memory browser session token.
     // The already-open mobile UI still has the old HttpOnly cookie and
     // would otherwise get stuck with ESESSION until the user reloads
-    // /web/. Same-origin Origin validation above is the CSRF boundary; for
+    // /. Same-origin Origin validation above is the CSRF boundary; for
     // same-origin browser traffic with a stale cookie, mint the fresh cookie
     // and let the request continue.
     res.setHeader('Set-Cookie', sessionCookie(sessionToken, !!expected && expected.startsWith('https://')));
@@ -322,7 +323,7 @@ function authorizeAccessRequest(req, res, authEnabled) {
   res.setHeader('WWW-Authenticate', 'Basic realm="mouaif", charset="UTF-8"');
   const accept = String(req.headers.accept || '');
   if (req.method === 'GET' && accept.includes('text/html')) {
-    res.writeHead(302, { Location: '/web/#/login' });
+    res.writeHead(302, { Location: '/#/login' });
     res.end();
     return false;
   }

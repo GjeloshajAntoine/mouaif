@@ -168,8 +168,8 @@ async function main() {
 
     // --- 6. Sign-in endpoint still works for the app (same-origin + session). ---
     // With authEnabled, the web UI first logs in via /api/access/login
-    // (mouaif_access cookie) and holds the mouaif_session cookie from /web/.
-    const page = await fetch('http://127.0.0.1:' + port + '/web/');
+    // (mouaif_access cookie) and holds the mouaif_session cookie from /.
+    const page = await fetch('http://127.0.0.1:' + port + '/');
     const sessionCookie = String(page.headers.get('set-cookie') || '').split(';')[0];
     const accessAuth = require('../src/access-auth.js');
     accessAuth.setPassword('oauth-test', 'password');

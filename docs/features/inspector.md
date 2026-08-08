@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Inspector** tab in the mobile shell ([src/web/src/main.jsx](../../src/web/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four sub-tabs: **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics).
+The **Inspector** tab in the mobile shell ([frontend/src/main.jsx](../../frontend/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four sub-tabs: **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics).
 
 The Inspector is the last piece of the spec from [decisions.md §6](../decisions.md) and §9 build-order item 14: a from-scratch mobile-friendly UI that consumes CDP events but never embeds the Chrome panel.
 
@@ -139,16 +139,16 @@ The mobile detail sheet applies top and bottom safe-area padding at the fixed ov
 
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **Proxy error surfacing** — a rejected upgrade (e.g. `ETARGET_NOT_FOUND`) is written as a short HTTP response with a JSON body before the socket closes. The browser's WebSocket `error` event carries no message, so `cdp.js` captures the server's close reason and the UI shows it on the status line instead of a generic "WebSocket error".
-- **No new CSS framework.** The Inspector styles live at the bottom of [src/web/src/style.css](../../src/web/src/style.css) under `/* ---- Inspector ---- */`. They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2.
+- **No new CSS framework.** The Inspector styles live at the bottom of [frontend/src/style.css](../../frontend/src/style.css) under `/* ---- Inspector ---- */`. They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2.
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
-- **Virtualization** — both list panels use [src/web/src/virtual-list.js](../../src/web/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
+- **Virtualization** — both list panels use [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
 - **Mutable row updates** — network and console entries carry a `rev` counter that is bumped on every mutation. The virtual-list render functions diff a signature (`id|rev|status|size|duration`) against the node's previous signature and skip DOM writes entirely when nothing changed, so a busy page doesn't force-reflow the list on every CDP event.
 - **Ref-only state.** The CDP client (websocket, command id, pending responses, event listeners, console / network buffers) lives on refs, not Preact state. A CDP message burst updates a ref and pushes rows into the virtual list directly; Preact is only re-rendered on phase / panel / status changes.
 - **Reconnect safety.** Disconnecting rejects pending CDP commands and clears
 	listeners plus the request map. Close/error events from an older socket are
 	identity-checked so they cannot wipe the state of a replacement connection.
 - **Backwards compatibility.** Adding the 4th tab does not change the existing REST or SSE surface. The bundle grew by ~14 KB JS and ~3.5 KB CSS to ship the new view.
-- **Server log line.** The `mouaif serve` startup banner now mentions `Web: /web/ — mobile UI` and `CDP: /api/inspector/ + WS /api/inspector/proxy` so users can see at a glance what shipped.
+- **Server log line.** The `mouaif serve` startup banner now mentions `Web: / — mobile UI` and `CDP: /api/inspector/ + WS /api/inspector/proxy` so users can see at a glance what shipped.
 
 ## Test fixture
 

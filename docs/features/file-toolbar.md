@@ -83,11 +83,11 @@ Output rides the existing `GET /api/events` SSE channel as `cli_output` frames:
 
 ## Implementation notes
 
-- File: `src/web/src/components/chat/FileToolbar.jsx` (component — menu with Files + Git + Cli)
-- File: `src/web/src/components/chat/GitModal.jsx` (component — the modal)
-- File: `src/web/src/components/chat/CliModal.jsx` (component — the CLI terminal modal)
-- File: `src/web/src/components/chat/Chat.jsx` (integration — toolbar next to composer)
-- File: `src/web/src/chat-composer.css` (CSS — `.file-toolbar*`, `.gm__*`, and `.cli__*` classes)
+- File: `frontend/src/components/chat/FileToolbar.jsx` (component — menu with Files + Git + Cli)
+- File: `frontend/src/components/chat/GitModal.jsx` (component — the modal)
+- File: `frontend/src/components/chat/CliModal.jsx` (component — the CLI terminal modal)
+- File: `frontend/src/components/chat/Chat.jsx` (integration — toolbar next to composer)
+- File: `frontend/src/chat-composer.css` (CSS — `.file-toolbar*`, `.gm__*`, and `.cli__*` classes)
 - File: `src/server-handlers-tools.js` (backend — CLI session + command + close handlers)
 - File: `src/server-shared.js` (backend — `broadcast` reused for `cli_output` frames)
 

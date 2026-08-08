@@ -1,4 +1,4 @@
-// Generate the mouaif PWA icon set into src/web/public/icons/. Run on
+// Generate the mouaif PWA icon set into frontend/public/icons/. Run on
 // `prebuild` (via package.json) and on `npm run icons` so the icons are
 // always in sync with this source file.
 //

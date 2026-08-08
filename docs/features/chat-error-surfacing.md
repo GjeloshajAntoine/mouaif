@@ -22,11 +22,11 @@ No configuration. When a turn fails you see a red-tinted bubble at the failure p
 - `persistStreamError(err)` appends a `{ role: 'system', content }` message via `messages.appendMessage`, formatted by `formatStreamError(err)` (code + message + first line of upstream detail, capped at 300 chars — provider error bodies can be full HTML pages). Persisting is best-effort: a read-only transcript must not mask the original error.
 - The `catch (streamErr)` path (a throw out of the streaming layer) persists and emits an `EINTERNAL` error the same way.
 
-### Client (`src/web/src/components/chat/`)
+### Client (`frontend/src/components/chat/`)
 
 - `transcript.js` exports `appendErrorCard(message, refs, state)`: renders a `.chat-msg--system.is-error` bubble (plain `textContent` — provider error bodies may carry markup) and mirrors the message into `state.messages` so a signature-based reconciliation does not wipe it before the server copy arrives.
 - `stream.js` renders the SSE `error` event with `appendErrorCard` and shortens the status line to `error: CODE message`. Send-time failures (`fetch` throw, non-OK HTTP response) render the same bubble instead of a fake `[error: …]` assistant message.
-- Styling lives in `src/web/src/components.css` (`.chat-msg--system.is-error`) using the `--danger` / `--danger-soft` design tokens.
+- Styling lives in `frontend/src/components.css` (`.chat-msg--system.is-error`) using the `--danger` / `--danger-soft` design tokens.
 
 ### Upstream history
 

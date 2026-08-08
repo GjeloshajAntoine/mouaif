@@ -2,7 +2,7 @@
 
 ## Overview
 
-Two surfaces in this commit. The REST surface is the endpoints the mobile UI calls; the mobile UI is the panel at `/web/` that lets a user edit app-level settings, provider connections, and raw project settings without `curl`.
+Two surfaces in this commit. The REST surface is the endpoints the mobile UI calls; the mobile UI is the panel at `/` that lets a user edit app-level settings, provider connections, and raw project settings without `curl`.
 
 The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§3](../decisions.md). The current UI manages app-level provider connections and project settings.
 
@@ -45,7 +45,7 @@ curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
 
 ### Mobile UI
 
-The mobile UI exposes a **Settings** destination in the bottom tab bar at `/web/`. The screen is a stack of focused sub-views, each with its own back link; the bottom tab bar is hidden on the sub-views so the content owns the full viewport height.
+The mobile UI exposes a **Settings** destination in the bottom tab bar at `/`. The screen is a stack of focused sub-views, each with its own back link; the bottom tab bar is hidden on the sub-views so the content owns the full viewport height.
 
 The home screen groups cards by scope so app-level and project-level settings never sit in the same list. Rather than repeat "overrides / wins / shadows" on every row, the layering is stated plainly and once: the **App defaults** group title notes it applies to every project, the **This project** footer says a project can change any default for its own folder, and the project page has a "Inherit app default" option where it matters. The mental model is two layers — *app defaults apply everywhere; a project can change them for its own folder* — not a chain of winners and losers.
 
@@ -79,7 +79,7 @@ Project settings use a regular, single-column form: a quiet path and scope intro
 
 The project view's groups are scoped on purpose: a **Chat defaults** group holds settings that live in `.mouaif.json` and apply to chats in this project (prompt style today; anything left on its default follows the app-level value), and a separate **This chat** group holds actions that apply to the chat the user came from (trace toggle, export trace, delete chat). The two scopes are never mixed in one group — a per-chat action next to a project setting reads as "this writes `.mouaif.json`", which it does not. The "This chat" group is hidden when the route carries no `?chatId=…`.
 
-The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `src/web/dist/`.
+The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `frontend/dist/`.
 
 ## Behavior
 
@@ -116,8 +116,8 @@ The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors
 
 - Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
 - Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
-- Mobile UI: [src/web/index.html](../../src/web/index.html), [src/web/src/style.css](../../src/web/src/style.css), [src/web/src/main.jsx](../../src/web/src/main.jsx). The settings screen is a stack of focused sub-views routed by the hash (`#/settings`, `#/settings/providers/<id>`, …); the bottom tab bar is hidden on sub-views so the content owns the full viewport height. `/api/settings` is fetched on demand and cached briefly in module scope; cache-busting `force: true` happens on save, delete, and the about-reset path.
-- **Settings shared bits** (declared at the top of [main.jsx](../../src/web/src/main.jsx)) — `loadApp`, `saveApp`, `resetAppKeys`, `loadAccounts`, `appProviders`, `providerDef`, `authNsForProvider`, `setStatus`, and the `SETTINGS_PROVIDERS` constant. The provider list is the single source of truth for the `<select>` and matches `src/ai.js → ENDPOINTS`.
+- Mobile UI: [frontend/index.html](../../frontend/index.html), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/main.jsx](../../frontend/src/main.jsx). The settings screen is a stack of focused sub-views routed by the hash (`#/settings`, `#/settings/providers/<id>`, …); the bottom tab bar is hidden on sub-views so the content owns the full viewport height. `/api/settings` is fetched on demand and cached briefly in module scope; cache-busting `force: true` happens on save, delete, and the about-reset path.
+- **Settings shared bits** (declared at the top of [main.jsx](../../frontend/src/main.jsx)) — `loadApp`, `saveApp`, `resetAppKeys`, `loadAccounts`, `appProviders`, `providerDef`, `authNsForProvider`, `setStatus`, and the `SETTINGS_PROVIDERS` constant. The provider list is the single source of truth for the `<select>` and matches `src/ai.js → ENDPOINTS`.
 
 ## Related
 
