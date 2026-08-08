@@ -17,7 +17,7 @@ export function ChatView(props) {
   const {
     refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp,
-    chatSwitcherOpen, chatSwitcherList,
+    chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
     setFileEditorOpen,
     setChatSwitcherOpen,
     send, onPickerSearch,
@@ -86,9 +86,6 @@ export function ChatView(props) {
           role: 'listbox',
           'aria-label': 'Switch to a chat',
           onScroll: onChatSwitcherScroll,
-          'data-loading': '0',
-          'data-offset': String(chatSwitcherList.length),
-          'data-total': '0'
         },
           chatSwitcherList.map((c) =>
             h('button', {
@@ -109,7 +106,7 @@ export function ChatView(props) {
           !chatSwitcherList.length ? h('div', { class: 'chat-view__chat-switcher-empty' }, 'No other chats') : null,
           h('div', {
             class: 'chat-view__chat-switcher-more',
-            hidden: !chatSwitcherList.length || chatSwitcherList.length >= 100
+            hidden: !chatSwitcherLoading
           }, 'Loading more…')
         ),
         h('div', { ref: refs.usageSummaryRef, class: 'chat-view__usage-summary', 'aria-label': 'Chat usage and provider credit' },

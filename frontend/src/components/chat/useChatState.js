@@ -61,7 +61,17 @@ export function useChatState(props) {
   const [authStamp, setAuthStamp] = useState(0);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
+  const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
   const chatSwitcherIdxRef = useRef(-1);
+  // Pagination state for the chat switcher, shared by the preload
+  // effect and the scroll handler so they advance ONE footer. `offset`
+  // is how many rows have been fetched so far; `total` is the server's
+  // reported chat count (started at Infinity until the first fetch
+  // returns). These used to live in DOM data-attributes that the JSX
+  // initialized statically (`data-total="0"`), which the scroll guard
+  // misread as "all loaded" — and the fetch always started at page 0,
+  // so rows beyond the first 100 could never be reached.
+  const chatSwitcherPager = useRef({ offset: 0, total: Infinity, loading: false });
 
   // imageAttachments gets a ref mirror so the imperative `state`
   // bag can read the live value on demand (stream.js:send reads
@@ -686,10 +696,16 @@ export function useChatState(props) {
   // with cached rows (no network wait on first open). Refresh when
   // the chat changes or a run in this chat ends so the rows stay
   // current (recently auto-titled chats, stale running flags).
+  // Resets the pager so the list always restarts at the top whenever
+  // it is regenerated.
   useEffect(() => {
     if (!projectDir) return;
+    const pager = chatSwitcherPager.current;
+    pager.offset = 0;
+    pager.total = Infinity;
+    pager.loading = false;
     let cancelled = false;
-    loadChatListForSwitcher(projectDir, (rows) => { if (!cancelled) setChatSwitcherList(rows); });
+    loadChatListForSwitcher(projectDir, chatSwitcherPager, (rows) => { if (!cancelled) setChatSwitcherList(rows); });
     return () => { cancelled = true; };
   }, [projectDir, chatId, runningVisible]);
 
@@ -775,23 +791,27 @@ export function useChatState(props) {
     chatSwitcherOpen,
     setChatSwitcherOpen,
     chatSwitcherList,
+    chatSwitcherLoading,
     onToggleChatSwitcher: useCallback(() => {
       setChatSwitcherOpen((prev) => !prev);
     }, []),
     // Scroll pagination: the switcher dropdown loads the first page
     // up front (preload); scrolling near the bottom fetches the next
-    // page. No-op while a page is already in flight. The preload
-    // effect bumps the list to the first page whenever the chat or
-    // running state changes, so offset 0 is the safe baseline.
+    // page from the shared pager offset. No-op while a page is already
+    // in flight or when every row is already loaded. The pagination
+    // state lives in a ref (chatSwitcherPager), not DOM data-attributes
+    // — the JSX can't know the server total, and DOM reads were stale,
+    // so the load-more guard never fired for chats past the first page.
     onChatSwitcherScroll: useCallback((e) => {
       if (!projectDir) return;
-      const el = e.currentTarget;
-      if (!el || el.dataset.loading === '1') return;
-      const offset = parseInt(el.dataset.offset || '0', 10) || 0;
-      if (offset >= (parseInt(el.dataset.total || '0', 10) || 0)) return;
-      el.dataset.loading = '1';
-      loadChatListForSwitcher(projectDir, (rows) => {
-        el.dataset.loading = '0';
+      const pager = chatSwitcherPager.current;
+      if (pager.loading) return;
+      if (pager.offset >= pager.total) return;
+      pager.loading = true;
+      setChatSwitcherLoading(true);
+      loadChatListForSwitcher(projectDir, pager, (rows) => {
+        pager.loading = false;
+        setChatSwitcherLoading(false);
         if (!rows.length) return;
         setChatSwitcherList((prev) => {
           const seen = new Set(prev.map((c) => c && c.id));
@@ -810,17 +830,25 @@ export function useChatState(props) {
 
 // Load the chat list for the chat switcher dropdown. Paginated: the
 // API caps every page at 100 rows, so chat counts beyond that need
-// multiple pages. `refresh(rows)` is called with each page as it
-// arrives; callers that only want the final list (or the first page
-// for an instant preload) can ignore intermediate pages.
-async function loadChatListForSwitcher(projectDir, refresh, opts = {}) {
+// multiple pages. `pager` ({ offset, total, loading }) is advanced so
+// the preload and the scroll handler share one running offset — the
+// fetch starts from `pager.offset` and records the server `total` so
+// the guard knows when every row is loaded. The preload loads up to
+// `opts.pages` pages at once; the scroll handler calls this once per
+// page. `refresh(rows)` is called with each page as it arrives.
+async function loadChatListForSwitcher(projectDir, pager, refresh, opts = {}) {
   if (!projectDir) return;
   const pageSize = 100;
   const pages = Math.max(1, Math.min(4, opts.pages || 1));
   try {
     for (let page = 0; page < pages; page++) {
-      const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(projectDir) + '&offset=' + (page * pageSize) + '&limit=' + pageSize);
+      if (pager.offset >= pager.total) break;
+      const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(projectDir) + '&offset=' + pager.offset + '&limit=' + pageSize);
       const chats = r.status === 200 && r.body ? (r.body.chats || []) : [];
+      if (r.status === 200 && r.body && typeof r.body.total === 'number') {
+        pager.total = r.body.total;
+      }
+      pager.offset += chats.length;
       refresh(chats);
       if (chats.length < pageSize) break;
     }
