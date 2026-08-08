@@ -37,6 +37,22 @@ Once installed:
 - The standing screen icon is the mouaif glyph on the blue gradient, exactly the in-app logo.
 - A first launch with the server reachable primes the cache so a later offline launch still renders the shell.
 
+## Migration from the old `/web/` install
+
+mouaif used to be installed with a `web/` prefix: the manifest declared `id`, `scope` and `start_url` of `/web/`, and the service worker was registered as `/web/sw.js` under a `/web/` scope. After the frontend moved to the **root** (`/`), a PWA installed from that older build does **not** upgrade in place:
+
+- The new manifest uses `id: "/"`, which the browser treats as a *different* app identity — it will not morph the old `/web/` install into the new one.
+- The legacy route sends `/web/` → `301 /` . That lands *outside* the old app's `/web/` scope, so the OS/browser drops `display: standalone` and opens the root in a **normal browser tab** — the most visible symptom: "launching the PWA opens the browser instead of the app."
+- The old `/web/`-scoped service worker and its caches are a separate, root-out-of-scope registration the new `/` SW cannot reach or clean up.
+
+Because of this, **re-installation is required once** after the move. The migration is a one-time manual step (the app can't reliably re-install itself from within a redirect that has already left the old scope):
+
+1. Open `http://host:5732/` in the browser once (not the stale home-screen shortcut) so the new `/`-scoped manifest and service worker are fetched and registered.
+2. Remove the old home-screen shortcut / installed app (iOS: Share → ✕ → Remove from Home Screen; Android / Chrome: Uninstall or ✕ on the app icon).
+3. Re-add it (iOS: Share → Add to Home Screen; Chrome: Install prompt) — it now installs from `/` with standalone mode.
+
+Opening `/web/` in a browser still 301-redirects to `/` so old bookmarks and any browser-tab reference keep working; only the *installed shortcut* needs the re-add.
+
 ## Behavior
 
 - **Manifest URL.** `/manifest.webmanifest`. The Node server emits `application/manifest+json; charset=utf-8` and a 5-minute `Cache-Control: public, max-age=300` so the browser re-fetches the manifest on the next session without keeping a stale one around forever.
@@ -63,7 +79,7 @@ Once installed:
   - `Service-Worker-Allowed: /` and `Cache-Control: no-cache` on `/sw.js`,
   - `Cache-Control: public, max-age=31536000, immutable` on fingerprinted `.js`, `.css`, `.png`, `.webp`, `.svg`, `.ico`,
   - `Cache-Control: public, max-age=300` on `manifest.webmanifest`.
-  The `/favicon.ico` endpoint serves the real `icons/favicon-32.png`. A legacy `/` route 301-redirects to `/` so old installs and bookmarks keep resolving (the hash fragment survives the redirect).
+  The `/favicon.ico` endpoint serves the real `icons/favicon-32.png`. A legacy `/web/` route 301-redirects to `/` so old bookmarks keep resolving (the hash fragment survives the redirect).
 - **Client side.** `frontend/src/sw-registration.js` registers `/sw.js` with `scope: '/'` (no-op in dev), tracks `navigator.onLine` and same-origin app-shell fetch failures to keep an `offline` signal current. `frontend/src/components/PwaBanners.jsx` renders the offline + update banners into the app shell between the header and the main content.
 - **Update semantics.** The SW calls `skipWaiting()` on install so the new worker activates immediately. `clients.claim()` lets it intercept the next fetch without a navigation. The page opts in to a reload at `controllerchange` time — the user pressing Reload is what writes the new controller; we don't force-reload mid-action.
 - **Lint.** `npm run lint` runs `node -c` on every `.js` file in `bin/`, `src/`, and `frontend/build/`. Three new scripts (`generate-icons.js`, `sw-src.js`, `check-icons.js`) plus `vite.config.js` are wired into the lint chain.
