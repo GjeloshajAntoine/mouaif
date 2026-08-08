@@ -17,19 +17,11 @@ import { registerServiceWorker, refreshProjectsOnVisible, consumePendingNotifica
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
-import { initVisualViewportInset } from './viewport.js';
 
 // ---- Render ------------------------------------------------------------
 
 const root = document.getElementById('app');
 if (root) render(h(AccessGate, null, h(App, null)), root);
-
-// Track the soft-keyboard inset via window.visualViewport so the shell
-// (and the bottom-anchored composer) rises above the keyboard on iOS,
-// where the Chromium-only `interactive-widget=resizes-content` viewport
-// directive is ignored. Runs after the first render so the metric is
-// measured against the mounted shell.
-initVisualViewportInset();
 
 // Register the service worker (no-op in dev; see sw-registration.js
 // for the production-only path). Deferred until after first paint so
