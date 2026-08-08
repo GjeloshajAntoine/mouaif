@@ -1381,6 +1381,17 @@ async function streamChat(opts) {
             onEvent(eventName, Object.assign({}, data, { parentTool: 'subagent' }));
             return;
           }
+          // Forward nested progress to the parent as-is. `report_progress`
+          // and `task` progress updates from a subagent must still reach
+          // the parent's push layer (sendChatPush 'progress' + the per-chat
+          // updatable notification) and the transcript progress card.
+          // `progress_update` never gets persisted by the parent, so it is
+          // safe to reuse the event name directly (no transcript corruption,
+          // unlike tool_call / tool_result / message below).
+          if (eventName === 'progress_update') {
+            onEvent('progress_update', data);
+            return;
+          }
           // Forward nested progress under a distinct event name. The
           // parent's SSE layer persists every `tool_call` / `tool_result`
           // / `message` it sees, so reusing those names would corrupt

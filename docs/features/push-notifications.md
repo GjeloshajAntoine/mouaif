@@ -77,6 +77,8 @@ Browser permission and subscription are installation-specific. Event preferences
 
 The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-progress`, so the OS replaces the previous notification for that chat instead of stacking a new one — the notification shows the live percentage / task title / token count as the run progresses. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
 
+Progress from a nested `subagent` run flows to the same `progress_update` channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.
+
 ## Implementation notes
 
 ### Files
