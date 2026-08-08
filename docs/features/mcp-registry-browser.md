@@ -4,7 +4,7 @@ Browse the official [MCP Registry](https://registry.modelcontextprotocol.io) fro
 
 ## Overview
 
-The **MCP Registry Browser** integrates the official community-owned registry at `registry.modelcontextprotocol.io` into the Settings UI. Users can search, explore popularity-scored server entries, and add any server as a project-scoped or app-wide MCP server without leaving the app.
+The **MCP Registry Browser** integrates the official community-owned registry at `registry.modelcontextprotocol.io` into the Settings UI. Users can search, sort, explore popularity-scored server entries, and add any server as a project-scoped or app-wide MCP server without leaving the app. Browsing is stateless: mouaif requests the Registry API directly through its backend proxy and does not store or cache registry responses.
 
 ## Usage
 
@@ -57,7 +57,11 @@ Proxies the official registry's `GET /v0.1/servers` endpoint.
 |---|---|---|---|
 | `search` | string | `""` | Substring search by server name |
 | `cursor` | string | `""` | Pagination cursor from a previous response |
+| `sort` | string | `"popularity"` | Field to sort by (`popularity`, `updatedAt`, `name`) |
+| `dir` | string | `"desc"` | Sort direction (`asc`, `desc`) |
 | `limit` | integer | 30 | Items per page, 1–100 |
+
+*Note: The official registry API does not natively support sorting. Mouaif sorts only the current API response in memory before returning it to the frontend. The response is not written to app settings, project files, or a cache.*
 
 **Response:**
 

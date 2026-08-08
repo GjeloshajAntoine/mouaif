@@ -49,6 +49,8 @@ export function SettingsMcpRegistryView(props = {}) {
   const [servers, setServers] = useState([]);
   const [metadata, setMetadata] = useState({ count: 0, nextCursor: null });
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState('popularity');
+  const [sortDir, setSortDir] = useState('desc');
   const [busy, setBusy] = useState(false);
   const [cursor, setCursor] = useState('');
   const [addingId, setAddingId] = useState(null); // id being added
@@ -56,11 +58,15 @@ export function SettingsMcpRegistryView(props = {}) {
   async function loadRegistry(opts = {}) {
     const q = opts.search !== undefined ? opts.search : search;
     const c = opts.cursor !== undefined ? opts.cursor : cursor;
+    const sF = opts.sortField !== undefined ? opts.sortField : sortField;
+    const sD = opts.sortDir !== undefined ? opts.sortDir : sortDir;
     setBusy(true);
     setStatus(statusEl, 'loading…', 'busy');
     const params = new URLSearchParams();
     if (q) params.set('search', q);
     if (c) params.set('cursor', c);
+    params.set('sort', sF);
+    params.set('dir', sD);
     params.set('limit', '30');
     try {
       const r = await fetchJson('/api/mcp/registry?' + params.toString());
@@ -160,17 +166,38 @@ export function SettingsMcpRegistryView(props = {}) {
       projectDir ? 'this project' : 'the app-wide list',
       '.'
     ),
-    // Search bar
-    h('div', { class: 'row row--inline', style: 'margin-bottom:8px' },
+    // Search bar and sorting controls
+    h('div', { class: 'row row--inline', style: 'margin-bottom:8px; gap:8px; flex-wrap:wrap;' },
       h('input', {
         ref: searchEl,
         class: 'input',
+        style: 'flex: 1 1 200px;',
         type: 'text',
         placeholder: 'Search servers by name…',
         'aria-label': 'Search MCP registry',
         onKeyDown: (e) => { if (e.key === 'Enter') doSearch(); }
       }),
-      h('button', { class: 'btn', type: 'button', onClick: doSearch, disabled: busy }, 'Search')
+      h('button', { class: 'btn', type: 'button', onClick: doSearch, disabled: busy }, 'Search'),
+      h('select', {
+        class: 'input',
+        style: 'width: auto;',
+        value: sortField + '|' + sortDir,
+        onChange: (e) => {
+          const [f, d] = e.target.value.split('|');
+          setSortField(f);
+          setSortDir(d);
+          setCursor('');
+          loadRegistry({ sortField: f, sortDir: d, cursor: '' });
+        },
+        disabled: busy
+      },
+        h('option', { value: 'popularity|desc' }, 'Most popular'),
+        h('option', { value: 'popularity|asc' }, 'Least popular'),
+        h('option', { value: 'updatedAt|desc' }, 'Recently updated'),
+        h('option', { value: 'updatedAt|asc' }, 'Oldest updated'),
+        h('option', { value: 'name|asc' }, 'Name (A-Z)'),
+        h('option', { value: 'name|desc' }, 'Name (Z-A)')
+      )
     ),
     // Server list
     h('ul', { class: 'reg-list', 'aria-label': 'Registry servers' },

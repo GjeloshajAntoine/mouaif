@@ -162,12 +162,13 @@ async function handleMcp(req, res, parsed) {
   }
 
   // GET /api/mcp/registry?search=...&cursor=...&limit=...
-  // Proxies the official MCP Registry API (registry.modelcontextprotocol.io).
-  // Returns paginated results with a computed popularity score.
-  // Caches responses in-memory for 30 seconds to avoid hammering the registry.
+  // Statelessly proxies the official MCP Registry API. Registry responses
+  // are never persisted or cached by mouaif.
   if (urlPath === '/api/mcp/registry' && method === 'GET') {
     const search = typeof q.search === 'string' ? q.search : '';
     const cursor = typeof q.cursor === 'string' ? q.cursor : '';
+    const sortField = ['popularity', 'updatedAt', 'name'].includes(q.sort) ? q.sort : 'popularity';
+    const sortDir = q.dir === 'asc' ? 'asc' : 'desc';
     const limit = Math.min(Math.max(parseInt(q.limit, 10) || 30, 1), 100);
     try {
       const registryUrl = new URL('https://registry.modelcontextprotocol.io/v0.1/servers');
@@ -213,6 +214,27 @@ async function handleMcp(req, res, parsed) {
       const servers = Array.isArray(registryBody.servers)
         ? registryBody.servers.map(enrich)
         : [];
+
+      // The Registry API does not expose sorting, so sort only this response
+      // in memory. No registry result is written to app or project storage.
+      const direction = sortDir === 'asc' ? 1 : -1;
+      const text = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+      servers.sort((a, b) => {
+        if (sortField === 'popularity') {
+          return direction * ((a.popularity && a.popularity.score || 0) - (b.popularity && b.popularity.score || 0));
+        }
+        if (sortField === 'updatedAt') {
+          const metaA = a._meta && a._meta['io.modelcontextprotocol.registry/official'];
+          const metaB = b._meta && b._meta['io.modelcontextprotocol.registry/official'];
+          const valueA = metaA && Date.parse(metaA.updatedAt) || 0;
+          const valueB = metaB && Date.parse(metaB.updatedAt) || 0;
+          return direction * (valueA - valueB);
+        }
+        const nameA = a.server && a.server.name || a.name || '';
+        const nameB = b.server && b.server.name || b.name || '';
+        return direction * text.compare(nameA, nameB);
+      });
+
       return sendJSON(res, 200, {
         servers,
         metadata: registryBody.metadata || { count: servers.length, nextCursor: null }
