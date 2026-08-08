@@ -43,6 +43,15 @@ The reconcile poll is cadence-adaptive: **1 s while this tab is following a run 
 
 When the SSE socket dies but the run survives on the server, a **reloaded** page used to keep `'streaming…'` forever: the reconcile poll saw `running:true`, set the busy state, and re-fetched `/revision` (and `/pending`) every second with no way to settle a run whose transcript had stopped moving. `reconcileRunningChat` now carries a `watchingStableTicks` counter: if the transcript is stable (not mid-tool) across a couple of identical polls, it clears the busy state like `runRecoveryTick` does on the same page. The pending-authorization queue is also drained only when the run just started or rows arrived — not on every tick (it was an extra `GET /pending` per second).
 
+### Latest-first progressive render (`src/web/src/components/chat/transcript.js` → `renderTranscriptChunked` / `renderTranscriptBackfill`)
+
+A long transcript (≥ `TRANSCRIPT_CHUNK_THRESHOLD`, 120 rows) used to render top-down from row 0 and only reveal the newest turn once the **whole** transcript had been built — so a big chat opened slow, scrolled up from the top, and appeared to "load from the beginning". The chunked render is now **tail-first**:
+
+1. **Phase 1 (synchronous, bounded).** Compute the render order (skipping empty assistant turns), then append only the newest `TRANSCRIPT_CHUNK_ROWS` (40) rows at the bottom and pin. The first paint cost is fixed regardless of transcript length, and the latest message is on screen on frame one.
+2. **Phase 2 (rAF chunks).** Backfill older rows **above** an insertion anchor (`refs._insertAnchor`, honored by `transcriptInsert`). Walking backwards and inserting each older row before the current first backfilled row keeps the net order chronological. After each chunk the scroll position is compensated by the height the inserted rows added above the viewport, so the view never jumps while history fills in behind the tail.
+
+`renderMessageRow` gained a de-dup guard: a tool `call` row is skipped when a card for its `toolCallId` is already on screen. Tail-first means a `tool_result` in the tail can render before its `tool_call` (which sits in the backfill), and an overlapping reconcile/recovery sync can re-render a row this client already appended — without the guard the call card was duplicated and stuck on "Waiting…". `resetTranscriptRender` clears `refs._insertAnchor` so a superseded pass (or a live append after the render) can never insert mid-transcript.
+
 ### Scroll preservation on rebuild (`src/web/src/components/chat/transcript.js` → `scrollTranscriptToBottomImpl`)
 
 A full transcript rebuild no longer unconditionally pins the view to the bottom. `scrollTranscriptToBottomImpl` only forces `scrollTop = scrollHeight` when the user was already pinned; a mid-view rebuild (recovery/reconcile) leaves an unpinned user's reading position alone instead of yanking them down. The initial load still pins because `pinnedToBottom` defaults to true.

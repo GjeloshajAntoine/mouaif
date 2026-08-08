@@ -89,6 +89,21 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
   }
 }
 
+// transcriptInsert(refs, node)
+//
+// Append a row/card to the transcript, or — while a latest-first
+// backfill pass is running — insert it before the current backfill
+// anchor (refs._insertAnchor) so older rows land ABOVE the tail that
+// was already painted at the bottom. When no anchor is set (the live
+// path and the tail phase) this is a plain appendChild.
+function transcriptInsert(refs, node) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  const anchor = refs._insertAnchor;
+  if (anchor && anchor.parentNode === el) el.insertBefore(node, anchor);
+  else el.appendChild(node);
+}
+
 // renderImageAttachments(host, attachments)
 function renderImageAttachments(host, attachments) {
   const wrap = document.createElement('div');
@@ -182,7 +197,7 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   head.appendChild(ts);
   row.appendChild(head);
   row.appendChild(body);
-  refs.transcript.current.appendChild(row);
+  transcriptInsert(refs, row);
   if (m.role === 'assistant' && isLive) {
     row._body = body;
     row._content = m.content || '';
@@ -530,7 +545,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
     body.appendChild(live);
     card.appendChild(body);
   }
-  refs.transcript.current.appendChild(card);
+  transcriptInsert(refs, card);
   afterTranscriptAppend(refs, true);
 }
 
@@ -724,7 +739,7 @@ export function appendToolResultCard(toolResult, refs) {
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     card.appendChild(body);
-    refs.transcript.current.appendChild(card);
+    transcriptInsert(refs, card);
   } else {
     // The call card becomes a result card. Preserve the command text
     // from the old call card header so the collapsed view still shows
@@ -1156,6 +1171,9 @@ function resetTranscriptRender(refs) {
   // A cancelled or superseded pass must not leave the scroll-pin
   // suppress flag stuck on, or later live appends would stop pinning.
   refs._suspendScrollPin = false;
+  // Nor a stale backfill anchor, or the next live append would insert
+  // mid-transcript instead of at the bottom.
+  refs._insertAnchor = null;
 }
 
 // whenTranscriptSettled(refs) -> Promise
@@ -1193,6 +1211,17 @@ export function cancelTranscriptRender(refs) {
 // empty-transcript case can share the exact same rendering.
 function renderMessageRow(state, refs, m) {
   if (m.role === 'tool' && m.phase === 'call') {
+    // De-dup: skip a call row when a card for this tool id is already
+    // on screen. Two paths need this: (1) latest-first render draws the
+    // tail before the backfill, so a result whose call sits in the
+    // backfill already produced a (standalone) card by the time we
+    // reach the call; (2) an overlapping reconcile/recovery sync can
+    // re-render a row this client already appended. Without the guard
+    // the call card is duplicated (and left stuck on "Waiting…").
+    if (m.toolCallId && refs.transcript.current
+        && refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(m.toolCallId)) + '"]')) {
+      return;
+    }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
   } else if (m.role === 'tool' && m.phase === 'result') {
     appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
@@ -1201,6 +1230,25 @@ function renderMessageRow(state, refs, m) {
   }
 }
 
+// isRenderableMessage(m) -> bool
+//
+// Empty assistant turns (no content, no reasoning) are placeholders
+// the loops skip. Extracted so the tail-first render and the backfill
+// share one predicate.
+function isRenderableMessage(m) {
+  if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) return false;
+  return true;
+}
+
+// renderTranscriptChunked — latest-first progressive render.
+//
+// Long transcripts used to render top-down from row 0 and only reveal
+// the newest turn after the WHOLE transcript had been built, so a big
+// chat opened slow and scrolled up from the top. This paints the tail
+// (newest rows that fill the viewport) FIRST and pins to the bottom
+// immediately, then backfills older rows ABOVE an anchor in rAF
+// chunks. The user sees the latest message on the first frame; the
+// history fills in behind it without moving the view.
 function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   const transcriptEl = refs.transcript.current;
   if (!transcriptEl) return;
@@ -1209,57 +1257,106 @@ function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   resetTranscriptRender(refs);
   const token = _renderToken;
 
-  // First visible screen paints immediately: the system prompt, the
-  // tools card, and enough messages to fill the viewport. Each append
-  // calls afterTranscriptAppend, but while chunking is armed that
-  // helper suppresses its scroll pin (transcript can't be scrolled to
-  // a stable bottom yet) — the finalize step re-pins.
-  refs._suspendScrollPin = true;
-
-  const headRows = Math.min(state.messages.length, TRANSCRIPT_CHUNK_ROWS);
-  for (let i = 0; i < headRows; i++) {
-    const m = state.messages[i];
-    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
-    renderMessageRow(state, refs, m);
+  // Indices of the renderable messages (skip empty assistant turns) in
+  // order, so the tail/backfill split is by visible rows, not raw rows.
+  const order = [];
+  for (let i = 0; i < state.messages.length; i++) {
+    if (isRenderableMessage(state.messages[i])) order.push(i);
   }
-  if (state.messages.length <= headRows) {
-    refs._suspendScrollPin = false;
+  if (!order.length) {
     restoreExpandedState(expanded, transcriptEl);
     reattachOverlayCards(refs, overlayCards);
     scrollTranscriptToBottomImpl(refs);
     updateUsageSummary(state, null, refs);
     return;
   }
-  // Short transcripts finish in a single continuation frame so the box
-  // paints before we pin and scroll; long ones keep chunking.
-  refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, { index: headRows, token, expanded, overlayCards }));
+
+  // Phase 1 — tail. Render the newest TRANSCRIPT_CHUNK_ROWS rows in
+  // order at the bottom (no anchor: plain append), then pin. This is
+  // the only synchronous work on open, so the first paint is bounded
+  // regardless of transcript length. Suspend per-row scroll pinning:
+  // this phase manages the scroll itself with a single pin at the end.
+  refs._suspendScrollPin = true;
+  const tailStart = Math.max(0, order.length - TRANSCRIPT_CHUNK_ROWS);
+  const childrenBefore = transcriptEl.children.length;
+  refs._insertAnchor = null;
+  for (let k = tailStart; k < order.length; k++) {
+    renderMessageRow(state, refs, state.messages[order[k]]);
+  }
+  refs._suspendScrollPin = false;
+  // Pin to the bottom now so the newest turn is on screen on frame one.
+  scrollTranscriptToBottomImpl(refs);
+
+  if (tailStart === 0) {
+    // Everything fit in the tail — nothing to backfill.
+    refs._insertAnchor = null;
+    restoreExpandedState(expanded, transcriptEl);
+    reattachOverlayCards(refs, overlayCards);
+    scrollTranscriptToBottomImpl(refs);
+    updateUsageSummary(state, null, refs);
+    return;
+  }
+
+  // Phase 2 — backfill older rows above the first tail row. The anchor
+  // is the first element the tail phase appended; inserting before it
+  // keeps older history between the header cards and the tail.
+  const anchor = transcriptEl.children[childrenBefore] || null;
+  refs._insertAnchor = anchor;
+  refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptBackfill(state, refs, {
+    order, index: tailStart - 1, token, expanded, overlayCards
+  }));
 }
 
-function renderTranscriptChunk(state, refs, chunk) {
-  if (chunk.token !== _renderToken) return; // superseded by a newer render
+function renderTranscriptBackfill(state, refs, chunk) {
+  if (chunk.token !== _renderToken) { refs._insertAnchor = null; return; } // superseded
   const transcriptEl = refs.transcript.current;
-  if (!transcriptEl) {
-    refs._suspendScrollPin = false;
-    return;
-  }
+  if (!transcriptEl) { refs._insertAnchor = null; return; }
   refs._pendingTranscriptChunk = null;
+  const wasPinned = refs.pinnedToBottom.current;
+  const prevScrollTop = transcriptEl.scrollTop;
+  const prevScrollHeight = transcriptEl.scrollHeight;
   let rendered = 0;
-  while (chunk.index < state.messages.length && rendered < TRANSCRIPT_CHUNK_ROWS) {
-    const m = state.messages[chunk.index];
-    chunk.index++;
-    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
+  // Suspend per-row scroll pinning while we insert above the viewport;
+  // the height compensation below keeps the view stable in one step.
+  refs._suspendScrollPin = true;
+  // Walk backwards so rows are inserted in reverse; because each insert
+  // goes before the SAME anchor, the net order stays chronological. The
+  // anchor advances to the node just inserted so the next (older) row
+  // lands above it — but only when a node was actually inserted (a
+  // duplicate tool-call row is skipped and inserts nothing, in which
+  // case the anchor must stay put).
+  while (chunk.index >= 0 && rendered < TRANSCRIPT_CHUNK_ROWS) {
+    const m = state.messages[chunk.order[chunk.index]];
+    chunk.index--;
+    const before = transcriptEl.childElementCount;
+    const prevInserted = refs._insertAnchor ? refs._insertAnchor.previousElementSibling : transcriptEl.lastElementChild;
     renderMessageRow(state, refs, m);
+    if (transcriptEl.childElementCount > before) {
+      // The newly inserted node is the one now sitting right before the
+      // old anchor; make it the new anchor.
+      const nowInserted = refs._insertAnchor ? refs._insertAnchor.previousElementSibling : transcriptEl.lastElementChild;
+      if (nowInserted && nowInserted !== prevInserted) refs._insertAnchor = nowInserted;
+    }
     rendered++;
   }
-  if (chunk.index < state.messages.length) {
-    refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptChunk(state, refs, chunk));
+  refs._suspendScrollPin = false;
+  // Keep the viewport stable: if the user was pinned to the bottom stay
+  // there; otherwise preserve their reading position by compensating
+  // for the height the inserted rows added above the viewport.
+  if (wasPinned) {
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  } else {
+    transcriptEl.scrollTop = prevScrollTop + (transcriptEl.scrollHeight - prevScrollHeight);
+  }
+  if (chunk.index >= 0) {
+    refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptBackfill(state, refs, chunk));
     return;
   }
-  // Done: re-pin to the bottom and restore the user's expanded cards.
-  refs._suspendScrollPin = false;
+  // Done: clear the anchor, restore expanded cards, final pin.
+  refs._insertAnchor = null;
   restoreExpandedState(chunk.expanded, transcriptEl);
   reattachOverlayCards(refs, chunk.overlayCards);
-  scrollTranscriptToBottomImpl(refs);
+  if (refs.pinnedToBottom.current) scrollTranscriptToBottomImpl(refs);
   updateUsageSummary(state, null, refs);
 }
 
