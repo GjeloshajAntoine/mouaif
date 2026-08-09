@@ -118,12 +118,12 @@ export function GitModal(props) {
   const [loadingCommits, setLoadingCommits] = useState(false);
   const [commitSectionOpen, setCommitSectionOpen] = useState(false);
   const [stashSectionOpen, setStashSectionOpen] = useState(false);
-  const [isLoadingRef, setIsLoadingRef] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectDir) { setLoading(false); setError('No project selected'); return; }
-    if (isLoadingRef) return;
-    setIsLoadingRef(true);
+    if (isLoading) return;
+    setIsLoading(true);
     setLoading(true);
     setError('');
     setNotice('');
@@ -147,8 +147,8 @@ export function GitModal(props) {
       setError(String(err));
     }
     setLoading(false);
-    setIsLoadingRef(false);
-  }, [projectDir, isLoadingRef]);
+    setIsLoading(false);
+  }, [projectDir]);
 
   useEffect(() => { load(); }, [load]);
 
