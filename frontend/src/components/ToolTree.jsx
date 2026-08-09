@@ -86,17 +86,20 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
           h('input', {
             type: 'checkbox',
             class: 'checkbox checkbox--sm',
-            checked: halfChecked ? false : !!group.checked,
+            checked: !!group.checked,
             disabled: !!group.disabled,
             // `indeterminate` is a DOM-only property; Reflect.a11y-
             // set it via a callback so Preact vdom doesn't drop it.
+            // When Preact reconciles the `checked` prop, it can clear the
+            // `indeterminate` state. We use a setTimeout to guarantee
+            // the DOM assignment runs *after* Preact finishes updating the node.
             ref: (el) => {
               if (el) {
-                // If we changed `indeterminate` while it had focus,
-                // or just from a standard prop sync, Preact might overwrite
-                // `checked` or standard DOM manipulation clears indeterminate.
-                // We must set it unconditionally during this ref pass.
+                // Also set immediately for first render
                 el.indeterminate = halfChecked;
+                setTimeout(() => {
+                  if (el) el.indeterminate = halfChecked;
+                }, 0);
               }
             },
             'aria-checked': halfChecked ? 'mixed' : undefined,
