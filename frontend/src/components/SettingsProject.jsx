@@ -434,6 +434,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
   }
 
+  function toggleMcpToolAuth(toolName, checked) {
+    const tools = Object.assign({}, mcpAuth.tools);
+    if (checked) delete tools[toolName];
+    else tools[toolName] = { mode: 'off', allowlist: [] };
+    setMcpAuth(Object.assign({}, mcpAuth, { tools }));
+    saveMcpAuthorization({ tools: { [toolName]: checked ? null : tools[toolName] } });
+    setMcpAuthStatusMsg(checked ? 'tool override cleared' : 'tool override off');
+  }
+
   async function saveAgentFiles(enabled, namesRaw) {
     const names = namesRaw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     setAgentFilesStatusMsg('saving…');
@@ -688,8 +697,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         const entry = mcpAuth.servers && mcpAuth.servers[slug];
         const overridden = !!(entry && entry.mode);
         const effMode = overridden ? entry.mode : (mcpAuth.mode || 'ask');
-        const toolCount = (Array.isArray(server.tools) ? server.tools.length : 0)
-          || (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug).length;
+        const serverTools = (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug);
+        const toolCount = serverTools.length || (Array.isArray(server.tools) ? server.tools.length : 0);
         groups.push({
           // Key the group by the *slug* (canonical override key), not the
           // id. The checkbox toggle below (`toggleMcpServerAuth(groupId
@@ -723,7 +732,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               }
             }
           }),
-          tools: [],
+          tools: serverTools.map((tool) => {
+            const entry = mcpAuth.tools && mcpAuth.tools[tool.name];
+            const mode = entry && entry.mode ? entry.mode : effMode;
+            return leaf(tool, { checked: mode !== 'off' });
+          }),
           extra: null
         });
       }
@@ -950,7 +963,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 groups: buildSettingsToolGroups(toolsCatalog),
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
-                  if (!groupId.startsWith('mcp-')) toggleSettingsGroup(groupId, checked);
+                  if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
+                  else toggleSettingsGroup(groupId, checked);
                 },
                 collapsedByDefault: true
               })
