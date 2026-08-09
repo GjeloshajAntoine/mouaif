@@ -59,6 +59,10 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
       const collapsible = kids.length > 1;
       const isCollapsed = collapsible && collapsed.has(group.id);
       const onCount = kids.filter((t) => t.checked).length;
+      // Half-check the group when some (but not all) of its tools are
+      // on. `indeterminate` is a DOM property, not an attribute, so it
+      // must be set through a ref callback after render.
+      const halfChecked = kids.length > 0 && onCount > 0 && onCount < kids.length;
 
       return h('li', { key: group.id, class: 'tool-tree__group', role: 'treeitem', 'aria-expanded': collapsible ? String(!isCollapsed) : undefined },
         h('div', { class: 'tool-tree__row' + (group.disabled ? ' is-disabled' : ''), title: group.title || (group.disabled && group.disabledReason ? group.disabledReason : undefined) },
@@ -84,6 +88,10 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
             class: 'checkbox checkbox--sm',
             checked: !!group.checked,
             disabled: !!group.disabled,
+            // `indeterminate` is a DOM-only property; Reflect.a11y-
+            // set it via a callback so Preact vdom doesn't drop it.
+            ref: (el) => { if (el) el.indeterminate = halfChecked; },
+            'aria-checked': halfChecked ? 'mixed' : undefined,
             onChange: (e) => onToggleGroup && onToggleGroup(group.id, e.target.checked),
             'aria-label': group.name
           }),

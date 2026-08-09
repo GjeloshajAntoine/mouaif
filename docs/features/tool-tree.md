@@ -19,7 +19,7 @@ The tree sits below the system prompt. It shows one group per tool family:
 
 Each group row has:
 
-- a **checkbox** that toggles every child tool at once
+- a **checkbox** that toggles every child tool at once — it shows a **half-check (indeterminate)** state when some but not all of the group's child tools are on, so a partial selection is visible at a glance
 - the group name
 - a short one-line description (truncated, with a tooltip for the full text)
 - a **collapse chevron** (only when there is more than one child)
@@ -76,6 +76,10 @@ When a `tool_call` SSE event arrives, `markToolUsed(state, refs, name)` in `stre
 3. Re-renders the tools card in place
 
 `state.usedTools` is reset when the chat switches.
+
+### Indeterminate (half-check) state
+
+A group whose child tools are partially selected renders its checkbox in the browser's `indeterminate` state (with `aria-checked="mixed"`), so a partial selection is visually distinct from both "all on" and "all off". Because `indeterminate` is a DOM-only property — it has no HTML attribute and would be stripped from the vdom — it is applied through a `ref` callback on the group `<input>` each render. It is purely presentational: clicking the group checkbox still runs the normal `onToggleGroup` handler (check → all on, uncheck → all off).
 
 ### Settings auth groups
 
