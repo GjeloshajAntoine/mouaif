@@ -67,6 +67,11 @@ function normalizeMessage(m) {
     content: m.content,
     ts: typeof m.ts === 'string' ? m.ts : new Date().toISOString()
   };
+  // Preserve a previously-assigned seq (appended rows carry one). A
+  // row without seq (e.g. an old file written before seq existed, or
+  // an optimistic client row echoed through normalize) gets the
+  // sequence assigned in listMessages by array position.
+  if (typeof m.seq === 'number' && Number.isFinite(m.seq)) out.seq = m.seq;
   if (m.role === 'user') {
     const attachments = normalizeAttachments(m.attachments);
     if (attachments.length) out.attachments = attachments;
@@ -124,10 +129,18 @@ function listMessages(projectDir, chatId) {
   const raw = readRaw(projectDir, chatId);
   const list = Array.isArray(raw.messages) ? raw.messages : [];
   const out = [];
-  for (const m of list) {
-    const n = normalizeMessage(m);
-    if (n) out.push(n);
+  // Stable seq by array position. The JSON store is append-only; a
+  // row appended by a writer that did not stamp seq (i.e. an existing
+  // file written before seq existed) gets its index. If any row was
+  // stamped we rewrite once so the seq is durable across reloads.
+  let changed = false;
+  for (let i = 0; i < list.length; i++) {
+    const n = normalizeMessage(list[i]);
+    if (!n) { changed = true; continue; }
+    if (n.seq !== i) { n.seq = i; changed = true; }
+    out.push(n);
   }
+  if (changed) writeRaw(projectDir, chatId, { messages: out });
   return out;
 }
 
@@ -194,6 +207,11 @@ function appendMessage(projectDir, chatId, msg) {
     if (typeof msg.phase === 'string') normalized.phase = msg.phase;
   }
   stored.push(normalized);
+  // Stamp the row's stable seq before persisting. The JSON store keeps
+  // seq by array index: needing the REVISION of the list (MAX(seq)),
+  // so recompute from the final array length — a consistent monotonic
+  // counter for this chat.
+  normalized.seq = stored.length - 1;
   writeRaw(projectDir, chatId, { messages: stored });
   return normalized;
 }

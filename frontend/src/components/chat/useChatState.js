@@ -154,6 +154,14 @@ export function useChatState(props) {
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
+  // Stable per-row identity set. Populated from the server's `seq`
+  // (both storage backends now emit it). Merging incoming rows keyed
+  // by this set — NOT by array length or role+ts — is what prevents
+  // the optimistic user message / live assistant bubble from being
+  // re-added when the server's persisted copy crosses the wire on the
+  // next reconcile, and prevents a reconnect from re-fetching rows it
+  // already merged. Reset per chat: seq is chat-scoped.
+  const seenSeqs = useRef(new Set());
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
   // Stable-tick counter for the reload follow poll (reconcileRunningChat).
   // When a reloaded chat shows the server's `running` flag but the
@@ -230,6 +238,8 @@ export function useChatState(props) {
       set agents(v) { agents.current = Array.isArray(v) ? v : []; },
       get usedTools() { return usedTools.current; },
       set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
+      get seenSeqs() { return seenSeqs.current; },
+      set seenSeqs(v) { seenSeqs.current = v instanceof Set ? v : new Set(v || []); },
       get transcriptRevision() { return transcriptRevision.current; },
       set transcriptRevision(v) { transcriptRevision.current = v; },
       get _persistedModelPair() { return persistedModelPair.current; },
@@ -462,6 +472,10 @@ export function useChatState(props) {
         state.chat = c;
         persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
         messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+        // Seed the seen-set from the freshly loaded transcript so the
+        // first reconcile / recovery tick never re-adds a row that the
+        // initial load already has.
+        { const set = new Set(); for (const m of messages.current) { if (typeof m.seq === 'number') set.add(m.seq); } seenSeqs.current = set; }
         // Seed the reconcile marker so the first 1 s tick is a no-op
         // (no redundant full-list fetch right after load).
         const lastMsg = messages.current[messages.current.length - 1];
@@ -708,6 +722,9 @@ export function useChatState(props) {
   }, [projectDir, chatId]);
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
+  // seq is chat-scoped; reset the seen-set with the chat so a stale
+  // seq from a previous chat can never suppress a load.
+  useEffect(() => { seenSeqs.current = new Set(); }, [chatId]);
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
   useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {

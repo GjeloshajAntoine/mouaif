@@ -29,6 +29,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
 import { subscribeLive } from './live.js';
+import { mergeServerRows } from './msgMerge.js';
 import { cssEscape } from './utils.js';
 
 // markToolUsed(state, refs, toolName)
@@ -309,15 +310,24 @@ function sameMessage(a, b) {
   return true;
 }
 
-export function syncFromRevision(state, refs, revKey, synced) {
+
+function syncFromRevision(state, refs, revKey, synced) {
   if (!Array.isArray(synced)) return null;
   const prev = state.messages;
-  const prefixIntact = synced.length >= prev.length
-    && synced.slice(0, prev.length).every((m, i) => sameMessage(m, prev[i]));
+  const merged = mergeServerRows(state, synced);
+  const prevLen = prev.length;
   state.transcriptRevision = revKey;
-  state.messages = synced;
-  if (prefixIntact) {
-    syncTranscriptAppend(state, refs, prev.length);
+  state.messages = merged;
+  if (merged.length === prevLen) {
+    // Nothing actually changed (all rows deduped) — no re-render.
+    return merged === prev ? 'appended' : null;
+  }
+  // If the merged result is a strict extension of the previous
+  // transcript (only appended rows), do the cheap append render.
+  const prefixIntact = merged.slice(0, Math.min(prevLen, merged.length))
+    .every((m, i) => m === prev[i] || sameMessage(m, prev[i]));
+  if (prefixIntact && merged.length >= prevLen) {
+    syncTranscriptAppend(state, refs, prevLen);
     return 'appended';
   }
   if (state._renderTranscript) state._renderTranscript();
@@ -346,16 +356,27 @@ async function fetchMessagesFull(projectDir, chatId) {
 // applyTailSync(state, refs, revKey, tail) -> 'appended' | null
 //
 // Fast path for the common append-only change: the server sent only
-// the rows after our known prefix, so concat them and render just
-// those rows. No prefix re-verification needed — the store is
-// append-only, and a non-append change is caught upstream by the
-// base < since check in fetchMessagesSince.
+// the rows after our known prefix, so merge them and render just
+// those rows. Merge (not concat): rows already in state.seenSeqs are
+// dropped, and a row that supersedes a seq-less optimistic/live copy
+// replaces it in place — this is what prevents the persisted
+// counterpart of a message the client already rendered optimistically
+// from being drawn a second time. No prefix re-verification needed —
+// the store is append-only, and a non-append change is caught
+// upstream by the base < since check in fetchMessagesSince.
 function applyTailSync(state, refs, revKey, tail) {
   if (!Array.isArray(tail)) return null;
   const prevLen = state.messages.length;
+  const merged = mergeServerRows(state, tail);
+  if (merged === state.messages) return 'appended'; // nothing changed
   state.transcriptRevision = revKey;
-  state.messages = state.messages.concat(tail);
-  if (!tail.length) return 'appended';
+  state.messages = merged;
+  const added = merged.length - prevLen;
+  if (added <= 0) {
+    // Rows replaced in place (dedup) without net growth — no new
+    // append render; positions already rendered stay.
+    return 'appended';
+  }
   syncTranscriptAppend(state, refs, prevLen);
   return 'appended';
 }

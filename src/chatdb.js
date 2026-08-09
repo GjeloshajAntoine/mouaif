@@ -129,7 +129,12 @@ function chatToRow(projectDir, chat) {
 
 function rowToMessage(row) {
   if (!row) return null;
-  const msg = { role: row.role, content: row.content, ts: row.ts };
+  // seq is the row's stable, monotonically increasing position within
+  // this (project_dir, chat_id). It is the ONLY identity the client
+  // can reliably dedup on: the SQLite backend assigns it at insert
+  // (append-only), so a row kept its seq forever. The client merges
+  // by seq and never re-adds a row it already holds.
+  const msg = { role: row.role, content: row.content, ts: row.ts, seq: row.seq };
   if (row.role === 'user' && row.attachments) {
     try { msg.attachments = JSON.parse(row.attachments); } catch { /* ignore */ }
   }

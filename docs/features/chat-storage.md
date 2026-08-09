@@ -102,6 +102,15 @@ Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
 - **`src/chats.js`** — public API, routes to `chatdb.js` or legacy JSON files based on `chatStorage` setting.
 - **`src/messages.js`** — public API, routes to `chatdb.js` or legacy JSON files.
 
+### Message `seq` — the stable per-chat row identity
+
+Every message exposed by `GET /api/chats/:id/messages` carries a `seq` field: its stable, monotonically increasing position within that `(project_dir, chat_id)`.
+
+- **SQLite backend:** `seq` is the `message_store` primary-key column, assigned at insert (append-only, so a row keeps its `seq` forever).
+- **JSON backend:** `seq` is assigned by array index in `listMessages` when a row lacks one (older files), then persisted; new appends stamp the next index. It is thus stable and monotonic across reloads.
+
+`seq` is chat-scoped, so it is safe when many chats across many projects run concurrently. It is the single identity the frontend's reconcile/recovery path merges by — see [`chat-streaming-performance.md`](chat-streaming-performance.md) and `frontend/src/components/chat/msgMerge.js`:
+
 ### Storage backend selection
 
 The `useDb(projectDir)` helper reads `settings.getResolved(projectDir).chatStorage`. If `'db'`, all chat/message operations go through `chatdb.js`. If `'json'`, the legacy file-based code paths are used.
