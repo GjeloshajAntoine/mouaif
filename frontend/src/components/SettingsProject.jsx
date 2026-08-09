@@ -1007,9 +1007,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                   else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
                   else toggleSettingsGroup(groupId, checked);
                 },
-                // Project settings expose every nested tool at once. There is
-                // no transient collapse state for a checkbox update to reset.
-                alwaysExpanded: true
+                // Groups with more than one nested tool start collapsed,
+                // matching the chat tree. The ToolTree holds its own
+                // collapse state, so a group the user expands stays open
+                // across SettingsProject re-renders (checkbox / segment
+                // changes only re-render this tree in place).
+                collapsedByDefault: true
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),
