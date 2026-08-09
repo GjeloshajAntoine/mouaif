@@ -43,6 +43,18 @@ export function ChatView(props) {
 
   const atMentionRef = useRef(null);
   const atArgBarRef = useRef(null);
+
+  // Persist the picker's max-output-tokens input to the chat record
+  // (and keep the trigger's value in sync). Empty clears the override.
+  function updateMaxOutput(input) {
+    let v = input && input.value ? input.value.trim() : '';
+    // Blank or remove any non-numeric noise; an all-numeric string is saved as-is.
+    const num = v && /^\d+$/.test(v) ? v : '';
+    state.maxOutputTokens = num;
+    if (num !== (state.chat && state.chat.maxOutputTokens || '')) {
+      if (typeof s.state._updateChat === 'function') s.state._updateChat({ maxOutputTokens: num });
+    }
+  }
   useEffect(() => {
     // Mount the at-mention popup on the composer textarea
     if (!refs.promptInput.current || !atMentionRef.current) return;
@@ -205,6 +217,32 @@ export function ChatView(props) {
               'aria-label': 'Close',
               title: 'Close'
             }, '×')
+          ),
+          h('div', { class: 'chat-view__picker-maxout' },
+            h('input', {
+              ref: refs.maxOutputTokens,
+              class: 'input chat-view__picker-maxout-input',
+              type: 'number',
+              min: 1,
+              inputMode: 'numeric',
+              placeholder: 'Max output tokens (blank = default)',
+              'aria-label': 'Max output tokens',
+              onBlur: (e) => {
+                const v = e.currentTarget.value.trim();
+                if (v && state.chat) {
+                  state.maxOutputTokens = v;
+                  if (v !== (state.chat.maxOutputTokens || '')) {
+                    updateMaxOutput(e.currentTarget);
+                  }
+                } else if (!v && state.chat && state.chat.maxOutputTokens) {
+                  state.maxOutputTokens = '';
+                  updateMaxOutput(e.currentTarget);
+                }
+              },
+              onKeydown: (e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }
+            })
           ),
           h('div', { class: 'chat-view__picker-chips', role: 'tablist', 'aria-label': 'Filter by provider' }),
           h('div', { ref: refs.modelPickerList, class: 'chat-view__picker-list' })

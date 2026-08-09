@@ -639,6 +639,10 @@ export async function openModelPicker(state, refs) {
   bindKeyboardInset(pop, refs.modelPickerList.current);
   bindPickerScrollLock(pop, refs.modelPickerList.current);
   trig.setAttribute('aria-expanded', 'true');
+  // Seed the max-output-tokens input from the chat's current value.
+  if (refs.maxOutputTokens && refs.maxOutputTokens.current) {
+    refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
+  }
   // Render immediately so opening the picker never waits on the network.
   // Refresh the recent section when the server-backed list arrives, unless
   // the user closed the picker in the meantime.

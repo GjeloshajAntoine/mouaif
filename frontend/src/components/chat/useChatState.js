@@ -101,6 +101,7 @@ export function useChatState(props) {
   const modelPickerList = useRef(null);
   const thinkingLevel = useRef(null);
   const thinkingLevelCustom = useRef(null);
+  const maxOutputTokens = useRef(null);
   const promptInput = useRef(null);
   const imageInput = useRef(null);
   const draftSaveTimer = useRef(null);
@@ -151,6 +152,8 @@ export function useChatState(props) {
   // Track the current thinking level (survives re-renders, unlike
   // a plain state property that resets on every render cycle).
   const thinkingLevelRef = useRef('');
+  // Track the current per-chat max output tokens (empty = provider default).
+  const maxOutputTokensRef = useRef('');
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -260,7 +263,9 @@ export function useChatState(props) {
       get mcpAuth() { return mcpAuth.current; },
       set mcpAuth(v) { mcpAuth.current = (v instanceof Object && !Array.isArray(v)) ? v : { mode: 'ask', allowlist: [], servers: {}, tools: {} }; },
       get thinkingLevel() { return thinkingLevelRef.current; },
-      set thinkingLevel(v) { thinkingLevelRef.current = v; }
+      set thinkingLevel(v) { thinkingLevelRef.current = v; },
+      get maxOutputTokens() { return maxOutputTokensRef.current; },
+      set maxOutputTokens(v) { maxOutputTokensRef.current = v; }
     };
   }
   const state = stateRef.current;
@@ -273,7 +278,7 @@ export function useChatState(props) {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
-    thinkingLevel, thinkingLevelCustom,
+    thinkingLevel, thinkingLevelCustom, maxOutputTokens,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
     jumpBtn, toolsCard, agentFilesCard,
     pinnedToBottom, pendingCount,
@@ -565,6 +570,7 @@ export function useChatState(props) {
         if (promptInput.current) setComposerText(promptInput.current.value);
         if (chatName.current) chatName.current.textContent = c.title || chatId;
         state.thinkingLevel = c.thinkingLevel || '';
+        state.maxOutputTokens = c.maxOutputTokens || '';
         // Sync thinking level select after initial load — options come
         // from the provider's reported descriptor when available.
         syncThinkingSelect(refs, state);

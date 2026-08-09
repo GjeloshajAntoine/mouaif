@@ -941,6 +941,14 @@ function buildOpenAIRequest(model, messages, stream) {
     const tl = String(model.thinkingLevel).trim();
     if (tl) body.reasoning_effort = tl;
   }
+  // Inject a max output cap for OpenAI-compatible providers. Empty string
+  // means upstream default (never set the field); a positive integer sets
+  // max_completion_tokens. OpenAI-shaped chat-completions endpoints accept
+  // max_completion_tokens on both classic and reasoning models.
+  const maxOut = String(model.maxOutputTokens || '').trim();
+  if (maxOut && /^\d+$/.test(maxOut) && parseInt(maxOut, 10) > 0) {
+    body.max_completion_tokens = parseInt(maxOut, 10);
+  }
   return {
     url: effectiveUrl,
     headers,
@@ -1067,6 +1075,10 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
   const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
+  const maxOutput = String(model.maxOutputTokens || '').trim();
+  const maxOutputNum = (maxOutput && /^\d+$/.test(maxOutput) && parseInt(maxOutput, 10) > 0)
+    ? parseInt(maxOutput, 10)
+    : 0;
   // Prompt caching is generally available on the Messages API, so cache
   // markers work with both API-key and OAuth authentication. OAuth keeps its
   // required oauth-2025-04-20 beta header; API-key requests need no beta.
@@ -1090,7 +1102,7 @@ function buildAnthropicRequest(model, messages, stream, specs) {
   if (convertedMessages.length >= 2) markPenultimateMessage(convertedMessages);
   const body = {
     model: model.id,
-    max_tokens: model.maxTokens || 1024,
+    max_tokens: maxOutputNum || 1024,
     // Anthropic prompt caching: the system message (profile + agent files +
     // custom prompt + feature summary) is stable across every turn of a
     // multi-tool conversation, so marking it with cache_control means the

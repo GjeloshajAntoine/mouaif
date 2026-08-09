@@ -367,7 +367,7 @@ async function runSingleToolCall(c, cx) {
 }
 
 async function streamChat(opts) {
-  const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel } = opts || {};
+  const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel, maxOutputTokens } = opts || {};
   if (!model || !model.provider) {
     return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
   }
@@ -377,10 +377,14 @@ async function streamChat(opts) {
   if (typeof onEvent !== 'function') {
     return { ok: false, error: { code: 'EBADINPUT', message: 'onEvent must be a function' } };
   }
-  // Pass thinking level down to the request builders so they can
-  // inject provider-specific fields (reasoning_effort, thinking budget, etc.)
+  // Pass thinking level and max output tokens down to the request builders
+  // so they can inject provider-specific fields (reasoning_effort, thinking
+  // budget, max_completion_tokens, max_tokens, etc.).
   if (typeof thinkingLevel === 'string' && thinkingLevel) {
     model.thinkingLevel = thinkingLevel;
+  }
+  if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
+    model.maxOutputTokens = maxOutputTokens;
   }
 
   let def, build, parse;

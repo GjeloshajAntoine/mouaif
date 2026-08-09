@@ -584,6 +584,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   const content = body && typeof body.content === 'string' ? body.content : '';
   const attachments = messages.normalizeAttachments(body && body.attachments);
   const thinkingLevel = body && typeof body.thinkingLevel === 'string' ? body.thinkingLevel : '';
+  const maxOutputTokens = body && typeof body.maxOutputTokens === 'string' ? body.maxOutputTokens : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!modelId) return sendJSON(res, 400, { error: 'modelId is required' });
   if (!content && !attachments.length) return sendJSON(res, 400, { error: 'content or image is required' });
@@ -997,6 +998,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     promptSize: resolvedProfileId,
     toolOutput: resolvedToolOutput,
     thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
+    maxOutputTokens: maxOutputTokens || chat.maxOutputTokens || '',
     signal: runController.signal,
     // Per-chat tool filter (decisions: chat.tools). null/undefined
     // means "all tools available to the project"; an array (even an

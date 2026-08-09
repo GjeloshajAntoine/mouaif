@@ -29,6 +29,7 @@ const CREATE_CHAT_TABLE = `
     provider_id   TEXT,
     model_id      TEXT,
     thinking_level TEXT DEFAULT '',
+    max_output_tokens TEXT DEFAULT '',
     draft         TEXT NOT NULL DEFAULT '',
     tools         TEXT,
     agent_id      TEXT,
@@ -91,6 +92,7 @@ function rowToChat(row) {
     providerId: row.provider_id || null,
     modelId: row.model_id || null,
     thinkingLevel: row.thinking_level || '',
+    maxOutputTokens: row.max_output_tokens || '',
     draft: row.draft || '',
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
     skills: row.skills === null ? undefined : (row.skills === 1)
@@ -117,6 +119,7 @@ function chatToRow(projectDir, chat) {
     provider_id: chat.providerId || null,
     model_id: chat.modelId || null,
     thinking_level: chat.thinkingLevel || '',
+    max_output_tokens: chat.maxOutputTokens || '',
     draft: chat.draft || '',
     tools: chat.tools === undefined ? null : JSON.stringify(chat.tools),
     // agent_id is a legacy column from the removed chat-persona design.
@@ -204,10 +207,10 @@ function createChat(projectDir, chat) {
   const row = chatToRow(projectDir, chat);
   d.prepare(`
     INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-      trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, draft, tools,
+      trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, tools,
       agent_id, agent_files, skills)
     VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-      @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @draft, @tools,
+      @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @tools,
       @agent_id, @agent_files, @skills)
   `).run(row);
   return rowToChat(d.prepare(
@@ -231,6 +234,7 @@ function updateChat(projectDir, chatId, patch) {
       trace = @trace, prompt_size = @prompt_size,
       prompt_id = @prompt_id, provider_id = @provider_id,
       model_id = @model_id, thinking_level = @thinking_level,
+      max_output_tokens = @max_output_tokens,
       draft = @draft, tools = @tools,
       agent_id = @agent_id, agent_files = @agent_files,
       skills = @skills

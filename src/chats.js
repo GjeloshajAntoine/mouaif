@@ -81,6 +81,7 @@ function normalizeChat(chat) {
     providerId: typeof chat.providerId === 'string' && chat.providerId ? chat.providerId : null,
     modelId: typeof chat.modelId === 'string' && chat.modelId ? chat.modelId : null,
     thinkingLevel: typeof chat.thinkingLevel === 'string' ? chat.thinkingLevel : '',
+    maxOutputTokens: typeof chat.maxOutputTokens === 'string' ? chat.maxOutputTokens : '',
     draft: typeof chat.draft === 'string' ? chat.draft : '',
     tools: chat.tools === null ? null : (Array.isArray(chat.tools) ? chat.tools.map((n) => String(n)).filter(Boolean) : undefined),
     agentFiles: typeof chat.agentFiles === 'boolean' ? chat.agentFiles : undefined,
@@ -172,6 +173,7 @@ function createChat(projectDir, opts) {
     trace: opts && opts.trace === true,
     promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize,
     thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
+    maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
     tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
   });
 
@@ -209,6 +211,9 @@ function updateChat(projectDir, chatId, patch) {
     }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'thinkingLevel')) {
       dbPatch.thinkingLevel = typeof patch.thinkingLevel === 'string' ? patch.thinkingLevel : '';
+    }
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'maxOutputTokens')) {
+      dbPatch.maxOutputTokens = typeof patch.maxOutputTokens === 'string' ? patch.maxOutputTokens : '';
     }
     if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
       dbPatch.draft = typeof patch.draft === 'string' ? patch.draft : '';
@@ -259,6 +264,9 @@ function updateChat(projectDir, chatId, patch) {
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'thinkingLevel')) {
     merged.thinkingLevel = typeof patch.thinkingLevel === 'string' ? patch.thinkingLevel : '';
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'maxOutputTokens')) {
+    merged.maxOutputTokens = typeof patch.maxOutputTokens === 'string' ? patch.maxOutputTokens : '';
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
     merged.draft = typeof patch.draft === 'string' ? patch.draft : '';

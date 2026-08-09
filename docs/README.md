@@ -59,6 +59,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Agent file picker](features/agent-file-picker.md) — browse the project and tap a file to fill the **File names to look for** agent-files setting in project settings.
 - [Task tool](features/task-tool.md) — built-in `task` tool for creating, tracking progress on, and completing structured tasks within a chat. Tasks render as rich inline cards with progress bars.
 - [Thinking level](features/thinking-level.md) — per-chat dropdown for model reasoning/thinking effort, with options sourced from the provider when available (OpenAI `reasoning_effort`, Anthropic `thinking.budget_tokens`, Gemini `thinkingConfig`, Ollama `think`) plus fallback presets.
+- [Max output tokens](features/max-output-tokens.md) — per-chat override of the output token cap, set in the model picker and sent as `max_completion_tokens` (OpenAI-shaped) or `max_tokens` (Anthropic).
 - [Restart API](features/restart-api.md) — `POST /api/restart` respawns a fresh worker via the CLI supervisor, or exits with code 0 when no launcher is available.
 - [Chat streaming performance](features/chat-streaming-performance.md) — streaming assistant text appends per-token text nodes instead of rebuilding the bubble, removing O(n²) work on long turns.
 - [Chat load performance](features/chat-load-performance.md) — SQL-side cost aggregation, a cheap transcript revision marker for polling, lazy collapsed tool-result bodies, and fewer redundant refreshes keep long chats fast to open.

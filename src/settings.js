@@ -266,6 +266,18 @@ const MIGRATIONS = [
         d.exec("ALTER TABLE chat_store ADD COLUMN thinking_level TEXT DEFAULT ''");
       }
     }
+  },
+  {
+    name: '2026-07-28-add-max-output-tokens',
+    description: 'Add max_output_tokens column to chat_store for existing databases',
+    run() {
+      const d = db();
+      const cols = d.prepare("PRAGMA table_info('chat_store')").all();
+      const hasCol = cols.some((c) => c.name === 'max_output_tokens');
+      if (!hasCol) {
+        d.exec("ALTER TABLE chat_store ADD COLUMN max_output_tokens TEXT DEFAULT ''");
+      }
+    }
   }
 ];
 

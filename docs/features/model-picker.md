@@ -49,3 +49,4 @@ The picker code lives in [frontend/src/components/chat/modelPicker.js](../../fro
 - [docs/features/ai-client.md](./ai-client.md) — provider catalog source for the live picker data.
 - [docs/features/auth.md](./auth.md) — provider credentials; the **No providers** empty-state points the user here.
 - [docs/features/settings-ui.md](./settings-ui.md) — the Settings tab the empty-state "Open Settings" action navigates to.
+- [docs/features/max-output-tokens.md](./max-output-tokens.md) — the per-chat output-cap field that also lives in this popover.

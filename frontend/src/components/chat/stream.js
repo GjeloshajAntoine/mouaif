@@ -690,7 +690,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
     resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel })
+      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
     });
   } catch (err) {
     setChatStatus(refs, 'network error', 'error');

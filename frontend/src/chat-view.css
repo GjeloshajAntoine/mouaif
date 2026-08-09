@@ -245,6 +245,31 @@
 }
 .chat-view__picker-search::placeholder { color: var(--muted); }
 .chat-view__picker-search:focus { border-color: var(--accent); }
+.chat-view__picker-maxout {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+  gap: 6px;
+}
+.chat-view__picker-maxout-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--tap);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+.chat-view__picker-maxout-input:focus { border-color: var(--accent); }
 .chat-view__picker-refresh,
 .chat-view__picker-close {
   flex: 0 0 auto;
