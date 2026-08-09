@@ -79,7 +79,7 @@ When a `tool_call` SSE event arrives, `markToolUsed(state, refs, name)` in `stre
 
 ### Indeterminate (half-check) state
 
-A group whose child tools are partially selected renders its checkbox in the browser's `indeterminate` state (with `aria-checked="mixed"`), so a partial selection is visually distinct from both "all on" and "all off". Because `indeterminate` is a DOM-only property — it has no HTML attribute and would be stripped from the vdom — it is applied through a `ref` callback on the group `<input>` each render. It is purely presentational: clicking the group checkbox still runs the normal `onToggleGroup` handler (check → all on, uncheck → all off).
+A group whose child tools are partially selected renders its checkbox in the browser's `indeterminate` state (with `aria-checked="mixed"`), so a partial selection is visually distinct from both "all on" and "all off". Because `indeterminate` is a DOM-only property — it has no HTML attribute and would be stripped from the vdom — it is applied through a `ref` callback on the group `<input>` each render. The custom checkbox CSS paints this state as a contrasting horizontal bar. It is purely presentational: clicking the group checkbox still runs the normal `onToggleGroup` handler (check → all on, uncheck → all off).
 
 ### Settings auth groups
 

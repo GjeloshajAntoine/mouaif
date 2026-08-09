@@ -91,7 +91,8 @@ select.input {
   flex-shrink: 0;
 }
 .checkbox:hover { border-color: var(--accent); }
-.checkbox:checked {
+.checkbox:checked,
+.checkbox:indeterminate {
   background: var(--accent);
   border-color: var(--accent);
 }
@@ -102,6 +103,13 @@ select.input {
   border-right: 2px solid var(--on-accent);
   border-bottom: 2px solid var(--on-accent);
   transform: rotate(45deg) translate(-1px, -1px);
+}
+.checkbox:indeterminate::after {
+  content: "";
+  width: 10px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--on-accent);
 }
 
 /* ---- Buttons ------------------------------------------------------ */

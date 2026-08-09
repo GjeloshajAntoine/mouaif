@@ -579,7 +579,7 @@
   height: 26px;
   cursor: pointer;
 }
-.switch input {
+.switch input[type="checkbox"] {
   position: absolute;
   inset: 0;
   margin: 0;
@@ -605,15 +605,15 @@
   border-radius: 50%;
   transition: transform var(--dur) var(--ease), background var(--dur-fast) var(--ease);
 }
-.switch input:checked + .switch__track {
+.switch input[type="checkbox"]:checked + .switch__track {
   background: var(--accent);
   border-color: var(--accent);
 }
-.switch input:checked + .switch__track .switch__thumb {
+.switch input[type="checkbox"]:checked + .switch__track .switch__thumb {
   transform: translateX(16px);
   background: var(--on-accent);
 }
-.switch input:focus-visible + .switch__track {
+.switch input[type="checkbox"]:focus-visible + .switch__track {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
