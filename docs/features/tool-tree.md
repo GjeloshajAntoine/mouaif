@@ -106,6 +106,8 @@ The settings tree renders one group per configured MCP server (group checkbox = 
 
 `buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege. MCP segments are shared with the chat view through `McpAuthSeg` in `frontend/src/components/settings/toolAuth.js` (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
 
+Server overrides are keyed by the server's canonical *slug*, but a hand-edited `.mcp.json` may key one by its display *`id`* instead — the two differ whenever the id contains characters `slugify` collapses (e.g. `id: "chrome-debug"` → `slug: "chrome_debug"`). A mismatch used to make the settings checkbox for that server silently show the shared default (wrongly reporting `default (ask)` / on) because the override was never found. `getAuthorization` in `src/tools/authorization.js` re-keys `mcp.servers` and the authorize-time lookup onto slugs (`mcpServersBySlug`), and `setAuthorization` also cleans the stale id-twin on write, so an id-keyed override reads and clears correctly regardless of which key the file uses.
+
 ### Filter semantics
 
 The per-chat `tools` filter (chat record):

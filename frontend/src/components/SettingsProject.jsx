@@ -691,7 +691,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         const toolCount = (Array.isArray(server.tools) ? server.tools.length : 0)
           || (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug).length;
         groups.push({
-          id: 'mcp-' + server.id,
+          // Key the group by the *slug* (canonical override key), not the
+          // id. The checkbox toggle below (`toggleMcpServerAuth(groupId
+          // .slice(4))`) writes the per-server override under this key, and
+          // McpAuthSeg + effMode read it back from the same slug. Using the
+          // id here (a hyphenated display id like `chrome-debug`) writes the
+          // override under a different key than the underscore slug the rest
+          // of the tree reads (`chrome_debug`), so a toggled-off checkbox
+          // never reflected its off state.
+          id: 'mcp-' + slug,
           name: server.name || server.id,
           description: (server.status || 'stopped') + (toolCount ? ' · ' + toolCount + (toolCount === 1 ? ' tool' : ' tools') : '')
             + (overridden ? ' · override: ' + segMode(effMode) : ' · default (' + segMode(effMode) + ')'),

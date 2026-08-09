@@ -45,8 +45,8 @@
     "defaultTimeoutMs": 30000,
     "maxTimeoutMs": 600000,
     "servers": {
-      "chrome_debug": {
-        "mode": "ask"
+      "chrome-debug": {
+        "mode": "off"
       }
     }
   }

@@ -165,7 +165,8 @@ function mcpLayeredConfig(projectDir, project, app, tool) {
   if (parsed) {
     const toolValue = auth.tools && auth.tools[tool];
     if (hasMcpOverride(toolValue)) return { value: toolValue, source: 'project-tool' };
-    const serverValue = auth.servers && auth.servers[parsed.slug];
+    const serversBySlug = auth.servers ? mcpServersBySlug(projectDir, auth.servers) : undefined;
+    const serverValue = serversBySlug && serversBySlug[parsed.slug];
     if (hasMcpOverride(serverValue)) return { value: serverValue, source: 'project-server' };
   }
   if (hasMcpOverride(auth)) return { value: auth, source: 'project' };
@@ -184,6 +185,46 @@ function mcpOverrideMaps(projectDir) {
   const servers = (auth.servers && typeof auth.servers === 'object' && !Array.isArray(auth.servers)) ? auth.servers : {};
   const tools = (auth.tools && typeof auth.tools === 'object' && !Array.isArray(auth.tools)) ? auth.tools : {};
   return { auth, servers, tools };
+}
+
+// Build an id -> slug map for every MCP server registered for the project.
+// Used both by the read-path re-key (mcpServersBySlug) and the write-path
+// cleanup in setAuthorization. Returns an empty map when the registry is
+// unavailable (MCP module failure, bad dir), in which case callers no-op.
+function mcpIdToSlug(projectDir) {
+  let registry;
+  try { registry = require('../mcp.js').listServers(projectDir); } catch { registry = null; }
+  const idToSlug = new Map();
+  for (const s of (registry || [])) {
+    if (s && typeof s.id === 'string' && s.slug && typeof s.slug === 'string') idToSlug.set(s.id, s.slug);
+  }
+  return idToSlug;
+}
+
+// MCP override maps are layered and looked up by the server's canonical
+// *slug*, but hand-edited .mcp.json files (and legacy configs) may key a
+// server override by its display *id* instead. A server whose slug and id
+// diverge (e.g. id "chrome-debug", slugified to "chrome_debug") would then
+// silently fail both the settings checkbox read and the authorize-time gate.
+// Re-key the override map onto slugs so the stored key no longer matters:
+// an id-keyed override resolves to the same server the slug paths read.
+// Servers not present in the registry pass through unchanged (a stale key
+// for a deleted server is harmless and left alone).
+function mcpServersBySlug(projectDir, servers) {
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return servers;
+  const idToSlug = mcpIdToSlug(projectDir);
+  if (!idToSlug.size) return servers;
+  const out = {};
+  let changed = false;
+  for (const [key, entry] of Object.entries(servers)) {
+    const target = idToSlug.has(key) ? idToSlug.get(key) : key;
+    if (target !== key) changed = true;
+    // If two keys collapse onto the same slug (id key plus an existing
+    // slug key), the explicit slug wins — it is the canonical form.
+    if (target !== key && Object.prototype.hasOwnProperty.call(out, target)) continue;
+    out[target] = entry;
+  }
+  return changed ? out : servers;
 }
 
 function effectiveConfig(projectDir, tool) {
@@ -214,9 +255,11 @@ function getAuthorization(projectDir) {
   // mcp.servers / mcp.tools mirror the persisted override maps (not the
   // layered result) so the Settings UI can render every configured
   // override, including ones whose tool or server is currently stopped.
+  // Override keys are re-keyed onto server slugs so a hand-edited id-keyed
+  // override still lines up with the UI's `servers.<slug>` lookups.
   const { servers, tools: toolOverrides } = mcpOverrideMaps(projectDir);
   const mcp = effectiveConfig(projectDir, 'mcp__any__tool');
-  mcp.servers = servers;
+  mcp.servers = mcpServersBySlug(projectDir, servers);
   mcp.tools = toolOverrides;
   return {
     tools: {
@@ -330,6 +373,28 @@ function setAuthorization(projectDir, patch) {
         if (entry == null) { delete auth[key][name]; continue; }
         const cfg = normalizeConfig(entry, 'project', true);
         auth[key][name] = mcpPersistShape(cfg);
+      }
+      // Normalize the server map on write too: a hand-edited override
+      // keyed by a server's display *id* (e.g. "chrome-debug") should not
+      // linger next to the canonical slug entry. When a server override is
+      // written or cleared here, drop any other key that resolves to the
+      // same slug, so the stored map never holds a stale twin that a later
+      // read (and the settings checkbox) has to second-guess.
+      if (key === 'servers' && Object.keys(auth.servers).length) {
+        const idToSlug = mcpIdToSlug(projectDir);
+        if (idToSlug.size) {
+          // Every server key that is not itself a slug is an id-key to
+          // clean up (or leave alone) based on whether the patch touched
+          // that server's slug.
+          for (const written of Object.keys(map)) {
+            const writtenSlug = idToSlug.has(written) ? idToSlug.get(written) : written;
+            for (const candidate of Object.keys(auth.servers)) {
+              if (candidate === writtenSlug) continue;
+              const candidateSlug = idToSlug.has(candidate) ? idToSlug.get(candidate) : candidate;
+              if (candidateSlug === writtenSlug) delete auth.servers[candidate];
+            }
+          }
+        }
       }
       // Drop empty maps so .mcp.json stays small and honest.
       if (!Object.keys(auth[key]).length) delete auth[key];
