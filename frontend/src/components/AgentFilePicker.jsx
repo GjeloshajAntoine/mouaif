@@ -35,7 +35,6 @@ export function AgentFilePicker(props) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const listEl = useRef(null);
 
   async function loadDir(target) {
     const d = (typeof target === 'string' && target) ? target : projectDir || '';
@@ -112,7 +111,7 @@ export function AgentFilePicker(props) {
       ),
       h('div', { class: 'afp__body' },
         err ? h('p', { class: 'afp__err' }, err)
-          : h('ul', { ref: listEl, class: 'afp__list', 'aria-label': 'Files and folders' },
+          : h('ul', { class: 'afp__list', 'aria-label': 'Files and folders' },
               entries.length === 0
                 ? h('li', { class: 'afp__empty' }, loading ? 'loading…' : 'no files here')
                 : entries.map((e) =>

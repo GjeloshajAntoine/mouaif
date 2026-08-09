@@ -10,7 +10,7 @@
 //         · Stash (with Stash up / Apply / Pop / Drop).
 
 import { h, Fragment } from 'preact';
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 
 // Run a git action via POST /api/git. Returns { ok, stdout, stderr }.
@@ -118,12 +118,12 @@ export function GitModal(props) {
   const [loadingCommits, setLoadingCommits] = useState(false);
   const [commitSectionOpen, setCommitSectionOpen] = useState(false);
   const [stashSectionOpen, setStashSectionOpen] = useState(false);
-  const loadingRef = useRef(false);
+  const [isLoadingRef, setIsLoadingRef] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectDir) { setLoading(false); setError('No project selected'); return; }
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    if (isLoadingRef) return;
+    setIsLoadingRef(true);
     setLoading(true);
     setError('');
     setNotice('');
@@ -147,8 +147,8 @@ export function GitModal(props) {
       setError(String(err));
     }
     setLoading(false);
-    loadingRef.current = false;
-  }, [projectDir]);
+    setIsLoadingRef(false);
+  }, [projectDir, isLoadingRef]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -7,7 +7,7 @@
 //
 // Sub-modules live in the inspector/ directory.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, route } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
@@ -20,21 +20,21 @@ export function InspectorView() {
   const statusEl = useRef(null);
   const targetsList = useRef(null);
 
-  const phase = useRef('setup');
-  const debuggerUrl = useRef('');
-  const defaultUrl = useRef('');
-  const targets = useRef([]);
-  const currentTarget = useRef(null);
-  const panel = useRef('console');
-  const detailItem = useRef(null);
-  const stateTick = useRef(0);
+  const [debuggerUrl, setDebuggerUrl] = useState('');
+  const [defaultUrl, setDefaultUrl] = useState('');
+  const [targets, setTargets] = useState([]);
+  const [currentTarget, setCurrentTarget] = useState(null);
+  const [panel, setPanel] = useState('console');
+  const [detailItem, setDetailItem] = useState(null);
+  const [phase, setPhase] = useState('setup');
+  const [, setTick] = useState(0);
   const consoleEntries = useRef([]);
   const networkEntries = useRef([]);
   const consoleVL = useRef(null);
   const networkVL = useRef(null);
   const reqMap = useRef(new Map());
 
-  function rerender() { stateTick.current++; forceUpdate(); }
+  function rerender() { setTick(t => t + 1); }
 
   const conn = useRef(null);
   const eventHandlers = useRef(null);
@@ -55,10 +55,10 @@ export function InspectorView() {
     conn.current = null;
     eventHandlers.current = null;
     reqMap.current.clear();
-    currentTarget.current = null;
+    setCurrentTarget(null);
     consoleEntries.current = [];
     networkEntries.current = [];
-    detailItem.current = null;
+    setDetailItem(null);
     if (consoleVL.current) { try { consoleVL.current.setData([]); } catch { /* ignore */ } }
     if (networkVL.current) { try { networkVL.current.setData([]); } catch { /* ignore */ } }
     if (statusEl.current) statusEl.current.textContent = '';
@@ -68,8 +68,9 @@ export function InspectorView() {
     if (conn.current) disconnect();
     const c = initCdp();
     const handlers = eventHandlers.current;
-    currentTarget.current = target;    panel.current = 'console';
-    phase.current = 'inspect';
+    setCurrentTarget(target);
+    setPanel('console');
+    setPhase('inspect');
     consoleEntries.current = [];
     networkEntries.current = [];
     if (statusEl.current) statusEl.current.textContent = 'connecting…';
@@ -120,8 +121,10 @@ export function InspectorView() {
     if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
     debuggerUrl.current = r.body.url || '';
     defaultUrl.current = r.body.defaultUrl || '';
-    if (urlInput.current) urlInput.current.value = debuggerUrl.current;
-    if (statusEl.current) statusEl.current.textContent = debuggerUrl.current ? ('current: ' + debuggerUrl.current) : 'using default: ' + defaultUrl.current;
+    setDebuggerUrl(r.body.url || '');
+    setDefaultUrl(r.body.defaultUrl || '');
+    if (urlInput.current) urlInput.current.value = r.body.url || '';
+    if (statusEl.current) statusEl.current.textContent = (r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl;
     rerender();
   }
 
@@ -136,7 +139,7 @@ export function InspectorView() {
     catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; if (saveBtn.current) saveBtn.current.disabled = false; return; }
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
-    debuggerUrl.current = r.body.url || next;
+    setDebuggerUrl(r.body.url || next);
     if (statusEl.current) statusEl.current.textContent = 'saved.';
   }
 
@@ -150,9 +153,9 @@ export function InspectorView() {
       if (statusEl.current) statusEl.current.textContent = msg;
       return;
     }
-    targets.current = r.body.targets || [];
-    phase.current = 'targets';
-    if (statusEl.current) statusEl.current.textContent = targets.current.length + ' targets';
+    setTargets(r.body.targets || []);
+    setPhase('targets');
+    if (statusEl.current) statusEl.current.textContent = (r.body.targets || []).length + ' targets';
     rerender();
   }
 
@@ -193,7 +196,7 @@ export function InspectorView() {
   // new tab and do NOT switch the current connection — the user asked for
   // a new tab, not a new inspection.
   async function openAttachedPageInNewTab() {
-    const target = currentTarget.current;
+    const target = currentTarget;
     if (!target || !target.url) return;
     const url = target.url;
     if (statusEl.current) statusEl.current.textContent = 'opening ' + url + ' in a new tab…';
@@ -219,7 +222,7 @@ export function InspectorView() {
   // current connection stays open so we can report the outcome; it is
   // torn down right before going back to the target list.
   async function closeAttachedTarget() {
-    const target = currentTarget.current;
+    const target = currentTarget;
     if (!target || !target.id) return;
     const name = target.title || target.url || 'this tab';
     if (!window.confirm('Close tab “' + name + '”?')) return;
@@ -237,7 +240,7 @@ export function InspectorView() {
       return;
     }
     disconnect();
-    phase.current = 'targets';
+    setPhase('targets');
     rerender();
     loadTargets();
   }
@@ -247,7 +250,7 @@ export function InspectorView() {
   // connection survives; the page is gone for a moment, then comes back
   // and the preview / console / network panels keep streaming.
   async function reloadAttachedTarget() {
-    const target = currentTarget.current;
+    const target = currentTarget;
     if (!target || !target.id) return;
     if (statusEl.current) statusEl.current.textContent = 'reloading…';
     let r;
@@ -269,7 +272,7 @@ export function InspectorView() {
   // URL (POST /api/inspector/navigate, CDP Page.navigate on the target).
   // The connection survives the navigation; the panels keep streaming.
   async function navigateAttachedTarget() {
-    const target = currentTarget.current;
+    const target = currentTarget;
     const input = navUrlInput.current;
     if (!target || !target.id || !input) return;
     let wanted = (input.value || '').trim();
@@ -320,7 +323,7 @@ export function InspectorView() {
 
   useEffect(() => { loadConfig(); return () => { disconnect(); }; }, []);
 
-  if (phase.current === 'setup') {
+  if (phase === 'setup') {
     return h(Fragment, null,
       h('section', null,
         h('p', { class: 'hint' }, 'Start Chrome with ', h('code', null, '--remote-debugging-port=9222'), ' and paste its debugger URL below.'),
@@ -338,18 +341,20 @@ export function InspectorView() {
     );
   }
 
-  if (phase.current === 'targets') {
+  if (phase === 'targets') {
+    // Note: manual DOM operations preserved for targets list performance
+    // and exact same behavior since targetsList.current.innerHTML manipulation is used.
     function renderTargets() {
       if (!targetsList.current) return;
       targetsList.current.innerHTML = '';
-      if (!targets.current.length) {
+      if (!targets.length) {
         const li = document.createElement('li');
         li.className = 'inspector__empty';
         li.textContent = 'no targets. Open a tab in Chrome and tap "Refresh targets".';
         targetsList.current.appendChild(li);
         return;
       }
-      for (const t of targets.current) {
+      for (const t of targets) {
         const li = document.createElement('li');
         li.className = 'inspector__target';
         const main = document.createElement('div');
@@ -394,7 +399,7 @@ export function InspectorView() {
     setTimeout(renderTargets, 0);
     return h(Fragment, null,
       h('div', { class: 'view-head' },
-        h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'setup'; rerender(); } }, '←'),
+        h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('setup'); rerender(); } }, '←'),
         h('h2', { class: 'view-title' }, 'Pick a target')
       ),
       h('section', null,
@@ -413,17 +418,17 @@ export function InspectorView() {
     );
   }
 
-  const t = currentTarget.current;
-  const activePanel = panel.current;
+  const t = currentTarget;
+  const activePanel = panel;
   const handlers = eventHandlers.current;
   const subtab = (id, label) => h('button', {
     class: 'inspector__subtab' + (activePanel === id ? ' is-active' : ''),
     type: 'button', role: 'tab', 'aria-selected': String(activePanel === id),
-    onClick: () => { panel.current = id; rerender(); }
+    onClick: () => { setPanel(id); rerender(); }
   }, label);
 
   function onListTap(ev) {
-    const vl = panel.current === 'console' ? consoleVL.current : networkVL.current;
+    const vl = panel === 'console' ? consoleVL.current : networkVL.current;
     if (!vl) return;
     let node = ev.target;
     while (node && node !== ev.currentTarget && !node.__sig) node = node.parentNode;
@@ -432,13 +437,13 @@ export function InspectorView() {
     const data = vl.getData();
     const item = data.find((x) => x.id === sigId);
     if (!item) return;
-    detailItem.current = item;
+    setDetailItem(item);
     rerender();
   }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); phase.current = 'targets'; rerender(); } }, '←'),
+      h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
     ),
     h('section', null,
@@ -500,9 +505,9 @@ export function InspectorView() {
             : h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) })
     ),
     h(DetailSheet, {
-      item: detailItem.current,
-      onClose: () => { detailItem.current = null; rerender(); },
-      onLoadBody: () => handlers && handlers.loadResponseBody(detailItem.current)
+      item: detailItem,
+      onClose: () => { setDetailItem(null); rerender(); },
+      onLoadBody: () => handlers && handlers.loadResponseBody(detailItem)
     })
   );
 }

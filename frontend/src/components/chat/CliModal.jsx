@@ -29,29 +29,25 @@ export function CliModal(props) {
   const inputRef = useRef(null);
   const sessionIdRef = useRef(null);
   const evtSourceRef = useRef(null);
-  const outBufferRef = useRef('');   // accumulated output (rendered on tick)
+  const [outBuffer, setOutBuffer] = useState('');   // accumulated output
 
   const appendOut = useCallback((text, stream) => {
     if (stream === 'exit') {
-      outBufferRef.current += '\n\u00A0\u2514\u2500 process exited with code ' + text + '\n';
-      flush();
+      setOutBuffer((prev) => prev + '\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
       return;
     }
     const t = String(text || '');
     if (!t) return;
-    // Carriage returns show up as line advances in a pipe; keep them
-    // literally so progress bars and \b output render naturally.
-    outBufferRef.current += t;
-    flush();
+    setOutBuffer((prev) => prev + t);
   }, []);
 
-  // Flush the buffer into the DOM (throttled for large streams).
-  function flush() {
+  // Auto-scroll the terminal on buffer change.
+  useEffect(() => {
     if (!outRef.current) return;
-    outRef.current.textContent = outBufferRef.current;
+    outRef.current.textContent = outBuffer;
     const el = outRef.current;
     el.scrollTop = el.scrollHeight;
-  }
+  }, [outBuffer]);
 
   // ---- session start ------------------------------------------------
   useEffect(() => {
@@ -113,12 +109,12 @@ export function CliModal(props) {
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
+  const [cmdText, setCmdText] = useState('');
+
   async function runCommand() {
-    const el = inputRef.current;
-    if (!el) return;
-    const cmd = el.value;
-    el.value = '';
-    if (!cmd.trim()) return;
+    if (!cmdText.trim()) return;
+    const cmd = cmdText;
+    setCmdText('');
     setBusy(true);
     try {
       const r = await fetchJson('/api/tools/cli/command', {
@@ -172,6 +168,8 @@ export function CliModal(props) {
                     ref: inputRef,
                     class: 'input cli__prompt',
                     type: 'text',
+                    value: cmdText,
+                    onInput: (e) => setCmdText(e.currentTarget.value),
                     placeholder: 'Type a command — runs in the project folder',
                     'aria-label': 'Command line',
                     autocomplete: 'off',

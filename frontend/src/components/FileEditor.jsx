@@ -132,7 +132,6 @@ export function FileEditorView(props) {
 
   const editorHostRef = useRef(null);
   const viewRef = useRef(null);     // CodeMirror EditorView
-  const pathInputRef = useRef(null);
   // saveRef always points to the latest save callback. CodeMirror's
   // keymap is configured once per open, so without this the Ctrl+S
   // binding would capture a stale save reference (and fail to write
@@ -334,14 +333,14 @@ export function FileEditorView(props) {
   function onPathKey(ev) {
     if (ev.key === 'Enter') {
       ev.preventDefault();
-      const v = (pathInputRef.current && pathInputRef.current.value || '').trim();
+      const v = (dirDisplay || '').trim();
       // If empty, treat as "go to project root". Otherwise use as is.
       loadDir(v || projectDir);
     }
   }
 
   function onPathGo() {
-    const v = (pathInputRef.current && pathInputRef.current.value || '').trim();
+    const v = (dirDisplay || '').trim();
     loadDir(v || projectDir);
   }
 
@@ -415,7 +414,6 @@ export function FileEditorView(props) {
           ),
           h('div', { class: 'fe__path-input-wrap' },
             h('input', {
-              ref: pathInputRef,
               class: 'input fe__path-input',
               type: 'text',
               value: dirDisplay,

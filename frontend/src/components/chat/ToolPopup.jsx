@@ -69,7 +69,6 @@ export function ToolPopup(props) {
 
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
-  const dialogRef = useRef(null);
   const triggerRef = useRef(null);
 
   // Close on outside click
@@ -92,23 +91,18 @@ export function ToolPopup(props) {
     };
   }, [open]);
 
-  // Cap the downward-opening popup to the real space below its trigger. The
-  // trigger sits in the chat head row near the top of the viewport, so the
-  // dialog opens downward; a percentage of viewport height could still
-  // overflow past the bottom on short screens because the composer and tab
-  // bar occupy part of that viewport.
+  // Calculate max height inline instead of via dom node mut.
+  const [maxHeight, setMaxHeight] = useState('auto');
+
   useEffect(() => {
     if (!open) return;
     const vv = window.visualViewport;
     function syncAvailableHeight() {
-      if (!dialogRef.current || !triggerRef.current) return;
-      // getBoundingClientRect() already uses the visible viewport coordinate
-      // space on mobile Safari. Subtracting visualViewport.offsetTop again
-      // under-counts (or destabilizes) the available space while scrolling.
+      if (!triggerRef.current) return;
       const triggerBottom = triggerRef.current.getBoundingClientRect().bottom;
       const vh = vv ? vv.height : window.innerHeight;
       const available = Math.max(80, Math.floor(vh - triggerBottom - 10));
-      dialogRef.current.style.maxHeight = available + 'px';
+      setMaxHeight(available + 'px');
     }
     syncAvailableHeight();
     window.addEventListener('resize', syncAvailableHeight);
@@ -272,10 +266,10 @@ export function ToolPopup(props) {
       'aria-label': 'Tool settings'
     },
       h('div', {
-        ref: dialogRef,
         class: 'tool-popup__popup',
         role: 'dialog',
-        'aria-label': 'Tool settings'
+        'aria-label': 'Tool settings',
+        style: { maxHeight }
       },
         h('div', { class: 'tool-popup__head' },
           h('span', { class: 'tool-popup__title' }, 'Tools'),

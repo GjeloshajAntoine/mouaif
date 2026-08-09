@@ -10,7 +10,7 @@
 //   POST   /api/projects/:id/tags/scan
 //   DELETE /api/projects/:id/tags/files/<relPath>
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { fetchJson, setStatus } from '../api.js';
 import { createVirtualList } from '../virtual-list.js';
 
@@ -19,37 +19,32 @@ export function SettingsTagsView(props) {
   // The view may be reached with only a projectDir (Settings → Active
   // project → File tags). Resolve the registered project id from the
   // path in that case; a passed-in id always wins.
-  const resolvedId = useRef(props.projectId || '');
+  const [resolvedId, setResolvedId] = useState(props.projectId || '');
 
-  const listEl = useRef(null);
-  const statusEl = useRef(null);
-  const scanBtn = useRef(null);
-  const virtualList = useRef(null);
-
-  // Local working state. `tagMap` is the persisted { relPath: entry }
-  // map; `files` is the last scan result. Kept in refs (not signals)
-  // because the rows are rendered imperatively, matching SettingsMcp.
-  const tagMap = useRef({});
-  const files = useRef([]);
+  const [statusMsg, setStatusMsg] = useState({text: '', kind: ''});
+  const [tagMap, setTagMap] = useState({});
+  const [files, setFiles] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [virtualList, setVirtualList] = useState(null);
 
   // Read the live id so the resolver in useEffect can populate it
   // before the first loadTags()/scan() call.
-  function id() { return resolvedId.current; }
+  function id() { return resolvedId; }
   function base() { return '/api/projects/' + encodeURIComponent(id()) + '/tags'; }
 
   async function loadTags() {
-    if (!id()) { setStatus(statusEl, 'no project id', 'error'); return; }
+    if (!id()) { setStatusMsg({text: 'no project id', kind: 'error'}); return; }
     let r;
     try { r = await fetchJson(base()); }
-    catch { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    tagMap.current = r.body.tags || {};
+    catch { setStatusMsg({text: 'network error', kind: 'error'}); return; }
+    if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error'}); return; }
+    setTagMap(r.body.tags || {});
   }
 
   async function scan() {
-    if (!id()) { setStatus(statusEl, 'no project id', 'error'); return; }
-    if (scanBtn.current) scanBtn.current.disabled = true;
-    setStatus(statusEl, 'scanning…', 'busy');
+    if (!id()) { setStatusMsg({text: 'no project id', kind: 'error'}); return; }
+    setIsScanning(true);
+    setStatusMsg({text: 'scanning…', kind: 'busy'});
     let r;
     try {
       r = await fetchJson(base() + '/scan', {
@@ -57,26 +52,25 @@ export function SettingsTagsView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
-    } catch { setStatus(statusEl, 'network error', 'error'); if (scanBtn.current) scanBtn.current.disabled = false; return; }
-    if (scanBtn.current) scanBtn.current.disabled = false;
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), 'error'); return; }
-    files.current = r.body.files || [];
-    render();
-    const tagged = Object.keys(tagMap.current).length;
-    setStatus(statusEl, files.current.length + ' files · ' + tagged + ' tagged', 'success');
+    } catch { setStatusMsg({text: 'network error', kind: 'error'}); setIsScanning(false); return; }
+    setIsScanning(false);
+    if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error'}); return; }
+    setFiles(r.body.files || []);
+    const tagged = Object.keys(tagMap).length;
+    setStatusMsg({text: r.body.files.length + ' files · ' + tagged + ' tagged', kind: 'success'});
   }
 
-  async function persist() {
+  async function persist(newMap) {
     let r;
     try {
       r = await fetchJson(base(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tags: tagMap.current })
+        body: JSON.stringify({ tags: newMap })
       });
-    } catch { setStatus(statusEl, 'network error', 'error'); return false; }
-    if (r.status !== 200) { setStatus(statusEl, 'save failed: HTTP ' + r.status, 'error'); return false; }
-    tagMap.current = r.body.tags || {};
+    } catch { setStatusMsg({text: 'network error', kind: 'error'}); return false; }
+    if (r.status !== 200) { setStatusMsg({text: 'save failed: HTTP ' + r.status, kind: 'error'}); return false; }
+    setTagMap(r.body.tags || {});
     return true;
   }
 
@@ -85,215 +79,234 @@ export function SettingsTagsView(props) {
   // "missing" badge and a Remove action.
   function rows() {
     const byPath = new Map();
-    for (const f of files.current) {
+    for (const f of files) {
       byPath.set(f.path, { path: f.path, size: f.size, binary: !!f.binary, present: true });
     }
-    for (const rel of Object.keys(tagMap.current)) {
+    for (const rel of Object.keys(tagMap)) {
       if (!byPath.has(rel)) byPath.set(rel, { path: rel, size: 0, binary: false, present: false });
     }
     return [...byPath.values()].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase()));
   }
 
-  function render() {
-    if (!listEl.current) return;
+  useEffect(() => {
+    const listEl = document.getElementById('tags-list-container');
+    if (!listEl) return;
     const all = rows();
-    listEl.current.classList.toggle('is-empty', !all.length);
+    listEl.classList.toggle('is-empty', !all.length);
     if (!all.length) {
-      if (virtualList.current) virtualList.current.setData([]);
-      listEl.current.dataset.emptyText = 'No files scanned yet. Tap Scan to list the project\u2019s text files.';
+      if (virtualList) virtualList.setData([]);
+      listEl.dataset.emptyText = 'No files scanned yet. Tap Scan to list the project\u2019s text files.';
       return;
     }
-    delete listEl.current.dataset.emptyText;
-    if (virtualList.current) virtualList.current.setData(all);
-  }
+    delete listEl.dataset.emptyText;
+    if (virtualList) virtualList.setData(all);
+  }, [files, tagMap, virtualList]);
 
   function renderRow(f) {
-    const entry = tagMap.current[f.path] || null;
-    const li = document.createElement('div');
-    li.className = 'tags__row' + (entry ? ' is-tagged' : '') + (f.binary ? ' is-binary' : '');
-
-    const head = document.createElement('div');
-    head.className = 'tags__row-head';
-
-    const pathEl = document.createElement('div');
-    pathEl.className = 'tags__row-path';
-    pathEl.textContent = f.path;
-    head.appendChild(pathEl);
-
-    if (!f.present) {
-      const badge = document.createElement('span');
-      badge.className = 'tags__badge tags__badge--missing';
-      badge.textContent = 'missing';
-      head.appendChild(badge);
-    } else if (f.binary) {
-      const badge = document.createElement('span');
-      badge.className = 'tags__badge';
-      badge.textContent = 'binary';
-      head.appendChild(badge);
-    }
-    li.appendChild(head);
-
-    // Binary files cannot be tagged (decisions §15).
-    if (f.binary && !entry) return li;
-
-    // Tag chips input: comma / Enter to add, tap × to remove.
-    const chipStrip = document.createElement('div');
-    chipStrip.className = 'tags__chips';
-    function repaintChips() {
-      chipStrip.innerHTML = '';
-      const e = tagMap.current[f.path];
-      const list = (e && Array.isArray(e.tags)) ? e.tags : [];
-      for (const t of list) {
-        const chip = document.createElement('span');
-        chip.className = 'tags__chip';
-        chip.textContent = t;
-        const x = document.createElement('button');
-        x.type = 'button'; x.className = 'tags__chip-x'; x.textContent = '×';
-        x.setAttribute('aria-label', 'Remove tag ' + t);
-        x.addEventListener('click', async () => {
-          const cur = tagMap.current[f.path];
-          if (!cur) return;
-          cur.tags = cur.tags.filter(x2 => x2 !== t);
-          if (!cur.tags.length && cur.excerpt == null && cur.includeInChat) {
-            // no tags left and default state — drop the entry entirely
-            delete tagMap.current[f.path];
-          }
-          if (await persist()) { repaintChips(); syncControls(); }
-        });
-        chip.appendChild(x);
-        chipStrip.appendChild(chip);
-      }
-      const input = document.createElement('input');
-      input.className = 'tags__chip-input';
-      input.type = 'text';
-      input.placeholder = list.length ? 'add tag…' : 'type a tag, Enter to add';
-      input.addEventListener('keydown', async (ev) => {
-        if (ev.key === 'Enter' || ev.key === ',') {
-          ev.preventDefault();
-          const val = input.value.trim().replace(/,+$/, '');
-          if (!val) return;
-          const cur = tagMap.current[f.path] || { tags: [], excerpt: null, includeInChat: true };
-          if (!cur.tags.includes(val)) cur.tags.push(val);
-          tagMap.current[f.path] = cur;
-          input.value = '';
-          if (await persist()) { repaintChips(); syncControls(); }
-        }
-      });
-      chipStrip.appendChild(input);
-    }
-    li.appendChild(chipStrip);
-
-    // Controls row: Include-in-chat toggle + excerpt start/end + Remove.
-    const controls = document.createElement('div');
-    controls.className = 'tags__controls';
-
-    const incLabel = document.createElement('label');
-    incLabel.className = 'tags__toggle';
-    const inc = document.createElement('input');
-    inc.type = 'checkbox'; inc.className = 'checkbox';
-    inc.addEventListener('change', async () => {
-      const cur = tagMap.current[f.path] || { tags: [], excerpt: null, includeInChat: true };
-      cur.includeInChat = inc.checked;
-      tagMap.current[f.path] = cur;
-      await persist();
-    });
-    incLabel.appendChild(inc);
-    incLabel.appendChild(document.createTextNode(' Include in chat'));
-    controls.appendChild(incLabel);
-
-    const exWrap = document.createElement('div');
-    exWrap.className = 'tags__excerpt';
-    const exStart = document.createElement('input');
-    exStart.type = 'number'; exStart.min = '1'; exStart.className = 'tags__excerpt-num';
-    exStart.placeholder = 'start';
-    const exEnd = document.createElement('input');
-    exEnd.type = 'number'; exEnd.min = '1'; exEnd.className = 'tags__excerpt-num';
-    exEnd.placeholder = 'end';
-    async function commitExcerpt() {
-      const cur = tagMap.current[f.path] || { tags: [], excerpt: null, includeInChat: true };
-      const s = parseInt(exStart.value, 10);
-      const e = parseInt(exEnd.value, 10);
-      if (Number.isInteger(s) && Number.isInteger(e) && s >= 1 && e >= s) {
-        cur.excerpt = { start: s, end: e };
-      } else {
-        cur.excerpt = null;
-      }
-      tagMap.current[f.path] = cur;
-      await persist();
-    }
-    exStart.addEventListener('change', commitExcerpt);
-    exEnd.addEventListener('change', commitExcerpt);
-    exWrap.appendChild(document.createTextNode('Lines '));
-    exWrap.appendChild(exStart);
-    exWrap.appendChild(document.createTextNode('–'));
-    exWrap.appendChild(exEnd);
-    controls.appendChild(exWrap);
-
-    const rm = document.createElement('button');
-    rm.type = 'button'; rm.className = 'btn btn--small'; rm.setAttribute('data-danger', '1');
-    rm.textContent = 'Remove';
-    rm.addEventListener('click', async () => {
-      if (!tagMap.current[f.path]) return;
-      let r;
-      try {
-        r = await fetchJson(base + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'), { method: 'DELETE' });
-      } catch { setStatus(statusEl, 'network error', 'error'); return; }
-      if (r.status !== 200 && r.status !== 404) { setStatus(statusEl, 'remove failed: HTTP ' + r.status, 'error'); return; }
-      delete tagMap.current[f.path];
-      render();
-      setStatus(statusEl, 'removed ' + f.path, 'success');
-    });
-    controls.appendChild(rm);
-
-    li.appendChild(controls);
-
-    function syncControls() {
-      const e = tagMap.current[f.path];
-      inc.checked = e ? e.includeInChat !== false : true;
-      exStart.value = e && e.excerpt ? e.excerpt.start : '';
-      exEnd.value = e && e.excerpt ? e.excerpt.end : '';
-      rm.disabled = !e;
-      li.classList.toggle('is-tagged', !!e);
-    }
-
-    repaintChips();
-    syncControls();
-    return li;
+    const entry = tagMap[f.path] || null;
+    const isTagged = !!entry;
+    
+    return h('div', { class: 'tags__row' + (isTagged ? ' is-tagged' : '') + (f.binary ? ' is-binary' : '') },
+      h('div', { class: 'tags__row-head' },
+        h('div', { class: 'tags__row-path' }, f.path),
+        !f.present 
+          ? h('span', { class: 'tags__badge tags__badge--missing' }, 'missing')
+          : f.binary 
+            ? h('span', { class: 'tags__badge' }, 'binary')
+            : null
+      ),
+      (f.binary && !entry) ? null : h(Fragment, null,
+        h('div', { class: 'tags__chips' },
+          ((entry && entry.tags) || []).map(t => h('span', { key: t, class: 'tags__chip' },
+            t,
+            h('button', {
+              type: 'button',
+              class: 'tags__chip-x',
+              'aria-label': 'Remove tag ' + t,
+              onClick: async () => {
+                const newMap = { ...tagMap };
+                const cur = newMap[f.path];
+                if (!cur) return;
+                cur.tags = cur.tags.filter(x => x !== t);
+                if (!cur.tags.length && cur.excerpt == null && cur.includeInChat) {
+                  delete newMap[f.path];
+                }
+                await persist(newMap);
+              }
+            }, '×')
+          )),
+          h('input', {
+            class: 'tags__chip-input',
+            type: 'text',
+            placeholder: (entry && entry.tags && entry.tags.length) ? 'add tag…' : 'type a tag, Enter to add',
+            onKeyDown: async (ev) => {
+              if (ev.key === 'Enter' || ev.key === ',') {
+                ev.preventDefault();
+                const val = ev.target.value.trim().replace(/,+$/, '');
+                if (!val) return;
+                const newMap = { ...tagMap };
+                const cur = newMap[f.path] || { tags: [], excerpt: null, includeInChat: true };
+                if (!cur.tags.includes(val)) cur.tags.push(val);
+                newMap[f.path] = cur;
+                ev.target.value = '';
+                await persist(newMap);
+              }
+            }
+          })
+        ),
+        h('div', { class: 'tags__controls' },
+          h('label', { class: 'tags__toggle' },
+            h('input', {
+              type: 'checkbox',
+              class: 'checkbox',
+              checked: entry ? entry.includeInChat !== false : true,
+              onChange: async (e) => {
+                const newMap = { ...tagMap };
+                const cur = newMap[f.path] || { tags: [], excerpt: null, includeInChat: true };
+                cur.includeInChat = e.target.checked;
+                newMap[f.path] = cur;
+                await persist(newMap);
+              }
+            }),
+            ' Include in chat'
+          ),
+          h('div', { class: 'tags__excerpt' },
+            'Lines ',
+            h('input', {
+              type: 'number',
+              min: '1',
+              class: 'tags__excerpt-num',
+              placeholder: 'start',
+              value: entry && entry.excerpt ? entry.excerpt.start : '',
+              onChange: async (e) => {
+                const newMap = { ...tagMap };
+                const cur = newMap[f.path] || { tags: [], excerpt: null, includeInChat: true };
+                const s = parseInt(e.target.value, 10);
+                const exEnd = document.getElementById(`tags-ex-end-${encodeURIComponent(f.path)}`);
+                const ev = exEnd ? exEnd.value : (entry && entry.excerpt ? entry.excerpt.end : '');
+                const end = parseInt(ev, 10);
+                if (Number.isInteger(s) && Number.isInteger(end) && s >= 1 && end >= s) {
+                  cur.excerpt = { start: s, end };
+                } else {
+                  cur.excerpt = null;
+                }
+                newMap[f.path] = cur;
+                await persist(newMap);
+              }
+            }),
+            '–',
+            h('input', {
+              id: `tags-ex-end-${encodeURIComponent(f.path)}`,
+              type: 'number',
+              min: '1',
+              class: 'tags__excerpt-num',
+              placeholder: 'end',
+              value: entry && entry.excerpt ? entry.excerpt.end : '',
+              onChange: async (e) => {
+                const newMap = { ...tagMap };
+                const cur = newMap[f.path] || { tags: [], excerpt: null, includeInChat: true };
+                const end = parseInt(e.target.value, 10);
+                const s = entry && entry.excerpt ? entry.excerpt.start : '';
+                if (Number.isInteger(s) && Number.isInteger(end) && s >= 1 && end >= s) {
+                  cur.excerpt = { start: s, end };
+                } else {
+                  cur.excerpt = null;
+                }
+                newMap[f.path] = cur;
+                await persist(newMap);
+              }
+            })
+          ),
+          h('button', {
+            type: 'button',
+            class: 'btn btn--small',
+            'data-danger': '1',
+            disabled: !entry,
+            onClick: async () => {
+              if (!tagMap[f.path]) return;
+              let r;
+              try {
+                r = await fetchJson(base() + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'), { method: 'DELETE' });
+              } catch { setStatusMsg({text: 'network error', kind: 'error'}); return; }
+              if (r.status !== 200 && r.status !== 404) { setStatusMsg({text: 'remove failed: HTTP ' + r.status, kind: 'error'}); return; }
+              const newMap = { ...tagMap };
+              delete newMap[f.path];
+              setTagMap(newMap);
+              setStatusMsg({text: 'removed ' + f.path, kind: 'success'});
+            }
+          }, 'Remove')
+        )
+      )
+    );
   }
 
   useEffect(() => {
-    virtualList.current = createVirtualList({
-      scroller: listEl.current,
+    const listEl = document.getElementById('tags-list-container');
+    if (!listEl) return;
+    const vl = createVirtualList({
+      scroller: listEl,
       itemHeight: 248,
       overscan: 3,
       data: [],
       render: (file, node) => {
-        node.className = 'tags__virtual-slot';
-        node.replaceChildren(renderRow(file));
+        // Preact requires explicit rendering into the dom node for virtualization, 
+        // but now we'll pass our vnode to Preact's render
+        import('preact').then(({ render: preactRender }) => {
+          node.className = 'tags__virtual-slot';
+          preactRender(renderRow(file), node);
+        });
       }
     });
+    setVirtualList(vl);
     (async () => {
+      let runId = resolvedId;
       // Resolve the registered project id from the path when the route
       // only carried projectDir. The tags REST surface hangs off the id.
-      if (!resolvedId.current && projectDir) {
+      if (!runId && projectDir) {
         try {
           const r = await fetchJson('/api/projects/registered');
           if (r.status === 200 && Array.isArray(r.body.projects)) {
             const hit = r.body.projects.find((p) => p && p.path === projectDir);
-            if (hit) resolvedId.current = hit.id;
+            if (hit) {
+              runId = hit.id;
+              setResolvedId(hit.id);
+            }
           }
         } catch { /* fall through to the no-id error */ }
-        if (!resolvedId.current) {
-          setStatus(statusEl, 'this folder is not a registered project — register it first', 'error');
+        if (!runId) {
+          setStatusMsg({text: 'this folder is not a registered project — register it first', kind: 'error'});
           return;
         }
       }
-      await loadTags();
-      await scan();
-    })().catch(() => setStatus(statusEl, 'load failed', 'error'));
+      if (runId) {
+        // use local override for id() function scope issues inside effects where state may lag
+        const originalId = id;
+        const tempBase = () => '/api/projects/' + encodeURIComponent(runId) + '/tags';
+        const loadTagsTemp = async () => {
+          try {
+            const r = await fetchJson(tempBase());
+            if (r.status === 200) setTagMap(r.body.tags || {});
+            else setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'});
+          } catch { setStatusMsg({text: 'network error', kind: 'error'}); }
+        };
+        const scanTemp = async () => {
+          setIsScanning(true);
+          setStatusMsg({text: 'scanning…', kind: 'busy'});
+          try {
+            const r = await fetchJson(tempBase() + '/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            setIsScanning(false);
+            if (r.status === 200) {
+              setFiles(r.body.files || []);
+              setStatusMsg({text: r.body.files.length + ' files · ' + Object.keys(tagMap).length + ' tagged', kind: 'success'});
+            } else setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'});
+          } catch { setStatusMsg({text: 'network error', kind: 'error'}); setIsScanning(false); }
+        };
+        await loadTagsTemp();
+        await scanTemp();
+      }
+    })().catch(() => setStatusMsg({text: 'load failed', kind: 'error'}));
     return () => {
-      if (virtualList.current) virtualList.current.destroy();
-      virtualList.current = null;
+      if (vl) vl.destroy();
     };
   }, [projectDir]);
 
@@ -304,10 +317,10 @@ export function SettingsTagsView(props) {
     ),
     h('p', { class: 'hint hint--compact' }, projectDir || '(project)'),
     h('p', { class: 'hint hint--compact' }, 'Tag project files, then toggle “Include in chat” to auto-inject them into every chat send. Reference one explicitly with @path in the composer.'),
-    h('div', { ref: listEl, class: 'tags__list', role: 'list', 'aria-label': 'Project files' }),
+    h('div', { id: 'tags-list-container', class: 'tags__list', role: 'list', 'aria-label': 'Project files' }),
     h('div', { class: 'page-bar' },
-      h('span', { ref: statusEl, class: 'status page-bar__status', 'aria-live': 'polite' }),
-      h('button', { ref: scanBtn, class: 'btn', type: 'button', onClick: scan }, 'Scan')
+      h('span', { class: 'status page-bar__status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text),
+      h('button', { class: 'btn', type: 'button', onClick: scan, disabled: isScanning }, 'Scan')
     )
   );
 }

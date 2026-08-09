@@ -9,8 +9,8 @@
 // the edit view keeps the auto-save behavior agents always had — field
 // edits PATCH on a short debounce, no Save button.
 import { h, Fragment } from 'preact';
-import { useState, useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus, activeProject } from '../api.js';
+import { useState, useEffect } from 'preact/hooks';
+import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 
@@ -87,63 +87,23 @@ export { toggleToolInList, toggleGroupInList };
 
 export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
-  const listEl = useRef(null);
-  const statusEl = useRef(null);
+  const [agents, setAgents] = useState([]);
+  const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
 
   async function load() {
     if (!projectDir) {
-      if (listEl.current) listEl.current.innerHTML = '';
-      setStatus(statusEl, 'open a chat to pick a project first', 'error');
+      setAgents([]);
+      setStatusMsg({ text: 'open a chat to pick a project first', kind: 'error' });
       return;
     }
-    setStatus(statusEl, 'loading…', 'busy');
+    setStatusMsg({ text: 'loading…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
     const list = r.body.agents || [];
-    renderList(list);
-    setStatus(statusEl, list.length + (list.length === 1 ? ' agent' : ' agents'), 'success');
-  }
-
-  function renderList(list) {
-    if (!listEl.current) return;
-    listEl.current.innerHTML = '';
-    if (!list.length) {
-      const li = document.createElement('li');
-      li.className = 'prompts__empty';
-      li.textContent = 'No agents yet. Tap "Add agent" to create your first one.';
-      listEl.current.appendChild(li);
-      return;
-    }
-    for (const a of list) {
-      const li = document.createElement('li');
-      li.className = 'prompt-row';
-      const main = document.createElement('a');
-      main.className = 'prompt-row__main';
-      main.href = '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(projectDir);
-      const name = document.createElement('div');
-      name.className = 'prompt-row__title';
-      name.textContent = a.name;
-      const meta = document.createElement('div');
-      meta.className = 'prompt-row__meta';
-      const bits = [];
-      bits.push(Array.isArray(a.tools) && a.tools.length
-        ? a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')
-        : 'all tools');
-      if (a.modelId) bits.push(a.modelId);
-      const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
-      if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
-      meta.textContent = bits.join(' · ');
-      main.appendChild(name);
-      main.appendChild(meta);
-      const chev = document.createElement('div');
-      chev.className = 'prompt-row__chev';
-      chev.textContent = '›';
-      main.appendChild(chev);
-      li.appendChild(main);
-      listEl.current.appendChild(li);
-    }
+    setAgents(list);
+    setStatusMsg({ text: list.length + (list.length === 1 ? ' agent' : ' agents'), kind: 'success' });
   }
 
   useEffect(() => { load(); }, [projectDir]);
@@ -171,13 +131,30 @@ export function SettingsAgentsView(props) {
     h('section', null,
       h('p', { class: 'hint hint--compact' }, 'Subagent delegation personas, saved in the project\'s .mouaif.json. The subagent tool and @-mentions can delegate to them.'),
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
-      h('ul', { ref: listEl, class: 'prompts__list', 'aria-label': 'Agents' }),
+      h('ul', { class: 'prompts__list', 'aria-label': 'Agents' },
+        agents.length === 0 ? h('li', { class: 'prompts__empty' }, 'No agents yet. Tap "Add agent" to create your first one.') : agents.map(a => {
+          const bits = [];
+          bits.push(Array.isArray(a.tools) && a.tools.length
+            ? a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')
+            : 'all tools');
+          if (a.modelId) bits.push(a.modelId);
+          const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
+          if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
+          return h('li', { key: a.name, class: 'prompt-row' },
+            h('a', { class: 'prompt-row__main', href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(projectDir) },
+              h('div', { class: 'prompt-row__title' }, a.name),
+              h('div', { class: 'prompt-row__meta' }, bits.join(' · ')),
+              h('div', { class: 'prompt-row__chev' }, '›')
+            )
+          );
+        })
+      ),
       h('div', { class: 'row row--actions' },
         h('a', {
           href: '#/settings/agents/new?projectDir=' + encodeURIComponent(projectDir),
           class: 'btn btn--primary'
         }, '+ Add agent'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
       )
     )
   );
@@ -188,20 +165,17 @@ export function SettingsAgentEditView(props) {
   const agentName = (props && props.id && props.id !== 'new') ? props.id : '';
   const isNew = !!(props && props.id === 'new');
   const projectDir = resolveProjectDir(props);
-  const nameRef = useRef(null);
-  const contentRef = useRef(null);
-  const modelRef = useRef(null);
-  const statusEl = useRef(null);
-  const deleteBtn = useRef(null);
   const [projectModels, setProjectModels] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   // The loaded agent in state so the tools checklist re-renders when a
   // checkbox toggles between "inherit all" and an explicit allowlist.
   const [agent, setAgent] = useState(null);
-  const saveTimer = useRef(null);
+  const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   async function load() {
-    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
+    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     try {
       const [mr, sr] = await Promise.all([
         fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
@@ -214,28 +188,29 @@ export function SettingsAgentEditView(props) {
       setAgent({ name: '', content: '', modelId: undefined, tools: undefined });
       return;
     }
-    setStatus(statusEl, 'loading…', 'busy');
+    setStatusMsg({ text: 'loading…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
     setAgent(r.body.agent);
-    setStatus(statusEl, '', '');
+    setStatusMsg({ text: '', kind: '' });
   }
 
   useEffect(() => { load(); }, [projectDir, agentName]);
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  const [saveTimer, setSaveTimer] = useState(null);
+  useEffect(() => () => { if (saveTimer) clearTimeout(saveTimer); }, [saveTimer]);
 
   // Debounced auto-save for the instructions textarea.
   function saveSoon(patch) {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    setStatus(statusEl, '…', 'busy');
-    saveTimer.current = setTimeout(() => saveNow(patch), 350);
+    if (saveTimer) clearTimeout(saveTimer);
+    setStatusMsg({ text: '…', kind: 'busy' });
+    setSaveTimer(setTimeout(() => saveNow(patch), 350));
   }
 
   async function saveNow(patch) {
     if (!projectDir || !agentName) return;
-    setStatus(statusEl, 'saving…', 'busy');
+    setStatusMsg({ text: 'saving…', kind: 'busy' });
     let r;
     try {
       r = await fetchJson('/api/agents/' + encodeURIComponent(agentName), {
@@ -243,9 +218,9 @@ export function SettingsAgentEditView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({ projectDir }, patch))
       });
-    } catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
+    } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
     if (r.status !== 200) {
-      setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error');
+      setStatusMsg({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error' });
       return;
     }
     if (r.body.agent) setAgent(r.body.agent);
@@ -256,7 +231,7 @@ export function SettingsAgentEditView(props) {
       nav('settings/agents/' + encodeURIComponent(newName) + '?projectDir=' + encodeURIComponent(projectDir));
       return;
     }
-    setStatus(statusEl, 'saved', 'success');
+    setStatusMsg({ text: 'saved', kind: 'success' });
   }
 
   function onNameInput(value) {
@@ -290,14 +265,15 @@ export function SettingsAgentEditView(props) {
   }
 
   async function create() {
-    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
-    const name = ((nameRef.current && nameRef.current.value) || '').trim();
-    if (!name) { setStatus(statusEl, 'name is required', 'error'); return; }
+    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
+    const name = (agent && agent.name || '').trim();
+    if (!name) { setStatusMsg({ text: 'name is required', kind: 'error' }); return; }
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
-      setStatus(statusEl, 'letters, digits, . _ - only; must start with a letter or digit', 'error');
+      setStatusMsg({ text: 'letters, digits, . _ - only; must start with a letter or digit', kind: 'error' });
       return;
     }
-    setStatus(statusEl, 'creating…', 'busy');
+    setIsCreating(true);
+    setStatusMsg({ text: 'creating…', kind: 'busy' });
     let r;
     try {
       r = await fetchJson('/api/agents', {
@@ -305,12 +281,13 @@ export function SettingsAgentEditView(props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectDir, name,
-          content: (contentRef.current && contentRef.current.value) || ''
+          content: (agent && agent.content) || ''
         })
       });
-    } catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
+    } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsCreating(false); return; }
+    setIsCreating(false);
     if (r.status !== 201) {
-      setStatus(statusEl, (r.body && r.body.error) || ('HTTP ' + r.status), 'error');
+      setStatusMsg({ text: (r.body && r.body.error) || ('HTTP ' + r.status), kind: 'error' });
       return;
     }
     nav('settings/agents/' + encodeURIComponent(r.body.agent.name) + '?projectDir=' + encodeURIComponent(projectDir));
@@ -319,12 +296,12 @@ export function SettingsAgentEditView(props) {
   async function deleteAgent() {
     if (!agentName) return;
     if (!confirm('Delete agent "' + agentName + '"?')) return;
-    if (deleteBtn.current) deleteBtn.current.disabled = true;
-    setStatus(statusEl, 'deleting…', 'busy');
+    setIsDeleting(true);
+    setStatusMsg({ text: 'deleting…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsDeleting(false); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); setIsDeleting(false); return; }
     nav('settings/agents?projectDir=' + encodeURIComponent(projectDir));
   }
 
@@ -349,7 +326,7 @@ export function SettingsAgentEditView(props) {
         h('a', { href: '#/settings/agents?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
         h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
       ),
-      h('section', null, h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }, 'loading…'))
+      h('section', null, h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text || 'loading…'))
     );
   }
 
@@ -375,7 +352,7 @@ export function SettingsAgentEditView(props) {
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sae-name' }, 'Name'),
         h('input', {
-          ref: nameRef, class: 'input', id: 'sae-name', type: 'text',
+          class: 'input', id: 'sae-name', type: 'text',
           value: agent.name || '', placeholder: 'reviewer',
           onInput: e => onNameInput(e.target.value)
         }),
@@ -384,9 +361,9 @@ export function SettingsAgentEditView(props) {
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sae-content' }, 'Instructions'),
         h('textarea', {
-          ref: contentRef, class: 'input prompts__textarea', id: 'sae-content', rows: 6,
+          class: 'input prompts__textarea', id: 'sae-content', rows: 6,
           value: agent.content || '',
-          onInput: isNew ? null : (e => onContentInput(e.target.value)),
+          onInput: isNew ? (e => onContentInput(e.target.value)) : (e => onContentInput(e.target.value)),
           placeholder: 'You are an assistant who…'
         }),
         !isNew && h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
@@ -394,7 +371,7 @@ export function SettingsAgentEditView(props) {
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sae-model' }, 'Model'),
         h('select', {
-          ref: modelRef, class: 'input', id: 'sae-model',
+          class: 'input', id: 'sae-model',
           value: agent.modelId || '',
           disabled: isNew,
           onChange: e => onModelChange(e.target.value)
@@ -414,9 +391,9 @@ export function SettingsAgentEditView(props) {
         h('p', { class: 'hint hint--compact' }, 'All checked = the agent inherits the chat\'s full tool surface. Uncheck to build an explicit allowlist.')
       ),
       h('div', { class: 'row row--actions' },
-        isNew && h('button', { class: 'btn btn--primary', type: 'button', onClick: create }, 'Create'),
-        !isNew && h('button', { ref: deleteBtn, class: 'btn btn--danger', type: 'button', onClick: deleteAgent }, 'Delete'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        isNew && h('button', { class: 'btn btn--primary', type: 'button', onClick: create, disabled: isCreating }, 'Create'),
+        !isNew && h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteAgent, disabled: isDeleting }, 'Delete'),
+        h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
       )
     )
   );

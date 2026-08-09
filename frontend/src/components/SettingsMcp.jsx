@@ -8,8 +8,8 @@
 // rows. A project entry with the same slug shadows the app entry.
 // See docs/features/mcp.md.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect, useState } from 'preact/hooks';
-import { fetchJson, setStatus, setActiveProject, activeProject } from '../api.js';
+import { useEffect, useState } from 'preact/hooks';
+import { fetchJson, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
 
@@ -21,8 +21,8 @@ export function SettingsMcpView(props = {}) {
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
   const projectName = projectDir ? projectDir.split(/[/\\]/).filter(Boolean).pop() || projectDir : '';
 
-  const openBtn = useRef(null);
-  const refreshBtn = useRef(null);
+  const [isOpenBusy, setIsOpenBusy] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [dirInput, setDirInput] = useState('');
   const [serversList, setServersList] = useState([]);
   const [listStatus, setListStatus] = useState({ text: '', kind: '' });
@@ -42,7 +42,8 @@ export function SettingsMcpView(props = {}) {
   }
 
   async function load() {
-    if (openBtn.current) openBtn.current.disabled = true;
+    setIsRefreshing(true);
+    setIsOpenBusy(true);
     setListStatus({ text: 'loading…', kind: 'busy' });
     // Without projectDir the REST surface returns app-scoped servers
     // only; with it the merged app + project view.
@@ -52,10 +53,12 @@ export function SettingsMcpView(props = {}) {
       r = await fetchJson('/api/mcp/servers' + qs);
     } catch (e) {
       setListStatus({ text: 'network error', kind: 'error' });
-      if (openBtn.current) openBtn.current.disabled = false;
+      setIsOpenBusy(false);
+      setIsRefreshing(false);
       return;
     }
-    if (openBtn.current) openBtn.current.disabled = false;
+    setIsOpenBusy(false);
+    setIsRefreshing(false);
     if (r.status !== 200) {
       setListStatus({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : ''), kind: 'error' });
       return;
@@ -256,7 +259,7 @@ export function SettingsMcpView(props = {}) {
                 onInput: (e) => setDirInput(e.target.value),
                 onKeyDown: (e) => { if (e.key === 'Enter') openProject(); }
               }),
-              h('button', { ref: openBtn, class: 'btn', type: 'button', onClick: openProject }, 'Open')
+              h('button', { class: 'btn', type: 'button', onClick: openProject, disabled: isOpenBusy }, 'Open')
             ),
             h('span', { class: 'hint hint--compact' }, 'Project servers live with the project (committed to .mcp.json). Open a project to manage them.')
           )
@@ -268,9 +271,10 @@ export function SettingsMcpView(props = {}) {
         'aria-live': 'polite'
       }, listStatus.text),
       h('button', {
-        ref: refreshBtn, class: 'btn btn--small', type: 'button',
+        class: 'btn btn--small', type: 'button',
         'aria-label': 'Refresh servers',
-        onClick: () => load()
+        onClick: () => load(),
+        disabled: isRefreshing
       }, '↻'),
       h('a', { href: newHref, class: 'page-bar__add', 'aria-label': 'Add MCP server' }, '+')
       )

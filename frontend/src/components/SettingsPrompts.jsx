@@ -8,8 +8,8 @@
 // If neither resolves, the view shows a "pick a project" empty
 // state and never calls the API.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect, useState } from 'preact/hooks';
-import { fetchJson, setStatus, activeProject } from '../api.js';
+import { useState, useEffect } from 'preact/hooks';
+import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 
 // Tool *family* names a prompt preset can enable. These mirror the
@@ -52,91 +52,39 @@ function resolveProjectDir(view) {
 
 export function SettingsPromptsView(props) {
   const projectDir = resolveProjectDir(props);
-  const listEl = useRef(null);
-  const statusEl = useRef(null);
+  const [prompts, setPrompts] = useState([]);
+  const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
+
+  function Copier({ text }) {
+    const [status, setStatus] = useState('Copy');
+    const doCopy = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ok = await copyText(text);
+      setStatus(ok ? 'Copied' : 'Copy failed');
+      setTimeout(() => setStatus('Copy'), 1400);
+    };
+    return h('button', {
+      type: 'button', class: 'prompt-row__copy' + (status === 'Copied' ? ' is-copied' : (status === 'Copy failed' ? ' is-error' : '')),
+      'aria-label': 'Copy prompt to clipboard',
+      onClick: doCopy
+    }, status);
+  }
 
   async function load() {
     if (!projectDir) {
-      if (listEl.current) listEl.current.innerHTML = '';
-      setStatus(statusEl, 'open a chat to pick a project first', 'error');
+      setPrompts([]);
+      setStatusMsg({ text: 'open a chat to pick a project first', kind: 'error' });
       return;
     }
-    setStatus(statusEl, 'loading…', 'busy');
+    setStatusMsg({ text: 'loading…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
     const list = r.body.prompts || [];
-    renderList(list);
-    setStatus(statusEl, list.length + (list.length === 1 ? ' prompt' : ' prompts'), 'success');
-  }
-
-  function renderList(list) {
-    if (!listEl.current) return;
-    listEl.current.innerHTML = '';
-    if (!list.length) {
-      const li = document.createElement('li');
-      li.className = 'prompts__empty';
-      li.textContent = 'No custom prompts yet. Tap "Add prompt" to create your first one.';
-      listEl.current.appendChild(li);
-      return;
-    }
-    for (const p of list) {
-      const li = document.createElement('li');
-      li.className = 'prompt-row';
-      const main = document.createElement('a');
-      main.className = 'prompt-row__main';
-      main.href = '#/settings/prompts/' + encodeURIComponent(p.id) + '?projectDir=' + encodeURIComponent(projectDir);
-      const name = document.createElement('div');
-      name.className = 'prompt-row__title';
-      name.textContent = p.title || p.id;
-      const meta = document.createElement('div');
-      meta.className = 'prompt-row__meta';
-      meta.textContent = p.content.length > 60 ? p.content.slice(0, 60) + '…' : p.content;
-      main.appendChild(name);
-      main.appendChild(meta);
-      const chev = document.createElement('div');
-      chev.className = 'prompt-row__chev';
-      chev.textContent = '›';
-      main.appendChild(chev);
-      li.appendChild(main);
-      // Preset status badge — "preset: shell, file · files on" or nothing.
-      if (p.preset && (Object.keys(p.preset).length)) {
-        const badge = document.createElement('div');
-        badge.className = 'prompt-row__preset';
-        const bits = [];
-        if (Array.isArray(p.preset.tools) && p.preset.tools.length) {
-          bits.push(p.preset.tools.map((t) => {
-            const choice = PRESET_TOOL_CHOICES.find((c) => c.value === t);
-            return choice ? choice.label : t;
-          }).join(', '));
-        }
-        if (p.preset.agentFiles === true) bits.push('agent files on');
-        badge.textContent = 'preset: ' + bits.join(' · ');
-        li.appendChild(badge);
-      }
-      // Copy-to-clipboard is a standalone action, not part of the row tap
-      // (the row navigates to the editor). A stopPropagation isn't needed —
-      // the button is a sibling of the link.
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'prompt-row__copy';
-      copyBtn.textContent = 'Copy';
-      copyBtn.setAttribute('aria-label', 'Copy prompt to clipboard');
-      copyBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const ok = await copyText(p.content);
-        copyBtn.textContent = ok ? 'Copied' : 'Copy failed';
-        copyBtn.classList.add(ok ? 'is-copied' : 'is-error');
-        setTimeout(() => {
-          copyBtn.textContent = 'Copy';
-          copyBtn.classList.remove('is-copied', 'is-error');
-        }, 1400);
-      });
-      li.appendChild(copyBtn);
-      listEl.current.appendChild(li);
-    }
+    setPrompts(list);
+    setStatusMsg({ text: list.length + (list.length === 1 ? ' prompt' : ' prompts'), kind: 'success' });
   }
 
   useEffect(() => { load(); }, [projectDir]);
@@ -164,13 +112,37 @@ export function SettingsPromptsView(props) {
     h('section', null,
       h('p', { class: 'hint hint--compact' }, 'Per-project system prompts. Saved in the project\'s .mouaif.json alongside other settings.'),
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
-      h('ul', { ref: listEl, class: 'prompts__list', 'aria-label': 'Custom prompts' }),
+      h('ul', { class: 'prompts__list', 'aria-label': 'Custom prompts' },
+        prompts.length === 0 ? h('li', { class: 'prompts__empty' }, 'No custom prompts yet. Tap "Add prompt" to create your first one.') : prompts.map(p => {
+          let presetBadge = null;
+          if (p.preset && Object.keys(p.preset).length) {
+            const bits = [];
+            if (Array.isArray(p.preset.tools) && p.preset.tools.length) {
+              bits.push(p.preset.tools.map(t => {
+                const choice = PRESET_TOOL_CHOICES.find(c => c.value === t);
+                return choice ? choice.label : t;
+              }).join(', '));
+            }
+            if (p.preset.agentFiles === true) bits.push('agent files on');
+            presetBadge = h('div', { class: 'prompt-row__preset' }, 'preset: ' + bits.join(' · '));
+          }
+          return h('li', { key: p.id, class: 'prompt-row' },
+            h('a', { class: 'prompt-row__main', href: '#/settings/prompts/' + encodeURIComponent(p.id) + '?projectDir=' + encodeURIComponent(projectDir) },
+              h('div', { class: 'prompt-row__title' }, p.title || p.id),
+              h('div', { class: 'prompt-row__meta' }, p.content.length > 60 ? p.content.slice(0, 60) + '…' : p.content),
+              h('div', { class: 'prompt-row__chev' }, '›')
+            ),
+            presetBadge,
+            h(Copier, { text: p.content })
+          );
+        })
+      ),
       h('div', { class: 'row row--actions' },
         h('a', {
           href: '#/settings/prompts/new?projectDir=' + encodeURIComponent(projectDir),
           class: 'btn btn--primary'
         }, '+ Add prompt'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
       )
     )
   );
@@ -179,16 +151,15 @@ export function SettingsPromptsView(props) {
 export function SettingsPromptEditView(props) {
   const promptId = (props && props.id) || '';
   const projectDir = resolveProjectDir(props);
-  const titleRef = useRef(null);
-  const contentRef = useRef(null);
-  const saveBtn = useRef(null);
-  const deleteBtn = useRef(null);
-  const statusEl = useRef(null);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   // The preset lives in state so toggling a tool / the agent-files
   // checkbox re-renders the checklist. Loaded from the prompt record;
   // saved back into the prompt on Save.
   const [preset, setPreset] = useState(null);
-  const agentFilesRef = useRef(null);
 
   // presetActive() — is the preset feature on for this prompt at all?
   // A non-null object counts even if it momentarily has an empty tools
@@ -234,40 +205,40 @@ export function SettingsPromptEditView(props) {
 
   async function load() {
     if (!projectDir) {
-      setStatus(statusEl, 'no project selected', 'error');
+      setStatusMsg({ text: 'no project selected', kind: 'error' });
       return;
     }
     if (!promptId) {
       // New prompt — nothing to load; refs are pre-cleared, preset empty.
-      if (titleRef.current) titleRef.current.value = '';
-      if (contentRef.current) contentRef.current.value = '';
+      setTitle('');
+      setContent('');
       setPreset(null);
-      setStatus(statusEl, '', '');
+      setStatusMsg({ text: '', kind: '' });
       return;
     }
-    setStatus(statusEl, 'loading…', 'busy');
+    setStatusMsg({ text: 'loading…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
     const p = r.body.prompt;
-    if (titleRef.current) titleRef.current.value = p.title || '';
-    if (contentRef.current) contentRef.current.value = p.content || '';
+    setTitle(p.title || '');
+    setContent(p.content || '');
     setPreset(p.preset && (Array.isArray(p.preset.tools) || typeof p.preset.agentFiles === 'boolean') ? {
       tools: Array.isArray(p.preset.tools) ? p.preset.tools.slice() : [],
       agentFiles: p.preset.agentFiles
     } : null);
-    setStatus(statusEl, 'loaded', 'success');
+    setStatusMsg({ text: 'loaded', kind: 'success' });
   }
 
   async function save() {
-    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
-    const title = (titleRef.current && titleRef.current.value || '').trim();
-    const content = (contentRef.current && contentRef.current.value || '').trim();
-    if (!content) { setStatus(statusEl, 'prompt content is required', 'error'); return; }
-    if (saveBtn.current) saveBtn.current.disabled = true;
-    setStatus(statusEl, 'saving…', 'busy');
-    const body = { projectDir, title, content };
+    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
+    const t = title.trim();
+    const c = content.trim();
+    if (!c) { setStatusMsg({ text: 'prompt content is required', kind: 'error' }); return; }
+    setIsSaving(true);
+    setStatusMsg({ text: 'saving…', kind: 'busy' });
+    const body = { projectDir, title: t, content: c };
     // Persist the preset only when it is active; otherwise send an explicit
     // clear so a previously-saved preset is removed.
     if (presetActive()) {
@@ -282,10 +253,10 @@ export function SettingsPromptEditView(props) {
     const method = promptId ? 'PATCH' : 'POST';
     let r;
     try { r = await fetchJson(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
-    if (saveBtn.current) saveBtn.current.disabled = false;
-    if (r.status !== 200 && r.status !== 201) { setStatus(statusEl, 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error'); return; }
-    setStatus(statusEl, 'saved.', 'success');
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsSaving(false); return; }
+    setIsSaving(false);
+    if (r.status !== 200 && r.status !== 201) { setStatusMsg({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error' }); return; }
+    setStatusMsg({ text: 'saved.', kind: 'success' });
     if (!promptId && r.status === 201) {
       nav('settings/prompts/' + encodeURIComponent(r.body.prompt.id) + '?projectDir=' + encodeURIComponent(projectDir));
     }
@@ -293,14 +264,14 @@ export function SettingsPromptEditView(props) {
 
   async function deletePrompt() {
     if (!promptId) return;
-    if (!projectDir) { setStatus(statusEl, 'no project selected', 'error'); return; }
+    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     if (!confirm('Delete this prompt? Chats that referenced it will fall back to no custom prompt.')) return;
-    if (deleteBtn.current) deleteBtn.current.disabled = true;
-    setStatus(statusEl, 'deleting…', 'busy');
+    setIsDeleting(true);
+    setStatusMsg({ text: 'deleting…', kind: 'busy' });
     let r;
     try { r = await fetchJson('/api/prompts/' + encodeURIComponent(promptId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
-    catch (err) { setStatus(statusEl, 'network error', 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
-    if (r.status !== 200) { setStatus(statusEl, 'HTTP ' + r.status, 'error'); if (deleteBtn.current) deleteBtn.current.disabled = false; return; }
+    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsDeleting(false); return; }
+    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); setIsDeleting(false); return; }
     nav('settings/prompts?projectDir=' + encodeURIComponent(projectDir));
   }
 
@@ -330,11 +301,11 @@ export function SettingsPromptEditView(props) {
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-title' }, 'Title'),
-        h('input', { ref: titleRef, class: 'input', id: 'spe-title', type: 'text', placeholder: 'My custom prompt' })
+        h('input', { value: title, onInput: e => setTitle(e.target.value), class: 'input', id: 'spe-title', type: 'text', placeholder: 'My custom prompt' })
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
-        h('textarea', { ref: contentRef, class: 'input prompts__textarea', id: 'spe-content', rows: 6, placeholder: 'You are a helpful assistant specialized in…' })
+        h('textarea', { value: content, onInput: e => setContent(e.target.value), class: 'input prompts__textarea', id: 'spe-content', rows: 6, placeholder: 'You are a helpful assistant specialized in…' })
       ),
       // ---- Prompt preset ---------------------------------------------
       // A preset is chat-default packaging: when a chat references this
@@ -378,7 +349,6 @@ export function SettingsPromptEditView(props) {
         h('label', { class: 'prompts__preset-tool prompts__preset-agentfiles' },
           h('input', {
             type: 'checkbox',
-            ref: agentFilesRef,
             checked: !!(preset && preset.agentFiles),
             onChange: (e) => toggleAgentFiles(e.currentTarget.checked)
           }),
@@ -386,9 +356,9 @@ export function SettingsPromptEditView(props) {
         )
       ),
       h('div', { class: 'row row--actions' },
-        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, promptId ? 'Save' : 'Create'),
-        h('button', { ref: deleteBtn, class: 'btn btn--danger', type: 'button', onClick: deletePrompt, hidden: !promptId }, 'Delete'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('button', { class: 'btn btn--primary', type: 'button', onClick: save, disabled: isSaving }, promptId ? 'Save' : 'Create'),
+        h('button', { class: 'btn btn--danger', type: 'button', onClick: deletePrompt, hidden: !promptId, disabled: isDeleting }, 'Delete'),
+        h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
       )
     )
   );
