@@ -604,7 +604,15 @@ function bindPickerScrollLock(pop, list) {
   };
   const onTouchMove = (ev) => {
     if (!ev.touches || ev.touches.length !== 1) return;
-    const scroller = list && list.contains(ev.target) ? list : null;
+    const t = ev.target;
+    // Never suppress taps on the sheet's form controls (the search field
+    // and the max-output input). A tap usually carries a few px of
+    // touchmove jitter, and preventDefault() here before the click fires
+    // would swallow the synthetic click — so the field would never focus
+    // and the mobile keyboard would never open. The search input is
+    // auto-focused on open; the max-output input needs that first tap.
+    if (t && typeof t.closest === 'function' && t.closest('input, textarea, select, button')) return;
+    const scroller = list && list.contains(t) ? list : null;
     if (!scroller) {
       ev.preventDefault();
       return;
