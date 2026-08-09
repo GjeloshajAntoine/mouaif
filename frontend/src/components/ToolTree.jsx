@@ -36,7 +36,7 @@
 //   class?: string
 
 import { h } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '' }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -49,7 +49,30 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
     return new Set(groups.filter((g) => (g.tools || []).length > 1).map((g) => g.id));
   });
 
+  // Groups can arrive after the collapse set is seeded above — MCP server
+  // groups load asynchronously behind the native groups in project
+  // settings, so their ids are not present on first mount and would
+  // otherwise render expanded. Seed late-arriving collapsible groups too,
+  // but never collapse a group the user has explicitly expanded (saved in
+  // `touched` by `flip`). The chat card rebuilds the tree in place and
+  // passes `initialCollapsed`, which already seeds every group at mount,
+  // so we skip the effect there.
+  const touched = useRef(new Set());
+  useEffect(() => {
+    if (initialCollapsed instanceof Set) return;
+    let changed = false;
+    const next = new Set(collapsed);
+    for (const g of groups) {
+      const id = g.id;
+      const collapsible = (g.tools || []).length > 1 && !alwaysExpanded;
+      if (!collapsedByDefault || !collapsible || touched.current.has(id)) continue;
+      if (!next.has(id)) { next.add(id); changed = true; }
+    }
+    if (changed) setCollapsed(next);
+  });
+
   function flip(groupId) {
+    touched.current.add(groupId);
     const next = new Set(collapsed);
     if (next.has(groupId)) next.delete(groupId);
     else next.add(groupId);
