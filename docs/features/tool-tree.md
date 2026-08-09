@@ -85,7 +85,9 @@ The chat tools card rebuilds the tree in place on every checkbox toggle (`update
 
 ### Indeterminate (half-check) state
 
-A group whose child tools are partially selected renders its checkbox in the browser's `indeterminate` state (with `aria-checked="mixed"`), so a partial selection is visually distinct from both "all on" and "all off". Because `indeterminate` is a DOM-only property — it has no HTML attribute and would be stripped from the vdom — it is applied through a `ref` callback on the group `<input>` each render. The custom checkbox CSS paints this state as a contrasting horizontal bar. It is purely presentational: clicking the group checkbox still runs the normal `onToggleGroup` handler (check → all on, uncheck → all off).
+A group whose child tools are partially selected renders its checkbox in the browser's `indeterminate` state (with `aria-checked="mixed"`), so a partial selection is visually distinct from both "all on" and "all off". Because `indeterminate` is a DOM-only property — it has no HTML attribute — it is passed as a vnode prop (`indeterminate: halfChecked`) on the group `<input>`. Preact applies it as a DOM property on every render (it is on the `HTMLInputElement` prototype), and only rewrites `checked` when that value actually changes, so a toggled child never clobbers the half-check and, once every child is on, the prop sends `false` and the half-check clears instead of sticking. The custom checkbox CSS paints this state as a contrasting horizontal bar. It is purely presentational: clicking the group checkbox still runs the normal `onToggleGroup` handler (check → all on, uncheck → all off).
+
+The composer popup's tree is rebuilt from `state.tools`, a mutable bag value, so a tool toggle rewrites it without itself re-rendering the `ToolPopup`. The chat tools card re-renders imperatively via `updateToolsCard`, but the popup needs a Preact re-render too — `useChatState` bumps `toolDataStamp` on every tool toggle so the popup recomputes its groups and keeps the half-check, expanded groups, and child states in sync.
 
 ### Settings auth groups
 

@@ -360,8 +360,19 @@ export function useChatState(props) {
     }
   }, [projectDir, chatId, updateChatBound]);
 
-  const onToggleTool = useCallback((name, next) => toggleTool(name, next, state, refs, updateChatBound), [updateChatBound]);
-  const onToggleToolGroup = useCallback((names, next) => toggleToolGroup(names, next, state, refs, updateChatBound), [updateChatBound]);
+  const onToggleTool = useCallback((name, next) => {
+    toggleTool(name, next, state, refs, updateChatBound);
+    // The composer ToolPopup renders its tree from `state.tools`, which is
+    // a mutable bag value — toggling a tool rewrites `state.tools` but does
+    // not itself re-render ChatView, so the popup would keep showing a stale
+    // tree (stale half-check / expanded groups). Bump the stamp so the popup
+    // re-renders and recomputes its groups from the new filter.
+    setToolDataStamp((v) => v + 1);
+  }, [updateChatBound]);
+  const onToggleToolGroup = useCallback((names, next) => {
+    toggleToolGroup(names, next, state, refs, updateChatBound);
+    setToolDataStamp((v) => v + 1);
+  }, [updateChatBound]);
   const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs)), [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
     state.skills = Object.assign({}, state.skills, { enabled: next });

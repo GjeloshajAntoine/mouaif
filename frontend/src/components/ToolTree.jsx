@@ -65,9 +65,12 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
       const collapsible = kids.length > 1;
       const isCollapsed = collapsible && collapsed.has(group.id);
       const onCount = kids.filter((t) => t.checked).length;
-      // Half-check the group when some (but not all) of its tools are
-      // on. `indeterminate` is a DOM property, not an attribute, so it
-      // must be set through a ref callback after render.
+      // Half-check the group when some (but not all) of its tools are on.
+      // `indeterminate` is a DOM-only property, not an attribute. It is
+      // passed as a vnode prop: Preact sets it as a DOM property on every
+      // render (it is on the HTMLInputElement prototype), which keeps the
+      // visual in sync without fighting Preact's commit order or leaving a
+      // stale half-check behind after every child becomes fully on.
       const halfChecked = kids.length > 0 && onCount > 0 && onCount < kids.length;
 
       return h('li', { key: group.id, class: 'tool-tree__group', role: 'treeitem', 'aria-expanded': collapsible ? String(!isCollapsed) : undefined },
@@ -94,20 +97,14 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
             class: 'checkbox checkbox--sm',
             checked: !!group.checked,
             disabled: !!group.disabled,
-            // `indeterminate` is a DOM-only property; Reflect.a11y-
-            // set it via a callback so Preact vdom doesn't drop it.
-            // When Preact reconciles the `checked` prop, it can clear the
-            // `indeterminate` state. We use a setTimeout to guarantee
-            // the DOM assignment runs *after* Preact finishes updating the node.
-            ref: (el) => {
-              if (el) {
-                // Also set immediately for first render
-                el.indeterminate = halfChecked;
-                setTimeout(() => {
-                  if (el) el.indeterminate = halfChecked;
-                }, 0);
-              }
-            },
+            // `indeterminate` is a DOM-only property; passing it as a vnode
+            // prop lets Preact set `el.indeterminate` on every render (it is
+            // a property on HTMLInputElement, so Preact's prop diff applies
+            // it as `n[l] = value`). Preact only rewrites `checked` when it
+            // actually changes, so a toggled child never clobbers the
+            // half-check, and once every child is on the prop sends `false`
+            // so the half-check clears instead of sticking.
+            indeterminate: halfChecked,
             'aria-checked': halfChecked ? 'mixed' : undefined,
             onChange: (e) => onToggleGroup && onToggleGroup(group.id, e.target.checked),
             'aria-label': group.name
