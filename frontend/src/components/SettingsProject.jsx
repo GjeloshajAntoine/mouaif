@@ -654,14 +654,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           { value: 'ask', label: 'Ask' },
           { value: 'allow', label: 'Allow' }
         ]),
-        // All file tools share a single authorization gate (tools.file),
-        // so the per-tool leaves are not individually toggleable. They
-        // mirror the group state and are disabled to signal that — a
-        // stray tap must never flip the whole section off.
+        // All file tools share tools.file. Keep each checkbox operable,
+        // but route it through the shared gate so state and persistence
+        // stay identical whether the user taps the parent or a leaf.
         tools: fileTools.map((t) => leaf(t, {
-          checked: isOn(fileAuth.mode),
-          disabled: true,
-          disabledReason: 'follows the File tools gate'
+          checked: isOn(fileAuth.mode)
         })),
         extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
       });
@@ -735,7 +732,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           tools: serverTools.map((tool) => {
             const entry = mcpAuth.tools && mcpAuth.tools[tool.name];
             const mode = entry && entry.mode ? entry.mode : effMode;
-            return leaf(tool, { checked: mode !== 'off' });
+            const prefix = 'mcp__' + slug + '__';
+            const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
+            return leaf(tool, { name: displayName, checked: mode !== 'off' });
           }),
           extra: null
         });
