@@ -30,24 +30,30 @@
 //   onToggleGroup: (groupId, checked) => void
 //   onToggleTool: (groupId, toolId, checked) => void
 //   collapsedByDefault?: boolean
+//   initialCollapsed?: Set<string>  // collision-start set to seed `collapsed`
+//   onCollapseChange?: (collapsed: Set<string>) => void  // fired each flip
 //   class?: string
 
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
 
-export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, class: className = '' }) {
+export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, class: className = '' }) {
   const [collapsed, setCollapsed] = useState(() => {
+    // An explicit seed wins over the default so an imperative caller
+    // (e.g. the chat tools card, which rebuilds the tree in place on
+    // every toggle) can preserve the user's expanded groups across a
+    // rebuild instead of snapping the section shut again.
+    if (initialCollapsed instanceof Set) return new Set(initialCollapsed);
     if (!collapsedByDefault) return new Set();
     return new Set(groups.filter((g) => (g.tools || []).length > 1).map((g) => g.id));
   });
 
   function flip(groupId) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
+    const next = new Set(collapsed);
+    if (next.has(groupId)) next.delete(groupId);
+    else next.add(groupId);
+    setCollapsed(next);
+    if (onCollapseChange) onCollapseChange(next);
   }
 
   const cls = className ? 'tool-tree ' + className : 'tool-tree';

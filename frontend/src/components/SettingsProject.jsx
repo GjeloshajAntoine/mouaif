@@ -645,7 +645,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           { value: 'ask', label: 'Ask' },
           { value: 'allow', label: 'Allow' }
         ]),
-        tools: fileTools.map((t) => leaf(t, { checked: isOn(fileAuth.mode) })),
+        // All file tools share a single authorization gate (tools.file),
+        // so the per-tool leaves are not individually toggleable. They
+        // mirror the group state and are disabled to signal that — a
+        // stray tap must never flip the whole section off.
+        tools: fileTools.map((t) => leaf(t, {
+          checked: isOn(fileAuth.mode),
+          disabled: true,
+          disabledReason: 'follows the File tools gate'
+        })),
         extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
       });
     }

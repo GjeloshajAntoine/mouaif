@@ -171,6 +171,12 @@ function buildToolsCard(state) {
   // Render the Preact ToolTree into a container div.
   const treeHost = document.createElement('div');
   treeHost.className = 'chat-view__tools-tree';
+  // Preserve which groups the user has expanded across the in-place
+  // rebuild that runs on every toggle. Without this, a remount with
+  // `collapsedByDefault` snaps every expanded section shut the moment
+  // a single checkbox is flipped. The set lives on `state` (not a
+  // local var) so it survives the rebuild triggered by the toggle.
+  const collapsed = state._toolTreeCollapsed || null;
 
   function onToggleGroup(groupId, checked) {
     // MCP default gate: the group checkbox is a quick Off ↔ Ask for the
@@ -188,7 +194,18 @@ function buildToolsCard(state) {
     if (state._toggleTool) state._toggleTool(toolId, checked);
   }
 
-  render(h(ToolTree, { groups, onToggleGroup, onToggleTool, collapsedByDefault: true }), treeHost);
+  // Persist the live collapse state on `state` so the next in-place
+  // rebuild seeds from it instead of collapsing every section again.
+  const captureCollapsed = (set) => { state._toolTreeCollapsed = set; };
+
+  render(h(ToolTree, {
+    groups,
+    onToggleGroup,
+    onToggleTool,
+    collapsedByDefault: true,
+    initialCollapsed: collapsed,
+    onCollapseChange: captureCollapsed
+  }), treeHost);
   card.appendChild(treeHost);
 
   return card;

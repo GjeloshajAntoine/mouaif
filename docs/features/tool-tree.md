@@ -34,6 +34,8 @@ Settings → Project shows the same tree, with each group row carrying its **aut
 
 The settings tree replaces the old "Tool permissions" list — the UI is identical to the chat view so the mental model is the same: one tree, one place to look.
 
+File tool leaves (`read_file`, …) are not individually toggleable here — all file tools share a single `tools.file` gate, so their checkboxes mirror the group state and are disabled with a "follows the File tools gate" note. Use the File tools group checkbox or the `Off / Ask / Allow` segment to change it; a stray tap on a leaf can never flip the whole section.
+
 ## Implementation notes
 
 ### Component
@@ -76,6 +78,10 @@ When a `tool_call` SSE event arrives, `markToolUsed(state, refs, name)` in `stre
 3. Re-renders the tools card in place
 
 `state.usedTools` is reset when the chat switches.
+
+### Group expansion survives toggles
+
+The chat tools card rebuilds the tree in place on every checkbox toggle (`updateToolsCard` → `replaceChild`). To keep the currently expanded sections open instead of snapping shut, the card persists the collapse set on `state._toolTreeCollapsed` and passes it back as `initialCollapsed` on the rebuilt tree (via the `onCollapseChange` callback). `ToolTree` seeds its `collapsed` state from `initialCollapsed` when provided.
 
 ### Indeterminate (half-check) state
 
