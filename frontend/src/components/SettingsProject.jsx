@@ -41,6 +41,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Off/Ask/Allow control re-renders when the user taps a segment.
   const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
   const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [fileToolAuth, setFileToolAuth] = useState({});
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
   const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
@@ -160,6 +161,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         mode: (file && file.mode) || 'ask',
         allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
       });
+      setFileToolAuth(Object.fromEntries(
+        ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
+      ));
       const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
       setSubagentAuth({
         mode: (sub && sub.mode) || 'ask',
@@ -359,7 +363,39 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveToolAuthorization(tool, newMode, allowlist, setStatusMsg);
   }
   function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
-  function pickFileMode(newMode) { pickToolMode('file', fileAuth, setFileAuth, setFileStatusMsg, newMode); }
+  function pickFileMode(newMode) {
+    const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
+    const next = { mode: newMode, allowlist };
+    setFileAuth(next);
+    // Effective leaf entries that inherit the family gate must move with it.
+    // Keep only explicit project leaf overrides pinned to their own mode.
+    setFileToolAuth((prev) => Object.fromEntries(Object.entries(prev).map(([name, auth]) => [
+      name,
+      auth && auth.source === 'project-tool' ? auth : Object.assign({}, next, { source: 'project' })
+    ])));
+    saveToolAuthorization('file', newMode, allowlist, setFileStatusMsg);
+  }
+  function pickFileToolMode(toolName, newMode) {
+    const current = fileToolAuth[toolName] || fileAuth;
+    const next = { mode: newMode, allowlist: newMode === 'allow' ? [] : (current.allowlist || []), source: 'project-tool' };
+    setFileToolAuth((prev) => Object.assign({}, prev, { [toolName]: next }));
+    saveToolAuthorization(toolName, next.mode, next.allowlist, setFileStatusMsg);
+  }
+  async function pickFileGroupMode(toolNames, newMode) {
+    const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
+    const next = { mode: newMode, allowlist, source: 'project-tool' };
+    setFileAuth({ mode: newMode, allowlist });
+    setFileToolAuth((prev) => Object.assign({}, prev,
+      Object.fromEntries(toolNames.map((name) => [name, next]))));
+    setFileStatusMsg('saving…');
+    const tools = Object.fromEntries(['file', ...toolNames].map((name) => [name, { mode: newMode, allowlist }]));
+    const r = await fetchJson('/api/tools/authorization', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: dir(), tools })
+    });
+    setFileStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+  }
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
@@ -654,11 +690,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           { value: 'ask', label: 'Ask' },
           { value: 'allow', label: 'Allow' }
         ]),
-        // All file tools share tools.file. Keep each checkbox operable,
-        // but route it through the shared gate so state and persistence
-        // stay identical whether the user taps the parent or a leaf.
+        // Leaves inherit tools.file until a leaf checkbox creates an
+        // explicit per-tool override. The source marker keeps inherited
+        // leaves synchronized when the family mode changes.
         tools: fileTools.map((t) => leaf(t, {
-          checked: isOn(fileAuth.mode)
+          checked: isOn((fileToolAuth[t.name] && fileToolAuth[t.name].mode) || fileAuth.mode)
         })),
         extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
       });
@@ -751,7 +787,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
-    else if (groupId === 'files') pickFileMode(mode);
+    else if (groupId === 'files') {
+      const names = toolsCatalog
+        .filter((tool) => tool && tool.kind === 'native' && tool.source === 'files')
+        .map((tool) => tool.name);
+      pickFileGroupMode(names, mode);
+    }
     else if (groupId === 'mcp') pickMcpMode(mode);
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
@@ -963,9 +1004,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
                   if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
+                  else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
                   else toggleSettingsGroup(groupId, checked);
                 },
-                collapsedByDefault: true
+                // Project settings expose every nested tool at once. There is
+                // no transient collapse state for a checkbox update to reset.
+                alwaysExpanded: true
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),

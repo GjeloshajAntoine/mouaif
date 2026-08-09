@@ -32,9 +32,9 @@ Leaf rows are individual tools. Only the checkbox is clickable — the row text 
 
 Settings → Project shows the same tree, with each group row carrying its **authorization segment** on the same line: `Off / Ask / Allow` (or `Off / Ask` for binary tools like `ask_user`). The group checkbox is a shortcut for `Off ↔ Ask`; the segment is the only way to pick `Allow`. MCP renders exactly like the chat view: an **MCP default** row (the project gate) and one expandable row per configured MCP server. Each discovered MCP tool is a child checkbox, backed by `mcp.tools.<composedName>` React state: unchecking creates an `off` override and checking clears that override so the tool inherits its server/default mode. The leaf label omits the repeated `mcp__<server>__` prefix while retaining the composed name as its stable ID. The server checkbox remains the server override's `Off ↔ Ask` shortcut, and the segment edits the per-server override with a ↺ reset. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Auto-approve patterns (the `allowlist` mode) are still honored when present in the project file, but the settings tree no longer renders a textarea for them — edit them from the raw `.mouaif.json` / `.mcp.json` in Technical details.
 
-The settings tree replaces the old "Tool permissions" list — the UI is identical to the chat view so the mental model is the same: one tree, one place to look.
+The settings tree replaces the old "Tool permissions" list — the UI is identical to the chat view so the mental model is the same: one tree, one place to look. Unlike the compact chat tree, nested tools in project settings are always expanded. This keeps every permission visible and removes collapse-state jumps while authorization saves re-render the tree.
 
-File tool leaves (`read_file`, …) share a single `tools.file` gate. Their checkboxes remain operable, but each leaf routes through that shared gate just like the File tools parent checkbox, so React state and persisted authorization stay synchronized.
+File tools inherit from the `tools.file` family gate, while a leaf checkbox can persist a more-specific `tools.<tool_name>` override. This lets one operation be disabled without changing its siblings. The parent checkbox updates the family and all visible leaves together, so it settles directly on checked or unchecked rather than briefly becoming indeterminate. The authorization segment edits the shared family default while preserving explicit leaf overrides.
 
 ## Implementation notes
 
@@ -53,7 +53,8 @@ File tool leaves (`read_file`, …) share a single `tools.file` gate. Their chec
   }>,
   onToggleGroup: (groupId, checked) => void,
   onToggleTool: (groupId, toolId, checked) => void,
-  collapsedByDefault?: boolean
+  collapsedByDefault?: boolean,
+  alwaysExpanded?: boolean
 }
 ```
 

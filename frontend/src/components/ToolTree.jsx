@@ -32,12 +32,13 @@
 //   collapsedByDefault?: boolean
 //   initialCollapsed?: Set<string>  // collision-start set to seed `collapsed`
 //   onCollapseChange?: (collapsed: Set<string>) => void  // fired each flip
+//   alwaysExpanded?: boolean       // show children without collapse controls
 //   class?: string
 
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
 
-export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, class: className = '' }) {
+export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '' }) {
   const [collapsed, setCollapsed] = useState(() => {
     // An explicit seed wins over the default so an imperative caller
     // (e.g. the chat tools card, which rebuilds the tree in place on
@@ -62,7 +63,8 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
   return h('ul', { class: cls, role: 'tree', 'aria-label': 'Tools' },
     groups.map((group) => {
       const kids = group.tools || [];
-      const collapsible = kids.length > 1;
+      const hasChildren = kids.length > 1;
+      const collapsible = hasChildren && !alwaysExpanded;
       const isCollapsed = collapsible && collapsed.has(group.id);
       const onCount = kids.filter((t) => t.checked).length;
       // Half-check the group when some (but not all) of its tools are on.
@@ -120,7 +122,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
         group.disabled && group.disabledReason
           ? h('div', { class: 'tool-tree__reason' }, group.disabledReason)
           : null,
-        collapsible && !isCollapsed
+        hasChildren && !isCollapsed
           ? h('ul', { class: 'tool-tree__children', role: 'group' },
               kids.map((tool) =>
                 h('li', { key: tool.id, class: 'tool-tree__item', role: 'treeitem' },

@@ -228,15 +228,20 @@ function mcpServersBySlug(projectDir, servers) {
 }
 
 function effectiveConfig(projectDir, tool) {
+  const requestedTool = tool;
   tool = configToolName(tool);
   const resolved = settings.getResolved(projectDir);
   const project = settings.getProject(projectDir);
   const app = settings.getApp();
   if (NATIVE_TOOLS.has(tool)) {
-    const projectValue = project && project.tools && project.tools[tool];
-    const appValue = app && app.tools && app.tools[tool];
+    const projectToolValue = FILE_TOOL_NAMES.has(requestedTool) && project && project.tools && project.tools[requestedTool];
+    const appToolValue = FILE_TOOL_NAMES.has(requestedTool) && app && app.tools && app.tools[requestedTool];
+    const projectValue = projectToolValue || (project && project.tools && project.tools[tool]);
+    const appValue = appToolValue || (app && app.tools && app.tools[tool]);
     const value = projectValue || appValue || {};
-    const source = projectValue ? 'project' : (appValue ? 'app' : 'default');
+    const source = projectToolValue
+      ? 'project-tool'
+      : (projectValue ? 'project' : (appToolValue ? 'app-tool' : (appValue ? 'app' : 'default')));
     // Built-in tools are part of the base agent surface and are always
     // discoverable. Authorization mode is the gate: `ask` prompts on first
     // use, `allow` runs directly, and `off` explicitly disables execution.
@@ -266,6 +271,7 @@ function getAuthorization(projectDir) {
       shell: effectiveConfig(projectDir, 'shell'),
       subagent: effectiveConfig(projectDir, 'subagent'),
       file: effectiveConfig(projectDir, 'file'),
+      ...Object.fromEntries(Array.from(FILE_TOOL_NAMES, (name) => [name, effectiveConfig(projectDir, name)])),
       ask_user: effectiveConfig(projectDir, 'ask_user'),
       report_progress: effectiveConfig(projectDir, 'report_progress'),
       task: effectiveConfig(projectDir, 'task')
@@ -329,10 +335,12 @@ function setAuthorization(projectDir, patch) {
   // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
   // owned by the project tools toggle (a different setting) and is
   // not duplicated here.
-  for (const name of NATIVE_TOOLS) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_TOOL_NAMES]) {
     if (patch.tools && patch.tools[name]) {
       const cfg = normalizeConfig(patch.tools[name], 'project', true);
-      next.tools = Object.assign({}, next.tools, project.tools);
+      // Preserve entries already applied from this patch. A request can
+      // update the file family and every nested file tool atomically.
+      next.tools = Object.assign({}, project.tools, next.tools);
       next.tools[name] = Object.assign({}, project.tools && project.tools[name], {
         mode: cfg.mode,
         allowlist: cfg.allowlist,

@@ -84,6 +84,20 @@ async function main() {
     assert.equal(allowed.decision, 'allow', tool + ' must use the tools.file authorization gate');
   }
 
+  // The settings parent checkbox writes the family and all leaves in one
+  // request. Every entry must survive the write loop so the UI cannot fall
+  // into a stale mixed state after the response is re-read.
+  authz.setAuthorization(projectDir, {
+    tools: Object.fromEntries(['file', ...authz.FILE_TOOL_NAMES].map((name) => [name, { mode: 'off' }]))
+  });
+  const fileAuth = authz.getAuthorization(projectDir).tools;
+  for (const tool of ['file', ...authz.FILE_TOOL_NAMES]) {
+    assert.equal(fileAuth[tool].mode, 'off', tool + ' must persist in an atomic file-group update');
+  }
+  authz.setAuthorization(projectDir, {
+    tools: Object.fromEntries(['file', ...authz.FILE_TOOL_NAMES].map((name) => [name, { mode: 'allow' }]))
+  });
+
   settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'ask', allowlist: ['^echo safe$'] } } });
   const legacyDisabled = await authz.authorize({
     projectDir, chatId: 'a1b2c3d4', callId: 'call_legacy_disabled', tool: 'shell', cmd: 'echo available'
