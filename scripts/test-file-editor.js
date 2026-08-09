@@ -18,7 +18,11 @@ function t(name, cond, msg) {
 }
 
 function makeProject() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-files-'));
+  // Test directories must be under homedir unless MOUAIF_ALLOW_ANY_ROOT is set.
+  // We place it in homedir to ensure it works regardless of the flag.
+  const testRoot = path.join(os.homedir(), '.mouaif-test-files-' + Math.random().toString(36).slice(2));
+  fs.mkdirSync(testRoot);
+  const root = testRoot;
   fs.writeFileSync(path.join(root, 'hello.txt'), 'hello world\n', 'utf8');
   fs.writeFileSync(path.join(root, 'app.js'), 'const x = 1;\n', 'utf8');
   fs.mkdirSync(path.join(root, 'sub'));
@@ -68,9 +72,14 @@ async function run() {
 
   // 6. readFile rejects path outside home (when ALLOW_ANY_ROOT is off)
   let home = null;
-  try { await files.readFile('/etc', '/etc/hosts'); }
-  catch (e) { home = e; }
-  t('readFile refuses outside home with EOUTSIDE_HOME', home && (home.code === 'EOUTSIDE_HOME' || home.code === 'EOUTSIDE_PROJECT'));
+  const allowAny = process.env.MOUAIF_ALLOW_ANY_ROOT === '1';
+  if (!allowAny) {
+    try { await files.readFile('/etc', '/etc/hosts'); }
+    catch (e) { home = e; }
+    t('readFile refuses outside home with EOUTSIDE_HOME', home && (home.code === 'EOUTSIDE_HOME' || home.code === 'EOUTSIDE_PROJECT'));
+  } else {
+    t('readFile refuses outside home with EOUTSIDE_HOME', true, 'skipped (ALLOW_ANY_ROOT is 1)');
+  }
 
   // 7. writeFile happy path
   const w = await files.writeFile(root, path.join(root, 'hello.txt'), 'updated\n');

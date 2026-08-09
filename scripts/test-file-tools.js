@@ -103,7 +103,7 @@ function writeFile(p, content) {
   // Outside project.
   const r1o = await files.runFileTool('read_file', { projectDir: root, args: { path: '../outside.js' } });
   assert(r1o.ok === false && r1o.result.error.code === 'EOUTSIDE_PROJECT', 'read_file EOUTSIDE_PROJECT on ..');
-  const r1a = await files.runFileTool('read_file', { projectDir: root, args: { path: 'C:/Windows/System32/drivers/etc/hosts' } });
+  const r1a = await files.runFileTool('read_file', { projectDir: root, args: { path: '/etc/hosts' } });
   assert(r1a.ok === false && r1a.result.error.code === 'EOUTSIDE_PROJECT', 'read_file EOUTSIDE_PROJECT on absolute outside');
 
   // ---- runFileTool: list_files -----------------------------------

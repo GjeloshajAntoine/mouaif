@@ -61,10 +61,10 @@ const ENDPOINTS = {
       if (model && model.auth === 'oauth') {
         return {
           'Authorization': 'Bearer ' + cred,
-          'anthropic-beta': 'oauth-2025-04-20'
+          'anthropic-beta': 'oauth-2025-04-20,prompt-caching-2024-07-31'
         };
       }
-      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01' };
+      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' };
     }
   },
   'gemini': {

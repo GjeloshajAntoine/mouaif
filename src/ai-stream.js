@@ -1280,12 +1280,12 @@ async function streamChat(opts) {
             return { ok: false, content: JSON.stringify(r), result: r };
           }
         }
-        nestedMessages.push({ role: 'system', content: agent.content });
+        nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.content, cache_control: { type: 'ephemeral' } }] });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
       } else {
         nestedMessages.push({
           role: 'system',
-          content: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.'
+          content: [{ type: 'text', text: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.', cache_control: { type: 'ephemeral' } }]
         });
       }
       // Authorization-time model override. The user picked a model on

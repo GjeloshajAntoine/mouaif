@@ -693,6 +693,8 @@ function listServers(projectDir) {
   // order (Array.prototype.sort is stable).
   return resolveMerged(projectDir)
     .sort((a, b) => {
+      // Scope wins (app before project)
+      if (a.scope !== b.scope) return a.scope === APP_SCOPE ? -1 : 1;
       const na = (a.entry.name || '').toLowerCase();
       const nb = (b.entry.name || '').toLowerCase();
       if (na !== nb) return na < nb ? -1 : 1;
