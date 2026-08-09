@@ -1,16 +1,16 @@
 // mouaif web — SettingsImportView
 // One-shot import of JSON chat transcripts into the SQLite store.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus } from '../api.js';
+import { useState } from 'preact/hooks';
+import { fetchJson } from '../api.js';
 
 export function SettingsImportView({ projectDir }) {
-  const statusEl = useRef(null);
-  const btn = useRef(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [status, setStatus] = useState({ message: '', type: '' });
 
   async function doImport() {
-    if (btn.current) btn.current.disabled = true;
-    setStatus(statusEl, 'importing…', 'busy');
+    setIsImporting(true);
+    setStatus({ message: 'importing…', type: 'busy' });
     try {
       const r = await fetchJson('/api/chats/import', {
         method: 'POST',
@@ -19,17 +19,20 @@ export function SettingsImportView({ projectDir }) {
       });
       if (r.status === 200) {
         const data = r.body.imported || {};
-        setStatus(statusEl, `✅ ${data.chats} chats, ${data.messages} messages imported.`, 'success');
+        let msg = `✅ ${data.chats} chats, ${data.messages} messages imported.`;
+        let type = 'success';
         if (data.errors && data.errors.length) {
-          setStatus(statusEl, statusEl.current.textContent + ' ⚠️ ' + data.errors.join('; '), 'warning');
+          msg += ' ⚠️ ' + data.errors.join('; ');
+          type = 'warning';
         }
+        setStatus({ message: msg, type });
       } else {
-        setStatus(statusEl, 'Import failed: HTTP ' + r.status + ' ' + (r.body && r.body.error || ''), 'error');
+        setStatus({ message: 'Import failed: HTTP ' + r.status + ' ' + (r.body && r.body.error || ''), type: 'error' });
       }
     } catch (e) {
-      setStatus(statusEl, 'Import error: ' + e.message, 'error');
+      setStatus({ message: 'Import error: ' + e.message, type: 'error' });
     }
-    if (btn.current) btn.current.disabled = false;
+    setIsImporting(false);
   }
 
   return h(Fragment, null,
@@ -41,8 +44,8 @@ export function SettingsImportView({ projectDir }) {
       h('p', { class: 'hint hint--compact' }, 'Import chat transcripts from the legacy JSON files (.mouaif.messages.*.json) into the SQLite storage. Existing chats in the DB are skipped; only new or missing messages are imported.'),
       h('p', { class: 'hint hint--compact' }, 'Project: ', h('code', null, projectDir || '(none)')),
       h('div', { class: 'row row--actions' },
-        h('button', { ref: btn, class: 'btn btn--primary', type: 'button', onClick: doImport }, 'Import from JSON files'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('button', { class: 'btn btn--primary', type: 'button', onClick: doImport, disabled: isImporting }, 'Import from JSON files'),
+        h('span', { class: `status${status.type ? ' status--' + status.type : ''}`, 'aria-live': 'polite' }, status.message)
       )
     )
   );

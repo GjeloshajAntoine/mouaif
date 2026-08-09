@@ -1,12 +1,13 @@
 // mouaif web — Settings home view
 import { h } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { loadApp, appProviders, activeProject } from '../api.js';
 
 export function SettingsHomeView() {
-  const providerSummary = useRef(null);
-  const promptSize = useRef(null);
-  const pricingSummary = useRef(null);
+  const [providerSummary, setProviderSummary] = useState('API keys & sign-ins');
+  const [promptSize, setPromptSize] = useState('prompt style');
+  const [pricingSummary, setPricingSummary] = useState('cost table');
+
   // Rows that only make sense against a project. Their href picks up the
   // active project (if any) so the user does not have to re-enter the path.
   const projectDir = (activeProject.value && activeProject.value.dir) || '';
@@ -16,18 +17,14 @@ export function SettingsHomeView() {
   async function load() {
     try {
       const app = await loadApp({ force: true });
-      if (providerSummary.current) {
-        const n = appProviders().length;
-        providerSummary.current.textContent = n ? (n === 1 ? '1 connected' : n + ' connected') : 'none yet — tap to add';
-      }
-      if (promptSize.current) {
-        promptSize.current.textContent = (app.app && app.app.promptSize) || 'average';
-      }
-      if (pricingSummary.current) {
-        const table = (app.app && app.app.modelPricing) || {};
-        const n = Object.keys(table).length;
-        pricingSummary.current.textContent = n ? (n === 1 ? '1 model priced' : n + ' models priced') : 'defaults';
-      }
+      const nProviders = appProviders().length;
+      setProviderSummary(nProviders ? (nProviders === 1 ? '1 connected' : nProviders + ' connected') : 'none yet — tap to add');
+      
+      setPromptSize((app.app && app.app.promptSize) || 'average');
+      
+      const pricingTable = (app.app && app.app.modelPricing) || {};
+      const nPricing = Object.keys(pricingTable).length;
+      setPricingSummary(nPricing ? (nPricing === 1 ? '1 model priced' : nPricing + ' models priced') : 'defaults');
     } catch (e) { /* summaries fall back to their static defaults */ }
   }
 
@@ -38,13 +35,13 @@ export function SettingsHomeView() {
   // use the standard .group__row pattern from layout.css (same as every
   // other drill-in settings list).
   function rowLi(to, label, opts = {}) {
-    const { detailRef = null, detail = null, sub = null } = opts;
+    const { detail = null, sub = null } = opts;
     return h('li', null,
       h('a', { href: '#/' + to, class: 'group__row', 'aria-label': label },
         h('span', { class: 'group__row-label' }, label),
-        sub && !detailRef && !detail
+        sub && !detail
           ? h('span', { class: 'group__row-detail' }, sub)
-          : h('span', { ref: detailRef, class: 'group__row-detail' }, detail || sub || ''),
+          : h('span', { class: 'group__row-detail' }, detail || sub || ''),
         h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
       )
     );
@@ -55,7 +52,7 @@ export function SettingsHomeView() {
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Providers'),
       h('ul', { class: 'group__list' },
-        rowLi('settings/providers', 'Providers', { detailRef: providerSummary, detail: 'API keys & sign-ins' })
+        rowLi('settings/providers', 'Providers', { detail: providerSummary })
       )
     ),
     // ---- App defaults: settings that apply everywhere unless a project
@@ -64,11 +61,11 @@ export function SettingsHomeView() {
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'App defaults', h('span', { class: 'group__title-note' }, 'Apply to every project')),
       h('ul', { class: 'group__list' },
-        rowLi('settings/defaults', 'Chat defaults', { detailRef: promptSize, detail: 'prompt style' }),
+        rowLi('settings/defaults', 'Chat defaults', { detail: promptSize }),
         rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
-        rowLi('settings/pricing', 'Model pricing', { detailRef: pricingSummary, detail: 'cost table' }),
+        rowLi('settings/pricing', 'Model pricing', { detail: pricingSummary }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
     ),

@@ -1,30 +1,30 @@
 // mouaif web — SettingsDefaultsView
 import { h, Fragment } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
-import { loadApp, saveApp, setStatus } from '../api.js';
+import { useState, useEffect } from 'preact/hooks';
+import { loadApp, saveApp } from '../api.js';
 
 export function SettingsDefaultsView() {
-  const promptSize = useRef(null);
-  const chatStorage = useRef(null);
-  const saveBtn = useRef(null);
-  const statusEl = useRef(null);
+  const [promptSize, setPromptSize] = useState('average');
+  const [chatStorage, setChatStorage] = useState('db');
+  const [isSaving, setIsSaving] = useState(false);
+  const [status, setStatusObj] = useState({ message: '', type: '' });
 
   async function load() {
     try {
       const app = await loadApp({ force: true });
-      if (promptSize.current) promptSize.current.value = (app.app && app.app.promptSize) || 'average';
-      if (chatStorage.current) chatStorage.current.value = (app.app && app.app.chatStorage) || 'db';
-    } catch (e) { setStatus(statusEl, 'load failed: ' + e.message, 'error'); }
+      setPromptSize((app.app && app.app.promptSize) || 'average');
+      setChatStorage((app.app && app.app.chatStorage) || 'db');
+    } catch (e) { setStatusObj({ message: 'load failed: ' + e.message, type: 'error' }); }
   }
 
   async function save() {
-    if (saveBtn.current) saveBtn.current.disabled = true;
-    setStatus(statusEl, 'saving…', 'busy');
+    setIsSaving(true);
+    setStatusObj({ message: 'saving…', type: 'busy' });
     try {
-      await saveApp({ promptSize: promptSize.current.value, chatStorage: chatStorage.current.value });
-      setStatus(statusEl, 'saved.', 'success');
-    } catch (e) { setStatus(statusEl, 'save failed: ' + e.message, 'error'); }
-    if (saveBtn.current) saveBtn.current.disabled = false;
+      await saveApp({ promptSize, chatStorage });
+      setStatusObj({ message: 'saved.', type: 'success' });
+    } catch (e) { setStatusObj({ message: 'save failed: ' + e.message, type: 'error' }); }
+    setIsSaving(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -39,7 +39,7 @@ export function SettingsDefaultsView() {
       h('p', { class: 'hint hint--compact' }, 'This applies to every project. A project or a single chat can pick a different style for itself.'),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sd-prompt-size' }, 'Default prompt style'),
-        h('select', { ref: promptSize, class: 'input', id: 'sd-prompt-size' },
+        h('select', { class: 'input', id: 'sd-prompt-size', value: promptSize, onChange: e => setPromptSize(e.target.value) },
           h('option', { value: 'very-small' }, 'Very small — tool names only, no schemas'),
           h('option', { value: 'average' }, 'Average — full tools, recommended'),
           h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
@@ -47,15 +47,15 @@ export function SettingsDefaultsView() {
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sd-chat-storage' }, 'Chat storage'),
-        h('select', { ref: chatStorage, class: 'input', id: 'sd-chat-storage' },
+        h('select', { class: 'input', id: 'sd-chat-storage', value: chatStorage, onChange: e => setChatStorage(e.target.value) },
           h('option', { value: 'db' }, 'Database (SQLite) — default, fast'),
           h('option', { value: 'json' }, 'JSON files — legacy, hand-editable')
         )
       ),
       h('p', { class: 'hint hint--compact' }, '"Database" stores chats and messages in the app SQLite store. "JSON files" keeps the legacy per-chat .mouaif.messages.*.json files. Changing this does not migrate existing data; use the Import tool to reimport JSON files into the DB.'),
       h('div', { class: 'row row--actions' },
-        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),
-        h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' })
+        h('button', { class: 'btn btn--primary', type: 'button', onClick: save, disabled: isSaving }, 'Save'),
+        h('span', { class: `status${status.type ? ' status--' + status.type : ''}`, 'aria-live': 'polite' }, status.message)
       )
     )
   );

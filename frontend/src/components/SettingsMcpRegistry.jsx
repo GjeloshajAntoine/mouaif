@@ -2,8 +2,8 @@
 // with popularity scoring and one-tap "Add to project" / "Add app-wide".
 // See docs/features/mcp-registry-browser.md.
 import { h, Fragment } from 'preact';
-import { useRef, useEffect, useState } from 'preact/hooks';
-import { fetchJson, setStatus } from '../api.js';
+import { useEffect, useState } from 'preact/hooks';
+import { fetchJson } from '../api.js';
 import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
 
@@ -44,8 +44,6 @@ function extractPkgInfo(entry) {
 
 export function SettingsMcpRegistryView(props = {}) {
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
-  const searchEl = useRef(null);
-  const statusEl = useRef(null);
   const [servers, setServers] = useState([]);
   const [metadata, setMetadata] = useState({ count: 0, nextCursor: null });
   const [search, setSearch] = useState('');
@@ -54,6 +52,7 @@ export function SettingsMcpRegistryView(props = {}) {
   const [busy, setBusy] = useState(false);
   const [cursor, setCursor] = useState('');
   const [addingId, setAddingId] = useState(null); // id being added
+  const [status, setStatusObj] = useState({ message: '', type: '' });
 
   async function loadRegistry(opts = {}) {
     const q = opts.search !== undefined ? opts.search : search;
@@ -61,7 +60,7 @@ export function SettingsMcpRegistryView(props = {}) {
     const sF = opts.sortField !== undefined ? opts.sortField : sortField;
     const sD = opts.sortDir !== undefined ? opts.sortDir : sortDir;
     setBusy(true);
-    setStatus(statusEl, 'loading…', 'busy');
+    setStatusObj({ message: 'loading…', type: 'busy' });
     const params = new URLSearchParams();
     if (q) params.set('search', q);
     if (c) params.set('cursor', c);
@@ -71,25 +70,23 @@ export function SettingsMcpRegistryView(props = {}) {
     try {
       const r = await fetchJson('/api/mcp/registry?' + params.toString());
       if (r.status !== 200) {
-        setStatus(statusEl, 'Registry error: HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), 'error');
+        setStatusObj({ message: 'Registry error: HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), type: 'error' });
         setBusy(false);
         return;
       }
       setServers(r.body.servers || []);
       setMetadata(r.body.metadata || { count: 0, nextCursor: null });
       setCursor(c ? (r.body.metadata && r.body.metadata.nextCursor) || '' : '');
-      setStatus(statusEl, (r.body.metadata && r.body.metadata.count) + ' servers found', 'success');
+      setStatusObj({ message: (r.body.metadata && r.body.metadata.count) + ' servers found', type: 'success' });
     } catch (e) {
-      setStatus(statusEl, 'Network error: ' + (e.message || e), 'error');
+      setStatusObj({ message: 'Network error: ' + (e.message || e), type: 'error' });
     }
     setBusy(false);
   }
 
   function doSearch() {
-    const val = (searchEl.current && searchEl.current.value || '').trim();
-    setSearch(val);
     setCursor('');
-    loadRegistry({ search: val, cursor: '' });
+    loadRegistry({ search, cursor: '' });
   }
 
   function doNextPage() {
@@ -108,11 +105,11 @@ export function SettingsMcpRegistryView(props = {}) {
     const displayName = name.includes('/') ? name.split('/').pop() : name;
     const pkgInfo = extractPkgInfo(entry);
     if (!pkgInfo) {
-      setStatus(statusEl, 'Cannot install: no package info for ' + displayName, 'error');
+      setStatusObj({ message: 'Cannot install: no package info for ' + displayName, type: 'error' });
       return;
     }
     setAddingId(name);
-    setStatus(statusEl, 'Adding ' + displayName + '…', 'busy');
+    setStatusObj({ message: 'Adding ' + displayName + '…', type: 'busy' });
     const scope = projectDir ? 'project' : 'app';
     const body = {
       projectDir: projectDir || null,
@@ -130,7 +127,7 @@ export function SettingsMcpRegistryView(props = {}) {
         body: JSON.stringify(body)
       });
       if (r.status === 201 || r.status === 200) {
-        setStatus(statusEl, displayName + ' added!', 'success');
+        setStatusObj({ message: displayName + ' added!', type: 'success' });
         // Navigate to the edit view for the new server
         const id = r.body && r.body.server && r.body.server.id;
         if (id) {
@@ -139,10 +136,10 @@ export function SettingsMcpRegistryView(props = {}) {
           }, 600);
         }
       } else {
-        setStatus(statusEl, 'HTTP ' + r.status + ': ' + (r.body && r.body.error || 'unknown'), 'error');
+        setStatusObj({ message: 'HTTP ' + r.status + ': ' + (r.body && r.body.error || 'unknown'), type: 'error' });
       }
     } catch (e) {
-      setStatus(statusEl, 'Network error: ' + (e.message || e), 'error');
+      setStatusObj({ message: 'Network error: ' + (e.message || e), type: 'error' });
     }
     setAddingId(null);
   }
@@ -169,12 +166,13 @@ export function SettingsMcpRegistryView(props = {}) {
     // Search bar and sorting controls
     h('div', { class: 'row row--inline', style: 'margin-bottom:8px; gap:8px; flex-wrap:wrap;' },
       h('input', {
-        ref: searchEl,
         class: 'input',
         style: 'flex: 1 1 200px;',
         type: 'text',
         placeholder: 'Search servers by name…',
         'aria-label': 'Search MCP registry',
+        value: search,
+        onInput: (e) => setSearch(e.target.value),
         onKeyDown: (e) => { if (e.key === 'Enter') doSearch(); }
       }),
       h('button', { class: 'btn', type: 'button', onClick: doSearch, disabled: busy }, 'Search'),
@@ -209,7 +207,7 @@ export function SettingsMcpRegistryView(props = {}) {
             const displayName = name.includes('/') ? name.split('/').pop() : name || 'unknown';
             const description = server.description || '';
             const meta = entry._meta && entry._meta['io.modelcontextprotocol.registry/official'] || {};
-            const status = meta.status || 'active';
+            const statusMeta = meta.status || 'active';
             const updated = meta.updatedAt ? new Date(meta.updatedAt).toLocaleDateString() : null;
             const packages = Array.isArray(server.packages) ? server.packages : [];
             const pkgCount = packages.length;
@@ -219,8 +217,8 @@ export function SettingsMcpRegistryView(props = {}) {
               h('div', { class: 'reg-row__head' },
                 h('div', { class: 'reg-row__name' }, displayName,
                   h('span', { class: 'reg-row__ver' }, meta.isLatest !== undefined ? 'latest' : ''),
-                  status !== 'active'
-                    ? h('span', { class: 'reg-row__status reg-row__status--' + status }, status)
+                  statusMeta !== 'active'
+                    ? h('span', { class: 'reg-row__status reg-row__status--' + statusMeta }, statusMeta)
                     : null
                 ),
                 popularityBar(popScore)
@@ -247,10 +245,9 @@ export function SettingsMcpRegistryView(props = {}) {
     // Pagination
     h('div', { class: 'page-bar' },
       h('span', {
-        class: 'status page-bar__status' + (statusEl.current && statusEl.current.dataset.state ? ' status--' + statusEl.current.dataset.state : ''),
+        class: `status page-bar__status${status.type ? ' status--' + status.type : ''}`,
         'aria-live': 'polite'
-      }, (statusEl.current && statusEl.current.textContent) || ''),
-      h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite', style: 'display:none' }),
+      }, status.message),
       h('button', {
         class: 'btn btn--small', type: 'button',
         disabled: !cursor || busy,

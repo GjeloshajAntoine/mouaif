@@ -6,12 +6,14 @@
 // rendered at its natural pixel size, so panning through the frame
 // scrolls the actual page content.
 import { h } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 
 export function PreviewPanel(props) {
   const frameRef = useRef(null);
   const imgRef = useRef(null);
-  const noteRef = useRef(null);
+  const [note, setNote] = useState('capturing…');
+  const [imgSrc, setImgSrc] = useState('');
+
   useEffect(() => {
     let stop = false;
     let timer = null;
@@ -29,27 +31,29 @@ export function PreviewPanel(props) {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           const blob = new Blob([bytes], { type: 'image/jpeg' });
           const next = URL.createObjectURL(blob);
-          const img = imgRef.current;
-          const frame = frameRef.current;
-          if (img && frame) {
+
+          if (imgRef.current && frameRef.current) {
             // If the user is scrolled inside the preview frame, keep their
             // position when a new screenshot replaces the old one. Without
             // this the frame would snap back to the top on every refresh.
-            const prevTop = frame.scrollTop || 0;
-            const prevLeft = frame.scrollLeft || 0;
-            img.onload = () => {
-              frame.scrollTop = prevTop;
-              frame.scrollLeft = prevLeft;
-              img.onload = null;
+            const prevTop = frameRef.current.scrollTop || 0;
+            const prevLeft = frameRef.current.scrollLeft || 0;
+            imgRef.current.onload = () => {
+              if (frameRef.current) {
+                frameRef.current.scrollTop = prevTop;
+                frameRef.current.scrollLeft = prevLeft;
+              }
+              if (imgRef.current) imgRef.current.onload = null;
             };
-            img.src = next;
           }
+
+          setImgSrc(next);
           if (objUrl) URL.revokeObjectURL(objUrl);
           objUrl = next;
-          if (noteRef.current) noteRef.current.textContent = 'live · ' + new Date().toLocaleTimeString();
+          setNote('live · ' + new Date().toLocaleTimeString());
         }
       } catch (e) {
-        if (noteRef.current) noteRef.current.textContent = 'screenshot failed: ' + (e && e.message || e);
+        setNote('screenshot failed: ' + (e && e.message || e));
       } finally {
         inFlight = false;
         if (!stop) timer = setTimeout(tick, 1200);
@@ -61,7 +65,8 @@ export function PreviewPanel(props) {
       if (timer) clearTimeout(timer);
       if (objUrl) URL.revokeObjectURL(objUrl);
     };
-  }, []);
+  }, [props.capture]);
+
   // Clicking/tapping the preview pokes the page at that point. The frame
   // is a scroll container (the image is a full-page capture, wider and/or
   // taller than the frame), so the tap coordinates inside the image must
@@ -84,8 +89,8 @@ export function PreviewPanel(props) {
   }
   return h('div', { class: 'inspector__preview' },
     h('div', { ref: frameRef, class: 'inspector__preview-frame', role: 'group', 'aria-label': 'Live page preview, scrollable', onClick: onPreviewClick },
-      h('img', { ref: imgRef, class: 'inspector__preview-img', alt: 'Live page preview' })
+      imgSrc ? h('img', { ref: imgRef, src: imgSrc, class: 'inspector__preview-img', alt: 'Live page preview' }) : null
     ),
-    h('div', { ref: noteRef, class: 'status inspector__status', 'aria-live': 'polite' }, 'capturing…')
+    h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
   );
 }
