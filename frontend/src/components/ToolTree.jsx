@@ -86,7 +86,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
           h('input', {
             type: 'checkbox',
             class: 'checkbox checkbox--sm',
-            checked: halfChecked || !!group.checked,
+            checked: halfChecked ? false : !!group.checked,
             disabled: !!group.disabled,
             // `indeterminate` is a DOM-only property; Reflect.a11y-
             // set it via a callback so Preact vdom doesn't drop it.
