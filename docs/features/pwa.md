@@ -34,7 +34,7 @@ On Chrome (desktop and Android), the browser may show an "Install" icon in the U
 Once installed:
 
 - Launching the shortcut opens `http://127.0.0.1:5732/` in a standalone window (no URL bar, no navigation chrome).
-- The standing screen icon is the mouaif glyph on the blue gradient, exactly the in-app logo.
+- The standing screen icon is the full **mouaif** wordmark on the blue gradient, rendered in the same ink as the in-app logo.
 - A first launch with the server reachable primes the cache so a later offline launch still renders the shell.
 
 ## Migration from the old `/web/` install
@@ -66,7 +66,7 @@ Opening `/web/` in a browser still 301-redirects to `/` so old bookmarks and any
       - Static asset → cache-first (fingerprinted filenames, so a cache hit is always valid).
     - Cross-origin, `/api/*`, `/events`, `/data`, `/oauth/*`, the favicon, non-GET, and SSE GETs → bypassed. The chat surface stays live; the SW never sits in front of a streaming response.
 - **Hashed JS/CSS assets** are served with `Cache-Control: public, max-age=31536000, immutable`. The fingerprint changes on every build, so a stale copy is GC'd by the next deploy.
-- **Icons.** 192 × 192 and 512 × 512 "any purpose" icons, plus a 512 × 512 "maskable" variant for Android adaptive icons. A 180 × 180 PNG doubles as the iOS `apple-touch-icon`, and a 32 × 32 PNG is the favicon. All are produced by `frontend/build/generate-icons.js` from a hand-rolled PNG encoder (no image library at build time).
+- **Icons.** 192 × 192 and 512 × 512 "any purpose" icons, plus a 512 × 512 "maskable" variant for Android adaptive icons. A 180 × 180 PNG doubles as the iOS `apple-touch-icon`, and a 32 × 32 PNG is the favicon. All but the favicon carry the full **mouaif** wordmark — a hand-rolled 5px-tall pixel font drawn in the same ink as the in-app logo on the brand-gradient tile (`frontend/build/generate-icons.js`, no image library at build time). The 32 px favicon keeps the compact single-"m" glyph, since six letters cannot rasterize legibly at that size. The maskable variant renders the wordmark at ~66% of the tile side so all ink stays inside the ~80% safe zone that Android's adaptive-icon mask clips to.
 - **Update flow.** When a new SW is installed, the page shows a "A new version is ready." banner with a Reload button. Tapping it posts `{ type: 'SKIP_WAITING' }` to the waiting worker; the worker activates and the `controllerchange` listener reloads once. The user is always in control — the page never reloads without consent.
 - **Offline indicator.** The off banner ("You are offline. Showing the last cached view.") appears when the browser fires `offline` or when a same-origin app-shell fetch fails. Multiple banners stack: offline at the top, update immediately below.
 - **Scope.** Strictly the app shell at `/`. `/api/settings`, `/api/ai/*`, `/events`, `/data`, `/oauth/callback`, and any future same-origin endpoint are untouched by the SW. The SW logs `[mouaif-sw]` warnings for visible problems (partial precache) but does not throw — the chat UI works as a normal web page if the SW is unavailable (private mode, restrictive embedding, etc.).

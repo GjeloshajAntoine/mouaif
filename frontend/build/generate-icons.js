@@ -53,29 +53,59 @@ function chunk(type, data) {
 // corners (radius = 22% of the side). The background is a 135deg
 // gradient from #6ea8fe (top-left) to #5b93f0 (bottom-right), with a
 // thin inner highlight near the top edge and a subtle shadow toward
-// the bottom-right. The glyph is a simple block "m" drawn from a
-// 5x5 pixel font scaled up to fit.
-function renderTile(size) {
+// the bottom-right. The mark is the full "mouaif" wordmark drawn from
+// a hand-rolled 5px-tall pixel font, in the same ink as the in-app
+// logo (layout.css .app__logo).
+//
+// `markScale` is the fraction of the tile side the wordmark should
+// span (0..1). Do not pass more than ~0.8 for "maskable" icons: the
+// manifest safe zone keeps graphic content inside a circle ~80% of the
+// tile side, so a wordmark at 0.85 would be clipped. The default
+// 0.85 is for always-flat "any" icons.
+function renderTile(size, opts) {
+  const markScale = (opts && opts.markScale) ?? 0.85;
   const stride = size * 4;
   const rgba = Buffer.alloc(size * stride);
 
-  // Glyph raster: 5 rows x 5 cols. 1 = ink, 0 = transparent over the
-  // tile. The "m" sits centred and is scaled so the glyph occupies
-  // ~62% of the tile width — the same proportion the in-app logo uses.
-  const GLYPH_W = 5;
-  const GLYPH_H = 5;
-  const GLYPH = [
-    '11101',
-    '10101',
-    '10101',
-    '10101',
-    '10101'
-  ];
+  // A naïve 5px-tall pixel font, monospace (each letter a 5-wide
+  // grid). The wordmark is "mouaif" with a single empty column
+  // between letters so it reads as one continuous brand word.
+  const FONT = {
+    m: ['10001', '11011', '11111', '10101', '10101'],
+    o: ['01110', '10001', '10001', '10001', '01110'],
+    u: ['10001', '10001', '10001', '10001', '01110'],
+    a: ['01110', '10001', '11111', '10001', '10001'],
+    i: ['00100', '00100', '00100', '00100', '00100'],
+    f: ['01110', '01000', '11100', '01000', '01000']
+  };
+  function composeWordmark() {
+    const L = 'mouaif';
+    const rows = [];
+    for (let y = 0; y < 5; y++) {
+      let line = '';
+      for (let li = 0; li < L.length; li++) {
+        if (li > 0) line += '0';
+        line += FONT[L[li]][y];
+      }
+      rows.push(line);
+    }
+    return rows;
+  }
+  const MARK = ['11101', '10101', '10101', '10101', '10101']; // compact single "m"
 
-  // Glyph footprint in pixels (in the tile). Sized for the
-  // 192/512 output: a glyph about 62% of the tile width reads well
-  // at small and large sizes.
-  const glyphPx = Math.round(size * 0.62);
+  // Pick the mark: full wordmark anywhere it stays legible (each grid
+  // column >= 1px). At 32px the six-letter wordmark cannot be drawn in
+  // readable pixels, so the favicon keeps the compact "m" from before.
+  let glyph = null, glyphPx = 0;
+  {
+    const rows = composeWordmark();
+    const w = rows[0].length;
+    const px = Math.round(size * markScale);
+    if (Math.floor(px / w) >= 1) { glyph = rows; glyphPx = px; }
+  }
+  const GLYPH_H = 5;
+  const GLYPH_W = glyph ? glyph[0].length : MARK[0].length;
+  if (!glyph) { glyph = MARK; glyphPx = Math.round(size * 0.62); } // mark ~62%
   const cell = Math.floor(glyphPx / GLYPH_W);
   const drawnW = cell * GLYPH_W;
   const drawnH = cell * GLYPH_H;
@@ -98,7 +128,7 @@ function renderTile(size) {
 
   // Helper: true if (gx, gy) is ink in the glyph.
   function glyphInk(gx, gy) {
-    return GLYPH[gy] && GLYPH[gy][gx] === '1';
+    return glyph[gy] && glyph[gy][gx] === '1';
   }
 
   // Colour helpers. sRGB-lerp is fine for the gradient stops; this is
@@ -178,7 +208,7 @@ function encodePng(size, rgba) {
 }
 
 function writeIcon(name, size, opts) {
-  const rgba = renderTile(size);
+  const rgba = renderTile(size, opts);
   const png = encodePng(size, rgba);
   const dest = path.join(OUT_DIR, name + (opts && opts.maskable ? '.maskable' : '') + '.png');
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -190,11 +220,14 @@ if (require.main === module) {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   writeIcon('icon-192', 192);
   writeIcon('icon-512', 512);
-  // Maskable variant: same raster (the design already keeps all ink
-  // inside the safe zone — the glyph is inset ~19% from each edge,
-  // which exceeds the 10% safe-zone the maskable spec recommends).
-  // Manifest expects a separate file, so we emit one anyway.
-  fs.copyFileSync(path.join(OUT_DIR, 'icon-512.png'), path.join(OUT_DIR, 'icon-maskable-512.png'));
+  // Maskable variant: the same raster but with the wordmark kept
+  // inside the maskable safe zone. The manifest safe zone is a circle
+  // whose diameter is 80% of the tile side, so an "any"-style
+  // wordmark spanning ~85% of the tile would be clipped by Android's
+  // adaptive-icon mask. We inset the mark to span ~66% so all the ink
+  // stays comfortably inside the ~80% circle. The manifest expects a
+  // separate file, so we emit one.
+  writeIcon('icon-maskable-512', 512, { markScale: 0.66 });
   writeIcon('icon-180-apple', 180);
   // Favicon-style 32 also useful for browsers that ignore /favicon.ico.
   writeIcon('favicon-32', 32);
