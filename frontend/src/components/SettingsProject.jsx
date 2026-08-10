@@ -24,28 +24,32 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [promptSize, setPromptSize] = useState('');
   const [promptSizeStatusMsg, setPromptSizeStatusMsg] = useState('Following the app default until you change it here');
 
-  // Tool output profile. One select maps to a { size, structure } combo.
-  // Values are seeded during load() from the resolved settings so the
-  // File tool options page has defaults even when the project never set
-  // a toolOutput key.
+  // Tool output profile. Two selects map directly to the backend
+  // { size, structure } combo. Values are seeded during load() from the
+  // resolved settings so the File tool options page has defaults even when
+  // the project never set a toolOutput key.
   const [outputSize, setOutputSize] = useState('average');
   const [outputStructure, setOutputStructure] = useState('full');
   const [outputStatusMsg, setOutputStatusMsg] = useState('');
 
-  // The three user-facing profiles → stored toolOutput combos.
-  const OUTPUT_PROFILES = {
-    small: { size: 'very-small', structure: 'concise' },
-    balanced: { size: 'average', structure: 'full' },
-    full: { size: 'extensive', structure: 'full' }
+  // Backend-supported tool output dimensions. Keep these in sync with
+  // src/toolFeedback.js so hand-edited .mouaif.json values stay visible in
+  // the UI instead of being collapsed into a lossy preset.
+  const OUTPUT_SIZES = {
+    'very-small': { label: 'Very small — quarter cap' },
+    average: { label: 'Average — standard cap (default)' },
+    full: { label: 'Full — 4× cap' },
+    extensive: { label: 'Extensive — never truncate' }
   };
-  // Resolve a stored { size, structure } pair back to a profile key;
-  // unknown combos (hand-edited .mouaif.json) fall back to 'balanced'.
-  function profileFor(size, structure) {
-    for (const k of Object.keys(OUTPUT_PROFILES)) {
-      const p = OUTPUT_PROFILES[k];
-      if (p.size === size && p.structure === structure) return k;
-    }
-    return 'balanced';
+  const OUTPUT_STRUCTURES = {
+    full: { label: 'Raw — preserve body' },
+    concise: { label: 'Concise — compact layout' }
+  };
+  function normalizeOutputSize(size) {
+    return Object.prototype.hasOwnProperty.call(OUTPUT_SIZES, size) ? size : 'average';
+  }
+  function normalizeOutputStructure(structure) {
+    return Object.prototype.hasOwnProperty.call(OUTPUT_STRUCTURES, structure) ? structure : 'full';
   }
 
   const [traceCardVisible, setTraceCardVisible] = useState(!!(initialChatId && initialChatId.trim()));
@@ -132,8 +136,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
     const to = (resolved && resolved.toolOutput && typeof resolved.toolOutput === 'object') ? resolved.toolOutput : {};
-    setOutputSize((to && to.size) || 'average');
-    setOutputStructure((to && to.structure) || 'full');
+    setOutputSize(normalizeOutputSize(to && to.size));
+    setOutputStructure(normalizeOutputStructure(to && to.structure));
     setOutputStatusMsg('');
 
     setTraceCardVisible(!!chatId());
@@ -306,14 +310,18 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   async function saveToolOutput(size, structure) {
+    const nextSize = normalizeOutputSize(size);
+    const nextStructure = normalizeOutputStructure(structure);
+    setOutputSize(nextSize);
+    setOutputStructure(nextStructure);
     setOutputStatusMsg('saving…');
-    await patchProject({ toolOutput: { size, structure } }, setOutputStatusMsg, 'saved');
+    await patchProject({ toolOutput: { size: nextSize, structure: nextStructure } }, setOutputStatusMsg, 'saved');
   }
-  function onOutputProfile(e) {
-    const p = OUTPUT_PROFILES[e.target.value] || OUTPUT_PROFILES.balanced;
-    setOutputSize(p.size);
-    setOutputStructure(p.structure);
-    saveToolOutput(p.size, p.structure);
+  function onOutputSize(e) {
+    saveToolOutput(e && e.target ? e.target.value : outputSize, outputStructure);
+  }
+  function onOutputStructure(e) {
+    saveToolOutput(outputSize, e && e.target ? e.target.value : outputStructure);
   }
 
   async function onChatTraceChange(e) {
@@ -846,60 +854,50 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   // What the model receives for a representative file-tool result under the
-  // selected profile. This page is "File tool options", so the sample is an
-  // actual file-tool payload in its compact model-facing form — the same
-  // shape src/tools/files.js emits: a small `#` header, a directory grouped
-  // once (no repeated path prefix per row), and no raw JSON envelope. The
-  // profile then applies exactly as in src/toolFeedback.js: `concise`
-  // collapses blank runs / strips leading indent + trailing whitespace, and
-  // the size budget truncates head/tail (75/25) with the standard marker
-  // only when the body exceeds the cap. The sample is well under every cap,
-  // so no truncation fires here — the visible difference is the concise
-  // layout. The transform is real; only the sample is fixed.
-  function exampleFor(profile) {
-    const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, extensive: Infinity };
+  // selected { size, structure } pair. This mirrors src/toolFeedback.js for
+  // ASCII text: structure first, then the byte cap, then 75/25 head-tail
+  // truncation with the standard marker. The sample is deliberately larger
+  // than every finite cap, so each size setting has a visible effect.
+  function exampleFor(size, structure) {
+    const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, full: 4, extensive: Infinity };
     const BASE_MAX_BYTES = 64 * 1024;
     const MIN_MAX_BYTES = 4 * 1024;
     const utf8Len = (s) => new TextEncoder().encode(s).length;
 
-    const combo = OUTPUT_PROFILES[profile] || OUTPUT_PROFILES.balanced;
-    // A generic `list_files` result across several directories. This is the
+    // A generic `list_files` result across many directories. This is the
     // compact format the file tools produce: one `# Listing`/`# Count`
     // header, then each directory printed once as a `# <dir>/` group header
-    // with bare basenames indented under it. The full path prefix is never
-    // repeated per row and the model never sees a JSON blob — the grouping
-    // is what saves tokens, which is why the sample spans multiple dirs.
-    const full = [
+    // with bare basenames indented under it. The model does not see a JSON
+    // envelope for successful file-tool output.
+    const dirCount = 72;
+    const filesPerDir = 110;
+    const lines = [
       '# Listing: **/*.js',
-      '# Count: 8',
-      '# Skipped: 3',
-      '',
-      '# src/',
-      '  index.js',
-      '  server.js',
-      '# src/lib/',
-      '  parser.js',
-      '  format.js',
-      '# src/routes/',
-      '  users.js',
-      '  posts.js',
-      '# test/',
-      '  parser.test.js',
-      '  server.test.js'
-    ].join('\n');
+      '# Count: ' + (dirCount * filesPerDir),
+      '# Skipped: 37',
+      ''
+    ];
+    for (let d = 1; d <= dirCount; d++) {
+      const dir = String(d).padStart(3, '0');
+      lines.push('# packages/module-' + dir + '/src/');
+      for (let f = 1; f <= filesPerDir; f++) {
+        lines.push('  component-output-profile-example-' + String(f).padStart(3, '0') + '.js');
+      }
+    }
+    const raw = lines.join('\n');
 
     // structure: `concise` collapses blank runs, strips leading indentation
     // and trailing whitespace (matches conciseLayout for non-JSON text).
-    let body = full;
-    if (combo.structure === 'concise') {
-      body = full
+    let body = raw;
+    if (normalizeOutputStructure(structure) === 'concise') {
+      body = raw
         .replace(/\n[ \t]*\n+/g, '\n')
         .replace(/^[ \t]+/gm, '')
         .replace(/\s+$/gm, '');
     }
 
     // size: byte-budget cap against the base 64 KiB. `extensive` never caps.
-    const mult = SIZE_MULTIPLIER[combo.size];
+    const mult = SIZE_MULTIPLIER[normalizeOutputSize(size)];
     if (mult === Infinity) return body;
     const cap = Math.max(MIN_MAX_BYTES, Math.floor(BASE_MAX_BYTES * mult));
     const bytes = utf8Len(body);
@@ -929,14 +927,21 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       h('ul', { class: 'group__list' },
         h('li', { class: 'settings-project__item' },
           h('div', { class: 'settings-project__item-main' },
-            h('label', { class: 'settings-project__item-title', for: 'sp-output-profile' }, 'Output profile'),
-            h('div', { class: 'settings-project__item-note' }, 'One preset covering result size and layout.'),
+            h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Size cap'),
+            h('div', { class: 'settings-project__item-note' }, 'How many bytes of each tool result the model can see.'),
             h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outputStatusMsg)
           ),
-          h('select', { class: 'input settings-project__select', id: 'sp-output-profile', value: profileFor(outputSize, outputStructure), onChange: onOutputProfile },
-            h('option', { value: 'small' }, 'Small — tight cap, compact layout'),
-            h('option', { value: 'balanced' }, 'Balanced — standard cap, raw body (default)'),
-            h('option', { value: 'full' }, 'Full — never truncate, raw body')
+          h('select', { class: 'input settings-project__select', id: 'sp-output-size', value: normalizeOutputSize(outputSize), onChange: onOutputSize },
+            Object.entries(OUTPUT_SIZES).map(([value, meta]) => h('option', { value }, meta.label))
+          )
+        ),
+        h('li', { class: 'settings-project__item' },
+          h('div', { class: 'settings-project__item-main' },
+            h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Layout'),
+            h('div', { class: 'settings-project__item-note' }, 'Whether whitespace is preserved or compacted before the size cap.')
+          ),
+          h('select', { class: 'input settings-project__select', id: 'sp-output-structure', value: normalizeOutputStructure(outputStructure), onChange: onOutputStructure },
+            Object.entries(OUTPUT_STRUCTURES).map(([value, meta]) => h('option', { value }, meta.label))
           )
         )
       ),
@@ -947,8 +952,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Example'),
-        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result spanning several directories — the compact file-tool format (each directory grouped once, no repeated path prefix, no JSON). Illustrative, not a live preview:'),
-        h('pre', { class: 'settings__out' }, exampleFor(profileFor(outputSize, outputStructure)))
+        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result spanning many directories — the compact file-tool format (each directory grouped once, no repeated path prefix, no JSON). The sample is intentionally large so finite size caps show the truncation marker:'),
+        h('pre', { class: 'settings__out' }, exampleFor(outputSize, outputStructure))
       )
     )
   );

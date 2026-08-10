@@ -76,6 +76,9 @@ const avgOut = feedback.compactToolFeedback({ name: 'shell', content: bigJson, m
 check('average size caps at base', Buffer.byteLength(avgOut, 'utf8') <= base, String(Buffer.byteLength(avgOut, 'utf8')));
 const vsOut = feedback.compactToolFeedback({ name: 'shell', content: 'x'.repeat(base * 2), maxBytes: base, toolOutput: { size: 'very-small', structure: 'full' } });
 check('very-small caps at base/4', Buffer.byteLength(vsOut, 'utf8') <= Math.floor(base / 4) + 8, String(Buffer.byteLength(vsOut, 'utf8')));
+const fullOut = feedback.compactToolFeedback({ name: 'shell', content: 'z'.repeat(base * 6), maxBytes: base, toolOutput: { size: 'full', structure: 'full' } });
+check('full size caps at 4x base', Buffer.byteLength(fullOut, 'utf8') <= base * 4, String(Buffer.byteLength(fullOut, 'utf8')));
+check('full size still truncates oversized output', /tool feedback truncated/.test(fullOut), fullOut.slice(0, 120));
 const extOut = feedback.compactToolFeedback({ name: 'shell', content: 'y'.repeat(60000), maxBytes: base, toolOutput: { size: 'extensive', structure: 'full' } });
 check('extensive never truncates', extOut.length === 60000, String(extOut.length));
 const rawLong = 'HEAD\n\n\n  mid\n\nTAIL';
