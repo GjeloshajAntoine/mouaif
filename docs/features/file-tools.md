@@ -51,7 +51,7 @@ Every tool:
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
-- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars scanned (default 200 / 2 MB; the counter counts characters, not bytes, so multi-byte text measures the same for the model and the UI).
+- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars scanned (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the `# Matches` header line.
 
 The caps are app-level knobs. Override them in the app store:
 
@@ -72,7 +72,6 @@ The `tool` message the model sees is a small header followed by the body, so the
 ```text
 # File: src/index.js
 # Lines: 1-72
-# Chars: 2310
 
 <file body>
 ```
@@ -90,13 +89,11 @@ The `tool` message the model sees is a small header followed by the body, so the
   new.js
 ```
 
-`search_files` groups matches by file the same way — one `# path` header per file, then `line: text` rows — and reports the scan volume in chars:
+`search_files` groups matches by file the same way — one `# path` header per file, then `line: text` rows:
 
 ```text
 # Search: function (login|logout)
 # Matches: 2
-# Files scanned: 4
-# Chars scanned: 5120
 
 # src/auth.js
 1: export function login() {}

@@ -97,7 +97,6 @@ function renderReadFileToolResult(body, r) {
   if (r.startLine != null && r.endLine != null) {
     meta.push('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : ''));
   }
-  if (r.chars != null) meta.push(r.chars + ' chars');
   if (r.truncated) meta.push('truncated');
   renderToolMeta(body, meta);
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
@@ -116,7 +115,7 @@ function renderListFilesToolResult(body, r) {
   meta.push(r.pattern ? ('pattern ' + r.pattern) : 'all text files');
   if (Array.isArray(r.entries)) {
     meta.push(r.entries.length + ' shown');
-    if (r.total != null && r.total !== r.entries.length) meta.push(r.total + ' total');
+    if (r.total != null && r.total !== r.entries.length) meta.push(r.total + ' total'); // legacy results only
   }
   if (r.skipped) meta.push(r.skipped + ' skipped');
   if (r.truncated) meta.push('capped');
@@ -166,7 +165,6 @@ function renderSearchFilesToolResult(body, r) {
   meta.push(r.query ? ('search ' + r.query) : 'no query');
   if (Array.isArray(r.matches)) meta.push(r.matches.length + ' matches');
   if (r.filesScanned != null) meta.push(r.filesScanned + ' files');
-  if (r.charsRead != null) meta.push(r.charsRead + ' chars');
   if (r.truncated) meta.push('capped');
   renderToolMeta(body, meta);
   if (!Array.isArray(r.matches)) {

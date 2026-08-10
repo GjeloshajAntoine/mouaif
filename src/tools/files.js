@@ -192,8 +192,6 @@ async function runReadFile(opts) {
       relPath: rel,
       startLine: 1,
       endLine: totalLines,
-      lines: totalLines,
-      chars: raw.length,
       body: raw,
       truncated: false
     };
@@ -211,8 +209,6 @@ async function runReadFile(opts) {
     startLine: a,
     endLine: b,
     totalLines,
-    lines: b - a + 1,
-    chars: slice.length,
     body: slice,
     truncated: b < endLine
   };
@@ -221,7 +217,6 @@ async function runReadFile(opts) {
 function formatReadFileResult(r) {
   const header = '# File: ' + r.relPath
     + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')
-    + (r.chars != null ? '\n# Chars: ' + r.chars : '')
     + (r.truncated ? '\n# Truncated: yes' : '');
   return header + '\n\n' + r.body;
 }
@@ -243,7 +238,6 @@ async function runListFiles(opts) {
 
   const out = [];
   let truncated = false;
-  let total = 0;
   let skipped = 0;
 
   async function walk(dirAbs, dirRel) {
@@ -268,11 +262,10 @@ async function runListFiles(opts) {
       const ext = path.extname(ent.name).toLowerCase();
       if (!TEXT_EXTS.has(ext)) { skipped++; continue; }
       out.push({ path: childRel });
-      total++;
     }
   }
   await walk(root, '');
-  return { entries: out, total, skipped, truncated, cap, pattern: pattern || '' };
+  return { entries: out, skipped, truncated, cap, pattern: pattern || '' };
 }
 
 function formatListFilesResult(r) {
@@ -417,14 +410,14 @@ async function runSearchFiles(opts) {
     }
   }
   await walk(root, '');
-  return { query, matches, filesScanned, charsRead, truncated, cap };
+  const result = { query, matches, filesScanned, truncated };
+  if (truncated) { result.capMatches = cap.matches; result.capBytes = cap.bytes; }
+  return result;
 }
 
 function formatSearchFilesResult(r) {
   const header = '# Search: ' + r.query
-    + '\n# Matches: ' + r.matches.length + (r.truncated ? ' (capped at ' + r.cap.matches + ' matches / ' + r.cap.bytes + ' chars)' : '')
-    + '\n# Files scanned: ' + r.filesScanned
-    + (r.charsRead != null ? '\n# Chars scanned: ' + r.charsRead : '');
+    + '\n# Matches: ' + r.matches.length + (r.truncated ? ' (capped at ' + r.capMatches + ' matches / ' + r.capBytes + ' chars)' : '');
   if (!r.matches.length) return header + '\n\n(no matches)';
   // Group by file so each path is printed once (a "# path" header)
   // followed by "line: text" rows, instead of repeating the full path
