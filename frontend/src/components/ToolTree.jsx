@@ -269,7 +269,9 @@ export function shortDesc(text, max = 40) {
 // dot badge.
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
   const groups = [];
-  const isOn = (name) => filter == null || filter.includes(name);
+  const selected = Array.isArray(filter) ? new Set(filter) : null;
+  const isOn = (name) => selected == null || selected.has(name);
+  const allToolsOn = (tools) => tools.length > 0 && tools.every((t) => t && isOn(t.name));
   const leaf = (t, extra) => Object.assign({
     id: t.name,
     name: t.name,
@@ -310,7 +312,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       id: 'files',
       name: 'File tools',
       description: 'read, list, search, write, edit',
-      checked: fileTools.every((t) => isOn(t.name)),
+      checked: allToolsOn(fileTools),
       tools: fileTools.map((t) => leaf(t))
     });
   }
@@ -336,10 +338,13 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       }).filter(Boolean);
     }
     groups.push({
-      id: 'mcp-' + server.id,
+      // Keep the row key aligned with the model-facing slug. Project
+      // settings already use this key for MCP auth overrides; the chat
+      // picker uses it to find the matching server without id/slug drift.
+      id: 'mcp-' + slug,
       name: server.name || server.id,
       description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
-      checked: true,
+      checked: allToolsOn(serverTools),
       tools: serverTools.map((t) => {
         const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
         return leaf(t, { name: short });

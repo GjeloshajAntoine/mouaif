@@ -155,8 +155,7 @@ function buildToolsCard(state) {
     });
     for (const g of groups) {
       if (!g.id.startsWith('mcp-')) continue;
-      const server = mcpServers.find((s) => s && s.id === g.id.slice(4));
-      const slug = (server && (server.slug || server.id)) || g.id.slice(4);
+      const slug = g.id.slice(4);
       g.control = h(McpAuthSeg, {
         name: g.name,
         slug,
