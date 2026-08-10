@@ -47,6 +47,11 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   check('builder: tools converted to Anthropic shape', req.body.tools[0].name === 'shell' && req.body.tools[0].input_schema.type === 'object' && req.body.tools[0].input_schema.properties.cmd);
   check('builder: cache_control on LAST tool only', !('cache_control' in req.body.tools[0]) && req.body.tools[1].cache_control && req.body.tools[1].cache_control.type === 'ephemeral', JSON.stringify(req.body.tools));
   check('builder: system block cacheable', req.body.system[0].cache_control && req.body.system[0].cache_control.type === 'ephemeral');
+  check('builder: API-key headers use generally available caching',
+    req.headers['x-api-key'] === 'sk-test'
+      && req.headers['anthropic-version'] === '2023-06-01'
+      && !('anthropic-beta' in req.headers),
+    JSON.stringify(req.headers));
   check('builder: assistant tool_calls -> tool_use block', req.body.messages[1].role === 'assistant' && req.body.messages[1].content[0].type === 'tool_use' && req.body.messages[1].content[0].id === 'toolu_01abc' && req.body.messages[1].content[0].input.title === 'T');
   check('builder: tool role -> user tool_result', req.body.messages[2].role === 'user' && req.body.messages[2].content[0].type === 'tool_result' && req.body.messages[2].content[0].tool_use_id === 'toolu_01abc');
   // The penultimate message (the deepest stable, replayed point) carries
@@ -64,6 +69,11 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   const oauthReq = BUILDERS.anthropic(Object.assign({}, MODEL, { auth: 'oauth' }), messages, true, SPECS);
   const oauthBody = JSON.stringify(oauthReq.body);
   check('builder: OAuth model carries cache_control', oauthBody.indexOf('cache_control') >= 0);
+  check('builder: OAuth headers retain only OAuth beta',
+    oauthReq.headers.Authorization === 'Bearer sk-test'
+      && oauthReq.headers['anthropic-beta'] === 'oauth-2025-04-20'
+      && !('anthropic-version' in oauthReq.headers),
+    JSON.stringify(oauthReq.headers));
 
   // Empty specs -> no tools field at all (system-only request stays valid).
   const noToolsReq = BUILDERS.anthropic(MODEL, [{ role: 'user', content: 'hi' }], true, undefined);
@@ -75,6 +85,14 @@ const MODEL = { id: 'claude-sonnet-4-5', provider: 'anthropic', maxTokens: 4096,
   // With NO tools and a short system block, the penultimate-message
   // breakpoint is what makes the cache engage — the exact "every tool
   // switched off" case.
+  const arraySystemReq = BUILDERS.anthropic(MODEL, [
+    { role: 'system', content: [{ type: 'text', text: 'A', cache_control: { type: 'ephemeral' } }, { type: 'text', text: 'B' }] },
+    { role: 'user', content: 'hi' }
+  ], true, undefined);
+  check('builder: system array text is preserved',
+    arraySystemReq.body.system[0].text === 'A\nB',
+    JSON.stringify(arraySystemReq.body.system));
+
   const bareReq = BUILDERS.anthropic(MODEL, [
     { role: 'system', content: 'You are a coding assistant.' },
     { role: 'user', content: 'hi' },

@@ -61,10 +61,10 @@ const ENDPOINTS = {
       if (model && model.auth === 'oauth') {
         return {
           'Authorization': 'Bearer ' + cred,
-          'anthropic-beta': 'oauth-2025-04-20,prompt-caching-2024-07-31'
+          'anthropic-beta': 'oauth-2025-04-20'
         };
       }
-      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' };
+      return { 'x-api-key': cred, 'anthropic-version': '2023-06-01' };
     }
   },
   'gemini': {
@@ -982,6 +982,20 @@ function openAIContentToGeminiParts(content) {
   }).filter((part) => part.text || part.inlineData);
 }
 
+function systemContentText(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (part == null) return '';
+      if (typeof part === 'string') return part;
+      if (typeof part === 'object' && part.type === 'text') return part.text || '';
+      return '';
+    }).filter(Boolean).join('\n');
+  }
+  return String(content);
+}
+
 // openAIToolsToAnthropic(specs) -> [{ name, description, input_schema }]
 // Converts the OpenAI-shaped tool specs ({ type:'function',
 // function:{ name, description, parameters } }) into Anthropic's native
@@ -1073,7 +1087,7 @@ function markPenultimateMessage(messages) {
 
 function buildAnthropicRequest(model, messages, stream, specs) {
   const systemMsgs = messages.filter(m => m.role === 'system');
-  const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
+  const systemContent = systemMsgs.map(m => systemContentText(m.content)).filter(Boolean).join('\n\n');
   const chatMessages = messages.filter(m => m.role !== 'system');
   const maxOutput = String(model.maxOutputTokens || '').trim();
   const maxOutputNum = (maxOutput && /^\d+$/.test(maxOutput) && parseInt(maxOutput, 10) > 0)
