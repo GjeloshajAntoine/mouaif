@@ -15,7 +15,32 @@
 // BUILDERS + PARSERS entry at the bottom, and (if the auth shape
 // differs) an entry in src/auth.js.
 
-const { joinUrl, err, firstStringField } = require('./util.js');
+const { joinUrl, firstStringField } = require('./util.js');
+
+// openAIShapedListModels(def, cred, signal) — shared fetch + error
+// mapping for the OpenAI-shaped /models adapters (openai-compatible,
+// openrouter, azure, mistral, groq, deepseek), which previously each
+// carried an identical copy of this scaffold. `def`:
+//   name            provider key (for typed errors)
+//   url             the /models endpoint
+//   authHeader(cred) header builder (same shape as ENDPOINTS entries)
+//   thinkingFor     model -> { kind } mapper for parseOpenAIShapedModels
+//   requireCred     true -> 401/403 with no cred is a typed ENO_APIKEY
+//                   (openai-compatible, azure, mistral, groq, deepseek);
+//                   false -> unauthenticated list works (openrouter)
+async function openAIShapedListModels(def, cred, signal) {
+  let r;
+  try {
+    r = await fetch(def.url, { headers: cred ? def.authHeader(cred) : {}, signal });
+  } catch (e) { throw unreachableError(def.name, e); }
+  if (def.requireCred !== false && (r.status === 401 || r.status === 403)) {
+    if (!cred) throw noApiKeyError(def.name);
+    throw httpError(r);
+  }
+  if (!r.ok) throw httpError(r);
+  const body = await r.json();
+  return parseOpenAIShapedModels(body, def.thinkingFor);
+}
 
 // ---- Provider endpoints ------------------------------------------------
 
@@ -27,20 +52,12 @@ const ENDPOINTS = {
     // but in this env the upstream returns 401 when no Authorization
     // header is sent, so treat "no cred" as a typed ENO_APIKEY error
     // instead of a generic upstream 401.
-    listModels: async (cred, signal) => {
-      const def = ENDPOINTS['openai-compatible'];
-      const url = (def.baseUrl || 'https://api.openai.com/v1') + '/models';
-      let r;
-      try { r = await fetch(url, { headers: cred ? def.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('openai-compatible', e); }
-      if (r.status === 401 || r.status === 403) {
-        if (!cred) throw noApiKeyError('openai-compatible');
-        throw httpError(r);
-      }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
-    }
+    listModels: async (cred, signal) => openAIShapedListModels({
+      name: 'openai-compatible',
+      url: (ENDPOINTS['openai-compatible'].baseUrl || 'https://api.openai.com/v1') + '/models',
+      authHeader: ENDPOINTS['openai-compatible'].authHeader,
+      thinkingFor: (m) => thinkingForOpenAIModel(m.id)
+    }, cred, signal)
   },
   'anthropic': {
     baseUrl: 'https://api.anthropic.com',
@@ -173,15 +190,13 @@ const ENDPOINTS = {
     // list unauthenticated, so missing cred is fine here; upstream
     // errors are surfaced as EUPSTREAM with the upstream status, and
     // a network failure is EUNREACHABLE (handled like the others).
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.openrouter.baseUrl + '/models';
-      let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.openrouter.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('openrouter', e); }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, thinkingForOpenRouterModel);
-    },
+    listModels: async (cred, signal) => openAIShapedListModels({
+      name: 'openrouter',
+      url: ENDPOINTS.openrouter.baseUrl + '/models',
+      authHeader: ENDPOINTS.openrouter.authHeader,
+      thinkingFor: thinkingForOpenRouterModel,
+      requireCred: false
+    }, cred, signal),
     staticHeaders: {
       'HTTP-Referer': 'https://mouaif.local',
       // The current OpenRouter API uses `X-OpenRouter-Title` as the
@@ -219,20 +234,12 @@ const ENDPOINTS = {
     // (model.apiVersion, settable in the provider form) or defaults
     // to a recent GA release (2024-10-21, which supports
     // stream_options.include_usage for chat completions).
-    listModels: async (cred, signal, model) => {
-      const apiVersion = (model && model.apiVersion) || '2024-10-21';
-      const url = joinUrl(ENDPOINTS.azure.baseUrl, '/openai/models?api-version=' + encodeURIComponent(apiVersion));
-      let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.azure.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('azure', e); }
-      if (r.status === 401 || r.status === 403) {
-        if (!cred) throw noApiKeyError('azure');
-        throw httpError(r);
-      }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
-    },
+    listModels: async (cred, signal, model) => openAIShapedListModels({
+      name: 'azure',
+      url: joinUrl(ENDPOINTS.azure.baseUrl, '/openai/models?api-version=' + encodeURIComponent((model && model.apiVersion) || '2024-10-21')),
+      authHeader: ENDPOINTS.azure.authHeader,
+      thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
+    }, cred, signal),
     // Every Azure request must carry an api-version query parameter.
     // model.apiVersion is user-settable (provider form); the builder
     // appends it unless the caller already set one.
@@ -246,19 +253,12 @@ const ENDPOINTS = {
     baseUrl: 'https://api.mistral.ai/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.mistral.baseUrl + '/models';
-      let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.mistral.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('mistral', e); }
-      if (r.status === 401 || r.status === 403) {
-        if (!cred) throw noApiKeyError('mistral');
-        throw httpError(r);
-      }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
-    }
+    listModels: async (cred, signal) => openAIShapedListModels({
+      name: 'mistral',
+      url: ENDPOINTS.mistral.baseUrl + '/models',
+      authHeader: ENDPOINTS.mistral.authHeader,
+      thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
+    }, cred, signal),
   },
   // Groq: OpenAI-shaped chat completions at
   // https://api.groq.com/openai/v1/chat/completions with a Bearer key.
@@ -268,19 +268,12 @@ const ENDPOINTS = {
     baseUrl: 'https://api.groq.com/openai/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.groq.baseUrl + '/models';
-      let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.groq.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('groq', e); }
-      if (r.status === 401 || r.status === 403) {
-        if (!cred) throw noApiKeyError('groq');
-        throw httpError(r);
-      }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
-    }
+    listModels: async (cred, signal) => openAIShapedListModels({
+      name: 'groq',
+      url: ENDPOINTS.groq.baseUrl + '/models',
+      authHeader: ENDPOINTS.groq.authHeader,
+      thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
+    }, cred, signal),
   },
   // DeepSeek: OpenAI-shaped chat completions at
   // https://api.deepseek.com/chat/completions with a Bearer key.
@@ -290,19 +283,12 @@ const ENDPOINTS = {
     baseUrl: 'https://api.deepseek.com',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.deepseek.baseUrl + '/models';
-      let r;
-      try { r = await fetch(url, { headers: cred ? ENDPOINTS.deepseek.authHeader(cred) : {}, signal }); }
-      catch (e) { throw unreachableError('deepseek', e); }
-      if (r.status === 401 || r.status === 403) {
-        if (!cred) throw noApiKeyError('deepseek');
-        throw httpError(r);
-      }
-      if (!r.ok) throw httpError(r);
-      const body = await r.json();
-      return parseOpenAIShapedModels(body, (m) => thinkingForOpenAIModel(m.id));
-    }
+    listModels: async (cred, signal) => openAIShapedListModels({
+      name: 'deepseek',
+      url: ENDPOINTS.deepseek.baseUrl + '/models',
+      authHeader: ENDPOINTS.deepseek.authHeader,
+      thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
+    }, cred, signal),
   }
 };
 
