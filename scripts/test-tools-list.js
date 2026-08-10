@@ -12,8 +12,9 @@ const os = require('os');
 const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-tl-'));
 
 // Minimal project config plus an MCP server loaded directly from
-// the project file. The first tools/list response must wait for startup and
-// include its discovered tools; requiring a second poll is a startup race.
+// the project file. MCP servers no longer auto-start on tools/list
+// (on-demand lifecycle): the first list is native-only, and the MCP
+// tools appear only after an explicit start.
 fs.writeFileSync(path.join(projDir, '.mouaif.json'), JSON.stringify({ name: 'tools-test' }, null, 2) + '\n');
 fs.writeFileSync(path.join(projDir, '.mcp.json'), JSON.stringify({
   servers: [{
@@ -63,7 +64,18 @@ server.listen(0, '127.0.0.1', () => {
         if (names.indexOf(expected) < 0) throw new Error('missing tool: ' + expected);
       }
       for (const expected of ['mcp__file_config_server__echo', 'mcp__file_config_server__add']) {
-        if (names.indexOf(expected) < 0) throw new Error('missing file-config MCP tool on first list: ' + expected);
+        if (names.indexOf(expected) >= 0) throw new Error('MCP tool auto-exposed before start: ' + expected);
+      }
+      // On-demand lifecycle: opening a chat (tools/list) never cold-starts
+      // a configured MCP server. The server here is enabled (default ask)
+      // but not running, so its tools are absent until started explicitly.
+      // Start it (the reload control / Settings Start), then re-list.
+      const rStart = await req('POST', '/api/mcp/servers/file-config-server/start', { projectDir: projDir });
+      if (rStart.status !== 200) throw new Error('mcp start failed: HTTP ' + rStart.status);
+      const r1b = await req('GET', '/api/tools/list?projectDir=' + encodeURIComponent(projDir));
+      const names2 = r1b.body.tools.map((t) => t.name);
+      for (const expected of ['mcp__file_config_server__echo', 'mcp__file_config_server__add']) {
+        if (names2.indexOf(expected) < 0) throw new Error('missing file-config MCP tool after explicit start: ' + expected);
       }
 
       // 2. Create a chat.

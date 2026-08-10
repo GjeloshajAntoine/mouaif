@@ -771,6 +771,12 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           description: (server.status || 'stopped') + (toolCount ? ' · ' + toolCount + (toolCount === 1 ? ' tool' : ' tools') : '')
             + (overridden ? ' · override: ' + segMode(effMode) : ' · default (' + segMode(effMode) + ')'),
           checked: effMode !== 'off',
+          // MCP lifecycle state for the reload control (same fields the
+          // chat tools card threads): a stopped-but-enabled server shows
+          // the start button; a disabled (off) one never does.
+          status: server.status || 'stopped',
+          enabled: effMode !== 'off',
+          serverId: server.id,
           control: h(McpAuthSeg, {
             name: server.name || server.id,
             slug,
@@ -805,6 +811,27 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     return groups;
   }
 
+  async function onReloadMcpServer(group) {
+    const d = dir();
+    const id = group && group.serverId;
+    if (!d || !id) return;
+    group.reloadBusy = true;
+    setGlobalStatus({ text: 'starting server…', state: 'busy' });
+    let ok = false;
+    try {
+      const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir: d })
+      });
+      ok = r.status === 200;
+    } catch { /* ok stays false */ }
+    group.reloadBusy = false;
+    setGlobalStatus(ok
+      ? { text: 'server started', state: 'ok' }
+      : { text: 'start failed — check Server command/URL', state: 'error' });
+    load(d);
+  }
   function toggleSettingsGroup(groupId, checked) {
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'shell') pickShellMode(mode);
@@ -1095,7 +1122,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 // collapse state, so a group the user expands stays open
                 // across SettingsProject re-renders (checkbox / segment
                 // changes only re-render this tree in place).
-                collapsedByDefault: true
+                collapsedByDefault: true,
+                onReloadServer: onReloadMcpServer
               })
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),

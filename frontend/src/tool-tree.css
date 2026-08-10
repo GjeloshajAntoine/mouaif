@@ -148,6 +148,28 @@
 .tool-tree__reset:hover { color: var(--fg); background: var(--surface-3); }
 .tool-tree__reset:active { background: var(--surface-3); }
 .tool-tree__reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Reload control for a stopped-but-enabled MCP server. Same shape as
+the reset button so an MCP row reads consistently; appears only when
+the server is startable but not running. */
+.tool-tree__reload {
+flex: 0 0 auto;
+min-width: 28px;
+height: 26px;
+padding: 0 6px;
+font-size: 0.9rem;
+line-height: 1;
+color: var(--muted);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-appearance: none;
+appearance: none;
+}
+.tool-tree__reload:hover { color: var(--fg); background: var(--surface-3); }
+.tool-tree__reload:active { background: var(--surface-3); }
+.tool-tree__reload:disabled { opacity: 0.5; cursor: default; }
+.tool-tree__reload:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Child list */
 .tool-tree__children {

@@ -39,7 +39,7 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '' }) {
+export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '', onReloadServer = null }) {
   const [collapsed, setCollapsed] = useState(() => {
     // An explicit seed wins over the default so an imperative caller
     // (e.g. the chat tools card, which rebuilds the tree in place on
@@ -141,7 +141,25 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
 
           group.description ? h('span', { class: 'tool-tree__desc' }, group.description) : null,
           kids.length > 1 ? h('span', { class: 'tool-tree__count' }, onCount + '/' + kids.length) : null,
-          group.control ? h('span', { class: 'tool-tree__control' }, group.control) : null
+          group.control ? h('span', { class: 'tool-tree__control' }, group.control) : null,
+          // Reload control for a stopped-but-enabled MCP server: the
+          // first tool-call starts it on demand, but the user can also
+          // start it here so the live tools appear immediately.
+          // Checked-off (disabled, auth `off`) servers never show it —
+          // they are not startable.
+          (!group.enabled || group.status === 'ready' || group.status === 'starting')
+            ? null
+            : h('button', {
+                type: 'button',
+                class: 'tool-tree__reload',
+                title: 'Start MCP server ' + group.name,
+                'aria-label': 'Start MCP server ' + group.name,
+                disabled: !!group.reloadBusy,
+                onClick: (e) => {
+                  e.stopPropagation();
+                  if (onReloadServer) onReloadServer(group);
+                }
+              }, '…')
         ),
         // Below-row extra content. A disabled row explains itself
         // here — a dead grey checkbox without a reason helps nobody.
@@ -348,6 +366,14 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       name: server.name || server.id,
       description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
       checked: allToolsOn(serverTools),
+      // MCP lifecycle state threaded for the reload control: a
+      // stopped-but-enabled server exposes its persisted tools but is
+      // not live. `enabled === false` is a disabled (auth `off`) server
+      // — never started, never surfaced here. `onReload` starts the
+      // server on demand.
+      status: server.status || 'stopped',
+      enabled: server.enabled !== false,
+      serverId: server.id,
       tools: serverTools.map((t) => {
         const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
         return leaf(t, { name: short });

@@ -197,13 +197,26 @@ function buildToolsCard(state) {
   // rebuild seeds from it instead of collapsing every section again.
   const captureCollapsed = (set) => { state._toolTreeCollapsed = set; };
 
+  async function onReloadServer(group) {
+    // Start the stopped-but-enabled MCP server via the lifecycle
+    // endpoint, then refresh the tree so its live tools appear.
+    const id = group && group.serverId;
+    if (!id || !state._reloadMcpServer) return;
+    group.reloadBusy = true;
+    if (state._updateToolsCard) state._updateToolsCard();
+    const ok = await state._reloadMcpServer(id);
+    if (ok && state._reloadMcpServerRefresh) await state._reloadMcpServerRefresh();
+    group.reloadBusy = false;
+    if (state._updateToolsCard) state._updateToolsCard();
+  }
   render(h(ToolTree, {
     groups,
     onToggleGroup,
     onToggleTool,
     collapsedByDefault: true,
     initialCollapsed: collapsed,
-    onCollapseChange: captureCollapsed
+    onCollapseChange: captureCollapsed,
+    onReloadServer
   }), treeHost);
   card.appendChild(treeHost);
 

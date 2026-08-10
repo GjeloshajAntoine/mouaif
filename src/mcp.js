@@ -713,7 +713,13 @@ function decorate(entry, projectDir, rawEntry) {
   const cache = loadToolCache(projectDir, rawEntry || entry);
   const tools = session ? session.tools.slice() : cache;
   const error = session && session.error ? session.error : null;
-  const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), headers: redactHeaders(entry.headers), status, tools });
+  // `enabled` reflects the per-server authorization gate (not `off`).
+  // A disabled server surfaces its tools from cache but can never be
+  // started on demand; a stopped-but-enabled one can. Absent auth data
+  // (decorate also runs without a project) it defaults to enabled so
+  // the Settings list is unchanged.
+  const enabled = entry.enabled !== undefined ? entry.enabled : serverEnabled(projectDir, entry);
+  const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), headers: redactHeaders(entry.headers), status, tools, enabled });
   if (error) decorated.error = error;
   return decorated;
 }
@@ -1113,11 +1119,35 @@ function resolveMcpOutputPaths(projectDir, args) {
 // tool name; `toolName` is the bare tool name from the server. Used
 // directly by src/ai.js when intercepting a tool_call.
 async function callTool(projectDir, serverSlug, toolName, args) {
-  const found = findSessionBySlug(projectDir, serverSlug);
-  if (!found) throw err('EMCP_NOSESSION', 'MCP server not running: ' + serverSlug, { serverSlug });
+  let found = findSessionBySlug(projectDir, serverSlug);
+  // On-demand start: the model called a tool on a server that is
+  // *enabled* (auth mode not `off`) but not currently running. Start it
+  // transparently here, within the same awaited call, so the model just
+  // sees a (possibly slower) result instead of an EMCP_NOSESSION
+  // dead-end that forces the user to go start it by hand. A disabled
+  // (`off`) server is never auto-started — only a server the user has
+  // checked on can come up on demand.
+  if (!found || found.session.status !== 'ready') {
+    // Resolve the server by slug so we can (a) refuse to auto-start a
+    // disabled server and (b) know the server's id for startServer.
+    const entry = resolveMerged(projectDir).find(({ entry }) =>
+      (entry.slug === serverSlug) || (slugify(entry.id || entry.name || '') === serverSlug));
+    if (!entry) throw err('EMCP_NOSESSION', 'MCP server not running: ' + serverSlug, { serverSlug });
+    if (!serverEnabled(projectDir, entry.entry)) {
+      throw err('ETOOL_DISABLED', 'MCP server is disabled: ' + serverSlug, { serverSlug });
+    }
+    try {
+      await startServer(projectDir, entry.entry.id);
+    } catch (e) {
+      // Surface the start failure as the tool result so the model sees a
+      // typed error instead of a generic transport error.
+      throw err((e && e.code) || 'EMCP_START', 'Failed to start MCP server: ' + ((e && e.message) || String(e)), { serverSlug });
+    }
+    found = findSessionBySlug(projectDir, serverSlug);
+  }
   const { session } = found;
-  if (session.status !== 'ready') {
-    throw err('EMCP_NOSESSION', 'MCP server not ready: ' + serverSlug, { serverSlug, status: session.status });
+  if (!session || session.status !== 'ready') {
+    throw err('EMCP_NOSESSION', 'MCP server not ready after start: ' + serverSlug, { serverSlug, status: session && session.status });
   }
   // Confirm the tool is in the discovered list. The MCP spec allows
   // the client to call any tool the server has; this is a defensive
@@ -1181,51 +1211,102 @@ function composedToolNameFor(serverEntry, tool) {
   return composedToolName(serverEntry.slug, tool.name);
 }
 
+// serverEnabled(projectDir, entry) -> boolean
+//
+// Decide whether a configured MCP server is "enabled" — i.e. its tools
+// are exposed to the model and it is eligible for start. The per-server
+// authorization mode is the enable signal (decisions §18): `off` means
+// the user has disabled the checkbox and the server must NEVER
+// auto-start nor be surfaced; any other mode (`ask`/`allow`/`allowlist`,
+// default `ask`) means it is enabled. Falling back to the shared MCP
+// gate when there is no per-server override matches how authorization
+// resolves the server's effective mode everywhere else. Loading the
+// authorization module here keeps mcp.js free of a hard dependency on
+// it (the layering lives in authorization.js, which already loads
+// mcp.js for slug resolution — so we stay one-directional and never
+// import-cycle).
+// serverEnabled(projectDir, entry) -> boolean
+//
+// Decide whether a configured MCP server is "enabled" — i.e. its tools
+// are exposed to the model and it is eligible for start. The
+// per-server authorization mode is the enable signal (decisions §18):
+// `off` means the user has disabled the checkbox and the server must
+// NEVER auto-start nor be surfaced; any other mode (`ask`/`allow`/
+// `allowlist`, default `ask`) means it is enabled.
+//
+// This reads the authorization block DIRECTLY from the merged config
+// (the same `readAllConfigs` inputs `resolveMerged` uses) instead of
+// going through tools/authorization.getAuthorization. That's
+// deliberate: getAuthorization resolves slugs by calling
+// mcp.listServers, which calls decorate -> serverEnabled, which would
+// recurse into getAuthorization — a module-init deadlock when
+// authorization.js first loads mcp.js. Reading the raw authorization
+// block here keeps the layering identical (per-server override >
+// project gate > app gate) with no cycle.
+function serverEnabled(projectDir, entry) {
+  try {
+    const slug = entry.slug || slugify(entry.id || entry.name || '');
+    // Layering order, lowest precedence first: default 'ask' -> app gate
+    // -> project gate -> per-server override. A lower layer that is
+    // *present* always wins over the default, including an `off`; only a
+    // missing layer falls through to the next.
+    let mode = 'ask';
+    try {
+      const app = settings.getApp() || {};
+      const appAuth = app && app.mcp && typeof app.mcp.authorization === 'object'
+        ? app.mcp.authorization : {};
+      if (appAuth && typeof appAuth.mode === 'string') {
+        mode = appAuth.mode;
+      }
+    } catch { /* ignore app-fallback errors */ }
+    // Project gate + per-server override live in the merged config files.
+    const cfg = readProjectConfig(projectDir);
+    const auth = cfg && cfg.mcp && typeof cfg.mcp.authorization === 'object'
+      ? cfg.mcp.authorization : {};
+    if (auth && typeof auth.mode === 'string') mode = auth.mode;
+    if (auth.servers && typeof auth.servers === 'object' && !Array.isArray(auth.servers)) {
+      const over = auth.servers[slug]
+        || auth.servers[entry.id];
+      if (over && typeof over === 'object' && typeof over.mode === 'string') mode = over.mode;
+    }
+    return mode !== 'off';
+  } catch {
+    // Authorization unavailable (module missing, config unreadable):
+    // fall back to enabled so a configured server still works the way
+    // it always has rather than silently disappearing.
+    return true;
+  }
+}
+
 // ensureServersRunning(projectDir) -> Promise<[{ id, name, status, tools }]>
 //
-// Called when the user opens a chat (via /api/tools/list) so the
-// project's configured MCP servers start lazily — the same behavior
-// the Settings UI documents ("open a chat that references a stopped
-// server"). Without this, the child process and tool cache are
-// in-memory only, so a server restart (or a new chat after one) leaves
-// `status: 'stopped'` and `/api/tools/list` returns an empty MCP tool
-// list. Every configured server is always on; it starts on chat open.
+// Called when the user opens a chat (via /api/tools/list). It is now a
+// pure *status reporter*: it never spawns a configured MCP server. The
+// user's explicit intent drives lifecycle:
 //
-// Each start is fire-and-forget: failures are captured in the result
-// (never thrown) so one bad server does not block the chat from
-// loading. A server that fails to start is recorded as 'errored' and
-// surfaced in the Settings UI; the rest of the set still starts.
-async function ensureServersRunning(projectDir) {
+//   - `off` (auth mode)         -> disabled: reported as such, never
+//                                  surfaced nor startable from here.
+//   - enabled-but-stopped       -> reported stopped with its persisted
+//                                  tool cache (listComposedToolSpecs
+//                                  falls back to it); the model's first
+//                                  tool-call starts it on demand via
+//                                  callTool, or the user taps the reload
+//                                  control.
+//   - enabled-and-running       -> reported ready.
+//
+// No child process is spawned here. On-demand start lives in callTool,
+// and the explicit /api/mcp/servers/:id/start endpoint drives the reload
+// button. This is what stops opening a chat from cold-starting every
+// configured MCP server the user never explicitly asked to run.
+function ensureServersRunning(projectDir) {
   const configured = resolveMerged(projectDir);
-  if (!configured.length) return [];
+  if (!configured.length) return Promise.resolve([]);
   const results = [];
   for (const { entry, scope } of configured) {
-    const existing = getSession(projectDir, entry.id);
-    if (existing && existing.status === 'ready') {
-      results.push(decorate(Object.assign({}, entry, { scope }), projectDir));
-      continue;
-    }
-    if (existing && existing.status === 'starting') {
-      // Another request is already spawning it; report the current
-      // state without double-starting. The caller re-polls later.
-      results.push(decorate(Object.assign({}, entry, { scope }), projectDir));
-      continue;
-    }
-    try {
-      const started = await startServer(projectDir, entry.id);
-      results.push(started);
-    } catch (e) {
-      results.push(Object.assign({}, entry, {
-        scope,
-        env: redactEnv(entry.env),
-        headers: redactHeaders(entry.headers),
-        status: 'errored',
-        tools: [],
-        error: { code: (e && e.code) || 'EMCP_START', message: (e && e.message) || String(e) }
-      }));
-    }
+    const enabled = serverEnabled(projectDir, entry);
+    results.push(decorate(Object.assign({}, entry, { scope, enabled }), projectDir));
   }
-  return results;
+  return Promise.resolve(results);
 }
 
 // listComposedToolSpecs(projectDir) -> the model-facing tool spec list.

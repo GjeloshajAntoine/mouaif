@@ -480,6 +480,44 @@ const kickPoll = useRef(null);
     }
   };
 
+  // Start an MCP server on demand from the chat tools tree's reload
+  // control, then refresh both the servers list (status flips to ready)
+  // and the tool catalog (its tools become live) and re-render the card
+  // in place. A disabled (auth `off`) server is skipped — callTool would
+  // refuse it; the reload control is only shown for enabled-but-stopped
+  // servers anyway. Returns a boolean so the caller can show busy state.
+  state._reloadMcpServer = async (serverId) => {
+    const d = projectDir;
+    if (!d || !serverId) return false;
+    try {
+      const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(serverId) + '/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir: d })
+      });
+      if (r.status !== 200) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  state._reloadMcpServerRefresh = async () => {
+    const d = projectDir;
+    if (!d) return;
+    // Fresh servers list (status ready/stopped) + fresh catalog so the
+    // tree reflects the started server's live tools.
+    const [rSrv, rTools] = await Promise.all([
+      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(d)),
+      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(d))
+    ]);
+    if (rSrv.status === 200 && Array.isArray(rSrv.body.servers)) mcpServers.current = rSrv.body.servers;
+    if (rTools.status === 200 && Array.isArray(rTools.body.tools)) {
+      tools.current = Object.assign({}, tools.current, { catalog: rTools.body.tools });
+    }
+    setToolDataStamp((v) => v + 1);
+    if (state._updateToolsCard) state._updateToolsCard();
+  };
+
   // ---- Initial load ----------------------------------------
   useEffect(() => {
     let cancelled = false;
