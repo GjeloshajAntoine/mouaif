@@ -486,17 +486,26 @@ const kickPoll = useRef(null);
     async function load() {
       if (!projectDir || !chatId) return;
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rTools, rMcp, rAgents] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents] = await Promise.all([
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
           loadModels(projectDir),
           fetchJson('/api/ai/models/providers'),
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
           fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir))
         ]);
+        // The tool catalog is the ONE chat-load request that is not fast
+        // to resolve: GET /api/tools/list auto-starts every configured MCP
+        // server that isn't already running (see docs/features/mcp.md), which
+        // on a cold start spawns child processes and can take seconds on the
+        // first chat open after a restart. Awaiting it inside the Promise.all
+        // above would hold back the transcript + model picker (which only need
+        // the fast requests) behind a blank chat on every cold open. So the
+        // catalog is fetched in the background: the chat renders immediately
+        // with the fast data, then the tools card swaps in once the (slow)
+        // catalog resolves below.
         if (cancelled) return;
         if (rChat.status !== 200) {
           if (status.current) status.current.textContent = 'chat not found';
@@ -530,8 +539,12 @@ const kickPoll = useRef(null);
         pickerFilter.current = { q: '', provider: 'all' };
         prompts.current = rPrompts.status === 200 ? (rPrompts.body.prompts || []) : [];
         systemPrompt.current = rSys.status === 200 ? rSys.body : null;
+        // Tool catalog starts empty; the background fetch below fills it
+        // in so the initial transcript render (which happens below) is
+        // never blocked on MCP cold-start. filter comes straight off the
+        // chat.
         tools.current = {
-          catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
+          catalog: [],
           filter: Array.isArray(c.tools) ? c.tools.slice() : null
         };
         // Seed the agent-files card from the chat record and project
@@ -612,6 +625,26 @@ const kickPoll = useRef(null);
         setToolDataStamp((value) => value + 1);
         renderModelPicker(state, refs);
         renderTranscriptBound();
+        // Fetch the tool catalog in the background. The transcript just
+        // painted with the fast data; the MCP cold-start inside
+        // /api/tools/list may take seconds, so don't let it hold up
+        // anything the user is already looking at. When it resolves,
+        // swap the tools card in place (MCP server groups + authorization
+        // segments appear) and bump the stamp so the ToolPopup sees the
+        // populated catalog. Fire-and-forget: a failure leaves the
+        // empty-catalog card, as it would if the request had raced load.
+        (function fetchToolsCatalogBackground() {
+          if (cancelled) return;
+          fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)).then((rTools) => {
+            if (cancelled) return;
+            tools.current = {
+              catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
+              filter: Array.isArray(c.tools) ? c.tools.slice() : null
+            };
+            setToolDataStamp((value) => value + 1);
+            if (state._updateToolsCard) state._updateToolsCard();
+          }).catch(() => { /* keep empty catalog */ });
+        })();
         // Fire live model fetches in the background (no await).
         (function fireLiveFetches() {
           if (activeProviderId(state)) {
