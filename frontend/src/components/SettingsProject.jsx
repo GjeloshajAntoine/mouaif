@@ -846,11 +846,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   // What the model receives for the same shell result under the selected
-  // profile. Mirrors src/toolFeedback.js: concise layout (JSON minified,
-  // blank runs collapsed) applies first, then the size budget truncates
-  // head/tail with the standard marker. Byte counts here are illustrative,
-  // not a live preview of a real result.
+  // profile. Faithfully mirrors src/toolFeedback.js: the `concise` structure
+  // minifies JSON / collapses blank runs *and* strips leading indentation,
+  // then the size budget truncates head/tail (75/25) with the standard
+  // marker only when the body exceeds the cap. The sample here is well under
+  // every cap, so the difference the model actually sees is the concise
+  // layout — no truncation fires. The transform is real; only the sample is
+  // fixed, not a live result.
   function exampleFor(profile) {
+    const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, extensive: Infinity };
+    const BASE_MAX_BYTES = 64 * 1024;
+    const MIN_MAX_BYTES = 4 * 1024;
+    const utf8Len = (s) => new TextEncoder().encode(s).length;
+
+    const combo = OUTPUT_PROFILES[profile] || OUTPUT_PROFILES.balanced;
     const full = [
       '$ npm install',
       '',
@@ -870,15 +879,30 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       '',
       'found 0 vulnerabilities'
     ].join('\n');
-    const concise = full.replace(/\n[ \t]*\n+/g, '\n');
-    if (profile === 'full') return full;
-    if (profile === 'small') {
-      const marker = '\n\n...[tool feedback truncated; original ' + concise.length + ' bytes]...\n\n';
-      const head = concise.slice(0, 110);
-      const tail = concise.slice(-78);
-      return head + marker + tail;
+
+    // structure: `concise` collapses blank runs, strips leading indentation
+    // and trailing whitespace (matches conciseLayout for non-JSON text).
+    let body = full;
+    if (combo.structure === 'concise') {
+      body = full
+        .replace(/\n[ \t]*\n+/g, '\n')
+        .replace(/^[ \t]+/gm, '')
+        .replace(/\s+$/gm, '');
     }
-    return full;
+
+    // size: byte-budget cap against the base 64 KiB. `extensive` never caps.
+    const mult = SIZE_MULTIPLIER[combo.size];
+    if (mult === Infinity) return body;
+    const cap = Math.max(MIN_MAX_BYTES, Math.floor(BASE_MAX_BYTES * mult));
+    const bytes = utf8Len(body);
+    if (bytes <= cap) return body;
+
+    // head/tail truncation with the standard marker (75% head, 25% tail).
+    const marker = '\n\n...[tool feedback truncated; original ' + bytes + ' bytes]...\n\n';
+    const payload = Math.max(0, cap - utf8Len(marker));
+    const headBudget = Math.floor(payload * 0.75);
+    const tailBudget = payload - headBudget;
+    return body.slice(0, headBudget) + marker + body.slice(body.length - tailBudget);
   }
 
   if (page === 'output') return h(Fragment, null,
