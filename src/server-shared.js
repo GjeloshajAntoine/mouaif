@@ -21,7 +21,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('node:child_process');
-const { qs, firstStringValue } = require('./util.js');
+const { qs, firstStringValue, errCodeToHttpStatus } = require('./util.js');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
@@ -714,5 +714,6 @@ module.exports = {
   finishOAuth,
   xyToText,
   firstStringValue,
-  qs
+  qs,
+  errCodeToHttpStatus
 };

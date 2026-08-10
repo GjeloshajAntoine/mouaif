@@ -10,6 +10,7 @@ const {
   sendJSON,
   qs,
   readJsonOr400,
+  errCodeToHttpStatus,
   settings,
   projects,
   chats,
@@ -18,16 +19,7 @@ const {
 } = require('./server-shared.js');
 
 function projectsErrorStatus(err) {
-  switch (err && err.code) {
-    case 'EBADPATH':       return 400;
-    case 'EOUTSIDE_HOME':  return 403;
-    case 'ENOENT':         return 404;
-    case 'ENOTDIR':        return 400;
-    case 'EACCES':         return 403;
-    case 'EEXIST':         return 409;
-    case 'EREAD':          return 500;
-    default:               return 400;
-  }
+  return errCodeToHttpStatus(err && err.code, 400);
 }
 
 async function handleProjects(req, res, parsed) {
@@ -139,21 +131,7 @@ async function handleProjects(req, res, parsed) {
 // EOUTSIDE_PROJECT -> 403, etc.).
 
 function filesErrorStatus(err) {
-  switch (err && err.code) {
-    case 'EBADPATH':         return 400;
-    case 'EBADINPUT':        return 400;
-    case 'EOUTSIDE_PROJECT': return 403;
-    case 'EOUTSIDE_HOME':    return 403;
-    case 'ENOENT':           return 404;
-    case 'ENOTDIR':          return 400;
-    case 'ENOTFILE':         return 400;
-    case 'EISDIR':           return 400;
-    case 'EACCES':           return 403;
-    case 'EBINARY':          return 415;
-    case 'ETOOLARGE':        return 413;
-    case 'EREAD':            return 500;
-    default:                 return 400;
-  }
+  return errCodeToHttpStatus(err && err.code, 400);
 }
 
 async function handleFileEditor(req, res, parsed) {
@@ -214,12 +192,7 @@ async function handleFileEditor(req, res, parsed) {
 // return 403 EOUTSIDE_PROJECT.
 
 function tagsErrorStatus(err) {
-  switch (err && err.code) {
-    case 'EBADINPUT':        return 400;
-    case 'EOUTSIDE_PROJECT': return 403;
-    case 'MOUAIF_PROJECT_PARSE_ERROR': return 422;
-    default:                 return 500;
-  }
+  return errCodeToHttpStatus(err && err.code);
 }
 
 async function handleTags(req, res, parsed) {

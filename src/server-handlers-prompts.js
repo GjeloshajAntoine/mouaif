@@ -8,6 +8,7 @@ const {
   sendJSON,
   qs,
   readJsonOr400,
+  errCodeToHttpStatus,
   settings,
   prompts,
   chats,
@@ -36,9 +37,7 @@ async function handlePrompts(req, res, parsed) {
   }
 
   function promptError(e) {
-    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
-    if (e && e.code === 'EBADINPUT') return 400;
-    return 500;
+    return errCodeToHttpStatus(e && e.code);
   }
 
   // GET /api/prompts?projectDir=<abs>
@@ -165,9 +164,7 @@ async function handleAgents(req, res, parsed) {
   }
 
   function agentError(e) {
-    if (e && e.code === 'MOUAIF_PROJECT_PARSE_ERROR') return 422;
-    if (e && e.code === 'EBADINPUT') return 400;
-    return 500;
+    return errCodeToHttpStatus(e && e.code);
   }
 
   if (method !== 'GET' && method !== 'POST' && method !== 'PATCH' && method !== 'DELETE') {
