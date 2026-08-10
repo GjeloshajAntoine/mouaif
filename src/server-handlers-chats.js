@@ -8,7 +8,8 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   runningKey,
   runningChats,
   runningChatCancels,
@@ -43,7 +44,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   }
 
   function readProjectDir(body) {
-    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromQuery = qs(q, 'projectDir');
     const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const dir = fromQuery || fromBody;
     if (!dir) return null;
@@ -52,7 +53,7 @@ async function handleChats(req, res, parsed, sessionToken) {
 
   // GET /api/chats?projectDir=<abs>[&offset=0&limit=20]
   if (urlPath === '/api/chats' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     const offset = Math.max(0, parseInt(typeof q.offset === 'string' ? q.offset : '0', 10) || 0);
     const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
@@ -120,7 +121,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   let m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'GET') {
     const id = decodeURIComponent(m[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       const chat = chats.getChat(dir, id);
@@ -135,9 +136,8 @@ async function handleChats(req, res, parsed, sessionToken) {
 
   // POST /api/chats   body: { projectDir, title?, trace?, promptSize? }
   if (urlPath === '/api/chats' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -152,9 +152,8 @@ async function handleChats(req, res, parsed, sessionToken) {
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const id = decodeURIComponent(m[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     // Strip server-owned fields from the client patch. The generic
@@ -179,9 +178,8 @@ async function handleChats(req, res, parsed, sessionToken) {
   m = urlPath.match(/^\/api\/chats\/([^/]+)\/touch$/);
   if (m && method === 'POST') {
     const id = decodeURIComponent(m[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -198,7 +196,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'DELETE') {
     const id = decodeURIComponent(m[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       const removed = chats.deleteChat(dir, id);
@@ -232,7 +230,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
   if (getMsgsMatch && method === 'GET') {
     const id = decodeURIComponent(getMsgsMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
@@ -261,7 +259,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   const revMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/revision$/);
   if (revMatch && method === 'GET') {
     const id = decodeURIComponent(revMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
@@ -288,7 +286,7 @@ async function handleChats(req, res, parsed, sessionToken) {
   const sysPromptMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/system-prompt$/);
   if (sysPromptMatch && method === 'GET') {
     const id = decodeURIComponent(sysPromptMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       const chat = chats.getChat(dir, id);
@@ -382,7 +380,7 @@ disabled: skillState.disabled.has(s.id)
   const toolPreviewMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/tool-preview$/);
   if (toolPreviewMatch && method === 'GET') {
     const id = decodeURIComponent(toolPreviewMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       const chat = chats.getChat(dir, id);
@@ -482,9 +480,8 @@ disabled: skillState.disabled.has(s.id)
   // route is for manual edits and tests.
   if (getMsgsMatch && method === 'POST') {
     const id = decodeURIComponent(getMsgsMatch[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -499,7 +496,7 @@ disabled: skillState.disabled.has(s.id)
   // DELETE /api/chats/:id/messages?projectDir= -> { ok, removed }
   if (getMsgsMatch && method === 'DELETE') {
     const id = decodeURIComponent(getMsgsMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
@@ -516,9 +513,8 @@ disabled: skillState.disabled.has(s.id)
   const exportTraceMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/trace\/export$/);
   if (exportTraceMatch && method === 'POST') {
     const id = decodeURIComponent(exportTraceMatch[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -533,9 +529,8 @@ disabled: skillState.disabled.has(s.id)
   // POST /api/chats/import  body: { projectDir, skipExisting?: bool }
   // Re-import chat metadata and messages from JSON files into the DB.
   if (urlPath === '/api/chats/import' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readProjectDir(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -559,7 +554,7 @@ disabled: skillState.disabled.has(s.id)
   const liveMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/live$/);
   if (liveMatch && method === 'GET') {
     const id = decodeURIComponent(liveMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
@@ -589,9 +584,8 @@ disabled: skillState.disabled.has(s.id)
 // the route table above stays compact.
 async function handleChatStream(req, res, chatId, sessionToken) {
   const _pushSessionId = push.sessionIdFromToken(sessionToken);
-  let body;
-  try { body = await readJsonBody(req); }
-  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const body = await readJsonOr400(req, res);
+  if (!body) return;
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';

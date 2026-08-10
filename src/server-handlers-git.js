@@ -4,7 +4,7 @@
 // http-server.js. Shared helpers live in src/server-shared.js.
 
 const { spawn } = require('node:child_process');
-const { sendJSON, readJsonBody, xyToText } = require('./server-shared.js');
+const { sendJSON, readJsonOr400, xyToText } = require('./server-shared.js');
 
 // ---- Git API ----------------------------------------------------------------
 //
@@ -18,9 +18,8 @@ const { sendJSON, readJsonBody, xyToText } = require('./server-shared.js');
 // These are read-safe or explicit-save commands. `commit` and `add` require
 // an extra `message` field. `push` and `pull` talk to the configured remote.
 async function handleGit(req, res, parsed) {
-  let body;
-  try { body = await readJsonBody(req); }
-  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const body = await readJsonOr400(req, res);
+  if (!body) return;
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   const action = body && typeof body.action === 'string' ? body.action : '';
   const args = body && typeof body.args === 'string' ? body.args : '';

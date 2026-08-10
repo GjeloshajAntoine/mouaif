@@ -6,7 +6,9 @@
 
 const {
   sendJSON,
+  qs,
   readJsonBody,
+  readJsonOr400,
   runningKey,
   runningChats,
   runningChatCancels,
@@ -50,7 +52,7 @@ function mcpErrorStatus(err) {
 }
 
 function readMcpProjectDir(q, body) {
-  const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+  const fromQuery = qs(q, 'projectDir');
   const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   return fromQuery || fromBody || '';
 }
@@ -75,9 +77,8 @@ async function handleMcp(req, res, parsed) {
 
   // POST /api/mcp/servers  body: { projectDir?, scope?, name, command, args?, env?, cwd?, enabled? }
   if (urlPath === '/api/mcp/servers' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readMcpProjectDir(q, body);
     const scope = body && body.scope === mcp.APP_SCOPE ? mcp.APP_SCOPE : mcp.PROJECT_SCOPE;
     if (scope === mcp.PROJECT_SCOPE && !dir) return sendJSON(res, 400, { error: 'projectDir is required for a project-scoped server' });
@@ -93,9 +94,8 @@ async function handleMcp(req, res, parsed) {
   let m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const id = decodeURIComponent(m[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readMcpProjectDir(q, body);
     try {
       const server = mcp.updateServer(dir || null, id, body || {});
@@ -166,8 +166,8 @@ async function handleMcp(req, res, parsed) {
   // Statelessly proxies the official MCP Registry API. Registry responses
   // are never persisted or cached by mouaif.
   if (urlPath === '/api/mcp/registry' && method === 'GET') {
-    const search = typeof q.search === 'string' ? q.search : '';
-    const cursor = typeof q.cursor === 'string' ? q.cursor : '';
+    const search = qs(q, 'search');
+    const cursor = qs(q, 'cursor');
     const sortField = ['popularity', 'updatedAt', 'name'].includes(q.sort) ? q.sort : 'popularity';
     const sortDir = q.dir === 'asc' ? 'asc' : 'desc';
     const limit = Math.min(Math.max(parseInt(q.limit, 10) || 30, 1), 100);
@@ -251,9 +251,8 @@ async function handleMcp(req, res, parsed) {
   // mcp.callTool() in-process. This endpoint is here for parity and
   // for a future UI action like "test this tool".
   if (urlPath === '/api/mcp/call' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = readMcpProjectDir(q, body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!body || typeof body.serverId !== 'string' || !body.serverId) {
@@ -351,9 +350,8 @@ async function handleInspector(req, res, parsed) {
 
   // PUT /api/inspector/config  body: { url }  -> { url }
   if (urlPath === '/api/inspector/config' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body.url !== 'string') {
       return sendJSON(res, 400, { error: 'url is required' });
     }
@@ -394,9 +392,8 @@ async function handleInspector(req, res, parsed) {
   // /json/new) and returns the fresh target record. The UI then
   // attaches straight to it — the "inspect this URL" one-step flow.
   if (urlPath === '/api/inspector/open' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body.url !== 'string' || !body.url.trim()) {
       return sendJSON(res, 400, { error: 'url is required' });
     }
@@ -418,9 +415,8 @@ async function handleInspector(req, res, parsed) {
   // Closes a tab of the debug Chrome (Target.closeTarget on the
   // browser-level WebSocket).
   if (urlPath === '/api/inspector/close' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
       return sendJSON(res, 400, { error: 'targetId is required' });
     }
@@ -436,9 +432,8 @@ async function handleInspector(req, res, parsed) {
   // Reloads a tab of the debug Chrome (Page.reload on the target's
   // WebSocket).
   if (urlPath === '/api/inspector/reload' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
       return sendJSON(res, 400, { error: 'targetId is required' });
     }
@@ -454,9 +449,8 @@ async function handleInspector(req, res, parsed) {
   // Navigates a tab of the debug Chrome to a new URL (Page.navigate on
   // the target's WebSocket).
   if (urlPath === '/api/inspector/navigate' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
       return sendJSON(res, 400, { error: 'targetId is required' });
     }
@@ -514,7 +508,7 @@ async function handleToolAuthorization(req, res, parsed) {
         return sendJSON(res, 500, { error: e.message });
       }
     }
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, authGate.getAuthorization(dir));
@@ -528,9 +522,8 @@ async function handleToolAuthorization(req, res, parsed) {
   // (no projectDir). Otherwise projectDir is required and the project
   // tools + MCP authorization are written as before.
   if (urlPath === '/api/tools/authorization' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const { projectDir, scope, tools, mcp: mcpAuthorization } = body || {};
     if (scope === 'app') {
       try {
@@ -553,8 +546,8 @@ async function handleToolAuthorization(req, res, parsed) {
 
   // GET /api/tools/authorization/pending?projectDir=<abs>&chatId=<id>
   if (urlPath === '/api/tools/authorization/pending' && method === 'GET') {
-    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    const chatId = typeof q.chatId === 'string' ? q.chatId : '';
+    const projectDir = qs(q, 'projectDir');
+    const chatId = qs(q, 'chatId');
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     if (!chatId) return sendJSON(res, 400, { error: 'chatId query param is required' });
     try {
@@ -567,9 +560,8 @@ async function handleToolAuthorization(req, res, parsed) {
 
   // POST /api/tools/authorization/cancel
   if (urlPath === '/api/tools/authorization/cancel' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const { projectDir, chatId } = body || {};
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
@@ -588,9 +580,8 @@ async function handleToolAuthorization(req, res, parsed) {
 
   // POST /api/tools/authorization/decision
   if (urlPath === '/api/tools/authorization/decision' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const { projectDir, chatId, callId, decision, payload } = body || {};
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });

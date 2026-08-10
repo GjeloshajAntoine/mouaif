@@ -8,7 +8,8 @@ const os = require('os');
 const path = require('path');
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   settings,
   projects,
   chats,
@@ -75,9 +76,8 @@ async function handleProjects(req, res, parsed) {
 
   // PATCH /api/projects/registered/:id  body: { name }
   if (delMatch && method === 'PATCH') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const name = body && typeof body.name === 'string' ? body.name : '';
     if (!name.trim()) return sendJSON(res, 400, { error: 'name is required' });
     const updated = projects.renameProject(delMatch[1], name);
@@ -87,9 +87,8 @@ async function handleProjects(req, res, parsed) {
 
   // POST /api/projects  body: { action, ... }
   if (urlPath === '/api/projects' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const action = body && body.action;
     try {
       if (action === 'list') {
@@ -164,8 +163,8 @@ async function handleFileEditor(req, res, parsed) {
 
   // GET /api/files?projectDir=<abs>&dir=<abs>  -> list a folder
   if (urlPath === '/api/files' && method === 'GET') {
-    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    const dir = typeof q.dir === 'string' ? q.dir : '';
+    const projectDir = qs(q, 'projectDir');
+    const dir = qs(q, 'dir');
     try {
       return sendJSON(res, 200, files.listDir(projectDir, dir));
     } catch (e) {
@@ -175,8 +174,8 @@ async function handleFileEditor(req, res, parsed) {
 
   // GET /api/file?projectDir=<abs>&path=<abs|rel>  -> read a text file
   if (urlPath === '/api/file' && method === 'GET') {
-    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
-    const path = typeof q.path === 'string' ? q.path : '';
+    const projectDir = qs(q, 'projectDir');
+    const path = qs(q, 'path');
     try {
       const out = await files.readFile(projectDir, path);
       return sendJSON(res, 200, out);
@@ -187,9 +186,8 @@ async function handleFileEditor(req, res, parsed) {
 
   // PUT /api/file  body { projectDir, path, content }  -> write a text file
   if (urlPath === '/api/file' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const path = body && typeof body.path === 'string' ? body.path : '';
     const content = body && typeof body.content === 'string' ? body.content : null;
@@ -249,9 +247,8 @@ async function handleTags(req, res, parsed) {
 
   // PUT /api/projects/:id/tags  body: { tags: { ... } }
   if (rest === '' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const map = body && typeof body.tags === 'object' && body.tags ? body.tags : {};
     try {
       return sendJSON(res, 200, { tags: tags.setTags(dir, map) });
@@ -262,9 +259,8 @@ async function handleTags(req, res, parsed) {
 
   // POST /api/projects/:id/tags/scan  body: { exts?: [...] }
   if (rest === '/scan' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const exts = body && Array.isArray(body.exts) ? body.exts : null;
     try {
       return sendJSON(res, 200, { files: tags.scanFiles(dir, exts) });

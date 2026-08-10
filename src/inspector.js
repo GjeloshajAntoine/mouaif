@@ -49,6 +49,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const { WebSocketServer, WebSocket } = require('ws');
+const { qs } = require('./util.js');
 const settings = require('./settings.js');
 
 const DEFAULT_CHROME_PORT = 9222;
@@ -510,7 +511,7 @@ async function handleProxy(req, socket, head, opts) {
   let upstreamWsUrl = typeof q.ws === 'string' ? q.ws : '';
   if (!upstreamWsUrl) {
     const host = typeof q.host === 'string' && q.host ? q.host : (opts && opts.debuggerUrl) || getDebuggerUrl();
-    const targetId = typeof q.targetId === 'string' ? q.targetId : '';
+    const targetId = qs(q, 'targetId');
     if (!targetId) {
       writeProxyError(socket, 400, 'EBADINPUT', 'either ?ws=<wsUrl> or ?targetId=<id> is required');
       return;

@@ -51,9 +51,19 @@ function firstStringValue(value) {
   return '';
 }
 
+// qs(q, name) — read a query-string value without the longhand
+// `typeof q.x === 'string' ? q.x : ''` that was repeated ~40 times
+// across the server handlers. Mirrors readJsonBody's string-only
+// coercion: a non-string query value (e.g. ?a=1&a=2 arriving as an
+// array) safely becomes ''.
+function qs(q, name) {
+  return (q && typeof q[name] === 'string') ? q[name] : '';
+}
+
 module.exports = {
   err,
   joinUrl,
+  qs,
   firstStringField,
   firstStringValue
 };

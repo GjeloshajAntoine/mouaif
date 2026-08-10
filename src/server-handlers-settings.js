@@ -7,7 +7,8 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   settingsForClient,
   sanitizeClientEntries,
   connectionForClient,
@@ -33,7 +34,7 @@ async function handleSettings(req, res, parsed) {
 
   // GET /api/settings/resolved?projectDir=<abs path>
   if (urlPath === '/api/settings/resolved' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, { resolved: settingsForClient(settings.getResolved(dir)) });
@@ -47,7 +48,7 @@ async function handleSettings(req, res, parsed) {
   // Raw project file (no app merge, no defaults). The UI uses this to
   // show the project-level values separately from the resolved view.
   if (urlPath === '/api/settings/project' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, {
@@ -62,9 +63,8 @@ async function handleSettings(req, res, parsed) {
 
   // PUT /api/settings/app  body: { ...patch }   (shallow merge into app store)
   if (urlPath === '/api/settings/app' && method === 'PUT') {
-    let patch;
-    try { patch = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const patch = await readJsonOr400(req, res);
+    if (!patch) return;
     try {
       for (const key of ['providers', 'models']) {
         sanitizeClientEntries(patch, key, settings.getApp()[key]);
@@ -78,9 +78,8 @@ async function handleSettings(req, res, parsed) {
 
   // PUT /api/settings/project  body: { projectDir, ...patch }
   if (urlPath === '/api/settings/project' && method === 'PUT') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const { projectDir, unset, ...patch } = body || {};
     if (!projectDir || typeof projectDir !== 'string') {
       return sendJSON(res, 400, { error: 'projectDir is required' });
@@ -105,9 +104,8 @@ async function handleSettings(req, res, parsed) {
   // Provider connections are app-level. Project model records reference
   // them by `provider`, keeping credentials out of project files.
   if (urlPath === '/api/settings/app/providers' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body !== 'object' || typeof body.id !== 'string' || !body.id.trim()) {
       return sendJSON(res, 400, { error: 'id is required' });
     }
@@ -171,9 +169,8 @@ async function handleSettings(req, res, parsed) {
   // source of truth for that field). Returns the merged model and the
   // updated models array.
   if (urlPath === '/api/settings/app/models' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!body || typeof body !== 'object' || !body.id || typeof body.id !== 'string') {
       return sendJSON(res, 400, { error: 'id is required' });
     }
@@ -240,7 +237,7 @@ async function handleSettings(req, res, parsed) {
   // GET /api/settings/models/recent?projectDir=<abs>
   // Returns the recent models list for the given project (newest first, capped at 20).
   if (urlPath === '/api/settings/models/recent' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     return sendJSON(res, 200, { recent: settings.getRecentModels(dir) });
   }
@@ -248,9 +245,8 @@ async function handleSettings(req, res, parsed) {
   // POST /api/settings/models/recent  body: { projectDir, provider, modelId }
   // Records a model as recently used (touches timestamp, deduplicates, caps at 20).
   if (urlPath === '/api/settings/models/recent' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const { projectDir, provider, modelId } = body || {};
     if (!projectDir || !provider || !modelId) {
       return sendJSON(res, 400, { error: 'projectDir, provider, and modelId are required' });
@@ -262,7 +258,7 @@ async function handleSettings(req, res, parsed) {
   // DELETE /api/settings/models/recent?projectDir=<abs>
   // Clears the recent models list for the given project.
   if (urlPath === '/api/settings/models/recent' && method === 'DELETE') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     settings.clearRecentModels(dir);
     return sendJSON(res, 200, { ok: true });
@@ -276,9 +272,8 @@ async function handleSettings(req, res, parsed) {
   // explicitly delete the keys from a clone of the current app and
   // write that clone back.
   if (urlPath === '/api/settings/app/reset' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const keys = Array.isArray(body && body.keys) ? body.keys : [];
     const bad = keys.filter(k => !RESETTABLE_APP_KEYS.has(k));
     if (bad.length) return sendJSON(res, 400, { error: 'Unknown key(s)', bad });

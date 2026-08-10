@@ -6,7 +6,7 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  readJsonOr400,
   resolveModel,
   credentialForProvider,
   hashShort,
@@ -195,9 +195,8 @@ async function handleAI(req, res, parsed) {
   // checks whether the upstream returns a typed error or a 200 SSE
   // stream. Aborts after 10 s so the user never waits long.
   if (urlPath === '/api/ai/test' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
 
     let model;
     try { model = resolveModel(body.modelId, body.projectDir); }
@@ -234,9 +233,8 @@ async function handleAI(req, res, parsed) {
 
   // POST /api/ai/chat  body: { modelId, messages, projectDir? }  -> SSE stream
   if (urlPath === '/api/ai/chat' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
 
     let model;
     try { model = resolveModel(body.modelId, body.projectDir); }

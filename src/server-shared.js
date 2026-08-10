@@ -21,6 +21,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('node:child_process');
+const { qs, firstStringValue } = require('./util.js');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
@@ -346,6 +347,21 @@ function readJsonBody(req) {
   });
 }
 
+// readJsonOr400(req, res) — readJsonBody with the uniform error guard
+// that every POST/PUT/PATCH handler used to repeat inline:
+//   try { body = await readJsonBody(req); }
+//   catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+// Returns the parsed body, or null after it has already sent a 400
+// response. Callers can `const body = await readJsonOr400(req, res); if (!body) return;`
+async function readJsonOr400(req, res) {
+  try {
+    return await readJsonBody(req);
+  } catch (e) {
+    sendJSON(res, e.status || 400, { error: e.message });
+    return null;
+  }
+}
+
 // ---- AI model resolution ------------------------------------------------
 
 function resolveModel(modelId, projectDir, providerId) {
@@ -612,11 +628,7 @@ function xyToText(xy) {
   return map[xy[1] !== ' ' ? xy[1] : xy[0]] || 'Changed';
 }
 
-function firstStringValue(value) {
-  if (!value || typeof value !== 'object') return '';
-  for (const item of Object.values(value)) if (typeof item === 'string') return item;
-  return '';
-}
+// firstStringValue() is shared from src/util.js.
 
 module.exports = {
   // constants
@@ -685,6 +697,7 @@ module.exports = {
   authorizeBrowserRequest,
   authorizeAccessRequest,
   readJsonBody,
+  readJsonOr400,
   resolveModel,
   credHashFor,
   credentialForProvider,
@@ -700,5 +713,6 @@ module.exports = {
   redirectMeta,
   finishOAuth,
   xyToText,
-  firstStringValue
+  firstStringValue,
+  qs
 };

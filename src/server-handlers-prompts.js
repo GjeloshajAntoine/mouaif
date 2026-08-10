@@ -6,7 +6,8 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   settings,
   prompts,
   chats,
@@ -29,7 +30,7 @@ async function handlePrompts(req, res, parsed) {
   const q = parsed.query || {};
 
   function projectDirFrom(body) {
-    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromQuery = qs(q, 'projectDir');
     const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     return fromQuery || fromBody;
   }
@@ -42,7 +43,7 @@ async function handlePrompts(req, res, parsed) {
 
   // GET /api/prompts?projectDir=<abs>
   if (urlPath === '/api/prompts' && method === 'GET') {
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       return sendJSON(res, 200, { prompts: prompts.listPrompts(dir) });
@@ -55,7 +56,7 @@ async function handlePrompts(req, res, parsed) {
   const getMatch = urlPath.match(/^\/api\/prompts\/([^/]+)$/);
   if (getMatch && method === 'GET') {
     const id = decodeURIComponent(getMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       const p = prompts.getPrompt(dir, id);
@@ -68,9 +69,8 @@ async function handlePrompts(req, res, parsed) {
 
   // POST /api/prompts  body: { projectDir, title?, content, role? }
   if (urlPath === '/api/prompts' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = projectDirFrom(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -84,9 +84,8 @@ async function handlePrompts(req, res, parsed) {
   // PATCH /api/prompts/:id  body: { projectDir, title?, content?, role? }
   if (getMatch && method === 'PATCH') {
     const id = decodeURIComponent(getMatch[1]);
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const dir = projectDirFrom(body);
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -101,7 +100,7 @@ async function handlePrompts(req, res, parsed) {
   // DELETE /api/prompts/:id?projectDir=<abs>
   if (getMatch && method === 'DELETE') {
     const id = decodeURIComponent(getMatch[1]);
-    const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       let clearedChats = 0;
@@ -160,7 +159,7 @@ async function handleAgents(req, res, parsed) {
   const q = parsed.query || {};
 
   function agentDirFrom(body) {
-    const fromQuery = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const fromQuery = qs(q, 'projectDir');
     const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     return fromQuery || fromBody;
   }
@@ -177,7 +176,7 @@ async function handleAgents(req, res, parsed) {
 
   // GET/DELETE carry projectDir in the query string; POST/PATCH carry
   // it in the JSON body. Only the query-string routes can 400 up front.
-  const dir = typeof q.projectDir === 'string' ? q.projectDir : '';
+  const dir = qs(q, 'projectDir');
 
   // GET /api/agents?projectDir=...
   if (urlPath === '/api/agents' && method === 'GET') {
@@ -191,9 +190,8 @@ async function handleAgents(req, res, parsed) {
 
   // POST /api/agents  body: { projectDir, name, content, tools? }
   if (urlPath === '/api/agents' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = agentDirFrom(body);
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
@@ -220,9 +218,8 @@ async function handleAgents(req, res, parsed) {
       }
     }
     if (method === 'PATCH') {
-      let body;
-      try { body = await readJsonBody(req); }
-      catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+      const body = await readJsonOr400(req, res);
+      if (!body) return;
       const patchDir = dir || (body && typeof body.projectDir === 'string' ? body.projectDir : '');
       if (!patchDir) return sendJSON(res, 400, { error: 'projectDir is required' });
       try {

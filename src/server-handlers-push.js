@@ -3,7 +3,7 @@
 // Browser push notification REST handlers. Extracted from the original
 // single-file http-server.js. Shared helpers live in src/server-shared.js.
 
-const { sendJSON, readJsonBody, push } = require('./server-shared.js');
+const { sendJSON, readJsonOr400, push } = require('./server-shared.js');
 
 async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
   const urlPath = parsed.pathname;
@@ -31,10 +31,9 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
   // POST /api/push/subscribe
   if (urlPath === '/api/push/subscribe' && method === 'POST') {
     if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, 400, { error: e.message }); }
-    if (!body || !body.subscription || !body.subscription.endpoint) {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (!body.subscription || !body.subscription.endpoint) {
       return sendJSON(res, 400, { error: 'subscription with endpoint is required', code: 'EBADINPUT' });
     }
     const { endpoint, keys } = body.subscription;
@@ -58,9 +57,8 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
   // DELETE /api/push/subscribe  body: { endpoint }
   if (urlPath === '/api/push/subscribe' && method === 'DELETE') {
     if (!sid) return sendJSON(res, 401, { error: 'No session', code: 'ESESSION' });
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const endpoint = body && body.endpoint;
     if (!endpoint) return sendJSON(res, 400, { error: 'endpoint is required', code: 'EBADINPUT' });
     const removed = push.removeSubscription(endpoint, sid);

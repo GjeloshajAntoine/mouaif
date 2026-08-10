@@ -6,7 +6,8 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   htmlPage,
   redirectMeta,
   finishOAuth,
@@ -44,7 +45,7 @@ async function handleAuth(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/auth/status' && method === 'GET') {
-    const provider = typeof q.provider === 'string' ? q.provider : '';
+    const provider = qs(q, 'provider');
     if (!provider) return sendJSON(res, 400, { error: 'provider query param is required' });
     if (!auth.SUPPORTED_PROVIDERS.includes(provider)) {
       return sendJSON(res, 400, { error: 'Unknown provider', provider });
@@ -80,9 +81,8 @@ async function handleAuth(req, res, parsed, serverConfig) {
     if (!auth.getExchange('anthropic')) {
       return sendJSON(res, 501, { error: 'Anthropic OAuth is not registered in this build' });
     }
-    let body = {};
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
 
     const state = oauthAnthropic.newState();
     const verifier = oauthAnthropic.newVerifier();
@@ -131,9 +131,8 @@ async function handleAuth(req, res, parsed, serverConfig) {
     if (!auth.getExchange('github-copilot')) {
       return sendJSON(res, 501, { error: 'GitHub Copilot OAuth is not registered in this build' });
     }
-    let body = {};
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
 
     const state = oauthCopilot.newState();
     const verifier = oauthCopilot.newVerifier();
@@ -183,9 +182,8 @@ async function handleAuth(req, res, parsed, serverConfig) {
     if (!auth.getExchange('openrouter')) {
       return sendJSON(res, 501, { error: 'OpenRouter OAuth is not registered in this build' });
     }
-    let body = {};
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
 
     const rawState = oauthOpenRouter.newState();
     // Encode the provider in the state prefix so it survives the
@@ -226,10 +224,10 @@ async function handleAuth(req, res, parsed, serverConfig) {
 
 async function handleOAuthCallback(req, res, parsed) {
   const q = parsed.query || {};
-  const provider = typeof q.provider === 'string' ? q.provider : '';
-  const state = typeof q.state === 'string' ? q.state : '';
-  const code = typeof q.code === 'string' ? q.code : '';
-  const errorParam = typeof q.error === 'string' ? q.error : '';
+  const provider = qs(q, 'provider');
+  const state = qs(q, 'state');
+  const code = qs(q, 'code');
+  const errorParam = qs(q, 'error');
 
   const result = await finishOAuth({ provider, state, code, errorParam, format: 'html' });
   res.writeHead(result.status, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -258,9 +256,8 @@ async function handleOAuthCallback(req, res, parsed) {
 }
 
 async function handleOAuthCallbackPost(req, res, parsed) {
-  let body = {};
-  try { body = await readJsonBody(req); }
-  catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+  const body = await readJsonOr400(req, res);
+  if (!body) return;
   const provider = typeof body.provider === 'string' ? body.provider : '';
   const state = typeof body.state === 'string' ? body.state : '';
   const code = typeof body.code === 'string' ? body.code : '';

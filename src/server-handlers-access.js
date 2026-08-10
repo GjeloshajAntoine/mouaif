@@ -5,7 +5,7 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  readJsonOr400,
   parseCookies,
   accessCookie,
   accessRequestOrigin,
@@ -33,8 +33,8 @@ async function handleAccess(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/access/login' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!accessAuth.configured()) return sendJSON(res, 409, { error: 'Access is not configured yet', code: 'ENOTCONFIGURED' });
     if (!checkAccessAttempts(req)) return sendJSON(res, 429, { error: 'Too many sign-in attempts; wait a minute', code: 'ERATE_LIMIT' });
     if (!accessAuth.verifyPassword(body.username, body.password)) {
@@ -58,8 +58,8 @@ async function handleAccess(req, res, parsed, serverConfig) {
   // password through this endpoint). The current session survives the
   // rotation; every other browser is signed out.
   if (urlPath === '/api/access/password' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
     try {
       const changed = accessAuth.changePassword(activeSession.username, body.currentPassword, body.newPassword, accessToken);
@@ -71,15 +71,15 @@ async function handleAccess(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/access/setup/verify' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const valid = accessAuth.setupCodeValid(body.code);
     return sendJSON(res, valid ? 200 : 401, { valid });
   }
 
   if (urlPath === '/api/access/setup' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const setupAuthorized = accessAuth.setupCodeValid(body.code);
     if (!activeSession && !setupAuthorized) return sendJSON(res, 401, { error: 'A valid one-time setup code or signed-in session is required', code: 'ESETUP_CODE' });
     try {
@@ -94,8 +94,8 @@ async function handleAccess(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/access/passkeys/register/options' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     if (!accessAuth.configured()) return sendJSON(res, 409, { error: 'Create the access user before adding a passkey', code: 'ENOTCONFIGURED' });
     const setupAuthorized = accessAuth.setupCodeValid(body.code);
     if (!activeSession && !setupAuthorized) return sendJSON(res, 401, { error: 'Sign in or provide a valid setup code first', code: 'EAUTH_REQUIRED' });
@@ -110,8 +110,8 @@ async function handleAccess(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/access/passkeys/register/verify' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     try {
       const result = accessAuth.finishRegistration(body);
       return sendJSON(res, 200, { ok: true, passkeys: result.passkeys });
@@ -125,8 +125,8 @@ async function handleAccess(req, res, parsed, serverConfig) {
   }
 
   if (urlPath === '/api/access/passkeys/login/verify' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     try {
       const account = accessAuth.finishAuthentication(body);
       clearAccessFailures(req);

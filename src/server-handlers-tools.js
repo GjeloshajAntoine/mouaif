@@ -6,7 +6,8 @@
 
 const {
   sendJSON,
-  readJsonBody,
+  qs,
+  readJsonOr400,
   resolveModel,
   settings,
   chats,
@@ -154,7 +155,7 @@ async function handleTools(req, res, parsed) {
   // listed — the user can start it from Settings → MCP, and a
   // subsequent call will pick up the newly discovered tools.
   if (urlPath === '/api/tools/list' && method === 'GET') {
-    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const projectDir = qs(q, 'projectDir');
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     // A chat opening (or the mobile UI re-loading a project) should
     // re-attach the MCP servers it needs. The Settings UI documents
@@ -252,9 +253,8 @@ async function handleTools(req, res, parsed) {
   }
 
   if (urlPath === '/api/tools/shell' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
     const shellOverride = body && typeof body.shell === 'string' ? body.shell : '';
@@ -337,7 +337,7 @@ async function handleTools(req, res, parsed) {
   // project and return its id. The browser then opens GET /events and
   // listens for `cli_output` frames tagged with that id.
   if (urlPath === '/api/tools/cli/session' && method === 'GET') {
-    const projectDir = typeof q.projectDir === 'string' ? q.projectDir : '';
+    const projectDir = qs(q, 'projectDir');
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     const fs = require('node:fs');
     let real;
@@ -367,9 +367,8 @@ async function handleTools(req, res, parsed) {
   // Write one command to the persistent session's stdin. The session
   // stays open; the next command appends after it.
   if (urlPath === '/api/tools/cli/command' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
@@ -386,9 +385,8 @@ async function handleTools(req, res, parsed) {
   // POST /api/tools/cli/close  body: { projectDir }
   // Kill the persistent session (idempotent).
   if (urlPath === '/api/tools/cli/close' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     closeCliSession(projectDir);
@@ -401,9 +399,8 @@ async function handleTools(req, res, parsed) {
   // same dispatcher the model-driven loop uses — one tool_call +
   // tool_result pair, returned in the JSON body (no SSE stream).
   if (urlPath === '/api/tools/subagent' && method === 'POST') {
-    let body;
-    try { body = await readJsonBody(req); }
-    catch (e) { return sendJSON(res, e.status || 400, { error: e.message }); }
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
     const task = body && typeof body.task === 'string' ? body.task.trim() : '';
