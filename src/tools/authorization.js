@@ -236,12 +236,29 @@ function effectiveConfig(projectDir, tool) {
   if (NATIVE_TOOLS.has(tool)) {
     const projectToolValue = FILE_TOOL_NAMES.has(requestedTool) && project && project.tools && project.tools[requestedTool];
     const appToolValue = FILE_TOOL_NAMES.has(requestedTool) && app && app.tools && app.tools[requestedTool];
-    const projectValue = projectToolValue || (project && project.tools && project.tools[tool]);
-    const appValue = appToolValue || (app && app.tools && app.tools[tool]);
-    const value = projectValue || appValue || {};
-    const source = projectToolValue
-      ? 'project-tool'
-      : (projectValue ? 'project' : (appToolValue ? 'app-tool' : (appValue ? 'app' : 'default')));
+    const projectFamilyValue = project && project.tools && project.tools[tool];
+    const appFamilyValue = app && app.tools && app.tools[tool];
+    let value;
+    let source;
+    if (FILE_TOOL_NAMES.has(requestedTool)) {
+      // File-operation checkboxes can persist per-leaf overrides, but a
+      // family-level Allow must mean Allow for every non-disabled leaf. A stale
+      // per-operation `ask` / `allowlist` entry must not mask `tools.file.mode =
+      // allow`, or the prompt says File tools are allowed while read_file still
+      // asks. Only an explicit per-operation `off` tightens family Allow.
+      if (projectToolValue && projectToolValue.mode === 'off') { value = projectToolValue; source = 'project-tool'; }
+      else if (projectFamilyValue && projectFamilyValue.mode === 'allow') { value = projectFamilyValue; source = 'project'; }
+      else if (projectToolValue) { value = projectToolValue; source = 'project-tool'; }
+      else if (projectFamilyValue) { value = projectFamilyValue; source = 'project'; }
+      else if (appToolValue && appToolValue.mode === 'off') { value = appToolValue; source = 'app-tool'; }
+      else if (appFamilyValue && appFamilyValue.mode === 'allow') { value = appFamilyValue; source = 'app'; }
+      else if (appToolValue) { value = appToolValue; source = 'app-tool'; }
+      else if (appFamilyValue) { value = appFamilyValue; source = 'app'; }
+      else { value = {}; source = 'default'; }
+    } else {
+      value = projectFamilyValue || appFamilyValue || {};
+      source = projectFamilyValue ? 'project' : (appFamilyValue ? 'app' : 'default');
+    }
     // Built-in tools are part of the base agent surface and are always
     // discoverable. Authorization mode is the gate: `ask` prompts on first
     // use, `allow` runs directly, and `off` explicitly disables execution.

@@ -92,6 +92,27 @@ async function main() {
     });
     assert.equal(allowed.decision, 'allow', tool + ' must use the tools.file authorization gate');
   }
+  settings.setProject(projectDir, {
+    tools: {
+      file: { enabled: true, mode: 'allow' },
+      read_file: { mode: 'ask' }
+    }
+  });
+  const staleLeafAsk = await authz.authorize({
+    projectDir, chatId: 'a1b2c3d4', callId: 'call_file_family_allow', tool: 'read_file', summary: 'README.md'
+  });
+  assert.equal(staleLeafAsk.decision, 'allow', 'family allow must not be masked by a stale per-file ask override');
+  settings.setProject(projectDir, {
+    tools: {
+      file: { enabled: true, mode: 'allow' },
+      read_file: { mode: 'off' }
+    }
+  });
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_file_leaf_off', tool: 'read_file', summary: 'README.md' }),
+    { code: 'ETOOL_DISABLED' },
+    'explicit per-file off still disables that one operation'
+  );
 
   // The settings parent checkbox writes the family and all leaves in one
   // request. Every entry must survive the write loop so the UI cannot fall
@@ -260,7 +281,7 @@ async function main() {
   authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: null } } });
   const idKeyedCleared = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
   assert.ok(!('srv_display' in (idKeyedCleared.authorization.servers || {})), 'clear by id removes the slug entry');
-  console.log('tool authorization: ' + (35 + 4 + 5) + ' assertions passed');
+  console.log('tool authorization: ' + (37 + 4 + 5) + ' assertions passed');
 }
 
 main().finally(() => {

@@ -11,7 +11,8 @@ The tools cover the common "find the file, read the file, edit the file" loop wi
 ### Availability
 
 - Native file tools are always included in the base tool declaration.
-- **Settings → Project → Tools → File tools authorization** controls execution: `ask` by default, `off` to reject calls, or `allow` to run without prompting.
+- **Settings → Project → Tools → File tools authorization** controls execution for the family: `ask` by default, `off` to reject calls, or `allow` to run without prompting.
+- Individual file-tool leaf checkboxes can store a per-operation `off` override. They cannot make a family-level `allow` fall back to `ask`.
 - Legacy `tools.file.enabled` values remain readable but no longer affect detection.
 
 ### Authorization modes
