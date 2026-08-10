@@ -49,6 +49,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL, pathToFileURL } = require('url');
+const { err } = require('./util.js');
 const settings = require('./settings.js');
 
 // ---- SDK lazy load ------------------------------------------------------
@@ -76,13 +77,6 @@ function getSdk() {
 }
 
 // ---- Helpers ------------------------------------------------------------
-
-function err(code, message, extra) {
-  const e = new Error(message);
-  e.code = code;
-  if (extra) Object.assign(e, extra);
-  return e;
-}
 
 function newServerId() {
   // Short hex id; uniqueness is project-scoped.

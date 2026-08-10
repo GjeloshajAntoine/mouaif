@@ -27,6 +27,7 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 
+const { err } = require('./util.js');
 const projects = require('./projects.js');
 
 // Default per-file size cap. The editor is for small fixes (config
@@ -57,12 +58,8 @@ const SKIP_DIRS = new Set([
 
 // ---- Errors ------------------------------------------------------------
 
-function err(code, message, extra) {
-  const e = new Error(message);
-  e.code = code;
-  if (extra) Object.assign(e, extra);
-  return e;
-}
+// err() is shared from src/util.js (files.js, tags.js and mcp.js used to
+// each carry an identical private copy).
 
 function isTextExt(ext) {
   if (!ext) return false;

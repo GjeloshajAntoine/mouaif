@@ -31,6 +31,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { err } = require('./util.js');
 const settings = require('./settings.js');
 
 // ---- Constants ----------------------------------------------------------
@@ -53,12 +54,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.mouaif', 'dist', 'build', '
 
 // ---- Path safety --------------------------------------------------------
 
-function err(code, message, extra) {
-  const e = new Error(message);
-  e.code = code;
-  if (extra) Object.assign(e, extra);
-  return e;
-}
+// err() is shared from src/util.js.
 
 // Normalize any incoming path to a POSIX-relative path under projectDir.
 // Throws EOUTSIDE_PROJECT if it escapes the root. Does NOT touch disk.
