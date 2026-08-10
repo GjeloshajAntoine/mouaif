@@ -300,6 +300,79 @@ function buildAgentFilesCard(state) {
   return card;
 }
 
+// buildSkillsCard(state)
+//
+// Shows discovered Agent Skills below the tools/agent-files cards.
+// Skill activation is currently a chat-level family toggle: checking
+// any available skill enables the skills catalog for the next turn,
+// and unchecking any available skill disables the family for the chat.
+function buildSkillsCard(state) {
+const sk = state.skills || { items: [], enabled: true, projectLocked: false };
+const card = document.createElement('div');
+card.className = 'chat-view__skills-card';
+card.dataset.skillsCard = '1';
+const head = document.createElement('div');
+head.className = 'chat-view__skills-head';
+const title = document.createElement('span');
+title.className = 'chat-view__skills-title';
+title.textContent = 'Skills';
+const note = document.createElement('span');
+note.className = 'chat-view__skills-note';
+if (sk.projectLocked) {
+note.textContent = 'off (locked by project setting) — enable in Settings → Project';
+} else {
+note.textContent = sk.enabled ? 'on — metadata applies next turn' : 'off — tap to enable';
+}
+head.appendChild(title); head.appendChild(note);
+card.appendChild(head);
+if (!sk.items.length) {
+const empty = document.createElement('div');
+empty.className = 'chat-view__skills-empty';
+empty.textContent = 'No skills found in .agents/skills.';
+card.appendChild(empty);
+return card;
+}
+const list = document.createElement('div');
+list.className = 'chat-view__skills-list';
+for (const skill of sk.items) {
+const disabledByProject = !!skill.disabled;
+const checked = !!(sk.enabled && !disabledByProject);
+const disabled = !!sk.projectLocked || disabledByProject;
+const row = document.createElement('label');
+row.className = 'chat-view__skills-row';
+const checkbox = document.createElement('input');
+checkbox.type = 'checkbox';
+checkbox.className = 'checkbox checkbox--sm';
+checkbox.checked = checked;
+checkbox.disabled = disabled;
+checkbox.setAttribute('aria-label', 'Use skill ' + (skill.name || skill.id));
+checkbox.addEventListener('change', () => state._toggleSkills && state._toggleSkills(checkbox.checked));
+const body = document.createElement('span');
+body.className = 'chat-view__skills-body';
+const name = document.createElement('span');
+name.className = 'chat-view__skills-name';
+name.textContent = skill.name || skill.id;
+body.appendChild(name);
+if (skill.description) {
+const desc = document.createElement('span');
+desc.className = 'chat-view__skills-desc';
+desc.textContent = skill.description;
+body.appendChild(desc);
+}
+if (disabledByProject) {
+const reason = document.createElement('span');
+reason.className = 'chat-view__skills-reason';
+reason.textContent = 'Disabled in Settings → Project';
+body.appendChild(reason);
+}
+row.appendChild(checkbox);
+row.appendChild(body);
+list.appendChild(row);
+}
+card.appendChild(list);
+return card;
+}
+
 // mountAgentFilesCard(refs, state)
 //
 // Insert the agent-files card into the transcript in the right slot.
@@ -325,6 +398,33 @@ export function mountAgentFilesCard(refs, state) {
   }
 }
 
+// mountSkillsCard(refs, state)
+//
+// Insert the skills card below agent files (or below tools/system if
+// those cards are absent).
+export function mountSkillsCard(refs, state) {
+  if (!refs.transcript.current) return;
+  const existing = refs.transcript.current.querySelector('[data-skills-card="1"]');
+  if (existing) existing.remove();
+  const card = buildSkillsCard(state);
+  refs.skillsCard.current = card;
+  const agentFilesCard = refs.transcript.current.querySelector('[data-agent-files-card="1"]');
+  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
+  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
+  const empty = refs.transcript.current.querySelector('.chat-view__empty');
+  if (agentFilesCard && agentFilesCard.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, agentFilesCard.nextSibling);
+  } else if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
+  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
+  } else if (empty && empty.parentNode === refs.transcript.current) {
+    refs.transcript.current.insertBefore(card, empty);
+  } else {
+    refs.transcript.current.appendChild(card);
+  }
+}
+
 // updateAgentFilesCard(refs, state)
 //
 // Re-render the agent-files card in place after a toggle. Same
@@ -334,6 +434,16 @@ export function updateAgentFilesCard(refs, state) {
   const fresh = buildAgentFilesCard(state);
   refs.agentFilesCard.current.parentNode.replaceChild(fresh, refs.agentFilesCard.current);
   refs.agentFilesCard.current = fresh;
+}
+
+// updateSkillsCard(refs, state)
+//
+// Re-render the skills card in place after a chat-level toggle.
+export function updateSkillsCard(refs, state) {
+  if (!refs.skillsCard.current || !refs.skillsCard.current.parentNode) return;
+  const fresh = buildSkillsCard(state);
+  refs.skillsCard.current.parentNode.replaceChild(fresh, refs.skillsCard.current);
+  refs.skillsCard.current = fresh;
 }
 
 // toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt)
@@ -347,9 +457,22 @@ export function updateAgentFilesCard(refs, state) {
 // immediately (agent files are part of the injected system context).
 export async function toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt) {
   const cur = state.agentFiles || { files: [], enabled: true, explicit: false };
-  state.agentFiles = { files: cur.files, enabled: next, explicit: true };
+  state.agentFiles = { files: cur.files, enabled: next, explicit: true, projectLocked: cur.projectLocked };
   updateAgentFilesCard(refs, state);
   await updateChat({ agentFiles: next });
+  if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
+}
+
+// toggleSkills(next, state, refs, updateChat, refreshSysPrompt)
+//
+// Flip the chat-level skills catalog toggle and persist it. Individual
+// project-disabled skills remain disabled; this only decides whether
+// the remaining skills are exposed to the model for the next turn.
+export async function toggleSkills(next, state, refs, updateChat, refreshSysPrompt) {
+  const cur = state.skills || { items: [], enabled: true, projectLocked: false };
+  state.skills = Object.assign({}, cur, { enabled: next });
+  updateSkillsCard(refs, state);
+  await updateChat({ skills: next });
   if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
 }
 

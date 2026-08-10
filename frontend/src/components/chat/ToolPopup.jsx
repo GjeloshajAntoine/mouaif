@@ -214,6 +214,10 @@ export function ToolPopup(props) {
       if (onToggleAgentFiles) onToggleAgentFiles(checked);
       return;
     }
+    if (groupId === 'skills') {
+      if (onToggleSkills) onToggleSkills(checked);
+      return;
+    }
     if (onToggleTool) onToggleTool(toolId, checked);
   }
 
@@ -243,10 +247,19 @@ export function ToolPopup(props) {
     groups.push({
       id: 'skills',
       name: 'Skills',
-      description: sk.items.filter((s) => s.enabled).map((s) => s.name).join(', '),
+      description: sk.enabled ? 'available metadata' : 'off',
       checked: sk.enabled,
       disabled: !!sk.projectLocked,
-      tools: sk.items.map((s) => ({ id: s.id, name: s.name, description: '', checked: sk.enabled && s.enabled, disabled: true }))
+      disabledReason: sk.projectLocked ? 'Locked off by Settings → Project.' : '',
+      alwaysExpanded: true,
+      tools: sk.items.map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description || '',
+        checked: sk.enabled && !s.disabled,
+        disabled: !!sk.projectLocked || !!s.disabled,
+        disabledReason: s.disabled ? 'Disabled in Settings → Project' : ''
+      }))
     });
   }
 

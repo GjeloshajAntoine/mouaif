@@ -19,7 +19,7 @@ import {
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
 import { cssEscape } from './utils.js';
-import { buildSetupCard, mountToolsCard, mountAgentFilesCard } from './cards.js';
+import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
 import { setPromptSize } from './meta.js';
 import { updateUsageSummary } from './usage.js';
 import { updateJumpButton } from './scroll.js';
@@ -1490,12 +1490,14 @@ export function renderTranscript(state, refs) {
     renderSystemPromptMessage(refs, state.systemPrompt);
     mountToolsCard(refs, state);
     mountAgentFilesCard(refs, state);
+    mountSkillsCard(refs, state);
     reattachOverlayCards(refs, overlayCards);
     return;
   }
   renderSystemPromptMessage(refs, state.systemPrompt);
   mountToolsCard(refs, state);
   mountAgentFilesCard(refs, state);
+  mountSkillsCard(refs, state);
   // Long transcripts render progressively so the first screen paints
   // immediately instead of blocking on a full DOM+markdown rebuild.
   if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD) {

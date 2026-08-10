@@ -23,7 +23,7 @@ import {
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
-import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles } from './cards.js';
+import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -111,6 +111,7 @@ export function useChatState(props) {
   const jumpBtn = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
+  const skillsCard = useRef(null);
 
   // ---- High-frequency mutable state (refs, not useState) -----
   const pinnedToBottom = useRef(true);
@@ -280,7 +281,7 @@ export function useChatState(props) {
     modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
     thinkingLevel, thinkingLevelCustom, maxOutputTokens,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
-    jumpBtn, toolsCard, agentFilesCard,
+    jumpBtn, toolsCard, agentFilesCard, skillsCard,
     pinnedToBottom, pendingCount,
     chatSwitcherTrigger, chatSwitcherPop,
     _autoresize: () => autoresize({ promptInput })
@@ -379,14 +380,14 @@ export function useChatState(props) {
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   const onToggleAgentFiles = useCallback((next) => {
-  toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
-  // Agent files live in the ref-backed state bag, so changing them
-  // needs an explicit render stamp for the composer ToolPopup.
-  setToolDataStamp((v) => v + 1);
-}, [updateChatBound]);
+    toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
+    // Agent files live in the ref-backed state bag, so changing them
+    // needs an explicit render stamp for the composer ToolPopup.
+    setToolDataStamp((v) => v + 1);
+  }, [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
-    state.skills = Object.assign({}, state.skills, { enabled: next });
-    updateChatBound({ skills: next });
+    toggleSkills(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
+    setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {

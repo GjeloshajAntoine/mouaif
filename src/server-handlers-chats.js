@@ -352,7 +352,13 @@ async function handleChats(req, res, parsed, sessionToken) {
         agentFilesAvailable,
         agentFileNames,
         projectAgentFiles,
-        skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, description: s.description, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
+        skills: skillState.skills.map((s) => ({
+id: s.id,
+name: s.name,
+description: s.description,
+enabled: skillState.enabled && !skillState.disabled.has(s.id),
+disabled: skillState.disabled.has(s.id)
+})),
         projectSkills: skillState.projectEnabled,
         prompt,
         text: parts.join('\n\n')

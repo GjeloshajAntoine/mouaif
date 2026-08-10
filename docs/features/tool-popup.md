@@ -12,8 +12,9 @@ A floating popover opened from a button in the chat composer toolbar that lets t
 4. For built-in tool groups (shell, subagent, ask_user, task, progress updates, file tools), an Off/Ask/Allow segment control is shown inline.
 5. MCP servers appear as their own group; the parent checkbox flips all that server's tools in the per-chat filter at once (the server itself is always on). MCP authorization renders exactly like the chat Tools card and project settings: an **MCP default** row edits the project's shared gate, and each server row carries an Off/Ask/Allow segment for that server's override (with a ↺ reset when an override is set).
 6. Agent files found at the project root appear under the tool list as an always-expanded group; every discovered file is shown with its own checkbox. Toggling any agent-file checkbox applies the chat-level **Use agent files** state to all discovered files.
-7. Tools that have been called in the current chat session show a dot badge (●).
-8. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
+7. Skills found in `.agents/skills/*/SKILL.md` appear below agent files as an always-expanded group with a checkbox next to each skill. Toggling any available skill checkbox applies the chat-level Skills on/off state to the next turn.
+8. Tools that have been called in the current chat session show a dot badge (●).
+9. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
 
 ## Implementation notes
 
