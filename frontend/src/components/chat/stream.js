@@ -324,10 +324,10 @@ async function fetchMessagesFull(projectDir, chatId) {
 // upstream by the base < since check in fetchMessagesSince.
 function applyTailSync(state, refs, revKey, tail) {
   if (!Array.isArray(tail)) return null;
+  state.transcriptRevision = revKey;
   const prevLen = state.messages.length;
   const merged = mergeServerRows(state, tail);
   if (merged === state.messages) return 'appended'; // nothing changed
-  state.transcriptRevision = revKey;
   state.messages = merged;
   const added = merged.length - prevLen;
   if (added <= 0) {
@@ -1059,20 +1059,14 @@ export async function reconcileRunningChat(state, refs) {
     }
 
     if (running) {
-      state.watchingRun = true;
-      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+      const liveKey = projectDir + '::' + chatId;
       // A second tab or a returning page stops seeing this chat as new
       // and starts following the live stream. Subscribe once so its
       // shell/subagent/progress tool cards render in flight instead of
       // waiting for the settled transcript.
       subscribeLive(state, refs);
-      setChatStatus(refs, 'streaming…', 'busy');
-      // Only drain the pending-authorization queue on an actual state
-      // change (a run just started here, or new rows arrived), not on
-      // every 1 s tick — it is an extra GET /pending round-trip per
-      // second while a long run spins, and the queue only grows on
-      // new requests. authCardGuard dedups the cards themselves.
-      if (!prevWatching || moved) loadPendingAuthorization(state, refs);
+      const liveState = state.liveRun && state.liveRun.key === liveKey ? state.liveRun : null;
+      const liveConnected = !!(liveState && (liveState.active || liveState.connected) && !liveState.ended && !liveState.failed);
 
       // Settle a torn run. On a reloaded page the server may report
       // `running` true while the SSE socket that would have cleared it
@@ -1088,20 +1082,33 @@ export async function reconcileRunningChat(state, refs) {
       const midTool = last && last.role === 'tool' && last.phase === 'call';
       if (state.runSettled) {
         // Already settled this torn run — stay quiet. No busy state, no
-        // stop button, no oscillation.
+        // stop button, no oscillation, and importantly no transient
+        // "streaming…" status before the latch branch runs.
         state.watchingRun = false;
-        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-      } else if (!moved && !midTool && state.messages.length > 0) {
-        state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
-        if (state.watchingStableTicks >= 2) {
-          state.watchingRun = false;
-          state.watchingStableTicks = 0;
-          state.runSettled = true;
-          if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-          setChatStatus(refs, 'done', 'success');
-        }
-      } else {
         state.watchingStableTicks = 0;
+        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+      } else {
+        state.watchingRun = true;
+        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+        setChatStatus(refs, 'streaming…', 'busy');
+        // Only drain the pending-authorization queue on an actual state
+        // change (a run just started here, or new rows arrived), not on
+        // every 1 s tick — it is an extra GET /pending round-trip per
+        // second while a long run spins, and the queue only grows on
+        // new requests. authCardGuard dedups the cards themselves.
+        if (!prevWatching || moved) loadPendingAuthorization(state, refs);
+        if (!moved && !midTool && state.messages.length > 0 && !liveConnected) {
+          state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
+          if (state.watchingStableTicks >= 2) {
+            state.watchingRun = false;
+            state.watchingStableTicks = 0;
+            state.runSettled = true;
+            if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+            setChatStatus(refs, 'done', 'success');
+          }
+        } else {
+          state.watchingStableTicks = 0;
+        }
       }
     } else if (state.watchingRun) {
       state.watchingRun = false;

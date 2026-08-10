@@ -27,6 +27,13 @@ import { setChatStatus } from './usage.js';
 
 const liveByChat = new Map();
 
+function setLiveRunState(state, key, patch) {
+const prev = state.liveRun && state.liveRun.key === key
+? state.liveRun
+: { key, active: false, connected: false, ended: false, failed: false };
+state.liveRun = Object.assign({}, prev, patch || {}, { key });
+}
+
 // subscribeLive(state, refs)
 //
 // Open a per-chat live stream for the current chat if it's running and
@@ -42,12 +49,17 @@ export function subscribeLive(state, refs) {
   let active = true;
   const ctl = new AbortController();
   liveByChat.set(key, { abort: ctl }); // reserve early so concurrent ticks don't double-open
+  setLiveRunState(state, key, { active: true, connected: false, ended: false, failed: false });
 
   fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir), {
     signal: ctl.signal
   }).then((resp) => {
-    if (!active || !resp.ok) return null;
-    if (!resp.body) return null;
+    if (!active) return null;
+    if (!resp.ok || !resp.body) {
+      setLiveRunState(state, key, { active: false, connected: false, ended: false, failed: true });
+      return null;
+    }
+    setLiveRunState(state, key, { active: true, connected: true, failed: false });
     return resp.body.getReader();
   }).then(async function consume(reader) {
     if (!reader) return;
@@ -63,7 +75,7 @@ export function subscribeLive(state, refs) {
           const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
           const ev = parseSSEFrame(frame); if (!ev) continue;
           if (ev.eventName === 'run_end') {
-            handleLiveRunEnd(refs, state);
+            handleLiveRunEnd(refs, state, key);
             return; // run finished — close
           }
           dispatchLiveEvent(ev, refs, state);
@@ -74,6 +86,10 @@ export function subscribeLive(state, refs) {
     if (active) {
       active = false;
       liveByChat.delete(key);
+      const current = state.liveRun;
+      if (current && current.key === key && !current.ended && !current.failed) {
+        setLiveRunState(state, key, { active: false, connected: false });
+      }
     }
   });
 
@@ -92,6 +108,7 @@ export function closeLive(state) {
   const entry = liveByChat.get(key);
   if (!entry) return;
   liveByChat.delete(key);
+  setLiveRunState(state, key, { active: false, connected: false });
   if (entry.abort) entry.abort.abort();
 }
 
@@ -136,10 +153,12 @@ function dispatchLiveEvent(ev, refs, state) {
   }
 }
 
-function handleLiveRunEnd(refs, state) {
+function handleLiveRunEnd(refs, state, key) {
+  setLiveRunState(state, key, { active: false, connected: false, ended: true, failed: false });
   removeOverlayCards(refs);
   state.watchingRun = false;
   state.watchingStableTicks = 0;
+  state.runSettled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
   setChatStatus(refs, 'done', 'success');
 }

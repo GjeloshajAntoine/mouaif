@@ -175,6 +175,12 @@ export function useChatState(props) {
   // stability logic used by stream recovery (runRecoveryTick).
   const watchingStableTicks = useRef(0);
   const watchingRun = useRef(false);
+  // State for the follower live-replay socket (`/api/chats/:id/live`).
+  // The reconcile poll uses this to distinguish a genuinely active but
+  // quiet run (live socket connected, no transcript movement yet) from a
+  // stale/torn running flag. Keep it outside Preact render state: it is a
+  // hot-path transport marker, not view data.
+  const liveRun = useRef({ key: '', active: false, connected: false, ended: false, failed: false });
   // Latch for a settled "torn" run. When a chat's server `running`
   // flag is stale (the run finished while we were away, or its SSE
   // socket died without clearing the flag), reconcileRunningChat
@@ -255,6 +261,8 @@ export function useChatState(props) {
       set watchingRun(v) { watchingRun.current = v; },
       get watchingStableTicks() { return watchingStableTicks.current; },
       set watchingStableTicks(v) { watchingStableTicks.current = v; },
+      get liveRun() { return liveRun.current; },
+      set liveRun(v) { liveRun.current = v && typeof v === 'object' ? v : { key: '', active: false, connected: false, ended: false, failed: false }; },
       get runSettled() { return runSettled.current; },
       set runSettled(v) { runSettled.current = v; },
       get providerCredit() { return providerCredit.current; },
@@ -752,6 +760,7 @@ export function useChatState(props) {
   // seq from a previous chat can never suppress a load.
   useEffect(() => { seenSeqs.current = new Set(); }, [chatId]);
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
+  useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
   useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state, refs);
