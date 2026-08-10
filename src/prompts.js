@@ -231,7 +231,7 @@ function getPromptPreset(projectDir, promptId) {
 //
 // The preset is a convenience layer over the existing per-chat settings —
 // it never relaxes the project's authorization gate (a tool the project
-// turned `off` stays off; agent files silently follow the project lock).
+// turned `off` stays off; agent files remain a per-chat toggle).
 function effectivePresetConfig(chat, preset) {
   const out = {};
   if (chat && typeof chat === 'object' && preset && typeof preset === 'object') {

@@ -254,12 +254,10 @@ export function mountToolsCard(refs, state) {
 // A small card that shows which agent files (AGENTS.md, CLAUDE.md,
 // .github/copilot-instructions.md) were found at the project root
 // and whether they are being injected into the model context. One
-// toggle flips the per-chat `agentFiles` boolean; the default
-// (no explicit choice) is ON regardless of the prompt-size profile.
-// When `projectLocked` is true, the project has the master switch off
-// and the per-chat toggle is disabled.
+// toggle flips the per-chat `agentFiles` boolean. Settings → Project
+// controls the file-name list, not a project-wide disable switch.
 function buildAgentFilesCard(state) {
-  const af = state.agentFiles || { files: [], enabled: true, explicit: false, projectLocked: false };
+  const af = state.agentFiles || { files: [], enabled: true, explicit: false };
   const card = document.createElement('div');
   card.className = 'chat-view__agent-files-card';
   card.dataset.agentFilesCard = '1';
@@ -271,14 +269,12 @@ function buildAgentFilesCard(state) {
   title.textContent = 'Agent files';
   const note = document.createElement('span');
   note.className = 'chat-view__agent-files-note';
-  if (af.projectLocked) {
-    note.textContent = 'off (locked by project setting) — enable in Settings → Project';
-  } else if (af.explicit) {
-    note.textContent = af.enabled ? 'on — applies next turn' : 'off — applies next turn';
-  } else {
-    note.textContent = af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable';
-  }
-  head.appendChild(title); head.appendChild(note);
+  if (af.explicit) {
+  note.textContent = af.enabled ? 'on — applies next turn' : 'off — applies next turn';
+} else {
+  note.textContent = af.enabled ? 'on (default) — tap to disable' : 'off (default) — tap to enable';
+}
+head.appendChild(title); head.appendChild(note);
   card.appendChild(head);
 
   if (!af.files.length) {
@@ -298,7 +294,7 @@ function buildAgentFilesCard(state) {
     checkbox.type = 'checkbox';
     checkbox.className = 'checkbox checkbox--sm';
     checkbox.checked = !!af.enabled;
-    checkbox.disabled = !!af.projectLocked;
+    checkbox.disabled = false;
     checkbox.setAttribute('aria-label', 'Use agent file ' + name);
     checkbox.addEventListener('change', () => state._toggleAgentFiles && state._toggleAgentFiles(checkbox.checked));
     const label = document.createElement('span');
@@ -470,7 +466,7 @@ export function updateSkillsCard(refs, state) {
 // immediately (agent files are part of the injected system context).
 export async function toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt) {
   const cur = state.agentFiles || { files: [], enabled: true, explicit: false };
-  state.agentFiles = { files: cur.files, enabled: next, explicit: true, projectLocked: cur.projectLocked };
+  state.agentFiles = { files: cur.files, enabled: next, explicit: true };
   updateAgentFilesCard(refs, state);
   await updateChat({ agentFiles: next });
   if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();

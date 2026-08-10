@@ -222,22 +222,22 @@ export function ToolPopup(props) {
   }
 
   // If agent files are available, add a synthetic group for them
-  const af = agentFiles || { files: [], enabled: true, projectLocked: false };
+  const af = agentFiles || { files: [], enabled: true };
   if (af.files.length) {
     groups.push({
       id: 'agent-files',
       name: 'Agent files',
       description: af.enabled ? 'all selected' : 'off',
       checked: af.enabled,
-      disabled: !!af.projectLocked,
-      disabledReason: af.projectLocked ? 'Locked off by Settings → Project.' : '',
+      disabled: false,
+      disabledReason: '',
       alwaysExpanded: true,
       tools: af.files.map((f) => ({
         id: f,
         name: f,
         description: '',
         checked: af.enabled,
-        disabled: !!af.projectLocked
+        disabled: false
       }))
     });
   }

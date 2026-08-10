@@ -325,20 +325,12 @@ async function handleChats(req, res, parsed, sessionToken) {
       const skillCatalog = agentSkills.catalogMessage(dir, chat);
       if (skillCatalog) parts.push(skillCatalog);
       if (prompt && prompt.content) parts.push(prompt.content);
-      // Also expose the project-level gate so the UI can render the
-      // per-chat toggle as locked off when the project has it disabled.
-      let projectAgentFiles = null;
-      try {
-        const project = require('./settings.js').getProject(dir);
-        if (project && typeof project.agentFiles === 'boolean') projectAgentFiles = project.agentFiles;
-      } catch { /* null */ }
       return sendJSON(res, 200, {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
         agentFilesEnabled,
         agentFilesAvailable,
         agentFileNames,
-        projectAgentFiles,
         skills: skillState.skills.map((s) => ({
 id: s.id,
 name: s.name,
