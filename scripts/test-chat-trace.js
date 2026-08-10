@@ -101,7 +101,8 @@ try {
       cache_control: { type: 'ephemeral' }
     }
   ]);
-  assert.equal(anthropic.headers['anthropic-beta'], 'prompt-caching-2024-07-31');
+  assert.equal(anthropic.headers['anthropic-beta'], undefined);
+  assert.equal(anthropic.headers['anthropic-version'], '2023-06-01');
   const gemini = ai.BUILDERS.gemini({ id: 'gemini-test', apiKey: 'x' }, [
     { role: 'system', content: 'profile' },
     { role: 'system', content: 'tagged file' },
