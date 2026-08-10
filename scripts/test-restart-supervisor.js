@@ -77,7 +77,9 @@ function killTree(proc) {
 
 async function main() {
   console.log(`[restart-supervisor] starting on port ${PORT}`);
-  const child = spawn(process.execPath, [BIN, 'serve', '--port', String(PORT)], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const env = { ...process.env };
+  delete env.MOUAIF_SERVE_CHILD;
+  const child = spawn(process.execPath, [BIN, 'serve', '--port', String(PORT)], { stdio: ['ignore', 'pipe', 'inherit'], env });
   const waitForBoots = makeBootWaiter(child);
 
   try {
