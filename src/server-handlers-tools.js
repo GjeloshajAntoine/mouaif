@@ -142,6 +142,27 @@ function attachCliStream(session, broadcast) {
 // The tool is off unless the project's resolved settings enable it
 // (settings.tools.shell.enabled). A disabled project returns
 // ETOOL_DISABLED with HTTP 403.
+
+// pushNativeTool(tools, opts) — append one built-in tool entry to the
+// catalog. All the single native tools advertise the same shape
+// ({ name, kind: 'native', source, description }); only the module to
+// load, its spec accessor and the fallback description differ, so the
+// six repetitive try/catch + push blocks collapse into one loader.
+// `opts.spec(mod)` returns the tool's `function` block (or undefined).
+// If the module cannot be loaded the tool is silently omitted.
+function pushNativeTool(tools, opts) {
+  try {
+    const mod = require(opts.load);
+    const fn = opts.spec(mod) || {};
+    tools.push({
+      name: opts.name,
+      kind: 'native',
+      source: opts.source,
+      description: fn.description || opts.fallback
+    });
+  } catch { /* module unavailable; omit */ }
+}
+
 async function handleTools(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -169,60 +190,12 @@ async function handleTools(req, res, parsed) {
     // broken MCP process does not fail the native-tool catalog.
     await mcp.ensureServersRunning(projectDir).catch(() => []);
     const tools = [];
-    try {
-      const shell = require('./tools/shell.js');
-      tools.push({
-        name: 'shell',
-        kind: 'native',
-        source: 'shell',
-        description: (shell.SPEC && shell.SPEC.function && shell.SPEC.function.description) || 'Run a shell command in the project directory.'
-      });
-    } catch { /* shell module unavailable; omit */ }
-    try {
-      const prog = require('./tools/progress.js');
-      tools.push({
-        name: 'report_progress',
-        kind: 'native',
-        source: 'progress',
-        description: (prog.SPEC && prog.SPEC.function && prog.SPEC.function.description) || 'Report real-time progress on a long-running operation.'
-      });
-    } catch { /* progress module unavailable; omit */ }
-    try {
-      const subagent = require('./tools/subagent.js');
-      tools.push({
-        name: 'subagent',
-        kind: 'native',
-        source: 'subagent',
-        description: (subagent.SPEC && subagent.SPEC.function && subagent.SPEC.function.description) || 'Delegate a focused task to a nested AI call.'
-      });
-    } catch { /* subagent module unavailable; omit */ }
-    try {
-      const af = require('./agentFeatures.js');
-      tools.push({
-        name: 'list_features',
-        kind: 'native',
-        source: 'features',
-        description: (af.LIST_FEATURES_SPEC && af.LIST_FEATURES_SPEC.function && af.LIST_FEATURES_SPEC.function.description) || 'Describe mouaif feature state.'
-      });
-    } catch { /* feature module unavailable; omit */ }
-    try {
-      const ask = require('./tools/ask.js');
-      tools.push({
-        name: 'ask_user',
-        kind: 'native',
-        source: 'ask_user',
-        description: (ask.SPEC && ask.SPEC.function && ask.SPEC.function.description) || 'Ask the user a structured question with options.'
-      });
-    } catch { /* ask_user module unavailable; omit */ }
-    try {
-      const taskMod = require('./tools/task.js');
-      tools.push({
-        name: 'task',
-        kind: 'native',
-        source: 'task',
-        description: (taskMod.SPEC && taskMod.SPEC.function && taskMod.SPEC.function.description) || 'Create, update, track progress on, and list structured tasks with subtasks.'
-      });
-    } catch { /* task module unavailable; omit */ }
+pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'progress', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'features', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
+pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
     try {
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {
