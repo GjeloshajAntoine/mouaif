@@ -28,7 +28,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
 import { subscribeLive } from './live.js';
-import { mergeServerRows } from './msgMerge.js';
+import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
 import { mountOverlayCard } from './overlay.js';
 
 // markToolUsed(state, refs, toolName)
@@ -291,10 +291,13 @@ function syncFromRevision(state, refs, revKey, synced) {
 
 // fetchMessagesSince(projectDir, chatId, since) -> { body, status }
 //
-// Fetch only the transcript tail after index `since` (the number of
-// rows the client already has). Returns null when the transcript was
-// cleared/replaced on the server (base < since) — the caller must
-// then fall back to a full /messages fetch and rebuild.
+// Fetch only the transcript tail after server seq/index `since` (the
+// next persisted row the client has not merged). This must not be
+// based on `state.messages.length`: live optimistic rows do not have a
+// server seq yet, and counting them would skip persisted rows while
+// following a running chat. Returns null when the transcript was
+// cleared/replaced on the server (base < since) — the caller must then
+// fall back to a full /messages fetch and rebuild.
 async function fetchMessagesSince(projectDir, chatId, since) {
   const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&since=' + since);
   if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return { body: null, status: r.status };
@@ -343,7 +346,7 @@ function applyTailSync(state, refs, revKey, tail) {
 // fall back to the full transcript and the prefix-checking sync.
 async function syncTailOrFull(state, refs, revKey) {
   const { projectDir, chatId } = state.props;
-  const t = await fetchMessagesSince(projectDir, chatId, state.messages.length);
+  const t = await fetchMessagesSince(projectDir, chatId, nextServerMessageIndex(state));
   if (t.body) return applyTailSync(state, refs, revKey, t.body.messages);
   const full = await fetchMessagesFull(projectDir, chatId);
   if (full == null) return null;

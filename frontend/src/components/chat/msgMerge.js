@@ -31,6 +31,29 @@ export function isReplaceable(prev, next) {
   return true;
 }
 
+// nextServerMessageIndex(state) -> number
+//
+// Return the next server-side `seq` the client has not merged yet.
+// This is intentionally based on stable per-row identity, not
+// `state.messages.length`: while a turn is live the client holds
+// optimistic seq-less rows (user bubble / assistant segment) that make
+// the array longer than the persisted prefix. Using array length for
+// `?since=` can skip the just-persisted server rows, delaying catch-up
+// until a full rebuild or the end of the run.
+export function nextServerMessageIndex(state) {
+let maxSeq = -1;
+const list = state && Array.isArray(state.messages) ? state.messages : [];
+for (const m of list) {
+if (m && typeof m.seq === 'number' && Number.isFinite(m.seq) && m.seq > maxSeq) maxSeq = m.seq;
+}
+const seen = state && state.seenSeqs;
+if (seen && typeof seen.forEach === 'function') {
+seen.forEach((seq) => {
+if (typeof seq === 'number' && Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+});
+}
+return maxSeq + 1;
+}
 // mergeServerRows(state, rows) -> Message[]
 //
 // Merge server-persisted `rows` (each stamped with its stable seq)

@@ -16,7 +16,7 @@ function t(name, cond, msg) {
 }
 
 async function run() {
-  const { mergeServerRows, isReplaceable } = await import(
+  const { mergeServerRows, isReplaceable, nextServerMessageIndex } = await import(
     '../frontend/src/components/chat/msgMerge.js'
   );
 
@@ -65,7 +65,17 @@ async function run() {
   t('identical assistants aligned positionally (no dup, no swap)',
     out.length === 3 && out[1].seq === 1 && out[1].ts === 'S1' && out[2].seq === 2 && out[2].ts === 'S2', out);
 
-  // Case 6: isReplaceable rejects different content.
+  // Case 6: tail-fetch index is based on persisted seq, not array
+  // length. A live client can hold optimistic seq-less rows while the
+  // server has already persisted rows 1..N; using messages.length as
+  // `since` would skip row 1 here.
+  s = { seenSeqs: new Set([0]), messages: [
+    { role: 'user', content: 'hi', ts: 'S', seq: 0 },
+    { role: 'assistant', content: 'live partial', reasoning: '', ts: 'C' }
+  ] };
+  t('nextServerMessageIndex ignores optimistic rows', nextServerMessageIndex(s) === 1, nextServerMessageIndex(s));
+
+  // Case 7: isReplaceable rejects different content.
   t('isReplaceable false on different content',
     !isReplaceable({ role: 'assistant', content: 'a', reasoning: '' }, { role: 'assistant', content: 'b', reasoning: '' }));
 

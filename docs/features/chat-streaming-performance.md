@@ -20,7 +20,7 @@ The hot path lives in [frontend/src/components/chat/transcript.js](../../fronten
 - The `_content` / `_reasoning` accumulators are still updated on the row so `finalizeLiveMessage` and any rebuild have the authoritative full text.
 - **Reconcile / recovery merges by `seq`, never re-adds a held row.** The reconcile poll (`reconcileRunningChat`), the stream-recovery poll, and the post-stream tail sync all pull rows through `mergeServerRows` (see `frontend/src/components/chat/msgMerge.js`). Rows the client already merged (either from the initial load or a prior tail) carry a stable per-chat `seq` that is in `state.seenSeqs`, so a redundant re-delivery is dropped. A persisted row that the client already rendered optimistically (the user message appended before the POST, or the live assistant bubble before the server persisted it) **replaces** its seq-less twin in place rather than being appended a second time.
   - This is what fixes the historic "last few messages repeat": the old code matched rows by `role + ts`, but the optimistic timestamp (client clock) differs from the persisted one (server clock), so the twin was drawn twice.
-  - `since=` tail fetches are keyed on the highest known `seq`, so a reconnect never re-transfers a row already merged. See [chat-storage.md](./chat-storage.md) for the `seq` contract on both backends.
+  - `since=` tail fetches are keyed on the highest known `seq`, not on `state.messages.length`, so a returning/follower client with optimistic seq-less live rows still asks for the next unmerged persisted row. This keeps catch-up incremental and avoids skipping rows until the run settles. See [chat-storage.md](./chat-storage.md) for the `seq` contract on both backends.
 
 ## Related
 
