@@ -845,6 +845,42 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     if (created) nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()));
   }
 
+  // What the model receives for the same shell result under the selected
+  // profile. Mirrors src/toolFeedback.js: concise layout (JSON minified,
+  // blank runs collapsed) applies first, then the size budget truncates
+  // head/tail with the standard marker. Byte counts here are illustrative,
+  // not a live preview of a real result.
+  function exampleFor(profile) {
+    const full = [
+      '$ npm install',
+      '',
+      '> some-native-dep@1.0.0 install',
+      '> node-gyp rebuild',
+      '',
+      'make: Entering directory \'/app/node_modules/some-native-dep/build\'',
+      '  CXX(target) Release/obj.target/binding/src/binding.o',
+      '  SOLINK_MODULE(target) Release/obj.target/binding.node',
+      '  COPY Release/binding.node',
+      'make: Leaving directory \'/app/node_modules/some-native-dep/build\'',
+      '',
+      'added 214 packages, and audited 215 packages in 9s',
+      '',
+      '36 packages are looking for funding',
+      '  run `npm fund` for details',
+      '',
+      'found 0 vulnerabilities'
+    ].join('\n');
+    const concise = full.replace(/\n[ \t]*\n+/g, '\n');
+    if (profile === 'full') return full;
+    if (profile === 'small') {
+      const marker = '\n\n...[tool feedback truncated; original ' + concise.length + ' bytes]...\n\n';
+      const head = concise.slice(0, 110);
+      const tail = concise.slice(-78);
+      return head + marker + tail;
+    }
+    return full;
+  }
+
   if (page === 'output') return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
@@ -876,6 +912,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('div', { class: 'group__title' }, 'Stored value'),
         h('p', { class: 'hint hint--compact' }, 'This is the exact ', h('code', null, 'toolOutput'), ' object written to ', h('code', null, '.mouaif.json'), ' when you change the profile.'),
         h('pre', { class: 'settings__out' }, JSON.stringify({ toolOutput: { size: outputSize, structure: outputStructure } }, null, 2))
+      ),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title' }, 'Example'),
+        h('p', { class: 'hint hint--compact' }, 'What the model would receive for the same shell result under the selected profile (illustrative, not a live preview):'),
+        h('pre', { class: 'settings__out' }, exampleFor(profileFor(outputSize, outputStructure)))
       )
     )
   );

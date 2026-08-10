@@ -22,6 +22,8 @@ Saving writes the whole `toolOutput` object to the project file:
 
 The page reads the **resolved** value (defaults → app → project), so an empty project still shows the default (**Balanced**) and a project override shows through. A hand-edited `.mouaif.json` whose `{ size, structure }` pair matches none of the three profiles is shown as **Balanced** until the user picks a profile, which then rewrites the stored combo.
 
+Below the stored-value readout, an **Example** block shows what the model would receive for the same sample shell result under the selected profile: **Balanced** and **Full** pass the raw body through, while **Small** shows the concise layout (blank runs collapsed) cut down with the standard head/tail truncation marker. The example is illustrative — byte counts are fixed, not computed from a live result.
+
 The profile applies to every model-facing tool result: the live multi-turn tool loop and the reconstructed history fed to the model when a chat resumes. `concise` never alters the stored transcript or the SSE events — it only shapes the `role: "tool"` message sent upstream, the same boundary as the existing byte-cap compaction.
 
 ## Implementation notes
