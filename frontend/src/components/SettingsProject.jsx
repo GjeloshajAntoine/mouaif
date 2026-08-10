@@ -24,12 +24,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [promptSize, setPromptSize] = useState('');
   const [promptSizeStatusMsg, setPromptSizeStatusMsg] = useState('Following the app default until you change it here');
 
-  // Tool output profile (size / structure). Set during load() from the
-  // resolved settings so the File tool options page has defaults even
-  // when the project never set a toolOutput key.
+  // Tool output profile. One select maps to a { size, structure } combo.
+  // Values are seeded during load() from the resolved settings so the
+  // File tool options page has defaults even when the project never set
+  // a toolOutput key.
   const [outputSize, setOutputSize] = useState('average');
   const [outputStructure, setOutputStructure] = useState('full');
   const [outputStatusMsg, setOutputStatusMsg] = useState('');
+
+  // The three user-facing profiles → stored toolOutput combos.
+  const OUTPUT_PROFILES = {
+    small: { size: 'very-small', structure: 'concise' },
+    balanced: { size: 'average', structure: 'full' },
+    full: { size: 'extensive', structure: 'full' }
+  };
+  // Resolve a stored { size, structure } pair back to a profile key;
+  // unknown combos (hand-edited .mouaif.json) fall back to 'balanced'.
+  function profileFor(size, structure) {
+    for (const k of Object.keys(OUTPUT_PROFILES)) {
+      const p = OUTPUT_PROFILES[k];
+      if (p.size === size && p.structure === structure) return k;
+    }
+    return 'balanced';
+  }
 
   const [traceCardVisible, setTraceCardVisible] = useState(!!(initialChatId && initialChatId.trim()));
   const [chatTraceOn, setChatTraceOn] = useState(false);
@@ -292,15 +309,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setOutputStatusMsg('saving…');
     await patchProject({ toolOutput: { size, structure } }, setOutputStatusMsg, 'saved');
   }
-  function onOutputSize(e) {
-    const v = e.target.value;
-    setOutputSize(v);
-    saveToolOutput(v, outputStructure);
-  }
-  function onOutputStructure(e) {
-    const v = e.target.value;
-    setOutputStructure(v);
-    saveToolOutput(outputSize, v);
+  function onOutputProfile(e) {
+    const p = OUTPUT_PROFILES[e.target.value] || OUTPUT_PROFILES.balanced;
+    setOutputSize(p.size);
+    setOutputStructure(p.structure);
+    saveToolOutput(p.size, p.structure);
   }
 
   async function onChatTraceChange(e) {
@@ -848,32 +861,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       h('ul', { class: 'group__list' },
         h('li', { class: 'settings-project__item' },
           h('div', { class: 'settings-project__item-main' },
-            h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Output size'),
-            h('div', { class: 'settings-project__item-note' }, 'How much of a tool result the model sees before truncation.'),
+            h('label', { class: 'settings-project__item-title', for: 'sp-output-profile' }, 'Output profile'),
+            h('div', { class: 'settings-project__item-note' }, 'One preset covering result size and layout.'),
             h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outputStatusMsg)
           ),
-          h('select', { class: 'input settings-project__select', id: 'sp-output-size', value: outputSize, onChange: onOutputSize },
-            h('option', { value: 'very-small' }, 'Very small — a quarter of the cap'),
-            h('option', { value: 'average' }, 'Average — the standard cap (default)'),
-            h('option', { value: 'full' }, 'Full — up to four times the cap'),
-            h('option', { value: 'extensive' }, 'Extensive — never truncate')
-          )
-        ),
-        h('li', { class: 'settings-project__item' },
-          h('div', { class: 'settings-project__item-main' },
-            h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Output structure'),
-            h('div', { class: 'settings-project__item-note' }, 'How the result body is arranged for the model.'),
-            h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' })
-          ),
-          h('select', { class: 'input settings-project__select', id: 'sp-output-structure', value: outputStructure, onChange: onOutputStructure },
-            h('option', { value: 'full' }, 'Full — keep the raw body'),
-            h('option', { value: 'concise' }, 'Concise — compact JSON, no blank runs')
+          h('select', { class: 'input settings-project__select', id: 'sp-output-profile', value: profileFor(outputSize, outputStructure), onChange: onOutputProfile },
+            h('option', { value: 'small' }, 'Small — tight cap, compact layout'),
+            h('option', { value: 'balanced' }, 'Balanced — standard cap, raw body (default)'),
+            h('option', { value: 'full' }, 'Full — never truncate, raw body')
           )
         )
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Stored value'),
-        h('p', { class: 'hint hint--compact' }, 'This is the exact ', h('code', null, 'toolOutput'), ' object written to ', h('code', null, '.mouaif.json'), ' when you change either control.'),
+        h('p', { class: 'hint hint--compact' }, 'This is the exact ', h('code', null, 'toolOutput'), ' object written to ', h('code', null, '.mouaif.json'), ' when you change the profile.'),
         h('pre', { class: 'settings__out' }, JSON.stringify({ toolOutput: { size: outputSize, structure: outputStructure } }, null, 2))
       )
     )
