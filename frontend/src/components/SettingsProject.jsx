@@ -863,24 +863,29 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const utf8Len = (s) => new TextEncoder().encode(s).length;
 
     const combo = OUTPUT_PROFILES[profile] || OUTPUT_PROFILES.balanced;
-    // A real `list_files` result: one `# Listing`/`# Count` header, the
-    // directory printed once as a `# src/tools/` group header, then bare
-    // basenames indented under it. This is the compact format the file
-    // tools produce — the full path is never repeated on every row and the
-    // model never sees a JSON blob.
+    // A generic `list_files` result across several directories. This is the
+    // compact format the file tools produce: one `# Listing`/`# Count`
+    // header, then each directory printed once as a `# <dir>/` group header
+    // with bare basenames indented under it. The full path prefix is never
+    // repeated per row and the model never sees a JSON blob — the grouping
+    // is what saves tokens, which is why the sample spans multiple dirs.
     const full = [
-      '# Listing: src/tools/*.js',
-      '# Count: 7',
-      '# Skipped: 5',
+      '# Listing: **/*.js',
+      '# Count: 8',
+      '# Skipped: 3',
       '',
-      '# src/tools/',
-      '  ask.js',
-      '  authorization.js',
-      '  files.js',
-      '  progress.js',
-      '  shell.js',
-      '  subagent.js',
-      '  task.js'
+      '# src/',
+      '  index.js',
+      '  server.js',
+      '# src/lib/',
+      '  parser.js',
+      '  format.js',
+      '# src/routes/',
+      '  users.js',
+      '  posts.js',
+      '# test/',
+      '  parser.test.js',
+      '  server.test.js'
     ].join('\n');
 
     // structure: `concise` collapses blank runs, strips leading indentation
@@ -942,7 +947,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Example'),
-        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result under the selected profile — the compact file-tool format (grouped header, no repeated paths, no JSON). Illustrative, not a live preview:'),
+        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result spanning several directories — the compact file-tool format (each directory grouped once, no repeated path prefix, no JSON). Illustrative, not a live preview:'),
         h('pre', { class: 'settings__out' }, exampleFor(profileFor(outputSize, outputStructure)))
       )
     )
