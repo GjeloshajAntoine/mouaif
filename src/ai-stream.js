@@ -4,7 +4,7 @@
 //
 // Owns the multi-turn tool loop (streamChat), the single tool-call
 // runner (runSingleToolCall), and the byte-stream helpers shared with
-// the provider parsers (joinUrl / readSSE / parseSSEFrame / readNDJSON).
+// the provider parsers (readSSE / parseSSEFrame / readNDJSON).
 // Provider definitions, request builders and event parsers live in
 // src/ai-endpoints.js; the public facade is src/ai.js.
 
@@ -12,13 +12,6 @@ const { endpointFor, requireApiKey, BUILDERS, PARSERS, parseMiniMaxTextToolCalls
 const toolFeedback = require('./toolFeedback.js');
 
 // ---- Streaming core ----------------------------------------------------
-
-function joinUrl(base, path) {
-  if (!base) return path;
-  if (base.endsWith('/') && path.startsWith('/')) return base + path.slice(1);
-  if (!base.endsWith('/') && !path.startsWith('/')) return base + '/' + path;
-  return base + path;
-}
 
 // Walks an SSE byte stream and yields {eventName, data} pairs.
 // `stream` is a ReadableStream<Uint8Array> from fetch().

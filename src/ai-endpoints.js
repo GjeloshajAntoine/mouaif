@@ -15,6 +15,8 @@
 // BUILDERS + PARSERS entry at the bottom, and (if the auth shape
 // differs) an entry in src/auth.js.
 
+const { joinUrl, err, firstStringField } = require('./util.js');
+
 // ---- Provider endpoints ------------------------------------------------
 
 const ENDPOINTS = {
@@ -849,15 +851,7 @@ async function exchangeCopilotTokenIfNeeded(model, parsedBlob) {
 
 // ---- Request builders --------------------------------------------------
 
-// Joins a base URL and a path, normalizing slashes. Shared by the
-// request builders; the streaming core keeps its own copy for the
-// byte-stream layer.
-function joinUrl(base, path) {
-  if (!base) return path;
-  if (base.endsWith('/') && path.startsWith('/')) return base + path.slice(1);
-  if (!base.endsWith('/') && !path.startsWith('/')) return base + '/' + path;
-  return base + path;
-}
+// joinUrl() is shared from src/util.js.
 
 // Returns the effective bearer-style credential: the OAuth access token
 // if one was resolved by requireApiKey, otherwise the plain apiKey.
@@ -1275,13 +1269,7 @@ function firstFiniteNumberOrNull(...values) {
   return null;
 }
 
-function firstStringField(obj, names) {
-  if (!obj || typeof obj !== 'object') return '';
-  for (const name of names) {
-    if (typeof obj[name] === 'string') return obj[name];
-  }
-  return '';
-}
+// firstStringField() is shared from src/util.js.
 
 function* parseOpenAISSE(eventName, data) {
   if (!data) return;
