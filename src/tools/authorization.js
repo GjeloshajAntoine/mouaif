@@ -376,11 +376,20 @@ function setAuthorization(projectDir, patch) {
       const map = p[key];
       if (!map || typeof map !== 'object' || Array.isArray(map)) continue;
       if (!auth[key] || typeof auth[key] !== 'object' || Array.isArray(auth[key])) auth[key] = {};
+      // Server overrides are stored under the server's canonical *slug*,
+      // but callers (and hand-edited files) may key by the display *id*.
+      // Normalize the write key to the slug up front: without this, an
+      // id-keyed write lands under the id and the cleanup pass below then
+      // deletes the just-written entry (its twin, the slug key, was never
+      // stored) — the override silently vanishes, so the settings
+      // checkbox looks like it never saved.
+      const idToSlug = key === 'servers' ? mcpIdToSlug(projectDir) : new Map();
       for (const [name, entry] of Object.entries(map)) {
         if (typeof name !== 'string' || !name) continue;
-        if (entry == null) { delete auth[key][name]; continue; }
+        const storeKey = idToSlug.has(name) ? idToSlug.get(name) : name;
+        if (entry == null) { delete auth[key][storeKey]; continue; }
         const cfg = normalizeConfig(entry, 'project', true);
-        auth[key][name] = mcpPersistShape(cfg);
+        auth[key][storeKey] = mcpPersistShape(cfg);
       }
       // Normalize the server map on write too: a hand-edited override
       // keyed by a server's display *id* (e.g. "chrome-debug") should not
@@ -388,19 +397,16 @@ function setAuthorization(projectDir, patch) {
       // written or cleared here, drop any other key that resolves to the
       // same slug, so the stored map never holds a stale twin that a later
       // read (and the settings checkbox) has to second-guess.
-      if (key === 'servers' && Object.keys(auth.servers).length) {
-        const idToSlug = mcpIdToSlug(projectDir);
-        if (idToSlug.size) {
-          // Every server key that is not itself a slug is an id-key to
-          // clean up (or leave alone) based on whether the patch touched
-          // that server's slug.
-          for (const written of Object.keys(map)) {
-            const writtenSlug = idToSlug.has(written) ? idToSlug.get(written) : written;
-            for (const candidate of Object.keys(auth.servers)) {
-              if (candidate === writtenSlug) continue;
-              const candidateSlug = idToSlug.has(candidate) ? idToSlug.get(candidate) : candidate;
-              if (candidateSlug === writtenSlug) delete auth.servers[candidate];
-            }
+      if (key === 'servers' && Object.keys(auth.servers).length && idToSlug.size) {
+        // Drop any stale twin keys (id-keyed leftovers) that resolve to a
+        // slug this patch just wrote, so the stored map never holds two
+        // entries for the same server.
+        for (const written of Object.keys(map)) {
+          const writtenSlug = idToSlug.has(written) ? idToSlug.get(written) : written;
+          for (const candidate of Object.keys(auth.servers)) {
+            if (candidate === writtenSlug) continue;
+            const candidateSlug = idToSlug.has(candidate) ? idToSlug.get(candidate) : candidate;
+            if (candidateSlug === writtenSlug) delete auth.servers[candidate];
           }
         }
       }

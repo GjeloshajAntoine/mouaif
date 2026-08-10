@@ -12,6 +12,15 @@ process.env.MOUAIF_HOME = home;
 const settings = require('../src/settings.js');
 const authz = require('../src/tools/authorization.js');
 
+// Register a server whose id diverges from its slug so the write-path
+// normalization (id-keyed overrides stored under the canonical slug) is
+// exercised. addServer slugifies the name, so name "srv-display" yields
+// slug "srv_display" while a caller-provided id can stay hyphenated.
+const added = require('../src/mcp.js').addServer(projectDir, { name: 'srv-display', command: 'node', args: [] });
+// addServer generates the id; the diverging pair is { id: added.id, slug: 'srv_display' }.
+const divergingServerId = added.id;
+assert.equal(added.slug, 'srv_display', 'test setup: slug is derived from the name');
+
 async function main() {
   settings.setProject(projectDir, {
     chats: [{ id: 'a1b2c3d4', title: 'Auth test', trace: false }],
@@ -231,7 +240,27 @@ async function main() {
     projectDir, chatId: mcpChat, callId: 'call_mcp_beat', tool: 'mcp__db__list_tables', summary: 'mcp__db__list_tables'
   });
   assert.equal(mcpToolBeatsOff.decision, 'allow', 'per-tool allow overrides the shared off');
-  console.log('tool authorization: ' + (35 + 4) + ' assertions passed');
+
+  // Id-keyed server override write: when a registered server's slug and
+  // display id diverge, an override keyed by the id must persist (stored
+  // under the canonical slug), not be deleted by the write-path cleanup.
+  // The MCP registry holds { id: divergingServerId, slug: 'srv_display' }.
+  authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: { mode: 'off' } } } });
+  const idKeyed = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
+  assert.ok(!(divergingServerId in idKeyed.authorization.servers), 'id-keyed write stores the slug, not the id');
+  assert.equal(idKeyed.authorization.servers.srv_display.mode, 'off', 'id-keyed write persists under the slug');
+  const idKeyedGet = authz.getAuthorization(projectDir);
+  assert.equal(idKeyedGet.mcp.servers.srv_display.mode, 'off', 'id-keyed write is visible on read');
+  // A second write must not delete the first (the regression: the
+  // id-keyed cleanup used to remove the just-written slug entry).
+  authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: { mode: 'allow' } } } });
+  const idKeyedRewrite = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
+  assert.equal(idKeyedRewrite.authorization.servers.srv_display.mode, 'allow', 'id-keyed rewrite persists under the slug');
+  // Clearing by id removes the slug entry too.
+  authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: null } } });
+  const idKeyedCleared = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
+  assert.ok(!('srv_display' in (idKeyedCleared.authorization.servers || {})), 'clear by id removes the slug entry');
+  console.log('tool authorization: ' + (35 + 4 + 5) + ' assertions passed');
 }
 
 main().finally(() => {

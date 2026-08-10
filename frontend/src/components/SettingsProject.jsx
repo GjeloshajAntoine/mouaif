@@ -384,7 +384,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   async function pickFileGroupMode(toolNames, newMode) {
     const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
     const next = { mode: newMode, allowlist, source: 'project-tool' };
-    setFileAuth({ mode: newMode, allowlist });
+    setFileAuth((prev) => Object.assign({}, prev, { mode: newMode, allowlist }));
     setFileToolAuth((prev) => Object.assign({}, prev,
       Object.fromEntries(toolNames.map((name) => [name, next]))));
     setFileStatusMsg('saving…');
@@ -435,34 +435,35 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
   function pickMcpMode(newMode) {
     const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
-    setMcpAuth(Object.assign({}, mcpAuth, { mode: newMode, allowlist }));
+    setMcpAuth((prev) => Object.assign({}, prev, { mode: newMode, allowlist }));
     saveMcpAuthorization({ mode: newMode, allowlist });
   }
 
   function pickServerAuthMode(slug, newMode) {
-    const servers = Object.assign({}, mcpAuth.servers);
-    const prev = servers[slug];
-    servers[slug] = {
-      mode: newMode,
-      allowlist: newMode === 'allow' ? [] : (prev && Array.isArray(prev.allowlist) ? prev.allowlist : [])
-    };
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-    saveMcpAuthorization({ servers: { [slug]: servers[slug] } });
+    setMcpAuth((prev) => {
+      const entry = prev.servers && prev.servers[slug];
+      const next = {
+        mode: newMode,
+        allowlist: newMode === 'allow' ? [] : (entry && Array.isArray(entry.allowlist) ? entry.allowlist : [])
+      };
+      const servers = Object.assign({}, prev.servers, { [slug]: next });
+      saveMcpAuthorization({ servers: { [slug]: next } });
+      return Object.assign({}, prev, { servers });
+    });
   }
 
   function clearServerAuthMode(slug) {
-    const servers = Object.assign({}, mcpAuth.servers);
-    delete servers[slug];
-    setMcpAuth(Object.assign({}, mcpAuth, { servers }));
+    setMcpAuth((prev) => {
+      const servers = Object.assign({}, prev.servers);
+      delete servers[slug];
+      return Object.assign({}, prev, { servers });
+    });
     saveMcpAuthorization({ servers: { [slug]: null } });
   }
 
   function toggleMcpServerAuth(slug, checked) {
     if (checked) {
-      const servers = Object.assign({}, mcpAuth.servers);
-      delete servers[slug];
-      setMcpAuth(Object.assign({}, mcpAuth, { servers }));
-      saveMcpAuthorization({ servers: { [slug]: null } });
+      clearServerAuthMode(slug);
       setMcpAuthStatusMsg('server override cleared (defaults to ' + segMode(mcpAuth.mode || 'ask') + ')');
     } else {
       pickServerAuthMode(slug, 'off');
@@ -471,11 +472,14 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
 
   function toggleMcpToolAuth(toolName, checked) {
-    const tools = Object.assign({}, mcpAuth.tools);
-    if (checked) delete tools[toolName];
-    else tools[toolName] = { mode: 'off', allowlist: [] };
-    setMcpAuth(Object.assign({}, mcpAuth, { tools }));
-    saveMcpAuthorization({ tools: { [toolName]: checked ? null : tools[toolName] } });
+    const entry = checked ? null : { mode: 'off', allowlist: [] };
+    setMcpAuth((prev) => {
+      const tools = Object.assign({}, prev.tools);
+      if (checked) delete tools[toolName];
+      else tools[toolName] = entry;
+      return Object.assign({}, prev, { tools });
+    });
+    saveMcpAuthorization({ tools: { [toolName]: entry } });
     setMcpAuthStatusMsg(checked ? 'tool override cleared' : 'tool override off');
   }
 
@@ -717,7 +721,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             if (!patch) return;
             const mode = patch.mode || 'ask';
             const allowlist = Array.isArray(patch.allowlist) ? patch.allowlist : [];
-            setMcpAuth(Object.assign({}, mcpAuth, { mode, allowlist }));
+            setMcpAuth((prev) => Object.assign({}, prev, { mode, allowlist }));
             saveMcpAuthorization({ mode, allowlist });
           }
         }),
@@ -758,9 +762,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               const val = patch.servers[key];
               if (val == null) clearServerAuthMode(key);
               else {
-                const serversNext = Object.assign({}, mcpAuth.servers);
-                serversNext[key] = val;
-                setMcpAuth(Object.assign({}, mcpAuth, { servers: serversNext }));
+                setMcpAuth((prev) => Object.assign({}, prev, {
+                  servers: Object.assign({}, prev.servers, { [key]: val })
+                }));
                 saveMcpAuthorization({ servers: { [key]: val } });
               }
             }
