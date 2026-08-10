@@ -167,12 +167,16 @@ export function useChatState(props) {
   // already merged. Reset per chat: seq is chat-scoped.
   const seenSeqs = useRef(new Set());
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
+// Ref the single poll effect populates so stream recovery (which is
+// folded into that same poll) can kick it immediately when the SSE
+// drops mid-turn, instead of waiting out the idle 3 s/6 s interval.
+const kickPoll = useRef(null);
   // Stable-tick counter for the reload follow poll (reconcileRunningChat).
   // When a reloaded chat shows the server's `running` flag but the
   // transcript has stopped moving, we must settle instead of looping
   // "streaming…" forever (the SSE was cut; the server-side run may have
   // finished without clearing the marker visibly). Mirrors the backoff
-  // stability logic used by stream recovery (runRecoveryTick).
+  // stability logic used by the stream-recovery path (recoverFromDisk).
   const watchingStableTicks = useRef(0);
   const watchingRun = useRef(false);
   // State for the follower live-replay socket (`/api/chats/:id/live`).
@@ -218,6 +222,7 @@ export function useChatState(props) {
     stateRef.current = {
       props: { projectDir, chatId },
       _setRunningVisible: setRunningVisible,
+      _kickPoll: () => { if (kickPoll.current) kickPoll.current(); },
       get chat() { return chat.current; },
       set chat(v) { chat.current = v; },
       get providers() { return providers.current; },
@@ -763,7 +768,7 @@ export function useChatState(props) {
   useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
   useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {
-    stopStreamRecovery(state, refs);
+    stopStreamRecovery(state);
     // Drop the per-chat live subscription so a backgrounded/closed tab
     // doesn't hold a socket for a chat the user left. The owner stream
     // keeps buffering regardless — returning re-subscribes and replays.
@@ -809,16 +814,30 @@ export function useChatState(props) {
       //  - hidden: 6 s — a backgrounded tab only needs eventual
       //    consistency and a slow tick is pure battery/CPU cost.
       let delay;
-      if (watchingRun.current) delay = 1000;
+      // While recovering a dropped SSE turn, keep the same snappy 1 s
+      // cadence as when following a run (recovery is a variant of that).
+      if (reconnect.current.active || watchingRun.current) delay = 1000;
       else if (typeof document !== 'undefined' && document.visibilityState === 'hidden') delay = 6000;
       else delay = 3000;
       timer = setTimeout(tick, delay);
     }
     async function tick() {
       if (stopped) return;
-      if (!streaming.current) await reconcileRunningChat(state, refs);
+      // Recovery syncs while `streaming` stays true (the local SSE died
+      // but the turn is still in flight server-side); the idle reconcile
+      // must NOT run over an active SSE. So: reconcile when recovering,
+      // or when idle (not streaming).
+      if (reconnect.current.active || !streaming.current) await reconcileRunningChat(state, refs);
       schedule();
     }
+    // Expose a way for stream recovery to kick the poll immediately (it
+    // may be parked at the idle 3 s/6 s interval). Reset any pending
+    // timer and tick now.
+    kickPoll.current = () => {
+      if (stopped) return;
+      if (timer) { clearTimeout(timer); timer = null; }
+      tick();
+    };
     function onVisibility() {
       // Becoming visible: tick immediately instead of waiting out the
       // slow interval, then resume the fast cadence. Becoming hidden:

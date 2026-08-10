@@ -352,25 +352,24 @@ async function syncTailOrFull(state, refs, revKey) {
   if (full == null) return null;
   return syncFromRevision(state, refs, revKey, full);
 }
-
-// startStreamRecovery / scheduleRecoveryTick / runRecoveryTick /
-// finishStreamRecovery / stopStreamRecovery
+// startStreamRecovery / stopStreamRecovery
 //
 // When the live stream drops mid-turn the server keeps writing the
-// run to the transcript file, so we recover by polling that file
-// with exponential backoff.
-
+// run to the transcript file, so we recover by syncing from disk via
+// the single reconcile poll (useChatState). Recovery does NOT run its
+// own timer: it sets the `reconnect` flags and kicks the shared poll
+// once so the first sync happens immediately; the poll tick() then
+// keeps running the recovery sync while reconnect.active is set.
 export function startStreamRecovery(state, refs, partialText) {
   const st = state.reconnect;
-  stopStreamRecovery(state, refs);
   st.active = true;
   st.attempts = 0;
   st.stopped = false;
   st.partialText = partialText || '';
-  state.streaming = true; // still "in a turn" for the poller
+  state.streaming = true; // still 'in a turn' for the send guard
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
   // When starting recovery, update any shell call cards that are on
-  // screen to show "reconnecting" instead of "Running…". The live
+  // screen to show 'reconnecting' instead of 'Running'. The live
   // SSE stream is gone, so their output preview stays empty until the
   // final tool_result arrives via the reconcile poll. Without this
   // hint the user sees a spinner with zero output and no feedback.
@@ -383,89 +382,17 @@ export function startStreamRecovery(state, refs, partialText) {
     }
   }
   setChatStatus(refs, 'connection lost — reconnecting…', 'busy');
-  scheduleRecoveryTick(state, refs, 0);
+  // Kick the shared poll now — it may be parked at the idle 3 s/6 s
+  // interval, and the first disk sync should happen straight away.
+  if (typeof state._kickPoll === 'function') state._kickPoll();
 }
 
-function scheduleRecoveryTick(state, refs, attempt) {
-  const st = state.reconnect;
-  if (st.stopped) return;
-  // Backoff: 1s, 2s, 4s, 5s, 5s … (cap at 5s, cap total attempts).
-  const delay = Math.min(5000, 1000 * Math.pow(2, attempt));
-  st.timer = setTimeout(() => runRecoveryTick(state, refs), delay);
-}
-
-async function runRecoveryTick(state, refs) {
-  const { projectDir, chatId } = state.props;
-  const st = state.reconnect;
-  if (st.stopped || !st.active) return;
-  st.attempts += 1;
-  // Cheap first: the revision marker ({count, ts}) tells us whether the
-  // transcript moved at all. Rows are fetched only when it did — and
-  // then just the tail after our known prefix (?since=), not the
-  // whole transcript.
-  let revKey = null;
-  try {
-    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
-    if (rRev.status === 200 && rRev.body != null) revKey = rRev.body.count + ':' + (rRev.body.ts || '');
-  } catch { revKey = null; }
-
-  if (revKey == null) {
-    // Server unreachable — keep trying while attempts remain.
-    if (st.attempts < 6) return scheduleRecoveryTick(state, refs, st.attempts);
-    return finishStreamRecovery(state, refs, 'could not reconnect — tap to retry', true);
-  }
-
-  if (revKey !== state.transcriptRevision) {
-    // New content landed on disk. Sync the authoritative rows (tail
-    // fetch first — only the rows after our known prefix cross the
-    // wire) and reset the stability counter — the run is clearly
-    // still going.
-    let applied = null;
-    try {
-      applied = await syncTailOrFull(state, refs, revKey);
-    } catch { applied = null; }
-    if (applied == null) {
-      if (st.attempts < 6) return scheduleRecoveryTick(state, refs, st.attempts);
-      return finishStreamRecovery(state, refs, 'could not reconnect — tap to retry', true);
-    }
-    st.stableTicks = 0;
-    setChatStatus(refs, 'reconnected — syncing…', 'busy');
-    return scheduleRecoveryTick(state, refs, st.attempts);
-  }
-
-  // Transcript is stable. A run is done when the last message is no
-  // longer a bare tool call (a call with no result yet means the agent
-  // is mid-tool) and we've seen a couple of identical polls.
-  const last = state.messages[state.messages.length - 1];
-  const midTool = last && last.role === 'tool' && last.phase === 'call';
-  st.stableTicks = (st.stableTicks || 0) + 1;
-  if (!midTool && st.stableTicks >= 2) {
-    return finishStreamRecovery(state, refs, null, false);
-  }
-  if (st.attempts >= 8) {
-    return finishStreamRecovery(state, refs, 'reconnect timed out — pull to retry', true);
-  }
-  scheduleRecoveryTick(state, refs, st.attempts);
-}
-
-function finishStreamRecovery(state, refs, message, failed) {
-  const st = state.reconnect;
-  if (st.timer) { clearTimeout(st.timer); st.timer = null; }
-  st.active = false;
-  state.streaming = false;
-  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-  if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
-  if (message) setChatStatus(refs, message, failed ? 'error' : 'success');
-  else setChatStatus(refs, 'reconnected', 'success');
-}
-
-export function stopStreamRecovery(state, refs) {
+export function stopStreamRecovery(state) {
   const st = state.reconnect;
   st.stopped = true;
-  if (st.timer) { clearTimeout(st.timer); st.timer = null; }
   st.active = false;
+  st.attempts = 0;
 }
-
 export async function loadPendingAuthorization(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!projectDir || !chatId || !refs.transcript.current) return;
@@ -508,7 +435,7 @@ export async function cancelRunningChat(state, refs) {
   // Stop any in-flight stream-recovery poller first — otherwise it
   // keeps ticking after the cancel and flips the status back to
   // "reconnecting…", fighting the cancel.
-  stopStreamRecovery(state, refs);
+  stopStreamRecovery(state);
   state.streaming = false;
   state.watchingRun = false;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
@@ -1021,6 +948,71 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
 }
 
+// recoverFromDisk — one recovery sync for a dropped local SSE turn.
+// Polls the authoritative transcript (server keeps writing the run to
+// disk while we were disconnected) with attempt-based backoff, collapsing
+// the old self-timer recovery into the single shared poll. Returns true
+// while still recovering, false once recovered (or failed) so the poll
+// drops back to its idle cadence.
+async function recoverFromDisk(state, refs) {
+  const { projectDir, chatId } = state.props;
+  const st = state.reconnect;
+  if (!st || !st.active || st.stopped) { if (st) st.active = false; return false; }
+  st.attempts += 1;
+  // Cheap first: the revision marker tells us whether the transcript
+  // moved at all. Rows are fetched only when it did — then just the
+  // tail after our known prefix (?since=).
+  let revKey = null;
+  try {
+    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
+    if (rRev.status === 200 && rRev.body != null) revKey = rRev.body.count + ':' + (rRev.body.ts || '');
+  } catch { revKey = null; }
+  if (revKey == null) {
+    // Server unreachable — keep trying while attempts remain.
+    if (st.attempts < 6) return true;
+    return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
+  }
+  if (revKey !== state.transcriptRevision) {
+    // New content landed on disk — sync the authoritative rows and
+    // reset the stability counter: the run is clearly still going.
+    let applied = null;
+    try { applied = await syncTailOrFull(state, refs, revKey); } catch { applied = null; }
+    if (applied == null) {
+      if (st.attempts < 6) return true;
+      return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
+    }
+    st.stableTicks = 0;
+    setChatStatus(refs, 'reconnected — syncing…', 'busy');
+    return true;
+  }
+  // Transcript is stable. The run is done when the last message is no
+  // longer a bare tool call and we've seen a couple of identical polls.
+  const last = state.messages[state.messages.length - 1];
+  const midTool = last && last.role === 'tool' && last.phase === 'call';
+  st.stableTicks = (st.stableTicks || 0) + 1;
+  if (!midTool && st.stableTicks >= 2) {
+    return finishRecovery(state, refs, null, false);
+  }
+  if (st.attempts >= 8) {
+    return finishRecovery(state, refs, 'reconnect timed out — pull to retry', true);
+  }
+  return true;
+}
+// finishRecovery — conclude a recovery: clear the flags, re-enable the
+// send button, and set the status. `failed` toggles the status color.
+function finishRecovery(state, refs, message, failed) {
+  const st = state.reconnect;
+  st.active = false;
+  st.stopped = false;
+  st.attempts = 0;
+  st.stableTicks = 0;
+  state.streaming = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+  if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+  if (message) setChatStatus(refs, message, failed ? 'error' : 'success');
+  else setChatStatus(refs, 'reconnected', 'success');
+  return false;
+}
 // reconcileRunningChat — one tick of the "another tab is running
 // this chat" poller. Syncs the transcript if the persisted rows
 // changed and surfaces the running flag as a busy status.
@@ -1035,6 +1027,12 @@ export async function send(state, refs, { content, attachments, clearComposerDra
 export async function reconcileRunningChat(state, refs) {
   const { projectDir, chatId } = state.props;
   if (!chatId || !projectDir) return;
+  // Recovery mode: the local SSE died mid-turn but the server-side run
+  // is still writing to disk. Sync from disk (recovery is allowed to run
+  // while `streaming` stays true; the idle path must not).
+  if (state.reconnect && state.reconnect.active) {
+    return recoverFromDisk(state, refs);
+  }
   if (state.streaming) return; // don't reconcile over our own stream
   try {
     const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));

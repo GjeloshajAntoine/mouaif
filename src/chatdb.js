@@ -333,6 +333,16 @@ function getMessageCount(projectDir, chatId) {
 // Cheap change marker: COUNT + MAX(ts) in one indexed scan (no row
 // data). The 1 s reconcile poll compares this instead of re-fetching
 // and JSON-stringifying the whole transcript.
+//
+// Why both, not just an index? `count` (the number of rows) is the
+// "index length" — it catches the common append. `ts` (MAX(ts)) is a
+// basically-free fingerprint that catches the rarer same-count edits
+// (replaceMessages/clearMessages change content without necessarily
+// changing the row count). Neither alone is sufficient without the
+// other; together they turn "did this transcript change?" into one
+// indexed aggregate with no row reads. This is NOT the source of the
+// polling overhead — each call is sub-millisecond; the actual sync
+// fetches only run when this marker moves (see /messages?since=).
 function messageRevisionDb(projectDir, chatId) {
   ensureTables();
   const d = require('./settings.js').getDb();
