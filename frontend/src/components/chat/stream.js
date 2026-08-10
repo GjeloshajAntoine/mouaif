@@ -393,16 +393,26 @@ export function stopStreamRecovery(state) {
   st.active = false;
   st.attempts = 0;
 }
+// loadPendingAuthorization — pull the server's list of prompts this
+// chat is parked on and (re-)mount their cards. Returns the number of
+// pending prompts so the reconcile poll can tell a genuinely-waiting
+// run apart from a torn/finished one. Safe to call every tick:
+// mountOverlayCard de-dupes by call-id and only mounts once the
+// transcript has actually painted, so a card missed on the first paint
+// (page reload, tab switch, or the transcript not being up yet) gets
+// re-mounted on a later tick instead of being lost.
 export async function loadPendingAuthorization(state, refs) {
   const { projectDir, chatId } = state.props;
-  if (!projectDir || !chatId || !refs.transcript.current) return;
+  if (!projectDir || !chatId || !refs.transcript.current) return 0;
   let r;
   try {
     r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
-  } catch { return; }
-  if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return;
+  } catch { return 0; }
+  if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return 0;
+  let count = 0;
   for (const request of r.body.pending) {
     if (!request || !request.callId) continue;
+    count++;
     if (request.tool === 'ask_user' && request.args) {
       const data = Object.assign({}, request.args, { callId: request.callId, tool: request.tool });
       mountOverlayCard(refs, request.callId, () => askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st)));
@@ -410,6 +420,7 @@ export async function loadPendingAuthorization(state, refs) {
       mountOverlayCard(refs, request.callId, () => authorizationCard(request, projectDir, chatId, refs, null, state));
     }
   }
+  return count;
 }
 
 export async function cancelRunningChat(state, refs) {
@@ -1088,14 +1099,27 @@ export async function reconcileRunningChat(state, refs) {
       } else {
         state.watchingRun = true;
         if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-        setChatStatus(refs, 'streaming…', 'busy');
-        // Only drain the pending-authorization queue on an actual state
-        // change (a run just started here, or new rows arrived), not on
-        // every 1 s tick — it is an extra GET /pending round-trip per
-        // second while a long run spins, and the queue only grows on
-        // new requests. authCardGuard dedups the cards themselves.
-        if (!prevWatching || moved) loadPendingAuthorization(state, refs);
-        if (!moved && !midTool && state.messages.length > 0 && !liveConnected) {
+        // Drain the pending-authorization queue. On a state change (a run
+        // just started here, or new rows arrived) always poll. Keep polling
+        // on a stable transcript too: a run parked on an authorization /
+        // ask_user prompt never emits new rows (the tool_call row is
+        // withheld until the user approves), so the pending queue is the
+        // ONLY signal that the run is genuinely *waiting* rather than
+        // *torn*. Re-mounting every tick is cheap (mountOverlayCard
+        // de-dupes by call-id) and lets a card missed on the first paint —
+        // page reload, tab switch, or transcript not yet up — finally land.
+        const stable = !moved && !midTool && state.messages.length > 0 && !liveConnected;
+        if (!prevWatching || moved || stable) {
+          state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+        }
+        if (state.pendingAuthCount > 0) {
+          // A prompt is waiting on the user. Never settle the run: it is
+          // genuinely paused, not torn. Keep polling so the card survives
+          // a reload / tab switch, and flag the chat as needing attention.
+          state.watchingStableTicks = 0;
+          setChatStatus(refs, 'waiting for you…', 'busy');
+        } else if (stable) {
+          setChatStatus(refs, 'streaming…', 'busy');
           state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
           if (state.watchingStableTicks >= 2) {
             state.watchingRun = false;
@@ -1105,15 +1129,21 @@ export async function reconcileRunningChat(state, refs) {
             setChatStatus(refs, 'done', 'success');
           }
         } else {
+          setChatStatus(refs, 'streaming…', 'busy');
           state.watchingStableTicks = 0;
         }
       }
     } else if (state.watchingRun) {
+      // Server no longer reports the run as running: it finished (or was
+      // cancelled). Any prompt it was parked on is gone, so drop the
+      // stale pending count and let the settle path run.
+      state.pendingAuthCount = 0;
       state.watchingRun = false;
       state.watchingStableTicks = 0;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       setChatStatus(refs, 'done', 'success');
     } else if (typeof state._setRunningVisible === 'function') {
+      state.pendingAuthCount = 0;
       state._setRunningVisible(false);
       state.watchingStableTicks = 0;
     }
