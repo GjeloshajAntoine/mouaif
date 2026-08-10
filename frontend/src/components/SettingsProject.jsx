@@ -869,8 +869,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Stored value'),
-        h('p', { class: 'hint hint--compact' }, 'Written to ', h('code', null, '.mouaif.json'), ' under ', h('code', null, 'toolOutput'), '. Leave a control to inherit the app default.'),
-        h('pre', { class: 'settings__out' }, JSON.stringify({ size: outputSize, structure: outputStructure }, null, 2))
+        h('p', { class: 'hint hint--compact' }, 'This is the exact ', h('code', null, 'toolOutput'), ' object written to ', h('code', null, '.mouaif.json'), ' when you change either control.'),
+        h('pre', { class: 'settings__out' }, JSON.stringify({ toolOutput: { size: outputSize, structure: outputStructure } }, null, 2))
       )
     )
   );
