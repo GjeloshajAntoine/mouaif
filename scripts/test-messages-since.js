@@ -1,12 +1,11 @@
-// End-to-end test for GET /api/chats/:id/messages?since=<index>:
+// End-to-end test for GET /api/chats/:id/messages?fromSeq=<seq>:
 // spawn the mouaif server on a free port, append messages to a chat,
 // and verify the incremental tail fetch:
 //
-//   - no `since`        -> full list + base === length
-//   - since < length    -> only the tail rows + base === length
-//   - since === length  -> empty tail (steady-state poll: no transfer)
-//   - since > length    -> empty tail + base < since (shrink signal:
-//                          the client must rebuild from a full fetch)
+//   - no `fromSeq`        -> full list + nextSeq === length
+//   - fromSeq < nextSeq   -> only the tail rows + nextSeq === length
+//   - fromSeq === nextSeq -> empty tail (steady-state poll: no transfer)
+//   - fromSeq > nextSeq   -> empty tail + nextSeq < fromSeq (rare full-rebuild signal)
 //
 // The append-only tail fetch is what the 1 s reconcile poll and the
 // stream-recovery poll use to avoid re-transferring the whole
@@ -101,31 +100,31 @@ async function run() {
       if (a.status !== 201 && a.status !== 200) { t('append ' + content, false, JSON.stringify(a)); }
     }
 
-    // Full fetch (no since): all rows + base echoes the length.
+    // Full fetch (no fromSeq): all rows + nextSeq echoes the length.
     const full = await request('GET', base + '/messages?' + q);
     t('full fetch 200 with 3 rows', full.status === 200 && full.body.messages.length === 3, JSON.stringify(full.body && full.body.messages && full.body.messages.length));
-    t('full fetch base === 3', full.body.base === 3, 'base=' + full.body.base);
+    t('full fetch nextSeq === 3', full.body.nextSeq === 3, 'nextSeq=' + full.body.nextSeq);
 
-    // Tail fetch: since=1 -> rows 2..3 only.
-    const tail = await request('GET', base + '/messages?' + q + '&since=1');
-    t('since=1 returns 2 rows', tail.status === 200 && tail.body.messages.length === 2, JSON.stringify(tail.body));
-    t('since=1 rows are the tail', tail.body.messages[0].content === 'two' && tail.body.messages[1].content === 'three');
-    t('since=1 base === 3', tail.body.base === 3, 'base=' + tail.body.base);
+    // Tail fetch: fromSeq=1 -> rows 2..3 only.
+    const tail = await request('GET', base + '/messages?' + q + '&fromSeq=1');
+    t('fromSeq=1 returns 2 rows', tail.status === 200 && tail.body.messages.length === 2, JSON.stringify(tail.body));
+    t('fromSeq=1 rows are the tail', tail.body.messages[0].content === 'two' && tail.body.messages[1].content === 'three');
+    t('fromSeq=1 nextSeq === 3', tail.body.nextSeq === 3, 'nextSeq=' + tail.body.nextSeq);
 
-    // Steady state: since === length -> empty tail, nothing to transfer.
-    const steady = await request('GET', base + '/messages?' + q + '&since=3');
-    t('since=3 returns 0 rows', steady.status === 200 && steady.body.messages.length === 0, JSON.stringify(steady.body));
-    t('since=3 base === 3', steady.body.base === 3, 'base=' + steady.body.base);
+    // Steady state: fromSeq === nextSeq -> empty tail, nothing to transfer.
+    const steady = await request('GET', base + '/messages?' + q + '&fromSeq=3');
+    t('fromSeq=3 returns 0 rows', steady.status === 200 && steady.body.messages.length === 0, JSON.stringify(steady.body));
+    t('fromSeq=3 nextSeq === 3', steady.body.nextSeq === 3, 'nextSeq=' + steady.body.nextSeq);
 
-    // Shrink signal: since > length -> empty tail with base < since so
-    // the client detects the non-append change and rebuilds.
-    const shrunk = await request('GET', base + '/messages?' + q + '&since=9');
-    t('since=9 returns 0 rows', shrunk.status === 200 && shrunk.body.messages.length === 0, JSON.stringify(shrunk.body));
-    t('since=9 base < since (shrink signal)', shrunk.body.base === 3 && shrunk.body.base < 9, 'base=' + shrunk.body.base);
+    // Cursor-ahead signal: fromSeq > nextSeq -> empty tail with nextSeq < fromSeq so
+    // the client detects mismatch and rebuilds.
+    const shrunk = await request('GET', base + '/messages?' + q + '&fromSeq=9');
+    t('fromSeq=9 returns 0 rows', shrunk.status === 200 && shrunk.body.messages.length === 0, JSON.stringify(shrunk.body));
+    t('fromSeq=9 nextSeq < fromSeq (rebuild signal)', shrunk.body.nextSeq === 3 && shrunk.body.nextSeq < 9, 'nextSeq=' + shrunk.body.nextSeq);
 
-    // Garbage since values fall back to the full list.
-    const junk = await request('GET', base + '/messages?' + q + '&since=abc');
-    t('since=abc ignored -> full list', junk.status === 200 && junk.body.messages.length === 3, JSON.stringify(junk.body && junk.body.messages && junk.body.messages.length));
+    // Garbage fromSeq values fall back to the full list.
+    const junk = await request('GET', base + '/messages?' + q + '&fromSeq=abc');
+    t('fromSeq=abc ignored -> full list', junk.status === 200 && junk.body.messages.length === 3, JSON.stringify(junk.body && junk.body.messages && junk.body.messages.length));
   } finally {
     child.kill('SIGTERM');
   }

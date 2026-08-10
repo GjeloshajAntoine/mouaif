@@ -2,25 +2,11 @@
 
 // Per-chat live-replay registry.
 //
-// While a chat has an in-flight streaming run, the "transient" tool
-// events — shell stdout/stderr (`shell_output`), nested subagent
-// activity (`subagent_event`), progress updates (`progress_update`),
-// and paused-run prompts (`authorization_required`, `ask_user_required`)
-// — are buffered here and fanned out to any subscribed follower.
-//
-// A follower is the UI on a *different* client (another tab/device) or
-// a returning page that shows this running chat. Without this registry
-// it would only ever see the settled transcript: tool call cards pinned
-// on "Running…" / "Waiting for results…" with no live content until the
-// final `tool_result` is persisted. The buffer + replay lets it render
-// the live stream into those cards in real time.
-//
-// The buffer intentionally holds ONLY content not yet represented in the
-// persisted transcript. Whenever a tool's result is persisted
-// (`tool_result`, handled by `pruneLive`), that tool's buffered transient
-// stream is dropped, so a late-subscribing follower can never re-draw
-// content that the result card already rendered. Progress updates are
-// never persisted, so they are kept until the run finishes.
+// While a chat has an in-flight streaming run, the transient tool events
+// (shell/subagent/progress/auth prompts) are buffered here and fanned out
+// to followers. Persisted transcript rows use message `seq`; this module
+// uses a separate `liveSeq` cursor for transient events so a reconnect can
+// replay only the live chunks the client has not consumed yet.
 
 const runs = new Map();
 
@@ -28,106 +14,83 @@ function sseFrame(name, data) {
   return 'event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n';
 }
 
-// ensureLiveChat(runKey) -> run
-//
-// Create (or return) the live-run entry for a chat that just started
-// streaming. Keyed by the same runningKey used for runningChats.
 function ensureLiveChat(runKey) {
   let r = runs.get(runKey);
   if (!r) {
-    r = { buffer: [], subscribers: new Set() };
+    r = { nextLiveSeq: 0, buffer: [], subscribers: new Set() };
     runs.set(runKey, r);
   }
   return r;
 }
 
-// pushLive(runKey, name, data)
-//
-// Record a transient event and push it to every subscribed follower.
-// Called from handleChatStream's `emit` for shell_output,
-// subagent_event, progress_update, authorization_required, and
-// ask_user_required.
 function pushLive(runKey, name, data) {
   const r = runs.get(runKey);
   if (!r) return;
-  r.buffer.push({ name, data });
-  const frame = sseFrame(name, data);
+  const ev = { liveSeq: r.nextLiveSeq++, name, data };
+  r.buffer.push(ev);
+  const frame = sseFrame(name, Object.assign({ liveSeq: ev.liveSeq }, data || {}));
   for (const sub of r.subscribers) {
     try { sub.write(frame); } catch { /* socket closed */ }
   }
 }
 
-// pruneLive(runKey, toolId)
-//
-// Drop the buffered transient events for a tool whose result has just
-// been persisted. `toolId` is the SSE `tool_result` id — the same as
-// `shell_output`'s `id` field and the `subagent_event` `parentCallId`.
+function eventToolId(e) {
+  const data = e && e.data;
+  if (!data) return '';
+  if (e.name === 'shell_output') return String(data.id == null ? '' : data.id);
+  if (e.name === 'subagent_event') return String(data.parentCallId == null ? '' : data.parentCallId);
+  if (e.name === 'authorization_required' || e.name === 'ask_user_required') return String(data.callId == null ? '' : data.callId);
+  return '';
+}
+
 function pruneLive(runKey, toolId) {
   const r = runs.get(runKey);
   if (!r) return;
   const id = String(toolId == null ? '' : toolId);
-  if (!id) return;
-  if (!r.buffer.length) return;
+  if (!id || !r.buffer.length) return;
   const hadOverlay = r.buffer.some((e) =>
-    (e.name === 'authorization_required' || e.name === 'ask_user_required')
-    && String((e.data && e.data.callId) == null ? '' : e.data.callId) === id
+    (e.name === 'authorization_required' || e.name === 'ask_user_required') && eventToolId(e) === id
   );
-  r.buffer = r.buffer.filter((e) => {
-    if (e.name === 'shell_output') {
-      return String((e.data && e.data.id) == null ? '' : e.data.id) !== id;
-    }
-    if (e.name === 'subagent_event') {
-      return String((e.data && e.data.parentCallId) == null ? '' : e.data.parentCallId) !== id;
-    }
-    if (e.name === 'authorization_required' || e.name === 'ask_user_required') {
-      return String((e.data && e.data.callId) == null ? '' : e.data.callId) !== id;
-    }
-    return true;
-  });
+  r.buffer = r.buffer.filter((e) => eventToolId(e) !== id);
   if (hadOverlay) {
-    const frame = sseFrame('authorization_resolved', { callId: id });
+    const ev = { liveSeq: r.nextLiveSeq++, name: 'authorization_resolved', data: { callId: id } };
+    r.buffer.push(ev);
+    const frame = sseFrame(ev.name, Object.assign({ liveSeq: ev.liveSeq }, ev.data));
     for (const sub of r.subscribers) {
       try { sub.write(frame); } catch { /* socket closed */ }
     }
   }
 }
 
-// addSubscriber(runKey, req, res)
-//
-// Open a per-chat live SSE for a follower: write the SSE headers,
-// replay the buffered transient events, then register the response so
-// `pushLive` reaches it. Returns the subscriber (whose lifecycle the
-// caller owns through `finishLiveChat`). Requires the chat to actually
-// be running — the caller checks that before calling.
-function addSubscriber(runKey, req, res) {
+function addSubscriber(runKey, req, res, options) {
   const r = ensureLiveChat(runKey);
+  const fromLiveSeq = options && Number.isFinite(options.fromLiveSeq) ? options.fromLiveSeq : 0;
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive'
   });
-  res.write(sseFrame('live_subscribed', { count: r.buffer.length }));
-  for (let i = 0; i < r.buffer.length; i++) {
-    try { res.write(sseFrame(r.buffer[i].name, r.buffer[i].data)); } catch { break; }
+  const replay = r.buffer.filter((e) => e.liveSeq >= fromLiveSeq);
+  res.write(sseFrame('live_subscribed', {
+    count: replay.length,
+    nextLiveSeq: r.nextLiveSeq,
+    fromLiveSeq
+  }));
+  for (const ev of replay) {
+    try { res.write(sseFrame(ev.name, Object.assign({ liveSeq: ev.liveSeq }, ev.data || {}))); } catch { break; }
   }
   r.subscribers.add(res);
-  // Drop the subscriber if the client hangs up (the client also closes
-  // on `run_end`). Guards keep the set from leaking a dead socket.
   const onClose = () => { r.subscribers.delete(res); };
   if (req && typeof req.on === 'function') req.on('close', onClose);
   res.on('close', onClose);
   return res;
 }
 
-// finishLiveChat(runKey)
-//
-// The run ended: tell every follower (so it settles its running state
-// and lets the reconcile poll clear the busy UI), then drop the entry.
 function finishLiveChat(runKey) {
   const r = runs.get(runKey);
   if (!r) return;
   runs.delete(runKey);
-  const frame = sseFrame('run_end', {});
+  const frame = sseFrame('run_end', { nextLiveSeq: r.nextLiveSeq });
   for (const sub of r.subscribers) {
     try { sub.write(frame); } catch { /* socket closed */ }
     try { sub.end(); } catch { /* already closed */ }

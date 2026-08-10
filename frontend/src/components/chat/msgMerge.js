@@ -38,7 +38,7 @@ export function isReplaceable(prev, next) {
 // `state.messages.length`: while a turn is live the client holds
 // optimistic seq-less rows (user bubble / assistant segment) that make
 // the array longer than the persisted prefix. Using array length for
-// `?since=` can skip the just-persisted server rows, delaying catch-up
+// `?fromSeq=` can skip the just-persisted server rows, delaying catch-up
 // until a full rebuild or the end of the run.
 export function nextServerMessageIndex(state) {
 let maxSeq = -1;

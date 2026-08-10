@@ -217,16 +217,12 @@ async function handleChats(req, res, parsed, sessionToken) {
   }
 
   // ---- Per-chat messages -------------------------------------------
-  // GET /api/chats/:id/messages?projectDir=[&since=<index>] -> { messages, base }
+  // GET /api/chats/:id/messages?projectDir=[&fromSeq=<seq>] -> { messages, nextSeq }
   //
-  // `since` is the number of rows the caller already has (its prefix
-  // length). When present, the response carries only the rows appended
-  // after that index — the 1 s reconcile poll and the stream-recovery
-  // poll then transfer just the missing tail instead of the whole
-  // transcript on every change. `base` echoes the server-side row
-  // count the slice was taken from; a base smaller than `since` means
-  // the transcript was cleared/replaced (not pure append) and the
-  // caller must re-fetch without `since` and rebuild.
+  // `fromSeq` is the next persisted row the caller has not merged. The
+  // stream/recovery hot path is append-only: fetch rows with seq >= fromSeq
+  // and avoid a full transcript transfer unless the server cursor is behind
+  // the local cursor. `since` remains accepted as a compatibility alias.
   const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
   if (getMsgsMatch && method === 'GET') {
     const id = decodeURIComponent(getMsgsMatch[1]);
@@ -235,27 +231,23 @@ async function handleChats(req, res, parsed, sessionToken) {
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const all = messages.listMessages(dir, id);
-      const since = typeof q.since === 'string' ? parseInt(q.since, 10) : NaN;
-      if (isFinite(since) && since >= 0) {
-        // If since > all.length the transcript shrank on the server
-        // (clearMessages) — return an empty tail with the smaller base
-        // so the client detects the non-append change and rebuilds.
-        const tail = since <= all.length ? all.slice(since) : [];
-        return sendJSON(res, 200, { messages: tail, base: all.length });
+      const rawFrom = typeof q.fromSeq === 'string' ? q.fromSeq : q.since;
+      const fromSeq = typeof rawFrom === 'string' ? parseInt(rawFrom, 10) : NaN;
+      if (isFinite(fromSeq) && fromSeq >= 0) {
+        const tail = fromSeq <= all.length ? all.slice(fromSeq) : [];
+        return sendJSON(res, 200, { messages: tail, nextSeq: all.length, base: all.length });
       }
-      return sendJSON(res, 200, { messages: all, base: all.length });
+      return sendJSON(res, 200, { messages: all, nextSeq: all.length, base: all.length });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // GET /api/chats/:id/revision?projectDir= -> { count, ts, running }
-  // Lightweight "has this transcript changed?" marker for the 1 s
-  // reconcile poll. count + latest ts is a cheap indexed aggregate
-  // that changes exactly when the transcript changes (append-only
-  // store: rows are never edited in place). When the marker moved,
-  // the client fetches just the tail via /messages?since=<prefixLen>.
+  // GET /api/chats/:id/revision?projectDir= -> { nextSeq, running }
+  // Lightweight run state for the reconcile/recovery poll. `nextSeq` is
+  // the append-only transcript cursor; if it is ahead of the client cursor,
+  // the client fetches just `/messages?fromSeq=<localNextSeq>`.
   const revMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/revision$/);
   if (revMatch && method === 'GET') {
     const id = decodeURIComponent(revMatch[1]);
@@ -263,10 +255,7 @@ async function handleChats(req, res, parsed, sessionToken) {
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
-      const rev = messages.messageRevision(dir, id);
-      // Include the in-memory running flag so the 1 s reconcile poll
-      // gets the change marker AND the liveness state in one request
-      // (previously two requests per tick: chat GET + revision GET).
+      const rev = messages.messageCursor(dir, id);
       rev.running = runningChats.has(runningKey(dir, id));
       return sendJSON(res, 200, rev);
     } catch (e) {
@@ -560,7 +549,8 @@ disabled: skillState.disabled.has(s.id)
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const rk = runningKey(dir, id);
       if (!runningChats.has(rk)) return sendJSON(res, 404, { error: 'No live run for this chat', id });
-      return liveChat.addSubscriber(rk, req, res);
+      const fromLiveSeq = typeof q.fromLiveSeq === 'string' ? parseInt(q.fromLiveSeq, 10) : 0;
+      return liveChat.addSubscriber(rk, req, res, { fromLiveSeq: isFinite(fromLiveSeq) && fromLiveSeq >= 0 ? fromLiveSeq : 0 });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });

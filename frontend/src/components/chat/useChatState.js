@@ -117,14 +117,14 @@ export function useChatState(props) {
   const pinnedToBottom = useRef(true);
   const pendingCount = useRef(0);
   const streaming = useRef(false);
-  // Cheap change marker for the reconcile poll (see stream.js):
-  // "count:latestTs" from GET /api/chats/:id/revision. Kept in sync
-  // with the full transcript so the poll never re-fetches everything
-  // unless the marker actually moved. (The old design also kept a
-  // full JSON.stringify signature of every message for the recovery
-  // poll — the revision marker replaced it.)
-  const transcriptRevision = useRef('');
-  // "providerId|modelId" of the pair last persisted on the server
+  // Append-only cursor for the reconcile/recovery poll (see stream.js):
+// the next persisted message seq the client has merged.
+const transcriptNextSeq = useRef(0);
+// Transient live-tool cursor (`/live?fromLiveSeq=`), separate from
+// persisted message seq because shell/subagent/progress chunks are not
+// transcript rows.
+const nextLiveSeq = useRef(0);
+// "providerId|modelId" of the pair last persisted on the server
   // (from the load response or a successful PATCH). Lets send() skip
   // the redundant per-turn PATCH when the record is already current.
   const persistedModelPair = useRef('');
@@ -255,8 +255,10 @@ const kickPoll = useRef(null);
       set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
       get seenSeqs() { return seenSeqs.current; },
       set seenSeqs(v) { seenSeqs.current = v instanceof Set ? v : new Set(v || []); },
-      get transcriptRevision() { return transcriptRevision.current; },
-      set transcriptRevision(v) { transcriptRevision.current = v; },
+      get transcriptNextSeq() { return transcriptNextSeq.current; },
+      set transcriptNextSeq(v) { transcriptNextSeq.current = v; },
+      get nextLiveSeq() { return nextLiveSeq.current; },
+      set nextLiveSeq(v) { nextLiveSeq.current = v; },
       get _persistedModelPair() { return persistedModelPair.current; },
       set _persistedModelPair(v) { persistedModelPair.current = v; },
       get streaming() { return streaming.current; },
@@ -558,11 +560,12 @@ const kickPoll = useRef(null);
         // first reconcile / recovery tick never re-adds a row that the
         // initial load already has.
         { const set = new Set(); for (const m of messages.current) { if (typeof m.seq === 'number') set.add(m.seq); } seenSeqs.current = set; }
-        // Seed the reconcile marker so the first 1 s tick is a no-op
-        // (no redundant full-list fetch right after load).
-        const lastMsg = messages.current[messages.current.length - 1];
-        transcriptRevision.current = messages.current.length + ':' + (lastMsg && lastMsg.ts ? lastMsg.ts : '');
-        models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
+        // Seed the append cursor so the first 1 s tick is a no-op.
+transcriptNextSeq.current = rMsgs.status === 200 && rMsgs.body && typeof rMsgs.body.nextSeq === 'number'
+  ? rMsgs.body.nextSeq
+  : (seenSeqs.current.size ? Math.max(...seenSeqs.current) + 1 : 0);
+nextLiveSeq.current = 0;
+models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
         state.providers = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
         // Seed the per-provider live cache with the project-level
         // records. Live fetches overwrite these.

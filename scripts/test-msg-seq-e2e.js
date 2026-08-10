@@ -1,5 +1,5 @@
 // E2E: verify the server emits a stable per-row `seq` on BOTH the full
-// /messages read and the incremental ?since= tail read, and that a tail
+// /messages read and the incremental ?fromSeq= tail read, and that a tail
 // fetch after appending yields rows whose seq continues monotonically.
 // This is the identity the client's merge-by-seq relies on to never
 // re-add a row it already holds (the fix for repeated last messages).
@@ -7,7 +7,7 @@
 // Spawns the server, appends to a chat (JSON storage backend), checks:
 //   - every returned message carries an integer `seq`;
 //   - full read seqs are 0..N-1 in order;
-//   - `since=N` returns only rows with seq >= N (no overlap with what
+//   - `fromSeq=N` returns only rows with seq >= N (no overlap with what
 //     the client already has).
 // Also runs the same against a project configured for chatStorage=db
 // (SQLite message_store backend).
@@ -106,16 +106,16 @@ async function run() {
       Array.isArray(msgs) && msgs.length === 4 && msgs.every((m) => Number.isInteger(m.seq)), msgs);
     t(rn + ' full read seqs are 0..N-1 in order',
       Array.isArray(msgs) && msgs.map((m) => m.seq).join(',') === '0,1,2,3', msgs && msgs.map((m)=>m.seq));
-    // Tail: since=2 should return only seqs >= 2 (no overlap).
-    const tail = await request('GET', base + '/messages?' + q + '&since=2');
+    // Tail: fromSeq=2 should return only seqs >= 2 (no overlap).
+    const tail = await request('GET', base + '/messages?' + q + '&fromSeq=2');
     const tmsgs = tail.body && tail.body.messages;
-    t(rn + ' since=2 returns only seq>=2 (no re-send of held rows)',
+    t(rn + ' fromSeq=2 returns only seq>=2 (no re-send of held rows)',
       Array.isArray(tmsgs) && tmsgs.length === 2 && tmsgs.every((m) => m.seq >= 2), tmsgs);
-    t(rn + ' since=2 tail seqs continue (2,3)',
+    t(rn + ' fromSeq=2 tail seqs continue (2,3)',
       Array.isArray(tmsgs) && tmsgs.map((m) => m.seq).join(',') === '2,3', tmsgs && tmsgs.map((m)=>m.seq));
     // Append one more + verify its seq continues (no reuse).
     await request('POST', base + '/messages', { projectDir: root, role: 'user', content: 'five' });
-    const tail2 = await request('GET', base + '/messages?' + q + '&since=4');
+    const tail2 = await request('GET', base + '/messages?' + q + '&fromSeq=4');
     t(rn + ' append-after-tail continues seq (4)',
       tail2.body && tail2.body.messages && tail2.body.messages.length === 1 && tail2.body.messages[0].seq === 4,
       tail2.body && tail2.body.messages);

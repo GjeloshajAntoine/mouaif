@@ -78,6 +78,9 @@ function baseTest() {
   const frames = collectFrames(sub);
   const names = frames.map((f) => f.name);
   t('replay starts with live_subscribed', frames[0] && frames[0].name === 'live_subscribed', JSON.stringify(names));
+  const firstShell = frames.find((f) => f.name === 'shell_output');
+  let firstShellData = null; try { firstShellData = firstShell ? JSON.parse(firstShell.data) : null; } catch {}
+  t('replayed events carry liveSeq', firstShellData && firstShellData.liveSeq === 0, firstShellData);
   const replayed = frames.filter((f) => f.name === 'shell_output').length;
   t('replays buffered shell_output for the run', replayed === 2, 'saw ' + replayed);
   t('replays buffered progress_update', frames.some((f) => f.name === 'progress_update'));
@@ -89,6 +92,10 @@ function baseTest() {
   liveChat.pushLive(rk, 'shell_output', { id: 'c1', stream: 'stdout', delta: 'world' });
   const liveFrames = collectFrames(sub);
   t('pushes new shell_output to subscriber', liveFrames.some((f) => f.name === 'shell_output' && f.data.includes('world')), JSON.stringify(liveFrames));
+  const subFromSeq = makeFakeRes();
+  liveChat.addSubscriber(rk, null, subFromSeq, { fromLiveSeq: 3 });
+  const fromSeqFrames = collectFrames(subFromSeq);
+  t('fromLiveSeq replays only missed live events', !fromSeqFrames.some((f) => f.data.includes('hello')) && !fromSeqFrames.some((f) => f.data.includes('Build')) && fromSeqFrames.some((f) => f.data.includes('world')), JSON.stringify(fromSeqFrames));
 
   // pruneLive drops the buffered transient stream for a tool whose
   // result was persisted, so a late subscriber won't re-draw content the

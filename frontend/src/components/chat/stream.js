@@ -234,124 +234,51 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 
-// syncFromRevision(state, refs, revKey, synced) -> 'appended' | 'rebuilt' | null
-//
-// Bring the on-screen transcript in line with the authoritative rows
-// after a revision-marker change. The store is append-only (rows are
-// never edited in place; edits/delete go through replaceMessages or
-// clearMessages, which always change the row count), so when only the
-// tail grew we render just the new rows incrementally instead of
-// rebuilding the whole transcript — a full rebuild re-parses every
-// message's markdown and collapses/scroll-jumps the view, and the
-// follower-tab poll hits this path once a second while a run is
-// active. A changed prefix (unreachable today; defensive only) falls
-// back to the full rebuild. Returns how the sync was applied, or null
-// when the payload wasn't usable.
-// sameMessage(a, b) -> bool
-//
-// Logical-equality for two transcript rows. The fallback path that
-// reaches syncFromRevision carries a freshly `JSON.parse`d full fetch,
-// so reference `===` is always false even when the rows are unchanged
-// — that forced a full blank-and-repaint (and a scroll reset) on the
-// very first recovery/reconcile tick that hit the fallback. Compare
-// by a stable key instead: the store is append-only, so an unchanged
-// prefix matches on role + ts (+ toolCallId/phase for tool rows).
-function sameMessage(a, b) {
-  if (!a || !b) return a === b;
-  if (a.role !== b.role) return false;
-  if ((a.ts || '') !== (b.ts || '')) return false;
-  if ((a.toolCallId || '') !== (b.toolCallId || '')) return false;
-  if ((a.phase || '') !== (b.phase || '')) return false;
-  return true;
+async function fetchRunState(projectDir, chatId) {
+  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
+  if (r.status !== 200 || !r.body) return null;
+  return { nextSeq: Number(r.body.nextSeq) || 0, running: !!r.body.running };
 }
 
+async function fetchMessagesFromSeq(projectDir, chatId, fromSeq) {
+  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&fromSeq=' + fromSeq);
+  if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return null;
+  return r.body;
+}
 
-function syncFromRevision(state, refs, revKey, synced) {
-  if (!Array.isArray(synced)) return null;
-  const prev = state.messages;
-  const merged = mergeServerRows(state, synced);
-  const prevLen = prev.length;
-  state.transcriptRevision = revKey;
-  state.messages = merged;
-  if (merged.length === prevLen) {
-    // Nothing actually changed (all rows deduped) — no re-render.
-    return merged === prev ? 'appended' : null;
-  }
-  // If the merged result is a strict extension of the previous
-  // transcript (only appended rows), do the cheap append render.
-  const prefixIntact = merged.slice(0, Math.min(prevLen, merged.length))
-    .every((m, i) => m === prev[i] || sameMessage(m, prev[i]));
-  if (prefixIntact && merged.length >= prevLen) {
-    syncTranscriptAppend(state, refs, prevLen);
-    return 'appended';
-  }
+async function fullRebuildFromServer(state, refs, nextSeq) {
+  const { projectDir, chatId } = state.props;
+  const body = await fetchMessagesFromSeq(projectDir, chatId, 0);
+  if (!body) return null;
+  state.messages = body.messages;
+  state.seenSeqs = new Set(body.messages.filter((m) => typeof m.seq === 'number').map((m) => m.seq));
+  state.transcriptNextSeq = typeof body.nextSeq === 'number' ? body.nextSeq : nextSeq;
   if (state._renderTranscript) state._renderTranscript();
   return 'rebuilt';
 }
 
-// fetchMessagesSince(projectDir, chatId, since) -> { body, status }
-//
-// Fetch only the transcript tail after server seq/index `since` (the
-// next persisted row the client has not merged). This must not be
-// based on `state.messages.length`: live optimistic rows do not have a
-// server seq yet, and counting them would skip persisted rows while
-// following a running chat. Returns null when the transcript was
-// cleared/replaced on the server (base < since) — the caller must then
-// fall back to a full /messages fetch and rebuild.
-async function fetchMessagesSince(projectDir, chatId, since) {
-  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&since=' + since);
-  if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return { body: null, status: r.status };
-  if (typeof r.body.base === 'number' && r.body.base < since) return { body: null, status: r.status };
-  return { body: r.body, status: r.status };
-}
-
-// fetchMessagesFull(projectDir, chatId) -> messages[] | null
-async function fetchMessagesFull(projectDir, chatId) {
-  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir));
-  return (r.status === 200 && r.body && Array.isArray(r.body.messages)) ? r.body.messages : null;
-}
-
-// applyTailSync(state, refs, revKey, tail) -> 'appended' | null
-//
-// Fast path for the common append-only change: the server sent only
-// the rows after our known prefix, so merge them and render just
-// those rows. Merge (not concat): rows already in state.seenSeqs are
-// dropped, and a row that supersedes a seq-less optimistic/live copy
-// replaces it in place — this is what prevents the persisted
-// counterpart of a message the client already rendered optimistically
-// from being drawn a second time. No prefix re-verification needed —
-// the store is append-only, and a non-append change is caught
-// upstream by the base < since check in fetchMessagesSince.
-function applyTailSync(state, refs, revKey, tail) {
+function applyTailSync(state, refs, nextSeq, tail) {
   if (!Array.isArray(tail)) return null;
-  state.transcriptRevision = revKey;
+  state.transcriptNextSeq = nextSeq;
   const prevLen = state.messages.length;
   const merged = mergeServerRows(state, tail);
-  if (merged === state.messages) return 'appended'; // nothing changed
+  if (merged === state.messages) return 'appended';
   state.messages = merged;
-  const added = merged.length - prevLen;
-  if (added <= 0) {
-    // Rows replaced in place (dedup) without net growth — no new
-    // append render; positions already rendered stay.
-    return 'appended';
-  }
-  syncTranscriptAppend(state, refs, prevLen);
+  if (merged.length > prevLen) syncTranscriptAppend(state, refs, prevLen);
   return 'appended';
 }
 
-// syncTailOrFull(state, refs, revKey) -> 'appended' | 'rebuilt' | null
-//
-// Shared catch-up for the reconcile/recovery polls: try the cheap
-// tail fetch first; on a non-append change (or a failed tail fetch)
-// fall back to the full transcript and the prefix-checking sync.
-async function syncTailOrFull(state, refs, revKey) {
+async function syncToNextSeq(state, refs, serverNextSeq) {
   const { projectDir, chatId } = state.props;
-  const t = await fetchMessagesSince(projectDir, chatId, nextServerMessageIndex(state));
-  if (t.body) return applyTailSync(state, refs, revKey, t.body.messages);
-  const full = await fetchMessagesFull(projectDir, chatId);
-  if (full == null) return null;
-  return syncFromRevision(state, refs, revKey, full);
+  const localNextSeq = nextServerMessageIndex(state);
+  if (serverNextSeq < localNextSeq) return fullRebuildFromServer(state, refs, serverNextSeq);
+  if (serverNextSeq === localNextSeq) { state.transcriptNextSeq = serverNextSeq; return 'stable'; }
+  const body = await fetchMessagesFromSeq(projectDir, chatId, localNextSeq);
+  if (!body) return null;
+  if (typeof body.nextSeq === 'number' && body.nextSeq < localNextSeq) return fullRebuildFromServer(state, refs, body.nextSeq);
+  return applyTailSync(state, refs, typeof body.nextSeq === 'number' ? body.nextSeq : serverNextSeq, body.messages);
 }
+
 // startStreamRecovery / stopStreamRecovery
 //
 // When the live stream drops mid-turn the server keeps writing the
@@ -536,6 +463,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // re-render, after which the optimistic user bubble appended below
   // would be duplicated by the next sync.
   state.streaming = true;
+  state.nextLiveSeq = 0;
 
   // Persist the pair before sending so reopening this chat keeps
   // the exact provider/model choice. Skipped when the server record
@@ -930,17 +858,8 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   // browser showing only the last tool card when a delta was
   // missed, reordered, or failed to render.
   try {
-    // Cheap first: only pull anything when the revision marker moved
-    // (this client appended messages itself, so the common case is a
-    // no-op without a round-trip). When it did move, fetch just the
-    // rows after our known prefix — not the whole transcript.
-    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
-    const revKey = (rRev.status === 200 && rRev.body)
-      ? (rRev.body.count + ':' + (rRev.body.ts || ''))
-      : '';
-    if (revKey && revKey !== state.transcriptRevision) {
-      await syncTailOrFull(state, refs, revKey);
-    }
+    const run = await fetchRunState(projectDir, chatId);
+    if (run) await syncToNextSeq(state, refs, run.nextSeq);
   } catch (syncError) {
     console.error('chat transcript reconciliation failed', syncError);
   }
@@ -970,45 +889,33 @@ async function recoverFromDisk(state, refs) {
   const st = state.reconnect;
   if (!st || !st.active || st.stopped) { if (st) st.active = false; return false; }
   st.attempts += 1;
-  // Cheap first: the revision marker tells us whether the transcript
-  // moved at all. Rows are fetched only when it did — then just the
-  // tail after our known prefix (?since=).
-  let revKey = null;
-  try {
-    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
-    if (rRev.status === 200 && rRev.body != null) revKey = rRev.body.count + ':' + (rRev.body.ts || '');
-  } catch { revKey = null; }
-  if (revKey == null) {
-    // Server unreachable — keep trying while attempts remain.
+
+  const run = await fetchRunState(projectDir, chatId).catch(() => null);
+  if (!run) {
     if (st.attempts < 6) return true;
     return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
   }
-  if (revKey !== state.transcriptRevision) {
-    // New content landed on disk — sync the authoritative rows and
-    // reset the stability counter: the run is clearly still going.
-    let applied = null;
-    try { applied = await syncTailOrFull(state, refs, revKey); } catch { applied = null; }
-    if (applied == null) {
-      if (st.attempts < 6) return true;
-      return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
-    }
+
+  const applied = await syncToNextSeq(state, refs, run.nextSeq).catch(() => null);
+  if (applied == null) {
+    if (st.attempts < 6) return true;
+    return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
+  }
+  if (applied !== 'stable') {
     st.stableTicks = 0;
     setChatStatus(refs, 'reconnected — syncing…', 'busy');
     return true;
   }
-  // Transcript is stable. The run is done when the last message is no
-  // longer a bare tool call and we've seen a couple of identical polls.
+
   const last = state.messages[state.messages.length - 1];
   const midTool = last && last.role === 'tool' && last.phase === 'call';
   st.stableTicks = (st.stableTicks || 0) + 1;
-  if (!midTool && st.stableTicks >= 2) {
-    return finishRecovery(state, refs, null, false);
-  }
-  if (st.attempts >= 8) {
-    return finishRecovery(state, refs, 'reconnect timed out — pull to retry', true);
-  }
+  if (!run.running && !midTool) return finishRecovery(state, refs, null, false);
+  if (!midTool && st.stableTicks >= 2) return finishRecovery(state, refs, null, false);
+  if (st.attempts >= 8) return finishRecovery(state, refs, 'reconnect timed out — pull to retry', true);
   return true;
 }
+
 // finishRecovery — conclude a recovery: clear the flags, re-enable the
 // send button, and set the status. `failed` toggles the status color.
 function finishRecovery(state, refs, message, failed) {
@@ -1028,115 +935,64 @@ function finishRecovery(state, refs, message, failed) {
 // this chat" poller. Syncs the transcript if the persisted rows
 // changed and surfaces the running flag as a busy status.
 //
-// Cheap tick: ONE request — /revision returns the {count, ts} marker
-// plus the chat's running flag (the old version fetched the chat
-// record and the marker separately, two round-trips per second).
-// Rows are fetched only when the marker actually moved, and then just
-// the tail after the known prefix (?since=) — the store is
-// append-only, so the transcript updates incrementally instead of
-// re-rendering every row.
+// Cheap tick: ONE request — /revision returns { nextSeq, running }.
+// Rows are fetched only when the server cursor is ahead, and then just
+// `/messages?fromSeq=<localNextSeq>`, so normal stream comeback stays
+// incremental and never needs a full transcript reload.
 export async function reconcileRunningChat(state, refs) {
-  const { projectDir, chatId } = state.props;
+  const { chatId, projectDir } = state.props;
   if (!chatId || !projectDir) return;
-  // Recovery mode: the local SSE died mid-turn but the server-side run
-  // is still writing to disk. Sync from disk (recovery is allowed to run
-  // while `streaming` stays true; the idle path must not).
-  if (state.reconnect && state.reconnect.active) {
-    return recoverFromDisk(state, refs);
-  }
-  if (state.streaming) return; // don't reconcile over our own stream
+  if (state.reconnect && state.reconnect.active) return recoverFromDisk(state, refs);
+  if (state.streaming) return;
+
   try {
-    const rRev = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
-    if (rRev.status !== 200 || rRev.body == null) return;
-    const rev = rRev.body;
+    const rev = await fetchRunState(projectDir, chatId);
+    if (!rev) return;
     const running = !!rev.running;
-    const revKey = rev.count + ':' + (rev.ts || '');
     const prevWatching = state.watchingRun;
-    let moved = false;
-    if (revKey !== state.transcriptRevision) {
-      // Transcript changed on disk (this tab is a follower, or the
-      // stream finished while we were backgrounded). Pull just the
-      // rows after our known prefix and sync them in; a non-append
-      // change falls back to the full fetch inside syncTailOrFull.
-      moved = true;
-      await syncTailOrFull(state, refs, revKey);
-      // A revision change is the ONLY reliable signal that a fresh turn
-      // started. Clear the torn-run settle latch so a new run can show
-      // its busy state again; a previously-settled stale flag must not
-      // suppress a genuinely new turn.
-      if (state.runSettled) state.runSettled = false;
-    }
+    const applied = await syncToNextSeq(state, refs, rev.nextSeq);
+    const moved = applied && applied !== 'stable';
+    if (moved && state.runSettled) state.runSettled = false;
 
     if (running) {
       const liveKey = projectDir + '::' + chatId;
-      // A second tab or a returning page stops seeing this chat as new
-      // and starts following the live stream. Subscribe once so its
-      // shell/subagent/progress tool cards render in flight instead of
-      // waiting for the settled transcript.
       subscribeLive(state, refs);
       const liveState = state.liveRun && state.liveRun.key === liveKey ? state.liveRun : null;
       const liveConnected = !!(liveState && (liveState.active || liveState.connected) && !liveState.ended && !liveState.failed);
-
-      // Settle a torn run. On a reloaded page the server may report
-      // `running` true while the SSE socket that would have cleared it
-      // is gone (the client lost the stream, not the run). If the
-      // transcript has stopped moving AND the last row isn't a bare
-      // mid-tool call, the turn is done — clear the busy state after a
-      // couple of identical stable polls instead of looping
-      // "streaming…" and re-fetching /revision forever. The settle is
-      // latched (state.runSettled) so a stale server flag doesn't flip
-      // us back to streaming on the next tick; the latch only lifts on
-      // a revision change (a fresh turn).
       const last = state.messages[state.messages.length - 1];
       const midTool = last && last.role === 'tool' && last.phase === 'call';
+      const stable = !moved && !midTool && state.messages.length > 0 && !liveConnected;
+
       if (state.runSettled) {
-        // Already settled this torn run — stay quiet. No busy state, no
-        // stop button, no oscillation, and importantly no transient
-        // "streaming…" status before the latch branch runs.
         state.watchingRun = false;
         state.watchingStableTicks = 0;
         if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+        return;
+      }
+
+      state.watchingRun = true;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+      if (!prevWatching || moved || stable || state.pendingAuthCount > 0) {
+        state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+      }
+      if (state.pendingAuthCount > 0) {
+        state.watchingStableTicks = 0;
+        setChatStatus(refs, 'waiting for you…', 'busy');
+      } else if (stable) {
+        setChatStatus(refs, 'streaming…', 'busy');
+        state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
+        if (state.watchingStableTicks >= 2) {
+          state.watchingRun = false;
+          state.watchingStableTicks = 0;
+          state.runSettled = true;
+          if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+          setChatStatus(refs, 'done', 'success');
+        }
       } else {
-        state.watchingRun = true;
-        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-        // Drain the pending-authorization queue. On a state change (a run
-        // just started here, or new rows arrived) always poll. Keep polling
-        // on a stable transcript too: a run parked on an authorization /
-        // ask_user prompt never emits new rows (the tool_call row is
-        // withheld until the user approves), so the pending queue is the
-        // ONLY signal that the run is genuinely *waiting* rather than
-        // *torn*. Re-mounting every tick is cheap (mountOverlayCard
-        // de-dupes by call-id) and lets a card missed on the first paint —
-        // page reload, tab switch, or transcript not yet up — finally land.
-        const stable = !moved && !midTool && state.messages.length > 0 && !liveConnected;
-        if (!prevWatching || moved || stable) {
-          state.pendingAuthCount = await loadPendingAuthorization(state, refs);
-        }
-        if (state.pendingAuthCount > 0) {
-          // A prompt is waiting on the user. Never settle the run: it is
-          // genuinely paused, not torn. Keep polling so the card survives
-          // a reload / tab switch, and flag the chat as needing attention.
-          state.watchingStableTicks = 0;
-          setChatStatus(refs, 'waiting for you…', 'busy');
-        } else if (stable) {
-          setChatStatus(refs, 'streaming…', 'busy');
-          state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
-          if (state.watchingStableTicks >= 2) {
-            state.watchingRun = false;
-            state.watchingStableTicks = 0;
-            state.runSettled = true;
-            if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-            setChatStatus(refs, 'done', 'success');
-          }
-        } else {
-          setChatStatus(refs, 'streaming…', 'busy');
-          state.watchingStableTicks = 0;
-        }
+        setChatStatus(refs, 'streaming…', 'busy');
+        state.watchingStableTicks = 0;
       }
     } else if (state.watchingRun) {
-      // Server no longer reports the run as running: it finished (or was
-      // cancelled). Any prompt it was parked on is gone, so drop the
-      // stale pending count and let the settle path run.
       state.pendingAuthCount = 0;
       state.watchingRun = false;
       state.watchingStableTicks = 0;

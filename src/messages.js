@@ -149,26 +149,20 @@ function getMessage(projectDir, chatId, index) {
   return listMessages(projectDir, chatId)[index] || null;
 }
 
-// messageRevision(projectDir, chatId) -> { count, ts }
+// messageCursor(projectDir, chatId) -> { nextSeq }
 //
-// Cheap change marker for a chat's transcript: message count + the
-// latest message timestamp. Messages are append-only (rows are never
-// edited in place), so count + ts changes exactly when the transcript
-// changes. Used by the client's 1 s reconcile poll to decide whether
-// a full /messages re-fetch + re-render is needed — the alternative
-// re-serialized the whole transcript every tick (multi-MB on long
-// tool-heavy chats).
-function messageRevision(projectDir, chatId) {
+// Cheap append-only recovery cursor for a chat transcript. `nextSeq` is
+// the first persisted row the client may not have yet; if the client
+// already knows the same value, there is no tail to fetch. This keeps
+// streaming recovery keyed on stable message seq instead of a fuzzy
+// count/timestamp revision marker.
+function messageCursor(projectDir, chatId) {
   if (useDb(projectDir)) {
-    return getChatDb().messageRevisionDb(projectDir, chatId);
+    return getChatDb().messageCursorDb(projectDir, chatId);
   }
   const raw = readRaw(projectDir, chatId);
   const list = Array.isArray(raw.messages) ? raw.messages : [];
-  let ts = null;
-  for (const m of list) {
-    if (m && typeof m.ts === 'string' && (ts == null || m.ts > ts)) ts = m.ts;
-  }
-  return { count: list.length, ts };
+  return { nextSeq: list.length };
 }
 
 function appendMessage(projectDir, chatId, msg) {
@@ -323,7 +317,7 @@ module.exports = {
   messagesFilePath,
   listMessages,
   getMessage,
-  messageRevision,
+  messageCursor,
   appendMessage,
   replaceMessages,
   clearMessages,

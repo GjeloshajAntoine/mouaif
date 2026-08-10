@@ -328,28 +328,19 @@ function getMessageCount(projectDir, chatId) {
   return row ? row.count : 0;
 }
 
-// messageRevisionDb(projectDir, chatId) -> { count, ts }
+// messageCursorDb(projectDir, chatId) -> { nextSeq }
 //
-// Cheap change marker: COUNT + MAX(ts) in one indexed scan (no row
-// data). The 1 s reconcile poll compares this instead of re-fetching
-// and JSON-stringifying the whole transcript.
-//
-// Why both, not just an index? `count` (the number of rows) is the
-// "index length" — it catches the common append. `ts` (MAX(ts)) is a
-// basically-free fingerprint that catches the rarer same-count edits
-// (replaceMessages/clearMessages change content without necessarily
-// changing the row count). Neither alone is sufficient without the
-// other; together they turn "did this transcript change?" into one
-// indexed aggregate with no row reads. This is NOT the source of the
-// polling overhead — each call is sub-millisecond; the actual sync
-// fetches only run when this marker moves (see /messages?since=).
-function messageRevisionDb(projectDir, chatId) {
+// Cheap append-only recovery cursor: the next persisted seq for this
+// chat. COUNT(*) is enough because seq is assigned by append position
+// in both storage backends; same-length edits are intentionally outside
+// the streaming recovery hot path.
+function messageCursorDb(projectDir, chatId) {
   ensureTables();
   const d = require('./settings.js').getDb();
   const row = d.prepare(
-    'SELECT COUNT(*) AS count, MAX(ts) AS ts FROM message_store WHERE project_dir = ? AND chat_id = ?'
+    'SELECT COUNT(*) AS nextSeq FROM message_store WHERE project_dir = ? AND chat_id = ?'
   ).get(projectDir, chatId);
-  return { count: row ? row.count : 0, ts: row && row.ts ? row.ts : null };
+  return { nextSeq: row ? row.nextSeq : 0 };
 }
 
 // ---- Cost aggregation (SQL, no full-transcript reads) ---------------------
@@ -496,7 +487,7 @@ module.exports = {
   replaceMessages,
   clearMessages,
   getMessageCount,
-  messageRevisionDb,
+  messageCursorDb,
   // Cost aggregation
   projectCostTotals,
   chatTotalCostDb,

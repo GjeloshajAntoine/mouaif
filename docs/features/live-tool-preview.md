@@ -18,8 +18,8 @@ No user action required, and nothing changes for the streaming chat itself (it a
 ## Behavior
 
 - While a chat has an in-flight run, the server keeps a per-chat live buffer holding only the **transient** events — exactly the ones never persisted on their own.
-- A follower subscribes via `GET /api/chats/:id/live` (SSE). It immediately receives the buffered events for the in-flight run, then continues to receive new ones as they occur.
-- Each event is routed into the same handler the streaming chat uses: `shell_output` fills the matching shell card's live `<pre>`, `subagent_event` fills the nested subagent card, `progress_update` creates/updates a progress card, and `authorization_required` / `ask_user_required` mount the same overlay cards as the owner stream.
+- A follower subscribes via `GET /api/chats/:id/live?fromLiveSeq=<seq>` (SSE). It immediately receives only buffered events at or after that transient cursor, then continues to receive new ones as they occur.
+- Each event carries `liveSeq`, which is separate from persisted message `seq`; the client advances `state.nextLiveSeq` and ignores already-applied events. Events are routed into the same handler the streaming chat uses: `shell_output` fills the matching shell card's live `<pre>`, `subagent_event` fills the nested subagent card, `progress_update` creates/updates a progress card, and `authorization_required` / `ask_user_required` mount the same overlay cards as the owner stream.
 - When a tool's result is persisted (`tool_result`), that tool's buffered stream is dropped, so a late subscriber never re-draws content the result card already rendered. Authorization and ask-user prompts are also pruned when the user answers `/api/tools/authorization/decision`, and followers receive `authorization_resolved` to remove stale replayed cards. Progress updates are never persisted, so they survive until the run ends.
 - When the run finishes, the follower's SSE closes with a `run_end` event. The client then lets its ordinary reconcile poll settle the busy state.
 - Subscribing to a chat that is **not** running returns `404` (JSON) — a client must never hold a dead live socket.
@@ -27,7 +27,7 @@ No user action required, and nothing changes for the streaming chat itself (it a
 ## Implementation notes
 
 - Files:
-  - `src/live-chat.js` — the per-chat live-replay registry: `ensureLiveChat`, `pushLive`, `pruneLive`, `addSubscriber`, `finishLiveChat`.
+  - `src/live-chat.js` — the per-chat live-replay registry: `ensureLiveChat`, `pushLive`, `pruneLive`, `addSubscriber`, `finishLiveChat`; assigns monotonic `liveSeq` values and filters replay by `fromLiveSeq`.
   - `src/server-shared.js` — exports the module (`liveChat`).
   - `src/server-handlers-chats.js` — the `/api/chats/:id/live` route; `handleChatStream` calls `ensureLiveChat` at run start, `pushLive`/`pruneLive` inside `emit`, and `finishLiveChat` at every exit.
   - `frontend/src/components/chat/live.js` — the client subscription (`subscribeLive`, `closeLive`) that dispatches events to the existing transcript handlers.

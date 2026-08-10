@@ -50,8 +50,9 @@ export function subscribeLive(state, refs) {
   const ctl = new AbortController();
   liveByChat.set(key, { abort: ctl }); // reserve early so concurrent ticks don't double-open
   setLiveRunState(state, key, { active: true, connected: false, ended: false, failed: false });
+  const fromLiveSeq = Number.isFinite(state.nextLiveSeq) ? state.nextLiveSeq : 0;
 
-  fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir), {
+  fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir) + '&fromLiveSeq=' + fromLiveSeq, {
     signal: ctl.signal
   }).then((resp) => {
     if (!active) return null;
@@ -75,7 +76,7 @@ export function subscribeLive(state, refs) {
           const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
           const ev = parseSSEFrame(frame); if (!ev) continue;
           if (ev.eventName === 'run_end') {
-            handleLiveRunEnd(refs, state, key);
+            handleLiveRunEnd(ev, refs, state, key);
             return; // run finished — close
           }
           dispatchLiveEvent(ev, refs, state);
@@ -124,7 +125,13 @@ function dispatchLiveEvent(ev, refs, state) {
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { return; }
   if (!data || typeof data !== 'object') return;
+  const liveSeq = typeof data.liveSeq === 'number' ? data.liveSeq : null;
+  if (liveSeq != null) {
+    if (liveSeq < (state.nextLiveSeq || 0)) return;
+    state.nextLiveSeq = liveSeq + 1;
+  }
   const { projectDir, chatId } = state.props;
+  if (ev.eventName === 'live_subscribed') return;
   if (ev.eventName === 'shell_output') {
     handleShellOutputEvent(data, refs);
     return;
@@ -153,7 +160,10 @@ function dispatchLiveEvent(ev, refs, state) {
   }
 }
 
-function handleLiveRunEnd(refs, state, key) {
+function handleLiveRunEnd(ev, refs, state, key) {
+  let data = null;
+  try { data = JSON.parse(ev.data || 'null'); } catch { data = null; }
+  if (data && typeof data.nextLiveSeq === 'number' && data.nextLiveSeq > (state.nextLiveSeq || 0)) state.nextLiveSeq = data.nextLiveSeq;
   setLiveRunState(state, key, { active: false, connected: false, ended: true, failed: false });
   removeOverlayCards(refs);
   state.watchingRun = false;

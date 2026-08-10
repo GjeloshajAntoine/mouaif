@@ -43,8 +43,8 @@ if (state.runSettled) {
 }
 ```
 - The latch is also set when the follower live socket receives `run_end`, so a final in-memory `running` tick cannot repaint "streaming…" after the socket already told the UI the run ended.
-- The latch is cleared inside the `revKey !== state.transcriptRevision` branch, right after the tail/full sync, so a real revision change re-enables the busy state for the next run.
-- Tail sync now updates `state.transcriptRevision` even when all fetched rows are already known. That prevents a moved server marker with duplicate rows from being treated as "new" on every later poll.
+- The latch is cleared when `syncToNextSeq` sees the server cursor advance, so a real persisted append re-enables the busy state for the next run.
+- Tail sync updates `state.transcriptNextSeq` even when all fetched rows are already known. That prevents a repeated cursor value with duplicate rows from being treated as "new" on every later poll.
 ## Related
 
 - [Chat UI](chat-ui.md)
