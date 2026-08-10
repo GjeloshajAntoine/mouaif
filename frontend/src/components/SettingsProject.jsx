@@ -845,14 +845,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     if (created) nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()));
   }
 
-  // What the model receives for the same shell result under the selected
-  // profile. Faithfully mirrors src/toolFeedback.js: the `concise` structure
-  // minifies JSON / collapses blank runs *and* strips leading indentation,
-  // then the size budget truncates head/tail (75/25) with the standard
-  // marker only when the body exceeds the cap. The sample here is well under
-  // every cap, so the difference the model actually sees is the concise
-  // layout — no truncation fires. The transform is real; only the sample is
-  // fixed, not a live result.
+  // What the model receives for a representative file-tool result under the
+  // selected profile. This page is "File tool options", so the sample is an
+  // actual file-tool payload in its compact model-facing form — the same
+  // shape src/tools/files.js emits: a small `#` header, a directory grouped
+  // once (no repeated path prefix per row), and no raw JSON envelope. The
+  // profile then applies exactly as in src/toolFeedback.js: `concise`
+  // collapses blank runs / strips leading indent + trailing whitespace, and
+  // the size budget truncates head/tail (75/25) with the standard marker
+  // only when the body exceeds the cap. The sample is well under every cap,
+  // so no truncation fires here — the visible difference is the concise
+  // layout. The transform is real; only the sample is fixed.
   function exampleFor(profile) {
     const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, extensive: Infinity };
     const BASE_MAX_BYTES = 64 * 1024;
@@ -860,24 +863,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     const utf8Len = (s) => new TextEncoder().encode(s).length;
 
     const combo = OUTPUT_PROFILES[profile] || OUTPUT_PROFILES.balanced;
+    // A real `list_files` result: one `# Listing`/`# Count` header, the
+    // directory printed once as a `# src/tools/` group header, then bare
+    // basenames indented under it. This is the compact format the file
+    // tools produce — the full path is never repeated on every row and the
+    // model never sees a JSON blob.
     const full = [
-      '$ npm install',
+      '# Listing: src/tools/*.js',
+      '# Count: 7',
+      '# Skipped: 5',
       '',
-      '> some-native-dep@1.0.0 install',
-      '> node-gyp rebuild',
-      '',
-      'make: Entering directory \'/app/node_modules/some-native-dep/build\'',
-      '  CXX(target) Release/obj.target/binding/src/binding.o',
-      '  SOLINK_MODULE(target) Release/obj.target/binding.node',
-      '  COPY Release/binding.node',
-      'make: Leaving directory \'/app/node_modules/some-native-dep/build\'',
-      '',
-      'added 214 packages, and audited 215 packages in 9s',
-      '',
-      '36 packages are looking for funding',
-      '  run `npm fund` for details',
-      '',
-      'found 0 vulnerabilities'
+      '# src/tools/',
+      '  ask.js',
+      '  authorization.js',
+      '  files.js',
+      '  progress.js',
+      '  shell.js',
+      '  subagent.js',
+      '  task.js'
     ].join('\n');
 
     // structure: `concise` collapses blank runs, strips leading indentation
@@ -939,7 +942,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Example'),
-        h('p', { class: 'hint hint--compact' }, 'What the model would receive for the same shell result under the selected profile (illustrative, not a live preview):'),
+        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result under the selected profile — the compact file-tool format (grouped header, no repeated paths, no JSON). Illustrative, not a live preview:'),
         h('pre', { class: 'settings__out' }, exampleFor(profileFor(outputSize, outputStructure)))
       )
     )
