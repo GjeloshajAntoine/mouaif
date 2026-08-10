@@ -378,7 +378,12 @@ export function useChatState(props) {
     toggleToolGroup(names, next, state, refs, updateChatBound);
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
-  const onToggleAgentFiles = useCallback((next) => toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs)), [updateChatBound]);
+  const onToggleAgentFiles = useCallback((next) => {
+  toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
+  // Agent files live in the ref-backed state bag, so changing them
+  // needs an explicit render stamp for the composer ToolPopup.
+  setToolDataStamp((v) => v + 1);
+}, [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
     state.skills = Object.assign({}, state.skills, { enabled: next });
     updateChatBound({ skills: next });

@@ -279,29 +279,23 @@ function buildAgentFilesCard(state) {
   const list = document.createElement('div');
   list.className = 'chat-view__agent-files-list';
   for (const name of af.files) {
-    const row = document.createElement('div');
+    const row = document.createElement('label');
     row.className = 'chat-view__agent-files-row';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'checkbox checkbox--sm';
+    checkbox.checked = !!af.enabled;
+    checkbox.disabled = !!af.projectLocked;
+    checkbox.setAttribute('aria-label', 'Use agent file ' + name);
+    checkbox.addEventListener('change', () => state._toggleAgentFiles && state._toggleAgentFiles(checkbox.checked));
     const label = document.createElement('span');
     label.className = 'chat-view__agent-files-name';
     label.textContent = name;
+    row.appendChild(checkbox);
     row.appendChild(label);
     list.appendChild(row);
   }
   card.appendChild(list);
-
-  const toggleLabel = document.createElement('label');
-  toggleLabel.className = 'chat-view__agent-files-toggle';
-  const toggle = document.createElement('input');
-  toggle.type = 'checkbox';
-  toggle.checked = !!af.enabled;
-  toggle.disabled = !!af.projectLocked;
-  toggle.setAttribute('aria-label', 'Use agent files');
-  toggle.addEventListener('change', () => state._toggleAgentFiles && state._toggleAgentFiles(toggle.checked));
-  const toggleText = document.createElement('span');
-  toggleText.textContent = af.projectLocked ? 'Use agent files (locked)' : 'Use agent files';
-  toggleLabel.appendChild(toggle);
-  toggleLabel.appendChild(toggleText);
-  card.appendChild(toggleLabel);
 
   return card;
 }

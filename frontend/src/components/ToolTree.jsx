@@ -23,6 +23,7 @@
 // Props:
 //   groups: Array<{
 //     id, name, description?, checked, disabled?, disabledReason?, title?,
+//     alwaysExpanded?: boolean,      // render children without a chevron
 //     control?: any,                 // right-aligned Preact node
 //     tools: Array<{ id, name, description?, title?, checked,
 //                    disabled?, disabledReason?, used? }>
@@ -64,7 +65,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
     const next = new Set(collapsed);
     for (const g of groups) {
       const id = g.id;
-      const collapsible = (g.tools || []).length > 1 && !alwaysExpanded;
+      const collapsible = (g.tools || []).length > 1 && !alwaysExpanded && !g.alwaysExpanded;
       if (!collapsedByDefault || !collapsible || touched.current.has(id)) continue;
       if (!next.has(id)) { next.add(id); changed = true; }
     }
@@ -87,8 +88,10 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
     groups.map((group) => {
       const kids = group.tools || [];
       const hasChildren = kids.length > 1;
-      const collapsible = hasChildren && !alwaysExpanded;
+      const groupAlwaysExpanded = alwaysExpanded || !!group.alwaysExpanded;
+      const collapsible = hasChildren && !groupAlwaysExpanded;
       const isCollapsed = collapsible && collapsed.has(group.id);
+      const showChildren = kids.length > 0 && !isCollapsed && (hasChildren || groupAlwaysExpanded);
       const onCount = kids.filter((t) => t.checked).length;
       // Half-check the group when some (but not all) of its tools are on.
       // `indeterminate` is a DOM-only property, not an attribute. It is
@@ -145,7 +148,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
         group.disabled && group.disabledReason
           ? h('div', { class: 'tool-tree__reason' }, group.disabledReason)
           : null,
-        hasChildren && !isCollapsed
+        showChildren
           ? h('ul', { class: 'tool-tree__children', role: 'group' },
               kids.map((tool) =>
                 h('li', { key: tool.id, class: 'tool-tree__item', role: 'treeitem' },

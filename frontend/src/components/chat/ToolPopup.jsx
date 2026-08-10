@@ -210,6 +210,10 @@ export function ToolPopup(props) {
   }
 
   function handleToggleTool(groupId, toolId, checked) {
+    if (groupId === 'agent-files') {
+      if (onToggleAgentFiles) onToggleAgentFiles(checked);
+      return;
+    }
     if (onToggleTool) onToggleTool(toolId, checked);
   }
 
@@ -219,9 +223,11 @@ export function ToolPopup(props) {
     groups.push({
       id: 'agent-files',
       name: 'Agent files',
-      description: af.files.join(', '),
+      description: af.enabled ? 'all selected' : 'off',
       checked: af.enabled,
       disabled: !!af.projectLocked,
+      disabledReason: af.projectLocked ? 'Locked off by Settings → Project.' : '',
+      alwaysExpanded: true,
       tools: af.files.map((f) => ({
         id: f,
         name: f,
