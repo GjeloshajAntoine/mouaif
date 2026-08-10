@@ -519,11 +519,14 @@ export function useChatState(props) {
         // gate. The project-level setting is the master switch: when
         // the project has it `false` the per-chat toggle cannot enable.
         const projectGate = rSys.status === 200 ? rSys.body.projectAgentFiles : null;
-        const afEnabled = projectGate === false
-          ? false
-          : (typeof c.agentFiles === 'boolean') ? c.agentFiles : true;
+        const afEnabled = rSys.status === 200 && typeof rSys.body.agentFilesEnabled === 'boolean'
+          ? rSys.body.agentFilesEnabled
+          : (projectGate === false ? false : (typeof c.agentFiles === 'boolean') ? c.agentFiles : true);
+        const afAvailable = rSys.status === 200 && Array.isArray(rSys.body.agentFilesAvailable)
+          ? rSys.body.agentFilesAvailable
+          : (Array.isArray(rSys.body && rSys.body.agentFiles) ? rSys.body.agentFiles : []);
         agentFiles.current = {
-          files: (rSys.status === 200 && Array.isArray(rSys.body.agentFiles)) ? rSys.body.agentFiles.map(f => f.name) : [],
+          files: afAvailable.map(f => f.name),
           enabled: afEnabled,
           explicit: typeof c.agentFiles === 'boolean',
           projectLocked: projectGate === false  // project has it off → toggle locked

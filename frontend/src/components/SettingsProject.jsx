@@ -243,7 +243,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
     } catch { /* keep empty list */ }
 
-    setAgentFilesOn(cp.agentFiles === true);
+    setAgentFilesOn(cp.agentFiles !== false);
     setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
     setSkillsOn(cp.skills !== false);
     setDisabledSkills(Array.isArray(cp.disabledSkills) ? cp.disabledSkills.join('\n') : '');
@@ -1119,7 +1119,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agent files' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. A chat can still opt out individually.')
+              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
             )
           )
         ),
@@ -1128,7 +1128,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             h('div', { class: 'settings-project__tool-head' },
               h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
               h('div', { class: 'settings-project__item-note' },
-                'When enabled, instruction files at the project root (e.g. AGENTS.md, CLAUDE.md) are injected into the model context. Chats can still override this. ',
+                'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
                 h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
               )
             ),

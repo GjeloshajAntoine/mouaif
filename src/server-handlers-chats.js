@@ -320,10 +320,15 @@ async function handleChats(req, res, parsed, sessionToken) {
       const parts = [];
       if (profile && profile.systemMessage) parts.push(profile.systemMessage);
       let agentFilesList = null;
+      let agentFilesEnabled = false;
+      let agentFilesAvailable = [];
+      let agentFileNames = [];
       try {
-        if (agentFiles.resolveEnabled({ chat: effectiveChat, projectDir: dir })) {
-          const names = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir: dir });
-          agentFilesList = agentFiles.load(dir, names);
+        agentFilesEnabled = agentFiles.resolveEnabled({ chat: effectiveChat, projectDir: dir });
+        agentFileNames = agentFiles.resolveFileNames({ chat: effectiveChat, projectDir: dir });
+        agentFilesAvailable = agentFiles.discover(dir, agentFileNames).map((f) => ({ name: f.name, size: f.size }));
+        if (agentFilesEnabled) {
+          agentFilesList = agentFiles.load(dir, agentFileNames);
           for (const af of agentFilesList) parts.push(af.content);
         }
       } catch { /* agent files stay null */ }
@@ -343,6 +348,9 @@ async function handleChats(req, res, parsed, sessionToken) {
       return sendJSON(res, 200, {
         profile,
         agentFiles: agentFilesList ? agentFilesList.map(m => ({ name: m.name })) : null,
+        agentFilesEnabled,
+        agentFilesAvailable,
+        agentFileNames,
         projectAgentFiles,
         skills: skillState.skills.map((s) => ({ id: s.id, name: s.name, description: s.description, enabled: skillState.enabled && !skillState.disabled.has(s.id) })),
         projectSkills: skillState.projectEnabled,
