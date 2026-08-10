@@ -4,7 +4,8 @@
 //
 // While a chat has an in-flight streaming run, the "transient" tool
 // events — shell stdout/stderr (`shell_output`), nested subagent
-// activity (`subagent_event`), and progress updates (`progress_update`)
+// activity (`subagent_event`), progress updates (`progress_update`),
+// and paused-run prompts (`authorization_required`, `ask_user_required`)
 // — are buffered here and fanned out to any subscribed follower.
 //
 // A follower is the UI on a *different* client (another tab/device) or
@@ -43,8 +44,9 @@ function ensureLiveChat(runKey) {
 // pushLive(runKey, name, data)
 //
 // Record a transient event and push it to every subscribed follower.
-// Called from handleChatStream's `emit` for shell_output /
-// subagent_event / progress_update only.
+// Called from handleChatStream's `emit` for shell_output,
+// subagent_event, progress_update, authorization_required, and
+// ask_user_required.
 function pushLive(runKey, name, data) {
   const r = runs.get(runKey);
   if (!r) return;
@@ -62,9 +64,14 @@ function pushLive(runKey, name, data) {
 // `shell_output`'s `id` field and the `subagent_event` `parentCallId`.
 function pruneLive(runKey, toolId) {
   const r = runs.get(runKey);
-  if (!r || !r.buffer.length) return;
+  if (!r) return;
   const id = String(toolId == null ? '' : toolId);
   if (!id) return;
+  if (!r.buffer.length) return;
+  const hadOverlay = r.buffer.some((e) =>
+    (e.name === 'authorization_required' || e.name === 'ask_user_required')
+    && String((e.data && e.data.callId) == null ? '' : e.data.callId) === id
+  );
   r.buffer = r.buffer.filter((e) => {
     if (e.name === 'shell_output') {
       return String((e.data && e.data.id) == null ? '' : e.data.id) !== id;
@@ -72,8 +79,17 @@ function pruneLive(runKey, toolId) {
     if (e.name === 'subagent_event') {
       return String((e.data && e.data.parentCallId) == null ? '' : e.data.parentCallId) !== id;
     }
+    if (e.name === 'authorization_required' || e.name === 'ask_user_required') {
+      return String((e.data && e.data.callId) == null ? '' : e.data.callId) !== id;
+    }
     return true;
   });
+  if (hadOverlay) {
+    const frame = sseFrame('authorization_resolved', { callId: id });
+    for (const sub of r.subscribers) {
+      try { sub.write(frame); } catch { /* socket closed */ }
+    }
+  }
 }
 
 // addSubscriber(runKey, req, res)

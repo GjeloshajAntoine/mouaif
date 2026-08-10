@@ -19,8 +19,7 @@ import {
   handleShellOutputEvent,
   handleSubagentStreamEvent,
   syncTranscriptAppend,
-  updateProgressCard,
-  whenTranscriptSettled
+  updateProgressCard
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -30,7 +29,7 @@ import { normalizeToolName, parseToolArgs } from './tools.js';
 import { queueComposerDraftSave } from './composer.js';
 import { subscribeLive } from './live.js';
 import { mergeServerRows } from './msgMerge.js';
-import { cssEscape } from './utils.js';
+import { mountOverlayCard } from './overlay.js';
 
 // markToolUsed(state, refs, toolName)
 //
@@ -40,50 +39,6 @@ import { cssEscape } from './utils.js';
 //      used") — the model clearly has it, so the filter should
 //      reflect reality. Persisted via the normal toggle path.
 //   2. The tool gets the "used" dot badge in the tree.
-// authCardGuard(refs, callId) -> bool
-//
-// De-dupe authorization / ask_user cards. The live SSE stream and the
-// reconcile poll (loadPendingAuthorization) both read the SAME pending
-// authorization queue on the server, so one request can arrive twice —
-// once as an SSE frame and again as a polled pending item. Both card
-// types stamp `data-auth-call-id` on the card; if a card for this
-// callId is already on screen, skip (return false) instead of mounting
-// a duplicate.
-function authCardGuard(refs, callId) {
-  if (!callId || !refs.transcript || !refs.transcript.current) return true;
-  const existing = refs.transcript.current.querySelector(
-    '.tool-card--authorization[data-auth-call-id="' + cssEscape(String(callId)) + '"],' +
-    '.tool-card--ask-user[data-auth-call-id="' + cssEscape(String(callId)) + '"]'
-  );
-  return !existing;
-}
-
-// mountOverlayCard(refs, mountFn)
-//
-// Mount an ask_user / authorization overlay card so it actually lands
-// on screen: wait for any in-flight chunked transcript render, skip
-// the mount while the transcript is still empty (a rebuild would wipe
-// the card), de-dupe by auth-call-id, and scroll the card into view.
-// Used by every overlay-card path (SSE events, nested subagent events,
-// and the pending-auth poll) so all of them behave identically.
-function mountOverlayCard(refs, callId, mountFn) {
-  whenTranscriptSettled(refs).then(() => {
-    if (!refs.transcript || !refs.transcript.current) return;
-    if (!authCardGuard(refs, callId)) return;
-    const t = refs.transcript.current;
-    const hasContent = t.children.length > 0
-      && !(t.children.length === 1 && t.querySelector(':scope > .chat-view__empty'));
-    if (!hasContent) {
-      // The transcript hasn't painted yet (chat still loading, or a
-      // rebuild is about to wipe it). Mounting now would lose the card;
-      // the loadPendingAuthorization poll re-mounts it once the
-      // transcript is up.
-      return;
-    }
-    mountFn();
-  });
-}
-
 function markToolUsed(state, refs, toolName) {
   if (!state || !toolName) return;
   const name = normalizeToolName(toolName);

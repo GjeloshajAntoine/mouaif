@@ -4,8 +4,9 @@
 // The live-replay layer lets a follower client — a second tab, or a
 // returning page that lost or never had the primary SSE socket — render
 // the transient tool events (shell_output, subagent_event,
-// progress_update) of an in-flight run into its tool cards in real
-// time, instead of seeing cards pinned on "Waiting for results…".
+// progress_update, authorization_required, ask_user_required) of an
+// in-flight run into its tool cards in real time, instead of seeing
+// cards pinned on "Waiting for results…" or waiting for /pending.
 //
 // Server process control lives in this script; the module-level registry
 // is exercised directly with a stub response object. We also verify the
@@ -68,6 +69,8 @@ function baseTest() {
   liveChat.pushLive(rk, 'shell_output', { id: 'c1', stream: 'stdout', delta: 'hello' });
   liveChat.pushLive(rk, 'shell_output', { id: 'c1', stream: 'stdout', delta: ' ' });
   liveChat.pushLive(rk, 'progress_update', { callId: 'c2', title: 'Build', current: 5, total: 10, status: 'running', message: 'compiling' });
+  liveChat.pushLive(rk, 'authorization_required', { callId: 'auth1', tool: 'shell', cmd: 'npm test' });
+  liveChat.pushLive(rk, 'ask_user_required', { callId: 'ask1', tool: 'ask_user', question: 'Proceed?', options: [{ label: 'Yes', value: 'yes' }, { label: 'No', value: 'no' }] });
 
   // addSubscriber replays the buffered transient events immediately.
   const sub = makeFakeRes();
@@ -78,6 +81,8 @@ function baseTest() {
   const replayed = frames.filter((f) => f.name === 'shell_output').length;
   t('replays buffered shell_output for the run', replayed === 2, 'saw ' + replayed);
   t('replays buffered progress_update', frames.some((f) => f.name === 'progress_update'));
+  t('replays buffered authorization prompt', frames.some((f) => f.name === 'authorization_required' && f.data.includes('auth1')));
+  t('replays buffered ask_user prompt', frames.some((f) => f.name === 'ask_user_required' && f.data.includes('ask1')));
 
   // Live push to a connected subscriber reaches it.
   sub._chunks = [];
@@ -96,6 +101,16 @@ function baseTest() {
   const replayed2 = f2.filter((f) => f.name === 'shell_output').length;
   t('prune drops the tool_id stream for a late subscriber', replayed2 === 0, 'saw ' + replayed2);
   t('progress_update survives prune (never persisted)', f2.some((f) => f.name === 'progress_update'));
+  t('unanswered authorization prompt survives unrelated prune', f2.some((f) => f.name === 'authorization_required' && f.data.includes('auth1')));
+  sub._chunks = [];
+  liveChat.pruneLive(rk, 'auth1');
+  const resolvedFrames = collectFrames(sub);
+  t('prune emits authorization_resolved to subscribers', resolvedFrames.some((f) => f.name === 'authorization_resolved' && f.data.includes('auth1')));
+  const sub3 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub3);
+  const f3 = collectFrames(sub3);
+  t('answered authorization prompt is not replayed late', !f3.some((f) => f.name === 'authorization_required' && f.data.includes('auth1')));
+  t('unanswered ask_user prompt still replays late', f3.some((f) => f.name === 'ask_user_required' && f.data.includes('ask1')));
 
   // finishLiveChat closes the subscriber with run_end and clears the entry.
   liveChat.finishLiveChat(rk);

@@ -12,6 +12,7 @@ const {
   runningChatCancels,
   firstStringValue,
   chats,
+  liveChat,
   mcp,
   inspector
 } = require('./server-shared.js');
@@ -602,7 +603,12 @@ async function handleToolAuthorization(req, res, parsed) {
       // tool reads it (the user's chosen option + free-form extra
       // text), but the channel is generic so a future native tool can
       // attach its own structured answer without a new endpoint.
+      const runKey = runningKey(projectDir, chatId);
       const out = authGate.recordDecision(projectDir, chatId, callId, decision, payload);
+      // Tell follower tabs/pages to drop any replayed prompt immediately.
+      // Without this, a page that returned to a paused stream could keep a
+      // stale approval card until the next transcript sync.
+      liveChat.pruneLive(runKey, callId);
       return sendJSON(res, 200, out);
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });

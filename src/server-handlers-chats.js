@@ -677,7 +677,8 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     // the run ends), replayed to late subscribers, and pushed live to
     // connected ones. Conveniently, the run entry also gives us the
     // toolResultId for a later prune on `tool_result`.
-    if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_update') {
+    if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_update'
+      || name === 'authorization_required' || name === 'ask_user_required') {
       liveChat.pushLive(runKey, name, data);
     } else if (name === 'tool_result') {
       liveChat.pruneLive(runKey, data && data.id);

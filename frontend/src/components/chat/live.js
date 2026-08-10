@@ -3,7 +3,8 @@
 // While a chat is running, the server keeps a per-chat live stream
 // (GET /api/chats/:id/live, src/live-chat.js) that replays the
 // buffered transient tool events — shell_output, subagent_event,
-// progress_update — and fans out new ones until the run ends. This
+// progress_update, authorization_required, and ask_user_required —
+// and fans out new ones until the run ends. This
 // module opens/dispatches that stream and routes each transient event
 // into the same handlers the live SSE uses, so:
 //
@@ -19,7 +20,10 @@
 // (which also tells the caller the run finished).
 
 import { parseSSEFrame } from '../../api.js';
+import { authorizationCard, askUserCard } from './cards.js';
 import { handleShellOutputEvent, handleSubagentStreamEvent, updateProgressCard } from './transcript.js';
+import { mountOverlayCard, removeOverlayCardByCallId, removeOverlayCards } from './overlay.js';
+import { setChatStatus } from './usage.js';
 
 const liveByChat = new Map();
 
@@ -58,7 +62,10 @@ export function subscribeLive(state, refs) {
         while ((idx = buf.indexOf('\n\n')) !== -1) {
           const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
           const ev = parseSSEFrame(frame); if (!ev) continue;
-          if (ev.eventName === 'run_end') return; // run finished — close
+          if (ev.eventName === 'run_end') {
+            handleLiveRunEnd(refs, state);
+            return; // run finished — close
+          }
           dispatchLiveEvent(ev, refs, state);
         }
       }
@@ -90,14 +97,17 @@ export function closeLive(state) {
 
 // dispatchLiveEvent(ev, refs, state)
 //
-// Route a transient live event into the same handlers the live SSE
-// stream uses. shell_output and subagent_event mutate existing tool
-// cards; progress_update creates/updates a progress card.
+// Route a transient live event into the same handlers the owner SSE stream
+// uses. shell_output and subagent_event mutate existing tool cards;
+// progress_update creates/updates a progress card; authorization prompts
+// mount the same overlay cards as the owner stream so returning to a chat
+// shows the approval UI immediately instead of waiting for /pending.
 function dispatchLiveEvent(ev, refs, state) {
   if (!refs.transcript || !refs.transcript.current) return;
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { return; }
   if (!data || typeof data !== 'object') return;
+  const { projectDir, chatId } = state.props;
   if (ev.eventName === 'shell_output') {
     handleShellOutputEvent(data, refs);
     return;
@@ -109,7 +119,29 @@ function dispatchLiveEvent(ev, refs, state) {
   if (ev.eventName === 'progress_update') {
     updateProgressCard(refs, data);
     setLiveStatus(refs, data);
+    return;
   }
+  if (ev.eventName === 'authorization_resolved') {
+    removeOverlayCardByCallId(refs, data.callId);
+    return;
+  }
+  if (ev.eventName === 'authorization_required') {
+    mountOverlayCard(refs, data.callId, () => authorizationCard(data, projectDir, chatId, refs, null, state));
+    setChatStatus(refs, 'authorization required', 'busy');
+    return;
+  }
+  if (ev.eventName === 'ask_user_required') {
+    mountOverlayCard(refs, data.callId, () => askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st)));
+    setChatStatus(refs, 'answer required', 'busy');
+  }
+}
+
+function handleLiveRunEnd(refs, state) {
+  removeOverlayCards(refs);
+  state.watchingRun = false;
+  state.watchingStableTicks = 0;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+  setChatStatus(refs, 'done', 'success');
 }
 
 // setLiveStatus(refs, data)
