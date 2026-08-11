@@ -321,8 +321,12 @@ async function handleChats(req, res, parsed, sessionToken) {
       } catch { /* agent files stay null */ }
       // Agents are subagent delegation targets only — never part of
       // the chat's system prompt. Skills are project instruction files.
-      const skillState = agentSkills.resolve({ chat, projectDir: dir });
-      const skillCatalog = agentSkills.catalogMessage(dir, chat);
+      // A prompt preset with `skills: true` rides on the chat for this
+      // turn (see prompts.effectivePresetConfig), so the catalog
+      // resolution reads `effectiveChat` — not the persisted record —
+      // to mirror the live stream's behavior.
+      const skillState = agentSkills.resolve({ chat: effectiveChat, projectDir: dir });
+      const skillCatalog = agentSkills.catalogMessage(dir, effectiveChat);
       if (skillCatalog) parts.push(skillCatalog);
       if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
@@ -745,8 +749,12 @@ async function handleChatStream(req, res, chatId, sessionToken) {
   } catch { /* non-fatal; stream proceeds without agent files */ }
   // Agents are delegation targets for the `subagent` tool only — they
   // are never injected into the main chat stream (docs/features/agents.md).
+  // A prompt preset with `skills: true` rides on the chat for this
+  // turn (see prompts.effectivePresetConfig), so the skills catalog
+  // resolves against `effectiveChat` — not the persisted record —
+  // to match the agent-files / agentFeatures paths above.
   try {
-    const catalog = agentSkills.catalogMessage(projectDir, chat);
+    const catalog = agentSkills.catalogMessage(projectDir, effectiveChat);
     if (catalog) upstreamMessages.push({ role: 'system', content: catalog });
   } catch { /* non-fatal; stream proceeds without skills */ }
 
@@ -761,7 +769,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     try { authz = require('./tools/authorization.js').getAuthorization(projectDir); } catch { /* safe default */ }
     let mcpServers = null;
     try { mcpServers = require('./mcp.js').listServers(projectDir); } catch { /* safe default */ }
-    const featureMsg = agentFeatures.buildFeatureSummary({ chat, projectDir, project, authz, mcpServers });
+    const featureMsg = agentFeatures.buildFeatureSummary({ chat: effectiveChat, projectDir, project, authz, mcpServers });
     if (featureMsg) {
       upstreamMessages.push({ role: 'system', content: featureMsg });
     }
