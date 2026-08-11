@@ -588,21 +588,23 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
           catalog: [],
           filter: Array.isArray(c.tools) ? c.tools.slice() : null
         };
-        // Seed the agent-files card from the chat record and project/default
-// state. Project settings choose the file list; chats own the on/off
-// choice and can still opt out for the next turn.
-const afEnabled = rSys.status === 200 && typeof rSys.body.agentFilesEnabled === 'boolean'
-? rSys.body.agentFilesEnabled
-: ((typeof c.agentFiles === 'boolean') ? c.agentFiles : true);
-const afAvailable = rSys.status === 200 && Array.isArray(rSys.body.agentFilesAvailable)
-? rSys.body.agentFilesAvailable
-: (Array.isArray(rSys.body && rSys.body.agentFiles) ? rSys.body.agentFiles : []);
-agentFiles.current = {
-files: afAvailable.map(f => f.name),
-enabled: afEnabled,
-explicit: typeof c.agentFiles === 'boolean'
-};
-const skillGate = rSys.status === 200 ? rSys.body.projectSkills : true;
+        // Seed the agent-files card from the chat record and project
+        // gate. The project-level setting is the master switch: when
+        // the project has it `false` the per-chat toggle cannot enable.
+        const projectGate = rSys.status === 200 ? rSys.body.projectAgentFiles : null;
+        const afEnabled = rSys.status === 200 && typeof rSys.body.agentFilesEnabled === 'boolean'
+          ? rSys.body.agentFilesEnabled
+          : (projectGate === false ? false : (typeof c.agentFiles === 'boolean') ? c.agentFiles : true);
+        const afAvailable = rSys.status === 200 && Array.isArray(rSys.body.agentFilesAvailable)
+          ? rSys.body.agentFilesAvailable
+          : (Array.isArray(rSys.body && rSys.body.agentFiles) ? rSys.body.agentFiles : []);
+        agentFiles.current = {
+          files: afAvailable.map(f => f.name),
+          enabled: afEnabled,
+          explicit: typeof c.agentFiles === 'boolean',
+          projectLocked: projectGate === false  // project has it off → toggle locked
+        };
+        const skillGate = rSys.status === 200 ? rSys.body.projectSkills : true;
         skills.current = {
           items: (rSys.status === 200 && Array.isArray(rSys.body.skills)) ? rSys.body.skills : [],
           enabled: skillGate !== false && c.skills !== false,

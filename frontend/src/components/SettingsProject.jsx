@@ -16,19 +16,6 @@ import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
-const AGENT_FILE_DEFAULT_NAMES = ['AGENTS.md', 'CLAUDE.md', '.github/copilot-instructions.md'];
-function parseAgentFileNameText(raw) {
-  const seen = new Set();
-  const out = [];
-  for (const part of String(raw || '').split(/\r?\n/)) {
-    const name = part.trim();
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    out.push(name);
-  }
-  return out;
-}
-
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
   const [projectPath, setProjectPath] = useState('…');
@@ -93,8 +80,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [mcpAuthStatusMsg, setMcpAuthStatusMsg] = useState('');
   const [mcpServers, setMcpServers] = useState([]);
 
+  const [agentFilesOn, setAgentFilesOn] = useState(false);
   const [agentFileNames, setAgentFileNames] = useState('');
-  const [newAgentFileName, setNewAgentFileName] = useState('');
   const [agentFilesStatusMsg, setAgentFilesStatusMsg] = useState('');
 
   // Agent file picker overlay
@@ -256,6 +243,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       if (ar.status === 200) setAgentPresets(Array.isArray(ar.body.agents) ? ar.body.agents : []);
     } catch { /* keep empty list */ }
 
+    setAgentFilesOn(cp.agentFiles !== false);
     setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
     setSkillsOn(cp.skills !== false);
     setDisabledSkills(Array.isArray(cp.disabledSkills) ? cp.disabledSkills.join('\n') : '');
@@ -516,51 +504,33 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setMcpAuthStatusMsg(checked ? 'tool override cleared' : 'tool override off');
   }
 
-  async function saveAgentFileNames(namesRaw) {
-const names = parseAgentFileNameText(namesRaw);
-setAgentFilesStatusMsg('saving…');
-const patch = names.length ? { agentFileNames: names, unset: ['agentFiles'] } : { unset: ['agentFiles', 'agentFileNames'] };
-const r = await fetchJson('/api/settings/project', {
-method: 'PUT',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
-});
-if (r.status === 200) {
-const nextProj = r.body.project || Object.assign({}, currentProject, names.length ? { agentFileNames: names } : {});
-setCurrentProject(nextProj);
-setEditorText(JSON.stringify(nextProj, null, 2));
-setAgentFilesStatusMsg('saved');
-} else {
-setAgentFilesStatusMsg('HTTP ' + r.status);
-}
-}
-async function saveAgentFileList(names) {
-const next = Array.isArray(names) ? names.map((s) => String(s).trim()).filter(Boolean) : [];
-const namesRaw = next.join('\n');
-setAgentFileNames(namesRaw);
-await saveAgentFileNames(namesRaw);
-}
-async function resetAgentFileNames() {
-await saveAgentFileList([]);
-}
-async function removeAgentFileName(name) {
-const next = parseAgentFileNameText(agentFileNames).filter((n) => n !== name);
-await saveAgentFileList(next);
-}
-async function addAgentFileName() {
-const clean = newAgentFileName.trim();
-if (!clean) return;
-const current = parseAgentFileNameText(agentFileNames);
-if (!current.includes(clean)) current.push(clean);
-setNewAgentFileName('');
-await saveAgentFileList(current);
-}
-function onAgentFileNameKeyDown(e) {
-if (e.key !== 'Enter') return;
-e.preventDefault();
-addAgentFileName();
-}
-async function saveSkills(enabled, idsRaw) {
+  async function saveAgentFiles(enabled, namesRaw) {
+    const names = namesRaw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    setAgentFilesStatusMsg('saving…');
+    const patch = { agentFiles: enabled };
+    if (names.length) patch.agentFileNames = names;
+    else patch.unset = ['agentFileNames'];
+    const r = await fetchJson('/api/settings/project', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ projectDir: dir() }, patch))
+    });
+    if (r.status === 200) {
+      const nextProj = r.body.project || Object.assign({}, currentProject, patch);
+      setCurrentProject(nextProj);
+      setEditorText(JSON.stringify(nextProj, null, 2));
+      setAgentFilesStatusMsg('saved');
+    } else {
+      setAgentFilesStatusMsg('HTTP ' + r.status);
+    }
+  }
+  function onAgentFilesToggle(e) {
+    const checked = e.target.checked;
+    setAgentFilesOn(checked);
+    saveAgentFiles(checked, agentFileNames);
+  }
+
+  async function saveSkills(enabled, idsRaw) {
     const ids = idsRaw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     await patchProject({ skills: enabled, disabledSkills: ids }, setSkillsStatusMsg, 'saved');
   }
@@ -576,13 +546,30 @@ async function saveSkills(enabled, idsRaw) {
   }
 
   function onAgentFilePicked(relPath) {
-if (!relPath) { setAgentFilePickerOpen(false); return; }
-const current = parseAgentFileNameText(agentFileNames);
-if (!current.includes(relPath)) current.push(relPath);
-setAgentFilePickerOpen(false);
-saveAgentFileList(current);
-}
-async function saveRaw() {
+    if (!relPath) { setAgentFilePickerOpen(false); return; }
+    const current = agentFileNames.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (!current.includes(relPath)) current.push(relPath);
+    const namesRaw = current.join('\n');
+    setAgentFileNames(namesRaw);
+    setAgentFilePickerOpen(false);
+    saveAgentFiles(agentFilesOn, namesRaw);
+  }
+
+  const [debouncer] = useState(() => {
+    let t = null;
+    return (fn) => {
+      if (t) clearTimeout(t);
+      t = setTimeout(fn, 350);
+    };
+  });
+  function onAgentFileNamesChange(e) {
+    const v = e.target.value;
+    setAgentFileNames(v);
+    setAgentFilesStatusMsg('…');
+    debouncer(() => saveAgentFiles(agentFilesOn, v));
+  }
+
+  async function saveRaw() {
     const d = dir();
     if (!d) { setEditorStatusMsg('no project'); return; }
     let parsed;
@@ -1153,75 +1140,36 @@ async function saveRaw() {
         )
       ),
 
-h('div', { class: 'group settings-project__section' },
+      h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('files'),
           h('span', null, 'Agent files'),
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agent files' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context when a chat uses them. Use this list for project conventions, architecture notes, or standing instructions.')
+              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
             )
           )
         ),
         h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__tool settings-project__tool--list' },
+          h('li', { class: 'settings-project__tool' },
             h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-name' }, 'File names to look for'),
+              h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
               h('div', { class: 'settings-project__item-note' },
-                'Add project-relative markdown paths. Leave the list empty to use the defaults. ',
+                'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
                 h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
               )
             ),
-            h('div', { class: 'settings-project__agent-files' },
-              parseAgentFileNameText(agentFileNames).length
-                ? h('ul', { class: 'settings-project__file-list', 'aria-label': 'Agent file names' },
-                  parseAgentFileNameText(agentFileNames).map((name) => h('li', { class: 'settings-project__file-item', key: name },
-                    h('code', { class: 'settings-project__file-name' }, name),
-                    h('button', {
-                      class: 'btn btn--ghost btn--sm settings-project__file-remove',
-                      type: 'button',
-                      onClick: () => removeAgentFileName(name),
-                      'aria-label': 'Remove agent file ' + name
-                    }, 'Remove')
-                  ))
-                )
-                : h('div', { class: 'settings-project__file-empty' },
-                  'Using defaults: ',
-                  AGENT_FILE_DEFAULT_NAMES.map((name, i) => h(Fragment, { key: name },
-                    i ? ', ' : '',
-                    h('code', null, name)
-                  ))
-                ),
-              h('div', { class: 'settings-project__afn-row' },
-                h('input', {
-                  class: 'input settings-project__mono settings-project__afn-text',
-                  id: 'sp-agent-file-name',
-                  type: 'text',
-                  spellcheck: false,
-                  placeholder: '.github/copilot-instructions.md',
-                  value: newAgentFileName,
-                  onInput: (e) => setNewAgentFileName(e.target.value),
-                  onKeyDown: onAgentFileNameKeyDown
-                }),
-                h('button', {
-                  class: 'btn btn--primary settings-project__afn-add',
-                  type: 'button',
-                  onClick: addAgentFileName,
-                  disabled: !newAgentFileName.trim()
-                }, 'Add'),
-                h('button', {
-                  class: 'btn btn--ghost settings-project__afn-pick',
-                  type: 'button',
-                  onClick: () => setAgentFilePickerOpen(true)
-                }, 'Pick')
-              ),
-              h('button', {
-                class: 'btn btn--ghost settings-project__defaults',
-                type: 'button',
-                onClick: resetAgentFileNames,
-                disabled: !parseAgentFileNameText(agentFileNames).length
-              }, 'Use defaults')
+            h('label', { class: 'switch' },
+              h('input', {
+                id: 'sp-agent-files',
+                type: 'checkbox',
+                role: 'switch',
+                checked: agentFilesOn,
+                'aria-checked': agentFilesOn ? 'true' : 'false',
+                onChange: onAgentFilesToggle
+              }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
             )
           ),
           h('li', { class: 'settings-project__tool' },
@@ -1254,6 +1202,30 @@ h('div', { class: 'group settings-project__section' },
               value: disabledSkills,
               onInput: onDisabledSkillsChange
             })
+          ),
+          h('li', { class: 'settings-project__tool' },
+            h('div', { class: 'settings-project__tool-head' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
+              h('div', { class: 'settings-project__item-note' },
+                'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'
+              )
+            ),
+            h('div', { class: 'settings-project__afn-row' },
+              h('textarea', {
+                class: 'input settings-project__mono settings-project__afn-text',
+                id: 'sp-agent-file-names',
+                rows: 3,
+                spellcheck: false,
+                placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
+                value: agentFileNames,
+                onInput: onAgentFileNamesChange
+              }),
+              h('button', {
+                class: 'btn btn--ghost settings-project__afn-pick',
+                type: 'button',
+                onClick: () => setAgentFilePickerOpen(true)
+              }, 'Pick file…')
+            )
           )
         )
       ),

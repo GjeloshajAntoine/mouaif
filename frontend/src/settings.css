@@ -730,68 +730,21 @@ textarea#projectEditor {
 }
 
 /* ---- Agent file picker -------------------------------------------- */
-.settings-project__tool--list { align-items: stretch; }
-.settings-project__agent-files {
-display: flex;
-flex-direction: column;
-gap: 8px;
-width: 100%;
-}
-.settings-project__file-list {
-list-style: none;
-margin: 0;
-padding: 0;
-display: flex;
-flex-direction: column;
-gap: 6px;
-}
-.settings-project__file-item {
-display: flex;
-align-items: center;
-gap: 8px;
-min-height: var(--tap);
-padding: 6px 8px;
-border: 1px solid var(--border);
-border-radius: var(--r-sm);
-background: var(--surface);
-}
-.settings-project__file-name {
-flex: 1 1 auto;
-min-width: 0;
-overflow-wrap: anywhere;
-font-size: 0.76rem;
-}
-.settings-project__file-remove { flex: 0 0 auto; }
-.settings-project__file-empty {
-padding: 8px 10px;
-border: 1px dashed var(--border);
-border-radius: var(--r-sm);
-color: var(--muted);
-font-size: 0.74rem;
-line-height: 1.4;
-background: var(--surface-2);
-}
-.settings-project__file-empty code {
-font-family: var(--font-mono);
-font-size: 0.9em;
-}
+
 .settings-project__afn-row {
-display: grid;
-grid-template-columns: minmax(0, 1fr) auto auto;
-align-items: stretch;
-gap: 6px;
-width: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
 }
-.settings-project__afn-text { min-width: 0; }
-.settings-project__afn-add,
+.settings-project__afn-text { flex: 1 1 auto; min-width: 0; }
 .settings-project__afn-pick {
-min-height: var(--tap);
-min-width: 58px;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  min-height: 34px;
+  min-width: 96px;
 }
-.settings-project__defaults {
-align-self: flex-start;
-min-height: var(--tap);
-}
+
 .afp__overlay {
   position: fixed;
   inset: 0;

@@ -57,9 +57,9 @@ async function main() {
 
   check('project-on chat can disable agent files', agentFiles.resolveEnabled({ chat: Object.assign({}, chat, { agentFiles: false }), projectDir }) === false);
   settings.setProject(projectDir, { agentFiles: false });
-  check('removed project-off setting no longer disables agent files', agentFiles.resolveEnabled({ chat, projectDir }) === true);
-  check('chat false still disables agent files', agentFiles.resolveEnabled({ chat: Object.assign({}, chat, { agentFiles: false }), projectDir }) === false);
-  check('discover still finds files when hidden project setting is false', agentFiles.discover(projectDir).some((f) => f.name === 'AGENTS.md'));
+  check('project-off locks out chat true', agentFiles.resolveEnabled({ chat: Object.assign({}, chat, { agentFiles: true }), projectDir }) === false);
+  check('discover still finds files while disabled', agentFiles.discover(projectDir).some((f) => f.name === 'AGENTS.md'));
+
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'mouaif.js'), 'serve'], {
     cwd: path.join(__dirname, '..'),
     env: Object.assign({}, process.env, { MOUAIF_HOME: TMP_HOME }),
@@ -71,10 +71,10 @@ async function main() {
   child.stderr.on('data', (c) => { stderr += c; });
   try {
     const r = await waitForServer(child, projectDir, chat.id);
-    check('system-prompt endpoint ignores hidden project-off setting', r.body.agentFilesEnabled === true, 'got ' + JSON.stringify(r.body.agentFilesEnabled));
-    check('system-prompt endpoint lists available agent files', Array.isArray(r.body.agentFilesAvailable) && r.body.agentFilesAvailable.some((f) => f.name === 'AGENTS.md'), JSON.stringify(r.body.agentFilesAvailable));
-    check('system-prompt endpoint injects agent files', Array.isArray(r.body.agentFiles) && r.body.agentFiles.some((f) => f.name === 'AGENTS.md'), JSON.stringify(r.body.agentFiles));
-    check('system-prompt endpoint omits removed project gate', !Object.prototype.hasOwnProperty.call(r.body, 'projectAgentFiles'), JSON.stringify(r.body.projectAgentFiles));
+    check('system-prompt endpoint returns disabled state', r.body.agentFilesEnabled === false, 'got ' + JSON.stringify(r.body.agentFilesEnabled));
+    check('system-prompt endpoint lists available agent files while disabled', Array.isArray(r.body.agentFilesAvailable) && r.body.agentFilesAvailable.some((f) => f.name === 'AGENTS.md'), JSON.stringify(r.body.agentFilesAvailable));
+    check('system-prompt endpoint does not inject disabled agent files', r.body.agentFiles === null, JSON.stringify(r.body.agentFiles));
+    check('system-prompt endpoint reports project lock', r.body.projectAgentFiles === false, JSON.stringify(r.body.projectAgentFiles));
   } finally {
     child.kill('SIGTERM');
     await new Promise((resolve) => child.on('exit', resolve));
