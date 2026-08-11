@@ -1111,6 +1111,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
               h('option', { value: 'average' }, 'Average — full tools, recommended'),
               h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance')
             )
+          ),
+          h('li', null,
+            h('a', {
+              class: 'group__row settings-project__link-row',
+              'aria-label': 'Custom prompts',
+              href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir || '')
+            },
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Custom prompts'),
+                h('span', { class: 'settings-project__link-sub' }, 'Reusable system and role prompts')
+              ),
+              h('span', { class: 'group__row-detail' }, promptsSummaryMsg),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+            )
           )
         )
       ),
@@ -1312,20 +1326,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 h('span', { class: 'settings-project__link-sub' }, 'Connect external tool servers')
               ),
               h('span', { class: 'group__row-detail' }, mcpSummaryMsg),
-              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-            )
-          ),
-          h('li', null,
-            h('a', {
-              class: 'group__row settings-project__link-row',
-              'aria-label': 'Custom prompts',
-              href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
-              h('span', { class: 'group__row-body' },
-                h('span', { class: 'group__row-label' }, 'Custom prompts'),
-                h('span', { class: 'settings-project__link-sub' }, 'Reusable system and role prompts')
-              ),
-              h('span', { class: 'group__row-detail' }, promptsSummaryMsg),
               h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
             )
           ),
