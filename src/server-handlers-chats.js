@@ -912,6 +912,10 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     quickActions: true
   }, appSettings.notifications || {});
   const chatUrl = `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
+  // One replaceable status slot per chat. Progress, completion, and errors
+  // share this tag so a completed/error status replaces the last progress
+  // alert instead of leaving two background notifications visible.
+  const statusPushTag = 'chat-' + chatId + '-status';
 
   function sendChatPush(kind, options = {}) {
     if (!_pushSessionId) return;
@@ -1144,7 +1148,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           sendChatPush('progress', {
             title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
             body: bar + '\n' + taskLine,
-            tag: 'chat-' + chatId + '-progress'
+            tag: statusPushTag
           });
         } else {
           // Plain `report_progress` (non-task) update. Body shows the
@@ -1156,11 +1160,11 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           sendChatPush('progress', {
             title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
             body: (pctNum != null ? pctNum + '% — ' : '') + (data.message || ''),
-            tag: 'chat-' + chatId + '-progress'
+            tag: statusPushTag
           });
         }
       } else if (name === 'done') {
-        sendChatPush('completion', { body: 'Response complete', tag: 'chat-' + chatId + '-status' });
+        sendChatPush('completion', { body: 'Response complete', tag: statusPushTag });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1266,7 +1270,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: 'chat-' + chatId + '-status' });
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: statusPushTag });
     res.end();
     return;
   }
@@ -1293,7 +1297,7 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: 'chat-' + chatId + '-status' });
+    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: statusPushTag });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);

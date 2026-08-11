@@ -38,7 +38,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 
-Attention alerts use `chat-{chatId}-attention`; completion and error alerts use `chat-{chatId}-status`. A completion alert therefore cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen; a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification.
+Attention alerts use `chat-{chatId}-attention`; progress, completion, and error alerts share `chat-{chatId}-status`. A completion or error alert therefore replaces the last progress alert, but cannot replace a question before the user has answered it. The service worker suppresses an alert only when the exact chat is visible on screen; a page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification.
 
 Because `WindowClient.focused` / `visibilityState` are unreliable on some engines (Safari, iOS PWA), the page is the authority on its own visibility: each open app window keeps a persistent `MessageChannel` to the worker and reports `{ hash, visible, focused }` on load, on `visibilitychange`/`focus`/`blur`, and on every hash change (`startVisibilityReporting` in `frontend/src/sw-registration.js`). The worker keeps the latest report per client (5-minute TTL) and consults it first in the push handler. For a client that never checked in — an old bundle, or a browser where the controller is briefly absent — the worker falls back to the client-reported `visibilityState`/`focused` properties, and engines that don't report those always show the alert rather than risk silently dropping it.
 
@@ -75,7 +75,7 @@ Browser permission and subscription are installation-specific. Event preferences
 
 ### Progress notifications
 
-The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-progress`, so the OS replaces the previous notification for that chat instead of stacking a new one — the notification shows the live percentage / task title / token count as the run progresses. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
+The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-status`, so the OS replaces the previous status notification for that chat instead of stacking a separate progress and completion notification — the notification shows the live percentage / task title / token count as the run progresses, then the final completion or error replaces it in place. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
 
 Progress from a nested `subagent` run flows to the same `progress_update` channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.
 

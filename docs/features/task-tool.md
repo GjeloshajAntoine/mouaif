@@ -101,7 +101,7 @@ The `task` tool uses the same authorization module as every other built-in tool.
 
 ### Push notifications
 
-`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable push notification as the `report_progress` tool (tag `chat-<id>-progress`), so each update replaces the previous one instead of stacking. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
+`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable status push notification as the `report_progress` tool (tag `chat-<id>-status`), so each update replaces the previous one and the final completion/error notification replaces the last task progress alert in place. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
 
 Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so each "row" is a line):
 

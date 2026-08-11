@@ -43,7 +43,7 @@ Completed/failed statuses auto-expand the card; running cards stay collapsed. Th
 
 ## Notifications
 
-Each `progress_update` also drives a per-chat updatable browser push notification (tag `chat-<id>-progress`), so a background chat keeps the user in the loop. The notification title carries the chat title plus the cumulative token/cost label for this turn (e.g. "my-project · 12.4K tok · $0.03") — progress and usage together; the body shows the live percentage and message. When a `status: "completed"` update arrives, the card turns green and the completion notification fires so the end of a long task is visible even if the chat is not open.
+Each `progress_update` also drives a per-chat updatable browser push notification (tag `chat-<id>-status`), so a background chat keeps the user in the loop without leaving a second progress notification beside the final completion/error notification. The notification title carries the chat title plus the cumulative token/cost label for this turn (e.g. "my-project · 12.4K tok · $0.03") — progress and usage together; the body shows the live percentage and message. When a `status: "completed"` update arrives, the card turns green and the final completion notification replaces that status slot so the end of a long task is visible if the chat is not open.
 
 ## Model guidance
 

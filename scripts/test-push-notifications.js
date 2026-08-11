@@ -84,5 +84,8 @@ assert.equal(deliveries[0].payload.requireInteraction, true, 'attention notifica
 assert.equal(deliveries[0].options.vapidDetails.subject, 'mailto:push@mouaif.local', 'local subscription uses the fallback VAPID contact');
 assert.equal(deliveries[0].options.vapidDetails.publicKey, localConfig.publicKey, 'delivery uses the persisted VAPID public key');
 assert.ok(deliveries[0].options.vapidDetails.privateKey, 'delivery configures the private VAPID key without exposing it');
+const chatPushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server-handlers-chats.js'), 'utf8');
+assert.ok(chatPushSource.includes("const statusPushTag = 'chat-' + chatId + '-status'"), 'chat streams define one shared status push tag');
+assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send progress pushes under a second tag');
 
-console.log('push notifications: 20 assertions passed');
+console.log('push notifications: 22 assertions passed');

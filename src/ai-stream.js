@@ -1177,10 +1177,10 @@ async function streamChat(opts) {
         const validated = taskMod.validateArgs(args);
         const out = taskMod.dispatchTask(callOpts && callOpts.chatId, validated);
         // Surface task progress changes as a progress_update event so the
-        // frontend progress card and the per-chat updatable push
-        // notification (tag chat-<id>-progress) show the current task
-        // title and count — the same notification slot the
-        // report_progress tool uses. Creation is skipped: a fresh task
+        // frontend progress card and the per-chat updatable status push
+        // notification show the current task title and count — the same
+        // notification slot the report_progress tool uses. Creation is
+        // skipped: a fresh task
         // always starts at 0%, which would be a noise notification.
         if (out && out.ok && out.result && out.result.task
           && (out.result.action === 'progress_updated' || out.result.action === 'completed')
