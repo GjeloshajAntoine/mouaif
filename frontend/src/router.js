@@ -20,7 +20,7 @@ function parseHash() {
   if (h === 'settings/project/technical' || h.startsWith('settings/project/technical?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
   }
   // settings/project/output — "File tool options" (size / structure / JSON),
   // a sibling of Technical details under Settings → Project.

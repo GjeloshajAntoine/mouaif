@@ -126,7 +126,7 @@ export function App() {
   else if (view.name === 'settingsProviderNew') body = h(SettingsProviderEditView, { id: '' });
   else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
   else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
-  else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical' });
+  else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical', chatId: view.chatId });
   else if (view.name === 'settingsProjectOutput') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'output' });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);

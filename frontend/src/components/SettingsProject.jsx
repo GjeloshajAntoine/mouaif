@@ -57,6 +57,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [chatTraceStatusMsg, setChatTraceStatusMsg] = useState('');
   const [canExportTrace, setCanExportTrace] = useState(false);
   const [exportTraceStatusMsg, setExportTraceStatusMsg] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatusMsg, setImportStatusMsg] = useState('');
 
   // Tool permissions live in state so the segmented
   // Off/Ask/Allow control re-renders when the user taps a segment.
@@ -351,6 +353,30 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       body: JSON.stringify({ projectDir: dir() })
     });
     setExportTraceStatusMsg(r.status === 200 ? ('exported: ' + r.body.path) : ('export failed: HTTP ' + r.status));
+  }
+
+  async function onTechnicalImport() {
+    if (!dir()) { setImportStatusMsg('no project selected'); return; }
+    setIsImporting(true);
+    setImportStatusMsg('importing…');
+    try {
+      const r = await fetchJson('/api/chats/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir: dir(), skipExisting: true })
+      });
+      if (r.status === 200) {
+        const data = r.body.imported || {};
+        let msg = '✅ ' + data.chats + ' chats, ' + data.messages + ' messages imported.';
+        if (data.errors && data.errors.length) msg += ' ⚠️ ' + data.errors.join('; ');
+        setImportStatusMsg(msg);
+      } else {
+        setImportStatusMsg('Import failed: HTTP ' + r.status + ' ' + (r.body && r.body.error || ''));
+      }
+    } catch (e) {
+      setImportStatusMsg('Import error: ' + e.message);
+    }
+    setIsImporting(false);
   }
 
   async function deleteChat() {
@@ -976,7 +1002,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
   if (page === 'technical') return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+      h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Technical details')
     ),
     h('section', { class: 'settings-project' },
@@ -1001,8 +1027,51 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         h('div', { class: 'group__title' }, 'Resolved settings'),
         h('p', { class: 'hint hint--compact' }, 'Defaults → app → project. Provider keys are redacted.'),
         h('pre', { class: 'settings__out' }, resolvedOutText)
+      ),
+  h('div', { class: 'group settings-project__section', hidden: !traceCardVisible },
+    h('div', { class: 'group__title settings-project__section-title' },
+      sectionIcon('chat'),
+      h('span', null, 'Current chat'),
+      h('details', { class: 'settings-project__info' },
+        h('summary', { 'aria-label': 'About tracing' }, '?'),
+        h('div', { class: 'settings-project__info-body' },
+          h('p', null, 'Tracing appends this chat’s events to ', h('code', null, '.mouaif/traces/<chatId>.ndjson'), ' in the project so you can commit it alongside your code. “Export trace” writes the file once, on demand.')
+        )
+      )
+    ),
+    h('ul', { class: 'group__list' },
+      h('li', { class: 'settings-project__item settings-project__item--col' },
+        h('div', { class: 'settings-project__item-row' },
+          h('div', { class: 'settings-project__item-main' },
+            h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
+            h('div', { class: 'settings-project__item-note' }, 'Append this chat’s events to a trace file in the project.'),
+            h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, chatTraceStatusMsg)
+          ),
+          h('label', { class: 'switch' },
+            h('input', { id: 'sp-chat-trace', type: 'checkbox', role: 'switch', checked: chatTraceOn, 'aria-checked': chatTraceOn ? 'true' : 'false', onChange: onChatTraceChange }),
+            h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+          )
+        ),
+        h('div', { class: 'settings-project__item-actions' },
+          h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, exportTraceStatusMsg),
+          h('button', { class: 'btn', type: 'button', onClick: exportTrace, disabled: !canExportTrace }, 'Export trace'),
+          h('button', { class: 'btn btn--danger btn--sm', type: 'button', onClick: deleteChat }, 'Delete chat')
+        )
       )
     )
+  ),
+  h('div', { class: 'group settings-project__section' },
+    h('div', { class: 'group__title settings-project__section-title' },
+      sectionIcon('more'),
+      h('span', null, 'Import chats')
+    ),
+    h('p', { class: 'hint hint--compact' }, 'Import chat transcripts from the legacy JSON files (.mouaif.messages.*.json) into the SQLite storage. Existing chats in the DB are skipped; only new or missing messages are imported.'),
+    h('div', { class: 'row row--actions' },
+      h('button', { class: 'btn btn--primary', type: 'button', onClick: onTechnicalImport, disabled: isImporting }, 'Import from JSON files'),
+      h('span', { class: 'status', 'aria-live': 'polite' }, importStatusMsg)
+    )
+  )
+  )
   );
 
   return h(Fragment, null,
@@ -1046,42 +1115,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         )
       ),
 
-      h('div', { class: 'group settings-project__section', hidden: !traceCardVisible },
-        h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('chat'),
-          h('span', null, 'Current chat'),
-          h('details', { class: 'settings-project__info' },
-            h('summary', { 'aria-label': 'About tracing' }, '?'),
-            h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Tracing appends this chat’s events to ', h('code', null, '.mouaif/traces/<chatId>.ndjson'), ' in the project so you can commit it alongside your code. “Export trace” writes the file once, on demand.')
-            )
-          )
-        ),
-        h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-            h('div', { class: 'settings-project__item-row' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-chat-trace' }, 'Trace this chat'),
-                h('div', { class: 'settings-project__item-note' }, 'Append this chat’s events to a trace file in the project.'),
-                h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, chatTraceStatusMsg)
-              ),
-              h('label', { class: 'switch' },
-                h('input', { id: 'sp-chat-trace', type: 'checkbox', role: 'switch', checked: chatTraceOn, 'aria-checked': chatTraceOn ? 'true' : 'false', onChange: onChatTraceChange }),
-                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-              )
-            ),
-            h('div', { class: 'settings-project__item-actions' },
-              h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, exportTraceStatusMsg),
-              h('button', { class: 'btn', type: 'button', onClick: exportTrace, disabled: !canExportTrace }, 'Export trace'),
-              h('button', { class: 'btn btn--danger btn--sm', type: 'button', onClick: deleteChat }, 'Delete chat')
-            )
-          )
-        )
-      ),
-
       h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('tools'),
+  h('div', { class: 'group__title settings-project__section-title' },
+    sectionIcon('tools'),
           h('span', null, 'Tools'),
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About tool permissions' }, '?'),
@@ -1297,7 +1333,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             h('a', {
               class: 'group__row settings-project__link-row',
               'aria-label': 'Import chats from JSON files',
-              href: '#/settings/project/import?projectDir=' + encodeURIComponent(loadedDir || '')
+              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(loadedDir || '')
             },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Import chats'),
