@@ -445,16 +445,20 @@ export function SettingsPromptsView(props) {
   function buildPresetGroups() {
     const selected = preset ? Array.from(preset.tools) : [];
     const groups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
-    // Re-mark each row's `checked` from the preset's local Set so a
+    // Re-mark each LEAF row's `checked` from the preset's local Set so a
     // tool the user just picked shows checked even when the catalog
-    // is empty / the group is `alwaysExpanded`.
+    // is empty / the group is `alwaysExpanded`. Do NOT re-mark the
+    // group row's `checked` for native / MCP groups: their group id
+    // (e.g. "files", "mcp-chrome-debug") is not a tool name and never
+    // appears in `preset.tools`, so a naive override would clobber
+    // `buildToolGroups`'s `allToolsOn` calculation and leave the
+    // group checkbox visually off even when every child is on —
+    // which is what made clicking the group header flip everything
+    // off instead of on. `buildToolGroups` already derives the right
+    // `checked` (and ToolTree derives `indeterminate` from the leaf
+    // counts) for every native / MCP group; only the synthetic
+    // `agent-files` / `skills` groups we add below need an override.
     for (const g of groups) {
-      const want = (g.id === 'agent-files')
-        ? !!(preset && preset.agentFiles)
-        : (g.id === 'skills')
-          ? !!(preset && preset.skills)
-          : (preset && preset.tools && preset.tools.has(g.id));
-      g.checked = !!want;
       for (const t of (g.tools || [])) {
         t.checked = !!(preset && preset.tools && preset.tools.has(t.id));
       }
