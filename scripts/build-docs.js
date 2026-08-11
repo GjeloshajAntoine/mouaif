@@ -14,6 +14,7 @@
 //     decisions.html
 //     assets/site.css
 //     features/<slug>.html
+//     features/images/...          (recursively copied from docs/features/images/)
 //
 // Usage:
 //   node scripts/build-docs.js
@@ -430,6 +431,20 @@ function listFeatureFiles() {
     .sort();
 }
 
+// Recursively copy docs/features/images/ into docs-dist/features/images/.
+// Features embed their screenshots as `./images/<feature>/<shot>.png` in
+// markdown; without this step the static site has no PNGs to serve even
+// though the HTML references them. We use fs.cpSync (Node ≥ 16.7) so the
+// recursion, mtime preservation, and directory creation are handled by
+// the runtime. The function is a no-op when the source dir is missing,
+// so an empty `docs/features/images/` tree doesn't fail the build.
+function copyFeatureImages(outDir) {
+  const srcDir = path.join(DOCS_DIR, 'features', 'images');
+  const dstDir = path.join(outDir, 'features', 'images');
+  if (!fs.existsSync(srcDir)) return;
+  fs.cpSync(srcDir, dstDir, { recursive: true, dereference: false });
+}
+
 function parseFeatureListItem(line) {
   // Matches the bullet shape used in docs/README.md:
   //   - [Title](features/foo.md) — short blurb.
@@ -776,6 +791,7 @@ function main() {
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(path.join(outDir, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(outDir, 'assets', 'site.css'), SITE_CSS);
+  copyFeatureImages(outDir);
 
   // Sidebar HTML is shared across every page. The active link class is
   // applied inline so each page can highlight its own entry. Feature
