@@ -87,7 +87,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Agent file picker overlay
   const [agentFilePickerOpen, setAgentFilePickerOpen] = useState(false);
   const [skillsOn, setSkillsOn] = useState(true);
-  const [disabledSkills, setDisabledSkills] = useState('');
   const [skillsStatusMsg, setSkillsStatusMsg] = useState('');
 
   const [promptsSummaryMsg, setPromptsSummaryMsg] = useState('—');
@@ -246,7 +245,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setAgentFilesOn(cp.agentFiles !== false);
     setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
     setSkillsOn(cp.skills !== false);
-    setDisabledSkills(Array.isArray(cp.disabledSkills) ? cp.disabledSkills.join('\n') : '');
 
     setEditorText(JSON.stringify(cp, null, 2));
     setSaveDisabled(false);
@@ -530,19 +528,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveAgentFiles(checked, agentFileNames);
   }
 
-  async function saveSkills(enabled, idsRaw) {
-    const ids = idsRaw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    await patchProject({ skills: enabled, disabledSkills: ids }, setSkillsStatusMsg, 'saved');
-  }
   function onSkillsToggle(e) {
     const checked = e.target.checked;
     setSkillsOn(checked);
-    saveSkills(checked, disabledSkills);
-  }
-  function onDisabledSkillsChange(e) {
-    const v = e.target.value;
-    setDisabledSkills(v);
-    saveSkills(skillsOn, v);
+    patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
   }
 
   function onAgentFilePicked(relPath) {
@@ -1152,59 +1141,48 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           )
         ),
         h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
-              h('div', { class: 'settings-project__item-note' },
-                'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
-                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
+                h('div', { class: 'settings-project__item-note' },
+                  'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
+                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
+                )
+              ),
+              h('label', { class: 'switch' },
+                h('input', {
+                  id: 'sp-agent-files',
+                  type: 'checkbox',
+                  role: 'switch',
+                  checked: agentFilesOn,
+                  'aria-checked': agentFilesOn ? 'true' : 'false',
+                  onChange: onAgentFilesToggle
+                }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
               )
-            ),
-            h('label', { class: 'switch' },
-              h('input', {
-                id: 'sp-agent-files',
-                type: 'checkbox',
-                role: 'switch',
-                checked: agentFilesOn,
-                'aria-checked': agentFilesOn ? 'true' : 'false',
-                onChange: onAgentFilesToggle
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
             )
           ),
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Skills'),
-              h('div', { class: 'settings-project__item-note' }, 'Inject .agents/skills/*/SKILL.md files. Disable the family here or in the chat Tools popup. ', h('span', { class: 'settings-project__item-status' }, skillsStatusMsg))
-            ),
-            h('label', { class: 'switch' },
-              h('input', {
-                id: 'sp-skills',
-                type: 'checkbox',
-                role: 'switch',
-                checked: skillsOn,
-                onChange: onSkillsToggle
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Skills'),
+                h('div', { class: 'settings-project__item-note' }, 'Inject .agents/skills/*/SKILL.md files. Disable the family here or in the chat Tools popup. ', h('span', { class: 'settings-project__item-status' }, skillsStatusMsg))
+              ),
+              h('label', { class: 'switch' },
+                h('input', {
+                  id: 'sp-skills',
+                  type: 'checkbox',
+                  role: 'switch',
+                  checked: skillsOn,
+                  onChange: onSkillsToggle
+                }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+              )
             )
           ),
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-disabled-skills' }, 'Disabled skills'),
-              h('div', { class: 'settings-project__item-note' }, 'One skill folder name per line. These skills stay disabled while other Agent files remain active.')
-            ),
-            h('textarea', {
-              class: 'input settings-project__mono',
-              id: 'sp-disabled-skills',
-              rows: 3,
-              spellcheck: false,
-              placeholder: 'legacy-skill',
-              value: disabledSkills,
-              onInput: onDisabledSkillsChange
-            })
-          ),
-          h('li', { class: 'settings-project__tool' },
-            h('div', { class: 'settings-project__tool-head' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
               h('div', { class: 'settings-project__item-note' },
                 'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'

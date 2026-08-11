@@ -21,14 +21,13 @@ Run the narrowest relevant tests first, then the full suite.
 
 Save it as `.agents/skills/testing/SKILL.md`. Optional `scripts/`, `references/`, and `assets/` directories may sit beside it.
 
-Open **Settings → Project → Agent files** to toggle all skills or enter disabled skill folder names, one per line. In a chat, the transcript shows a **Skills** card below tools and agent files; every discovered skill appears with a checkbox. Open **Tools** to see the same always-expanded Skills group. Toggling any available skill checkbox changes the chat-level skills on/off state without changing the project default.
+Open **Settings → Project → Agent files** to toggle skills on or off. In a chat, the transcript shows a **Skills** card below tools and agent files; every discovered skill appears with a checkbox. Open **Tools** to see the same always-expanded Skills group. Toggling any available skill checkbox changes the chat-level skills on/off state without changing the project default.
 
 Project settings use this shape:
 
 ```json
 {
-  "skills": true,
-  "disabledSkills": ["legacy-skill"]
+  "skills": true
 }
 ```
 
