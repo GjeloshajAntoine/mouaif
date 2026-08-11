@@ -107,6 +107,20 @@ async function apiWrite(projectDir, filePath, content) {
   }
   return { body: r.body };
 }
+// Read a previewable image (PNG/JPG/GIF/WebP/SVG/BMP/ICO) as a
+// data URL. The server returns the bytes inline so the modal does
+// not need a separate auth-bearing URL; the same `projectDir` +
+// `path` shape as the text read keeps the UI consistent.
+async function apiReadMedia(projectDir, filePath) {
+  const params = new URLSearchParams();
+  if (projectDir) params.set('projectDir', projectDir);
+  params.set('path', filePath);
+  const r = await fetchJson('/api/file-media?' + params.toString());
+  if (r.status !== 200) {
+    return { error: (r.body && r.body.error) || ('HTTP ' + r.status), code: r.body && r.body.code };
+  }
+  return { body: r.body };
+}
 
 // ---- Component ---------------------------------------------------------
 
@@ -126,6 +140,9 @@ export function FileEditorView(props) {
   const [loading, setLoading] = useState(false);
 
   const [openFile, setOpenFile] = useState(null); // { relPath, absPath, content, size, ext }
+  const [openMedia, setOpenMedia] = useState(null); // { relPath, absPath, dataUrl, mime, size, ext }
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaStatus, setMediaStatus] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorStatus, setEditorStatus] = useState('');
@@ -175,6 +192,10 @@ export function FileEditorView(props) {
 
   const openPath = useCallback(async (relOrAbs) => {
     if (!confirmDiscardIfDirty()) return;
+    // Opening a text file means the preview pane is no longer
+    // current. Clear it so the editor owns the right-hand pane.
+    setOpenMedia(null);
+    setMediaStatus('');
     setEditorStatus('loading…');
     const r = await apiRead(projectDir, relOrAbs);
     if (r.error) {
@@ -196,6 +217,41 @@ export function FileEditorView(props) {
     setDirty(false);
     setEditorStatus(file.size + ' bytes');
   }, [projectDir, confirmDiscardIfDirty]);
+  // Open an image for preview. SVG can be edited as text, so callers
+  // pass `forceText: true` when the user picks "Edit" from the
+  // preview header; everything else is read-only here.
+  const openMediaPath = useCallback(async (relOrAbs, opts) => {
+    if (opts && opts.forceText) {
+      // Hand off to the text path; it owns the editor lifecycle.
+      return openPath(relOrAbs);
+    }
+    setMediaLoading(true);
+    setMediaStatus('loading…');
+    const r = await apiReadMedia(projectDir, relOrAbs);
+    setMediaLoading(false);
+    if (r.error) {
+      setMediaStatus(r.error);
+      setOpenMedia(null);
+      return;
+    }
+    // Close the editor when switching to preview so the right-hand
+    // pane swaps cleanly. The user's dirty text buffer is dropped
+    // here without a confirm() — preview is a different mode and
+    // discarding a half-typed file just to look at an image is the
+    // expected trade-off.
+    setOpenFile(null);
+    setDirty(false);
+    setEditorStatus('');
+    setOpenMedia({
+      relPath: r.body.relPath,
+      absPath: r.body.path,
+      dataUrl: r.body.dataUrl,
+      mime: r.body.mime,
+      size: r.body.size,
+      ext: r.body.ext
+    });
+    setMediaStatus(r.body.size + ' bytes · ' + r.body.mime);
+  }, [projectDir, openPath]);
 
   useLayoutEffect(() => {
     if (!openFile) return;
@@ -272,6 +328,15 @@ export function FileEditorView(props) {
       }
     };
   }, []);
+  // When the user switches to a preview, drop the editor view so it
+  // does not linger in the background and waste memory. mountEditor
+  // will rebuild it from scratch the next time openFile is set.
+  useEffect(() => {
+    if (openMedia && viewRef.current) {
+      viewRef.current.destroy();
+      viewRef.current = null;
+    }
+  }, [openMedia]);
 
   // ---- save / revert --------------------------------------------------
 
@@ -349,9 +414,16 @@ export function FileEditorView(props) {
       loadDir(entry.path);
       return;
     }
-    // File. Reject binaries client-side as a UX shortcut (the server
-    // would reject them anyway, but greying them out communicates the
-    // rule without a round-trip).
+    // Image files open in the preview pane. The list marks them
+    // with `binary: true` so the icon is consistent, but the
+    // preview is a first-class action and not a "rejection".
+    if (entry.image) {
+      openMediaPath(entry.relPath);
+      return;
+    }
+    // Reject other binaries client-side as a UX shortcut (the server
+    // would reject them anyway, but greying them out communicates
+    // the rule without a round-trip).
     if (entry.binary) return;
     openPath(entry.relPath);
   }
@@ -451,14 +523,14 @@ export function FileEditorView(props) {
               : entries.map((e) =>
                   h('li', {
                     key: e.path,
-                    class: 'fe__row' + (e.binary ? ' fe__row--binary' : '') + (openFile && openFile.relPath === e.relPath ? ' is-open' : ''),
+                    class: 'fe__row' + (e.binary ? ' fe__row--binary' : '') + (e.image ? ' fe__row--image' : '') + ((openFile && openFile.relPath === e.relPath) || (openMedia && openMedia.relPath === e.relPath) ? ' is-open' : ''),
                     role: 'button',
                     tabindex: e.binary ? -1 : 0,
                     'aria-disabled': e.binary ? 'true' : 'false',
-                    title: e.binary ? 'binary file — cannot be edited here' : (e.path),
+                    title: (e.binary && !e.image) ? 'binary file — cannot be opened here' : (e.path),
                     onClick: () => onEntryClick(e),
                     onKeydown: (ev) => {
-                      if (e.binary) return;
+                      if (e.binary && !e.image) return;
                       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onEntryClick(e); }
                     }
                   },
@@ -466,21 +538,70 @@ export function FileEditorView(props) {
                       e.type === 'dir'
                         ? h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
                             h('path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z', fill: 'currentColor' }))
-                        : h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
-                            h('path', { d: 'M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5Z', fill: 'currentColor' })
-                          )
+                        : e.image
+                          ? h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
+                              h('path', { d: 'M21 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm-9 11-3-4-2.5 3L4 13.5V7h16v9l-4-3-4 3Zm-4-7a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z', fill: 'currentColor' }))
+                          : h('svg', { viewBox: '0 0 24 24', width: 16, height: 16 },
+                              h('path', { d: 'M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7h3.5L13 3.5Z', fill: 'currentColor' })
+                            )
                     ),
                     h('span', { class: 'fe__row-name' }, e.name),
                     e.type === 'dir'
                       ? h('span', { class: 'fe__row-meta' }, e.hasChildren ? '…' : '·')
-                      : h('span', { class: 'fe__row-meta' }, e.binary ? 'binary' : (e.size < 1024 ? (e.size + ' B') : Math.round(e.size / 1024) + ' KB'))
+                      : h('span', { class: 'fe__row-meta' },
+                          e.image ? 'image'
+                            : (e.binary ? 'binary' : (e.size < 1024 ? (e.size + ' B') : Math.round(e.size / 1024) + ' KB'))
+                        )
                   )
                 )
           )
         ),
         h('div', { class: 'fe__editor-wrap' },
-          openFile
+          openMedia
             ? h(Fragment, null,
+                h('div', { class: 'fe__editor-head' },
+                  h('div', { class: 'fe__editor-path', title: openMedia.absPath }, openMedia.relPath),
+                  h('div', { class: 'fe__editor-actions' },
+                    // SVG is also a text file; offer to
+                    // switch to the editor for it. Other
+                    // image types stay read-only.
+                    (openMedia.ext === '.svg' || (openMedia.mime === 'image/svg+xml'))
+                      ? h('button', {
+                          class: 'btn',
+                          type: 'button',
+                          onClick: () => openMediaPath(openMedia.relPath, { forceText: true }),
+                          title: 'Open this file in the code editor'
+                        }, 'Edit')
+                      : null,
+                    h('button', {
+                      class: 'btn',
+                      type: 'button',
+                      onClick: () => { setOpenMedia(null); setMediaStatus(''); },
+                      title: 'Close preview'
+                    }, 'Close')
+                  )
+                ),
+                h('div', { class: 'fe__media-host' },
+                  openMedia.mime === 'image/svg+xml'
+                    ? h('div', {
+                        class: 'fe__media-svg',
+                        role: 'img',
+                        'aria-label': openMedia.relPath,
+                        dangerouslySetInnerHTML: { __html: atob(openMedia.dataUrl.split(',')[1] || '') }
+                      })
+                    : h('img', {
+                        class: 'fe__media-img',
+                        src: openMedia.dataUrl,
+                        alt: openMedia.relPath,
+                        draggable: 'false'
+                      })
+                ),
+                h('div', { class: 'fe__editor-status' },
+                  h('span', { class: 'status' }, mediaStatus || ' ')
+                )
+              )
+            : openFile
+              ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
                   h('div', { class: 'fe__editor-actions' },
@@ -507,7 +628,7 @@ export function FileEditorView(props) {
                 )
               )
             : h('div', { class: 'fe__editor-empty' },
-                h('p', null, 'Pick a file from the list to start editing.'),
+                h('p', null, 'Pick a file from the list to start editing, or tap an image to preview it.'),
                 h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcrumb to jump to a folder.')
               )
         )

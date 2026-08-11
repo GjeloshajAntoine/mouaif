@@ -28,9 +28,10 @@ async function handleProjects(req, res, parsed) {
   const q = parsed.query || {};
 
   // File editor (in-app CodeMirror popup). See handleFileEditor for the
-  // contract; dispatched here so /api/file and /api/files win over the
-  // generic /api/projects routes below.
-  if (urlPath === '/api/file' || urlPath === '/api/files') {
+  // contract; dispatched here so /api/file, /api/files, and the
+  // image-preview /api/file-media route all win over the generic
+  // /api/projects routes below.
+  if (urlPath === '/api/file' || urlPath === '/api/files' || urlPath === '/api/file-media') {
     return handleFileEditor(req, res, parsed);
   }
 
@@ -125,10 +126,11 @@ async function handleProjects(req, res, parsed) {
 //   GET  /api/files?projectDir=<abs>&dir=<abs>          -> list a folder
 //   GET  /api/file?projectDir=<abs>&path=<abs|rel>      -> read a text file
 //   PUT  /api/file   body { projectDir, path, content } -> write a text file
+//   GET  /api/file-media?projectDir=<abs>&path=<abs|rel> -> read an image as data URL
 //
 // Errors map to typed codes so the UI can render the right message
 // (EBINARY -> "binary file, cannot edit", ETOOLARGE -> "file too big",
-// EOUTSIDE_PROJECT -> 403, etc.).
+// EOUTSIDE_PROJECT -> 403, ENOTIMAGE -> "file is not an image", etc.).
 
 function filesErrorStatus(err) {
   return errCodeToHttpStatus(err && err.code, 400);
@@ -177,6 +179,22 @@ async function handleFileEditor(req, res, parsed) {
     }
   }
 
+  // GET /api/file-media?projectDir=<abs>&path=<abs|rel>
+  // Read an image file (or other previewable binary) as a base64
+  // data URL. Used by the file editor popup to render an <img>
+  // preview for .png/.jpg/.gif/.webp/.svg/.bmp/.ico without needing
+  // a separate auth-bearing URL. The data URL is small (<= 1 MiB
+  // cap, same as the text read).
+  if (urlPath === '/api/file-media' && method === 'GET') {
+    const projectDir = qs(q, 'projectDir');
+    const path = qs(q, 'path');
+    try {
+      const out = await files.readMedia(projectDir, path);
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, filesErrorStatus(e), { error: e.message, code: e.code, path: e.path, size: e.size, maxBytes: e.maxBytes });
+    }
+  }
   return sendJSON(res, 404, { error: 'Not found', scope: 'fileEditor' });
 }
 

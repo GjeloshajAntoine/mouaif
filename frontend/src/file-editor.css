@@ -303,3 +303,49 @@
 }
 .fe__editor-empty p { margin: 0; }
 .fe__editor-hint { font-size: 0.8rem; color: var(--muted); }
+/* Image preview pane (right-hand side of the file modal).
+The host is a centered scroller so oversized images stay
+within reach on small screens; bitmaps use object-fit: contain
+so they never overflow the modal. SVG is rendered inline and
+is allowed to flow naturally to its native size. */
+.fe__media-host {
+flex: 1 1 auto;
+min-height: 0;
+overflow: auto;
+display: flex;
+align-items: center;
+justify-content: center;
+background: #1f2227;
+color: var(--fg-soft);
+padding: 12px;
+-webkit-overflow-scrolling: touch;
+}
+.fe__media-img {
+max-width: 100%;
+max-height: 100%;
+width: auto;
+height: auto;
+object-fit: contain;
+user-select: none;
+-webkit-user-drag: none;
+}
+.fe__media-svg {
+max-width: 100%;
+max-height: 100%;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.fe__media-svg svg {
+max-width: 100%;
+max-height: 100%;
+height: auto;
+width: auto;
+}
+/* Image file row: tappable but visually distinct from text rows.
+The "image" meta pill uses a subtle accent so the user can
+spot previewable files at a glance. */
+.fe__row--image .fe__row-meta {
+color: var(--accent);
+font-weight: 500;
+}

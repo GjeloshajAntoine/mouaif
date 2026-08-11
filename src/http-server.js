@@ -170,9 +170,10 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   }
 
   // File editor (in-app CodeMirror popup). See handleFileEditor for the
-  // contract; dispatched here as a top-level route so /api/file and
-  // /api/files are first-class (they do not start with /api/projects).
-  if (urlPath === '/api/file' || urlPath === '/api/files') {
+  // contract; dispatched here as a top-level route so /api/file,
+  // /api/files, and the image-preview /api/file-media are all
+  // first-class (they do not start with /api/projects).
+  if (urlPath === '/api/file' || urlPath === '/api/files' || urlPath === '/api/file-media') {
     return handleFileEditor(req, res, parsed);
   }
 

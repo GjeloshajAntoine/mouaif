@@ -15,6 +15,9 @@ const mouaifHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-http-home-'));
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-proj-'));
 fs.writeFileSync(path.join(root, 'hello.txt'), 'hello world\n', 'utf8');
 fs.writeFileSync(path.join(root, 'app.js'), 'const x = 1;\n', 'utf8');
+fs.writeFileSync(path.join(root, 'LICENSE'), 'MIT License\n\nCopyright (c) 2026\n', 'utf8');
+fs.writeFileSync(path.join(root, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+fs.writeFileSync(path.join(root, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
 fs.mkdirSync(path.join(root, 'sub'));
 fs.writeFileSync(path.join(root, 'sub', 'inner.md'), '# inner\n', 'utf8');
 fs.writeFileSync(path.join(root, 'binary.png'), Buffer.from([0, 1, 2, 0xff, 0xfe]));
@@ -90,6 +93,9 @@ async function run() {
     t('list has hello.txt', list1.body && Array.isArray(list1.body.entries) && list1.body.entries.some(e => e.name === 'hello.txt'));
     t('list has sub/ as dir', list1.body && list1.body.entries.some(e => e.name === 'sub' && e.type === 'dir'));
     t('list flags binary', list1.body && list1.body.entries.some(e => e.name === 'binary.png' && e.binary === true));
+    t('list flags png as image', list1.body && list1.body.entries.some(e => e.name === 'logo.png' && e.image === true && e.binary === true));
+    t('list flags svg as image', list1.body && list1.body.entries.some(e => e.name === 'icon.svg' && e.image === true));
+    t('list marks LICENSE as text (sniff)', list1.body && list1.body.entries.some(e => e.name === 'LICENSE' && e.text === true && e.binary === false));
 
     // 2. list a subdir
     const list2 = await request('GET', '/api/files?projectDir=' + encodeURIComponent(root) + '&dir=' + encodeURIComponent(path.join(root, 'sub')));
@@ -104,6 +110,22 @@ async function run() {
     const r2 = await request('GET', '/api/file?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path.join(root, 'binary.png')));
     t('read binary 415', r2.status === 415, JSON.stringify(r2));
     t('read binary code EBINARY', r2.body && r2.body.code === 'EBINARY');
+
+    // 4b. read text file with no extension (sniffed as text)
+    const r2b = await request('GET', '/api/file?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path.join(root, 'LICENSE')));
+    t('read LICENSE 200', r2b.status === 200, JSON.stringify(r2b));
+    t('read LICENSE content matches', r2b.body && /MIT License/.test(r2b.body.content || ''));
+
+    // 4c. /api/file-media happy path
+    const r2c = await request('GET', '/api/file-media?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path.join(root, 'logo.png')));
+    t('media read 200', r2c.status === 200, JSON.stringify(r2c).slice(0, 200));
+    t('media mime is image/png', r2c.body && r2c.body.mime === 'image/png');
+    t('media dataUrl is image/png base64', r2c.body && /^data:image\/png;base64,/.test(r2c.body.dataUrl || ''));
+
+    // 4d. /api/file-media rejects non-image
+    const r2d = await request('GET', '/api/file-media?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path.join(root, 'hello.txt')));
+    t('media reject non-image 415', r2d.status === 415, JSON.stringify(r2d));
+    t('media reject non-image ENOTIMAGE', r2d.body && r2d.body.code === 'ENOTIMAGE');
 
     // 5. read escape -> 403
     const r3 = await request('GET', '/api/file?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent('/etc/passwd'));
