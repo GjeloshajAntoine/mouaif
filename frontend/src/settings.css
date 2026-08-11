@@ -22,35 +22,33 @@
 
 /* ---- Settings: custom prompts ------------------------------------- */
 
-.prompts__list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.prompts__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
-.prompt-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; position: relative; }
-.prompt-row__main { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; text-decoration: none; color: var(--fg); cursor: pointer; position: relative; }
-.prompt-row__main:active { background: var(--surface-2); }
-.prompt-row__title { font-weight: 600; font-size: 0.8rem; }
-.prompt-row__meta { font-size: 0.76rem; color: var(--fg-soft); }
-.prompt-row__chev { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 1.05rem; color: var(--fg-soft); }
-/* Copy button sits at the row's right edge, below the chevron gap and
-   above the preset badge — always visible, tappable (≥44px), never part
-   of the row's navigation tap. */
-.prompt-row__copy {
-  position: absolute; right: 6px; bottom: 5px; z-index: 1;
+.prompts__picker { display: flex; flex-direction: column; gap: 4px; }
+.prompts__picker-row {
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px;
+}
+.prompts__select { flex: 1 1 160px; min-width: 0; min-height: var(--tap); }
+.prompts__copy {
+  min-height: var(--tap); min-width: 76px;
+  padding: 0 12px; font-size: 0.78rem;
+}
+.prompts__copy.is-copied { color: var(--success, #2e7d32); border-color: var(--success, #2e7d32); }
+.prompts__copy.is-error { color: var(--danger, #c62828); border-color: var(--danger, #c62828); }
+.prompts__dirty {
+  margin: 4px 0 0;
+  color: #b35900; /* amber: warn, not error */
+  font-size: 0.74rem;
+}
+/* Copy button (sits in the picker row, next to the dropdown). */
+.prompts__copy {
   min-height: var(--tap); /* ≥44px touch target */
-  padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-2); color: var(--fg); font-size: 0.72rem;
+  padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--fg); font-size: 0.78rem;
   cursor: pointer;
 }
-.prompt-row__copy:active { background: var(--surface-3); }
-.prompt-row__copy.is-copied { color: var(--success, #2e7d32); }
-.prompt-row__copy.is-error { color: var(--danger, #c62828); }
-/* Preset status badge — a short "preset: shell, file · files on" line.
-   Padded on the right so it never runs under the copy button. */
-.prompt-row__preset {
-  padding: 4px 74px 6px 10px;
-  font-size: 0.68rem; line-height: 1.3; color: var(--fg-soft);
-  background: var(--surface-2); border-top: 1px solid var(--border);
-}
-/* Prompt preset editor section (SettingsPromptEditView). */
+.prompts__copy:active { background: var(--surface-3); }
+.prompts__copy.is-copied { color: var(--success, #2e7d32); border-color: var(--success, #2e7d32); }
+.prompts__copy.is-error { color: var(--danger, #c62828); border-color: var(--danger, #c62828); }
+/* Prompt preset editor section (inline in SettingsPromptsView). */
 .prompts__preset { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .prompts__preset-head { display: flex; flex-direction: column; gap: 4px; }
 .prompts__preset-main { display: flex; align-items: center; gap: 10px; }

@@ -69,13 +69,13 @@ function parseHash() {
   if (h === 'settings/prompts' || h.startsWith('settings/prompts?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '', id: '' };
   }
   if (h.startsWith('settings/prompts/')) {
     const rest = h.slice('settings/prompts/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsPromptEdit', id, projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsPrompts', id, projectDir: params.get('projectDir') || '' };
   }
   // #/settings/mcp/registry routes to the browse view (before the generic
   // settings/mcp match, which only catches hash === settings/mcp or ?qs).
