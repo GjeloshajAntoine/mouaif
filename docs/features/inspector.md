@@ -35,26 +35,80 @@ The environment variable `MOUAIF_CHROME_URL` overrides the default for headless 
 On a physical device, Chrome runs on the phone and `mouaif` runs on a laptop. Forward the port with `adb reverse tcp:9222 tcp:9222` and point the URL at `http://127.0.0.1:9222`. On the same network you can also use the phone's LAN IP.
 
 ## UI flow
-
-The view is a 3-state machine. State is held in refs (not Preact state) so a CDP message burst does not thrash the tree.
+The view is a 3-state machine. The phase, saved debugger URL, and
+current target live in Preact `useState`; the high-frequency CDP
+buffers (console / network entries, request map, virtual-list
+handles) live in `useRef` so a CDP message burst does not thrash
+the tree.
 
 1. **Setup** — input the Chrome debugger URL, save, and discover.
-2. **Targets** — list of discoverable pages / service workers / etc. with title, URL, and a Connect button per row.
-3. **Inspect** — connected to a specific target, with **Preview**, **Console**, **Network**, and **Info** sub-tabs. The header shows the target's title, type, and URL. A status line above the active panel reports the current WebSocket state.
+   Shown only when the app has no saved URL yet.
+2. **Targets** — list of discoverable pages / iframes / service
+   workers / background pages, with a type chip, a title, a host
+   subtitle, and a per-row overflow menu (Connect / Reload / Close).
+3. **Inspect** — connected to a specific target, with **Preview**,
+   **Console**, **Network**, and **Info** sub-tabs. The header shows
+   the target's title, type, and URL. A status line above the
+   active panel reports the current WebSocket state.
 
-The view starts in `setup`. Each phase has a per-screen back button that walks the state machine backwards and tears down any open WebSocket.
+The view skips straight to **Targets** on mount when a saved URL is
+present: `loadConfig` triggers `loadTargets` via `setTimeout(0)` so
+the targets phase's status element is mounted before the request
+fires. Returning users no longer have to retap **Discover** every
+visit. The setup screen still shows when no URL is saved. Each phase
+has a per-screen back button that walks the state machine backwards
+and tears down any open WebSocket.
 
-The **Targets** screen also has a **Page URL** field for one-step inspect: type a page URL (e.g. `http://localhost:3000`, or bare `localhost:3000` — the scheme is added for you), tap **Open & inspect** (or press Enter), and the server tells Chrome to open that page in a **new tab**, then attaches the inspector straight to it. No need to open the tab yourself or pick from the target list. The manual list below remains available for tabs that are already open.
+The **Targets** screen also has a **Page URL** field for one-step
+inspect: type a page URL (e.g. `http://localhost:3000`, or bare
+`localhost:3000` — the scheme is added for you), tap **Open &
+inspect** (or press Enter), and the server tells Chrome to open that
+page in a **new tab**, then attaches the inspector straight to it.
+No need to open the tab yourself or pick from the target list. The
+manual list below remains available for tabs that are already open.
 
-While inspecting a target, the header shows the page's URL in a code chip plus a **New tab** button (`POST /api/inspector/open`, the same endpoint behind **Open & inspect**). Tapping the button opens that same URL in a fresh Chrome tab; the outcome is reported on the status line. The button is a 44 px+ touch target (the previous URL-as-link affordance was ambiguous and hard to tap), and the current connection keeps its target — no re-attachment.
+While inspecting a target, the header shows the page's URL in a code
+chip plus a **New tab** button (`POST /api/inspector/open`, the same
+endpoint behind **Open & inspect**). Tapping the button opens that
+same URL in a fresh Chrome tab; the outcome is reported on the status
+line. The button is a 44 px+ touch target (the previous URL-as-link
+affordance was ambiguous and hard to tap), and the current connection
+keeps its target — no re-attachment.
 
 ## Tab management
-
-The Inspector can **reload**, **navigate**, and **close** tabs of the debug Chrome — both from the targets list and, for the page being inspected, from the inspect header. The server talks CDP directly to Chrome (`Page.reload` / `Page.navigate` on the target's WebSocket, `Target.closeTarget` on the browser-level WebSocket), so these actions work without an active inspector connection.
+The Inspector can **reload**, **navigate**, and **close** tabs of the
+debug Chrome — both from the targets list and, for the page being
+inspected, from the inspect header. The server talks CDP directly to
+Chrome (`Page.reload` / `Page.navigate` on the target's WebSocket,
+`Target.closeTarget` on the browser-level WebSocket), so these
+actions work without an active inspector connection.
 
 ### Targets list rows
+Each row is a tappable card with a **type chip** on the left, the
+title above the host subtitle on the right, and a `…` overflow on
+the far right. Tapping the body of the card is the primary action
+(**Connect**). The overflow menu holds the per-row actions:
 
-Each page row in the targets list shows compact icon buttons for **Reload** (⟳) and **Close** (✕, danger-tinted) next to the **Connect** button. Reload refreshes that tab in place; Close deletes the tab — a confirmation prompt appears first because closing cannot be undone. Closing an inspected tab also re-runs the discovery so the tab vanishes from the list. The icon buttons keep a ≥ 36 px touch target and carry `aria-label`s.
+- **Connect** — same as tapping the body.
+- **Reload** — visible only for targets of `type === "page"`
+  (iframes, service workers and background pages do not have a
+  reload action in CDP).
+- **Close tab** — visible only for `type === "page"` targets; the
+  server-side `Target.closeTarget` is called and the list is
+  refreshed so the closed tab disappears.
+
+The chip color follows the type: **TAB** / **FRAME** (accent blue)
+for pages and iframes, **SW** / **WORKER** / **SHARED** (amber) for
+workers, **BG** / **OTHER** (muted) for everything else. The chip
+makes it easy to tell at a glance which row is a service worker vs
+a normal tab.
+
+The list itself is rendered declaratively as Preact children (the
+previous version mutated a shared `<ul>` via `setTimeout` +
+`createElement`, which raced Preact reconciliation and made refresh
+actions flaky on a busy target list). The empty state shows a short
+"how to" hint and a centred **Refresh targets** action instead of a
+bare `<li>`.
 
 ### Inspect header
 
@@ -143,11 +197,13 @@ The mobile detail sheet applies top and bottom safe-area padding at the fixed ov
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
 - **Virtualization** — both list panels use [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
 - **Mutable row updates** — network and console entries carry a `rev` counter that is bumped on every mutation. The virtual-list render functions diff a signature (`id|rev|status|size|duration`) against the node's previous signature and skip DOM writes entirely when nothing changed, so a busy page doesn't force-reflow the list on every CDP event.
-- **Ref-only state.** The CDP client (websocket, command id, pending responses, event listeners, console / network buffers) lives on refs, not Preact state. A CDP message burst updates a ref and pushes rows into the virtual list directly; Preact is only re-rendered on phase / panel / status changes.
+- **State and refs.** The phase, saved debugger URL, current target, panel and detail item live in Preact `useState` so the Inspector re-renders when the user moves between phases. The high-frequency CDP buffers (websocket, command id, pending responses, event listeners, console / network entry arrays, request map, virtual-list handles) live in `useRef` so a CDP message burst updates a ref and pushes rows into the virtual list directly. Preact is only re-rendered on phase / panel / status changes.
 - **Reconnect safety.** Disconnecting rejects pending CDP commands and clears
 	listeners plus the request map. Close/error events from an older socket are
 	identity-checked so they cannot wipe the state of a replacement connection.
 - **Backwards compatibility.** Adding the 4th tab does not change the existing REST or SSE surface. The bundle grew by ~14 KB JS and ~3.5 KB CSS to ship the new view.
+- **Auto-discovery on mount.** When a debugger URL is already saved, `loadConfig` calls `loadTargets` via `setTimeout(0)` so the targets phase's status `<div>` is mounted before the request fires. Without the `setTimeout`, the call would write its status message to the setup phase's `<span>` (the only mounted status element at the time `loadConfig` resolves), and the targets phase would mount with a stale "fetching targets…" message. Returning users no longer have to retap **Discover** on every visit.
+- **Strict-mode `.current` cleanup.** A previous refactor from `useRef` to `useState` left a few `debuggerUrl.current = …` and `defaultUrl.current = …` lines in `loadConfig` / `connect`. In strict mode, setting a property on a string primitive throws (`Cannot create property 'current' on string ''`), and the resulting unhandled rejection aborted the auto-discovery chain. The fix is to drop the leftover `.current` assignments and read the state value directly.
 - **Server log line.** The `mouaif serve` startup banner now mentions `Web: / — mobile UI` and `CDP: /api/inspector/ + WS /api/inspector/proxy` so users can see at a glance what shipped.
 
 ## Test fixture

@@ -11,15 +11,38 @@ import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, route } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
-
+// Short human label for a Chrome DevTools target type. Chrome uses a
+// handful of types: `page` (a normal tab), `iframe`, `service_worker`,
+// `background_page` (extension), and a few rarely-seen ones
+// (`worker`, `shared_worker`, `other`). The chip color follows the
+// type so the list reads at a glance.
+const TYPE_META = {
+  page:            { label: 'TAB',    short: 'tab', tone: 'accent'  },
+  iframe:          { label: 'FRAME',  short: 'frame', tone: 'accent'  },
+  service_worker:  { label: 'SW',     short: 'sw',  tone: 'warning' },
+  background_page: { label: 'BG',     short: 'bg',  tone: 'muted'   },
+  worker:          { label: 'WORKER', short: 'wrk', tone: 'warning' },
+  shared_worker:   { label: 'SHARED', short: 'shr', tone: 'warning' },
+  other:           { label: 'OTHER',  short: '?',   tone: 'muted'   }
+};
+function targetMeta(t) {
+  const type = (t && t.type) || 'other';
+  return TYPE_META[type] || TYPE_META.other;
+}
+// hostOf — extract `host[:port]` from a target URL so we can show it
+// as a subtitle alongside the title. Returns '' for non-http(s) targets
+// (chrome:// pages, bare webSocketDebuggerUrl, etc.).
+function hostOf(t) {
+  const u = (t && t.url) || '';
+  if (!u || !/^https?:\/\//i.test(u)) return '';
+  try { return new URL(u).host; } catch { return ''; }
+}
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
   const navUrlInput = useRef(null);
   const saveBtn = useRef(null);
   const statusEl = useRef(null);
-  const targetsList = useRef(null);
-
   const [debuggerUrl, setDebuggerUrl] = useState('');
   const [defaultUrl, setDefaultUrl] = useState('');
   const [targets, setTargets] = useState([]);
@@ -74,7 +97,7 @@ export function InspectorView() {
     consoleEntries.current = [];
     networkEntries.current = [];
     if (statusEl.current) statusEl.current.textContent = 'connecting…';
-    const result = c.connect(debuggerUrl.current, target.id);
+    const result = c.connect(debuggerUrl, target.id);
     if (result.error) {
       if (statusEl.current) statusEl.current.textContent = result.error;
       return;
@@ -116,16 +139,29 @@ export function InspectorView() {
 
   async function loadConfig() {
     let r;
-    try { r = await fetchJson('/api/inspector/config'); }
-    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
-    if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
-    debuggerUrl.current = r.body.url || '';
-    defaultUrl.current = r.body.defaultUrl || '';
-    setDebuggerUrl(r.body.url || '');
-    setDefaultUrl(r.body.defaultUrl || '');
-    if (urlInput.current) urlInput.current.value = r.body.url || '';
-    if (statusEl.current) statusEl.current.textContent = (r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl;
-    rerender();
+    try {
+      r = await fetchJson('/api/inspector/config');
+      if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+      setDebuggerUrl(r.body.url || '');
+      setDefaultUrl(r.body.defaultUrl || '');
+      if (urlInput.current) urlInput.current.value = r.body.url || '';
+      if (statusEl.current) statusEl.current.textContent = (r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl;
+      rerender();
+      // Auto-discover on mount when a debugger URL is already saved.
+      // Returning users land on the targets list directly instead of
+      // being sent back to the setup screen on every visit. Deferred
+      // to the next tick so the targets phase's statusEl <div> is
+      // mounted by the time loadTargets writes to it — the setup
+      // phase's <span> would otherwise receive the message.
+      if (r.body.url) setTimeout(loadTargets, 0);
+    } catch (e) {
+      // Outer catch: an exception in any of the state setters or DOM
+      // writes below (e.g. from a mid-fetch unmount) would otherwise
+      // surface as an unhandled rejection that the user can't see and
+      // that also aborts the auto-discovery chain. Surface it on the
+      // status line instead.
+      if (statusEl.current) statusEl.current.textContent = 'inspector: ' + (e && e.message || String(e));
+    }
   }
 
   async function saveConfig() {
@@ -342,61 +378,84 @@ export function InspectorView() {
   }
 
   if (phase === 'targets') {
-    // Note: manual DOM operations preserved for targets list performance
-    // and exact same behavior since targetsList.current.innerHTML manipulation is used.
-    function renderTargets() {
-      if (!targetsList.current) return;
-      targetsList.current.innerHTML = '';
-      if (!targets.length) {
-        const li = document.createElement('li');
-        li.className = 'inspector__empty';
-        li.textContent = 'no targets. Open a tab in Chrome and tap "Refresh targets".';
-        targetsList.current.appendChild(li);
-        return;
-      }
-      for (const t of targets) {
-        const li = document.createElement('li');
-        li.className = 'inspector__target';
-        const main = document.createElement('div');
-        main.className = 'inspector__target-main';
-        const title = document.createElement('div');
-        title.className = 'inspector__target-title';
-        title.textContent = t.title || t.url || t.id;
-        const url = document.createElement('div');
-        url.className = 'inspector__target-url';
-        url.textContent = t.url || t.webSocketDebuggerUrl || t.id;
-        main.appendChild(title); main.appendChild(url);
-        const actions = document.createElement('div');
-        actions.className = 'inspector__target-actions';
-        const connectBtn = document.createElement('button');
-        connectBtn.className = 'btn btn--primary btn--small';
-        connectBtn.type = 'button';
-        connectBtn.textContent = 'Connect';
-        connectBtn.addEventListener('click', () => connect(t));
-        actions.appendChild(connectBtn);
-        if (t.type === 'page' && t.id) {
-          const reloadBtn = document.createElement('button');
-          reloadBtn.className = 'icon-btn';
-          reloadBtn.type = 'button';
-          reloadBtn.textContent = '⟳';
-          reloadBtn.title = 'Reload this tab';
-          reloadBtn.setAttribute('aria-label', 'Reload this tab');
-          reloadBtn.addEventListener('click', () => actionTarget(t, 'reload'));
-          actions.appendChild(reloadBtn);
-          const closeBtn = document.createElement('button');
-          closeBtn.className = 'icon-btn icon-btn--danger';
-          closeBtn.type = 'button';
-          closeBtn.textContent = '✕';
-          closeBtn.title = 'Close this tab';
-          closeBtn.setAttribute('aria-label', 'Close this tab');
-          closeBtn.addEventListener('click', () => actionTarget(t, 'close'));
-          actions.appendChild(closeBtn);
-        }
-        li.appendChild(main); li.appendChild(actions);
-        targetsList.current.appendChild(li);
-      }
-    }
-    setTimeout(renderTargets, 0);
+    // TargetMenu — overflow popover attached to each row. Same pattern as
+    // the project-card menu in Projects.jsx: a single `…` button that
+    // opens a small list of actions. Kept inside the targets phase so
+    // it can close on outside-click and on row-dismiss.
+    const TargetMenu = function (props) {
+      const [open, setOpen] = useState(false);
+      useEffect(() => {
+        if (!open) return;
+        function onDocClick() { setOpen(false); }
+        // setTimeout to avoid the same click that opened the menu from
+        // closing it on the same event.
+        const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+        return () => {
+          clearTimeout(id);
+          document.removeEventListener('click', onDocClick);
+        };
+      }, [open]);
+      const t = props.target;
+      const meta = targetMeta(t);
+      const canManage = t && t.id && t.type === 'page';
+      return h('div', { class: 'inspector__row-menu' },
+        h('button', {
+          class: 'icon-btn inspector__row-menu-btn',
+          type: 'button',
+          'aria-haspopup': 'true',
+          'aria-expanded': String(open),
+          'aria-label': 'Target options',
+          onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+        }, '⋯'),
+        h('div', {
+          class: 'inspector__row-menu-pop',
+          hidden: !open,
+          role: 'menu',
+          onClick: (e) => e.stopPropagation()
+        },
+          h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onConnect(t); } }, 'Connect'),
+          canManage ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(t); } }, 'Reload') : null,
+          canManage ? h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(t); } }, 'Close tab') : null,
+          h('div', { class: 'inspector__row-menu-meta' },
+            h('span', null, meta.label),
+            h('span', null, t && t.id ? t.id : '')
+          )
+        )
+      );
+    };
+    // TargetRow — one declarative card per Chrome target. Tapping the
+    // body connects; the `…` button opens the overflow menu with the
+    // destructive actions (Reload / Close) that used to live as tiny
+    // icon buttons next to the title. The type chip + host subtitle
+    // make it obvious at a glance what the row represents.
+    const TargetRow = function (props) {
+      const t = props.target;
+      const meta = targetMeta(t);
+      const title = (t && (t.title || t.url || t.id)) || '';
+      const subtitle = hostOf(t) || (t && (t.url || t.webSocketDebuggerUrl || t.id)) || '';
+      return h('li', { class: 'inspector__row-target inspector__row-target--' + meta.tone, key: t && t.id },
+        h('button', {
+          class: 'inspector__row-target-main',
+          type: 'button',
+          'aria-label': 'Connect to ' + title,
+          onClick: () => connect(t)
+        },
+          h('span', { class: 'inspector__row-target-chip' }, meta.label),
+          h('span', { class: 'inspector__row-target-body' },
+            h('span', { class: 'inspector__row-target-title' }, title),
+            subtitle && subtitle !== title
+              ? h('span', { class: 'inspector__row-target-sub' }, subtitle)
+              : null
+          )
+        ),
+        h(TargetMenu, {
+          target: t,
+          onConnect: connect,
+          onReload: actionTarget.bind(null, 'reload'),
+          onClose: actionTarget.bind(null, 'close')
+        })
+      );
+    };
     return h(Fragment, null,
       h('div', { class: 'view-head' },
         h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('setup'); rerender(); } }, '←'),
@@ -413,7 +472,14 @@ export function InspectorView() {
           h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
         ),
         h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
-        h('ul', { ref: targetsList, class: 'inspector__targets', 'aria-label': 'Discoverable targets' })
+        targets.length
+          ? h('ul', { class: 'inspector__row-targets', 'aria-label': 'Discoverable targets' },
+              targets.map((t) => h(TargetRow, { target: t, key: t && t.id }))
+            )
+          : h('div', { class: 'inspector__row-targets-empty', role: 'status' },
+              h('p', null, 'No targets found.'),
+              h('p', { class: 'inspector__row-targets-empty-hint' }, 'Open a tab in Chrome and tap ', h('strong', null, 'Refresh targets'), ' to discover it.')
+            )
       )
     );
   }
