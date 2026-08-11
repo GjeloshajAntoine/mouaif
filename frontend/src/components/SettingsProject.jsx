@@ -1332,24 +1332,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('li', null,
             h('a', {
               class: 'group__row settings-project__link-row',
-              'aria-label': 'Import chats from JSON files',
-              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
-              h('span', { class: 'group__row-body' },
-                h('span', { class: 'group__row-label' }, 'Import chats'),
-                h('span', { class: 'settings-project__link-sub' }, 'Reimport from .mouaif.messages.*.json files')
-              ),
-              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-            )
-          )
-        )
-      ),
-
-      h('div', { class: 'group settings-project__section' },
-        h('ul', { class: 'group__list' },
-          h('li', null,
-            h('a', {
-              class: 'group__row settings-project__link-row',
               href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir()) + (chatId() ? '&chatId=' + encodeURIComponent(chatId()) : '')
             },
               h('span', { class: 'group__row-body' },
