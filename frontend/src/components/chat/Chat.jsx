@@ -250,7 +250,7 @@ export function ChatView(props) {
       ),
       h('a', {
         class: 'chat-view__iconbtn',
-        href: '#/settings/project/technical?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
+        href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
         'aria-label': 'Project settings',
         title: 'Settings'
       },

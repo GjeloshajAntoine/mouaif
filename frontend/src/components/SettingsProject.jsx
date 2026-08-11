@@ -1350,7 +1350,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('li', null,
             h('a', {
               class: 'group__row settings-project__link-row',
-              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir())
+              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir()) + (chatId() ? '&chatId=' + encodeURIComponent(chatId()) : '')
             },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Technical details'),

@@ -11,7 +11,7 @@ A per-chat toggle (off by default) appends every new event for that chat to a pr
 - **Toggle**: per-chat, off by default. There is no app-wide or project-wide default; every chat starts untraced.
 - **Path**: `<projectDir>/.mouaif/traces/<chatId>.ndjson`, append-only. The filename identifies the chat, so `chatId` is not repeated on every line. If the chat has no project, the user is prompted to pick one before tracing starts (no surprise writes outside the project).
 - **One-shot export**: the chat UI exposes an "Export trace" action that writes the same NDJSON shape to a user-picked path without enabling the toggle.
-- **Where the controls live**: the trace toggle, "Export trace", and the chat's delete action sit on the project's **Technical details** page (`#/settings/project/technical?chatId=…`), which the chat header's settings button opens with the current `chatId`. The chat import action shares that page.
+- **Where the controls live**: the trace toggle, "Export trace", and the chat's delete action sit on the project's **Technical details** page (`#/settings/project/technical?chatId=…`). Reach it from a chat via the settings button, then the **Technical details** link at the bottom of project settings; the link carries the current `chatId` so the trace controls show. The chat import action shares that page.
 
 ### NDJSON shape
 
