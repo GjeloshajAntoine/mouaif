@@ -434,9 +434,10 @@ disabled: skillState.disabled.has(s.id)
           if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }
       } catch { /* authorization state unreadable; keep every tool advertised */ }
-      // Apply the same initial per-profile reduction the stream applies.
-      // For very-small, this starts with discover_tool only; discovered
-      // tool schemas are added dynamically during the tool loop.
+      // Apply the same per-profile reduction the stream applies. For
+      // very-small this is discover_tool plus one compact (name + description,
+      // schema-less) entry per tool — a FIXED list, identical on every
+      // tool-loop request, so the Anthropic cached prefix stays byte-stable.
       let effective = toolSpecs;
       try { effective = promptProfiles.reduceToolSpecs(toolSpecs, profileId); } catch { /* full specs */ }
       const reduced = profileId === 'very-small';
@@ -447,8 +448,8 @@ disabled: skillState.disabled.has(s.id)
           name: fn.name || '',
           description: typeof fn.description === 'string' ? fn.description : '',
           // hasSchema reflects whether this advertised tool exposes
-          // parameter names. For very-small's initial preview this is
-          // discover_tool's own schema.
+          // parameter names. For very-small only discover_tool's own
+          // schema is present; the other entries are schema-less.
           hasSchema: params.length > 0,
           params
         };

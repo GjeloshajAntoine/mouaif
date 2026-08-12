@@ -174,19 +174,26 @@ async function main() {
     ext[0].function.parameters && ext[0].function.parameters.properties.cmd,
     'got: ' + JSON.stringify(ext[0].function.parameters));
   const tiny = pp.reduceToolSpecs(sampleSpecs, 'very-small');
-  check('reduceToolSpecs very-small initially exposes discover_tool only',
-    tiny.length === 1 && tiny[0].function.name === 'discover_tool',
+  check('reduceToolSpecs very-small exposes discover_tool plus one compact entry per tool',
+    tiny.length === 1 + sampleSpecs.length &&
+    tiny[0].function.name === 'discover_tool' &&
+    tiny.slice(1).every(s => s.function.name === 'shell' || s.function.name === 'list_files'),
     'got: ' + JSON.stringify(tiny.map(s => s.function.name)));
   check('reduceToolSpecs very-small discover_tool lists tool names',
     tiny[0].function.description.indexOf('shell') !== -1 &&
     tiny[0].function.parameters.properties.toolName.enum.indexOf('shell') !== -1,
     'got: ' + JSON.stringify(tiny[0].function));
+  check('reduceToolSpecs very-small compact entries are schema-less',
+    tiny.slice(1).every(s => !s.function.parameters),
+    'got: ' + JSON.stringify(tiny.slice(1)));
+  // The very-small tool list must be byte-stable across discovery: a
+  // growing list would change the Anthropic cached prefix (system + tools)
+  // between tool-loop requests and invalidate the warm cache every round.
   const tinyDiscovered = pp.reduceToolSpecs(sampleSpecs, 'very-small', { discoveredToolNames: new Set(['shell']) });
-  check('reduceToolSpecs very-small adds discovered tool full schema',
-    tinyDiscovered.length === 2 &&
-    tinyDiscovered[1].function.name === 'shell' &&
-    tinyDiscovered[1].function.parameters.properties.cmd,
-    'got: ' + JSON.stringify(tinyDiscovered));
+  check('reduceToolSpecs very-small list is byte-identical after discovery',
+    JSON.stringify(tiny) === JSON.stringify(tinyDiscovered),
+    'got before: ' + JSON.stringify(tiny.map(s => s.function.name)) +
+    ' after: ' + JSON.stringify(tinyDiscovered.map(s => s.function.name)));
   check('reduceToolSpecs invalid profile falls through to full',
     pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,
     'unknown profile did not keep full specs');

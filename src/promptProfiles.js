@@ -187,10 +187,15 @@ function makeDiscoverToolSpec(specs) {
 // (.github/copilot-instructions.md §4): the profile controls HOW MUCH
 // of each tool is sent upstream, not just the system prompt text.
 //
-//   very-small : initially advertises only discover_tool. Its description
-//                lists available tool names. After the model discovers a
-//                tool, pass opts.discoveredToolNames to advertise that
-//                chosen tool's full schema alongside discover_tool.
+//   very-small : compact tool list, name + short description only (no
+//                parameter schemas), plus discover_tool for on-demand
+//                full-schema expansion. The list is FIXED for the whole
+//                turn: the same tools are advertised on the first request
+//                and on every tool-loop follow-up. Growing the list after
+//                a discover_tool call would change the Anthropic cached
+//                prefix (system + tools) between requests, so the warm
+//                cache would be invalidated on every round and caching
+//                would never engage.
 //   average    : full tool list, name + full description + parameters
 //                (the compact-but-complete default).
 //   extensive  : same as average (full), kept separate so the extensive
@@ -208,15 +213,24 @@ function reduceToolSpecs(specs, profileValue, opts) {
     // average + extensive: full specs, defensively copied.
     return specs.map(cloneToolSpec);
   }
-  const discovered = new Set();
-  const rawNames = opts && opts.discoveredToolNames;
-  if (rawNames && typeof rawNames[Symbol.iterator] === 'function') {
-    for (const n of rawNames) if (typeof n === 'string' && n) discovered.add(n);
-  }
+  // very-small: discover_tool + one compact entry per tool, stable for
+  // the whole turn. Compact entries keep the token budget low (the
+  // profile's whole point) while the byte-stable list keeps the
+  // Anthropic cache prefix identical across tool-loop requests.
   const out = [makeDiscoverToolSpec(specs)];
   for (const spec of specs) {
-    const name = spec && spec.function && spec.function.name;
-    if (name && discovered.has(name)) out.push(cloneToolSpec(spec));
+    const fn = (spec && spec.function) || {};
+    if (!fn.name) continue;
+    out.push({
+      type: 'function',
+      function: {
+        name: fn.name,
+        description: typeof fn.description === 'string' ? fn.description : '',
+        // No `parameters` block: the model gets the tool's shape via
+        // discover_tool if it needs it. Omitting it here is what keeps
+        // very-small's footprint small AND the prefix stable.
+      }
+    });
   }
   return out;
 }

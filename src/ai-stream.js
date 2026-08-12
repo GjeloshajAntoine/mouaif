@@ -515,10 +515,14 @@ async function streamChat(opts) {
   }
 
   // Shrink the tool declaration according to the active prompt-size
-  // profile (decisions §4). For very-small, the first request advertises
-  // discover_tool only; its description lists tool names. When the model
-  // discovers a specific tool, later requests include that tool's full
-  // schema too. average/extensive send the full specs from the start.
+  // profile (decisions §4). For very-small, the list is compact (name +
+  // description, no schemas) but FIXED for the whole turn — it must not
+  // grow between tool-loop requests, because Anthropic's cached prefix
+  // (system + tools) would change and the warm cache would be
+  // invalidated on every round. average/extensive send the full specs
+  // from the start. `discoveredToolNames` is retained for the
+  // discover_tool dispatcher (it decides what the tool returns), but it
+  // no longer changes the advertised tool list.
   const discoveredToolNames = new Set();
   let promptProfilesMod = null;
   try { promptProfilesMod = require('./promptProfiles.js'); } catch { /* optional */ }

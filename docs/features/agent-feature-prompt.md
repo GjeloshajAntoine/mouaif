@@ -74,7 +74,7 @@ The REST endpoint returns the same structured state the `list_features` tool ret
 
 ## Related
 
-- [docs/features/prompt-profiles.md](./prompt-profiles.md) — the tool works best with `very-small` profile where other tool specs are hidden behind `discover_tool`.
+- [docs/features/prompt-profiles.md](./prompt-profiles.md) — the tool works best with the `very-small` profile, where tool schemas are hidden behind `discover_tool`.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — the auth state that the feature summary and tool report.
 - [docs/features/agents.md](./agents.md) — the agent state reported by the feature system.
 - [docs/features/file-tagging.md](./file-tagging.md) — the tagging state reported by the feature system.
