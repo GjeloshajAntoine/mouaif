@@ -563,7 +563,7 @@ export function InspectorView() {
       ),
       h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
       activePanel === 'preview'
-        ? h(PreviewPanel, { capture: handlers && handlers.captureScreenshot, clickAt: handlers && handlers.clickAt })
+        ? h(PreviewPanel, { capture: handlers && handlers.captureScreenshot, clickAt: handlers && handlers.clickAt, subscribe: conn.current && conn.current.cdpOn })
         : activePanel === 'console'
           ? h(ConsolePanel, { onRowTap: onListTap, onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); } })
           : activePanel === 'network'

@@ -122,7 +122,7 @@ These replace the old URL-as-link affordance: the URL now lives in an editable f
 
 ## Preview panel
 
-The Preview panel shows what the attached page actually looks like, live. It polls `Page.captureScreenshot` (JPEG, quality 55) roughly every 1.2 s while the tab is active and paints the result into an `<img>` via an object URL. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects, so an idle inspector never burns CDP cycles. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.
+The Preview panel shows what the attached page actually looks like, live. It captures the page via `Page.captureScreenshot` (JPEG, quality 55) and paints the result into an `<img>` via an object URL. The capture loop is **event-driven** rather than a fixed timer: the panel subscribes to `Page.frameNavigated` and `Page.frameStoppedLoading` over the same CDP connection, and each of those events triggers an immediate capture. A slow 3 s fallback poll covers in-page state changes that no CDP event fires for (scroll, hover, JS-driven DOM mutations, SPA route changes that don't navigate the frame). The poll resets its 3 s clock every time an event-driven capture lands, so the panel does **not** busy-poll during a navigation burst — an idle page costs at most one capture per 3 s, and a page that just finished loading captures immediately and goes quiet. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.
 
 The screenshot is a **full-page capture** (`captureBeyondViewport: true`), so the shot is as tall as the page's scrollable content rather than just the visible viewport. The frame that hosts the image is a scroll container (`overflow: auto`, `56dvh` tall). The image is scaled to the frame's width (`width: 100%`, height from aspect ratio) and the frame scrolls vertically through the full-page height — a mobile-first "scroll through the page" view. Scaling to the frame width (rather than showing natural device pixels) is required because high-DPR captures come back 2–3× wider than the CSS viewport; at natural size the user would only see a zoomed-in corner of the page. If the user is scrolled inside the frame when a fresh screenshot arrives, their position is restored on image load instead of snapping to the top.
 
@@ -135,6 +135,22 @@ Tapping or clicking anywhere on the preview **forwards a click to the page**. Th
 3. **Full-page device pixels → viewport CSS pixels** — `Input.dispatchMouseEvent` wants coordinates relative to the live viewport, so `clickAt` (in `inspector/events.js`) first divides by the page's `devicePixelRatio` (queried via `Runtime.evaluate`) to get page CSS coordinates, then subtracts the page's `scrollX`/`scrollY`. If the tapped point is outside the live viewport (e.g. below the fold), the page is first scrolled to bring it roughly centered into view (`window.scrollTo`), then the click is dispatched at the corrected viewport coordinates.
 
 The click is sent as `Input.dispatchMouseEvent` (`mousePressed` + `mouseReleased`, left button) over the same CDP connection. The preview behaves like a remote tap surface, not just a picture — a tap below the fold scrolls the real page and clicks the element the user aimed at.
+
+### Preview refresh + click reliability
+
+The capture loop swaps the screenshot into a single, persistent `<img>` node by reassigning its `src` to a fresh object URL on every capture. The previous version called `setImgSrc(next)` to push a new URL into state, which caused Preact to **unmount the old `<img>` and mount a brand-new one** every 1.2 s. Two side effects followed:
+
+- The user saw a brief blank / "loading" flash on every refresh — the visible "load message" that re-appeared constantly.
+- A click landing during the decode window found `imgRef.current.naturalWidth === 0` and silently returned, so the tap on the preview was a no-op until the next refresh.
+
+Reusing the same node removes both. The capture loop also:
+
+- **Is event-driven, not timer-driven.** Subscribes to `Page.frameNavigated` and `Page.frameStoppedLoading` over the same CDP connection; each event triggers an immediate capture. A 3 s fallback poll covers in-page state changes that no CDP event fires for (scroll, hover, JS-driven DOM mutations, SPA route changes that don't navigate the frame). The poll resets its 3 s clock every time an event-driven capture lands, so an idle page costs at most one capture per 3 s.
+- Defers `URL.revokeObjectURL` of the previous object URL until the new image's `onload` fires. Revoking too early used to abort the in-flight decode and show a blank frame.
+- Caches the last successfully decoded `naturalWidth`/`naturalHeight` in a ref (`lastDims`). `onPreviewClick` uses these as a fallback when the live image is still mid-decode — the page's intrinsic size is essentially constant between captures, so the previous frame is a safe approximation and a click during a refresh still maps to a sensible point on the page.
+- Updates the status note from `capturing…` to `live` only on the first successful capture, and only changes it again on error. The per-tick timestamp that used to re-fire through the `aria-live` region on every refresh was just noise.
+
+The `<img>` is mounted with `src=""` (and `draggable="false"`) so the element is in the tree and has a measurable bounding rect even before the first capture lands. Clicks arriving before any capture at all fall back to the rendered rect's own dimensions, so the page still receives a click near the tapped area.
 
 ## Console panel
 
