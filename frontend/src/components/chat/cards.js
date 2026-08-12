@@ -130,9 +130,8 @@ function buildToolsCard(state) {
   // MCP authorization — same layered model as project settings:
   // an "MCP default" gate row (the project's shared fallback, layers
   // 3-4) plus one Off/Ask/Allow segment per MCP server group (the
-  // per-server override, layer 2; shows the effective mode and gains
-  // a ↺ reset when an override is set). Writes go through
-  // state._saveMcpAuth so the card re-renders in place.
+  // per-server override, layer 2, showing the effective mode). Writes
+  // go through state._saveMcpAuth so the card re-renders in place.
   const mcpAuth = state.mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
   const mcpServers = state.mcpServers || [];
   const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));

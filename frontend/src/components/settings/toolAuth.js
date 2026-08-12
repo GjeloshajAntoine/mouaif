@@ -81,8 +81,7 @@ export function mcpEffective(servers, slug, shared) {
 // never drift. Two flavours, driven by `slug`:
 //   - slug set   → per-server override row. The segment shows the
 //     effective mode (override or shared gate); picking a mode writes
-//     `servers.<slug>`; a ↺ reset appears only when an override exists
-//     and clears it back to the shared gate.
+//     `servers.<slug>`.
 //   - slug null  → the shared gate itself (project or app default).
 //     Picking a mode writes `{ mode, allowlist }`.
 // Picking "Ask" while allowlist patterns exist persists `allowlist`
@@ -113,17 +112,7 @@ export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', on
       )
     )
   );
-  if (!slug || !eff.overridden) return seg;
-  return h('span', { class: 'tool-tree__control-inline' },
-    seg,
-    h('button', {
-      type: 'button',
-      class: 'tool-tree__reset',
-      'aria-label': 'Use the default permission for ' + name,
-      title: 'Clear this server’s override; fall back to the MCP default',
-      onClick: () => onSave && onSave({ servers: { [slug]: null } })
-    }, '↺')
-  );
+  return seg;
 }
 
 // Build a debounced allowlist saver for a tool's auto-approve patterns textarea.

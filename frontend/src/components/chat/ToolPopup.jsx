@@ -152,9 +152,8 @@ export function ToolPopup(props) {
   // MCP authorization — same layered model as the chat Tools card and
   // the project settings tree: an "MCP default" gate row (the project's
   // shared fallback) plus one Off/Ask/Allow segment per MCP server group
-  // (the per-server override; shows the effective mode and gains a ↺
-  // reset when an override is set). Writes go through onSaveMcpAuth so
-  // the card and the settings page pick the change up too.
+  // (the per-server override, showing the effective mode). Writes go
+  // through onSaveMcpAuth so the card and settings page stay in sync.
   const mcpAuthState = mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
   const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));
   if (firstMcp >= 0) {
