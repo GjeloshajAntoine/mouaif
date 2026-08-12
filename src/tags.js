@@ -57,7 +57,8 @@ const DEFAULT_EXTS = [
   '.dockerignore', '.gitmodules', '.htaccess', '.dockerfile', '.makefile'
 ];
 
-// Directories the scan never descends into.
+// Directories the scan never descends into. `.mouaif` holds the tag map
+// itself (and traces) — scanning it would just show `.mouaif.json`.
 const SKIP_DIRS = new Set(['node_modules', '.git', '.mouaif', 'dist', 'build', '.next', '.cache']);
 
 // ---- Path safety --------------------------------------------------------
@@ -173,8 +174,10 @@ function removeTag(projectDir, relPathOrAbs) {
 
 // One-pass directory walk. Returns text-ish files with size + ext and a
 // `binary` flag for out-of-allowlist extensions. Skips heavy build dirs
-// and dotfiles. Bounded by `limit` (default 5000) so a huge project does
-// not hang the request.
+// and nested tooling dirs (node_modules, .git, dist, build, .next, .cache,
+// .mouaif). Root-level dotfiles and dot-dirs (.env, .github) are included —
+// they are config the user tags. Bounded by `limit` (default 5000) so a
+// huge project does not hang the request.
 function scanFiles(projectDir, exts, limit) {
   const rootResolved = path.resolve(projectDir);
   const allow = new Set((Array.isArray(exts) && exts.length ? exts : DEFAULT_EXTS)
@@ -188,24 +191,44 @@ function scanFiles(projectDir, exts, limit) {
     try { names = fs.readdirSync(dir, { withFileTypes: true }); }
     catch { continue; }
     for (const dirent of names) {
-      if (dirent.name.startsWith('.')) continue;
+      // Hidden entries at the root (`.github`, `.env`, `.config`) are
+      // usually config the user wants to tag, so they are NOT skipped
+      // here. Nested hidden dirs are almost always tooling cache
+      // (`.cache`, `.vite`); hidden files nested deeper are editor/
+      // tool noise. The one exception: the tag map itself,
+      // `.mouaif.json`, is skipped outright.
+      const isHidden = dirent.name.startsWith('.');
       const full = path.join(dir, dirent.name);
       if (dirent.isDirectory()) {
+        // Nested hidden dirs (deeper than the project root) are almost
+        // always tooling cache (`.cache`, `.vite`); the root-level ones
+        // (`.github`, `.config`) are config the user tags.
+        if (isHidden && dir !== rootResolved) continue;
         if (SKIP_DIRS.has(dirent.name)) continue;
         stack.push(full);
         continue;
       }
       if (!dirent.isFile()) continue;
+      // The tag map itself must never appear as a taggable file.
+      if (dirent.name === '.mouaif.json') continue;
+      // Hidden files nested deeper than the root are tooling noise.
+      if (isHidden && dir !== rootResolved) continue;
       const ext = path.extname(dirent.name).toLowerCase();
       let size = 0;
       try { size = fs.statSync(full).size; } catch { continue; }
       // Binary filter. The allowlist check is against the extension
       // (`app.vue` has ext `.vue`, `my.config.js` ext `.js`) — not the
       // whole name, so a dot inside the base name never hides a file.
-      // Files with no extension at all (`Makefile`) are still flagged
-      // binary so the user is not tricked into tagging a compiled blob.
+      // A file is text when:
+      //   - its extension is on the allowlist, OR
+      //   - it has no extension and its name is either extensionless-but-
+      //    -allowlisted (`Makefile`) or a leading-dot file whose suffix
+      //     is allowlisted (`.env` -> `.env`, `.gitignore` -> `.gitignore`).
+      //     Leading-dot names keep the dot in the extension key so the
+      //     same allowlist covers `Dockerfile` and `.dockerignore`.
       const isText = allow.has(ext)
-        || (ext === '' && (dirent.name.indexOf('.') === -1 || /^\.[A-Za-z0-9_-]+$/.test(dirent.name)) && allow.has('.' + dirent.name.toLowerCase()));
+        || (ext === '' && allow.has('.' + dirent.name.toLowerCase()))
+        || (ext === '' && /^\.[A-Za-z0-9_-]+$/.test(dirent.name) && allow.has(dirent.name.toLowerCase()));
       out.push({
         path: path.relative(rootResolved, full).split(path.sep).join('/'),
         size,

@@ -47,6 +47,13 @@ fs.writeFileSync(path.join(PROJ, 'Makefile'), 'all:\n\techo hi\n');
 fs.writeFileSync(path.join(PROJ, 'webpack.config.js'), 'module.exports = {};\n');
 // Untagged text file for the on-disk bare-basename @-reference path.
 fs.writeFileSync(path.join(PROJ, 'notes.txt'), 'some notes\n');
+// Root-level hidden entries — the scan must include them (regression
+// for the "dot-dir/dotfile" bug).
+fs.mkdirSync(path.join(PROJ, '.github', 'workflows'), { recursive: true });
+fs.writeFileSync(path.join(PROJ, '.github', 'workflows', 'ci.yml'), 'name: ci\n');
+fs.writeFileSync(path.join(PROJ, '.env'), 'KEY=value\n');
+fs.writeFileSync(path.join(PROJ, '.gitignore'), 'node_modules\n');
+fs.writeFileSync(path.join(PROJ, 'src', '.hidden.js'), 'tool noise\n'); // nested hidden file — skipped
 
 // ---- Path normalization -------------------------------------------------
 
@@ -68,6 +75,10 @@ check('scan flags js as non-binary', (scan.find(f => f.path === 'src/a.js') || {
 check('scan treats dotted-name .vue as text', (scan.find(f => f.path === 'src/App.vue') || {}).binary === false);
 check('scan treats webpack.config.js as text', (scan.find(f => f.path === 'webpack.config.js') || {}).binary === false);
 check('scan treats extensionless Makefile as text', (scan.find(f => f.path === 'Makefile') || {}).binary === false);
+check('scan includes root-level .github dir', scanPaths.includes('.github/workflows/ci.yml'));
+check('scan includes root-level .env as text', (scan.find(f => f.path === '.env') || {}).binary === false);
+check('scan includes root-level .gitignore as text', (scan.find(f => f.path === '.gitignore') || {}).binary === false);
+check('scan skips nested hidden files', !scanPaths.some(p => p.includes('.hidden.js')));
 
 // ---- CRUD round-trip ----------------------------------------------------
 
@@ -154,6 +165,10 @@ check('parseReferences with no @ returns empty without scanning', noRefs.length 
 // the on-disk scan (the scan-returned-objects bug made this return []).
 const untaggedRefs = tags.parseReferences(PROJ, 'read @notes.txt please');
 check('parseReferences resolves untagged file via on-disk scan', untaggedRefs.includes('notes.txt'));
+const hiddenRefs = tags.parseReferences(PROJ, 'see @ci.yml please');
+check('parseReferences resolves file inside .github', hiddenRefs.includes('.github/workflows/ci.yml'));
+const hiddenExact = tags.parseReferences(PROJ, 'see @.github/workflows/ci.yml please');
+check('parseReferences resolves exact hidden path', hiddenExact.includes('.github/workflows/ci.yml'));
 // A bare key entry (hand-edited `.mouaif.json` `"x": true`) normalizes
 // to includeInChat:false so the UI does not present a fake tagged file.
 tags.setTags(PROJ, { 'src/App.vue': true });
