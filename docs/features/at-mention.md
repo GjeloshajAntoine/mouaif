@@ -7,7 +7,7 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
 ## Usage
 
 - Type `@` anywhere in the chat composer. A popup appears above the composer showing:
-  - **Files** — tagged project files first (with their tags listed in the search text), then scanned project text files (up to ~200). Selecting a file inserts `@<relPath>`.
+  - **Files** — tagged project files first (with their tags listed in the search text), then scanned project text files (up to ~200). Each result shows the file name as its primary label and the project-relative folder underneath; root files show **Project root**. Selecting a file inserts `@<relPath>`.
   - **Agents** — the project's subagent personas (from Settings → Project → Agents), with their pinned model in the subtitle when set.
   - **Actions** — the project's available tools (shell, read_file, list_files, write_file, etc.).
   - **Model** — the currently selected model ID.

@@ -63,6 +63,15 @@ async function resolveProjectId(projectDir) {
 
 // ---- Build the item list ------------------------------------------------
 
+function filePathParts(relPath) {
+  const normalized = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const separator = normalized.lastIndexOf('/');
+  return {
+    name: separator >= 0 ? normalized.slice(separator + 1) : normalized,
+    folder: separator >= 0 ? normalized.slice(0, separator) : 'Project root'
+  };
+}
+
 async function buildItems(projectDir) {
   if (!projectDir) return [];
   const out = [];
@@ -78,14 +87,14 @@ async function buildItems(projectDir) {
         const tagMap = r.body.tags;
         for (const relPath of Object.keys(tagMap).sort()) {
           const entry = tagMap[relPath];
-          const label = relPath.split('/').pop();
+          const pathParts = filePathParts(relPath);
           out.push({
             id: 'file:' + relPath,
-            label,
-            subtitle: relPath,
+            label: pathParts.name,
+            subtitle: pathParts.folder,
             category: CATEGORY.FILES, icon: 'file',
             insert: relPath,
-            searchText: (label + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
+            searchText: (pathParts.name + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
           });
         }
       }
@@ -111,20 +120,20 @@ async function buildItems(projectDir) {
     }
   }
   const scanned = scanCache || [];
-  const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.subtitle));
+  const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.insert));
   let fileCount = 0;
   for (const f of scanned) {
     if (fileCount >= 200) break;
     if (!f.path || taggedPaths.has(f.path)) continue;
     if (f.binary) continue;
-    const label = f.path.split('/').pop();
+    const pathParts = filePathParts(f.path);
     out.push({
       id: 'file:' + f.path,
-      label,
-      subtitle: f.path,
+      label: pathParts.name,
+      subtitle: pathParts.folder,
       category: CATEGORY.FILES, icon: 'file',
       insert: f.path,
-      searchText: (label + ' ' + f.path).toLowerCase()
+      searchText: (pathParts.name + ' ' + f.path).toLowerCase()
     });
     fileCount++;
   }
