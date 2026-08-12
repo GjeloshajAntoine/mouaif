@@ -44,9 +44,17 @@ const DEFAULT_MAX_BYTES = 256 * 1024;
 // outside this list is reported by the scan as `binary: true` and cannot
 // be tagged through the UI.
 const DEFAULT_EXTS = [
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.md', '.txt',
-  '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift', '.c', '.h',
-  '.cpp', '.hpp', '.css', '.html', '.yml', '.yaml', '.toml', '.sh'
+  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.json5', '.md',
+  '.txt', '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift', '.c', '.h',
+  '.cpp', '.hpp', '.css', '.scss', '.less', '.html', '.vue', '.svelte',
+  '.astro', '.yml', '.yaml', '.toml', '.sh', '.sql', '.graphql', '.gql',
+  '.proto', '.ini', '.conf', '.cfg', '.env', '.lock', '.map', '.log',
+  '.lua', '.pl', '.pm', '.r', '.jl', '.dart', '.zig', '.ex', '.exs',
+  '.erl', '.hrl', '.fs', '.fsx', '.ml', '.clj', '.cljs', '.scala',
+  '.groovy', '.gradle', '.tf', '.hcl', '.pug', '.jade', '.ejs', '.hbs',
+  '.mustache', '.tpl', '.gitignore', '.gitattributes', '.editorconfig',
+  '.eslintrc', '.prettierrc', '.babelrc', '.npmrc', '.nvmrc', '.yarnrc',
+  '.dockerignore', '.gitmodules', '.htaccess', '.dockerfile', '.makefile'
 ];
 
 // Directories the scan never descends into.
@@ -109,7 +117,10 @@ function normalizeExcerpt(raw) {
 
 function normalizeEntry(raw) {
   if (!raw || typeof raw !== 'object') {
-    return { tags: [], excerpt: null, includeInChat: true };
+    // A bare key with no value (e.g. a hand-edited `"src/a.js": true`) is
+    // not a meaningful entry — an empty tags list with includeInChat=true
+    // would silently tag nothing while telling the UI the file is tagged.
+    return { tags: [], excerpt: null, includeInChat: false };
   }
   const tags = Array.isArray(raw.tags)
     ? raw.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
@@ -188,11 +199,18 @@ function scanFiles(projectDir, exts, limit) {
       const ext = path.extname(dirent.name).toLowerCase();
       let size = 0;
       try { size = fs.statSync(full).size; } catch { continue; }
+      // Binary filter. The allowlist check is against the extension
+      // (`app.vue` has ext `.vue`, `my.config.js` ext `.js`) — not the
+      // whole name, so a dot inside the base name never hides a file.
+      // Files with no extension at all (`Makefile`) are still flagged
+      // binary so the user is not tricked into tagging a compiled blob.
+      const isText = allow.has(ext)
+        || (ext === '' && (dirent.name.indexOf('.') === -1 || /^\.[A-Za-z0-9_-]+$/.test(dirent.name)) && allow.has('.' + dirent.name.toLowerCase()));
       out.push({
         path: path.relative(rootResolved, full).split(path.sep).join('/'),
         size,
         ext,
-        binary: !allow.has(ext)
+        binary: !isText
       });
       if (out.length >= cap) break;
     }
@@ -325,7 +343,14 @@ function parseReferences(projectDir, text) {
   // `src/api/users.js` when that is unambiguous.
   const byBase = new Map(); // basename -> [relPath]
   const tagged = (() => { try { return getTags(projectDir); } catch { return {}; } })();
-  const candidates = (bareBases.length ? scanFiles(projectDir, null, 5000) : [])
+  // Union of the on-disk scan and the tagged map. The scan is the primary
+  // source (a mention can target any file in the project, tagged or not);
+  // the tagged map is merged in so a stale/missing tagged path still
+  // resolves even though the scan can no longer see it. scanFiles returns
+  // objects ({path,size,ext,binary}); map them to their path strings here
+  // so the byBase loop below sees the relPaths it expects.
+  const candidates = []
+    .concat((bareBases.length ? scanFiles(projectDir, null, 5000) : []).map(f => f.path))
     .concat(Object.keys(tagged))
     .filter(Boolean);
   // Only resolve bare basenames that were actually mentioned; scanning

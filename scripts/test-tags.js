@@ -39,6 +39,14 @@ fs.writeFileSync(path.join(PROJ, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x4
 fs.writeFileSync(path.join(PROJ, 'node_modules', 'x', 'dep.js'), 'should be skipped');
 // Oversized file (> default 256 KB) with no excerpt -> not injected.
 fs.writeFileSync(path.join(PROJ, 'big.txt'), 'x'.repeat(300 * 1024));
+// Dotted-name source files and extensionless text build files — the
+// exact cases that used to be misclassified as binary (regression tests
+// for the scan allowlist fix).
+fs.writeFileSync(path.join(PROJ, 'src', 'App.vue'), '<template><div>hi</div></template>\n');
+fs.writeFileSync(path.join(PROJ, 'Makefile'), 'all:\n\techo hi\n');
+fs.writeFileSync(path.join(PROJ, 'webpack.config.js'), 'module.exports = {};\n');
+// Untagged text file for the on-disk bare-basename @-reference path.
+fs.writeFileSync(path.join(PROJ, 'notes.txt'), 'some notes\n');
 
 // ---- Path normalization -------------------------------------------------
 
@@ -57,6 +65,9 @@ check('scan finds README.md', scanPaths.includes('README.md'));
 check('scan skips node_modules', !scanPaths.some(p => p.startsWith('node_modules')));
 check('scan flags png as binary', (scan.find(f => f.path === 'logo.png') || {}).binary === true);
 check('scan flags js as non-binary', (scan.find(f => f.path === 'src/a.js') || {}).binary === false);
+check('scan treats dotted-name .vue as text', (scan.find(f => f.path === 'src/App.vue') || {}).binary === false);
+check('scan treats webpack.config.js as text', (scan.find(f => f.path === 'webpack.config.js') || {}).binary === false);
+check('scan treats extensionless Makefile as text', (scan.find(f => f.path === 'Makefile') || {}).binary === false);
 
 // ---- CRUD round-trip ----------------------------------------------------
 
@@ -139,6 +150,15 @@ check('parseReferences resolves ambiguous basename to shortest path',
 // No @ tokens at all -> no disk scan, empty result (hot path).
 const noRefs = tags.parseReferences(PROJ, 'no references here');
 check('parseReferences with no @ returns empty without scanning', noRefs.length === 0);
+// A bare basename that is NOT in the tagged map must still resolve via
+// the on-disk scan (the scan-returned-objects bug made this return []).
+const untaggedRefs = tags.parseReferences(PROJ, 'read @notes.txt please');
+check('parseReferences resolves untagged file via on-disk scan', untaggedRefs.includes('notes.txt'));
+// A bare key entry (hand-edited `.mouaif.json` `"x": true`) normalizes
+// to includeInChat:false so the UI does not present a fake tagged file.
+tags.setTags(PROJ, { 'src/App.vue': true });
+const bareEntry = tags.getTags(PROJ)['src/App.vue'];
+check('bare true entry normalizes to includeInChat=false', bareEntry && bareEntry.includeInChat === false);
 
 // ---- Summary ------------------------------------------------------------
 
