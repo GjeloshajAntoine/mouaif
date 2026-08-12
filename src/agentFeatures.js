@@ -94,12 +94,14 @@ function buildFeatureSummary(opts) {
 
   // --- MCP servers ---
   if (Array.isArray(mcpServers) && mcpServers.length) {
-    const running = mcpServers.filter(s => s.status === 'running');
-    const stopped = mcpServers.filter(s => s.status === 'stopped' || s.status === 'error');
-    const parts = [];
-    if (running.length) parts.push(running.length + ' running');
-    if (stopped.length) parts.push(stopped.length + ' stopped');
-    feat.push('[MCP] ' + parts.join(', '));
+    // NOTE: the MCP line deliberately carries ONLY the configured server
+    // count — never the live running/stopped status. The feature summary
+    // rides inside the cached system block of Anthropic prompt caching;
+    // a status flip (on-demand start, error, restart) mid-conversation
+    // would change that block and invalidate the entire warm cache for
+    // the rest of the chat. The model can query live status via
+    // list_features / the MCP tools if it actually needs it.
+    feat.push('[MCP] ' + mcpServers.length + ' configured');
   }
 
   // --- Agent files ---

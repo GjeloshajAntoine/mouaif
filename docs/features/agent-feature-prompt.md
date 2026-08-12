@@ -15,7 +15,7 @@ Together they solve the problem of "the model doesn't know what it can do": with
 The feature summary is assembled server-side and injected as its own `system` message in the upstream message array, after agent files and before tagged files. It lists:
 
 - **Built-in tools** — shell, subagent, ask_user, file tools — showing their authorization mode (`off` / `ask` / `allowlist` / `allow`).
-- **MCP servers** — how many are running and stopped.
+- **MCP servers** — how many are configured. (Deliberately NOT the live running/stopped status: the summary rides inside the cached Anthropic system block, and a status flip mid-conversation would invalidate the whole prompt cache. Live status is available via `list_features`.)
 - **Agent files** — whether AGENTS.md / CLAUDE.md etc. are injected.
 - **Agents** — how many named subagent personas are defined in the project.
 - **File tagging** — whether tags are configured in the project.
