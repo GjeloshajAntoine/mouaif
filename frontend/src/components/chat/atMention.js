@@ -16,6 +16,10 @@ const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MODEL: 
 const CATEGORY_LABELS = { files: 'Files', agents: 'Agents', actions: 'Actions', model: 'Model' };
 const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
+// At rest (empty query), show only this many items per category so the
+// Files section doesn't push Agents/Actions/Model out of view. Typing a
+// query drops the per-category cap entirely.
+const REST_PER_CATEGORY = 4;
 
 // ---- Module-level state -------------------------------------------------
 
@@ -208,12 +212,23 @@ function filterItems(searchQuery) {
   const matches = searchQuery
     ? items.filter(item => item.searchText.indexOf(searchQuery) >= 0)
     : items;
-  let fileCount = 0;
+  // With an active query there is no per-category cap — the user is
+  // searching. Files still get the large global cap.
+  if (searchQuery) {
+    let fileCount = 0;
+    return matches.filter(item => {
+      if (item.category !== CATEGORY.FILES) return true;
+      if (fileCount >= MAX_FILE_RESULTS) return false;
+      fileCount++;
+      return true;
+    });
+  }
+  // At rest, cap each category so the popup surfaces every section.
+  const counts = {};
   return matches.filter(item => {
-    if (item.category !== CATEGORY.FILES) return true;
-    if (fileCount >= MAX_FILE_RESULTS) return false;
-    fileCount++;
-    return true;
+    const n = counts[item.category] || 0;
+    counts[item.category] = n + 1;
+    return n < REST_PER_CATEGORY;
   });
 }
 

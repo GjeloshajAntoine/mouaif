@@ -12,6 +12,7 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
   - **Actions** — the project's available tools (shell, read_file, list_files, write_file, etc.).
   - **Model** — the currently selected model ID.
 - Narrow the list by typing any part of a file name or folder path (case-insensitive search against label, full relative path, and tags). The 200-file display cap is applied after matching, so files and folders later in large project scans remain searchable.
+- **At rest** (empty query), each category shows at most **4 items** so Files don't crowd out Agents, Actions, and Model. Start typing to drop the per-category cap and search the full list.
 - Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
 - **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent.
@@ -65,6 +66,7 @@ The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=
 - State is module-level (one instance). The `uiState` reference points to the Preact mutable state bag so `buildItems` can read project dir, tools catalog, and chat model without passing them on every keystroke.
 - Files are fetched on mount and every 5 s via a `setInterval` in the `ChatView` mount effect. The scan endpoint is called once per project-dir change (cached in `scanCache`).
 - The `@` detection walks backwards from the cursor to find `@` preceded by whitespace or start-of-string. The query ends at the cursor and cannot contain whitespace.
+- `filterItems` applies a `REST_PER_CATEGORY` cap (4 items per section) only when the query is empty; any typed query searches the full item list with only the 200-file global cap.
 - **Direct invocation** happens in `stream.js` `send()` — the popup itself never invokes tools. It always inserts `@<name>` into the composer, and the typed-Enter path in `send()` decides whether to dispatch (shell/MCP at start-of-text with args) or send to the model.
 - Argument parsing in `tools.js` (`parseToolArgs`): tries JSON first, then `key=value` pairs. Unparseable text returns `null`, causing the tool dispatch to skip and fall through to normal model send.
 - **Arg bar:** When a tool with `parameters` is selected, `selectItem()` calls `renderArgBar(props, required, filled)` which creates a chip for each unfilled parameter. Required args are marked with `.is-required` (bold/accent border). `appendArg(key, prop)` appends ` key=\`\`` for string types or ` key= ` for booleans/numbers, then updates the bar to remove the filled chip. The bar is cleared when a non-tool item (file, model) is selected or the popup is remounted.
