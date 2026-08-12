@@ -331,16 +331,17 @@ function getMessageCount(projectDir, chatId) {
 // messageCursorDb(projectDir, chatId) -> { nextSeq }
 //
 // Cheap append-only recovery cursor: the next persisted seq for this
-// chat. COUNT(*) is enough because seq is assigned by append position
-// in both storage backends; same-length edits are intentionally outside
-// the streaming recovery hot path.
+// chat. Derive it from MAX(seq)+1 rather than COUNT(*) so the cursor
+// stays monotonic even if seq ever becomes non-contiguous (e.g. a
+// future delete/reinsert path); the client treats `nextSeq` as a seq
+// cursor, not a row count.
 function messageCursorDb(projectDir, chatId) {
   ensureTables();
   const d = require('./settings.js').getDb();
   const row = d.prepare(
-    'SELECT COUNT(*) AS nextSeq FROM message_store WHERE project_dir = ? AND chat_id = ?'
+    'SELECT COALESCE(MAX(seq), -1) + 1 AS nextSeq FROM message_store WHERE project_dir = ? AND chat_id = ?'
   ).get(projectDir, chatId);
-  return { nextSeq: row ? row.nextSeq : 0 };
+  return { nextSeq: row && typeof row.nextSeq === 'number' ? row.nextSeq : 0 };
 }
 
 // ---- Cost aggregation (SQL, no full-transcript reads) ---------------------
