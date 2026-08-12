@@ -82,6 +82,11 @@
   min-width: 0;
   overflow: hidden;
 }
+/* In full-editor mode the path-row only carries the
+   layout toggle + Close, so right-align them and give
+   the row a tiny bit of padding so the buttons don't
+   collide with the sheet edge on narrow phones. */
+.fe__sheet--full .fe__path-row { justify-content: flex-end; padding: 0 4px; }
 .fe__path-input-wrap { flex: 1 1 0; width: 0; min-width: 0; }
 .fe__path-input {
   display: block;

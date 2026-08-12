@@ -33,7 +33,14 @@ Tap the **Files** item in the file toolbar dropdown (next to the composer). The 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.
 
 ### Layout toggle — split vs full-editor
-The modal opens in **split view** by default: the file list sits on the left (38% width on tablet/desktop, full-width and stacked above the editor on phones) and the editor/preview sits on the right. A two-bar icon in the header toolbar toggles **full-editor mode**, which hides the file list so the editor/preview takes the whole pane. Tapping the same button (the icon swaps to a one-bar glyph with an `is-active` accent) restores the split view. The toggle is available even before any file is opened, so the user can pick a layout up front, and it does not reload or close the currently open file.
+The modal opens in **split view** by default: the file list sits on the left (38% width on tablet/desktop, full-width and stacked above the editor on phones) and the editor/preview sits on the right. A single-rectangle icon in the header toolbar switches to **full-editor mode**, which hides the file list (and the breadcrumb + list-status rows that go with it) so the editor/preview takes the whole pane. The header is also reduced: the path input, Up / Go / Refresh buttons, and breadcrumb all disappear in full-editor mode, leaving only the toggle and **Close**.
+
+The toggle icon always shows the **next** state, not the current one:
+
+- In split view: a single wide rectangle (the action is "hide the file list").
+- In full-editor mode: two equal vertical bars (the action is "restore the split view"). The icon gets the `is-active` accent so the current layout is obvious at a glance. The icon renders at 18px in this state so the two-bar shape stays legible at the 36px mobile touch target.
+
+Tapping the toggle switches layouts without reloading or closing the currently open file, so flipping it mid-edit preserves the buffer, dirty flag, and save state.
 
 ## Backend API
 
@@ -69,8 +76,8 @@ For files that fall outside the allowlist, `readFile` and `writeFile` now run an
 
 ## Implementation notes
 
-- File: `frontend/src/components/FileEditor.jsx` (component — adds `openMedia` state, `apiReadMedia`, image-row click path, preview pane with `<img>` and inline SVG; `editorFull` state + header toggle button for full-editor mode; sheet gets the `fe__sheet--full` modifier class when the list is hidden)
-- File: `frontend/src/file-editor.css` (CSS — `.fe__media-host`, `.fe__media-img`, `.fe__media-svg`, `.fe__row--image`; `.fe__iconbtn.is-active` for the toggle button, `.fe__sheet--full .fe__list-wrap { display: none }` for full-editor mode)
+- File: `frontend/src/components/FileEditor.jsx` (component — adds `openMedia` state, `apiReadMedia`, image-row click path, preview pane with `<img>` and inline SVG; `editorFull` state + a header `fe__path-row` that renders a minimal toolbar (toggle + Close) in full-editor mode and the full nav toolbar (Up / path / Go / Refresh / toggle / Close) in split mode; breadcrumb + list-status rows are gated on `!editorFull`; sheet gets the `fe__sheet--full` modifier class when the list is hidden)
+- File: `frontend/src/file-editor.css` (CSS — `.fe__media-host`, `.fe__media-img`, `.fe__media-svg`, `.fe__row--image`; `.fe__iconbtn.is-active` for the toggle button, `.fe__sheet--full .fe__list-wrap { display: none }` for the hidden list, `.fe__sheet--full .fe__path-row { justify-content: flex-end }` so the minimal header's two buttons sit on the right of the sheet on narrow phones)
 - File: `src/files.js` (server — adds `IMAGE_EXTS`, `EXT_TO_MIME`, `isProbablyText`, `isProbablyTextSync`, `readMedia`, `mimeForExt`; expands `TEXT_EXTS`; sniffs in `readFile`/`writeFile`/`listDir`)
 - File: `src/server-handlers-projects.js` (server — dispatches `/api/file-media` to `handleFileEditor`; adds the `GET /api/file-media` route inside `handleFileEditor`)
 - File: `src/http-server.js` (server — adds `/api/file-media` to the top-level file-editor dispatcher so it wins over `/api/projects/*`)
