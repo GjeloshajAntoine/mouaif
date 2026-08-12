@@ -41,7 +41,15 @@ function writeFile(p, content) {
   assert(files.globToRegExp('src/**/*.test.js').test('src/x/foo.test.js'), 'glob src/**/*.test.js matches');
   assert(!files.globToRegExp('src/**/*.test.js').test('lib/x/foo.test.js'), 'glob src/**/*.test.js is anchored to src/');
   assert(files.globToRegExp('README.md').test('README.md'), 'glob literal matches');
-  assert(!files.globToRegExp('README.md').test('readme.md'), 'glob is case-sensitive on POSIX');
+  assert(files.globToRegExp('README.md').test('readme.md'), 'glob is case-insensitive so a model need not guess project casing');
+  assert(files.globToRegExp('readme.md').test('README.md'), 'glob is case-insensitive in both directions');
+  // Bare (non-glob) patterns are directory-or-file prefixes: `src` matches
+  // every file under src/ (the `/**` suffix is implied), so a model that
+  // asks to "list src" gets an answer instead of nothing.
+  assert(files.globToRegExp('src').test('src/index.js'), 'bare glob src matches a file under src');
+  assert(files.globToRegExp('src').test('src/utils/new.js'), 'bare glob src matches nested files too');
+  assert(files.globToRegExp('src').test('other.js') === false, 'bare glob src does not match outside src');
+  assert(files.globToRegExp('src/index.js').test('src/index.js'), 'bare glob with a full file path matches it');
 
   // ---- SPEC shape ------------------------------------------------
   assert(files.SPECS.read_file.function.name === 'read_file', 'read_file spec name');
@@ -131,6 +139,14 @@ function writeFile(p, content) {
   assert(r2g.ok === true, 'list_files glob ok');
   const gp = r2g.result.entries.map((e) => e.path);
   assert(gp.indexOf('src/a.js') >= 0 && gp.indexOf('src/b.ts') === -1, 'list_files src/*.js matches only .js');
+  // Bare directory pattern: `src` (no `/**`) implies the subtree, so a
+  // model that says "list src" gets the files rather than an empty list.
+  const r2b = await files.runFileTool('list_files', { projectDir: root, args: { pattern: 'src' } });
+  assert(r2b.ok === true, 'list_files bare-dir pattern ok');
+  const bp = r2b.result.entries.map((e) => e.path);
+  assert(bp.indexOf('src/a.js') >= 0 && bp.indexOf('src/b.ts') >= 0, 'list_files bare `src` lists the subtree');
+  assert(bp.indexOf('README.md') === -1, 'list_files bare `src` does not leak outside src');
+
 
   // Empty pattern.
   const r2z = await files.runFileTool('list_files', { projectDir: root, args: { pattern: '   ' } });
@@ -157,6 +173,13 @@ function writeFile(p, content) {
   assert(r3f.ok === true, 'search_files path filter ok');
   assert(r3f.result.matches.length === 1, 'search_files path filter narrows to one file');
   assert(r3f.result.matches[0].path === 'src/auth.js', 'search_files path filter result is the file');
+  // A missing / partial directory path is treated as a subtree prefix
+  // instead of silently returning zero matches: `src/util` (typo or a dir
+  // not created yet) still searches everything under the nearest existing
+  // ancestor `src`.
+  const r3sub = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)', path: 'src/util' } });
+  assert(r3sub.ok === true, 'search_files missing-dir subtree path ok');
+  assert(r3sub.result.matches.length > 0, 'search_files missing-dir subtree still finds matches');
 
   // Bad regex.
   const r3b = await files.runFileTool('search_files', { projectDir: root, args: { query: '(' } });

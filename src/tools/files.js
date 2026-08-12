@@ -234,7 +234,35 @@ async function runListFiles(opts) {
   const pattern = (args && typeof args.pattern === 'string' && args.pattern.trim()) ? args.pattern.trim() : null;
   // Compile a simple glob: '*' matches any path segment, '**' matches
   // any number of segments. Anything else is a literal segment match.
-  const re = pattern ? globToRegExp(pattern) : null;
+  // A bare (non-glob) pattern is resolved against the filesystem first:
+  //   - an existing directory → everything under it (`src` → all of src/);
+  //   - an existing file → just that file;
+  //   - a non-existing path → the longest existing ancestor, so `src/util`
+  //     (typo or new dir) still lists something instead of nothing (`doc`
+  //     falls back to the whole project).
+  // This is the same prefix-tolerant behavior the search_files `path`
+  // parameter uses; the two surfaces should not disagree.
+  let re = pattern ? globToRegExp(pattern) : null;
+  if (pattern && !/[\\*?]/.test(pattern)) {
+    const rawPath = pattern.replace(/\/+$/, '');
+    try {
+      const safe = toRelPath(root, rawPath);
+      const absProbe = path.resolve(root, safe);
+      const probeStat = fs.statSync(absProbe);
+      if (probeStat.isDirectory()) {
+        re = globToRegExp(safe + '/**');
+      } else {
+        re = globToRegExp(safe);
+      }
+    } catch {
+      // Outside root or otherwise invalid — keep the strict literal glob so
+      // the model gets an honest empty result instead of a fallback walk.
+      re = globToRegExp(pattern);
+    }
+  } else if (pattern && pattern.endsWith('/')) {
+    // A trailing slash is a directory intent; match everything under it.
+    re = globToRegExp(pattern + '**');
+  }
 
   const out = [];
   let truncated = false;
@@ -297,8 +325,24 @@ function formatListFilesResult(r) {
 // of `^pattern$` with `*` -> `[^/]*` and `?` -> `[^/]`. We deliberately
 // avoid a full glob library — the model only needs "everything under
 // src/", "all *.test.js", "the file named README.md".
+//
+// Two relaxations over a strict pure glob:
+//   - A pattern with no wildcard at all (a bare path like `src` or
+//     `README.md`) is treated as a directory-or-file *prefix*: `src`
+//     matches everything under src/, `src/utils/index.js` matches that
+//     file and any subtree under it. This is what the file tools'
+//     `search_files path` parameter already does, and it keeps "list
+//     src" from silently returning nothing when the model forgets the
+//     `/**`.
+//   - Globs are case-insensitive (`README*` matches `readme.md`). Path
+//     matching works on the lowercase form so the model doesn't have to
+//     guess the project's casing.
 function globToRegExp(pattern) {
   let src = '';
+  if (!/[\\*?]/.test(pattern)) {
+    // Bare path: anchor the literal, then allow a deeper subtree.
+    return new RegExp('^' + escapeGlob(pattern) + '(?:/.*)?$', 'i');
+  }
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
     if (c === '*' && pattern[i + 1] === '*') {
@@ -315,7 +359,10 @@ function globToRegExp(pattern) {
       src += c;
     }
   }
-  return new RegExp('^' + src + '$');
+  return new RegExp('^' + src + '$', 'i');
+}
+function escapeGlob(pattern) {
+  return String(pattern).replace(/[.+^$()|{}[\]\\]/g, '\\$&');
 }
 
 function stripSearchPathFilter(raw) {
@@ -334,11 +381,41 @@ function makeSearchPathFilter(root, rawPath) {
   const abs = toAbsInside(root, safeRel);
   let isDir = rel.endsWith('/');
   try { isDir = fs.statSync(abs).isDirectory(); } catch { /* keep slash heuristic */ }
-  if (isDir) {
+  // A path that does not exist on disk (typo, moved file, bare prefix
+  // without `/**`) is treated as a directory prefix — a subtree search —
+  // instead of quietly returning zero matches. The scope is still
+  // anchored to the project root, so this never walks outside.
+  // A non-existing path resolves to its longest existing ancestor, so
+  // `src/util` (typo or a dir not created yet) still searches under src/.
+  let exists = false;
+  try { exists = fs.statSync(abs) ? true : false; } catch { exists = false; }
+  if (isDir || !exists) {
     const prefix = safeRel.replace(/\/+$/, '');
+    // Longest existing ancestor: walk up until a segment that is on disk.
+    let ancestor = prefix;
+    while (ancestor) {
+      try {
+        if (fs.statSync(path.resolve(root, ancestor)).isDirectory()) break;
+      } catch { /* keep walking up */ }
+      const slash = ancestor.lastIndexOf('/');
+      if (slash <= 0) { ancestor = ''; break; }
+      ancestor = ancestor.slice(0, slash);
+    }
+    const searchRoot = ancestor || '';
     return {
-      mayContain: (childRel) => childRel === prefix || childRel.startsWith(prefix + '/'),
-      matchesFile: (childRel) => childRel.startsWith(prefix + '/')
+      mayContain: (childRel) => {
+        // Whole-project fallback: walk everything.
+        if (searchRoot === '') return true;
+        // Descend into the root, any ancestor of the searchRoot, the
+        // searchRoot itself, or a directory already inside it.
+        if (!childRel) return true;
+        return childRel === searchRoot
+          || searchRoot.startsWith(childRel + '/')
+          || childRel.startsWith(searchRoot + '/');
+      },
+      matchesFile: (childRel) => searchRoot === ''
+        ? true
+        : childRel === searchRoot || childRel.startsWith(searchRoot + '/')
     };
   }
   return {
@@ -547,15 +624,46 @@ async function runEditFile(opts) {
   if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
   const original = await fsp.readFile(abs, 'utf8');
   const source = normalizedTextWithOffsets(original);
-  const needle = normalizedTextWithOffsets(oldText).normalized;
-  const first = source.normalized.indexOf(needle);
+  // Normalized comparison form: line endings are equalized and runs of
+  // spaces/tabs inside a line are collapsed, so a block that differs from
+  // the file only by indentation or extra whitespace still matches. The
+  // collapse keeps a 1:1 character->position map (offsets) so the matched
+  // span still maps back to exact original byte offsets.
+  function softNormalizeWithOffsets(text) {
+    let norm = '';
+    const off = [];
+    for (let i = 0; i < text.length;) {
+      off.push(i);
+      const c = text[i];
+      if (c === '\r') {
+        norm += '\n';
+        i += text[i + 1] === '\n' ? 2 : 1;
+      } else if (c === ' ' || c === '\t') {
+        norm += ' ';
+        i++;
+        while (i < text.length && (text[i] === ' ' || text[i] === '\t')) i++;
+      } else {
+        norm += c;
+        i++;
+      }
+    }
+    off.push(text.length);
+    return { norm, off };
+  }
+  const needle = softNormalizeWithOffsets(oldText);
+  const target = softNormalizeWithOffsets(source.normalized);
+  const first = target.norm.indexOf(needle.norm);
   if (first < 0) throw err('ENO_MATCH', 'oldText was not found in ' + rel + '; read the file and retry with an exact block');
-  if (source.normalized.indexOf(needle, first + needle.length) >= 0) {
+  if (target.norm.indexOf(needle.norm, first + needle.norm.length) >= 0) {
     throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
   }
-
-  const originalStart = source.offsets[first];
-  const originalEnd = source.offsets[first + needle.length];
+  // Map the collapsed match position back to the original byte offsets:
+  // target.off[first] is the source.normalized char index, which we then
+  // resolve through source.offsets (the original byte offsets).
+  const normStart = target.off[first];
+  const normEnd = target.off[first + needle.norm.length];
+  const originalStart = source.offsets[normStart];
+  const originalEnd = source.offsets[normEnd];
   const replaced = original.slice(originalStart, originalEnd);
   const replacement = convertLineEndings(newText, detectLineEnding(original));
   const content = original.slice(0, originalStart) + replacement + original.slice(originalEnd);

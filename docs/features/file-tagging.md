@@ -39,6 +39,8 @@ When the user sends a message, the server pre-appends the tagged files to the up
 
 The leading header block lets the model reason about provenance. The role is `system` by default (the tagged files are project context); when the user types `@src/api/users.js` in the composer, the role is `user` so the model treats it as a direct reference.
 
+A bare basename mention — `@users.js` instead of the full path — is also accepted. `parseReferences` resolves it against the tagged map first and the on-disk scan second, so `@users.js` promotes `src/api/users.js` when that basename is unambiguous (an ambiguous basename resolves to the shortest path rather than being dropped, and a mention with no match at all is silently ignored).
+
 ### REST
 
 | Method | Path | Body / Query | Response |
@@ -63,7 +65,7 @@ The `scan` endpoint is the directory walk the UI uses to populate the file list.
 
 ## Implementation notes
 
-- Source: `src/tags.js` (new module) — `getTags(projectDir)`, `setTags(projectDir, map)`, `scanFiles(projectDir, exts)`, `resolveForInjection(projectDir, message)`.
+- Source: `src/tags.js` (new module) — `getTags(projectDir)`, `setTags(projectDir, map)`, `scanFiles(projectDir, exts)`, `resolveForInjection(projectDir, message)`, `parseReferences(projectDir, text)`. `parseReferences` short-circuits when the message has no `@` tokens (it runs on every chat send) and only touches the disk for bare basename mentions; exact `@path` tokens are resolved without scanning.
 - The injection happens in `src/index.js` → `handleChatStream`, immediately before the existing `promptId` block. Tagged files go first (deepest context), then the prompt, then the transcript.
 - A `tags` section is appended to the per-chat trace file (decision §5) as a single `system event` line so a trace replay shows what was injected without re-reading the file from disk.
 - The `scan` endpoint is a one-pass walk; large projects (>50k files) are paged by directory depth. The UI can stop at any time and the server is not blocked.

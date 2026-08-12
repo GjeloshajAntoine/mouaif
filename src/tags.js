@@ -293,18 +293,64 @@ function resolveForInjection(projectDir, opts) {
 // Parse @<relPath> tokens out of a composer message. Returns the list of
 // referenced relative paths (POSIX-normalized where possible; unparseable
 // tokens are dropped). Used to promote a tagged file to a `user` message.
+//
+// Matching is relaxed on purpose: an exact `@src/api/users.js` works, and
+// so does a bare basename `@users.js` when it uniquely identifies one
+// file in the project. The basename is resolved against the tagged map
+// (which is all the composer needs — an `@` mention is about files the
+// user already tagged) and, as a fallback, the on-disk scan. Ambiguous
+// basenames are resolved by the shortest path — the user attaches the
+// file they can type — and dropped only when nothing at all matches.
 function parseReferences(projectDir, text) {
   if (typeof text !== 'string' || !text) return [];
   const out = [];
   // @ followed by a path-ish token (no whitespace). Stops at whitespace.
   const re = /(?:^|\s)@([^\s]+)/g;
+  let bareBases = [];
   let m;
   while ((m = re.exec(text)) !== null) {
     const raw = m[1];
+    // A slash means the user typed a path (`@src/api/users.js`) — resolve
+    // it exactly. A bare token (`@users.js`) is a basename hint; leave it
+    // for the resolution pass below so `@a.js` resolves to src/a.js
+    // instead of being rejected as an ambiguous literal path.
+    if (raw.indexOf('/') === -1) { bareBases.push(raw); continue; }
     try { out.push(toRelPath(projectDir, raw)); }
-    catch { /* skip tokens that escape root or are not paths */ }
+    catch { /* try basename resolution */ }
   }
-  return out;
+  // Short-circuit: if there are no @-tokens at all (the common case), do
+  // not touch the disk — parseReferences runs on every chat send.
+  if (!out.length && !bareBases.length) return [];
+  // Second pass: bare basename references. `@users.js` resolves the file
+  // `src/api/users.js` when that is unambiguous.
+  const byBase = new Map(); // basename -> [relPath]
+  const tagged = (() => { try { return getTags(projectDir); } catch { return {}; } })();
+  const candidates = (bareBases.length ? scanFiles(projectDir, null, 5000) : [])
+    .concat(Object.keys(tagged))
+    .filter(Boolean);
+  // Only resolve bare basenames that were actually mentioned; scanning
+  // is avoidable when every mention was already an exact path.
+  for (const rel of candidates) {
+    if (typeof rel !== 'string') continue;
+    const name = String(rel).split('/').pop() || '';
+    if (!name) continue;
+    if (!byBase.has(name)) byBase.set(name, []);
+    const arr = byBase.get(name);
+    if (!arr.includes(rel)) arr.push(rel);
+  }
+  for (const raw of bareBases) {
+    const base = String(raw).split('/').pop();
+    if (out.some((p) => p === base)) continue; // exact path already resolved
+    const hits = byBase.get(base) || [];
+    if (hits.length === 1) {
+      out.push(hits[0]);
+    } else if (hits.length > 1) {
+      // Shortest path wins for an ambiguous basename.
+      hits.sort((a, b) => a.length - b.length);
+      out.push(hits[0]);
+    }
+  }
+  return Array.from(new Set(out));
 }
 
 module.exports = {

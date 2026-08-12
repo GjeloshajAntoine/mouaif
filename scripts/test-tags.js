@@ -123,6 +123,23 @@ check('@-referenced file promoted to user role', pMsg && pMsg.role === 'user');
 const none = tags.resolveForInjection(PROJ, {});
 check('excluded + unreferenced file skipped', !none.some(m => m.relPath === 'src/a.js'));
 
+// ---- Bare basename @-references ----------------------------------------
+// `@a.js` should resolve to src/a.js when the basename is unambiguous in
+// the project (the tagged map plus the on-disk scan).
+const baseRefs = tags.parseReferences(PROJ, 'check @a.js please');
+check('parseReferences resolves bare basename to a tagged file', baseRefs.includes('src/a.js'));
+// Ambiguous basenames pick the shortest path instead of dropping the ref.
+tags.setTags(PROJ, {
+  'src/a.js': { tags: [], excerpt: null, includeInChat: false },
+  'lib/more/deeper/a.js': { tags: [], excerpt: null, includeInChat: false }
+});
+const ambigRefs = tags.parseReferences(PROJ, 'see @a.js');
+check('parseReferences resolves ambiguous basename to shortest path',
+  ambigRefs.includes('src/a.js') && !ambigRefs.includes('lib/more/deeper/a.js'));
+// No @ tokens at all -> no disk scan, empty result (hot path).
+const noRefs = tags.parseReferences(PROJ, 'no references here');
+check('parseReferences with no @ returns empty without scanning', noRefs.length === 0);
+
 // ---- Summary ------------------------------------------------------------
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
