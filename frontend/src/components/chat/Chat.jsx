@@ -50,8 +50,8 @@ export function ChatView(props) {
     let v = input && input.value ? input.value.trim() : '';
     // Blank or remove any non-numeric noise; an all-numeric string is saved as-is.
     const num = v && /^\d+$/.test(v) ? v : '';
-    state.maxOutputTokens = num;
-    if (num !== (state.chat && state.chat.maxOutputTokens || '')) {
+    s.state.maxOutputTokens = num;
+    if (num !== (s.state.chat && s.state.chat.maxOutputTokens || '')) {
       if (typeof s.state._updateChat === 'function') s.state._updateChat({ maxOutputTokens: num });
     }
   }
@@ -228,16 +228,16 @@ export function ChatView(props) {
               placeholder: 'Max output tokens (blank = default)',
               'aria-label': 'Max output tokens',
               onBlur: (e) => {
-                const v = e.currentTarget.value.trim();
-                if (v && state.chat) {
-                  state.maxOutputTokens = v;
-                  if (v !== (state.chat.maxOutputTokens || '')) {
-                    updateMaxOutput(e.currentTarget);
-                  }
-                } else if (!v && state.chat && state.chat.maxOutputTokens) {
-                  state.maxOutputTokens = '';
-                  updateMaxOutput(e.currentTarget);
-                }
+          const v = e.currentTarget.value.trim();
+          if (v && s.state.chat) {
+            s.state.maxOutputTokens = v;
+            if (v !== (s.state.chat.maxOutputTokens || '')) {
+              updateMaxOutput(e.currentTarget);
+            }
+          } else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
+            s.state.maxOutputTokens = '';
+            updateMaxOutput(e.currentTarget);
+          }
               },
               onKeydown: (e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
