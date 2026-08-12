@@ -4,13 +4,11 @@
 // This is the identity the client's merge-by-seq relies on to never
 // re-add a row it already holds (the fix for repeated last messages).
 //
-// Spawns the server, appends to a chat (JSON storage backend), checks:
+// Spawns the server, appends to a chat (SQLite storage backend), checks:
 //   - every returned message carries an integer `seq`;
 //   - full read seqs are 0..N-1 in order;
 //   - `fromSeq=N` returns only rows with seq >= N (no overlap with what
 //     the client already has).
-// Also runs the same against a project configured for chatStorage=db
-// (SQLite message_store backend).
 
 'use strict';
 
@@ -21,7 +19,6 @@ const http = require('http');
 const { spawn } = require('child_process');
 
 const mouaifHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-seq-home-'));
-const rootJson = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-seq-json-'));
 const rootDb = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-seq-db-'));
 
 let pass = 0, fail = 0;
@@ -63,21 +60,13 @@ function pickFreePort() {
   });
 }
 
-function argsForRoot(root, db) {
-  return {
-    env: Object.assign({}, process.env, {
-      MOUAIF_HOME: mouaifHome,
-      MOUAIF_ALLOW_ANY_ROOT: '1',
-      MOUAIF_CHAT_STORAGE_DEFAULT: db ? 'db' : 'json'
-    }),
-    root
-  };
-}
-
 async function run() {
   port = await pickFreePort();
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'mouaif.js'), 'serve', '--port', String(port), '--host', '127.0.0.1'], {
-    env: argsForRoot(rootDb, false).env,
+    env: Object.assign({}, process.env, {
+      MOUAIF_HOME: mouaifHome,
+      MOUAIF_ALLOW_ANY_ROOT: '1'
+    }),
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let serverLog = '';
@@ -85,13 +74,7 @@ async function run() {
   child.stderr.on('data', (d) => { serverLog += d; });
   if (!(await waitForServer())) { console.error('server failed:\n' + serverLog); child.kill(); process.exit(1); }
 
-  for (const [rn, root, db] of [['json', rootJson, false], ['db', rootDb, true]]) {
-    // Configure storage for the project. The default is read from env
-    // above (MOUAIF_CHAT_STORAGE_DEFAULT) unless overridden. Simpler:
-    // write a .mouaif.json with chatStorage.
-    try {
-      fs.writeFileSync(path.join(root, '.mouaif.json'), JSON.stringify({ chatStorage: db ? 'db' : 'json' }));
-    } catch {}
+  for (const [rn, root] of [['db', rootDb]]) {
     const q = 'projectDir=' + encodeURIComponent(root);
     const create = await request('POST', '/api/chats', { projectDir: root });
     if (create.status !== 201 || !create.body || !create.body.chat) { t(rn + ' create chat', false, create); continue; }

@@ -8,8 +8,8 @@
 //   - both in the same ~/.mouaif/store.sqlite used by settings.js
 //
 // This module exposes the DB helpers. The public API surface remains
-// src/chats.js and src/messages.js, which route through this module
-// when the app setting `chatStorage` is 'db' (default).
+// src/chats.js and src/messages.js, which route through this module.
+// It is the only chat/message storage backend.
 
 const path = require('path');
 const { assertChatId, CHAT_ID_RE, normalizeMessage } = require('./messages.js');
@@ -408,8 +408,10 @@ function chatTotalCostDb(projectDir, chatId) {
 
 // ---- Import from JSON files ------------------------------------------------
 //
-// Scans <projectDir> for .mouaif.messages.*.json files and imports them
-// into the DB. Also imports chat metadata from .mouaif.json.
+// Legacy one-shot import from `.mouaif.messages.*.json` transcripts and the
+// old `<projectDir>/.mouaif.json` `chats` array. Kept so users who ran the
+// earlier file-based storage can migrate that history into the DB; it is
+// no longer an active backend and the import migration is retired.
 
 function importFromJson(projectDir, opts) {
   ensureTables();
@@ -492,6 +494,8 @@ module.exports = {
   // Cost aggregation
   projectCostTotals,
   chatTotalCostDb,
-  // Import
-  importFromJson
+  // Legacy import
+  importFromJson,
+  // Exported so settings migrations can create the tables before their ALTERs.
+  ensureChatTables: ensureTables
 };

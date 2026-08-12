@@ -122,11 +122,6 @@ function parseHash() {
     return { name: 'settingsTags', projectId: params.get('projectId') || '', projectDir: params.get('projectDir') || '' };
   }
   if (h === 'settings/about') return { name: 'settingsAbout' };
-  if (h === 'settings/project/import' || h.startsWith('settings/project/import?')) {
-    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-    const params = new URLSearchParams(qs);
-    return { name: 'settingsImport', projectDir: params.get('projectDir') || '' };
-  }
   if (h.startsWith('chat/')) {
     const rest = h.slice('chat/'.length);
     const [chatId, qs] = rest.split('?');

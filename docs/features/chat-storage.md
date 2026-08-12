@@ -1,60 +1,26 @@
 # Chat storage — SQLite-backed chat and message persistence
-
 <!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
+Static-page-ready. No SSG shortcodes. Update docs/README.md in the
+same commit that adds this file.
 -->
-
 ## Overview
-
-By default, mouaif stores chat metadata and messages in the app-level SQLite database (`~/.mouaif/store.sqlite`), the same SQLite store used for app settings. Legacy file-based storage (`.mouaif.messages.*.json` files) is still available as a fallback via the `chatStorage` app setting.
-
+mouaif stores chat metadata and messages in the app-level SQLite database (`~/.mouaif/store.sqlite`), the same SQLite store used for app settings. There is no file-based chat storage backend: legacy `.mouaif.messages.*.json` transcripts were removed. To keep a chat's history as a project file you can commit, use the per-chat trace-to-file export (see [trace.md](./trace.md)).
 ## Usage
-
 ### Default behavior
+All chats and messages are stored in the DB. No action needed.
+### Committing a chat's history
+Chat storage and the trace export are independent. To write a chat's transcript next to the project source:
 
-All new chats are stored in the DB. No action needed.
+1. Open the chat, then its settings.
+2. Open **Technical details** (or **Settings → Project → Technical details** with the chat's `chatId`).
+3. Toggle **Trace this chat** to append events to `<projectDir>/.mouaif/traces/<chatId>.ndjson`, or tap **Export trace** for a one-shot write.
 
-### Switching back to JSON files
-
-1. Go to **Settings → App defaults → Chat storage**
-2. Select **"JSON files"**
-3. Save
-
-Existing chats in the DB are not migrated back to JSON. Only new chats follow the selected backend.
-
-### Importing existing JSON chats into the DB
-
-When a project already has `.mouaif.messages.*.json` files (from before the DB storage was enabled), they can be imported into the SQLite store:
-
-**From the UI:**
-1. Open **Settings → Project settings**
-2. Tap **"Import chats"** under "Project add-ons"
-3. Tap **"Import from JSON files"**
-
-**From the CLI:**
-```bash
-mouaif import-chats /path/to/project
-```
-
-**On server start:**
-The migration `2025-07-23-import-chats-to-db` runs automatically on `mouaif serve` startup and imports any un-imported JSON files for every registered project.
-
-### API endpoint
-
-```
-POST /api/chats/import
-Body: { projectDir: "<abs>", skipExisting?: true }
-```
-
-Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
-
+The trace file is user-owned: it can be `git add`-ed with the project and is kept when the chat is deleted. See [trace.md](./trace.md).
+### Legacy JSON import
+For users upgrading from an earlier version, a one-shot import from the old `.mouaif.messages.*.json` files is available as a code path (`src/chatdb.js` → `importFromJson`) and the `mouaif import-chats` CLI command. The automatic startup migration that ran this import has been retired; JSON files are no longer read as a storage backend.
 ## Implementation notes
-
 ### DB schema (in `~/.mouaif/store.sqlite`)
-
 **`chat_store`** table — one row per chat:
-
 | Column | Type | Notes |
 |--------|------|-------|
 | `project_dir` | TEXT | Part of composite PK |
@@ -73,9 +39,7 @@ Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
 | `agent_id` | TEXT | Legacy — always NULL; kept for old DBs, no longer read or written |
 | `agent_files` | INTEGER | 0, 1, or NULL (=undefined) |
 | `skills` | INTEGER | 0, 1, or NULL (=undefined) |
-
 **`message_store`** table — one row per message:
-
 | Column | Type | Notes |
 |--------|------|-------|
 | `project_dir` | TEXT | Part of composite PK |
@@ -95,26 +59,11 @@ Returns `{ ok: true, imported: { chats: <n>, messages: <n>, errors: [...] } }`.
 | `args` | TEXT | Nullable, JSON |
 | `ok` | INTEGER | Nullable, 0/1 |
 | `phase` | TEXT | `call` or `result` |
-
 ### Module structure
-
-- **`src/chatdb.js`** — direct SQLite CRUD for chats and messages. Tables are created lazily with `IF NOT EXISTS`.
-- **`src/chats.js`** — public API, routes to `chatdb.js` or legacy JSON files based on `chatStorage` setting.
-- **`src/messages.js`** — public API, routes to `chatdb.js` or legacy JSON files.
-
+- **`src/chatdb.js`** — direct SQLite CRUD for chats and messages. Tables are created lazily with `IF NOT EXISTS`. Also keeps the legacy `importFromJson` one-shot importer.
+- **`src/chats.js`** — public API for chats, delegates to `chatdb.js`.
+- **`src/messages.js`** — public API for messages, delegates to `chatdb.js`.
 ### Message `seq` — the stable per-chat row identity
-
 Every message exposed by `GET /api/chats/:id/messages` carries a `seq` field: its stable, monotonically increasing position within that `(project_dir, chat_id)`.
-
 - **SQLite backend:** `seq` is the `message_store` primary-key column, assigned at insert (append-only, so a row keeps its `seq` forever).
-- **JSON backend:** `seq` is assigned by array index in `listMessages` when a row lacks one (older files), then persisted; new appends stamp the next index. It is thus stable and monotonic across reloads.
-
-`seq` is chat-scoped, so it is safe when many chats across many projects run concurrently. It is the single identity the frontend's reconcile/recovery path merges by — see [`chat-streaming-performance.md`](chat-streaming-performance.md) and `frontend/src/components/chat/msgMerge.js`:
-
-### Storage backend selection
-
-The `useDb(projectDir)` helper reads `settings.getResolved(projectDir).chatStorage`. If `'db'`, all chat/message operations go through `chatdb.js`. If `'json'`, the legacy file-based code paths are used.
-
-### Auto-import migration
-
-The `2025-07-23-import-chats-to-db` migration in `settings.js` scans every registered project for `.mouaif.messages.*.json` files and imports them into the DB. It runs on every `mouaif serve` start (skipped if already run). Idempotent: `skipExisting: true` prevents re-importing chats already in the DB.
+`seq` is chat-scoped, so it is safe when many chats across many projects run concurrently. It is the single identity the frontend's reconcile/recovery path merges by — see [`chat-streaming-performance.md`](chat-streaming-performance.md) and `frontend/src/components/chat/msgMerge.js`.

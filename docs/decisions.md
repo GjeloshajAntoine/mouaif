@@ -124,14 +124,12 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - The basename `@`-reference pass resolves against the **on-disk scan plus the tagged map** (a mention can target any file in the project, tagged or not). The scan returns objects, so the pass maps them to `path` strings before matching.
 - New module: `src/tags.js`. New REST surface: `GET/PUT /api/projects/<id>/tags`, `POST /api/projects/<id>/tags/scan`, `DELETE /api/projects/<id>/tags/files/*`. The injection happens in `src/index.js → handleChatStream` immediately before the existing `promptId` block.
 
-## 22. Chat storage — SQLite by default, JSON files as a legacy option
+## 22. Chat storage — SQLite only
 
-- Chat metadata and messages are stored in the same app-level SQLite store (`~/.mouaif/store.sqlite`) used for settings, in two new tables: `chat_store` and `message_store`.
-- File-based storage (`.mouaif.messages.*.json` files) is still available via the `chatStorage` app setting (`'db'` | `'json'`, default `'db'`). Switching back to JSON does not migrate existing DB data.
-- A migration (`2025-07-23-import-chats-to-db`) runs on every `mouaif serve` start and imports any existing JSON files into the DB. Idempotent: already-imported chats are skipped.
-- A manual import is available via `POST /api/chats/import`, the `mouaif import-chats` CLI command, and a "Import chats" button in project settings.
-- Messages are stored with a composite PK `(project_dir, chat_id, seq)` so the same project-chat ordering is preserved across backends. The `seq` column is auto-incremented per chat.
-- The `chatStorage` toggle is resolved per-project via `settings.getResolved(projectDir)` so individual projects could theoretically opt back to JSON while others use the DB. In practice the setting is app-wide, but the resolution chain supports per-project override.
+- Chat metadata and messages are stored in the same app-level SQLite store (`~/.mouaif/store.sqlite`) used for settings, in two tables: `chat_store` and `message_store`.
+- File-based storage (`.mouaif.messages.*.json` files) has been removed as a storage backend. The only way to keep a chat transcript as a project file is the trace-to-file export (decision §5): the per-chat toggle writes `<projectDir>/.mouaif/traces/<chatId>.ndjson`, and a one-shot "Export trace" writes the same NDJSON on demand.
+- A migration (`2025-07-23-import-chats-to-db`) ran once to import existing JSON files into the DB; it is retired and no longer runs on startup.
+- Messages are stored with a composite PK `(project_dir, chat_id, seq)`; the `seq` column is auto-incremented per chat.
 
 ## 16. Shell tool — let the model run commands in the project
 
