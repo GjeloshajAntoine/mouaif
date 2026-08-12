@@ -33,55 +33,59 @@ async function handleGit(req, res, parsed) {
     return sendJSON(res, 400, { error: 'unsupported action: ' + action, supported: [...SAFE_ACTIONS] });
   }
 
-  let cmd;
+  // Build an argv array (never a string + split) so values containing
+  // spaces — commit messages in particular — reach git as single
+  // arguments instead of being shattered into separate tokens.
+  const splitArgs = (s) => (s ? s.trim().split(/\s+/).filter(Boolean) : []);
+  let argv;
   switch (action) {
     case 'status':
-      cmd = 'git status --short --branch';
+      argv = ['status', '--short', '--branch'];
       break;
     case 'diff':
-      cmd = 'git diff' + (args ? ' ' + args : ' --stat');
+      argv = ['diff'].concat(args ? splitArgs(args) : ['--stat']);
       break;
     case 'log':
-      cmd = 'git log --oneline -20' + (args ? ' ' + args : '');
+      argv = ['log', '--oneline', '-20'].concat(splitArgs(args));
       break;
     case 'add':
       if (!args) return sendJSON(res, 400, { error: 'args (file paths) required for add' });
-      cmd = 'git add ' + args;
+      argv = ['add'].concat(splitArgs(args));
       break;
     case 'commit':
       if (!message) return sendJSON(res, 400, { error: 'message required for commit' });
-      cmd = 'git commit -m ' + JSON.stringify(message);
+      argv = ['commit', '-m', message];
       break;
     case 'branch':
-      cmd = 'git branch' + (args ? ' ' + args : '');
+      argv = ['branch'].concat(splitArgs(args));
       break;
     case 'checkout':
       if (!args) return sendJSON(res, 400, { error: 'args (branch name) required for checkout' });
-      cmd = 'git checkout ' + args;
+      argv = ['checkout', args];
       break;
     case 'stash':
-      cmd = 'git stash' + (args ? ' ' + args : '');
+      argv = ['stash'].concat(splitArgs(args));
       break;
     case 'stash-apply':
-      cmd = 'git stash apply' + (args ? ' ' + args : '');
+      argv = ['stash', 'apply'].concat(splitArgs(args));
       break;
     case 'stash-pop':
-      cmd = 'git stash pop' + (args ? ' ' + args : '');
+      argv = ['stash', 'pop'].concat(splitArgs(args));
       break;
     case 'stash-drop':
-      cmd = 'git stash drop' + (args ? ' ' + args : '');
+      argv = ['stash', 'drop'].concat(splitArgs(args));
       break;
     case 'push':
-      cmd = 'git push' + (args ? ' ' + args : '');
+      argv = ['push'].concat(splitArgs(args));
       break;
     case 'pull':
-      cmd = 'git pull' + (args ? ' ' + args : '');
+      argv = ['pull'].concat(splitArgs(args));
       break;
     default:
       return sendJSON(res, 400, { error: 'unsupported action' });
   }
 
-  const child = spawn('git', ['-C', projectDir].concat(cmd.split(' ').slice(1)), {
+  const child = spawn('git', ['-C', projectDir].concat(argv), {
     cwd: projectDir,
     timeout: 15000,
     env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' })
