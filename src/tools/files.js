@@ -66,12 +66,8 @@ const TEXT_EXTS = new Set([
 
 // ---- Errors ------------------------------------------------------------
 
-function err(code, message, extra) {
-  const e = new Error(message);
-  e.code = code;
-  if (extra) Object.assign(e, extra);
-  return e;
-}
+// Shared typed-error helper; single definition lives in src/util.js.
+const { err } = require('../util.js');
 
 // ---- Path safety -------------------------------------------------------
 
