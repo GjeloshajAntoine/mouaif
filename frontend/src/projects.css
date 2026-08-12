@@ -317,3 +317,17 @@
 .picker__create[open] > summary { border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .picker__create[open] > .row:first-of-type { padding-top: 12px; }
 .picker__create[open] { background: var(--surface); }
+.picker__db {
+display: flex;
+align-items: center;
+gap: 8px;
+margin: 6px 10px 4px;
+min-height: var(--tap);
+font-size: 0.8rem;
+color: var(--fg-soft);
+}
+.picker__db input[type="checkbox"] {
+width: 18px;
+height: 18px;
+flex-shrink: 0;
+}

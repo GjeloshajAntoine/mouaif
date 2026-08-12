@@ -44,16 +44,18 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
-  // GET /api/settings/project?projectDir=<abs path>  -> { project, path }
+  // GET /api/settings/project?projectDir=<abs path>  -> { project, path, dbBacked }
   // Raw project file (no app merge, no defaults). The UI uses this to
   // show the project-level values separately from the resolved view.
   if (urlPath === '/api/settings/project' && method === 'GET') {
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
+      const dbBacked = settings.isDbBacked(dir);
       return sendJSON(res, 200, {
         project: settingsForClient(settings.getProject(dir)),
-        path: settings.getProjectPath(dir)
+        path: dbBacked ? null : settings.getProjectPath(dir),
+        dbBacked
       });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
@@ -94,7 +96,12 @@ async function handleSettings(req, res, parsed) {
       }
       let next = Object.keys(patch).length ? settings.setProject(projectDir, patch) : currentProject;
       if (Array.isArray(unset) && unset.length) next = settings.unsetProjectKeys(projectDir, unset);
-      return sendJSON(res, 200, { project: settingsForClient(next), path: settings.getProjectPath(projectDir) });
+      const dbBacked = settings.isDbBacked(projectDir);
+      return sendJSON(res, 200, {
+        project: settingsForClient(next),
+        path: dbBacked ? null : settings.getProjectPath(projectDir),
+        dbBacked
+      });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }
@@ -297,6 +304,56 @@ async function handleSettings(req, res, parsed) {
       // -> we add setAppReplace for this.
       const result = settings.setAppReplace(next);
       return sendJSON(res, 200, { app: settingsForClient(result), reset: keys });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
+
+  // GET /api/settings/project/storage?projectDir=<abs>
+  // Reports where this project's settings live. `dbBacked: true` means the
+  // settings are persisted in the app SQLite store (no .mouaif.json written);
+  // `dbBacked: false` means the .mouaif.json file on disk.
+  if (urlPath === '/api/settings/project/storage' && method === 'GET') {
+    const dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { dbBacked: settings.isDbBacked(dir) });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // PUT /api/settings/project/storage  body: { projectDir, dbBacked }
+  // Moves a project between file-backed and DB-backed storage. Toggling on
+  // copies the current project object into the DB and leaves any existing
+  // .mouaif.json untouched (nothing is deleted). Toggling off writes the DB
+  // copy back to .mouaif.json and clears the DB row.
+  if (urlPath === '/api/settings/project/storage' && method === 'PUT') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (typeof body.dbBacked !== 'boolean') {
+      return sendJSON(res, 400, { error: 'dbBacked must be a boolean' });
+    }
+    try {
+      if (body.dbBacked) {
+        // Seed from the existing file (if any), then flag as DB-backed.
+        settings.setDbProject(projectDir, { ...settings.getProjectRaw(projectDir), __dbBacked: true });
+      } else {
+        const current = settings.getDbProjectRaw(projectDir);
+        delete current.__dbBacked;
+        settings.writeProjectJson(settings.getProjectPath(projectDir), current);
+        settings.getDb()
+          .prepare('DELETE FROM ' + settings.PROJECT_SETTINGS_TABLE + ' WHERE project_dir = ?')
+          .run(projectDir);
+      }
+      const dbBacked = settings.isDbBacked(projectDir);
+      return sendJSON(res, 200, {
+        dbBacked,
+        project: settingsForClient(settings.getProject(projectDir)),
+        path: dbBacked ? null : settings.getProjectPath(projectDir)
+      });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
     }

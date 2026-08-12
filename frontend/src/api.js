@@ -142,6 +142,23 @@ export async function clearRecentModels(projectDir) {
   await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
 }
 
+// ---- Project settings storage (file vs DB) ---------------------------
+export async function getProjectStorage(projectDir) {
+  if (!projectDir) return { dbBacked: false };
+  const r = await fetchJson('/api/settings/project/storage?projectDir=' + encodeURIComponent(projectDir));
+  if (r.status !== 200) return { dbBacked: false };
+  return { dbBacked: !!r.body.dbBacked };
+}
+export async function setProjectStorage(projectDir, dbBacked) {
+  const r = await fetchJson('/api/settings/project/storage', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectDir, dbBacked: !!dbBacked })
+  });
+  if (r.status !== 200) throw new Error('HTTP ' + r.status);
+  return { dbBacked: !!r.body.dbBacked, project: r.body.project || {}, path: r.body.path || null };
+}
+
 // ---- Tiny toast helper -----------------------------------------------
 
 export function setStatus(ref, text, state) {

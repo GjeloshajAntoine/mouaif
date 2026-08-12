@@ -10,6 +10,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 
 - [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
 - [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
+- [Project settings storage](features/project-settings-storage.md) — opt a project into DB-backed settings so no `.mouaif.json` is written to the working tree.
 - [Settings UI](features/settings-ui.md) — REST endpoints for global provider connections and project settings, plus the mobile Settings section in `/`.
 - [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
 - [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
@@ -54,7 +55,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Agent feature prompt and tool](features/agent-feature-prompt.md) — dynamic system context telling the model which features are enabled, plus a `list_features` tool for the full structured state on demand.
 - [Skills](features/skills.md) — reusable `.agents/skills/*/SKILL.md` instructions with project, chat, and per-skill disable controls.
 - [Model bookmarks (pinned & recently used)](features/model-bookmarks.md) — per-project pinned and recently used models at the top of the model picker, persisted in localStorage.
-- [Chat storage](features/chat-storage.md) — SQLite-backed chat and message persistence; import JSON files into the DB.
+- [Chat storage](features/chat-storage.md) — SQLite-backed chat and message persistence; JSON file storage removed.
 - [Chat switcher](features/chat-switcher.md) — inline dropdown in the chat header to switch between project chats without leaving the view.
 - [Tool popup](features/tool-popup.md) — floating popover in the composer toolbar to toggle available tools, authorization modes, MCP servers, and agent files.
 - [Agent file picker](features/agent-file-picker.md) — browse the project and tap a file to fill the **File names to look for** agent-files setting in project settings.

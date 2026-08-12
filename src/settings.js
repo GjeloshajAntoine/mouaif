@@ -34,6 +34,12 @@ const APP_KEY = 'settings';
 // hand-editable, project-committed <projectDir>/.mcp.json.
 const MCP_TOOL_CACHE_TABLE = 'mcp_tool_cache';
 const MIGRATIONS_TABLE = '_migrations';
+// Per-project settings stored in the app DB instead of <projectDir>/.mouaif.json.
+// Keyed by canonical project directory so a project can opt out of writing the
+// JSON file (keeps the working tree untouched). The row shape mirrors the
+// project file: the value is the full raw project object.
+const PROJECT_SETTINGS_TABLE = 'project_settings';
+const PROJECT_SETTINGS_KEY = '__project_settings__';
 
 // Built-in defaults. These are the floor: anything not set in app or project
 // falls back to these. They are intentionally tiny for the first commit; later
@@ -61,10 +67,6 @@ const DEFAULTS = Object.freeze({
   // `structure` controls the layout (`full`, `concise`). Lives in the same
   // default floor so projects without a key resolve to a sane value.
   toolOutput: { size: 'average', structure: 'full' },
-  // Chat storage backend: 'db' (SQLite, default) or 'json' (file-based, legacy).
-  // When 'db', chat metadata and messages live in ~/.mouaif/store.sqlite.
-  // When 'json', they live in <projectDir>/.mouaif.json and .mouaif.messages.*.json.
-  chatStorage: 'db',
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,
@@ -104,6 +106,12 @@ function openDb(home) {
        tools       TEXT NOT NULL,
        updated_at  TEXT NOT NULL,
        PRIMARY KEY (project_dir, server_id)
+     );`
+  );
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS ${PROJECT_SETTINGS_TABLE} (
+       project_dir TEXT PRIMARY KEY,
+       value       TEXT NOT NULL
      );`
   );
   db.exec(
@@ -224,29 +232,6 @@ const MIGRATIONS = [
     }
   },
   {
-    name: '2025-07-23-import-chats-to-db',
-    description: 'Import existing JSON chat transcripts into the SQLite store',
-    async run() {
-      const projects = require('./projects.js').listProjects();
-      const chatdb = require('./chatdb.js');
-      for (const p of projects) {
-        if (!p || !p.path) continue;
-        try {
-          const result = chatdb.importFromJson(p.path, { skipExisting: true });
-          if (result.chats > 0 || result.messages > 0) {
-            console.log('  [migration] imported ' + result.chats + ' chats, ' + result.messages + ' messages from ' + p.path);
-          }
-          if (result.errors.length) {
-            for (const e of result.errors) console.error('  [migration] warning: ' + e);
-          }
-        } catch (e) {
-          // Non-fatal — a project with no JSON chats is fine.
-          console.error('  [migration] import failed for ' + p.path + ': ' + e.message);
-        }
-      }
-    }
-  },
-  {
     name: '2026-07-23-drop-unused-client-domains',
     description: 'Remove the unused client domains table',
     run() {
@@ -257,9 +242,12 @@ const MIGRATIONS = [
     name: '2026-07-27-add-thinking-level',
     description: 'Add thinking_level column to chat_store for existing databases',
     run() {
+      // Ensure the chat tables exist first. Fresh installs create them lazily
+      // on first chat access, but migrations run at startup before any chat is
+      // touched, so a brand-new DB has no chat_store yet (the retired import
+      // migration used to create it). Guard so the column ALTER doesn't 404.
+      require('./chatdb.js').ensureChatTables();
       const d = db();
-      // Check if the column already exists (e.g. if the CREATE TABLE IF NOT EXISTS
-      // already has it for a fresh install, or if this migration was partially applied).
       const cols = d.prepare("PRAGMA table_info('chat_store')").all();
       const hasCol = cols.some((c) => c.name === 'thinking_level');
       if (!hasCol) {
@@ -271,6 +259,7 @@ const MIGRATIONS = [
     name: '2026-07-28-add-max-output-tokens',
     description: 'Add max_output_tokens column to chat_store for existing databases',
     run() {
+      require('./chatdb.js').ensureChatTables();
       const d = db();
       const cols = d.prepare("PRAGMA table_info('chat_store')").all();
       const hasCol = cols.some((c) => c.name === 'max_output_tokens');
@@ -421,14 +410,58 @@ function getProjectRaw(projectDir) {
   return readProjectJson(getProjectPath(projectDir));
 }
 
+// ---- DB-backed project settings ----------------------------------------
+// When a project opts out of the JSON file, its settings live here instead
+// of <projectDir>/.mouaif.json so the working tree is never touched. The
+// value is the same raw project object the file would have carried.
+function projectSettingsRow(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') return null;
+  return db()
+    .prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
+    .get(projectDir) || null;
+}
+function getDbProjectRaw(projectDir) {
+  const row = projectSettingsRow(projectDir);
+  if (!row) return {};
+  try { return JSON.parse(row.value); } catch { return {}; }
+}
+function isDbBacked(projectDir) {
+  const row = projectSettingsRow(projectDir);
+  if (!row) return false;
+  try { return JSON.parse(row.value).__dbBacked === true; } catch { return false; }
+}
+function setDbProject(projectDir, next) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    throw new TypeError('setDbProject() expects an object');
+  }
+  db()
+    .prepare(
+      `INSERT INTO ${PROJECT_SETTINGS_TABLE} (project_dir, value) VALUES (?, ?)
+ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
+    )
+    .run(projectDir, JSON.stringify(next));
+  return next;
+}
+function setDbBacked(projectDir, dbBacked) {
+  const next = { ...getDbProjectRaw(projectDir), __dbBacked: !!dbBacked };
+  if (!dbBacked) delete next.__dbBacked;
+  setDbProject(projectDir, next);
+  return next;
+}
+
 function getProject(projectDir) {
-  // Raw project object (no defaults, no app merge).
+  // Raw project object (no defaults, no app merge). A DB-backed project
+  // returns its store row verbatim; otherwise the .mouaif.json file.
+  if (isDbBacked(projectDir)) return getDbProjectRaw(projectDir);
   return getProjectRaw(projectDir);
 }
 
 function setProject(projectDir, patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError('setProject() expects an object patch');
+  }
+  if (isDbBacked(projectDir)) {
+    return setDbProject(projectDir, { ...getDbProjectRaw(projectDir), ...patch });
   }
   const current = getProjectRaw(projectDir);
   const next = { ...current, ...patch };
@@ -439,6 +472,11 @@ function setProject(projectDir, patch) {
 function unsetProjectKeys(projectDir, keys) {
   if (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string' || !key)) {
     throw new TypeError('unsetProjectKeys() expects an array of key names');
+  }
+  if (isDbBacked(projectDir)) {
+    const next = getDbProjectRaw(projectDir);
+    for (const key of keys) delete next[key];
+    return setDbProject(projectDir, next);
   }
   const next = getProjectRaw(projectDir);
   for (const key of keys) delete next[key];
@@ -467,7 +505,7 @@ function deepMerge(base, override) {
 function getResolved(projectDir) {
   // Order: defaults -> app -> project. Project wins.
   const app = getAppRaw();
-  const project = projectDir ? getProjectRaw(projectDir) : {};
+  const project = projectDir ? getProject(projectDir) : {};
   return deepMerge(deepMerge(DEFAULTS, app), project);
 }
 
@@ -514,6 +552,7 @@ module.exports = {
   // introspection
   MOUAIF_HOME,
   PROJECT_FILE,
+  PROJECT_SETTINGS_TABLE,
   DEFAULTS,
   // app
   getApp,
@@ -522,8 +561,13 @@ module.exports = {
   // project
   getProjectPath,
   getProject,
+  getProjectRaw,
   setProject,
+  setDbProject,
   unsetProjectKeys,
+  getDbProjectRaw,
+  isDbBacked,
+  setDbBacked,
   // shared project-file I/O (used by chats.js / messages.js)
   readProjectJson,
   writeProjectJson,

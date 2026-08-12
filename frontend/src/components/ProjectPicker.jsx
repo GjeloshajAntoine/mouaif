@@ -10,6 +10,7 @@ export function ProjectPickerView(props) {
   const [status, setStatus] = useState('loading…');
   const [newName, setNewName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+const [dbBacked, setDbBacked] = useState(false);
 
   async function load(dir) {
     const useDir = dir ?? currentDir;
@@ -34,7 +35,7 @@ export function ProjectPickerView(props) {
   async function selectDir(dir) {
     setStatus('registering…');
     let r;
-    try { r = await fetchJson('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'register', dir }) }); }
+    try { r = await fetchJson('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'register', dir, dbBacked }) }); }
     catch (err) { setStatus('network error'); return; }
     if (r.status !== 200) {
       setStatus((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
@@ -93,6 +94,10 @@ export function ProjectPickerView(props) {
         if (parent != null) nav('projects/new?dir=' + encodeURIComponent(parent));
       }, 'aria-label': 'Go to parent folder' }, '↑ Up'),
       h('button', { class: 'page-bar__add', type: 'button', onClick: () => selectDir(currentDir), 'aria-label': 'Select this folder' }, '✓')
+    ),
+    h('label', { class: 'row row--inline picker__db' },
+      h('input', { type: 'checkbox', checked: dbBacked, onChange: (e) => setDbBacked(!!e.target.checked), 'aria-label': 'Store settings in app DB' }),
+      h('span', null, 'Store settings in app DB — don’t write .mouaif.json')
     ),
     h('ul', { class: 'picker__list', 'aria-label': 'Subfolders' },
       entries.length === 0

@@ -9,7 +9,7 @@
 // file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { fetchJson, setActiveProject, activeProject, projectsReload } from '../api.js';
+import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
@@ -57,8 +57,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [chatTraceStatusMsg, setChatTraceStatusMsg] = useState('');
   const [canExportTrace, setCanExportTrace] = useState(false);
   const [exportTraceStatusMsg, setExportTraceStatusMsg] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
-  const [importStatusMsg, setImportStatusMsg] = useState('');
 
   // Tool permissions live in state so the segmented
   // Off/Ask/Allow control re-renders when the user taps a segment.
@@ -106,6 +104,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [revertDisabled, setRevertDisabled] = useState(true);
   const [editorStatusMsg, setEditorStatusMsg] = useState('');
   const [resolvedOutText, setResolvedOutText] = useState('');
+  const [dbBacked, setDbBacked] = useState(false);
+  const [storageStatusMsg, setStorageStatusMsg] = useState('');
 
   const [currentProject, setCurrentProject] = useState({});
   const [loadedDir, setLoadedDir] = useState('');
@@ -131,6 +131,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setCurrentProject(cp);
     setActiveProject(d, '');
     setProjectPath(projRes.body.path || d);
+    setDbBacked(projRes.body.dbBacked === true);
 
     setPromptSize((cp.promptSize && String(cp.promptSize)) || '');
     setPromptSizeStatusMsg('');
@@ -355,29 +356,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     setExportTraceStatusMsg(r.status === 200 ? ('exported: ' + r.body.path) : ('export failed: HTTP ' + r.status));
   }
 
-  async function onTechnicalImport() {
-    if (!dir()) { setImportStatusMsg('no project selected'); return; }
-    setIsImporting(true);
-    setImportStatusMsg('importing…');
-    try {
-      const r = await fetchJson('/api/chats/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: dir(), skipExisting: true })
-      });
-      if (r.status === 200) {
-        const data = r.body.imported || {};
-        let msg = '✅ ' + data.chats + ' chats, ' + data.messages + ' messages imported.';
-        if (data.errors && data.errors.length) msg += ' ⚠️ ' + data.errors.join('; ');
-        setImportStatusMsg(msg);
-      } else {
-        setImportStatusMsg('Import failed: HTTP ' + r.status + ' ' + (r.body && r.body.error || ''));
-      }
-    } catch (e) {
-      setImportStatusMsg('Import error: ' + e.message);
-    }
-    setIsImporting(false);
-  }
 
   async function deleteChat() {
     if (!chatId()) return;
@@ -587,6 +565,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   async function saveRaw() {
     const d = dir();
     if (!d) { setEditorStatusMsg('no project'); return; }
+    if (dbBacked) { setEditorStatusMsg('DB-backed — settings save automatically'); return; }
     let parsed;
     try { parsed = JSON.parse(editorText || '{}'); }
     catch (e) { setEditorStatusMsg('invalid JSON: ' + e.message); return; }
@@ -609,6 +588,22 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function revertRaw() {
     setEditorText(JSON.stringify(currentProject, null, 2));
     setEditorStatusMsg('reverted');
+  }
+  async function onStorageToggle(e) {
+    const want = !!e.target.checked;
+    const d = dir();
+    if (!d) { setStorageStatusMsg('no project'); return; }
+    setStorageStatusMsg('saving…');
+    try {
+      const res = await setProjectStorage(d, want);
+      setDbBacked(res.dbBacked);
+      setProjectPath(res.path || d);
+      setCurrentProject(res.project);
+      setEditorText(JSON.stringify(res.project, null, 2));
+      setStorageStatusMsg(res.dbBacked ? 'stored in app DB — project folder unchanged' : 'stored in .mouaif.json');
+    } catch (err) {
+      setStorageStatusMsg('save failed: ' + (err && err.message ? err.message : err));
+    }
   }
 
   useEffect(() => {
@@ -1007,18 +1002,46 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     ),
     h('section', { class: 'settings-project' },
       h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('files'),
+          h('span', null, 'Project settings storage'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About project settings storage' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Keep this project’s settings in the app database instead of writing a ', h('code', null, '.mouaif.json'), ' file. The project folder stays untouched, so nothing shows up in git.')
+            )
+          )
+        ),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sp-db-backed' }, 'Store settings in app DB'),
+                h('div', { class: 'settings-project__item-note' }, dbBacked ? 'Settings live in the app SQLite store. No .mouaif.json is written to the project.' : 'Settings live in .mouaif.json and can be committed with the project.'),
+                h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, storageStatusMsg)
+              ),
+              h('label', { class: 'switch' },
+                h('input', { id: 'sp-db-backed', type: 'checkbox', role: 'switch', checked: dbBacked, 'aria-checked': dbBacked ? 'true' : 'false', onChange: onStorageToggle }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+              )
+            )
+          )
+        )
+      ),
+      h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Raw project file'),
-        h('p', { class: 'hint hint--compact' }, 'Hand-edit ', h('code', null, '.mouaif.json'), '. The main settings page writes the same file.'),
+        h('p', { class: 'hint hint--compact' }, dbBacked ? 'This project is DB-backed — the raw JSON below is shown read-only for reference.' : 'Hand-edit ', h('code', null, '.mouaif.json'), '. The main settings page writes the same file.'),
         h('textarea', {
           class: 'input settings-project__code',
           id: 'sp-project-editor',
           rows: 10,
           spellcheck: false,
           value: editorText,
-          onInput: (e) => setEditorText(e.target.value)
+          onInput: (e) => setEditorText(e.target.value),
+          readOnly: dbBacked
         }),
         h('div', { class: 'row row--actions' },
-          h('button', { class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: saveDisabled }, 'Save file'),
+          h('button', { class: 'btn btn--primary', type: 'button', onClick: saveRaw, disabled: saveDisabled || dbBacked }, 'Save file'),
           h('button', { class: 'btn', type: 'button', onClick: revertRaw, disabled: revertDisabled }, 'Revert'),
           h('span', { class: 'status', 'aria-live': 'polite' }, editorStatusMsg)
         )
@@ -1058,17 +1081,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           h('button', { class: 'btn btn--danger btn--sm', type: 'button', onClick: deleteChat }, 'Delete chat')
         )
       )
-    )
-  ),
-  h('div', { class: 'group settings-project__section' },
-    h('div', { class: 'group__title settings-project__section-title' },
-      sectionIcon('more'),
-      h('span', null, 'Import chats')
-    ),
-    h('p', { class: 'hint hint--compact' }, 'Import chat transcripts from the legacy JSON files (.mouaif.messages.*.json) into the SQLite storage. Existing chats in the DB are skipped; only new or missing messages are imported.'),
-    h('div', { class: 'row row--actions' },
-      h('button', { class: 'btn btn--primary', type: 'button', onClick: onTechnicalImport, disabled: isImporting }, 'Import from JSON files'),
-      h('span', { class: 'status', 'aria-live': 'polite' }, importStatusMsg)
     )
   )
   )

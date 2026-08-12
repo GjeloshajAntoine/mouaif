@@ -96,15 +96,20 @@ async function handleProjects(req, res, parsed) {
         const out = projects.createDir(target);
         return sendJSON(res, 201, { ...out, parent: body.parent, name: body.name });
       }
-      if (action === 'register') {
-        if (typeof body.dir !== 'string' || !body.dir) {
-          return sendJSON(res, 400, { error: 'dir is required' });
-        }
-        const row = projects.registerProject(body.dir);
-        // Seed the persisted project total cost.
-        try { chats.recomputeProjectTotalCost(body.dir); } catch { /* non-fatal */ }
-        return sendJSON(res, 200, { project: row });
-      }
+  if (action === 'register') {
+    if (typeof body.dir !== 'string' || !body.dir) {
+      return sendJSON(res, 400, { error: 'dir is required' });
+    }
+    const row = projects.registerProject(body.dir);
+    // Opt the project into DB-backed settings before seeding the cost so
+    // the working tree is never touched (see project-settings-storage.md).
+    if (body.dbBacked === true) {
+      settings.setDbBacked(body.dir, true);
+    }
+    // Seed the persisted project total cost.
+    try { chats.recomputeProjectTotalCost(body.dir); } catch { /* non-fatal */ }
+    return sendJSON(res, 200, { project: row, dbBacked: !!body.dbBacked });
+  }
       return sendJSON(res, 400, { error: 'Unknown action', action });
     } catch (e) {
       return sendJSON(res, projectsErrorStatus(e), { error: e.message, code: e.code, path: e.path });

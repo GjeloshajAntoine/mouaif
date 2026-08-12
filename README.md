@@ -7,7 +7,7 @@ A CLI tool with an integrated HTTP server, an in-app project picker, and a mobil
 - **CLI**: `mouaif serve` (port 5732 by default), `mouaif info`.
 - **HTTP server**: REST + SSE. SSE for chat streaming (`POST /api/chats/:id/messages/stream`).
 - **Mobile UI** at `http://127.0.0.1:5732/`: projects, chats, settings, sign-in. Preact + Vite, served by the same Node process. No framework-specific state layer — `@preact/signals` only.
-- **Storage**: app-level settings in `~/.mouaif/store.sqlite` (better-sqlite3). Per-project settings + chats in `<projectDir>/.mouaif.json`. Per-chat transcripts in `<projectDir>/.mouaif.messages.<chatId>.json`. Trace streams in `<projectDir>/.mouaif/traces/<chatId>.ndjson`.
+- **Storage**: app-level settings and chat transcripts in `~/.mouaif/store.sqlite` (better-sqlite3). Per-project settings in `<projectDir>/.mouaif.json`. Opt-in trace streams in `<projectDir>/.mouaif/traces/<chatId>.ndjson` for committing a chat's history with the project.
 - **Auth**: API keys live in the app SQLite store. OAuth tokens live in the OS keychain via `@napi-rs/keyring` (Windows Credential Manager / macOS Keychain / Linux Secret Service). A loopback callback at `GET /oauth/callback` completes provider sign-in; the UI polls `/api/auth/status` until the account is visible.
 - **Five AI providers** in the AI client: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are apikey-only in the bundled build; Anthropic supports OAuth via a per-provider flow. Copilot is reserved (auth flow lands in a follow-up).
 
