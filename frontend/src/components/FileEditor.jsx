@@ -149,6 +149,10 @@ export function FileEditorView(props) {
 
   const editorHostRef = useRef(null);
   const viewRef = useRef(null);     // CodeMirror EditorView
+  // editorFull hides the file list so the editor takes the whole
+  // pane. Default is false (split layout) — toggling off restores
+  // the same layout the modal opened with.
+  const [editorFull, setEditorFull] = useState(false);
   // saveRef always points to the latest save callback. CodeMirror's
   // keymap is configured once per open, so without this the Ctrl+S
   // binding would capture a stale save reference (and fail to write
@@ -476,7 +480,7 @@ export function FileEditorView(props) {
     'aria-label': 'File editor',
     onClick: (ev) => { /* clicks on the overlay do not close; the X does */ }
   },
-    h('div', { class: 'fe__sheet' },
+    h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : '') },
       h('div', { class: 'fe__head' },
         h('div', { class: 'fe__path-row' },
           h('button', { class: 'fe__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
@@ -501,6 +505,29 @@ export function FileEditorView(props) {
           h('button', { class: 'fe__iconbtn', type: 'button', onClick: () => loadDir(currentDir.current), 'aria-label': 'Refresh', title: 'Refresh' },
             h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
               h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
+            )
+          ),
+          // Toggle: hide the file list so the editor takes the
+          // whole pane. Same button restores the split view.
+          // Default state is the split view; the button is
+          // available even before any file is opened so the user
+          // can pick a layout up front.
+          h('button', {
+            class: 'fe__iconbtn' + (editorFull ? ' is-active' : ''),
+            type: 'button',
+            onClick: () => setEditorFull(v => !v),
+            'aria-label': editorFull ? 'Show file list' : 'Hide file list',
+            'aria-pressed': String(editorFull),
+            title: editorFull ? 'Show file list' : 'Hide file list'
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+              // Two stacked vertical bars when in split mode
+              // (the current state); one bar on the right when
+              // in full-editor mode (the action the button will
+              // perform).
+              editorFull
+                ? h('path', { d: 'M3 4h7v16H3zM14 4h7v16h-7z', fill: 'currentColor' })
+                : h('path', { d: 'M3 4h5v16H3zM11 4h11v16H11z', fill: 'currentColor' })
             )
           ),
           h('button', { class: 'fe__iconbtn fe__iconbtn--close', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },

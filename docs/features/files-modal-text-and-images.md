@@ -9,6 +9,7 @@ The **Files** button next to the chat composer opens a full-screen modal with a 
 - **Images** (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico`) open in a preview pane that renders the bytes inline (raster bitmaps as `<img>`, SVG inline at native resolution).
 - **SVG** is both text and image; the preview is the default, and the preview header has an **Edit** button to switch the same file into the CodeMirror editor.
 - **Other binaries** stay disabled in the file list, same as before.
+- **Layout toggle** — the modal opens in split view by default (file list on the left, editor/preview on the right) and has a toolbar button to switch to **full-editor mode** (the file list is hidden so the editor/preview takes the whole pane). Tapping the same button restores the split view.
 
 ## Usage
 
@@ -30,6 +31,9 @@ Tap the **Files** item in the file toolbar dropdown (next to the composer). The 
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.
+
+### Layout toggle — split vs full-editor
+The modal opens in **split view** by default: the file list sits on the left (38% width on tablet/desktop, full-width and stacked above the editor on phones) and the editor/preview sits on the right. A two-bar icon in the header toolbar toggles **full-editor mode**, which hides the file list so the editor/preview takes the whole pane. Tapping the same button (the icon swaps to a one-bar glyph with an `is-active` accent) restores the split view. The toggle is available even before any file is opened, so the user can pick a layout up front, and it does not reload or close the currently open file.
 
 ## Backend API
 
@@ -65,8 +69,8 @@ For files that fall outside the allowlist, `readFile` and `writeFile` now run an
 
 ## Implementation notes
 
-- File: `frontend/src/components/FileEditor.jsx` (component — adds `openMedia` state, `apiReadMedia`, image-row click path, preview pane with `<img>` and inline SVG)
-- File: `frontend/src/file-editor.css` (CSS — `.fe__media-host`, `.fe__media-img`, `.fe__media-svg`, `.fe__row--image`)
+- File: `frontend/src/components/FileEditor.jsx` (component — adds `openMedia` state, `apiReadMedia`, image-row click path, preview pane with `<img>` and inline SVG; `editorFull` state + header toggle button for full-editor mode; sheet gets the `fe__sheet--full` modifier class when the list is hidden)
+- File: `frontend/src/file-editor.css` (CSS — `.fe__media-host`, `.fe__media-img`, `.fe__media-svg`, `.fe__row--image`; `.fe__iconbtn.is-active` for the toggle button, `.fe__sheet--full .fe__list-wrap { display: none }` for full-editor mode)
 - File: `src/files.js` (server — adds `IMAGE_EXTS`, `EXT_TO_MIME`, `isProbablyText`, `isProbablyTextSync`, `readMedia`, `mimeForExt`; expands `TEXT_EXTS`; sniffs in `readFile`/`writeFile`/`listDir`)
 - File: `src/server-handlers-projects.js` (server — dispatches `/api/file-media` to `handleFileEditor`; adds the `GET /api/file-media` route inside `handleFileEditor`)
 - File: `src/http-server.js` (server — adds `/api/file-media` to the top-level file-editor dispatcher so it wins over `/api/projects/*`)

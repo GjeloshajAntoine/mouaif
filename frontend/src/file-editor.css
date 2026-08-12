@@ -117,6 +117,8 @@
   transition: background 80ms ease, color 80ms ease;
 }
 .fe__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
+.fe__iconbtn.is-active { background: var(--accent-soft); color: var(--accent); }
+.fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
 .fe__iconbtn--close { color: var(--fg-soft); }
 .fe__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
 
@@ -187,6 +189,12 @@
     border-bottom: 0;
   }
 }
+/* Full-editor mode: hide the file list so the editor takes
+   the whole pane. Default state keeps the split view; the
+   toggle button in the header swaps between them. On phone
+   widths the list sits above the editor anyway, so hiding it
+   also lets the editor own the body on narrow screens. */
+.fe__sheet--full .fe__list-wrap { display: none; }
 .fe__list { list-style: none; margin: 0; padding: 4px 0; }
 .fe__empty {
   text-align: center;
