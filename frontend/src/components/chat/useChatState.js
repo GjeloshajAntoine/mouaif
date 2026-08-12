@@ -838,6 +838,17 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
   // seq is chat-scoped; reset the seen-set with the chat so a stale
   // seq from a previous chat can never suppress a load.
   useEffect(() => { seenSeqs.current = new Set(); }, [chatId]);
+  // Scroll pinning is per-chat. ChatView is reused across chat
+  // navigation (only props change, no remount), so a `pinnedToBottom`
+  // left `false` by scrolling up in the previous chat would carry over
+  // and make the next chat open scrolled up — its latest messages
+  // hidden until the user scrolls manually. Reset to pinned on every
+  // chat change so a newly opened chat always pins to the bottom.
+  useEffect(() => {
+    pinnedToBottom.current = true;
+    pendingCount.current = 0;
+    updateJumpButton(refs);
+  }, [chatId, projectDir]);
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
   useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
   useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
