@@ -71,7 +71,7 @@ const { handleAI } = require('./server-handlers-ai.js');
 const { handleAuth, handleOAuthCallback, handleOAuthCallbackPost } = require('./server-handlers-auth.js');
 const { handleAccess } = require('./server-handlers-access.js');
 const { handlePush } = require('./server-handlers-push.js');
-const { handleGit, handleGitInfo, handleGitLog } = require('./server-handlers-git.js');
+const { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles } = require('./server-handlers-git.js');
 const { handleTools } = require('./server-handlers-tools.js');
 const { handlePrompts, handleFeatures, handleAgents } = require('./server-handlers-prompts.js');
 const { handleMcp, handleRestart, handleInspector, handleToolAuthorization } = require('./server-handlers-misc.js');
@@ -265,6 +265,9 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   }
   if (urlPath === '/api/git/commits' && method === 'GET') {
     return handleGitLog(req, res, parsed);
+  }
+  if (urlPath === '/api/git/commit-files' && method === 'GET') {
+    return handleGitCommitFiles(req, res, parsed);
   }
   if (urlPath === '/api/git' && method === 'POST') {
     return handleGit(req, res, parsed);

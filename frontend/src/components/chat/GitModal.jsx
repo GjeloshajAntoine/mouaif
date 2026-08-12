@@ -64,15 +64,48 @@ function FileRow({ file, defaultOpen }) {
   );
 }
 
-// A single commit row.
-function CommitRow({ commit }) {
+// A single commit row. The changed-file list is fetched lazily from
+// GET /api/git/commit-files the first time the row is expanded, so
+// commits in the list only pay for `git show` when the user opens them.
+function CommitRow({ projectDir, commit }) {
   const [open, setOpen] = useState(false);
-  const files = commit.files || [];
+  const [files, setFiles] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadedHash, setLoadedHash] = useState('');
+
+  const loadFiles = useCallback(async () => {
+    if (loading || loadedHash === commit.hash) return;
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams();
+      params.set('projectDir', projectDir);
+      params.set('hash', commit.hash);
+      const r = await fetchJson('/api/git/commit-files?' + params.toString());
+      if (r.status === 200 && r.body && r.body.ok) {
+        setFiles(r.body.files || []);
+        setLoadedHash(commit.hash);
+      } else {
+        setError((r.body && r.body.error) || 'HTTP ' + r.status);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+    setLoading(false);
+  }, [projectDir, commit.hash, loading, loadedHash]);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && loadedHash !== commit.hash) loadFiles();
+  }
+
   return h('div', { class: 'gm__commit' },
     h('button', {
       class: 'gm__commit-head' + (open ? ' is-open' : ''),
       type: 'button',
-      onClick: () => setOpen(!open),
+      onClick: toggle,
       'aria-expanded': String(open),
       'aria-label': 'Toggle commit ' + commit.short
     },
@@ -85,9 +118,18 @@ function CommitRow({ commit }) {
       )
     ),
     open && h('div', { class: 'gm__commit-body' },
-      files.length === 0
-        ? h('div', { class: 'gm__empty' }, 'No file changes in this commit')
-        : files.map((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }))
+      loading
+        ? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
+        : error
+          ? h('div', { class: 'gm__error' },
+              h('p', null, error),
+              h('button', { class: 'btn', type: 'button', onClick: loadFiles }, 'Retry')
+            )
+          : files === null
+            ? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
+            : files.length === 0
+              ? h('div', { class: 'gm__empty' }, 'No file changes in this commit')
+              : files.map((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }))
     )
   );
 }
@@ -354,7 +396,7 @@ export function GitModal(props) {
                     allCommits.length === 0
                       ? h('div', { class: 'gm__empty' }, 'No commits yet')
                       : h(Fragment, null,
-                          allCommits.map((c, ci) => h(CommitRow, { key: c.hash || ci, commit: c })),
+                          allCommits.map((c, ci) => h(CommitRow, { key: c.hash || ci, projectDir, commit: c })),
                           hasMoreCommits
                             ? h('button', {
                                 class: 'gm__load-more',

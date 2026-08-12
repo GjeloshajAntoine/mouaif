@@ -110,13 +110,15 @@ async function handleGit(req, res, parsed) {
 //        stashes:  [ { index, subject, date } ],
 //        staged:  [ { path, status, statusText, diff } ],   // staged changes
 //        unstaged: [ { path, status, statusText, diff } ],  // unstaged changes
-//        commits: [ { hash, short, subject, author, date, files: [ { path, status, diff } ] } ]
+//        commits: [ { hash, short, subject, author, date } ] // metadata only
 //      }
 //
-// One `git status` + one `git log -20` + per-file diffs. Diffs are
-// capped at 120 lines each; everything is parsed from machine-readable
+// One `git status` + one `git log -20` + per-file diffs (only for the
+// staged/unstaged sections). Everything is parsed from machine-readable
 // output (porcelain v1 with -z record separators, %x00 log formats,
 // unified diff hunks) so the frontend never touches raw shell text.
+// Per-commit file lists are NOT fetched here — the Git modal calls
+// GET /api/git/commit-files the first time a commit is expanded.
 async function handleGitInfo(req, res, parsed) {
   const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
@@ -237,8 +239,6 @@ async function handleGitInfo(req, res, parsed) {
   };
 
   const MAX_FILE_DIFFS = 12;
-  const MAX_COMMIT_DIFFS = 3;
-
   await Promise.all(staged.slice(0, MAX_FILE_DIFFS).map(async (f) => {
     const r = await run(['diff', '--cached', '--', f.path.split(' -> ')[0]]);
     if (r.ok) f.diff = capDiff(r.stdout);
@@ -247,43 +247,6 @@ async function handleGitInfo(req, res, parsed) {
     const r = await run(['diff', '--', f.path.split(' -> ')[0]]);
     if (r.ok) f.diff = capDiff(r.stdout);
   }));
-
-  // Per-commit changed files: `git show --format=` drops the commit
-  // header so stdout is purely the diff for that commit. Parse file
-  // hunks so each changed file is a separate expandable entry.
-  const parseFileDiffs = (text) => {
-    const files = [];
-    let cur = null;
-    const lines = text.split('\n');
-    for (const line of lines) {
-      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
-      if (m) {
-        if (cur) files.push(cur);
-        cur = { path: m[2], status: 'M', statusText: 'Modified', diff: line + '\n' };
-        continue;
-      }
-      if (!cur) continue;
-      if (line.startsWith('new file mode ')) { cur.status = 'A'; cur.statusText = 'Added'; }
-      else if (line.startsWith('deleted file mode ')) { cur.status = 'D'; cur.statusText = 'Deleted'; }
-      else if (line.startsWith('rename from ')) { cur.status = 'R'; cur.statusText = 'Renamed'; }
-      else if (line.startsWith('similarity index ')) { cur.statusText = 'Renamed'; }
-      cur.diff += line + '\n';
-    }
-    if (cur) files.push(cur);
-    return files;
-  };
-
-  await Promise.all(commits.slice(0, MAX_COMMIT_DIFFS).map(async (c) => {
-    const r = await run(['show', '--format=', c.hash]);
-    if (r.ok) {
-      c.files = parseFileDiffs(capDiff(r.stdout));
-      c.filesTruncated = r.stdout.split('\n').length > 120;
-    }
-  }));
-  for (const c of commits) {
-    if (!c.files) c.files = [];
-    if (!c.filesTruncated) c.filesTruncated = false;
-  }
 
   return sendJSON(res, 200, {
     ok: true,
@@ -306,8 +269,8 @@ async function handleGitInfo(req, res, parsed) {
 //
 // GET /api/git/commits?projectDir=<abs>&offset=0&count=20
 //   -> { ok: true, commits: [ ... ], total: <count of all commits> }
-//   Each commit: { hash, short, subject, author, date, files: [] }
-//   Diffs on the first page only (same cap as handleGitInfo).
+//   Each commit: { hash, short, subject, author, date } — metadata only.
+//   File lists are fetched on demand via GET /api/git/commit-files.
 async function handleGitLog(req, res, parsed) {
   const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
@@ -316,7 +279,6 @@ async function handleGitLog(req, res, parsed) {
   const offset = isFinite(queryOffset) && queryOffset >= 0 ? queryOffset : 0;
   const queryCount = parseInt(parsed.query.count, 10);
   const count = isFinite(queryCount) && queryCount >= 1 && queryCount <= 100 ? queryCount : 20;
-  const firstPage = offset === 0;
 
   const run = (args) => new Promise((resolve) => {
     const child = spawn('git', ['-C', projectDir].concat(args), {
@@ -356,48 +318,111 @@ async function handleGitLog(req, res, parsed) {
     }
   }
 
-  // Per-commit diffs only on the first page (same as handleGitInfo)
-  const capDiff = (text) => {
-    const lines = text.split('\n');
-    if (lines.length > 120) return lines.slice(0, 120).join('\n') + '\n… diff truncated';
-    return text;
-  };
-  const parseFileDiffs = (text) => {
-    const files = [];
-    let cur = null;
-    const lines = text.split('\n');
-    for (const line of lines) {
-      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
-      if (m) {
-        if (cur) files.push(cur);
-        cur = { path: m[2], status: 'M', statusText: 'Modified', diff: line + '\n' };
-        continue;
-      }
-      if (!cur) continue;
-      if (line.startsWith('new file mode ')) { cur.status = 'A'; cur.statusText = 'Added'; }
-      else if (line.startsWith('deleted file mode ')) { cur.status = 'D'; cur.statusText = 'Deleted'; }
-      else if (line.startsWith('rename from ')) { cur.status = 'R'; cur.statusText = 'Renamed'; }
-      else if (line.startsWith('similarity index ')) { cur.statusText = 'Renamed'; }
-      cur.diff += line + '\n';
-    }
-    if (cur) files.push(cur);
-    return files;
-  };
-
-  const MAX_COMMIT_DIFFS = 3;
-  await Promise.all(commits.slice(0, MAX_COMMIT_DIFFS).map(async (c) => {
-    const r = await run(['show', '--format=', c.hash]);
-    if (r.ok) {
-      c.files = parseFileDiffs(capDiff(r.stdout));
-      c.filesTruncated = r.stdout.split('\n').length > 120;
-    }
-  }));
-  for (const c of commits) {
-    if (!c.files) c.files = [];
-    if (!c.filesTruncated) c.filesTruncated = false;
-  }
-
   return sendJSON(res, 200, { ok: true, commits, total, offset, count });
 }
 
-module.exports = { handleGit, handleGitInfo, handleGitLog };
+// ---- Per-commit file list ------------------------------------------------
+//
+// GET /api/git/commit-files?projectDir=<abs>&hash=<full-or-short>&nameStatus=1
+//   -> { ok: true, files: [ { path, status, statusText, diff } ] }
+//
+// Full file list for one commit, fetched lazily when the user expands a
+// commit in the Git modal. Uses `git show --name-status` so every changed
+// file is listed (no diff-line truncation); `git show --format=` adds the
+// actual diff hunks. No caps: the whole list is returned for the commit.
+async function handleGitCommitFiles(req, res, parsed) {
+  const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
+  const hash = typeof parsed.query.hash === 'string' ? parsed.query.hash.trim() : '';
+  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+  if (!hash) return sendJSON(res, 400, { error: 'hash is required' });
+
+  const run = (args) => new Promise((resolve) => {
+    const child = spawn('git', ['-C', projectDir].concat(args), {
+      cwd: projectDir,
+      timeout: 15000,
+      env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
+      windowsHide: true
+    });
+    let stdout = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.on('error', () => resolve({ ok: false, stdout: '', exitCode: -1 }));
+    child.on('close', (code) => resolve({ ok: code === 0, stdout, exitCode: code }));
+  });
+
+  // Sanity-check the hash before passing it to git: allow only hex (at
+  // least 4 chars) or a ref-like token such as a commit-ish. Everything
+  // else (spaces, shell metacharacters, slashes) is rejected so the arg
+  // never escapes into an unexpected git invocation.
+  if (!/^[0-9a-fA-F]{4,40}$/.test(hash)) {
+    return sendJSON(res, 400, { error: 'invalid hash' });
+  }
+
+  // `--name-status` prints one `<XY>\t<path>` line per changed file (plus
+  // `R100\t<old>\t<new>` for renames). Default output is non-verbose, so
+  // each file appears exactly once with no copy/rename duplicates.
+  const nameRes = await run(['show', '--name-status', '--format=', hash]);
+  if (!nameRes.ok) {
+    return sendJSON(res, 200, { ok: false, error: 'unknown commit', code: 'ENOCOMMIT' });
+  }
+
+  const files = [];
+  const capDiff = (text) => {
+    const lines = text.split('\n');
+    if (lines.length > 120) {
+      return lines.slice(0, 120).join('\n') + '\n… diff truncated';
+    }
+    return text;
+  };
+
+  // Diff hunks for each changed file, parsed into the same shape the
+  // Git modal already renders (statusText derived from the porcelain
+  // letter, diff capped at 120 lines per file).
+  const diffRes = await run(['show', '--format=', hash]);
+  let diffByPath = new Map();
+  if (diffRes.ok) {
+    let cur = null;
+    const lines = diffRes.stdout.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
+      if (m) {
+        if (cur) diffByPath.set(cur.path, cur.diff);
+        cur = { path: m[2], diff: line + '\n' };
+        continue;
+      }
+      if (!cur) continue;
+      if (line.startsWith('new file mode ')) cur.status = 'A';
+      else if (line.startsWith('deleted file mode ')) cur.status = 'D';
+      else if (line.startsWith('rename from ')) cur.status = 'R';
+      cur.diff += line + '\n';
+    }
+    if (cur) diffByPath.set(cur.path, cur.diff);
+  }
+
+  const STATUS_TEXT = {
+    A: 'Added', M: 'Modified', D: 'Deleted',
+    R: 'Renamed', C: 'Copied', T: 'Type changed',
+    U: 'Unmerged', X: 'Unknown', B: 'Broken'
+  };
+
+  const nameLines = nameRes.stdout.split('\n').filter((l) => l.length > 0);
+  for (const line of nameLines) {
+    const fields = line.split('\t');
+    const status = (fields[0] || 'M').replace(/[0-9]/g, '').slice(0, 1);
+    let path = fields[1] || '';
+    if (status === 'R' || status === 'C') {
+      path = (fields[1] || '') + ' -> ' + (fields[2] || '');
+    }
+    if (!path) continue;
+    const full = diffByPath.get(path.split(' -> ')[0]) || diffByPath.get(path);
+    files.push({
+      path,
+      status,
+      statusText: STATUS_TEXT[status] || status,
+      diff: full ? capDiff(full) : ''
+    });
+  }
+
+  return sendJSON(res, 200, { ok: true, files });
+}
+
+module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles };
