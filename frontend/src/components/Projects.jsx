@@ -49,6 +49,7 @@ function ProjectMenu({ project, onRename, onUnregister }) {
       onClick: e => e.stopPropagation()
     },
       h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/project?projectDir=' + encodeURIComponent(project.path)); } }, 'Settings…'),
+      h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/tags?projectDir=' + encodeURIComponent(project.path)); } }, 'File tags…'),
       h('button', { type: 'button', onClick: () => { setOpen(false); onRename(project); } }, 'Rename…'),
       h('button', { type: 'button', 'data-danger': '1', onClick: () => { setOpen(false); onUnregister(project); } }, 'Unregister')
     )

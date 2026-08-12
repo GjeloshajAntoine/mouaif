@@ -116,7 +116,11 @@ function parseHash() {
       scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : '')
     };
   }
-  // settings/tags route removed (file tags entry hidden from UI)
+  if (h === 'settings/tags' || h.startsWith('settings/tags?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsTags', projectId: params.get('projectId') || '', projectDir: params.get('projectDir') || '' };
+  }
   if (h === 'settings/about') return { name: 'settingsAbout' };
   if (h === 'settings/project/import' || h.startsWith('settings/project/import?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';

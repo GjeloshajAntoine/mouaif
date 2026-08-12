@@ -63,7 +63,9 @@
 .tags__row.is-tagged { border-color: var(--accent-soft); }
 .tags__row.is-binary { opacity: 0.6; }
 .tags__row-head { display: flex; align-items: center; gap: 6px; }
-.tags__row-path { flex: 1 1 auto; font-family: var(--font-mono); font-size: 0.76rem; color: var(--fg); word-break: break-all; }
+.tags__row-path { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--font-mono); }
+.tags__row-name { color: var(--fg); font-size: 0.8rem; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.tags__row-folder { color: var(--fg-soft); font-size: 0.68rem; line-height: 1.3; overflow-wrap: anywhere; }
 .tags__badge { flex: 0 0 auto; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 5px; }
 .tags__badge--missing { color: var(--warning); border-color: var(--warning); }
 .tags__chips { display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; overflow-x: auto; min-height: var(--tap); }

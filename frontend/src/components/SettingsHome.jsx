@@ -82,10 +82,10 @@ export function SettingsHomeView() {
             rowLi('settings/project' + projectQS, 'Project settings', { sub: 'prompt style, tools, agents' }),
             rowLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'app servers + this project\'s own' }),
             rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
-            /* file tags setting entry removed */
+            rowLi('settings/tags' + projectQS, 'File tags', { sub: 'tag files and include them in chat' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
-            'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts) show up here.')
+            'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts, file tags) show up here.')
     ),
     // ---- One-line footer: explains the layering once, plainly, instead of
     // repeating "overrides / wins / shadows" on every row above. ---------

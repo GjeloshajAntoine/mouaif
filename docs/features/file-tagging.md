@@ -13,7 +13,7 @@ A user can attach **tags** to files inside a project. When a chat is sent, every
 
 ### Tagging a file
 
-From the project card's options menu, the user opens **File tags** and sees every text-ish file in the project (filtered by extension; binary files are hidden). Tapping a file opens the editor:
+From the project card's options menu or **Settings → This project → File tags**, the user opens **File tags** and sees every scanned project file. Each row shows the file name prominently and its project-relative folder underneath; root files show **Project root**. Binary files are labeled and cannot be newly tagged.
 
 - **Tags** — a free-form chip list. New tags are created by typing and pressing `,` or `Enter`. Removing a chip is a tap on the chip's `×`.
 - **Excerpt** — the user can pin a specific line range (start/end inclusive) instead of including the whole file. Empty excerpt means "whole file."

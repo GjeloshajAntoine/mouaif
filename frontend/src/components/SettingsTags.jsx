@@ -11,8 +11,17 @@
 //   DELETE /api/projects/:id/tags/files/<relPath>
 import { h, Fragment } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { fetchJson, setStatus } from '../api.js';
+import { fetchJson } from '../api.js';
 import { createVirtualList } from '../virtual-list.js';
+
+function taggedPathParts(relPath) {
+const normalized = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+const separator = normalized.lastIndexOf('/');
+return {
+name: separator >= 0 ? normalized.slice(separator + 1) : normalized,
+folder: separator >= 0 ? normalized.slice(0, separator) : 'Project root'
+};
+}
 
 export function SettingsTagsView(props) {
   const projectDir = props.projectDir || '';
@@ -105,10 +114,14 @@ export function SettingsTagsView(props) {
   function renderRow(f) {
     const entry = tagMap[f.path] || null;
     const isTagged = !!entry;
+    const pathParts = taggedPathParts(f.path);
     
     return h('div', { class: 'tags__row' + (isTagged ? ' is-tagged' : '') + (f.binary ? ' is-binary' : '') },
       h('div', { class: 'tags__row-head' },
-        h('div', { class: 'tags__row-path' }, f.path),
+        h('div', { class: 'tags__row-path', title: f.path },
+          h('span', { class: 'tags__row-name' }, pathParts.name),
+          h('span', { class: 'tags__row-folder' }, pathParts.folder)
+        ),
         !f.present 
           ? h('span', { class: 'tags__badge tags__badge--missing' }, 'missing')
           : f.binary 
