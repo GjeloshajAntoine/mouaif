@@ -15,6 +15,7 @@ import { fetchJson } from '../../api.js';
 const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MODEL: 'model' };
 const CATEGORY_LABELS = { files: 'Files', agents: 'Agents', actions: 'Actions', model: 'Model' };
 const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', model: '🤖' };
+const MAX_FILE_RESULTS = 200;
 
 // ---- Module-level state -------------------------------------------------
 
@@ -121,9 +122,7 @@ async function buildItems(projectDir) {
   }
   const scanned = scanCache || [];
   const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.insert));
-  let fileCount = 0;
   for (const f of scanned) {
-    if (fileCount >= 200) break;
     if (!f.path || taggedPaths.has(f.path)) continue;
     if (f.binary) continue;
     const pathParts = filePathParts(f.path);
@@ -135,7 +134,6 @@ async function buildItems(projectDir) {
       insert: f.path,
       searchText: (pathParts.name + ' ' + f.path).toLowerCase()
     });
-    fileCount++;
   }
 
   // 3. Actions (tools from catalog) — include parameters for arg suggestions
@@ -204,7 +202,20 @@ async function buildItems(projectDir) {
   return out;
 }
 
-// ---- Rendering ----------------------------------------------------------
+// ---- Filtering + rendering ----------------------------------------------
+
+function filterItems(searchQuery) {
+  const matches = searchQuery
+    ? items.filter(item => item.searchText.indexOf(searchQuery) >= 0)
+    : items;
+  let fileCount = 0;
+  return matches.filter(item => {
+    if (item.category !== CATEGORY.FILES) return true;
+    if (fileCount >= MAX_FILE_RESULTS) return false;
+    fileCount++;
+    return true;
+  });
+}
 
 function renderPopup() {
   if (!popup) return;
@@ -430,11 +441,7 @@ function onInput() {
   range = { start, end: pos };
   query = q;
   selectedIdx = 0;
-
-  filtered = items.filter(item => {
-    if (!q) return true;
-    return item.searchText.indexOf(q) >= 0;
-  });
+  filtered = filterItems(q);
 
   visible = true;
   renderPopup();
@@ -518,11 +525,7 @@ export function refreshAtMentionItems() {
     buildItems(projectDir).then(newItems => {
       items = newItems;
       if (visible) {
-        const q = query;
-        filtered = items.filter(item => {
-          if (!q) return true;
-          return item.searchText.indexOf(q) >= 0;
-        });
+        filtered = filterItems(query);
         renderPopup();
       }
     }).catch(() => {});

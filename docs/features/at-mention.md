@@ -11,7 +11,7 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
   - **Agents** — the project's subagent personas (from Settings → Project → Agents), with their pinned model in the subtitle when set.
   - **Actions** — the project's available tools (shell, read_file, list_files, write_file, etc.).
   - **Model** — the currently selected model ID.
-- Narrow the list by typing more characters (case-insensitive search against label, path, and tags).
+- Narrow the list by typing any part of a file name or folder path (case-insensitive search against label, full relative path, and tags). The 200-file display cap is applied after matching, so files and folders later in large project scans remain searchable.
 - Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
 - **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent.
