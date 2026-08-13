@@ -2,7 +2,13 @@
 
 ## Overview
 
-The **Inspector** tab in the mobile shell ([frontend/src/main.jsx](../../frontend/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four sub-tabs: **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics). Its UI and CDP client are loaded as a separate JavaScript chunk only when the Inspector route is opened, keeping them out of the app's initial bundle.
+The **Inspector** tab in the mobile shell ([frontend/src/main.jsx](../../frontend/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four **optional panels** — **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics) — that the user toggles on and off individually. All toggled-on panels are stacked vertically and share the available height; toggled-off panels are unmounted so their capture loops and virtual lists stop running. The default for a first-time visit is "all four on"; the user's choice is remembered in `localStorage` so it survives a reload and a new target. The UI and CDP client are loaded as a separate JavaScript chunk only when the Inspector route is opened, keeping them out of the app's initial bundle.
+
+![Inspector with all four optional panels visible](./images/inspector/optional-panels.png)
+
+![Inspector with Preview hidden — the other three panels share the leftover height](./images/inspector/optional-panels-preview-hidden.png)
+
+![Inspector after a reload — the previously hidden Preview is still off, the others still on, and the connection is restored to the new target](./images/inspector/optional-panels-reload-restores.png)
 
 The Inspector is the last piece of the spec from [decisions.md §6](../decisions.md) and §9 build-order item 14: a from-scratch mobile-friendly UI that consumes CDP events but never embeds the Chrome panel.
 
@@ -46,10 +52,11 @@ the tree.
 2. **Targets** — list of discoverable pages / iframes / service
    workers / background pages, with a type chip, a title, a host
    subtitle, and a per-row overflow menu (Connect / Reload / Close).
-3. **Inspect** — connected to a specific target, with **Preview**,
-   **Console**, **Network**, and **Info** sub-tabs. The header shows
-   the target's title, type, and URL. A status line above the
-   active panel reports the current WebSocket state.
+3. **Inspect** — connected to a specific target, with the four
+   optional panels (Preview / Console / Network / Info) shown
+   stacked when toggled on. The header shows the target's title,
+   type, and URL. A status line above the panel stack reports
+   the current WebSocket state.
 
 The view skips straight to **Targets** on mount when a saved URL is
 present: `loadConfig` triggers `loadTargets` via `setTimeout(0)` so
@@ -74,6 +81,94 @@ same URL in a fresh Chrome tab; the outcome is reported on the status
 line. The button is a 44 px+ touch target (the previous URL-as-link
 affordance was ambiguous and hard to tap), and the current connection
 keeps its target — no re-attachment.
+
+## Optional panels
+
+The Inspect view does not switch between sub-tabs. Instead, each
+of the four panels is **optional**: the user picks which ones are
+visible, and the visible panels are stacked vertically. The
+intent is to let a mobile-first user focus on the one or two
+signals they care about (e.g. the live preview while iterating
+on a layout, or the network panel while debugging an API call)
+without paying the cost — both screen real estate and CPU — of
+the panels they have toggled off.
+
+### The panel toolbar
+
+A single row of pill-style chips sits between the inspect header
+and the panel stack. One chip per panel:
+
+- **Preview** — live page screenshots (the `Preview` panel)
+- **Console** — `Runtime.consoleAPICalled` / `Runtime.exceptionThrown`
+- **Network** — `Network.requestWillBeSent` / response / finished
+- **Info** — page metrics (`Performance.getMetrics`)
+
+Each chip has two states: **on** (filled with the accent colour,
+matching the rest of the active-control language in the app) and
+**off** (outlined, muted). Tapping a chip toggles the matching
+panel. The toolbar also has a **Show all** reset chip on the
+right; tapping it lights every chip and remounts every panel —
+useful when a user has hidden everything and wants to get back to
+the default view without picking chips one by one.
+
+The chips wrap on narrow phones, and each is a 44 px+ touch
+target, so the toolbar is usable one-handed on a 360 px viewport.
+
+### Per-panel card
+
+Every panel — visible or not — is wrapped in a `PanelCard` that
+draws a small header strip (panel label + an eye toggle) and a
+body. The body is `null` while the panel is hidden, so the
+underlying panel component (and the virtual list, capture loop,
+or metrics poller it owns) **unmounts**. Hiding a panel really
+does stop its work, not just hide its DOM.
+
+The eye toggle in each card's header is a shortcut for the
+toolbar chip and is always reachable. The eye glyph shows the
+panel's current state: an open eye when visible, an eye-with-a-
+slash when hidden. Tapping the eye flips the state.
+
+### State and persistence
+
+The set of visible panel IDs lives in Preact `useState` in
+`InspectorView` and is hydrated from `localStorage` under the key
+`mouaif:inspector:panels` (a JSON array of panel ids). The
+default for a first-time visit is "all four visible". The state
+is **global across targets** — picking panels on one target
+keeps the same panels visible when the user switches to another
+target. The list is filtered against the canonical `PANELS`
+allowlist on every load, so a hand-edited localStorage value
+that names a non-existent panel is silently dropped.
+
+The last-visible-panel guard prevents the user from hiding every
+panel. If the user tries to toggle off the only remaining
+visible panel, the toggle is a no-op (and the toolbar's
+**Show all** chip is the recovery path). The same fallback runs
+on mount: an empty saved set resets to the default.
+
+### Sizing
+
+The visible panels are flex children of a vertical stack. The
+**first** visible panel gets a `grow` modifier so it takes the
+remaining viewport height; the other visible panels keep their
+intrinsic height (the console and network virtual lists
+themselves are the scroll containers). Hiding a panel gives the
+remaining panels more room without any user action: the
+_preview_ takes the full leftover height if the user kept only
+the preview; the _console_ becomes the full scroll container if
+the user kept only the console; etc. The min height for any
+panel is 220 px so a panel never collapses to nothing.
+
+### Empty state
+
+If somehow every panel ends up hidden (e.g. by removing the
+localStorage key on a device that previously had a saved state
+and then saving a fresh empty set programmatically), the panel
+stack is replaced by a small dashed card with the text "No
+panels visible." and a one-tap **Show all panels** button that
+restores the default. In normal use the per-panel guard makes
+this state unreachable from the UI, but the empty card is the
+recovery affordance when it is reached.
 
 ## Tab management
 The Inspector can **reload**, **navigate**, and **close** tabs of the
@@ -122,7 +217,7 @@ These replace the old URL-as-link affordance: the URL now lives in an editable f
 
 ## Preview panel
 
-The Preview panel shows what the attached page actually looks like, live. It captures the page via `Page.captureScreenshot` (JPEG, quality 55) and paints the result into an `<img>` via an object URL. The capture loop is **event-driven** rather than a fixed timer: the panel subscribes to `Page.frameNavigated` and `Page.frameStoppedLoading` over the same CDP connection, and each of those events triggers an immediate capture. A slow 3 s fallback poll covers in-page state changes that no CDP event fires for (scroll, hover, JS-driven DOM mutations, SPA route changes that don't navigate the frame). The poll resets its 3 s clock every time an event-driven capture lands, so the panel does **not** busy-poll during a navigation burst — an idle page costs at most one capture per 3 s, and a page that just finished loading captures immediately and goes quiet. The loop is strictly sequential (no overlapping captures) and stops as soon as the user switches sub-tab or disconnects. `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other tabs keep working.
+When its toolbar chip is on (see [Optional panels](#optional-panels)), the Preview panel shows what the attached page actually looks like, live. It captures the page via `Page.captureScreenshot` (JPEG, quality 55) and paints the result into an `<img>` via an object URL. The capture loop is **event-driven** rather than a fixed timer: the panel subscribes to `Page.frameNavigated` and `Page.frameStoppedLoading` over the same CDP connection, and each of those events triggers an immediate capture. A slow 3 s fallback poll covers in-page state changes that no CDP event fires for (scroll, hover, JS-driven DOM mutations, SPA route changes that don't navigate the frame). The poll resets its 3 s clock every time an event-driven capture lands, so the panel does **not** busy-poll during a navigation burst — an idle page costs at most one capture per 3 s, and a page that just finished loading captures immediately and goes quiet. The loop is strictly sequential (no overlapping captures) and stops as soon as the user hides the Preview chip or disconnects (the `useEffect` cleanup tears down the loop and unsubscribes from the CDP events). `Page.enable` is sent on connection; if the domain is unavailable the panel shows a status line and the other panels keep working.
 
 The screenshot is a **full-page capture** (`captureBeyondViewport: true`), so the shot is as tall as the page's scrollable content rather than just the visible viewport. The frame that hosts the image is a scroll container (`overflow: auto`, `56dvh` tall). The image is scaled to the frame's width (`width: 100%`, height from aspect ratio) and the frame scrolls vertically through the full-page height — a mobile-first "scroll through the page" view. Scaling to the frame width (rather than showing natural device pixels) is required because high-DPR captures come back 2–3× wider than the CSS viewport; at natural size the user would only see a zoomed-in corner of the page. If the user is scrolled inside the frame when a fresh screenshot arrives, their position is restored on image load instead of snapping to the top.
 
@@ -154,7 +249,7 @@ The `<img>` is mounted with `src=""` (and `draggable="false"`) so the element is
 
 ## Console panel
 
-The Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), the formatted message text, and a source link (`file:line`) when a stack trace is attached. Object arguments render as compact inline previews (`{a: 1, b: 2, …}`) built from the CDP `preview` payload rather than a bare `Object` description.
+When its toolbar chip is on, the Console panel subscribes to `Runtime.consoleAPICalled` and `Runtime.exceptionThrown`. Each event is rendered as a row with a timestamp, a level chip (LOG / DEBUG / INFO / WARNING / ERROR — colored to match Chrome's own severity), the formatted message text, and a source link (`file:line`) when a stack trace is attached. Object arguments render as compact inline previews (`{a: 1, b: 2, …}`) built from the CDP `preview` payload rather than a bare `Object` description.
 
 Tapping a row opens a **detail sheet**: the full message, the source location, and the complete stack trace for exceptions and traced logs.
 
@@ -164,7 +259,7 @@ The panel keeps the last **2,000** entries in memory and renders them through a 
 
 ## Network panel
 
-The Network panel subscribes to `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, and `Network.loadingFailed`. Entries are keyed by `requestId` so the four events per request collapse into a single row. The row carries the method, the HTTP status (or `···` for pending, `FAIL` for `loadingFailed`), the URL, and a metadata line with resource type, MIME type, transferred size, duration, and remote IP. Status chips are colored by class: 2xx green, 3xx amber, 4xx/5xx red, pending muted, failed red.
+When its toolbar chip is on, the Network panel subscribes to `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, and `Network.loadingFailed`. Entries are keyed by `requestId` so the four events per request collapse into a single row. The row carries the method, the HTTP status (or `···` for pending, `FAIL` for `loadingFailed`), the URL, and a metadata line with resource type, MIME type, transferred size, duration, and remote IP. Status chips are colored by class: 2xx green, 3xx amber, 4xx/5xx red, pending muted, failed red.
 
 Chrome does not replay requests that finished before the Network domain was enabled — `Network.enable` on an already-loaded page emits nothing, and there is no request-history API. So on attach the panel **backfills the page's existing resources** via `Page.getResourceTree` (the main document, subframe documents, and their resource URLs), tagged with a `PRE` status chip and a `pre-attach` meta tag. This keeps an attach to an already-open tab (the common case) from showing an empty log. Backfilled rows are reconstructed entries, not full request records: Chrome retains no size or body for them, so the detail sheet explains that and hides the "Fetch body" button (the sheet's body area shows `(pre-attach — body not captured by Chrome)`). New traffic after attach streams in normally with full detail; the backfill is inserted before any live entries so the timeline stays chronological. The status line reports how many resources were backfilled. If the Page domain is unavailable the backfill is skipped and the panel starts empty.
 
@@ -174,7 +269,7 @@ The panel renders the last **2,000** requests through the same Virtual list prim
 
 ## Info panel
 
-The Info panel shows live page vitals from `Performance.getMetrics`: open documents, frames, DOM node count, JS event listeners, JS heap usage, layout count, and style-recalc count, plus the number of network requests seen in the session. It polls every 2.5 s while the tab is active and renders the counters as a responsive metric grid (2 columns on a phone, 4 on wider screens).
+When its toolbar chip is on, the Info panel shows live page vitals from `Performance.getMetrics`: open documents, frames, DOM node count, JS event listeners, JS heap usage, layout count, and style-recalc count, plus the number of network requests seen in the session. It polls every 2.5 s while the tab is active and renders the counters as a responsive metric grid (2 columns on a phone, 4 on wider screens).
 
 `Network.enable` is sent on connection.
 
@@ -209,15 +304,15 @@ The mobile detail sheet applies top and bottom safe-area padding at the fixed ov
 
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **Proxy error surfacing** — a rejected upgrade (e.g. `ETARGET_NOT_FOUND`) is written as a short HTTP response with a JSON body before the socket closes. The browser's WebSocket `error` event carries no message, so `cdp.js` captures the server's close reason and the UI shows it on the status line instead of a generic "WebSocket error".
-- **No new CSS framework.** The Inspector styles live at the bottom of [frontend/src/style.css](../../frontend/src/style.css) under `/* ---- Inspector ---- */`. They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2.
+- **No new CSS framework.** The Inspector styles live in [frontend/src/inspector.css](../../frontend/src/inspector.css) (imported last by [frontend/src/style.css](../../frontend/src/style.css) so it wins on equal-specificity ties). They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2. The new panel-related selectors (`inspector__panelbar`, `inspector__panelchip`, `inspector__panel`, `inspector__panel-head`, `inspector__panel-eye`, `inspector__panels`, `inspector__panels-empty`) live alongside the previous `inspector__subtabs` / `inspector__subtab` rules that they replaced.
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
 - **Virtualization** — both list panels use [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
 - **Mutable row updates** — network and console entries carry a `rev` counter that is bumped on every mutation. The virtual-list render functions diff a signature (`id|rev|status|size|duration`) against the node's previous signature and skip DOM writes entirely when nothing changed, so a busy page doesn't force-reflow the list on every CDP event.
-- **State and refs.** The phase, saved debugger URL, current target, panel and detail item live in Preact `useState` so the Inspector re-renders when the user moves between phases. The high-frequency CDP buffers (websocket, command id, pending responses, event listeners, console / network entry arrays, request map, virtual-list handles) live in `useRef` so a CDP message burst updates a ref and pushes rows into the virtual list directly. Preact is only re-rendered on phase / panel / status changes.
+- **State and refs.** The phase, saved debugger URL, current target, visibility set of optional panels (`visiblePanels`, hydrated from `localStorage` under `mouaif:inspector:panels` and filtered against the canonical `PANELS` allowlist), and detail item live in Preact `useState` so the Inspector re-renders when the user moves between phases or toggles a panel. The high-frequency CDP buffers (websocket, command id, pending responses, event listeners, console / network entry arrays, request map, virtual-list handles) live in `useRef` so a CDP message burst updates a ref and pushes rows into the virtual list directly. A `useEffect` on `visiblePanels` eagerly clears `consoleVL.current` / `networkVL.current` when the matching panel becomes hidden, so events.js's `if (vl)` short-circuit fires for the next CDP event instead of pushing into a destroyed virtual list. Preact is only re-rendered on phase / panel / status changes.
 - **Reconnect safety.** Disconnecting rejects pending CDP commands and clears
 	listeners plus the request map. Close/error events from an older socket are
 	identity-checked so they cannot wipe the state of a replacement connection.
-- **Backwards compatibility.** Adding the 4th tab does not change the existing REST or SSE surface. The bundle grew by ~14 KB JS and ~3.5 KB CSS to ship the new view.
+- **Backwards compatibility.** The optional-panels redesign does not change the existing REST or SSE surface; the Inspector chunk grew by ~14 KB JS and the Inspector CSS by ~3.5 KB to ship the new view. Returning users land on the same targets phase they had before; the panel visibility state defaults to all-on for a first visit and is otherwise hydrated from the `mouaif:inspector:panels` localStorage key.
 - **Auto-discovery on mount.** When a debugger URL is already saved, `loadConfig` calls `loadTargets` via `setTimeout(0)` so the targets phase's status `<div>` is mounted before the request fires. Without the `setTimeout`, the call would write its status message to the setup phase's `<span>` (the only mounted status element at the time `loadConfig` resolves), and the targets phase would mount with a stale "fetching targets…" message. Returning users no longer have to retap **Discover** on every visit.
 - **Strict-mode `.current` cleanup.** A previous refactor from `useRef` to `useState` left a few `debuggerUrl.current = …` and `defaultUrl.current = …` lines in `loadConfig` / `connect`. In strict mode, setting a property on a string primitive throws (`Cannot create property 'current' on string ''`), and the resulting unhandled rejection aborted the auto-discovery chain. The fix is to drop the leftover `.current` assignments and read the state value directly.
 - **Server log line.** The `mouaif serve` startup banner now mentions `Web: / — mobile UI` and `CDP: /api/inspector/ + WS /api/inspector/proxy` so users can see at a glance what shipped.

@@ -37,6 +37,47 @@ function hostOf(t) {
   if (!u || !/^https?:\/\//i.test(u)) return '';
   try { return new URL(u).host; } catch { return ''; }
 }
+// Optional-panel model
+// --------------------
+// The Inspector is a from-scratch mobile DevTools UI. Instead of the
+// previous single-active subtab (Preview / Console / Network / Info)
+// the user now picks *which* of the four panels are visible. The
+// toggled-on panels are stacked vertically and share the available
+// height; toggled-off panels are unmounted, which also stops their
+// capture loops (preview screenshots, metrics polling) and the
+// virtual-list renderers, so the user pays only for what they look at.
+//
+// `PANELS` is the canonical ordered list of panel IDs and labels.
+// `loadPanelState()` hydrates the visibility set from localStorage
+// (the key lives in `PANEL_STATE_KEY`) so the user's choice
+// persists across sessions and across inspected targets. The first
+// visit (no saved state) shows all four panels — the new
+// design's default is to surface every signal, and the user narrows
+// it down on demand.
+const PANELS = [
+  { id: 'preview',  label: 'Preview' },
+  { id: 'console',  label: 'Console' },
+  { id: 'network',  label: 'Network' },
+  { id: 'overview', label: 'Info'    }
+];
+const PANEL_STATE_KEY = 'mouaif:inspector:panels';
+function loadPanelState() {
+  try {
+    const raw = localStorage.getItem(PANEL_STATE_KEY);
+    if (!raw) return new Set(PANELS.map((p) => p.id));
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set(PANELS.map((p) => p.id));
+    const known = new Set(PANELS.map((p) => p.id));
+    const next = new Set(arr.filter((id) => known.has(id)));
+    // Guard against an all-hidden state: a UI with zero panels is
+    // useless, and re-mounting after picking "hide all" would trap
+    // the user. Reset to the default instead.
+    return next.size ? next : new Set(PANELS.map((p) => p.id));
+  } catch { return new Set(PANELS.map((p) => p.id)); }
+}
+function savePanelState(set) {
+  try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(Array.from(set))); } catch { /* ignore */ }
+}
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
@@ -47,7 +88,11 @@ export function InspectorView() {
   const [defaultUrl, setDefaultUrl] = useState('');
   const [targets, setTargets] = useState([]);
   const [currentTarget, setCurrentTarget] = useState(null);
-  const [panel, setPanel] = useState('console');
+  // visiblePanels: a Set of panel IDs currently rendered. Hydrated from
+  // localStorage on mount; updated by the per-panel toggle. The single
+  // 'panel' state from the previous design is gone — the new UI does
+  // not switch between panels, it shows all toggled-on panels stacked.
+  const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
   const [detailItem, setDetailItem] = useState(null);
   const [phase, setPhase] = useState('setup');
   const [, setTick] = useState(0);
@@ -56,6 +101,26 @@ export function InspectorView() {
   const consoleVL = useRef(null);
   const networkVL = useRef(null);
   const reqMap = useRef(new Map());
+
+// When a panel becomes hidden the corresponding virtual-list
+// child unmounts and runs its own `vl.destroy()` cleanup, but
+// the parent's `consoleVL.current` / `networkVL.current` still
+// point at the destroyed list. The next CDP event would call
+// `vl.setData(...)` on the destroyed instance — a no-op, but
+// wasteful. Clear the refs eagerly on visibility transitions so
+// events.js's `if (vl)` short-circuit fires instead.
+useEffect(() => {
+  if (!visiblePanels.has('console') && consoleVL.current) {
+    try { consoleVL.current.setData([]); } catch { /* destroyed */ }
+    consoleVL.current = null;
+  }
+}, [visiblePanels]);
+useEffect(() => {
+  if (!visiblePanels.has('network') && networkVL.current) {
+    try { networkVL.current.setData([]); } catch { /* destroyed */ }
+    networkVL.current = null;
+  }
+}, [visiblePanels]);
 
   function rerender() { setTick(t => t + 1); }
 
@@ -92,7 +157,6 @@ export function InspectorView() {
     const c = initCdp();
     const handlers = eventHandlers.current;
     setCurrentTarget(target);
-    setPanel('console');
     setPhase('inspect');
     consoleEntries.current = [];
     networkEntries.current = [];
@@ -485,16 +549,17 @@ export function InspectorView() {
   }
 
   const t = currentTarget;
-  const activePanel = panel;
   const handlers = eventHandlers.current;
-  const subtab = (id, label) => h('button', {
-    class: 'inspector__subtab' + (activePanel === id ? ' is-active' : ''),
-    type: 'button', role: 'tab', 'aria-selected': String(activePanel === id),
-    onClick: () => { setPanel(id); rerender(); }
-  }, label);
-
-  function onListTap(ev) {
-    const vl = panel === 'console' ? consoleVL.current : networkVL.current;
+  // onListTap — unified tap handler for both the console and the
+  // network virtual lists. Identifies the row by the `__sig` we set
+  // in the panel renderers (a `|`-separated id+rev), then walks the
+  // matching virtual list for the row's full data record. The new
+  // design renders both lists simultaneously when both panels are
+  // visible, so the handler needs to know which list to look in
+  // from the panel id rather than the previous single-active-tab
+  // selector.
+  function onListTap(panelId, ev) {
+    const vl = panelId === 'console' ? consoleVL.current : networkVL.current;
     if (!vl) return;
     let node = ev.target;
     while (node && node !== ev.currentTarget && !node.__sig) node = node.parentNode;
@@ -506,7 +571,93 @@ export function InspectorView() {
     setDetailItem(item);
     rerender();
   }
-
+  // togglePanel — flip a panel's visibility. The user's choice is
+  // persisted to localStorage so it survives a reload and a new
+  // target. If the user hides the last visible panel we keep it
+  // visible (loadPanelState would also re-default on next load;
+  // doing it here keeps the UI from being empty for a frame).
+  function togglePanel(id) {
+    setVisiblePanels((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        if (next.size === 1) return prev; // keep at least one visible
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      savePanelState(next);
+      return next;
+    });
+    rerender();
+  }
+  // showAllPanels — reset to the default "everything visible".
+  // Wired to a button in the empty-state hint and to the toolbar's
+  // reset action. Kept cheap (one state setter + persist) because
+  // the panels remount on visibility change anyway.
+  function showAllPanels() {
+    const all = new Set(PANELS.map((p) => p.id));
+    savePanelState(all);
+    setVisiblePanels(all);
+    rerender();
+  }
+  // PanelCard — one optional panel rendered as a card. The header
+  // shows the panel label + a live eye toggle (showing the next
+  // state, not the current one: open eye = "currently visible",
+  // closed eye = "tap to hide"). The body is a flex child that
+  // takes whatever vertical space remains; the `grow` prop tells
+  // the first visible panel to take the leftover height, so a user
+  // with one panel open gets a single full-height panel, and a
+  // user with all four open gets four equal-height panels.
+  function PanelCard(props) {
+    const isVisible = visiblePanels.has(props.id);
+    const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
+    return h('div', {
+      class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
+      'data-panel': props.id
+    },
+      h('div', { class: 'inspector__panel-head' },
+        h('span', { class: 'inspector__panel-label' }, props.label),
+        h('button', {
+          class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
+          type: 'button',
+          'aria-label': toggleAria,
+          'aria-pressed': String(isVisible),
+          title: toggleAria,
+          onClick: () => togglePanel(props.id)
+        },
+          // Eye-open glyph when the panel is visible, eye-closed
+          // when it's hidden. Drawn as inline SVG so it inherits
+          // the current color and matches the rest of the chrome
+          // iconography.
+          isVisible
+            ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+                h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
+                h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
+              )
+            : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+                h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
+              )
+        )
+      ),
+      h('div', { class: 'inspector__panel-body' },
+        isVisible ? props.children : null
+      )
+    );
+  }
+  const visibleIds = PANELS.map((p) => p.id).filter((id) => visiblePanels.has(id));
+  const noPanelsVisible = visibleIds.length === 0;
+  // Render the optional panels. Each card has its own header +
+  // body; the first visible card also gets `grow` so the preview
+  // (or whatever the user kept) fills the leftover height.
+  // Console and Network each keep their own internal virtual-list
+  // scroller — their body height is bounded by CSS so a busy page
+  // doesn't force-grow the panel past the available viewport.
+  const renderPanelBody = (id) => {
+    if (id === 'preview') return h(PreviewPanel, { capture: handlers && handlers.captureScreenshot, clickAt: handlers && handlers.clickAt, subscribe: conn.current && conn.current.cdpOn });
+    if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); } });
+    if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
+    return h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) });
+  };
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
@@ -555,20 +706,46 @@ export function InspectorView() {
           onClick: closeAttachedTarget
         }, 'Close')
       ),
-      h('div', { class: 'inspector__subtabs', role: 'tablist' },
-        subtab('preview', 'Preview'),
-        subtab('console', 'Console'),
-        subtab('network', 'Network'),
-        subtab('overview', 'Info')
+      // Panel toolbar — replaces the old 4-tab segmented control.
+      // Each chip toggles one panel. Tapping a lit chip hides the
+      // panel; tapping a dimmed chip shows it. The `Show all` chip
+      // is a quick reset to the all-on default for users who hid
+      // everything. The toolbar is a single row of touch targets
+      // (44px min) and wraps on narrow phones.
+      h('div', { class: 'inspector__panelbar', role: 'group', 'aria-label': 'Optional panels' },
+        PANELS.map((p) => {
+          const on = visiblePanels.has(p.id);
+          return h('button', {
+            class: 'inspector__panelchip' + (on ? ' is-on' : ''),
+            type: 'button',
+            'aria-label': (on ? 'Hide ' : 'Show ') + p.label,
+            'aria-pressed': String(on),
+            onClick: () => togglePanel(p.id)
+          }, p.label);
+        }),
+        h('button', {
+          class: 'inspector__panelchip inspector__panelchip--reset',
+          type: 'button',
+          onClick: showAllPanels,
+          'aria-label': 'Show all panels',
+          title: 'Show all panels'
+        }, 'Show all')
       ),
       h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
-      activePanel === 'preview'
-        ? h(PreviewPanel, { capture: handlers && handlers.captureScreenshot, clickAt: handlers && handlers.clickAt, subscribe: conn.current && conn.current.cdpOn })
-        : activePanel === 'console'
-          ? h(ConsolePanel, { onRowTap: onListTap, onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); } })
-          : activePanel === 'network'
-            ? h(NetworkPanel, { onRowTap: onListTap, onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } })
-            : h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) })
+      noPanelsVisible
+        ? h('div', { class: 'inspector__panels-empty', role: 'status' },
+            h('p', null, 'No panels visible.'),
+            h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
+            h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
+          )
+        : h('div', { class: 'inspector__panels' },
+            visibleIds.map((id, idx) => h(PanelCard, {
+              id,
+              label: PANELS.find((p) => p.id === id).label,
+              grow: idx === 0,
+              key: id
+            }, renderPanelBody(id)))
+          )
     ),
     h(DetailSheet, {
       item: detailItem,

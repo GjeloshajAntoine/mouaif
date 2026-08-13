@@ -3,42 +3,174 @@
 
 /* ---- Inspector ------------------------------------------------------ */
 
-.inspector__subtabs {
+/* Panel toolbar — replaces the old single-active subtab bar.
+   A row of pill-style chips, one per optional panel (Preview /
+   Console / Network / Info), plus a "Show all" reset chip.
+   Tapping a lit chip hides the panel; tapping a dimmed chip
+   shows it. The chips wrap on narrow phones; the wrap is part
+   of the design, so a chip never overflows the screen. */
+.inspector__panelbar {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  margin-bottom: 6px;
+  margin: 0 0 8px;
 }
-.inspector__subtab {
+.inspector__panelchip {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   color: var(--muted);
-  background: transparent;
-  border: 0;
-  padding: 4px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0 12px;
   min-height: var(--tap);
-  border-radius: var(--r-sm);
-  flex: 1;
+  border-radius: var(--r-pill, 999px);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.inspector__subtab:hover { color: var(--fg); background: var(--surface-2); }
-.inspector__subtab.is-active {
+.inspector__panelchip:hover { color: var(--fg); }
+.inspector__panelchip.is-on {
   color: var(--on-accent);
   background: var(--accent);
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 2px 8px rgba(110,168,254,.2);
+  border-color: var(--accent);
+  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 4px rgba(110,168,254,.2);
 }
+.inspector__panelchip--reset {
+  color: var(--accent);
+  background: transparent;
+  border-color: var(--border-strong);
+  margin-left: auto;
+}
+.inspector__panelchip--reset:hover {
+  background: var(--accent-soft);
+}
+/* The stacked-panels container. Holds the visible PanelCards
+   as flex children. The grow modifier on the first child takes
+   the remaining vertical space; the other children keep their
+   intrinsic height (the virtual-list scrollers bound
+   themselves). */
+.inspector__panels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.inspector__panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  min-height: 0;
+}
+.inspector__panel--grow {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+.inspector__panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.inspector__panel-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+}
+.inspector__panel-eye {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-eye:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-eye.is-visible {
+  color: var(--accent);
+}
+.inspector__panel-eye.is-visible:hover {
+  color: var(--accent-press);
+}
+.inspector__panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The existing virtual-list scrollers and the preview frame
+   carry their own intrinsic heights (48dvh scroller, 56dvh
+   preview frame) that were tuned for the single-active-tab
+   layout. Inside a PanelCard the parent panel sets the size
+   and the child only provides the vertical scroll affordance,
+   so the panels stack and share the available height instead
+   of each grabbing 48dvh of the viewport. */
+.inspector__panel-body .inspector__scroller {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 220px;
+}
+.inspector__panel-body .inspector__preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+.inspector__panel-body .inspector__preview-frame {
+  height: 100%;
+  min-height: 220px;
+}
+.inspector__panel-body .inspector__metrics {
+  padding: 8px;
+}
+/* Empty state when the user has hidden every panel. A small
+   hint card with a one-tap "Show all panels" button. The empty
+   state itself is a small surface; it does not block the
+   toolbar above from being used. */
+.inspector__panels-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.inspector__panels-empty p { margin: 0; }
+.inspector__panels-empty-hint { color: var(--muted-2); font-size: 0.76rem; }
 
 .inspector__title { flex: 1; }
 .inspector__status {
   margin-bottom: 10px;
   font-size: 0.8rem;
 }
+
 
 .inspector__scroller {
   position: relative;
