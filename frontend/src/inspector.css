@@ -3,21 +3,85 @@
 
 /* ---- Inspector ------------------------------------------------------ */
 
-/* Panel toolbar — replaces the old single-active subtab bar.
-   A row of pill-style chips, one per optional panel (Preview /
-   Console / Network / Info), plus a "Show all" reset chip.
-   Tapping a lit chip hides the panel; tapping a dimmed chip
-   shows it. The chips wrap on narrow phones; the wrap is part
-   of the design, so a chip never overflows the screen. */
+/* ---- Inspect chrome (head, nav, panelbar) ---------------------- */
+/* The head + nav + panelbar + status strip sits above the panel
+   stack. On a phone the chrome takes ~250 px of vertical space;
+   on a wider screen it wraps tighter because the panel
+   "first-grow" behaviour kicks in and the page is shorter. Every
+   strip is padded to match the rest of the mobile UI
+   (10 px sides, 4 px vertical) and uses the standard
+   surface / border / radius tokens. */
+.inspector__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px;
+}
+.inspector__head .hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  /* The hint is the URL chip on the same row as the New tab
+     button. On a narrow phone the URL truncates with an
+     ellipsis instead of pushing the button off-screen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__head .hint code {
+  font-size: 0.76rem;
+  word-break: normal;
+}
+.inspector__newtab {
+  flex: 0 0 auto;
+  /* 44 px+ touch target; the small button is bumped up here
+     because the previous 32 px height was below the mobile
+     44 px minimum and was hard to tap accurately. */
+  min-height: var(--tap);
+  padding: 0 12px;
+  font-size: 0.78rem;
+}
+.inspector__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px;
+}
+.inspector__nav .input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Shorten the URL field on narrow screens so the Go/Close
+     buttons always stay visible. Without the min-width: 0 the
+     flex item would refuse to shrink past its intrinsic
+     content width and the buttons would spill off the edge. */
+}
+.inspector__nav .btn {
+  /* Match the input height. The shared .btn--small modifier
+     drops to 32 px (--tap-sm) which is below the 44 px mobile
+     touch target; bump back up here without losing the small
+     font size and tight padding. */
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 12px;
+  font-size: 0.8rem;
+}
+
+/* Panel toolbar — one row of pill-style chips, one per
+   optional panel, plus a "Show all" reset chip on the right.
+   The chip is text-only on mobile (icon-only is hard to scan
+   at a glance) and uses a tight horizontal padding so all four
+   panel chips fit on a single line at 360 px wide. The "Show
+   all" chip wraps to a new line on the narrowest viewports
+   instead of pushing the panel chips off the edge. */
 .inspector__panelbar {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
+  margin: 0 10px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  margin: 0 0 8px;
 }
 .inspector__panelchip {
   font: inherit;
@@ -27,12 +91,18 @@
   color: var(--muted);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  padding: 0 12px;
+  padding: 0 10px;
   min-height: var(--tap);
   border-radius: var(--r-pill, 999px);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
+  /* Equal-width chips so a row of 4 fills the toolbar evenly
+     instead of "Console" stretching wider than "Info" and
+     pushing the row to wrap on a 360 px viewport. */
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
 }
 .inspector__panelchip:hover { color: var(--fg); }
 .inspector__panelchip.is-on {
@@ -42,23 +112,31 @@
   box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 4px rgba(110,168,254,.2);
 }
 .inspector__panelchip--reset {
+  /* "Show all" doesn't share the equal-width row with the
+     panel chips. It lives on its own line below them (or
+     beside them on wide viewports) and stays compact. */
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 2px;
   color: var(--accent);
   background: transparent;
   border-color: var(--border-strong);
-  margin-left: auto;
 }
 .inspector__panelchip--reset:hover {
   background: var(--accent-soft);
 }
+
 /* The stacked-panels container. Holds the visible PanelCards
-   as flex children. The grow modifier on the first child takes
-   the remaining vertical space; the other children keep their
-   intrinsic height (the virtual-list scrollers bound
-   themselves). */
+   as flex children. The cards share the available width
+   (100 %) and either stack with their own intrinsic heights
+   (the default on mobile) or one of them grows to fill the
+   leftover height (the wide-screen behaviour, see media
+   query below). */
 .inspector__panels {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 0 10px 10px;
   min-height: 0;
 }
 .inspector__panel {
@@ -69,10 +147,6 @@
   border-radius: var(--r-md);
   overflow: hidden;
   min-height: 0;
-}
-.inspector__panel--grow {
-  flex: 1 1 auto;
-  min-height: 220px;
 }
 .inspector__panel-head {
   flex: 0 0 auto;
@@ -121,30 +195,111 @@
   display: flex;
   flex-direction: column;
 }
+
 /* The existing virtual-list scrollers and the preview frame
    carry their own intrinsic heights (48dvh scroller, 56dvh
    preview frame) that were tuned for the single-active-tab
    layout. Inside a PanelCard the parent panel sets the size
    and the child only provides the vertical scroll affordance,
    so the panels stack and share the available height instead
-   of each grabbing 48dvh of the viewport. */
+   of each grabbing 48dvh of the viewport.
+
+   The mobile-first sizing here is deliberately small: on a
+   360 px phone the first panel only gets the leftover 200-300
+   px above the fold, and reserving 220 px for every other
+   panel eats the whole page. We clamp each panel body to
+   ~32 dvh with a 180 px floor and let the page scroll, so
+   the user sees Preview at the top and can scroll down to
+   Console / Network / Info as needed. The wide-screen media
+   query below re-enables the "first panel grows" behaviour
+   for tablet and desktop. */
 .inspector__panel-body .inspector__scroller {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 220px;
+  flex: 0 0 auto;
+  height: 32dvh;
+  min-height: 180px;
 }
 .inspector__panel-body .inspector__preview {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
+  flex: 0 0 auto;
+  height: 40dvh;
+  min-height: 220px;
 }
 .inspector__panel-body .inspector__preview-frame {
   height: 100%;
-  min-height: 220px;
+  min-height: 0;
 }
 .inspector__panel-body .inspector__metrics {
   padding: 8px;
+  /* Metrics grid is 2 columns on mobile, 4 on wider screens. */
 }
+
+/* Wide-screen layout: 900 px and up. The page is short
+   enough (and tall enough) that all four panels can fit
+   above the fold, so the first visible panel grows to
+   fill the leftover height and the others keep their
+   intrinsic heights. Below 900 px the panels are stacked
+   with their own intrinsic heights and the page scrolls
+   — the "first grows" behaviour does not help at
+   phone and small-tablet sizes because the four panels'
+   intrinsic heights already exceed the available space
+   and the grow would just compress the other panels to
+   nothing.
+
+   The parent's height is left to the flex algorithm
+   (no `height: calc(...)`) because the chrome height
+   varies (it shrinks when the panelbar wraps to one row,
+   grows when the page title is long) and a fixed parent
+   height that is too small would clip the non-grow
+   children. The grow child has `flex: 1 1 auto` and a
+   min-height so the layout never collapses to a single
+   line at the top. */
+@media (min-width: 900px) {
+  .inspector__panel--grow {
+    flex: 1 1 auto;
+    min-height: 240px;
+  }
+  /* Stop the non-grow children from being compressed by
+     the flex algorithm when the parent's height is
+     constrained. The body still has its 32 dvh target. */
+  .inspector__panel:not(.inspector__panel--grow) {
+    flex: 0 0 auto;
+  }
+  .inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__scroller {
+    flex: 0 0 auto;
+    height: 32dvh;
+    min-height: 180px;
+  }
+  .inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__preview {
+    flex: 0 0 auto;
+    height: 40dvh;
+    min-height: 220px;
+  }
+  /* The grow child fills the leftover space: the scroller
+     / preview-frame are the only flex items in the panel
+     body, and they each become `flex: 1 1 auto; height:
+     auto` so the screenshot or list has the available
+     room. */
+  .inspector__panel--grow .inspector__panel-body .inspector__scroller,
+  .inspector__panel--grow .inspector__panel-body .inspector__preview {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+  .inspector__panelbar {
+    flex-wrap: nowrap;
+  }
+  .inspector__panelchip--reset {
+    width: auto;
+    margin-top: 0;
+    margin-left: auto;
+  }
+  .inspector__panel-body .inspector__metrics {
+    /* 4 columns on wider screens — fits a row of 8
+       counters without horizontal scroll on a 600 px
+       viewport. */
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 /* Empty state when the user has hidden every panel. A small
    hint card with a one-tap "Show all panels" button. The empty
    state itself is a small surface; it does not block the
@@ -154,6 +309,7 @@
   border: 1px dashed var(--border-strong);
   border-radius: var(--r-md);
   padding: 18px 12px;
+  margin: 0 10px;
   text-align: center;
   color: var(--muted);
   font-size: 0.84rem;
@@ -164,10 +320,12 @@
 }
 .inspector__panels-empty p { margin: 0; }
 .inspector__panels-empty-hint { color: var(--muted-2); font-size: 0.76rem; }
+ { color: var(--muted-2); font-size: 0.76rem; }
 
 .inspector__title { flex: 1; }
 .inspector__status {
-  margin-bottom: 10px;
+  margin: 0 10px 8px;
+  padding: 2px 4px;
   font-size: 0.8rem;
 }
 

@@ -4,9 +4,11 @@
 
 The **Inspector** tab in the mobile shell ([frontend/src/main.jsx](../../frontend/src/main.jsx) → `InspectorView`) is a from-scratch DevTools-style UI built on top of the **Chrome DevTools Protocol (CDP)**. It is *not* the default Chrome panel embedded in an iframe — the browser speaks CDP directly over WebSocket, the mouaif server ([src/inspector.js](../../src/inspector.js) + [src/index.js](../../src/index.js)) is a thin relay. The UI is mobile-first and ships four **optional panels** — **Preview** (live screenshots of the page), **Console**, **Network**, and **Info** (page metrics) — that the user toggles on and off individually. All toggled-on panels are stacked vertically and share the available height; toggled-off panels are unmounted so their capture loops and virtual lists stop running. The default for a first-time visit is "all four on"; the user's choice is remembered in `localStorage` so it survives a reload and a new target. The UI and CDP client are loaded as a separate JavaScript chunk only when the Inspector route is opened, keeping them out of the app's initial bundle.
 
-![Inspector with all four optional panels visible](./images/inspector/optional-panels.png)
+![Inspector on a 360 px phone with all four optional panels visible — the Preview panel takes ~40 dvh above the fold and the other three panels stack below, reachable by scrolling the page](./images/inspector/mobile-360-all-on.png)
 
-![Inspector with Preview hidden — the other three panels share the leftover height](./images/inspector/optional-panels-preview-hidden.png)
+![Inspector on a 360 px phone with Preview hidden — the other three panels keep their intrinsic 32 dvh / metrics heights and the user scrolls to reach them](./images/inspector/mobile-360-final.png)
+
+![Inspector on a 390 px viewport (the iPhone 14 Pro size) with all four panels stacked](./images/inspector/optional-panels.png)
 
 ![Inspector after a reload — the previously hidden Preview is still off, the others still on, and the connection is restored to the new target](./images/inspector/optional-panels-reload-restores.png)
 
@@ -147,17 +149,45 @@ visible panel, the toggle is a no-op (and the toolbar's
 on mount: an empty saved set resets to the default.
 
 ### Sizing
-
 The visible panels are flex children of a vertical stack. The
-**first** visible panel gets a `grow` modifier so it takes the
-remaining viewport height; the other visible panels keep their
-intrinsic height (the console and network virtual lists
-themselves are the scroll containers). Hiding a panel gives the
-remaining panels more room without any user action: the
-_preview_ takes the full leftover height if the user kept only
-the preview; the _console_ becomes the full scroll container if
-the user kept only the console; etc. The min height for any
-panel is 220 px so a panel never collapses to nothing.
+layout has two regimes, picked by viewport width:
+
+- **Mobile (default, < 900 px)** — each panel has its own
+  intrinsic height. The **Preview** panel is `40 dvh` tall
+  with a `220 px` floor so the screenshot is legible above
+  the fold. The Console and Network virtual-list scrollers
+  are `32 dvh` tall with an `180 px` floor so a panel of
+  log entries or requests is scannable in one screen. The
+  Info metrics card is content-sized. The page scrolls if
+  the four panels do not fit; the user reaches Console,
+  Network, and Info by scrolling the page, and inside each
+  list by scrolling the scroller. This is the right model
+  on a phone because the four panels' intrinsic heights
+  already exceed the viewport — having the first panel
+  "grow" on a phone would just compress the other three to
+  a sliver.
+- **Wide screen (>= 900 px)** — the first visible panel
+  gets a `grow` modifier and takes the remaining viewport
+  height; the other visible panels keep their intrinsic
+  heights. Hiding a panel gives the remaining panels more
+  room without any user action: the _preview_ takes the
+  full leftover height if the user kept only the preview;
+  the _console_ becomes the full scroll container if the
+  user kept only the console; etc. The grow has a
+  `240 px` min-height so the panel never collapses to
+  nothing. This is the right model on a tablet or desktop
+  where the four panels do fit above the fold and the
+  user benefits from the first panel "claiming" the
+  leftover height (e.g. a tall screenshot filling the
+  page while Console / Network / Info share the rest).
+
+The breakpoint is intentionally high: at 600-899 px (small
+tablet, phablet) the available height is still tight enough
+that the "first grows" behaviour would just compress the
+non-grow panels. Below 900 px the layout stays predictable
+— the user always sees the same panel heights regardless
+of which panels are visible — and the page scrolls.
+
 
 ### Empty state
 
@@ -304,7 +334,8 @@ The mobile detail sheet applies top and bottom safe-area padding at the fixed ov
 
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **Proxy error surfacing** — a rejected upgrade (e.g. `ETARGET_NOT_FOUND`) is written as a short HTTP response with a JSON body before the socket closes. The browser's WebSocket `error` event carries no message, so `cdp.js` captures the server's close reason and the UI shows it on the status line instead of a generic "WebSocket error".
-- **No new CSS framework.** The Inspector styles live in [frontend/src/inspector.css](../../frontend/src/inspector.css) (imported last by [frontend/src/style.css](../../frontend/src/style.css) so it wins on equal-specificity ties). They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2. The new panel-related selectors (`inspector__panelbar`, `inspector__panelchip`, `inspector__panel`, `inspector__panel-head`, `inspector__panel-eye`, `inspector__panels`, `inspector__panels-empty`) live alongside the previous `inspector__subtabs` / `inspector__subtab` rules that they replaced.
+- **No new CSS framework.** The Inspector styles live in [frontend/src/inspector.css](../../frontend/src/inspector.css) (imported last by [frontend/src/style.css](../../frontend/src/style.css) so it wins on equal-specificity ties). They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2. The new panel-related selectors (`inspector__panelbar`, `inspector__panelchip`, `inspector__panel`, `inspector__panel-head`, `inspector__panel-eye`, `inspector__panels`, `inspector__panels-empty`) and the inspect chrome (`inspector__head`, `inspector__nav`, `inspector__newtab`) live alongside the previous `inspector__subtabs` / `inspector__subtab` rules that they replaced. The nav row bumps `.btn--small` back up to the 44 px mobile touch target (the bare `.btn--small` is `var(--tap-sm)` = 32 px and was too small on a phone); the head and nav have 10 px side padding to match the rest of the layout; the panelbar uses `flex: 1 1 0` chips so all four panel chips fit on a single row at 360 px wide with the "Show all" chip wrapping to its own line below.
+- **Responsive sizing.** A `@media (min-width: 900px)` block in [frontend/src/inspector.css](../../frontend/src/inspector.css) re-enables the "first panel grows" behaviour for tablet and desktop: the grow child becomes `flex: 1 1 auto` with the scroller / preview-frame inside it set to `flex: 1 1 auto; height: auto; min-height: 0`, and the metrics grid switches from 2 to 4 columns. Below 900 px each panel has its own intrinsic height (Preview `40 dvh`, list scrollers `32 dvh`) and the page scrolls. The breakpoint is intentionally high: at 600-899 px the four panels' intrinsic heights already exceed the available space, and the grow would just compress the non-grow panels to a sliver instead of letting the user scroll predictably between them.
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
 - **Virtualization** — both list panels use [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
 - **Mutable row updates** — network and console entries carry a `rev` counter that is bumped on every mutation. The virtual-list render functions diff a signature (`id|rev|status|size|duration`) against the node's previous signature and skip DOM writes entirely when nothing changed, so a busy page doesn't force-reflow the list on every CDP event.
