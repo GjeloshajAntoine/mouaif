@@ -392,6 +392,10 @@ pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', f
     let model;
     try { model = resolveModel(modelId, projectDir, providerId); }
     catch (e) { return sendJSON(res, e.code === 'EMODEL_NOT_FOUND' || e.code === 'EPROVIDER_NOT_FOUND' ? 404 : 400, { error: e.message, code: e.code || 'EBADMODEL' }); }
+    // Inherit the chat's thinking level so a delegated run (agent pin or
+    // generic) matches what a normal chat turn would send. An agent's own
+    // thinkingLevel still wins inside the dispatcher.
+    if (typeof chat.thinkingLevel === 'string' && chat.thinkingLevel) model.thinkingLevel = chat.thinkingLevel;
 
     let appSettings;
     try { appSettings = settings.getApp(); } catch { /* defaults apply */ }

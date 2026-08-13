@@ -140,21 +140,24 @@ ok(!agents.isValidName('x'.repeat(65)), 'too long invalid');
       { id: 'big', provider: 'anthropic', label: 'Big' }
     ]
   }), 'utf8');
-  const a = agents.create(dir, { name: 'pinned', content: 'x', modelId: 'small' });
-  ok(a.modelId === 'small', 'create stores modelId');
+  const a = agents.create(dir, { name: 'pinned', content: 'x', modelId: 'small', providerId: 'openai-compatible' });
+  ok(a.modelId === 'small' && a.providerId === 'openai-compatible', 'create stores the provider-qualified model pin');
   const b = agents.create(dir, { name: 'plain', content: 'x' });
   ok(b.modelId === undefined, 'create without modelId leaves it unset');
-  const patched = agents.update(dir, 'pinned', { modelId: 'big' });
-  ok(patched.modelId === 'big', 'update patches modelId');
+  const patched = agents.update(dir, 'pinned', { modelId: 'big', providerId: 'anthropic' });
+  ok(patched.modelId === 'big' && patched.providerId === 'anthropic', 'update patches the provider-qualified model pin');
   const cleared = agents.update(dir, 'pinned', { modelId: '' });
-  ok(cleared.modelId === undefined, 'empty modelId clears the pin');
+  ok(cleared.modelId === undefined && cleared.providerId === undefined, 'empty modelId clears the provider-qualified pin');
   // resolveModel: null when unpinned, record when pinned, throw on unknown.
   ok(agents.resolveModel(dir, agents.get(dir, 'plain')) === null, 'resolveModel returns null when unpinned');
-  agents.update(dir, 'pinned', { modelId: 'big' });
+  agents.update(dir, 'pinned', { modelId: 'big', providerId: 'anthropic' });
   const rec = agents.resolveModel(dir, agents.get(dir, 'pinned'));
   ok(rec && rec.id === 'big' && rec.provider === 'anthropic', 'resolveModel returns the project model record');
-  agents.update(dir, 'pinned', { modelId: 'ghost' });
+  agents.update(dir, 'pinned', { modelId: 'ghost', providerId: '' });
   assert.throws(() => agents.resolveModel(dir, agents.get(dir, 'pinned')), /unknown model/i);
+  agents.update(dir, 'pinned', { modelId: 'live/model', providerId: 'openrouter' });
+  const liveRec = agents.resolveModel(dir, agents.get(dir, 'pinned'));
+  ok(liveRec.id === 'live/model' && liveRec.provider === 'openrouter', 'provider-qualified live model resolves without a project record');
   passed++;
 }
 

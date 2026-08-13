@@ -7,7 +7,7 @@
 // message is the agent's instructions, optionally restricted to the
 // agent's tool allowlist.
 //
-// Each agent = { name, content, tools?, modelId?, createdAt, updatedAt }
+// Each agent = { name, content, tools?, modelId?, providerId?, thinkingLevel?, createdAt, updatedAt }
 //   name:    user-defined, unique per project, immutable. Matches
 //            NAME_RE. This is the value the subagent `agent` argument
 //            is matched against.
@@ -15,9 +15,14 @@
 //            system message. Capped at MAX_BYTES on write.
 //   tools:   optional array of tool names the nested call may use.
 //            Absent/empty = inherit the parent's full tool surface.
-//   modelId: optional project model id (from settings `models`) the
-//            nested call runs on. Absent/empty = inherit the chat's
-//            model and provider.
+//   modelId: optional model id the nested call runs on. It may be a
+//            project model or a live-catalog model when providerId is set.
+//            Absent/empty = inherit the chat's model and provider.
+//   providerId: provider connection for the pinned model. Required for a
+//            live-catalog model; inferred for legacy project-model pins.
+//   thinkingLevel: optional reasoning-effort override for the nested
+//            call (same values as the chat's thinking dropdown).
+//            Absent/empty = inherit the chat's thinking level.
 //
 // Agents are NOT chat personas — a chat-level persona is what custom
 // prompts are for. Nothing in the stream path, chat record, or project
@@ -58,33 +63,38 @@ function normalizeAgent(raw) {
     ? raw.tools.map(String).map((s) => s.trim()).filter(Boolean)
     : undefined;
   const modelId = typeof raw.modelId === 'string' && raw.modelId.trim() ? raw.modelId.trim() : undefined;
+  const providerId = typeof raw.providerId === 'string' && raw.providerId.trim() ? raw.providerId.trim() : undefined;
+  const thinkingLevel = typeof raw.thinkingLevel === 'string' && raw.thinkingLevel.trim() ? raw.thinkingLevel.trim() : undefined;
   return {
     name,
     content: capContent(raw.content),
     tools: tools && tools.length ? tools : undefined,
     modelId,
+    providerId,
+    thinkingLevel,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
 }
 
-// Validate an agent's modelId against the project's user-defined
-// models. Returns the matching model record, or null when the agent
-// inherits the chat model (no modelId set). Throws EBADINPUT /
-// EUNKNOWN_MODEL otherwise — an agent pinned to a model that no longer
-// exists must fail loudly, not silently fall back.
+// Resolve an agent's project or live-catalog model pin. A provider-qualified
+// pin can be hydrated from its app-level connection even when the model is
+// not duplicated in project settings; legacy unqualified pins stay strict.
 function resolveModel(projectDir, agent) {
   const modelId = agent && typeof agent.modelId === 'string' ? agent.modelId.trim() : '';
   if (!modelId) return null;
+  const providerId = agent && typeof agent.providerId === 'string' ? agent.providerId.trim() : '';
   const resolved = settings.getResolved(projectDir || null);
   const models = Array.isArray(resolved.models) ? resolved.models : [];
-  const m = models.find((x) => x && x.id === modelId);
-  if (!m) {
-    const error = new Error('Agent "' + (agent.name || '?') + '" references unknown model "' + modelId + '"');
-    error.code = 'EUNKNOWN_MODEL';
-    throw error;
-  }
-  return m;
+  const m = models.find((x) => x && x.id === modelId && (!providerId || x.provider === providerId));
+  if (m) return m;
+  // A provider-qualified pin may come from the live catalog rather than
+  // the project's saved models. The dispatcher hydrates this identity
+  // record with the app-level provider connection.
+  if (providerId) return { id: modelId, provider: providerId };
+  const error = new Error('Agent "' + (agent.name || '?') + '" references unknown model "' + modelId + '"');
+  error.code = 'EUNKNOWN_MODEL';
+  throw error;
 }
 
 function readRawList(project) {
@@ -132,6 +142,8 @@ function create(projectDir, opts) {
     content,
     tools: Array.isArray(opts.tools) ? opts.tools : undefined,
     modelId: typeof opts.modelId === 'string' ? opts.modelId : undefined,
+    providerId: typeof opts.providerId === 'string' ? opts.providerId : undefined,
+    thinkingLevel: typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : undefined,
     createdAt: now,
     updatedAt: now
   });
@@ -180,6 +192,12 @@ function update(projectDir, name, patch) {
     modelId: Object.prototype.hasOwnProperty.call(patch || {}, 'modelId')
       ? (typeof patch.modelId === 'string' && patch.modelId.trim() ? patch.modelId.trim() : undefined)
       : current.modelId,
+    providerId: Object.prototype.hasOwnProperty.call(patch || {}, 'providerId')
+      ? (typeof patch.providerId === 'string' && patch.providerId.trim() ? patch.providerId.trim() : undefined)
+      : (Object.prototype.hasOwnProperty.call(patch || {}, 'modelId') && !patch.modelId ? undefined : current.providerId),
+    thinkingLevel: Object.prototype.hasOwnProperty.call(patch || {}, 'thinkingLevel')
+      ? (typeof patch.thinkingLevel === 'string' && patch.thinkingLevel.trim() ? patch.thinkingLevel.trim() : undefined)
+      : current.thinkingLevel,
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString()
   };

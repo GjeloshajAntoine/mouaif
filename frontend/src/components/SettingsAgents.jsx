@@ -10,10 +10,11 @@
 // edits PATCH on a short debounce, no Save button.
 import { h, Fragment } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { fetchJson, activeProject } from '../api.js';
+import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { ModelPickerField } from './ModelPickerField.jsx';
+import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 
 function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
@@ -167,6 +168,7 @@ export function SettingsAgentEditView(props) {
   const isNew = !!(props && props.id === 'new');
   const projectDir = resolveProjectDir(props);
   const [projectModels, setProjectModels] = useState([]);
+  const [modelProviders, setModelProviders] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   // The loaded agent in state so the tools checklist re-renders when a
   // checkbox toggles between "inherit all" and an explicit allowlist.
@@ -178,11 +180,33 @@ export function SettingsAgentEditView(props) {
   async function load() {
     if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     try {
-      const [mr, sr] = await Promise.all([
+      const [mr, pr, sr] = await Promise.all([
         fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
+        fetchJson('/api/ai/models/providers'),
         fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
       ]);
-      if (mr.status === 200 && Array.isArray(mr.body.models)) setProjectModels(mr.body.models);
+      const saved = mr.status === 200 && Array.isArray(mr.body.models) ? mr.body.models : [];
+      const providers = pr.status === 200 && Array.isArray(pr.body.providers)
+        ? pr.body.providers.map((p) => p && p.id).filter(Boolean)
+        : [];
+      const live = await Promise.all(providers.map((provider) =>
+        fetchLiveModels(provider)
+          .then((result) => ({ provider, models: result.models || [] }))
+          .catch(() => ({ provider, models: [] }))
+      ));
+      const union = new Map();
+      for (const m of saved) {
+        if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
+      }
+      for (const group of live) {
+        for (const m of group.models) {
+          if (!m || !m.id) continue;
+          const key = group.provider + '\u0000' + m.id;
+          if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
+        }
+      }
+      setProjectModels(Array.from(union.values()));
+      setModelProviders(providers);
       if (sr.status === 200 && Array.isArray(sr.body.servers)) setMcpServers(sr.body.servers);
     } catch { /* pickers stay empty */ }
     if (isNew) {
@@ -247,8 +271,16 @@ export function SettingsAgentEditView(props) {
 
   function onModelChange(sel) {
     const modelId = (sel && sel.modelId) || '';
-    setAgent(a => Object.assign({}, a, { modelId: modelId || undefined }));
-    saveNow({ modelId });
+    const providerId = (sel && sel.providerId) || '';
+    setAgent(a => Object.assign({}, a, {
+      modelId: modelId || undefined,
+      providerId: providerId || undefined
+    }));
+    saveNow({ modelId, providerId });
+  }
+  function onThinkingLevelChange(value) {
+    setAgent(a => Object.assign({}, a, { thinkingLevel: value || undefined }));
+    saveNow({ thinkingLevel: value || '' });
   }
 
   function onToolToggle(tool, checked) {
@@ -374,17 +406,34 @@ export function SettingsAgentEditView(props) {
         h(ModelPickerField, {
           models: projectModels,
           value: agent.modelId
-            ? { providerId: (projectModels.find(m => m.id === agent.modelId) || {}).provider || '', modelId: agent.modelId }
+            ? {
+              providerId: agent.providerId || (projectModels.find(m => m.id === agent.modelId) || {}).provider || '',
+              modelId: agent.modelId
+            }
             : null,
+          variant: 'sheet',
+          extraProviders: modelProviders,
           allowClear: true,
           clearLabel: 'Inherit chat model',
           placeholder: 'Pick a model',
           disabled: isNew,
-          ariaLabel: 'Model for this agent',
-          onChange: onModelChange
-        })
-      ),
-      h('div', { class: 'row', hidden: isNew },
+        ariaLabel: 'Model for this agent',
+        onChange: onModelChange
+      })
+    ),
+    h('div', { class: 'row' },
+      h('label', { class: 'label', for: 'sae-thinking' }, 'Thinking'),
+      h(ThinkingSelectField, {
+        value: agent.thinkingLevel || '',
+        descriptor: (projectModels.find(m => m.id === agent.modelId && (!agent.providerId || m.provider === agent.providerId)) || {}).thinking,
+        inheritLabel: 'Inherit chat thinking',
+        disabled: isNew,
+        ariaLabel: 'Thinking level for this agent',
+        onChange: onThinkingLevelChange
+      }),
+      h('p', { class: 'hint hint--compact' }, 'How much reasoning this agent does before answering. "Inherit chat thinking" follows the chat\'s current model.')
+    ),
+    h('div', { class: 'row', hidden: isNew },
         h('span', { class: 'label' }, 'Tools'),
         h(ToolTree, {
           groups: agentToolGroups,

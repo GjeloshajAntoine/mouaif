@@ -10,7 +10,7 @@ import { isSubagentTool, normalizeToolName } from './tools.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
-import { ModelPickerField } from '../ModelPickerField.jsx';
+import { AuthModelPicker } from '../AuthModelPicker.jsx';
 
 // buildSetupCard()
 //
@@ -574,7 +574,7 @@ function buildAuthModelPicker(state, request) {
   const out = new Map();
   for (const m of (state.models || [])) {
     if (!m || !m.id || !m.provider) continue;
-    out.set(m.provider + '\u0000' + m.id, { id: m.id, provider: m.provider, label: m.label || '' });
+    out.set(m.provider + '\u0000' + m.id, { id: m.id, provider: m.provider, label: m.label || '', thinking: m.thinking || undefined });
   }
   const live = state.liveByProvider || {};
   for (const provider of Object.keys(live)) {
@@ -582,7 +582,7 @@ function buildAuthModelPicker(state, request) {
       if (!m || !m.id) continue;
       const key = provider + '\u0000' + m.id;
       if (out.has(key)) continue;
-      out.set(key, { id: m.id, provider, label: m.label || '' });
+      out.set(key, { id: m.id, provider, label: m.label || '', thinking: m.thinking || undefined });
     }
   }
   const list = Array.from(out.values()).sort((a, b) =>
@@ -606,12 +606,9 @@ function buildAuthModelPicker(state, request) {
   // "inherit" row clears it back to the chat default / agent pin.
   const mpHost = document.createElement('div');
   mpHost.className = 'tool-card__auth-model-field';
-  render(h(ModelPickerField, {
+  render(h(AuthModelPicker, {
     models: list,
-    value: selected,
-    allowClear: true,
-    clearLabel: selected ? ('(chat default) ' + selected.modelId) : '(chat default)',
-    ariaLabel: 'Model for this subagent run',
+    initialValue: selected,
     onChange: (next) => { selected = next; }
   }), mpHost);
   host.appendChild(mpHost);
@@ -664,17 +661,23 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
       button.addEventListener('click', async () => {
         for (const child of actions.querySelectorAll('button')) child.disabled = true;
         const body = { projectDir, chatId, callId: request.callId, decision };
-        // Fold the picked model into the decision payload so the
-        // subagent dispatcher can run this call on it. Only when the
-        // card showed a picker and the user chose a non-default option.
+        // Fold the picked model + thinking level into the decision
+        // payload so the subagent dispatcher can run this call on them.
+        // Only when the card showed a picker and the user chose a
+        // non-default option.
         const chosen = modelPicker && typeof modelPicker._selected === 'function' ? modelPicker._selected() : null;
-        if (chosen && chosen.providerId && chosen.modelId && decision !== 'deny') {
-          body.payload = {
-            modelOverride: {
-              providerId: chosen.providerId,
-              modelId: chosen.modelId
-            }
-          };
+        if (chosen && decision !== 'deny') {
+          const payload = {};
+          if (chosen.modelOverride && chosen.modelOverride.providerId && chosen.modelOverride.modelId) {
+            payload.modelOverride = {
+              providerId: chosen.modelOverride.providerId,
+              modelId: chosen.modelOverride.modelId
+            };
+          }
+          if (typeof chosen.thinkingLevel === 'string' && chosen.thinkingLevel) {
+            payload.thinkingLevel = chosen.thinkingLevel;
+          }
+          if (Object.keys(payload).length) body.payload = payload;
         }
         const r = await fetchJson('/api/tools/authorization/decision', {
           method: 'POST',

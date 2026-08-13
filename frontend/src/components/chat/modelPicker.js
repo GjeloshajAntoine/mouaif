@@ -728,13 +728,14 @@ export async function refreshActiveProvider(state, refs) {
 // and surface a one-line summary on the head. Used by the picker's
 // ↻ button.
 export async function refreshAllProviders(state, refs, setChatStatus) {
-  if (refs.modelPickerRefresh.current) refs.modelPickerRefresh.current.disabled = true;
+  // The refresh button is rendered by ModelPickerField (not an imperative
+  // DOM node), so there is no refs.modelPickerRefresh to disable here; the
+  // component disables it itself via its `refreshing` state.
   setChatStatus('refreshing models…', 'busy');
   invalidateModelsCache();
   const providers = state.providers.map((p) => p && p.id).filter(Boolean);
   if (!providers.length) {
     setChatStatus('add a provider in Settings → Providers', 'error');
-    if (refs.modelPickerRefresh.current) refs.modelPickerRefresh.current.disabled = false;
     return;
   }
   const results = await Promise.all(
@@ -765,5 +766,4 @@ export async function refreshAllProviders(state, refs, setChatStatus) {
     setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
   }
   if (typeof state._onLiveModels === 'function') state._onLiveModels('all');
-  if (refs && refs.modelPickerRefresh && refs.modelPickerRefresh.current) refs.modelPickerRefresh.current.disabled = false;
 }

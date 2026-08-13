@@ -13,9 +13,10 @@ Agents are **not** chat personas — a chat-level persona is what [custom prompt
 | **Name** | string | — (required) | Unique per project, matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. Mutable after creation — renaming auto-saves and redirects the edit view to the new URL. This is the value the `subagent` `agent` argument is matched against. |
 | **Instructions** | string | — (required) | The persona text. Becomes the nested call's system message. Capped at 64 KiB. |
 | **Tools** | tool-name list | all | Optional allowlist restricting which tools the nested call may use. Empty/unset = the nested call inherits the parent's full tool surface. |
-| **Model** | model id | inherit | Optional project model (from Settings → Project models) the nested call runs on. Empty/unset = the nested call uses the chat's model and provider. An id that no longer exists fails loudly with `EUNKNOWN_MODEL` — never a silent fallback. |
+| **Model** | provider + model id | inherit | Optional model from the same project + live-catalog union as the chat top bar. Empty/unset = the nested call uses the chat's model and provider. Provider-qualified live models do not need to be duplicated in project settings; legacy unqualified ids that no longer exist fail with `EUNKNOWN_MODEL`. |
+| **Thinking** | thinking level | inherit | Optional reasoning-effort override for the nested call (same values as the chat's thinking dropdown). Empty/unset = the nested call follows the chat's thinking level. |
 
-Provider and prompt size are **never** configurable on an agent — the model pin carries its own provider; everything else follows the chat.
+Provider and prompt size are **never** configurable on an agent — the model pin carries its own provider; everything else follows the chat. Thinking level **is** configurable (an optional reasoning-effort override that only applies when the agent's nested call runs).
 
 ## Usage
 
@@ -26,8 +27,9 @@ Open **Settings → Project → Agents** (in the *Project add-ons* group, alongs
 - **+ Add agent** opens `#/settings/agents/new`, asks for a name and instructions, creates the agent, and redirects to its edit view.
 - **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.
 - **Instructions** is a multiline field; it saves on a short debounce.
-- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The control is the same trigger + modal the chat top bar uses (search, provider filter chips, grouped sections); the list row shows the pinned model id in its meta line.
+- **Model** uses the same project + live-catalog union, two-line trigger, provider chips, grouped rows, search, and phone viewport sheet as the chat top bar. "Inherit chat model" clears both the saved model and provider.
 - **Tools** is a grouped tree of native tools and configured MCP servers. Each MCP group shows its status and discovered tool names/descriptions (using cached discovery data while stopped). Selecting an MCP server stores its server slug, so current and future tools from that server are available to the agent. All groups checked = inherit everything; unchecking builds an explicit allowlist.
+- **Thinking** is a dropdown of the presets for the agent's pinned model (from the model's provider-reported `thinking` descriptor) plus "Inherit chat thinking". The first row keeps the chat's level; picking a preset stores `thinkingLevel` on the agent so delegated runs use it even when the chat later changes.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
 ### REST
@@ -35,9 +37,9 @@ Open **Settings → Project → Agents** (in the *Project add-ons* group, alongs
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/api/agents?projectDir=<abs>` | — | `{ agents: [...] }` |
-| `POST` | `/api/agents` | `{ projectDir, name, content, tools?, modelId? }` | `{ agent }` (201); 400 on invalid/duplicate name |
+| `POST` | `/api/agents` | `{ projectDir, name, content, tools?, modelId?, providerId?, thinkingLevel? }` | `{ agent }` (201); 400 on invalid/duplicate name |
 | `GET` | `/api/agents/:name?projectDir=<abs>` | — | `{ agent }` or 404 |
-| `PATCH` | `/api/agents/:name` | `{ projectDir, name?, content?, tools?, modelId? }` | `{ agent }`; `name` is now mutable (renames the agent); `modelId: ""` clears the pin |
+| `PATCH` | `/api/agents/:name` | `{ projectDir, name?, content?, tools?, modelId?, providerId?, thinkingLevel? }` | `{ agent }`; `name` is now mutable (renames the agent); empty `modelId` / `providerId` clears the pin; `thinkingLevel: ""` clears the override |
 | `DELETE` | `/api/agents/:name?projectDir=<abs>` | — | `{ ok, removed }` |
 
 ### Delegate with `subagent`
@@ -68,7 +70,7 @@ When a name is provided:
 
 - The nested call's system message is the agent's **instructions** (replacing the generic "focused subagent" persona).
 - If the agent has a **tools** allowlist, the nested call is restricted to it.
-- If the agent has a **model** pin, the nested call runs on that project model (its own provider connection) instead of the chat's model.
+- If the agent has a **model** pin, the nested call runs on that project or live-catalog model (through its saved provider connection) instead of the chat's model.
 - Everything else is inherited from the parent: MCP surface and the authorization gate.
 
 An **unknown name returns a typed error** — no silent fallback to a generic subagent:
@@ -81,12 +83,13 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 
 The mobile agent editor sheet reserves the top safe area at its fixed overlay so it cannot extend beneath the device status bar.
 
-- Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
-- The model pin resolves at dispatch time: `agents.resolveModel()` finds the project model by id, and the subagent dispatch hydrates it with the app-level provider connection (same sanitization as chat model resolution — credentials never come from the project file).
-- Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
+- Storage: `.mouaif.json` under `agents` as `{ name, content, tools?, modelId?, providerId?, thinkingLevel?, createdAt, updatedAt }`. The legacy `agentPresets` key is read as a one-release fallback (its `id` becomes `name`; extra fields like `title`/`promptSize`/`agentFiles` are dropped, `modelId` is kept) and removed on first write.
+- The model pin resolves at dispatch time: `agents.resolveModel()` first finds a matching project model by provider + id, then accepts a provider-qualified live-catalog identity. The subagent dispatcher hydrates either with the app-level provider connection; credentials never come from the project file.
+- The thinking override resolves in the subagent dispatcher (`src/ai-stream.js`): the authorization card's per-run value wins, then the agent's `thinkingLevel`, then the chat's inherited value. An empty string clears the inherited level so "No thinking" is honoured explicitly.
+- Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model (and its `thinkingLevel`) is the default when the agent has no pin and no explicit `modelId` is passed.
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
-- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `frontend/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `frontend/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor). The agent model pin uses the shared `frontend/src/components/ModelPickerField.jsx`.
+- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai-stream.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `frontend/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `frontend/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor). The agent model pin uses the shared `frontend/src/components/ModelPickerField.jsx`; the thinking override uses `frontend/src/components/ThinkingSelectField.jsx`.
 
 ## Related
 

@@ -80,10 +80,9 @@ function PinIcon({ pinned }) {
 // ModelPickerField
 //
 // props:
-//   models          — array of { id, provider?, label?, ghost? } (initial list)
-//   getModels       — optional () => fresh list, re-read after refresh
-//   value           — { providerId, modelId } | null | undefined
-//   onChange        — (selection | null) => void
+//   models          — array of { id, provider?, label?, ghost? }
+//   value           — controlled { providerId, modelId } selection
+//   onChange        — (selection | null) => void; parent updates value
 //   allowClear      — bool, show a "clear/inherit" action row at the top
 //   clearLabel      — string for that row (default "Inherit chat model")
 //   placeholder     — trigger text when no value and no clear row
@@ -94,7 +93,9 @@ function PinIcon({ pinned }) {
 //   disabled        — bool
 //   ariaLabel       — trigger aria-label (default "Pick model")
 //   className       — extra class on the root `.mp` element
-//   variant         — 'dropdown' (anchored) | 'sheet' (fixed iOS sheet)
+//   variant         — 'dropdown' | 'sheet' | 'chat'; both sheet variants
+//                     use the chat picker's mobile viewport modal, while
+//                     'chat' also applies the compact top-bar trigger layout
 //   pinned          — Set<string> of "providerId\0modelId" bookmarks
 //   onTogglePin     — (model) => void, shown when provided (pin button)
 //   recent          — Array<{ provider, id, ts }> recency, newest first
@@ -105,7 +106,6 @@ function PinIcon({ pinned }) {
 export function ModelPickerField(props) {
   const {
     models,
-    getModels,
     value,
     onChange,
     allowClear = false,
@@ -129,7 +129,7 @@ export function ModelPickerField(props) {
     children
   } = props;
 
-  const [list, setList] = useState(() => normalizeModels(models));
+  const list = useMemo(() => normalizeModels(models), [models]);
   const [open, setOpen] = useState(false);
   // Support both uncontrolled (internal state, the default for the auth
   // card / Agents editor) and controlled (chat head's `open` +
@@ -148,42 +148,30 @@ export function ModelPickerField(props) {
   const popRef = useRef(null);
   const searchRef = useRef(null);
   const listRef = useRef(null);
-  const [sel, setSel] = useState(() =>
-    (value && (value.providerId || value.modelId))
-      ? { providerId: value.providerId || '', modelId: value.modelId || '' }
-      : null);
+  const triggerRef = useRef(null);
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  const isSheet = variant === 'sheet' || variant === 'chat';
+  // Selection and models are controlled props. Keep only transient UI
+  // concerns (open/search/filter/refreshing) as local component state.
+  const sel = (value && (value.providerId || value.modelId))
+    ? { providerId: value.providerId || '', modelId: value.modelId || '' }
+    : null;
 
-  // Sync the displayed selection whenever the parent hands us a new value
-  // (the Agents editor re-renders with a fresh modelId; the chat head
-  // re-renders after a pick or a persisted chat load). Guarded so an
-  // object identity change on the parent's side doesn't loop.
+  // Close on outside click and Escape. Returning focus to the trigger
+  // keeps the sheet modal usable with a hardware keyboard as well as touch.
   useEffect(() => {
-    const next = (value && (value.providerId || value.modelId))
-      ? { providerId: value.providerId || '', modelId: value.modelId || '' }
-      : null;
-    setSel((prev) => {
-      if (prev === next) return prev;
-      if (prev && next && prev.providerId === next.providerId && prev.modelId === next.modelId) return prev;
-      return next;
-    });
-  }, [value]);
-
-  // Refresh the local list whenever the parent hands us a new model set
-  // (relevant for the reactive Agents editor, the chat's live-catalog
-  // refresh, and after a refresh() call).
-  useEffect(() => {
-    setList(normalizeModels(models));
-  }, [models]);
-
-  // Close on outside click and Escape.
-  useEffect(() => {
-  if (!effectiveOpen) return;
-  const onDocClick = (ev) => {
-    if (rootRef.current && !rootRef.current.contains(ev.target)) setEffectiveOpen(false);
-  };
-  const onKey = (ev) => {
-    if (ev.key === 'Escape') setEffectiveOpen(false);
-  };
+    if (!effectiveOpen) return;
+    const close = () => {
+      setEffectiveOpen(false);
+      requestAnimationFrame(() => triggerRef.current && triggerRef.current.focus());
+    };
+    const onDocClick = (ev) => {
+      if (rootRef.current && !rootRef.current.contains(ev.target)) close();
+    };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') close();
+    };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('touchstart', onDocClick);
     document.addEventListener('keydown', onKey);
@@ -194,17 +182,20 @@ export function ModelPickerField(props) {
     };
   }, [effectiveOpen]);
 
-  // Focus the search input when the sheet opens.
+  // Call the open hook after the first paint, then focus search. Keeping
+  // these in that order lets callers populate a live catalog without the
+  // component reading stale models during the opening event.
   useEffect(() => {
-    if (effectiveOpen && searchRef.current) searchRef.current.focus();
-    if (effectiveOpen && onOpen) onOpen();
-  }, [effectiveOpen, onOpen]);
+    if (!effectiveOpen) return;
+    if (onOpenRef.current) onOpenRef.current();
+    requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
+  }, [effectiveOpen]);
 
   // iOS keyboard + background-scroll handling for the fixed sheet
   // variant. Mirrors the imperative syncKeyboardInset /
   // bindPickerScrollLock the chat head used to run.
   useEffect(() => {
-  if (!effectiveOpen || variant !== 'sheet') return;
+    if (!effectiveOpen || !isSheet) return;
     const pop = popRef.current;
     if (!pop) return;
     const vv = window.visualViewport;
@@ -271,7 +262,7 @@ export function ModelPickerField(props) {
       pop.style.removeProperty('--model-picker-viewport-top');
       pop.style.removeProperty('--model-picker-keyboard-inset');
     };
-  }, [effectiveOpen, variant]);
+  }, [effectiveOpen, isSheet]);
 
   const providers = useMemo(() => {
     const set = [];
@@ -303,14 +294,16 @@ export function ModelPickerField(props) {
   const selectedKey = sel ? (sel.providerId + '\u0000' + sel.modelId) : null;
   const showingFullList = providerFilter === 'all' && !q.trim().toLowerCase();
 
-  function pick(m) {
+  function closeAndRestoreFocus() {
     setEffectiveOpen(false);
-    setSel({ providerId: m.provider, modelId: m.id });
+    requestAnimationFrame(() => triggerRef.current && triggerRef.current.focus());
+  }
+  function pick(m) {
+    closeAndRestoreFocus();
     if (onChange) onChange({ providerId: m.provider, modelId: m.id });
   }
   function pickClear() {
-    setEffectiveOpen(false);
-    setSel(null);
+    closeAndRestoreFocus();
     if (onChange) onChange(null);
   }
   async function doRefresh() {
@@ -318,7 +311,6 @@ export function ModelPickerField(props) {
     setRefreshing(true);
     try {
       await refresh();
-      if (getModels) setList(normalizeModels(getModels()));
     } finally {
       setRefreshing(false);
     }
@@ -329,11 +321,12 @@ export function ModelPickerField(props) {
   const isEmpty = !sel && !allowClear;
   const rootClass = 'mp'
     + (className ? ' ' + className : '')
-    + (variant === 'sheet' ? ' mp--sheet' : '');
+    + (variant === 'chat' ? ' mp--chat mp--sheet' : (variant === 'sheet' ? ' mp--sheet' : ''));
 
   return h('div', { class: rootClass, ref: rootRef },
     label ? h('label', { class: 'mp__label' }, label) : null,
     h('button', {
+      ref: triggerRef,
       type: 'button',
       class: 'mp__trigger' + (isEmpty ? ' is-empty' : '') + (noProviders ? ' no-providers' : '') + (!list.length && !noProviders ? ' is-empty' : ''),
       disabled: !!disabled,
@@ -348,7 +341,13 @@ export function ModelPickerField(props) {
     ),
     h('span', { class: 'mp__caret', 'aria-hidden': 'true' }, '▾')
     ),
-    effectiveOpen ? h('div', { class: 'mp__pop', role: 'dialog', 'aria-label': ariaLabel, ref: popRef },
+    effectiveOpen ? h('div', {
+      class: 'mp__pop',
+      role: 'dialog',
+      'aria-modal': isSheet ? 'true' : undefined,
+      'aria-label': ariaLabel,
+      ref: popRef
+    },
       h('div', { class: 'mp__head' },
         h('input', {
           ref: searchRef,
@@ -376,7 +375,7 @@ export function ModelPickerField(props) {
           class: 'mp__close',
           'aria-label': 'Close',
           title: 'Close',
-          onClick: () => setEffectiveOpen(false)
+      onClick: closeAndRestoreFocus
         }, '×')
       ),
       children ? children : null,

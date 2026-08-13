@@ -63,6 +63,16 @@ export function thinkingOptionsFor(descriptor) {
 // thinkingLevel selection. Falls back to the generic presets when
 // the provider reports nothing. Called whenever the chat record or
 // the live model data changes.
+// thinkingOptionsForSelect(descriptor) -> [{ value, label }]
+//
+// The same options as thinkingOptionsFor but without the __custom__
+// sentinel. Used by consumers that do not render the free-form custom
+// input (the Agents editor and the subagent authorization card), which
+// surface a plain <select> of presets + "No thinking".
+export function thinkingOptionsForSelect(descriptor) {
+  return thinkingOptionsFor(descriptor).filter((o) => o.value !== "__custom__");
+}
+
 export function syncThinkingSelect(refs, state) {
   const sel = refs.thinkingLevel && refs.thinkingLevel.current;
   if (!sel) return;

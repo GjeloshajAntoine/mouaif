@@ -1054,20 +1054,18 @@ transition: color 80ms ease, background 80ms ease;
 /* Ghost row (active model that is no longer in the catalog) */
 .mp__row.is-ghost .mp__row-id { color: var(--warning); }
 .mp__row.is-ghost .mp__row-meta { color: var(--warning); }
-/* ---- Sheet variant (the chat top bar's fixed iOS sheet) ---------- */
-/* The chat head renders the shared field with `variant="sheet"`. On a
-   phone the popover becomes a fixed near-full-screen sheet anchored to
-   the visual viewport (see --model-picker-viewport-* set in the
-   component's keyboard effect); on wider screens it stays an anchored
-   dropdown. This mirrors the old .chat-view__picker sheet math. */
-.mp--sheet {
+/* ---- Shared viewport-sheet + chat top-bar variants --------------- */
+/* Every model field uses the same phone modal as the chat picker.
+   `mp--chat` only adds compact top-bar sizing; `mp--sheet` owns the
+   modal placement and can also be used in cards/forms. */
+.mp--chat {
 position: relative;
 flex: 1 1 80px;
 min-width: 0;
 max-width: 180px;
 }
 .mp--sheet > .mp__pop {
-z-index: 36;
+z-index: 46;
 top: calc(100% + 4px);
 left: 0;
 right: 0;
@@ -1082,6 +1080,7 @@ top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));
 left: 0;
 right: 0;
 bottom: auto;
+width: 100%;
 max-height: none;
 min-height: 0;
 height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));

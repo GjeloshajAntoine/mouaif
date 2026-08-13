@@ -727,3 +727,12 @@
   position: relative;
   min-width: 0;
 }
+.tool-card--authorization .auth-model-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tool-card--authorization .auth-model-picker .thinking-select-field {
+  width: 100%;
+  min-height: var(--tap);
+}

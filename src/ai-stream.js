@@ -125,6 +125,9 @@ async function runSingleToolCall(c, cx) {
   // subagent dispatcher resolves it to a hydrated model so the
   // delegated run executes on the chosen model for this call only.
   let callOptsModelOverride = null;
+  // Captured from the same authorization payload: a per-run thinking
+  // level the user picked on the approval card (this call only).
+  let callOptsThinkingLevel = null;
   const pushToolMessage = (name, content) => {
     if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name, content });
   };
@@ -311,12 +314,18 @@ async function runSingleToolCall(c, cx) {
         if (authDecision && authDecision.payload) {
           if (c.name === 'ask_user') {
             callOptsAnswerPayload = authDecision.payload;
-          } else if (c.name === 'subagent' && authDecision.payload.modelOverride) {
-            // The authorization card let the user pick a model for
-            // this delegated run. Hand it to the subagent dispatcher,
-            // which resolves it to a hydrated model and runs the
-            // nested call on it (per-call override, never persisted).
-            callOptsModelOverride = authDecision.payload.modelOverride;
+          } else if (c.name === 'subagent') {
+            if (authDecision.payload.modelOverride) {
+              // The authorization card let the user pick a model for
+              // this delegated run. Hand it to the subagent dispatcher,
+              // which resolves it to a hydrated model and runs the
+              // nested call on it (per-call override, never persisted).
+              callOptsModelOverride = authDecision.payload.modelOverride;
+            }
+            if (typeof authDecision.payload.thinkingLevel === 'string') {
+              // Per-run thinking level chosen on the same card.
+              callOptsThinkingLevel = authDecision.payload.thinkingLevel;
+            }
           }
         }
       }
@@ -327,7 +336,7 @@ async function runSingleToolCall(c, cx) {
       // appeared permanently stuck on a tool call with no messages.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride }));
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel }));
     }
   } catch (e) {
     // Denied/disabled/error calls still need a call card immediately
@@ -1231,6 +1240,10 @@ async function streamChat(opts) {
       // instead of silently delegating to a generic subagent.
       let agentTools = null;
       let nestedModel = model; // default: inherit the chat's model
+      // Default: inherit the chat's thinking level (null → inherit). An
+      // explicit per-run override (authorization card) wins; otherwise an
+      // agent's thinkingLevel applies. Empty string = "No thinking".
+      let nestedThinkingLevel = null;
       const nestedMessages = [];
       // Per-call model override chosen on the authorization card.
       // { providerId, modelId } — the user explicitly picked a model
@@ -1272,9 +1285,13 @@ async function streamChat(opts) {
             const app = settingsMod.getApp();
             const providers = Array.isArray(app.providers) ? app.providers : [];
             const connection = providers.find((p) => p && p.id === rec.provider) || null;
-            nestedModel = Object.assign({}, connection || {}, rec, {
+            if (!connection) {
+              const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
+              return { ok: false, content: JSON.stringify(r), result: r };
+            }
+            nestedModel = Object.assign({}, connection, rec, {
               provider: rec.provider,
-              auth: rec.auth || (connection && connection.auth) || 'apikey'
+              auth: rec.auth || connection.auth || 'apikey'
             });
           } catch (e) {
             const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
@@ -1283,6 +1300,11 @@ async function streamChat(opts) {
         }
         nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.content, cache_control: { type: 'ephemeral' } }] });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
+        // Per-agent thinking level (optional). Applies only when no
+        // explicit per-run override was chosen on the approval card.
+        if (typeof agent.thinkingLevel === 'string' && agent.thinkingLevel.trim()) {
+          nestedThinkingLevel = agent.thinkingLevel;
+        }
       } else {
         nestedMessages.push({
           role: 'system',
@@ -1337,6 +1359,19 @@ async function streamChat(opts) {
         role: 'user',
         content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
       });
+      // Per-run thinking level from the authorization card wins over an
+      // agent's pin. An empty string clears both so the nested call uses
+      // the provider default (the user explicitly chose "No thinking").
+      if (callOpts && typeof callOpts.thinkingLevel === 'string') {
+        nestedThinkingLevel = callOpts.thinkingLevel;
+      }
+      // Apply the resolved level directly onto the nested model. `streamChat`
+      // only assigns a truthy `thinkingLevel` opt, so an explicit "" (clear)
+      // must delete the inherited value rather than ride through it.
+      if (nestedThinkingLevel !== null) {
+        if (nestedThinkingLevel === '') delete nestedModel.thinkingLevel;
+        else nestedModel.thinkingLevel = nestedThinkingLevel;
+      }
       const nestedEvents = [];
       const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
       let nestedEnabled = parentEnabled

@@ -66,17 +66,21 @@ export function useChatState(props) {
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
   const chatSwitcherIdxRef = useRef(-1);
-  // Reactive mirrors for the shared model picker (ModelPickerField). The
-  // imperative `state` bag still owns the hot-path data, but the picker
-  // is a Preact component that needs re-render triggers when that data
-  // changes (chat load, live-catalog refresh, pin/recent updates, and
-  // the imperative stream.js _openModelPicker escape hatch).
-  const [pickerModels, setPickerModels] = useState([]);
-  const [pickerValue, setPickerValue] = useState(null);
-  const [pickerPinned, setPickerPinned] = useState(() => new Set());
-  const [pickerRecent, setPickerRecent] = useState([]);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerProviders, setPickerProviders] = useState([]);
+  // One React state value is the model picker's source of truth for the
+  // rendered UI. The imperative chat bag still feeds streaming helpers,
+  // but a sync produces one atomic props snapshot instead of six mirrors
+  // that can briefly describe different picker states.
+  const [picker, setPicker] = useState(() => ({
+    models: [],
+    value: null,
+    pinned: new Set(),
+    recent: [],
+    open: false,
+    providers: []
+  }));
+  const setPickerOpen = useCallback((open) => {
+    setPicker((current) => current.open === open ? current : { ...current, open });
+  }, []);
   // Pagination state for the chat switcher, shared by the preload
   // effect and the scroll handler so they advance ONE footer. `offset`
   // is how many rows have been fetched so far; `total` is the server's
@@ -338,20 +342,19 @@ const kickPoll = useRef(null);
     // in sync with the active provider/model descriptor instead.
     syncThinkingSelect(refs, state);
   }
-  // Rebuild the reactive state the shared picker renders from. Called
-  // after the chat loads, after a pick/persist, after a live-catalog
-  // refresh, and after pin/recent bookmarks change. Keeps the imperative
-  // bag (state.models / state.liveByProvider / state.chat) and the
-  // Preact picker mirrors in lockstep.
+  // Rebuild the atomic props snapshot rendered by ModelPickerField.
   function syncPickerState() {
     const c = state.chat;
-    setPickerModels(modelsForPicker(state));
-    setPickerProviders(state.providers.map((p) => p && p.id).filter(Boolean));
-    setPickerValue((c && c.providerId && c.modelId)
-      ? { providerId: c.providerId, modelId: c.modelId }
-      : null);
-    setPickerPinned(loadPinned(state));
-    setPickerRecent(loadRecent(state));
+    setPicker((current) => ({
+      models: modelsForPicker(state),
+      providers: state.providers.map((p) => p && p.id).filter(Boolean),
+      value: (c && c.providerId && c.modelId)
+        ? { providerId: c.providerId, modelId: c.modelId }
+        : null,
+      pinned: loadPinned(state),
+      recent: loadRecent(state),
+      open: current.open
+    }));
   }
 
   // Wire the model-picker's onChatChanged hook so the head
@@ -416,14 +419,21 @@ const kickPoll = useRef(null);
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
-  const onPickerPickBound = useCallback((providerId, modelId) => {
+  const onPickerPickBound = useCallback((selection, legacyModelId) => {
+    const providerId = selection && typeof selection === 'object' ? selection.providerId : selection;
+    const modelId = selection && typeof selection === 'object' ? selection.modelId : legacyModelId;
     if (!providerId || !modelId) return;
     setPickerOpen(false);
     if (state.chat && state.chat.providerId === providerId && state.chat.modelId === modelId) return;
     touchRecent(state, providerId, modelId);
     const next = Object.assign({}, state.chat, { providerId, modelId });
     state.chat = next;
-    setPickerValue({ providerId, modelId });
+    setPicker((current) => ({
+      ...current,
+      value: { providerId, modelId },
+      recent: loadRecent(state),
+      open: false
+    }));
     syncThinkingSelect(refs, state);
     refreshProviderCredit(state, refs);
     updateChatBound({ providerId, modelId });
@@ -741,6 +751,9 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
     // Live data may carry per-model thinking descriptors that the
     // seeded project-level records lack — rebuild the dropdown options.
     syncThinkingSelect(refs, state);
+    // The picker renders from modelsForPicker(state), which unions the
+    // live cache — reflect the freshly fetched catalog in the sheet.
+    syncPickerState();
     return { provider, ok: true, count: live.length };
   }
 
@@ -953,8 +966,8 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
   setImageAttachments, setFileEditorOpen,
-  // Reactive model-picker surface (rendered by ModelPickerField)
-  pickerModels, pickerValue, pickerPinned, pickerRecent, pickerOpen, pickerProviders,
+  // Reactive model-picker props (rendered by ModelPickerField)
+  picker,
   // Actions bound for direct use in the JSX
   send,
     updateChat: updateChatBound,
@@ -965,6 +978,13 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
       syncPickerState();
     },
     onPickerOpen: async () => {
+      // Seed the max-output-tokens input from the chat record before
+      // the sheet shows. openModelPicker() used to do this imperatively;
+      // the declarative sheet has no imperative open hook, so re-seed
+      // here (the field lives in ModelPickerField's children slot).
+      if (refs.maxOutputTokens && refs.maxOutputTokens.current) {
+        refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
+      }
       await loadRecentFromServer(state);
       syncPickerState();
     },
