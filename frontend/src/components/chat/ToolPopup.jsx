@@ -9,9 +9,11 @@
 // objects.
 
 import { h } from 'preact';
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
+import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
 // Segment control for Off / Ask / Allow, same model as cards.js.
 // Picking Allow clears any allowlist; any other mode keeps it, so an
@@ -71,53 +73,19 @@ export function ToolPopup(props) {
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    function onClick(e) {
-      if (popupRef.current && !popupRef.current.contains(e.target) &&
-          triggerRef.current && !triggerRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
 
   // Calculate max height inline instead of via dom node mut.
   const [maxHeight, setMaxHeight] = useState('auto');
+  const syncAvailableHeight = useCallback(() => {
+    if (!triggerRef.current) return;
+    const triggerBottom = triggerRef.current.getBoundingClientRect().bottom;
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const available = Math.max(80, Math.floor(vh - triggerBottom - 10));
+    setMaxHeight(available + 'px');
+  }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const vv = window.visualViewport;
-    function syncAvailableHeight() {
-      if (!triggerRef.current) return;
-      const triggerBottom = triggerRef.current.getBoundingClientRect().bottom;
-      const vh = vv ? vv.height : window.innerHeight;
-      const available = Math.max(80, Math.floor(vh - triggerBottom - 10));
-      setMaxHeight(available + 'px');
-    }
-    syncAvailableHeight();
-    window.addEventListener('resize', syncAvailableHeight);
-    if (vv) {
-      vv.addEventListener('resize', syncAvailableHeight);
-      vv.addEventListener('scroll', syncAvailableHeight);
-    }
-    return () => {
-      window.removeEventListener('resize', syncAvailableHeight);
-      if (vv) {
-        vv.removeEventListener('resize', syncAvailableHeight);
-        vv.removeEventListener('scroll', syncAvailableHeight);
-      }
-    };
-  }, [open]);
+  useVisualViewport(syncAvailableHeight, open);
 
   // Build the groups for the tool tree. Same logic as cards.js.
   const catalog = (tools && tools.catalog) || [];
@@ -163,6 +131,7 @@ export function ToolPopup(props) {
       name: 'MCP default',
       description: 'gate for servers without an override',
       checked: (mcpAuthState.mode || 'ask') !== 'off',
+      hideCheckbox: true,
       control: h(McpAuthSeg, {
         name: 'MCP default',
         slug: null,

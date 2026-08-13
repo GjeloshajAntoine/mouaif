@@ -14,12 +14,12 @@ The tree sits below the system prompt. It shows one group per tool family:
 - **subagent** — delegate a task to a nested AI call
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file
-- **MCP default** — the project's shared MCP authorization gate (rendered when at least one MCP server is configured)
+- **MCP default** — the project's shared MCP authorization gate (rendered when at least one MCP server is configured; no checkbox)
 - **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
 
 Each group row has:
 
-- a **checkbox** that toggles every child tool at once — it shows a **half-check (indeterminate)** state when some but not all of the group's child tools are on, so a partial selection is visible at a glance
+- a **checkbox** that toggles every child tool at once (omitted on groups with `hideCheckbox: true`, such as the **MCP default** gate) — it shows a **half-check (indeterminate)** state when some but not all of the group's child tools are on, so a partial selection is visible at a glance
 - the group name
 - a short one-line description (truncated, with a tooltip for the full text)
 - a **collapse chevron** (only when there is more than one child)
@@ -46,6 +46,7 @@ File tools inherit from the `tools.file` family gate. A leaf checkbox can persis
 {
   groups: Array<{
     id, name, description?, checked, disabled?, disabledReason?, title?,
+    hideCheckbox?: boolean,        // omit the group checkbox (e.g. MCP default)
     control?: any,                 // right-aligned Preact node (e.g. auth segment)
     extra?: any,                   // below-row node (e.g. allowlist disclosure)
     tools: Array<{ id, name, description?, title?, checked,

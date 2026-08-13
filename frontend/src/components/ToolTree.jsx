@@ -23,6 +23,7 @@
 // Props:
 //   groups: Array<{
 //     id, name, description?, checked, disabled?, disabledReason?, title?,
+//     hideCheckbox?: boolean,        // omit the group checkbox (e.g. MCP default)
 //     alwaysExpanded?: boolean,      // render children without a chevron
 //     control?: any,                 // right-aligned Preact node
 //     tools: Array<{ id, name, description?, title?, checked,
@@ -116,11 +117,14 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                 )
               )
             : h('span', { class: 'tool-tree__chew', 'aria-hidden': 'true' }),
-          // The checkbox is its own click target — the row is NOT a
-          // <label>, so tapping the name text does not flip anything.
-          // A disabled group is a hard lock (server off, project
-          // locked, …): the checkbox is inert and the row explains why.
-          h('input', {
+        // The checkbox is its own click target — the row is NOT a
+        // <label>, so tapping the name text does not flip anything.
+        // A disabled group is a hard lock (server off, project
+        // locked, …): the checkbox is inert and the row explains why.
+        // Groups can set `hideCheckbox: true` (e.g. "MCP default" gate).
+        group.hideCheckbox
+          ? null
+          : h('input', {
             type: 'checkbox',
             class: 'checkbox checkbox--sm',
             checked: !!group.checked,

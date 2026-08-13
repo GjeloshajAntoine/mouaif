@@ -737,12 +737,13 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     const servers = (mcpServers || []).filter((s) => s && s.id);
     if (servers.length) {
-      groups.push({
-        id: 'mcp',
-        name: 'MCP default',
-        description: 'gate for MCP servers without an override',
-        checked: (mcpAuth.mode || 'ask') !== 'off',
-        control: h(McpAuthSeg, {
+    groups.push({
+      id: 'mcp',
+      name: 'MCP default',
+      description: 'gate for MCP servers without an override',
+      checked: (mcpAuth.mode || 'ask') !== 'off',
+      hideCheckbox: true,
+      control: h(McpAuthSeg, {
           name: 'MCP default',
           slug: null,
           servers: mcpAuth.servers,
