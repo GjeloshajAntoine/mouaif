@@ -150,6 +150,19 @@ visible panel, the toggle is a no-op (and the toolbar's
 **Show all** chip is the recovery path). The same fallback runs
 on mount: an empty saved set resets to the default.
 
+The sub-components that render the panels (`PanelCard`), the
+target list (`TargetRow`, `TargetMenu`), and the inspect-view
+overflow (`InspectActionsMenu`) are defined at **module scope**,
+not inside `InspectorView`'s render function. Defining them
+inside the render gave every render a brand-new component type,
+so Preact unmounted and remounted the whole subtree on every
+state change — toggling a panel chip would tear down the preview
+capture loop and reset the live preview, and a CDP-triggered
+`rerender()` would drop the open menu state. Hoisting them keeps
+the preview `<img>`, the virtual lists, and the menu open-state
+alive across re-renders; the parent passes data and actions in as
+props instead of them closing over the parent render.
+
 ### Sizing
 The visible panels are flex children of a vertical stack. The
 layout has two regimes, picked by viewport width:

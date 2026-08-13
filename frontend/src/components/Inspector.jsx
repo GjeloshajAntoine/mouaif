@@ -78,6 +78,183 @@ function loadPanelState() {
 function savePanelState(set) {
   try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(Array.from(set))); } catch { /* ignore */ }
 }
+// Hoisted sub-components (module scope) so their identity is stable
+// across InspectorView re-renders. Defining them *inside* the render
+// function gave every render a brand-new component type, so Preact
+// unmounted + remounted the whole subtree on each state change — e.g.
+// toggling a panel chip tore down the preview capture loop and reset
+// the live preview, and any CDP-triggered rerender lost the open menu
+// state. Hoisting keeps the preview <img>, the virtual lists, and the
+// menu open-state alive across re-renders; parent data/actions flow in
+// as props instead of via closure over the parent render.
+function TargetMenu(props) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick() { setOpen(false); }
+    // setTimeout to avoid the same click that opened the menu from
+    // closing it on the same event.
+    const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('click', onDocClick);
+    };
+  }, [open]);
+  const t = props.target;
+  const meta = targetMeta(t);
+  const canManage = t && t.id && t.type === 'page';
+  return h('div', { class: 'inspector__row-menu' },
+    h('button', {
+      class: 'icon-btn inspector__row-menu-btn',
+      type: 'button',
+      'aria-haspopup': 'true',
+      'aria-expanded': String(open),
+      'aria-label': 'Target options',
+      onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+    }, '⋯'),
+    h('div', {
+      class: 'inspector__row-menu-pop',
+      hidden: !open,
+      role: 'menu',
+      onClick: (e) => e.stopPropagation()
+    },
+      h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onConnect(t); } }, 'Connect'),
+      canManage ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(t); } }, 'Reload') : null,
+      canManage ? h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(t); } }, 'Close tab') : null,
+      h('div', { class: 'inspector__row-menu-meta' },
+        h('span', null, meta.label),
+        h('span', null, t && t.id ? t.id : '')
+      )
+    )
+  );
+}
+
+function TargetRow(props) {
+  const t = props.target;
+  const meta = targetMeta(t);
+  const title = (t && (t.title || t.url || t.id)) || '';
+  const subtitle = hostOf(t) || (t && (t.url || t.webSocketDebuggerUrl || t.id)) || '';
+  return h('li', { class: 'inspector__row-target inspector__row-target--' + meta.tone, key: t && t.id },
+    h('button', {
+      class: 'inspector__row-target-main',
+      type: 'button',
+      'aria-label': 'Connect to ' + title,
+      onClick: () => props.onConnect(t)
+    },
+      h('span', { class: 'inspector__row-target-chip' }, meta.label),
+      h('span', { class: 'inspector__row-target-body' },
+        h('span', { class: 'inspector__row-target-title' }, title),
+        subtitle && subtitle !== title
+          ? h('span', { class: 'inspector__row-target-sub' }, subtitle)
+          : null
+      )
+    ),
+    h(TargetMenu, {
+      target: t,
+      onConnect: props.onConnect,
+      onReload: props.onReload,
+      onClose: props.onClose
+    })
+  );
+}
+
+function PanelCard(props) {
+  const isVisible = props.isVisible;
+  const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
+  return h('div', {
+    class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
+    'data-panel': props.id
+  },
+    h('div', { class: 'inspector__panel-head' },
+      h('span', { class: 'inspector__panel-label' }, props.label),
+      h('button', {
+        class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
+        type: 'button',
+        'aria-label': toggleAria,
+        'aria-pressed': String(isVisible),
+        title: toggleAria,
+        onClick: () => props.onToggle(props.id)
+      },
+        // Eye-open glyph when the panel is visible, eye-closed
+        // when it's hidden. Drawn as inline SVG so it inherits
+        // the current color and matches the rest of the chrome
+        // iconography.
+        isVisible
+          ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+              h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
+              h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
+            )
+          : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+              h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
+            )
+      )
+    ),
+    h('div', { class: 'inspector__panel-body' },
+      isVisible ? props.children : null
+    )
+  );
+}
+
+function InspectActionsMenu(props) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick() { setOpen(false); }
+    // setTimeout to avoid the same click that opened the menu from
+    // closing it on the same event (same pattern as TargetMenu).
+    const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('click', onDocClick);
+    };
+  }, [open]);
+  return h('div', { class: 'inspector__actions' },
+    h('button', {
+      class: 'icon-btn inspector__actions-btn',
+      type: 'button',
+      'aria-haspopup': 'true',
+      'aria-expanded': String(open),
+      'aria-label': 'Tab actions',
+      title: 'Tab actions',
+      onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+    }, '…'),
+    h('div', {
+      class: 'inspector__actions-pop',
+      hidden: !open,
+      role: 'menu',
+      onClick: (e) => e.stopPropagation()
+    },
+      h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(); } }, 'Reload'),
+      h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onOpenInNewTab(); } }, 'Open in new tab'),
+      h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onShowAll(); } }, 'Show all panels'),
+      h('div', { class: 'inspector__actions-pop-sep' }),
+      h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(); } }, 'Close tab')
+    )
+  );
+}
+
+// Panel chip icons. Inline SVG keeps the panelbar a single 36 px
+// row at 360 px (4 icon chips + gaps ≈ 152 px) instead of the
+// previous text-label design that wrapped the chips onto a
+// second line for "Show all" (104 px tall on a phone). Each
+// chip keeps its text label as a tooltip + aria-label for
+// screen readers; on screen only the glyph shows, the iOS
+// DevTools-style segmented-control pattern.
+const PANEL_ICONS = {
+  preview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm2 10h10v-2H7v2Zm0-4h10V9H7v2Zm0-4h6V5H7v2Z', fill: 'currentColor' })
+  ),
+  console: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M3 4h18v3H3V4Zm0 5h12v2H3V9Zm0 4h18v2H3v-2Zm0 4h12v3H3v-3Z', fill: 'currentColor' })
+  ),
+  network: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M12 3a9 9 0 0 0-9 9h2a7 7 0 0 1 14 0h2a9 9 0 0 0-9-9Zm0 4a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0h2a5 5 0 0 0-5-5Zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-9 6h18v2H3v-2Z', fill: 'currentColor' })
+  ),
+  overview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M3 4h7v7H3V4Zm0 9h7v7H3v-7Zm9-9h9v4h-9V4Zm0 6h9v10h-9V10Z', fill: 'currentColor' })
+  )
+};
+
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
@@ -442,84 +619,6 @@ useEffect(() => {
   }
 
   if (phase === 'targets') {
-    // TargetMenu — overflow popover attached to each row. Same pattern as
-    // the project-card menu in Projects.jsx: a single `…` button that
-    // opens a small list of actions. Kept inside the targets phase so
-    // it can close on outside-click and on row-dismiss.
-    const TargetMenu = function (props) {
-      const [open, setOpen] = useState(false);
-      useEffect(() => {
-        if (!open) return;
-        function onDocClick() { setOpen(false); }
-        // setTimeout to avoid the same click that opened the menu from
-        // closing it on the same event.
-        const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
-        return () => {
-          clearTimeout(id);
-          document.removeEventListener('click', onDocClick);
-        };
-      }, [open]);
-      const t = props.target;
-      const meta = targetMeta(t);
-      const canManage = t && t.id && t.type === 'page';
-      return h('div', { class: 'inspector__row-menu' },
-        h('button', {
-          class: 'icon-btn inspector__row-menu-btn',
-          type: 'button',
-          'aria-haspopup': 'true',
-          'aria-expanded': String(open),
-          'aria-label': 'Target options',
-          onClick: (e) => { e.stopPropagation(); setOpen(!open); }
-        }, '⋯'),
-        h('div', {
-          class: 'inspector__row-menu-pop',
-          hidden: !open,
-          role: 'menu',
-          onClick: (e) => e.stopPropagation()
-        },
-          h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onConnect(t); } }, 'Connect'),
-          canManage ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(t); } }, 'Reload') : null,
-          canManage ? h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(t); } }, 'Close tab') : null,
-          h('div', { class: 'inspector__row-menu-meta' },
-            h('span', null, meta.label),
-            h('span', null, t && t.id ? t.id : '')
-          )
-        )
-      );
-    };
-    // TargetRow — one declarative card per Chrome target. Tapping the
-    // body connects; the `…` button opens the overflow menu with the
-    // destructive actions (Reload / Close) that used to live as tiny
-    // icon buttons next to the title. The type chip + host subtitle
-    // make it obvious at a glance what the row represents.
-    const TargetRow = function (props) {
-      const t = props.target;
-      const meta = targetMeta(t);
-      const title = (t && (t.title || t.url || t.id)) || '';
-      const subtitle = hostOf(t) || (t && (t.url || t.webSocketDebuggerUrl || t.id)) || '';
-      return h('li', { class: 'inspector__row-target inspector__row-target--' + meta.tone, key: t && t.id },
-        h('button', {
-          class: 'inspector__row-target-main',
-          type: 'button',
-          'aria-label': 'Connect to ' + title,
-          onClick: () => connect(t)
-        },
-          h('span', { class: 'inspector__row-target-chip' }, meta.label),
-          h('span', { class: 'inspector__row-target-body' },
-            h('span', { class: 'inspector__row-target-title' }, title),
-            subtitle && subtitle !== title
-              ? h('span', { class: 'inspector__row-target-sub' }, subtitle)
-              : null
-          )
-        ),
-        h(TargetMenu, {
-          target: t,
-          onConnect: connect,
-          onReload: actionTarget.bind(null, 'reload'),
-          onClose: actionTarget.bind(null, 'close')
-        })
-      );
-    };
     return h(Fragment, null,
       h('div', { class: 'view-head' },
         h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to inspector setup', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('setup'); rerender(); } }, '←'),
@@ -538,7 +637,13 @@ useEffect(() => {
         h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
         targets.length
           ? h('ul', { class: 'inspector__row-targets', 'aria-label': 'Discoverable targets' },
-              targets.map((t) => h(TargetRow, { target: t, key: t && t.id }))
+              targets.map((t) => h(TargetRow, {
+                target: t,
+                key: t && t.id,
+                onConnect: connect,
+                onReload: actionTarget.bind(null, 'reload'),
+                onClose: actionTarget.bind(null, 'close')
+              }))
             )
           : h('div', { class: 'inspector__row-targets-empty', role: 'status' },
               h('p', null, 'No targets found.'),
@@ -608,42 +713,6 @@ useEffect(() => {
   // the first visible panel to take the leftover height, so a user
   // with one panel open gets a single full-height panel, and a
   // user with all four open gets four equal-height panels.
-  function PanelCard(props) {
-    const isVisible = visiblePanels.has(props.id);
-    const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
-    return h('div', {
-      class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
-      'data-panel': props.id
-    },
-      h('div', { class: 'inspector__panel-head' },
-        h('span', { class: 'inspector__panel-label' }, props.label),
-        h('button', {
-          class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
-          type: 'button',
-          'aria-label': toggleAria,
-          'aria-pressed': String(isVisible),
-          title: toggleAria,
-          onClick: () => togglePanel(props.id)
-        },
-          // Eye-open glyph when the panel is visible, eye-closed
-          // when it's hidden. Drawn as inline SVG so it inherits
-          // the current color and matches the rest of the chrome
-          // iconography.
-          isVisible
-            ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-                h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
-                h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
-              )
-            : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-                h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
-              )
-        )
-      ),
-      h('div', { class: 'inspector__panel-body' },
-        isVisible ? props.children : null
-      )
-    );
-  }
   const visibleIds = PANELS.map((p) => p.id).filter((id) => visiblePanels.has(id));
   const noPanelsVisible = visibleIds.length === 0;
   // Render the optional panels. Each card has its own header +
@@ -664,69 +733,16 @@ useEffect(() => {
   // URL and pressing Go — sits in the always-visible nav row below.
   // The `…` button mirrors the same overflow pattern used by the
   // target rows in TargetMenu and the project cards in Projects.jsx.
-  const InspectActionsMenu = function () {
-    const [open, setOpen] = useState(false);
-    useEffect(() => {
-      if (!open) return;
-      function onDocClick() { setOpen(false); }
-      // setTimeout to avoid the same click that opened the menu from
-      // closing it on the same event (same pattern as TargetMenu).
-      const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
-      return () => {
-        clearTimeout(id);
-        document.removeEventListener('click', onDocClick);
-      };
-    }, [open]);
-    return h('div', { class: 'inspector__actions' },
-      h('button', {
-        class: 'icon-btn inspector__actions-btn',
-        type: 'button',
-        'aria-haspopup': 'true',
-        'aria-expanded': String(open),
-        'aria-label': 'Tab actions',
-        title: 'Tab actions',
-        onClick: (e) => { e.stopPropagation(); setOpen(!open); }
-      }, '…'),
-      h('div', {
-        class: 'inspector__actions-pop',
-        hidden: !open,
-        role: 'menu',
-        onClick: (e) => e.stopPropagation()
-      },
-        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); reloadAttachedTarget(); } }, 'Reload'),
-        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); openAttachedPageInNewTab(); } }, 'Open in new tab'),
-        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); showAllPanels(); } }, 'Show all panels'),
-        h('div', { class: 'inspector__actions-pop-sep' }),
-        h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); closeAttachedTarget(); } }, 'Close tab')
-      )
-    );
-  };
-  // Panel chip icons. Inline SVG keeps the panelbar a single 36 px
-  // row at 360 px (4 icon chips + gaps ≈ 152 px) instead of the
-  // previous text-label design that wrapped the chips onto a
-  // second line for "Show all" (104 px tall on a phone). Each
-  // chip keeps its text label as a tooltip + aria-label for
-  // screen readers; on screen only the glyph shows, the iOS
-  // DevTools-style segmented-control pattern.
-  const PANEL_ICONS = {
-    preview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-      h('path', { d: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm2 10h10v-2H7v2Zm0-4h10V9H7v2Zm0-4h6V5H7v2Z', fill: 'currentColor' })
-    ),
-    console: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-      h('path', { d: 'M3 4h18v3H3V4Zm0 5h12v2H3V9Zm0 4h18v2H3v-2Zm0 4h12v3H3v-3Z', fill: 'currentColor' })
-    ),
-    network: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-      h('path', { d: 'M12 3a9 9 0 0 0-9 9h2a7 7 0 0 1 14 0h2a9 9 0 0 0-9-9Zm0 4a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0h2a5 5 0 0 0-5-5Zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-9 6h18v2H3v-2Z', fill: 'currentColor' })
-    ),
-    overview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-      h('path', { d: 'M3 4h7v7H3V4Zm0 9h7v7H3v-7Zm9-9h9v4h-9V4Zm0 6h9v10h-9V10Z', fill: 'currentColor' })
-    )
-  };
   return h(Fragment, null,
     h('div', { class: 'view-head inspector__viewhead' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
       h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target')),
-      h(InspectActionsMenu, null)
+      h(InspectActionsMenu, {
+        onReload: reloadAttachedTarget,
+        onOpenInNewTab: openAttachedPageInNewTab,
+        onShowAll: showAllPanels,
+        onClose: closeAttachedTarget
+      })
     ),
     // Single-line target subtitle — type chip + host URL, truncated.
     // Replaces the old standalone `.inspector__head` row (50 px tall)
@@ -806,6 +822,8 @@ useEffect(() => {
               id,
               label: PANELS.find((p) => p.id === id).label,
               grow: idx === 0,
+              isVisible: visiblePanels.has(id),
+              onToggle: togglePanel,
               key: id
             }, renderPanelBody(id)))
           )
