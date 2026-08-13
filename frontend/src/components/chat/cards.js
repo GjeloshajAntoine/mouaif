@@ -10,6 +10,7 @@ import { isSubagentTool, normalizeToolName } from './tools.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
+import { ModelPickerField } from '../ModelPickerField.jsx';
 
 // buildSetupCard()
 //
@@ -565,7 +566,8 @@ export function removePendingAuthorizationCards(refs) {
 // persisted on the chat or an agent). The list is the same union
 // the main chat model picker shows: project-defined models plus the
 // per-provider live catalog, deduped by (provider, id). The chat's
-// current model is preselected, prefixed with "(chat default)".
+// current model is preselected. The control is the same trigger +
+// modal the chat top bar uses (see ModelPickerField).
 // Returns null when there is nothing to pick from.
 function buildAuthModelPicker(state, request) {
   if (!state || request.tool !== 'subagent') return null;
@@ -587,30 +589,33 @@ function buildAuthModelPicker(state, request) {
     (a.provider + a.id).localeCompare(b.provider + b.id));
   if (!list.length) return null;
 
+  const chat = state.chat || {};
+  let selected = (chat.providerId && chat.modelId)
+    ? { providerId: chat.providerId, modelId: chat.modelId }
+    : null;
+
   const host = document.createElement('div');
   host.className = 'tool-card__auth-model';
   const label = document.createElement('label');
   label.className = 'tool-card__auth-model-label';
   label.textContent = 'Run this subagent on';
-  const sel = document.createElement('select');
-  sel.className = 'input tool-card__auth-model-select';
-  sel.setAttribute('aria-label', 'Model for this subagent run');
-  const chat = state.chat || {};
-  const currentKey = (chat.providerId && chat.modelId) ? chat.providerId + '\u0000' + chat.modelId : null;
-  const chatItem = currentKey ? out.get(currentKey) : null;
-  const defaultOpt = document.createElement('option');
-  defaultOpt.value = '';
-  defaultOpt.textContent = chatItem ? '(chat default) ' + chatItem.id : '(chat default)';
-  sel.appendChild(defaultOpt);
-  for (const m of list) {
-    const opt = document.createElement('option');
-    opt.value = m.provider + '\u0000' + m.id;
-    opt.textContent = m.id + (m.label && m.label !== m.id ? ' — ' + m.label : '') + ' · ' + m.provider;
-    sel.appendChild(opt);
-  }
-  sel.value = '';
   host.appendChild(label);
-  host.appendChild(sel);
+
+  // The picker holds its own selection; expose it for the decision
+  // payload. Picking a model sets the override; tapping the
+  // "inherit" row clears it back to the chat default / agent pin.
+  const mpHost = document.createElement('div');
+  mpHost.className = 'tool-card__auth-model-field';
+  render(h(ModelPickerField, {
+    models: list,
+    value: selected,
+    allowClear: true,
+    clearLabel: selected ? ('(chat default) ' + selected.modelId) : '(chat default)',
+    ariaLabel: 'Model for this subagent run',
+    onChange: (next) => { selected = next; }
+  }), mpHost);
+  host.appendChild(mpHost);
+  host._selected = () => selected;
   return host;
 }
 
@@ -662,18 +667,14 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
         // Fold the picked model into the decision payload so the
         // subagent dispatcher can run this call on it. Only when the
         // card showed a picker and the user chose a non-default option.
-        if (modelPicker && modelPicker.querySelector('.tool-card__auth-model-select')) {
-          const sel = modelPicker.querySelector('.tool-card__auth-model-select');
-          const raw = sel && sel.value;
-          const sep = raw ? raw.indexOf('\u0000') : -1;
-          if (sep > 0 && decision !== 'deny') {
-            body.payload = {
-              modelOverride: {
-                providerId: raw.slice(0, sep),
-                modelId: raw.slice(sep + 1)
-              }
-            };
-          }
+        const chosen = modelPicker && typeof modelPicker._selected === 'function' ? modelPicker._selected() : null;
+        if (chosen && chosen.providerId && chosen.modelId && decision !== 'deny') {
+          body.payload = {
+            modelOverride: {
+              providerId: chosen.providerId,
+              modelId: chosen.modelId
+            }
+          };
         }
         const r = await fetchJson('/api/tools/authorization/decision', {
           method: 'POST',

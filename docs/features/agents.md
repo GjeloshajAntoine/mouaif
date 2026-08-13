@@ -26,7 +26,7 @@ Open **Settings → Project → Agents** (in the *Project add-ons* group, alongs
 - **+ Add agent** opens `#/settings/agents/new`, asks for a name and instructions, creates the agent, and redirects to its edit view.
 - **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.
 - **Instructions** is a multiline field; it saves on a short debounce.
-- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The list row shows the pinned model id in its meta line.
+- **Model** is a dropdown of the project's user-defined models plus "Inherit chat model". The control is the same trigger + modal the chat top bar uses (search, provider filter chips, grouped sections); the list row shows the pinned model id in its meta line.
 - **Tools** is a grouped tree of native tools and configured MCP servers. Each MCP group shows its status and discovered tool names/descriptions (using cached discovery data while stopped). Selecting an MCP server stores its server slug, so current and future tools from that server are available to the agent. All groups checked = inherit everything; unchecking builds an explicit allowlist.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
@@ -86,7 +86,7 @@ The mobile agent editor sheet reserves the top safe area at its fixed overlay so
 - Direct invocation (`POST /api/tools/subagent`) reuses the model loop's single-call runner `ai.runSingleToolCall()` — circuit breaker, authorization gate, and dispatcher are shared, so behavior matches a model-initiated call exactly. The chat's current model is the default when the agent has no pin and no explicit `modelId` is passed.
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
-- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `frontend/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `frontend/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor).
+- Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `frontend/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `frontend/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor). The agent model pin uses the shared `frontend/src/components/ModelPickerField.jsx`.
 
 ## Related
 

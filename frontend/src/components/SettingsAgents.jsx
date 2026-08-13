@@ -13,6 +13,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
+import { ModelPickerField } from './ModelPickerField.jsx';
 
 function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
@@ -244,8 +245,8 @@ export function SettingsAgentEditView(props) {
     saveSoon({ content: value });
   }
 
-  function onModelChange(value) {
-    const modelId = value || '';
+  function onModelChange(sel) {
+    const modelId = (sel && sel.modelId) || '';
     setAgent(a => Object.assign({}, a, { modelId: modelId || undefined }));
     saveNow({ modelId });
   }
@@ -370,15 +371,18 @@ export function SettingsAgentEditView(props) {
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'sae-model' }, 'Model'),
-        h('select', {
-          class: 'input', id: 'sae-model',
-          value: agent.modelId || '',
+        h(ModelPickerField, {
+          models: projectModels,
+          value: agent.modelId
+            ? { providerId: (projectModels.find(m => m.id === agent.modelId) || {}).provider || '', modelId: agent.modelId }
+            : null,
+          allowClear: true,
+          clearLabel: 'Inherit chat model',
+          placeholder: 'Pick a model',
           disabled: isNew,
-          onChange: e => onModelChange(e.target.value)
-        },
-          h('option', { value: '' }, 'Inherit chat model'),
-          projectModels.map(m => h('option', { key: m.id, value: m.id }, (m.label || m.id) + (m.provider ? ' (' + m.provider + ')' : '')))
-        )
+          ariaLabel: 'Model for this agent',
+          onChange: onModelChange
+        })
       ),
       h('div', { class: 'row', hidden: isNew },
         h('span', { class: 'label' }, 'Tools'),

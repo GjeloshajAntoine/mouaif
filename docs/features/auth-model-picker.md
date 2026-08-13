@@ -16,7 +16,7 @@ The picker appears only on `subagent` approval cards. It lists the same union th
 - project-defined models (`settings.models`)
 - the per-provider live catalog (`GET /api/ai/models/live`)
 
-deduplicated by `(provider, modelId)`, sorted by provider then id. The first option is a **"(chat default)"** entry that keeps the run on the chat's current model (or the agent's model pin, when the called agent has one).
+deduplicated by `(provider, modelId)`, sorted by provider then id. The first row is a **"(chat default)"** entry that keeps the run on the chat's current model (or the agent's model pin, when the called agent has one). The trigger shows `(chat default) <modelId>` until the user picks an override.
 
 Pick a model, then choose any non-deny action. The decision payload carries
 
@@ -50,8 +50,8 @@ The existing decision endpoint is unchanged; `payload` is now also honored for `
 
 - **Payload channel.** `src/tools/authorization.js` `recordDecision` forwards any `payload` object through the pending decision's `resolve({ decision: 'allow', payload })`. `src/ai-stream.js` already captured that for `ask_user`; it now also captures `payload.modelOverride` for `subagent` and passes it to the dispatcher as `callOpts.modelOverride`.
 - **Safe hydration.** The override record is resolved inside the subagent branch of `src/ai-stream.js`: the project model record (found by `modelId` + `providerId` in `settings.getResolved(...).models`) contributes only identity/selection metadata (`id`, `provider`, `label`, `contextWindow`, `thinking`, `pricing`); transport and credentials always come from the app-level provider connection — the same sanitization rule `resolveModel` enforces in `src/server-shared.js`. Live-catalog models that are not in the project `models` array resolve by provider id.
-- **Card UI.** `buildAuthModelPicker(state, request)` in [frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js) builds the `<select>` from `state.models` + `state.liveByProvider`. `authorizationCard` gained a trailing `state` argument; all call sites in [frontend/src/components/chat/stream.js](../../frontend/src/components/chat/stream.js) — the direct `/shell` path, the pending-reload path, and both SSE paths (top-level and nested subagent) — pass it through.
-- Styling lives in [frontend/src/tool-cards.css](../../frontend/src/tool-cards.css) under `.tool-card__auth-model-*` (full-width select, ≥ 44 px tap target).
+- **Card UI.** `buildAuthModelPicker(state, request)` in [frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js) builds the control from `state.models` + `state.liveByProvider` and renders a `ModelPickerField` into a host element; the current selection is exposed via `host._selected()` so the decision payload reads it. `authorizationCard` gained a trailing `state` argument; all call sites in [frontend/src/components/chat/stream.js](../../frontend/src/components/chat/stream.js) — the direct `/shell` path, the pending-reload path, and both SSE paths (top-level and nested subagent) — pass it through.
+- Styling lives in [frontend/src/chat-view.css](../../frontend/src/chat-view.css) under `.mp*` (the shared field) and [frontend/src/tool-cards.css](../../frontend/src/tool-cards.css) under `.tool-card__auth-model-*` (the card slot, full-width, ≥ 44 px tap target).
 
 ## Related
 
