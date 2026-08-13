@@ -1028,3 +1028,93 @@ min-height: var(--tap);
 cursor: pointer;
 }
 .mp__empty-action:disabled { opacity: 0.55; cursor: wait; }
+/* ---- Pin button on picker rows (.mp__pin) ----------------------- */
+.mp__pin {
+flex: 0 0 auto;
+width: 28px;
+height: 28px;
+min-width: 28px;
+min-height: 28px;
+padding: 0;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+font: inherit;
+font-size: 0;
+color: var(--muted);
+background: transparent;
+border: 0;
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: color 80ms ease, background 80ms ease;
+}
+.mp__pin:hover { color: var(--accent); background: var(--surface-3); }
+.mp__pin[aria-pressed="true"] { color: var(--accent-hi); }
+.mp__pin:active { transform: scale(0.92); }
+/* Ghost row (active model that is no longer in the catalog) */
+.mp__row.is-ghost .mp__row-id { color: var(--warning); }
+.mp__row.is-ghost .mp__row-meta { color: var(--warning); }
+/* ---- Sheet variant (the chat top bar's fixed iOS sheet) ---------- */
+/* The chat head renders the shared field with `variant="sheet"`. On a
+   phone the popover becomes a fixed near-full-screen sheet anchored to
+   the visual viewport (see --model-picker-viewport-* set in the
+   component's keyboard effect); on wider screens it stays an anchored
+   dropdown. This mirrors the old .chat-view__picker sheet math. */
+.mp--sheet {
+position: relative;
+flex: 1 1 80px;
+min-width: 0;
+max-width: 180px;
+}
+.mp--sheet > .mp__pop {
+z-index: 36;
+top: calc(100% + 4px);
+left: 0;
+right: 0;
+width: auto;
+max-height: min(60vh, calc(100dvh - 48px - var(--safe-top, 0px)));
+min-height: 280px;
+}
+@media (max-width: 480px) {
+.mp--sheet > .mp__pop {
+position: fixed;
+top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));
+left: 0;
+right: 0;
+bottom: auto;
+max-height: none;
+min-height: 0;
+height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
+overflow: hidden;
+touch-action: none;
+overscroll-behavior: none;
+border-radius: var(--r-lg) var(--r-lg) 0 0;
+box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+}
+/* The max-output-tokens slot sits between the head and the chips */
+.chat-view__picker-maxout {
+display: flex;
+align-items: center;
+padding: 6px 8px;
+border-bottom: 1px solid var(--border);
+background: var(--surface-2);
+flex: 0 0 auto;
+gap: 6px;
+}
+.chat-view__picker-maxout-input {
+flex: 1 1 auto;
+min-width: 0;
+height: var(--tap);
+padding: 0 10px;
+font: inherit;
+font-size: 0.8rem;
+color: var(--fg);
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+appearance: none;
+-webkit-appearance: none;
+outline: none;
+}
+.chat-view__picker-maxout-input:focus { border-color: var(--accent); }

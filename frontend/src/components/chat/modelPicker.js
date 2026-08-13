@@ -719,10 +719,7 @@ export async function refreshActiveProvider(state, refs) {
   const provider = activeProviderId(state);
   if (!provider) return;
   const res = await fetchLiveForProvider(provider, state);
-  if (res.ok) {
-    renderModelPicker(state, refs);
-    if (typeof state._onLiveModels === 'function') state._onLiveModels(provider);
-  }
+  if (res.ok && typeof state._onLiveModels === 'function') state._onLiveModels(provider);
 }
 
 // refreshAllProviders(state, refs, setChatStatus)
@@ -767,7 +764,6 @@ export async function refreshAllProviders(state, refs, setChatStatus) {
   } else {
     setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
   }
-  renderModelPicker(state, refs);
   if (typeof state._onLiveModels === 'function') state._onLiveModels('all');
-  if (refs.modelPickerRefresh.current) refs.modelPickerRefresh.current.disabled = false;
+  if (refs && refs.modelPickerRefresh && refs.modelPickerRefresh.current) refs.modelPickerRefresh.current.disabled = false;
 }

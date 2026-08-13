@@ -11,6 +11,7 @@ import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
+import { ModelPickerField } from '../ModelPickerField.jsx';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -20,8 +21,8 @@ export function ChatView(props) {
     chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
     setFileEditorOpen,
     setChatSwitcherOpen,
-    send, onPickerSearch,
-    onRefreshAllProviders, onOpenModelPicker, onCloseModelPicker,
+    pickerModels, pickerValue, pickerPinned, pickerRecent, pickerOpen, pickerProviders,
+    send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
     onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat
@@ -43,18 +44,6 @@ export function ChatView(props) {
 
   const atMentionRef = useRef(null);
   const atArgBarRef = useRef(null);
-
-  // Persist the picker's max-output-tokens input to the chat record
-  // (and keep the trigger's value in sync). Empty clears the override.
-  function updateMaxOutput(input) {
-    let v = input && input.value ? input.value.trim() : '';
-    // Blank or remove any non-numeric noise; an all-numeric string is saved as-is.
-    const num = v && /^\d+$/.test(v) ? v : '';
-    s.state.maxOutputTokens = num;
-    if (num !== (s.state.chat && s.state.chat.maxOutputTokens || '')) {
-      if (typeof s.state._updateChat === 'function') s.state._updateChat({ maxOutputTokens: num });
-    }
-  }
   useEffect(() => {
     // Mount the at-mention popup on the composer textarea
     if (!refs.promptInput.current || !atMentionRef.current) return;
@@ -127,24 +116,52 @@ export function ChatView(props) {
         )
       ),
       h('div', { class: 'chat-view__model-row' },
-        h('button', {
-          ref: refs.modelPickerTrigger,
-          class: 'chat-view__model-trigger',
-          type: 'button',
-          id: 'chatModelTrigger',
-          onClick: onOpenModelPicker,
-          'aria-label': 'Pick model',
-          'aria-haspopup': 'dialog',
-          'aria-expanded': 'false'
-        },
-          h('span', { class: 'chat-view__model-stack' },
-            h('span', { class: 'chat-view__model-id' }, '(pick a model)'),
-            h('span', { class: 'chat-view__model-provider' }, '')
-          ),
-          h('span', { class: 'chat-view__model-caret', 'aria-hidden': 'true' }, '▾')
-        ),
-        h('select', {
-          ref: refs.thinkingLevel,
+        h(ModelPickerField, {
+  models: pickerModels,
+  value: pickerValue,
+  variant: 'sheet',
+  open: pickerOpen,
+  onOpenChange: onPickerOpenChange,
+          noProviders: !s.state.providers.length,
+          pinned: pickerPinned,
+          onTogglePin: onPickerTogglePin,
+          recent: pickerRecent,
+          extraProviders: pickerProviders,
+          refresh: onRefreshAllProviders,
+          refreshEmpty: 'Refresh models',
+          ariaLabel: 'Pick model',
+        onOpen: onPickerOpen,
+        onChange: onPickerPick
+      },
+        h('div', { class: 'chat-view__picker-maxout' },
+          h('input', {
+            ref: refs.maxOutputTokens,
+            class: 'input chat-view__picker-maxout-input',
+            type: 'number',
+            min: 1,
+            inputMode: 'numeric',
+            placeholder: 'Max output tokens (blank = default)',
+            'aria-label': 'Max output tokens',
+            onBlur: (e) => {
+              const v = e.currentTarget.value.trim();
+              if (v && s.state.chat) {
+                s.state.maxOutputTokens = v;
+                if (v !== (s.state.chat.maxOutputTokens || '')) {
+                  s.updateChat({ maxOutputTokens: v });
+                }
+              } else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
+                s.state.maxOutputTokens = '';
+                s.updateChat({ maxOutputTokens: '' });
+              }
+            },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }
+          })
+        )
+      ),
+      h('select', {
+        ref: refs.thinkingLevel,
           class: 'input chat-view__thinking-select',
           'aria-label': 'Thinking level',
           'data-allow-custom': '1',
@@ -182,71 +199,6 @@ export function ChatView(props) {
             }
           }
         }),
-        h('div', {
-          ref: refs.modelPickerPop,
-          class: 'chat-view__picker',
-          hidden: true,
-          role: 'dialog',
-          'aria-label': 'Pick a model'
-        },
-          h('div', { class: 'chat-view__picker-head' },
-            h('input', {
-              ref: refs.modelPickerSearch,
-              class: 'chat-view__picker-search',
-              type: 'search',
-              placeholder: 'Search models',
-              'aria-label': 'Search models',
-              onInput: onPickerSearch
-            }),
-            h('button', {
-              ref: refs.modelPickerRefresh,
-              class: 'chat-view__picker-refresh',
-              type: 'button',
-              onClick: onRefreshAllProviders,
-              'aria-label': 'Refresh model lists',
-              title: 'Refresh model lists from all providers'
-            },
-              h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-                h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
-              )
-            ),
-            h('button', {
-              class: 'chat-view__picker-close',
-              type: 'button',
-              onClick: onCloseModelPicker,
-              'aria-label': 'Close',
-              title: 'Close'
-            }, '×')
-          ),
-          h('div', { class: 'chat-view__picker-maxout' },
-            h('input', {
-              ref: refs.maxOutputTokens,
-              class: 'input chat-view__picker-maxout-input',
-              type: 'number',
-              min: 1,
-              inputMode: 'numeric',
-              placeholder: 'Max output tokens (blank = default)',
-              'aria-label': 'Max output tokens',
-              onBlur: (e) => {
-          const v = e.currentTarget.value.trim();
-          if (v && s.state.chat) {
-            s.state.maxOutputTokens = v;
-            if (v !== (s.state.chat.maxOutputTokens || '')) {
-              updateMaxOutput(e.currentTarget);
-            }
-          } else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
-            s.state.maxOutputTokens = '';
-            updateMaxOutput(e.currentTarget);
-          }
-              },
-              onKeydown: (e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-              }
-            })
-          ),
-          h('div', { class: 'chat-view__picker-chips', role: 'tablist', 'aria-label': 'Filter by provider' }),
-          h('div', { ref: refs.modelPickerList, class: 'chat-view__picker-list' })
-        )
       ),
       h('a', {
         class: 'chat-view__iconbtn',

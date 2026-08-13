@@ -18,7 +18,8 @@ import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson, loadModels } from '../../api.js';
 import { nav } from '../../router.js';
 import {
-  renderModelPicker, refreshActiveProvider, refreshAllProviders, openModelPicker, closeModelPicker, onPickerSearch, activeProviderId, touchRecent
+  refreshActiveProvider, refreshAllProviders, activeProviderId, touchRecent,
+  loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
 } from './modelPicker.js';
 import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
@@ -65,6 +66,17 @@ export function useChatState(props) {
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
   const chatSwitcherIdxRef = useRef(-1);
+  // Reactive mirrors for the shared model picker (ModelPickerField). The
+  // imperative `state` bag still owns the hot-path data, but the picker
+  // is a Preact component that needs re-render triggers when that data
+  // changes (chat load, live-catalog refresh, pin/recent updates, and
+  // the imperative stream.js _openModelPicker escape hatch).
+  const [pickerModels, setPickerModels] = useState([]);
+  const [pickerValue, setPickerValue] = useState(null);
+  const [pickerPinned, setPickerPinned] = useState(() => new Set());
+  const [pickerRecent, setPickerRecent] = useState([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerProviders, setPickerProviders] = useState([]);
   // Pagination state for the chat switcher, shared by the preload
   // effect and the scroll handler so they advance ONE footer. `offset`
   // is how many rows have been fetched so far; `total` is the server's
@@ -94,11 +106,6 @@ export function useChatState(props) {
   const providerCreditRef = useRef(null);
   const setupCard = useRef(null);
   const transcript = useRef(null);
-  const modelPickerTrigger = useRef(null);
-  const modelPickerPop = useRef(null);
-  const modelPickerSearch = useRef(null);
-  const modelPickerRefresh = useRef(null);
-  const modelPickerList = useRef(null);
   const thinkingLevel = useRef(null);
   const thinkingLevelCustom = useRef(null);
   const maxOutputTokens = useRef(null);
@@ -293,7 +300,6 @@ const kickPoll = useRef(null);
   const refs = {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
-    modelPickerTrigger, modelPickerPop, modelPickerSearch, modelPickerRefresh, modelPickerList,
     thinkingLevel, thinkingLevelCustom, maxOutputTokens,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
     jumpBtn, toolsCard, agentFilesCard, skillsCard,
@@ -323,24 +329,29 @@ const kickPoll = useRef(null);
     state._persistedModelPair = (r.body.chat.providerId || '') + '|' + (r.body.chat.modelId || '');
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
-    updateModelTriggerLocal();
+    syncPickerState();
   }, [projectDir, chatId]);
 
   function updateModelTriggerLocal() {
-    const trig = modelPickerTrigger.current;
-    if (!trig) return;
-    const c = state.chat;
-    const modelId = c && c.modelId ? c.modelId : '';
-    const providerId = c && c.providerId ? c.providerId : '';
-    const idEl = trig.querySelector('.chat-view__model-id');
-    const provEl = trig.querySelector('.chat-view__model-provider');
-    if (idEl) idEl.textContent = modelId || '(pick a model)';
-    if (provEl) provEl.textContent = providerId || (state.providers.length ? '' : 'add a provider in Settings → Providers');
-    trig.classList.toggle('is-empty', !modelId);
-    trig.classList.toggle('no-providers', !state.providers.length);
-    // Sync thinking level select — options come from the provider's
-    // reported descriptor for the active model when available.
+    // The trigger is now rendered declaratively by ModelPickerField, so
+    // there is no imperative DOM to patch. Keep the thinking-level select
+    // in sync with the active provider/model descriptor instead.
     syncThinkingSelect(refs, state);
+  }
+  // Rebuild the reactive state the shared picker renders from. Called
+  // after the chat loads, after a pick/persist, after a live-catalog
+  // refresh, and after pin/recent bookmarks change. Keeps the imperative
+  // bag (state.models / state.liveByProvider / state.chat) and the
+  // Preact picker mirrors in lockstep.
+  function syncPickerState() {
+    const c = state.chat;
+    setPickerModels(modelsForPicker(state));
+    setPickerProviders(state.providers.map((p) => p && p.id).filter(Boolean));
+    setPickerValue((c && c.providerId && c.modelId)
+      ? { providerId: c.providerId, modelId: c.modelId }
+      : null);
+    setPickerPinned(loadPinned(state));
+    setPickerRecent(loadRecent(state));
   }
 
   // Wire the model-picker's onChatChanged hook so the head
@@ -348,8 +359,8 @@ const kickPoll = useRef(null);
   state._onChatChanged = () => updateModelTriggerLocal();
   // Re-sync the thinking dropdown when live model data arrives —
   // provider-reported descriptors replace the seeded/fallback options.
-  state._onLiveModels = () => syncThinkingSelect(refs, state);
-  state._openModelPicker = () => openModelPicker(state, refs);
+  state._onLiveModels = () => { syncThinkingSelect(refs, state); syncPickerState(); };
+  state._openModelPicker = () => setPickerOpen(true);
   // The empty-state card in the picker can fire the same refresh
   // the head's ↻ button does, but it lives inside the picker
   // module (which doesn't import the hook), so we expose the
@@ -407,12 +418,13 @@ const kickPoll = useRef(null);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((providerId, modelId) => {
     if (!providerId || !modelId) return;
-    closeModelPicker(refs);
+    setPickerOpen(false);
     if (state.chat && state.chat.providerId === providerId && state.chat.modelId === modelId) return;
     touchRecent(state, providerId, modelId);
     const next = Object.assign({}, state.chat, { providerId, modelId });
     state.chat = next;
-    updateModelTriggerLocal();
+    setPickerValue({ providerId, modelId });
+    syncThinkingSelect(refs, state);
     refreshProviderCredit(state, refs);
     updateChatBound({ providerId, modelId });
   }, [updateChatBound]);
@@ -549,7 +561,7 @@ const kickPoll = useRef(null);
         if (cancelled) return;
         if (rChat.status !== 200) {
           if (status.current) status.current.textContent = 'chat not found';
-          renderModelPicker(state, refs);
+          syncPickerState();
           return;
         }
         const c = rChat.body.chat;
@@ -653,7 +665,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         updateMetaLine(refs, state);
         updateUsageSummary(state, null, refs);
         refreshProviderCredit(state, refs);
-        updateModelTriggerLocal();
+        syncPickerState();
 
         // Render the transcript and model picker immediately with the
         // project-level model list. Then fire live model fetches in the
@@ -664,7 +676,6 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         // live in refs for the imperative transcript renderer. Notify Preact
         // once after loading so ToolPopup receives those populated values.
         setToolDataStamp((value) => value + 1);
-        renderModelPicker(state, refs);
         renderTranscriptBound();
         // Fetch the tool catalog in the background. The transcript just
         // painted with the fast data; the MCP cold-start inside
@@ -737,11 +748,8 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
   //              stream cleanup, reconcile-running poll -------
   useEffect(() => {
     function onDocClick(e) {
-      const pop = modelPickerPop.current;
-      const trig = modelPickerTrigger.current;
-      if (pop && !pop.hidden) {
-        if (!(pop.contains(e.target) || (trig && trig.contains(e.target)))) closeModelPicker(refs);
-      }
+      // The shared ModelPickerField closes itself on outside click and
+      // Escape (see its own effect); nothing to do here for the picker.
       // Close chat switcher on outside click
       const swPop = refs.chatSwitcherPop && refs.chatSwitcherPop.current;
       const swTrig = refs.chatSwitcherTrigger && refs.chatSwitcherTrigger.current;
@@ -754,7 +762,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
     function onKey(e) {
       if (e.key === 'Escape') {
         if (fileEditorOpen) { setFileEditorOpen(false); return; }
-        if (modelPickerPop.current && !modelPickerPop.current.hidden) closeModelPicker(refs);
+        setPickerOpen(false);
       }
     }
     document.addEventListener('click', onDocClick);
@@ -944,15 +952,24 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
   return {
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-    setImageAttachments, setFileEditorOpen,
-    // Actions bound for direct use in the JSX
-    send,
+  setImageAttachments, setFileEditorOpen,
+  // Reactive model-picker surface (rendered by ModelPickerField)
+  pickerModels, pickerValue, pickerPinned, pickerRecent, pickerOpen, pickerProviders,
+  // Actions bound for direct use in the JSX
+  send,
     updateChat: updateChatBound,
     onPickerPick: onPickerPickBound,
-    onPickerSearch: () => onPickerSearch(refs, state),
-    onRefreshAllProviders: () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st)),
-    onOpenModelPicker: () => openModelPicker(state, refs),
-    onCloseModelPicker: () => closeModelPicker(refs),
+    onPickerTogglePin: (m) => {
+      if (!m) return;
+      togglePin(state, m.provider, m.id);
+      syncPickerState();
+    },
+    onPickerOpen: async () => {
+      await loadRecentFromServer(state);
+      syncPickerState();
+    },
+    onRefreshAllProviders: () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st)).then(() => syncPickerState()),
+    onPickerOpenChange: (v) => setPickerOpen(v),
     onComposerKey: (e) => onComposerKey(e, send),
     onComposerInput: () => {
       setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
