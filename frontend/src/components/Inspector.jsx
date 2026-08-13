@@ -658,30 +658,104 @@ useEffect(() => {
     if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
     return h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) });
   };
+  // InspectActionsMenu — overflow menu attached to the right side of
+  // the view-head. Holds the less-frequent chrome actions (Reload,
+  // Open in new tab, Close tab) so the most common action — typing a
+  // URL and pressing Go — sits in the always-visible nav row below.
+  // The `…` button mirrors the same overflow pattern used by the
+  // target rows in TargetMenu and the project cards in Projects.jsx.
+  const InspectActionsMenu = function () {
+    const [open, setOpen] = useState(false);
+    useEffect(() => {
+      if (!open) return;
+      function onDocClick() { setOpen(false); }
+      // setTimeout to avoid the same click that opened the menu from
+      // closing it on the same event (same pattern as TargetMenu).
+      const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
+      return () => {
+        clearTimeout(id);
+        document.removeEventListener('click', onDocClick);
+      };
+    }, [open]);
+    return h('div', { class: 'inspector__actions' },
+      h('button', {
+        class: 'icon-btn inspector__actions-btn',
+        type: 'button',
+        'aria-haspopup': 'true',
+        'aria-expanded': String(open),
+        'aria-label': 'Tab actions',
+        title: 'Tab actions',
+        onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+      }, '…'),
+      h('div', {
+        class: 'inspector__actions-pop',
+        hidden: !open,
+        role: 'menu',
+        onClick: (e) => e.stopPropagation()
+      },
+        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); reloadAttachedTarget(); } }, 'Reload'),
+        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); openAttachedPageInNewTab(); } }, 'Open in new tab'),
+        h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); showAllPanels(); } }, 'Show all panels'),
+        h('div', { class: 'inspector__actions-pop-sep' }),
+        h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); closeAttachedTarget(); } }, 'Close tab')
+      )
+    );
+  };
+  // Panel chip icons. Inline SVG keeps the panelbar a single 36 px
+  // row at 360 px (4 icon chips + gaps ≈ 152 px) instead of the
+  // previous text-label design that wrapped the chips onto a
+  // second line for "Show all" (104 px tall on a phone). Each
+  // chip keeps its text label as a tooltip + aria-label for
+  // screen readers; on screen only the glyph shows, the iOS
+  // DevTools-style segmented-control pattern.
+  const PANEL_ICONS = {
+    preview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('path', { d: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm2 10h10v-2H7v2Zm0-4h10V9H7v2Zm0-4h6V5H7v2Z', fill: 'currentColor' })
+    ),
+    console: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('path', { d: 'M3 4h18v3H3V4Zm0 5h12v2H3V9Zm0 4h18v2H3v-2Zm0 4h12v3H3v-3Z', fill: 'currentColor' })
+    ),
+    network: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('path', { d: 'M12 3a9 9 0 0 0-9 9h2a7 7 0 0 1 14 0h2a9 9 0 0 0-9-9Zm0 4a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0h2a5 5 0 0 0-5-5Zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-9 6h18v2H3v-2Z', fill: 'currentColor' })
+    ),
+    overview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('path', { d: 'M3 4h7v7H3V4Zm0 9h7v7H3v-7Zm9-9h9v4h-9V4Zm0 6h9v10h-9V10Z', fill: 'currentColor' })
+    )
+  };
   return h(Fragment, null,
-    h('div', { class: 'view-head' },
+    h('div', { class: 'view-head inspector__viewhead' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
-      h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target'))
+      h('h2', { class: 'view-title inspector__title' }, t && (t.title || t.url || 'target')),
+      h(InspectActionsMenu, null)
+    ),
+    // Single-line target subtitle — type chip + host URL, truncated.
+    // Replaces the old standalone `.inspector__head` row (50 px tall)
+    // so the user keeps the URL visible without burning a whole row
+    // for it. The host URL is ellipsised rather than wrapping so the
+    // row stays a single 32 px line on every viewport.
+    h('div', { class: 'inspector__sub' },
+      h('span', { class: 'inspector__sub-chip inspector__sub-chip--' + (targetMeta(t).tone) }, targetMeta(t).label),
+      h('span', { class: 'inspector__sub-host' }, hostOf(t) || (t && t.url) || '')
     ),
     h('section', null,
-      h('div', { class: 'inspector__head' },
-        h('p', { class: 'hint' }, h('code', null, (t && t.type) || 'page'), ' — ', h('code', null, (t && t.url) || '')),
-        h('button', {
-          class: 'btn inspector__newtab',
-          type: 'button',
-          title: 'Open this page in a new Chrome tab',
-          'aria-label': 'Open ' + ((t && t.url) || 'the page') + ' in a new Chrome tab',
-          onClick: openAttachedPageInNewTab
-        }, 'New tab')
-      ),
       h('div', { class: 'inspector__nav' },
+        // Icon-only Reload button. The text-button Reload (a 44 px
+        // button labelled "Reload") was moved into the view-head
+        // overflow menu (InspectActionsMenu) so the nav row carries
+        // only what the user does every few seconds: type a URL
+        // and tap Go. The icon button keeps the 32 px glyph size
+        // so the URL field stays the widest flex child.
         h('button', {
-          class: 'btn btn--small',
+          class: 'icon-btn inspector__nav-reload',
           type: 'button',
           title: 'Reload this tab',
           'aria-label': 'Reload this tab',
           onClick: reloadAttachedTarget
-        }, 'Reload'),
+        },
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+          )
+        ),
         h('input', {
           ref: navUrlInput,
           class: 'input inspector__nav-input',
@@ -692,26 +766,21 @@ useEffect(() => {
           onKeydown: (e) => { if (e.key === 'Enter') navigateAttachedTarget(); }
         }),
         h('button', {
-          class: 'btn btn--small btn--primary',
+          class: 'btn btn--primary inspector__nav-go',
           type: 'button',
           title: 'Go to this URL in the inspected tab',
           'aria-label': 'Go to this URL in the inspected tab',
           onClick: navigateAttachedTarget
-        }, 'Go'),
-        h('button', {
-          class: 'btn btn--small btn--danger',
-          type: 'button',
-          title: 'Close this tab',
-          'aria-label': 'Close this tab',
-          onClick: closeAttachedTarget
-        }, 'Close')
+        }, 'Go')
+        // Close button moved to InspectActionsMenu so the nav row
+        // carries only the URL field + Go (the most common action).
       ),
-      // Panel toolbar — replaces the old 4-tab segmented control.
-      // Each chip toggles one panel. Tapping a lit chip hides the
-      // panel; tapping a dimmed chip shows it. The `Show all` chip
-      // is a quick reset to the all-on default for users who hid
-      // everything. The toolbar is a single row of touch targets
-      // (44px min) and wraps on narrow phones.
+      // Panel toolbar — icon-only chips in a single row. Each chip
+      // toggles its panel. The text labels live in the tooltip +
+      // aria-label; the panel icon (PANEL_ICONS above) is the only
+      // on-screen content. The "Show all" reset moved into the
+      // InspectActionsMenu overflow so the panelbar stays exactly
+      // 4 chips wide and fits a 360 px viewport without wrapping.
       h('div', { class: 'inspector__panelbar', role: 'group', 'aria-label': 'Optional panels' },
         PANELS.map((p) => {
           const on = visiblePanels.has(p.id);
@@ -720,16 +789,10 @@ useEffect(() => {
             type: 'button',
             'aria-label': (on ? 'Hide ' : 'Show ') + p.label,
             'aria-pressed': String(on),
+            title: (on ? 'Hide ' : 'Show ') + p.label,
             onClick: () => togglePanel(p.id)
-          }, p.label);
-        }),
-        h('button', {
-          class: 'inspector__panelchip inspector__panelchip--reset',
-          type: 'button',
-          onClick: showAllPanels,
-          'aria-label': 'Show all panels',
-          title: 'Show all panels'
-        }, 'Show all')
+          }, PANEL_ICONS[p.id]);
+        })
       ),
       h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
       noPanelsVisible

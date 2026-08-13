@@ -97,26 +97,28 @@ the panels they have toggled off.
 
 ### The panel toolbar
 
-A single row of pill-style chips sits between the inspect header
-and the panel stack. One chip per panel:
-
-- **Preview** — live page screenshots (the `Preview` panel)
-- **Console** — `Runtime.consoleAPICalled` / `Runtime.exceptionThrown`
-- **Network** — `Network.requestWillBeSent` / response / finished
-- **Info** — page metrics (`Performance.getMetrics`)
-
+A single row of icon chips sits between the nav row and the panel
+stack. One chip per panel, each a 36 x 36 px square with an inline
+SVG glyph:
+- **Preview** (frame icon) — live page screenshots
+- **Console** (log-line icon) — `Runtime.consoleAPICalled` / `Runtime.exceptionThrown`
+- **Network** (network-graph icon) — `Network.requestWillBeSent` / response / finished
+- **Info** (4-quadrant icon) — page metrics (`Performance.getMetrics`)
 Each chip has two states: **on** (filled with the accent colour,
 matching the rest of the active-control language in the app) and
 **off** (outlined, muted). Tapping a chip toggles the matching
-panel. The toolbar also has a **Show all** reset chip on the
-right; tapping it lights every chip and remounts every panel —
-useful when a user has hidden everything and wants to get back to
-the default view without picking chips one by one.
+panel. The chip's text label lives in the tooltip + aria-label so
+screen readers and mouse hover still get the full name; on screen
+only the glyph shows, the iOS DevTools-style segmented-control
+pattern.
 
-The chips wrap on narrow phones, and each is a 44 px+ touch
-target, so the toolbar is usable one-handed on a 360 px viewport.
+The chips are equal-width (`flex: 1 1 0`) and never wrap, so the
+toolbar fits on one line at 360 px wide without pushing any panel
+content off-screen. The **Show all** reset lives in the
+InspectActionsMenu overflow (see [Inspect header](#inspect-header))
+instead of as a 5th chip on this row.
 
-### Per-panel card
+### Per-panel card### Per-panel card
 
 Every panel — visible or not — is wrapped in a `PanelCard` that
 draws a small header strip (panel label + an eye toggle) and a
@@ -237,13 +239,25 @@ bare `<li>`.
 
 ### Inspect header
 
-While inspecting, a toolbar under the header offers:
+While inspecting, the chrome above the panel stack is four strips on every viewport, designed mobile-first so the first panel sits comfortably above the fold on a 360 x 800 phone:
+
+- **`.view-head` (38 px)** — the back arrow, the page title (ellipsised on narrow viewports), and the **`...` overflow menu** on the right. The overflow holds the less-frequent chrome actions (Reload, Open in new tab, Show all panels, Close tab) so the always-visible URL row below carries only what the user does every few seconds.
+- **`.inspector__sub` (24 px)** — a single-line subtitle with the target type chip (TAB / FRAME / SW / BG / OTHER) on the left and the host URL on the right (ellipsised on narrow viewports). Replaces the old standalone `.inspector__head` row (50 px tall) that repeated the URL chip a second time.
+- **`.inspector__nav` (50 px)** — an icon-only **Reload** glyph button on the left, the URL input in the middle (flex-grows), and the primary **Go** button on the right. The previous layout put the text Reload / URL / Go / Close buttons on this row, which made the URL field narrow on a 360 px phone and pushed Close off the edge; Close moved into the overflow menu.
+- **`.inspector__panelbar` (46 px)** — the four panel chips. The chips are now icon-only (inline SVG) and equal-width across a single 46 px row, so the panelbar fits on one line at 360 px wide. The `Show all` reset lives in the overflow menu instead of as a 5th chip.
+
+The chrome above the first panel went from 282 px on a 360 px viewport to 197 px (-30 %), and the first panel now starts at 217 px instead of 301 px, freeing 84 px of usable space above the fold.
+
+The overflow menu (`...` button on the right of the title row) is the same pattern as the targets list's per-row menu and the project-card options menu: a button + a popover with the actions, with the destructive action separated by a hairline above. Tap-anywhere-on-the-page closes it. The popover sits above the panelbar with the same surface-3 background and shadow tokens used by the targets and project menus.
+
+The actions in the overflow menu:
 
 - **Reload** — reloads the attached page (`POST /api/inspector/reload`). The connection survives; the preview, console, and network panels keep streaming.
-- **URL field + Go** — navigates the attached tab to a new URL (`POST /api/inspector/navigate`). Bare hosts like `localhost:3000` get `http://` added automatically, matching the "Open & inspect" flow. The field is pre-filled with the current page URL and submits on Enter.
-- **Close** — closes the attached tab (`POST /api/inspector/close`), after a confirmation. The inspector disconnects, walks back to the targets list, and refreshes it.
+- **Open in new tab** — opens the attached page's URL in a fresh Chrome tab (`POST /api/inspector/open`). The current connection keeps its target — no re-attachment.
+- **Show all panels** — resets the visible-panel set to the default (all four on). The same action the empty-state card offers.
+- **Close tab** — closes the attached tab (`POST /api/inspector/close`), after a confirmation. The inspector disconnects, walks back to the targets list, and refreshes it. Rendered in the danger colour and separated from the other items by a hairline so it doesn't sit next to a benign action by accident.
 
-These replace the old URL-as-link affordance: the URL now lives in an editable field, and destructive actions are explicit buttons instead of hidden gestures.
+The URL field below the title is pre-filled with the current page URL and submits on Enter. Bare hosts like `localhost:3000` get `http://` added automatically, matching the "Open & inspect" flow.
 
 ## Preview panel
 
@@ -334,7 +348,7 @@ The mobile detail sheet applies top and bottom safe-area padding at the fixed ov
 
 - **WS library** — runtime dependency `ws@^8`. Used both server-side (the `noServer` `WebSocketServer` for the upgrade handshake) and in the test mock. The mobile UI uses the browser's native `WebSocket` to talk to the server.
 - **Proxy error surfacing** — a rejected upgrade (e.g. `ETARGET_NOT_FOUND`) is written as a short HTTP response with a JSON body before the socket closes. The browser's WebSocket `error` event carries no message, so `cdp.js` captures the server's close reason and the UI shows it on the status line instead of a generic "WebSocket error".
-- **No new CSS framework.** The Inspector styles live in [frontend/src/inspector.css](../../frontend/src/inspector.css) (imported last by [frontend/src/style.css](../../frontend/src/style.css) so it wins on equal-specificity ties). They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2. The new panel-related selectors (`inspector__panelbar`, `inspector__panelchip`, `inspector__panel`, `inspector__panel-head`, `inspector__panel-eye`, `inspector__panels`, `inspector__panels-empty`) and the inspect chrome (`inspector__head`, `inspector__nav`, `inspector__newtab`) live alongside the previous `inspector__subtabs` / `inspector__subtab` rules that they replaced. The nav row bumps `.btn--small` back up to the 44 px mobile touch target (the bare `.btn--small` is `var(--tap-sm)` = 32 px and was too small on a phone); the head and nav have 10 px side padding to match the rest of the layout; the panelbar uses `flex: 1 1 0` chips so all four panel chips fit on a single row at 360 px wide with the "Show all" chip wrapping to its own line below.
+- **No new CSS framework.** The Inspector styles live in [frontend/src/inspector.css](../../frontend/src/inspector.css) (imported last by [frontend/src/style.css](../../frontend/src/style.css) so it wins on equal-specificity ties). They re-use the same tokens (surfaces, accent, semantic colors, 4 px spacing) and follow the mobile-first rules from [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2. The panel-related selectors (`inspector__panelbar`, `inspector__panelchip`, `inspector__panel`, `inspector__panel-head`, `inspector__panel-eye`, `inspector__panels`, `inspector__panels-empty`) and the inspect chrome (`inspector__viewhead`, `inspector__sub`, `inspector__nav`, `inspector__actions`, `inspector__nav-reload`, `inspector__nav-go`) live alongside the previous `inspector__subtabs` / `inspector__subtab` rules that they replaced. The previous design's standalone `inspector__head` row (50 px) and `inspector__nav` row (50 px) totalled 100 px of chrome on a phone just to repeat what the view-head already shows; the new layout collapses the type chip + URL into a 24 px subtitle and uses an icon-only Reload glyph (32 px) + URL field + Go button on the nav row, with the Reload / Open in new tab / Show all panels / Close tab actions in a `...` overflow menu on the right of the title row. The panelbar chips are icon-only (inline SVG) and equal-width so the row fits on a single 46 px line at 360 px wide. The total chrome above the first panel went from 282 px to 197 px on a 360 px viewport.
 - **Responsive sizing.** A `@media (min-width: 900px)` block in [frontend/src/inspector.css](../../frontend/src/inspector.css) re-enables the "first panel grows" behaviour for tablet and desktop: the grow child becomes `flex: 1 1 auto` with the scroller / preview-frame inside it set to `flex: 1 1 auto; height: auto; min-height: 0`, and the metrics grid switches from 2 to 4 columns. Below 900 px each panel has its own intrinsic height (Preview `40 dvh`, list scrollers `32 dvh`) and the page scrolls. The breakpoint is intentionally high: at 600-899 px the four panels' intrinsic heights already exceed the available space, and the grow would just compress the non-grow panels to a sliver instead of letting the user scroll predictably between them.
 - **Tab bar layout** — the bottom tab bar is a 3-column grid (`Projects / Inspector / Settings`). Inspector is a peer of the existing tabs, not a child of Settings; provider authentication lives within Settings.
 - **Virtualization** — both list panels use [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Each row is a fixed-height absolutely-positioned node, the pool is reused, and the spacer height drives the native scrollbar. The Inspector passes an optional `key` function so rows keep DOM-node identity across updates: when a network entry flips from pending to 200, or a response body loads, the same `<div>` is re-rendered in place instead of being recycled.
