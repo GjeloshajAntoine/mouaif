@@ -6,7 +6,6 @@ import { loadApp, appProviders, activeProject } from '../api.js';
 export function SettingsHomeView() {
   const [providerSummary, setProviderSummary] = useState('API keys & sign-ins');
   const [promptSize, setPromptSize] = useState('prompt style');
-  const [pricingSummary, setPricingSummary] = useState('cost table');
 
   // Rows that only make sense against a project. Their href picks up the
   // active project (if any) so the user does not have to re-enter the path.
@@ -21,10 +20,6 @@ export function SettingsHomeView() {
       setProviderSummary(nProviders ? (nProviders === 1 ? '1 connected' : nProviders + ' connected') : 'none yet — tap to add');
       
       setPromptSize((app.app && app.app.promptSize) || 'average');
-      
-      const pricingTable = (app.app && app.app.modelPricing) || {};
-      const nPricing = Object.keys(pricingTable).length;
-      setPricingSummary(nPricing ? (nPricing === 1 ? '1 model priced' : nPricing + ' models priced') : 'defaults');
     } catch (e) { /* summaries fall back to their static defaults */ }
   }
 
@@ -65,7 +60,6 @@ export function SettingsHomeView() {
         rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
-        rowLi('settings/pricing', 'Model pricing', { detail: pricingSummary }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )
     ),
@@ -81,11 +75,10 @@ export function SettingsHomeView() {
         ? h('ul', { class: 'group__list' },
             rowLi('settings/project' + projectQS, 'Project settings', { sub: 'prompt style, tools, agents' }),
             rowLi('settings/mcp' + projectQS, 'MCP servers', { sub: 'app servers + this project\'s own' }),
-            rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' }),
-            rowLi('settings/tags' + projectQS, 'File tags', { sub: 'tag files and include them in chat' })
+            rowLi('settings/prompts' + projectQS, 'Custom prompts', { sub: 'system prompts for this project' })
           )
         : h('p', { class: 'hint hint--compact settings-home__empty' },
-            'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts, file tags) show up here.')
+            'Open a chat or pick a project first, then this project\'s settings (prompt style, tools, MCP servers, custom prompts) show up here.')
     ),
     // ---- One-line footer: explains the layering once, plainly, instead of
     // repeating "overrides / wins / shadows" on every row above. ---------

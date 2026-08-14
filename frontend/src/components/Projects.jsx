@@ -1,9 +1,10 @@
 // mouaif web — ProjectsView
 import { h, Fragment } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
+import { useClickOutside } from '../hooks/useClickOutside.js';
 
 const CHAT_PAGE_SIZE = 30;
 
@@ -24,16 +25,10 @@ function fmtChatDate(chat) {
 
 function ProjectMenu({ project, onRename, onUnregister }) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  useClickOutside(menuRef, () => setOpen(false), open);
 
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick() { setOpen(false); }
-    // setTimeout to avoid immediate close from the click that opened it
-    setTimeout(() => document.addEventListener('click', onDocClick), 0);
-    return () => document.removeEventListener('click', onDocClick);
-  }, [open]);
-
-  return h('div', { class: 'project-card__menu' },
+  return h('div', { ref: menuRef, class: 'project-card__menu' },
     h('button', {
       class: 'project-card__menu-btn',
       type: 'button',
@@ -49,7 +44,6 @@ function ProjectMenu({ project, onRename, onUnregister }) {
       onClick: e => e.stopPropagation()
     },
       h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/project?projectDir=' + encodeURIComponent(project.path)); } }, 'Settings…'),
-      h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/tags?projectDir=' + encodeURIComponent(project.path)); } }, 'File tags…'),
       h('button', { type: 'button', onClick: () => { setOpen(false); onRename(project); } }, 'Rename…'),
       h('button', { type: 'button', 'data-danger': '1', onClick: () => { setOpen(false); onUnregister(project); } }, 'Unregister')
     )
