@@ -118,6 +118,11 @@ export function SettingsPromptsView(props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copyStatus, setCopyStatus] = useState('Copy');
+  // Built-in prompt-size profiles (Very small / Average / Extensive).
+  // Their system messages are the "default prompts" a user can copy
+  // into the content editor as a starting point.
+  const [profiles, setProfiles] = useState([]);
+  const [showProfileCopy, setShowProfileCopy] = useState(false);
 
   // Dirty tracking. The dropdown switcher consults this to decide
   // whether to confirm before discarding edits.
@@ -156,6 +161,20 @@ export function SettingsPromptsView(props) {
     if (r.status !== 200) return;
     const list = r.body.prompts || [];
     setPrompts(list);
+  }
+
+  async function loadProfiles() {
+    try {
+      const r = await fetchJson('/api/prompt-profiles');
+      if (r.status === 200 && Array.isArray(r.body.profiles)) {
+        setProfiles(r.body.profiles.map((p) => ({
+          id: p.id,
+          label: p.label || p.id,
+          description: p.description || '',
+          systemMessage: p.systemMessage || ''
+        })));
+      }
+    } catch { /* leave profiles empty; the helper just won't render */ }
   }
 
   async function loadProjectData() {
@@ -284,6 +303,7 @@ export function SettingsPromptsView(props) {
 
   useEffect(() => { loadPrompts(); }, [projectDir]);
   useEffect(() => { if (projectDir) loadProjectData(); }, [projectDir]);
+  useEffect(() => { loadProfiles(); }, []);
 
   // Once the list loads, apply a legacy `initialId` (from the old
   // two-step URL `settings/prompts/:id`) by switching the picker to
@@ -436,6 +456,20 @@ export function SettingsPromptsView(props) {
     setSelectedId(NEW_PROMPT_ID);
     applyPromptToForm(null);
     setStatusMsg({ text: '', kind: '' });
+  }
+  // Copy a built-in prompt-size profile's system message into the
+  // content editor as a starting point. This replaces the current
+  // content in place; the user can then edit and Save it as their
+  // own custom prompt.
+  function copyProfileIntoContent(profile) {
+    if (!profile || !profile.systemMessage) return;
+    if (content && content !== profile.systemMessage) {
+      const ok = confirm('Replace the current prompt content with the "' + (profile.label || profile.id) + '" default?');
+      if (!ok) return;
+    }
+    setContent(profile.systemMessage);
+    setShowProfileCopy(false);
+    setStatusMsg({ text: 'loaded "' + (profile.label || profile.id) + '" default \u2014 edit and Save.', kind: 'success' });
   }
 
   // -------------------------------------------------------------------
@@ -616,7 +650,32 @@ export function SettingsPromptsView(props) {
           id: 'spe-content',
           rows: 6,
           placeholder: 'You are a helpful assistant specialized in\u2026'
-        })
+        }),
+        h('div', { class: 'prompts__from-default' },
+          h('button', {
+            type: 'button',
+            class: 'btn btn--ghost',
+            onClick: () => setShowProfileCopy((v) => !v),
+            'aria-expanded': String(showProfileCopy)
+          }, 'Copy from default'),
+          h('span', { class: 'hint hint--compact' },
+            'Start from a built-in prompt-size profile, then edit.')
+        ),
+        showProfileCopy ? h('div', { class: 'prompts__profile-pick' },
+          profiles.length
+            ? profiles.map((p) =>
+              h('button', {
+                type: 'button',
+                class: 'btn btn--ghost prompts__profile-option',
+                key: p.id,
+                onClick: () => copyProfileIntoContent(p)
+              },
+              h('span', { class: 'prompts__profile-name' }, p.label),
+              h('span', { class: 'prompts__profile-desc' }, p.description)
+              )
+            )
+            : h('p', { class: 'hint' }, 'profiles unavailable')
+        ) : null
       ),
 
       // ---- Prompt preset --------------------------------------------
