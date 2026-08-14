@@ -233,6 +233,54 @@ export function parsePlainFileToolResult(text) {
     } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = m[1] === '<all text files>' ? '' : m[1];
     else if ((m = line.match(/^# Search: (.*)$/))) out.query = m[1];
     else if ((m = line.match(/^# Wrote: (.*)$/))) out.relPath = m[1];
+    else if ((m = line.match(/^# Count: (\d+)/))) out.entryCount = Number(m[1]);
+    else if ((m = line.match(/^# Matches: (\d+)/))) out.matchCount = Number(m[1]);
+    else if ((m = line.match(/^# Skipped: (\d+)/))) out.skipped = Number(m[1]);
+  }
+  // Rebuild the structured arrays the per-tool renderers and the
+  // collapsed summary rely on. The plain-text form groups rows by a
+  // `# dir/` / `# path` header, so parse the body back into the same
+  // `entries` / `matches` objects the live SSE path emits. Without
+  // this, a list_files / search_files result that reaches the UI as
+  // text (subagent nested results, tool-feedback replay) would report
+  // an empty count and the summary would say "0 files" / "0 matches".
+  if (out.pattern != null) {
+    out.entries = parseListEntriesBody(out.body);
+    if (out.entryCount != null && out.entries.length > out.entryCount) out.entries = out.entries.slice(0, out.entryCount);
+  } else if (out.query != null) {
+    out.matches = parseSearchMatchesBody(out.body);
+    if (out.matchCount != null && out.matches.length > out.matchCount) out.matches = out.matches.slice(0, out.matchCount);
   }
   return out;
+}
+// Rebuild `entries: [{ path }]` from the grouped list_files body:
+// indented lines are files, `# dir/` headers set the current directory.
+function parseListEntriesBody(body) {
+  const entries = [];
+  let dir = '';
+  for (const line of String(body || '').split('\n')) {
+    if (line.startsWith('# ')) {
+      dir = line.slice(2).replace(/\/+$/, '');
+    } else if (line.trim()) {
+      const name = line.trim();
+      entries.push({ path: dir ? dir + '/' + name : name });
+    }
+  }
+  return entries;
+}
+// Rebuild `matches: [{ path, line, text }]` from the grouped search_files
+// body: `# path` headers then `lineno: text` rows.
+function parseSearchMatchesBody(body) {
+  const matches = [];
+  let path = '';
+  const re = /^(\d+): ?(.*)$/;
+  for (const line of String(body || '').split('\n')) {
+    if (line.startsWith('# ')) {
+      path = line.slice(2);
+    } else {
+      const m = line.match(re);
+      if (m) matches.push({ path, line: Number(m[1]), text: m[2] });
+    }
+  }
+  return matches;
 }

@@ -107,7 +107,7 @@ The `tool` message the model sees is a small header followed by the body, so the
 # Chars: 21 · 1 lines
 ```
 
-The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card.
+The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card. When a file-tool result reaches the UI as the plain-text header form above (subagent-nested results, tool-replay from the message store, or the model-facing `content` string), the frontend re-parses it back into the structured shape: it reads the `# Count:` / `# Matches:` (and `# Skipped:`) header lines and rebuilds the `entries` / `matches` arrays from the grouped body, so the card's count and the collapsed "N files" / "N matches" summary are accurate and consistent with the object path.
 
 ## HTTP surface
 
