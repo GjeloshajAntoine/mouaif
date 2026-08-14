@@ -578,6 +578,58 @@ function previewEditDiff(rel, before, after) {
   return out.join('\n');
 }
 
+// Find the closest matching snippet in the file to help an agent understand
+// why `oldText` was not matched (e.g. stale cache or slight typo).
+function findClosestContext(original, oldText) {
+  const fileLines = String(original || '').split(/\r?\n/);
+  const oldLines = String(oldText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!oldLines.length || !fileLines.length) return null;
+
+  function tokenize(str) {
+    return str.toLowerCase().match(/[a-zA-Z0-9_$]+/g) || [];
+  }
+
+  const oldTokens = new Set(tokenize(oldText));
+  if (oldTokens.size === 0) return null;
+
+  let bestScore = 0;
+  let bestIndex = -1;
+  const windowLen = Math.max(1, oldLines.length);
+
+  for (let i = 0; i < fileLines.length; i++) {
+    const windowLines = fileLines.slice(i, i + windowLen);
+    const windowText = windowLines.join('\n');
+    const windowTokens = tokenize(windowText);
+    if (windowTokens.length === 0) continue;
+
+    let overlap = 0;
+    for (const t of windowTokens) {
+      if (oldTokens.has(t)) overlap++;
+    }
+    const score = overlap / Math.max(windowTokens.length, oldTokens.size);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  if (bestScore >= 0.25 && bestIndex >= 0) {
+    const startLine = Math.max(1, bestIndex + 1);
+    const endLine = Math.min(fileLines.length, bestIndex + windowLen);
+    const excerptLines = [];
+    for (let i = startLine; i <= endLine; i++) {
+      excerptLines.push(i + ': ' + (fileLines[i - 1] || ''));
+    }
+    return {
+      startLine,
+      endLine,
+      score: bestScore,
+      excerpt: excerptLines.join('\n')
+    };
+  }
+  return null;
+}
+
 // Create or overwrite a file. `dirs: true` allows the path to include
 // new directories (the runner mkdir -p's them); otherwise the parent
 // dir must already exist. Refuses paths that escape the root.
@@ -648,16 +700,78 @@ async function runEditFile(opts) {
   }
   const needle = softNormalizeWithOffsets(oldText);
   const target = softNormalizeWithOffsets(source.normalized);
+
+  // Strategy 1: Direct soft match on collapsed whitespace.
+  let normStart = -1;
+  let normEnd = -1;
   const first = target.norm.indexOf(needle.norm);
-  if (first < 0) throw err('ENO_MATCH', 'oldText was not found in ' + rel + '; read the file and retry with an exact block');
-  if (target.norm.indexOf(needle.norm, first + needle.norm.length) >= 0) {
-    throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
+  if (first >= 0) {
+    if (target.norm.indexOf(needle.norm, first + needle.norm.length) >= 0) {
+      throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
+    }
+    normStart = target.off[first];
+    normEnd = target.off[first + needle.norm.length];
+  } else {
+    // Strategy 2: Line-trimmed block match (ignoring leading/trailing blank lines
+    // in oldText and line-by-line whitespace variations).
+    const needleLines = needle.norm.split('\n');
+    let nStart = 0;
+    let nEnd = needleLines.length;
+    while (nStart < nEnd && !needleLines[nStart].trim()) nStart++;
+    while (nEnd > nStart && !needleLines[nEnd - 1].trim()) nEnd--;
+
+    let matchedLineIdx = -1;
+    let isMulti = false;
+    if (nEnd > nStart) {
+      const targetLines = target.norm.split('\n');
+      const targetLineOffsets = [0];
+      for (let i = 0; i < target.norm.length; i++) {
+        if (target.norm[i] === '\n') targetLineOffsets.push(i + 1);
+      }
+      const needleLineCount = nEnd - nStart;
+      const matches = [];
+      for (let i = 0; i <= targetLines.length - needleLineCount; i++) {
+        let match = true;
+        for (let j = 0; j < needleLineCount; j++) {
+          if (targetLines[i + j].trim() !== needleLines[nStart + j].trim()) {
+            match = false;
+            break;
+          }
+        }
+        if (match) matches.push(i);
+      }
+      if (matches.length === 1) {
+        matchedLineIdx = matches[0];
+        const lineStartNorm = targetLineOffsets[matchedLineIdx];
+        const endLineIdx = matchedLineIdx + needleLineCount - 1;
+        const lineEndNorm = (endLineIdx + 1 < targetLineOffsets.length)
+          ? targetLineOffsets[endLineIdx + 1] - 1
+          : target.norm.length;
+        normStart = target.off[lineStartNorm];
+        normEnd = target.off[lineEndNorm];
+      } else if (matches.length > 1) {
+        isMulti = true;
+      }
+    }
+
+    if (isMulti) {
+      throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
+    }
+
+    if (normStart < 0 || normEnd < 0) {
+      // Find closest matching snippet to give the model actionable feedback.
+      const hint = findClosestContext(original, oldText);
+      let msg = 'oldText was not found in ' + rel + '; read the file and retry with an exact block';
+      if (hint && hint.excerpt) {
+        msg += '\n\nClosest match found around lines ' + hint.startLine + '-' + hint.endLine + ':\n' + hint.excerpt;
+      }
+      throw err('ENO_MATCH', msg);
+    }
   }
+
   // Map the collapsed match position back to the original byte offsets:
   // target.off[first] is the source.normalized char index, which we then
   // resolve through source.offsets (the original byte offsets).
-  const normStart = target.off[first];
-  const normEnd = target.off[first + needle.norm.length];
   const originalStart = source.offsets[normStart];
   const originalEnd = source.offsets[normEnd];
   const replaced = original.slice(originalStart, originalEnd);

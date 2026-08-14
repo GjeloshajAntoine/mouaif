@@ -212,6 +212,31 @@ function writeFile(p, content) {
   assert(fs.readFileSync(newFile, 'utf8') === beforeBadEdit, 'rejected edit_file leaves file unchanged');
   const e3 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'src/utils/new.js', oldText: 'missing', newText: 'x' } });
   assert(e3.ok === false && e3.result.error.code === 'ENO_MATCH', 'edit_file rejects missing oldText');
+
+  // Helpful hint on ENO_MATCH.
+  const hintFile = path.join(root, 'hint.js');
+  writeFile(hintFile, 'function alpha() {\n  const x = 1;\n  const y = 2;\n  return x + y;\n}\n');
+  const eHint = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'hint.js', oldText: 'function alpha() {\n  const x = 1;\n  const y = 99;\n  return x + y;\n}', newText: 'function beta() {}' }
+  });
+  assert(eHint.ok === false && eHint.result.error.code === 'ENO_MATCH', 'edit_file ENO_MATCH when content differs');
+  assert(eHint.result.error.message.includes('Closest match found around lines'), 'edit_file surfaces closest matching lines hint');
+
+  // Line-trimmed matching (agent sends block with differing indentation / surrounding blank lines).
+  const trimFile = path.join(root, 'trim.js');
+  writeFile(trimFile, '  function testIndent() {\n    const a = 1;\n    const b = 2;\n    return a + b;\n  }\n');
+  const eTrim = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: {
+      path: 'trim.js',
+      oldText: '\nfunction testIndent() {\n  const a = 1;\n  const b = 2;\n  return a + b;\n}\n',
+      newText: 'function testIndent() {\n  return 42;\n}'
+    }
+  });
+  assert(eTrim.ok === true, 'edit_file matches block despite indentation and blank line padding');
+  assert(fs.readFileSync(trimFile, 'utf8').includes('return 42;'), 'edit_file applied trimmed replacement');
+
   writeFile(path.join(root, 'duplicate.txt'), 'same\nsame\n');
   const e4 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'duplicate.txt', oldText: 'same', newText: 'x' } });
   assert(e4.ok === false && e4.result.error.code === 'EMULTI_MATCH', 'edit_file rejects ambiguous oldText');
