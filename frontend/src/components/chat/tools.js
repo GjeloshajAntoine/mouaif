@@ -162,12 +162,14 @@ export function formatResultSummary(name, r) {
     return null;
   }
   if (n === 'list_files') {
-    const count = Array.isArray(r.entries) ? r.entries.length : 0;
-    return count + ' file' + (count === 1 ? '' : 's');
+    const count = r.entryCount != null ? r.entryCount : (Array.isArray(r.entries) ? r.entries.length : 0);
+    const suffix = r.truncated ? ' (capped at ' + (r.cap != null ? r.cap : count) + ')' : '';
+    return count + ' file' + (count === 1 ? '' : 's') + suffix;
   }
   if (n === 'search_files') {
-    const count = Array.isArray(r.matches) ? r.matches.length : 0;
-    return count + ' match' + (count === 1 ? '' : 'es');
+    const count = r.matchCount != null ? r.matchCount : (Array.isArray(r.matches) ? r.matches.length : 0);
+    const suffix = r.truncated ? ' (capped at ' + (r.capMatches != null ? r.capMatches : count) + ')' : '';
+    return count + ' match' + (count === 1 ? '' : 'es') + suffix;
   }
   if (n === 'edit_file') {
     if (r.addedChars != null) return '+' + r.addedChars + ' chars';
@@ -233,9 +235,13 @@ export function parsePlainFileToolResult(text) {
     } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = m[1] === '<all text files>' ? '' : m[1];
     else if ((m = line.match(/^# Search: (.*)$/))) out.query = m[1];
     else if ((m = line.match(/^# Wrote: (.*)$/))) out.relPath = m[1];
-    else if ((m = line.match(/^# Count: (\d+)/))) out.entryCount = Number(m[1]);
-    else if ((m = line.match(/^# Matches: (\d+)/))) out.matchCount = Number(m[1]);
-    else if ((m = line.match(/^# Skipped: (\d+)/))) out.skipped = Number(m[1]);
+    else if ((m = line.match(/^# Count: (\d+)(?: \(capped at (\d+)\))?/))) {
+      out.entryCount = Number(m[1]);
+      if (m[2] != null) { out.truncated = true; out.cap = Number(m[2]); }
+    } else if ((m = line.match(/^# Matches: (\d+)(?: \(capped at (\d+) matches \/ (\d+) chars\))?/))) {
+      out.matchCount = Number(m[1]);
+      if (m[2] != null) { out.truncated = true; out.capMatches = Number(m[2]); out.capBytes = Number(m[3]); }
+    } else if ((m = line.match(/^# Skipped: (\d+)/))) out.skipped = Number(m[1]);
   }
   // Rebuild the structured arrays the per-tool renderers and the
   // collapsed summary rely on. The plain-text form groups rows by a
