@@ -11,6 +11,7 @@ import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, route } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
+import { useClickOutside } from '../hooks/useClickOutside.js';
 // Short human label for a Chrome DevTools target type. Chrome uses a
 // handful of types: `page` (a normal tab), `iframe`, `service_worker`,
 // `background_page` (extension), and a few rarely-seen ones
@@ -89,21 +90,12 @@ function savePanelState(set) {
 // as props instead of via closure over the parent render.
 function TargetMenu(props) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick() { setOpen(false); }
-    // setTimeout to avoid the same click that opened the menu from
-    // closing it on the same event.
-    const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('click', onDocClick);
-    };
-  }, [open]);
+  const menuRef = useRef(null);
+  useClickOutside(menuRef, () => setOpen(false), open);
   const t = props.target;
   const meta = targetMeta(t);
   const canManage = t && t.id && t.type === 'page';
-  return h('div', { class: 'inspector__row-menu' },
+  return h('div', { ref: menuRef, class: 'inspector__row-menu' },
     h('button', {
       class: 'icon-btn inspector__row-menu-btn',
       type: 'button',
@@ -197,18 +189,9 @@ function PanelCard(props) {
 
 function InspectActionsMenu(props) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick() { setOpen(false); }
-    // setTimeout to avoid the same click that opened the menu from
-    // closing it on the same event (same pattern as TargetMenu).
-    const id = setTimeout(() => document.addEventListener('click', onDocClick), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('click', onDocClick);
-    };
-  }, [open]);
-  return h('div', { class: 'inspector__actions' },
+  const actionsRef = useRef(null);
+  useClickOutside(actionsRef, () => setOpen(false), open);
+  return h('div', { ref: actionsRef, class: 'inspector__actions' },
     h('button', {
       class: 'icon-btn inspector__actions-btn',
       type: 'button',
@@ -304,11 +287,39 @@ useEffect(() => {
   const conn = useRef(null);
   const eventHandlers = useRef(null);
 
+  function onTargetNavigated(newUrl, newTitle) {
+    if (!newUrl) return;
+    setCurrentTarget((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        url: newUrl,
+        title: newTitle || newUrl
+      };
+    });
+    if (navUrlInput.current) {
+      navUrlInput.current.value = newUrl;
+    }
+    // Query the page document.title via CDP Runtime.evaluate to get the real title
+    if (conn.current && conn.current.cdpSend) {
+      conn.current.cdpSend('Runtime.evaluate', { expression: 'document.title', returnByValue: true })
+        .then((r) => {
+          const t = r && r.result && r.result.value;
+          if (t && typeof t === 'string') {
+            setCurrentTarget((prev) => prev ? { ...prev, title: t } : prev);
+          }
+        })
+        .catch(() => {});
+    }
+    rerender();
+  }
+
   function initCdp() {
     conn.current = createCdpConnection();
     const state = {
       consoleEntries, networkEntries, reqMap, consoleVL, networkVL, statusEl,
       cdpSend: conn.current.cdpSend,
+      onNavigate: onTargetNavigated,
       rerender
     };
     eventHandlers.current = createEventHandlers(state);
@@ -356,6 +367,8 @@ useEffect(() => {
       c.cdpOn('Network.responseReceived', handlers.onResponseReceived);
       c.cdpOn('Network.loadingFinished', handlers.onLoadingFinished);
       c.cdpOn('Network.loadingFailed', handlers.onLoadingFailed);
+      c.cdpOn('Page.frameNavigated', handlers.onFrameNavigated);
+      c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
       // Seed the Network panel with the page's pre-existing resources.
       // Chrome does not replay requests that finished before Network.enable,
       // so without this an attach to an already-open tab shows an empty

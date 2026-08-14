@@ -121,8 +121,14 @@ export function PreviewPanel(props) {
         setImgSrc(next);
         setNote('live');
       }
-    } catch (e) {
-        setNote('screenshot failed: ' + (e && e.message || e));
+      } catch (e) {
+        const msg = (e && e.message) || String(e);
+        // If the socket isn't open yet, stay in 'capturing…' and let the fallback retry
+        if (msg === 'not connected' || msg === 'disconnected') {
+          setNote('capturing…');
+        } else {
+          setNote('screenshot failed: ' + msg);
+        }
       } finally {
         inFlight = false;
       }

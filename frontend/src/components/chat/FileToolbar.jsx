@@ -14,6 +14,7 @@
 
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 export function FileToolbar(props) {
   const { projectDir, onOpenFileEditor } = props;
@@ -51,16 +52,7 @@ export function FileToolbar(props) {
     return () => { cancelled = true; };
   }, [cliOpen, CliModal]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onClick(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [menuOpen]);
+  useClickOutside(menuRef, () => setMenuOpen(false), menuOpen);
 
   function handleFileEditor() {
     setMenuOpen(false);

@@ -3,7 +3,7 @@
 import { argToString } from './format.js';
 
 export function createEventHandlers(state) {
-  const { consoleEntries, networkEntries, reqMap, consoleVL, networkVL, statusEl, cdpSend } = state;
+  const { consoleEntries, networkEntries, reqMap, consoleVL, networkVL, statusEl, cdpSend, onNavigate } = state;
 
   function touchEntry(e) { e.rev = (e.rev || 0) + 1; }
 
@@ -313,9 +313,25 @@ export function createEventHandlers(state) {
     }
   }
 
+  function onFrameNavigated(params) {
+    const frame = params && params.frame;
+    if (!frame) return;
+    // Main frame navigation: frame.parentId is missing or null
+    if (!frame.parentId && typeof onNavigate === 'function') {
+      onNavigate(frame.url || '', frame.name || '');
+    }
+  }
+
+  function onNavigatedWithinDocument(params) {
+    if (params && params.url && typeof onNavigate === 'function') {
+      onNavigate(params.url, '');
+    }
+  }
+
   return {
     onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
     onResponseReceived, onLoadingFinished, onLoadingFailed,
+    onFrameNavigated, onNavigatedWithinDocument,
     pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
     loadResponseBody, backfillResources
   };
