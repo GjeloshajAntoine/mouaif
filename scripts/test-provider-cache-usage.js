@@ -29,6 +29,20 @@ function events(parser, data) {
 }
 
 {
+  const parsed = events(PARSERS.deepseek, {
+    choices: [],
+    usage: {
+      prompt_tokens: 2000,
+      completion_tokens: 150,
+      prompt_cache_hit_tokens: 1800,
+      prompt_cache_miss_tokens: 200
+    }
+  });
+  const usage = parsed.find((event) => event.name === 'done').data.usage;
+  check('DeepSeek: prompt total preserved', usage.promptTokens === 2000, JSON.stringify(usage));
+  check('DeepSeek: prompt_cache_hit_tokens normalized', usage.cacheReadTokens === 1800, JSON.stringify(usage));
+}
+{
   const parsed = events(PARSERS.openrouter, {
     choices: [],
     usage: {
@@ -55,5 +69,5 @@ function events(parser, data) {
   check('Gemini: cached content subset normalized', usage.cacheReadTokens === 1000, JSON.stringify(usage));
 }
 
-console.log('--- ' + (5 - failed) + ' passed, ' + failed + ' failed ---');
+console.log('--- ' + (7 - failed) + ' passed, ' + failed + ' failed ---');
 process.exit(failed ? 1 : 0);

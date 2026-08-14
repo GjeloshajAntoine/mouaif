@@ -1321,14 +1321,17 @@ function* parseOpenAISSE(eventName, data) {
       obj.usage.outputTokens
     );
     // OpenAI and OpenAI-shaped providers report cache hits as a subset
-    // of prompt_tokens. Accept both snake_case and camelCase variants;
-    // OpenRouter and compatible gateways may preserve either shape.
+    // of prompt_tokens. Accept snake_case, camelCase, DeepSeek's
+    // prompt_cache_hit_tokens, and nested variants; OpenRouter and
+    // compatible gateways may preserve any of these shapes.
     const promptDetails = obj.usage.prompt_tokens_details || obj.usage.promptTokensDetails || {};
     const cacheReadTokens = firstFiniteNumber(
       promptDetails.cached_tokens,
       promptDetails.cachedTokens,
       obj.usage.cached_tokens,
-      obj.usage.cachedTokens
+      obj.usage.cachedTokens,
+      obj.usage.prompt_cache_hit_tokens,
+      obj.usage.promptCacheHitTokens
     );
     const providerCost = firstFiniteNumberOrNull(
       obj.usage.cost,
