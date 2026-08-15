@@ -487,25 +487,37 @@ padding: 0;
 background: var(--surface);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
-/* `overflow: hidden` was removed here so the per-row overflow
-popup (`.inspector__row-menu-pop`, position: absolute) can drop
-below the row it belongs to without being clipped by the list.
-Before, the popup was truncated to a single visible row (just
-"Connect") which hid the Reload / Close tab actions and the
-target-id footer. Rounded corners are preserved by rounding the
-first and last <li> instead — see the rules below. */
-}
-.inspector__row-targets > li:first-child {
-border-top-left-radius: var(--r-md);
-border-top-right-radius: var(--r-md);
-overflow: hidden;
-}
-.inspector__row-targets > li:last-child {
-border-bottom-left-radius: var(--r-md);
-border-bottom-right-radius: var(--r-md);
-overflow: hidden;
+/* `overflow: hidden` is intentionally NOT set here so the per-row
+overflow popup (`.inspector__row-menu-pop`, position: absolute)
+can drop below the row it belongs to without being clipped by
+the list. With the original `overflow: hidden` the popup was
+clipped to a single visible row (just "Connect") which hid
+Reload / Close tab and the target-id footer. The popup's
+containing block (`.inspector__row-menu`) is also free of
+overflow clipping.
+
+The list still LOOKS rounded because the rows are transparent
+(relying on the list's own background), and the first / last
+row's main button + menu button round their outer corners via
+the two rules below, so the hover state — which paints the only
+opaque surface inside a row — also respects the rounded shape. */
 }
 .inspector__row-targets > li + li { border-top: 1px solid var(--border); }
+/* Round the first / last row's buttons at their OUTER corners so
+the hover background (the only opaque surface inside a row)
+matches the list's rounded shape. Inner corners stay sharp. */
+.inspector__row-targets > li:first-child .inspector__row-target-main {
+border-top-left-radius: var(--r-md);
+}
+.inspector__row-targets > li:first-child .inspector__row-menu-btn {
+border-top-right-radius: var(--r-md);
+}
+.inspector__row-targets > li:last-child .inspector__row-target-main {
+border-bottom-left-radius: var(--r-md);
+}
+.inspector__row-targets > li:last-child .inspector__row-menu-btn {
+border-bottom-right-radius: var(--r-md);
+}
 .inspector__row-target {
 display: flex;
 align-items: stretch;
