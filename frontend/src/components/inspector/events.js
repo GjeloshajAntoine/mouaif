@@ -21,18 +21,18 @@ export function createEventHandlers(state) {
   function touchEntry(e) { e.rev = (e.rev || 0) + 1; }
 
   function pushConsole() {
+    const data = consoleEntries.current.slice(-2000);
     const vl = consoleVL.current;
     if (vl) {
-      const data = consoleEntries.current.slice(-2000);
       try { vl.setData(data); vl.scrollToIndex(data.length - 1); } catch { /* vl destroyed */ consoleVL.current = null; }
     }
     if (consoleCountRef.current) consoleCountRef.current(data.length);
   }
 
   function pushNetwork() {
+    const data = networkEntries.current.slice(-2000);
     const vl = networkVL.current;
     if (vl) {
-      const data = networkEntries.current.slice(-2000);
       try { vl.setData(data); } catch { /* vl destroyed */ networkVL.current = null; }
     }
     if (networkCountRef.current) networkCountRef.current(data.length);
