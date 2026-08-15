@@ -954,7 +954,14 @@ margin-right: 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   min-height: 24px;
-  max-width: 100%;
+  /* Subtract the 10 px side margins from the viewport-budget so the
+     pill fits inside the parent's content width. The inline-flex
+     box would otherwise be clamped to `100%` (= parent width) and
+     the horizontal margins would add another 20 px (10 each side),
+     pushing the pill's right edge past the viewport on a 360 px
+     phone and forcing the main scroller to gain a horizontal
+     scrollbar. */
+  max-width: calc(100% - 20px);
   align-self: flex-start;
 }
 .inspector__statuspill-dot {
