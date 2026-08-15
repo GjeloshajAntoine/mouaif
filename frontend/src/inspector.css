@@ -907,6 +907,23 @@ margin-right: 8px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+/* Inner scroller for the detail sheet. The sheet itself is overflow:hidden
+   with max-height:80dvh; the head is fixed (flex:0 0 0) and everything else
+   sits inside this flex child so swipes scroll the sheet, not the page.
+
+   flex-basis is auto (not 0) so the sheet still hugs short content — when
+   head + body intrinsic < 80dvh the sheet sizes to content and the body
+   keeps its intrinsic height. Only when the parent constraint (the
+   max-height) kicks in does the body shrink and overflow-y:auto kicks in,
+   so long content scrolls within the sheet instead of overflowing it. */
+.inspector__sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px calc(12px + var(--safe-bottom, 0px)) 12px;
+}
 .inspector__sheet-title {
   font-size: 0.85rem;
   font-weight: 600;
