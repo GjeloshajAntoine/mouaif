@@ -33,6 +33,47 @@ export function scrollTranscriptToBottom(refs) {
   refs.pinnedToBottom.current = true;
   refs.pendingCount.current = 0;
   updateJumpButton(refs);
+  pinTranscriptAfterSettle(refs);
+}
+
+// pinTranscriptAfterSettle(refs)
+//
+// Re-pin to the bottom once the transcript has finished reflowing.
+// A single `scrollTop = scrollHeight` pins against the PRE-layout
+// height; content that grows a frame or two later (markdown code
+// blocks, reflowing tool cards, image decode, font metrics) leaves the
+// view a few pixels above the newest row with no further append to
+// re-trigger a pin — the last element ends up half-visible below the
+// fold. Schedule a short, bounded run of rAF checkpoints that re-pin
+// while the content keeps growing and stop once the layout is stable.
+// Only runs while still pinned (a user scroll-up cancels it) and
+// while no chunked render is in flight (that path owns the scroll).
+let _settleToken = 0;
+export function pinTranscriptAfterSettle(refs) {
+  const token = ++_settleToken;
+  const el = refs.transcript.current;
+  if (!el) return;
+
+  let stableFrames = 0;
+  const STABLE_FRAMES_TO_STOP = 2;
+  const MAX_FRAMES = 12;
+
+  function step(frame) {
+    if (token !== _settleToken) return; // superseded by a newer pin
+    if (!refs.pinnedToBottom.current) return; // user scrolled up
+    if (refs._suspendScrollPin || refs._insertAnchor) return; // chunked pass owns scroll
+    if (refs.transcript.current !== el) return; // detached / re-created
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (gap < 1) {
+      stableFrames += 1;
+      if (stableFrames >= STABLE_FRAMES_TO_STOP) return;
+    } else {
+      stableFrames = 0;
+      el.scrollTop = el.scrollHeight;
+    }
+    if (frame < MAX_FRAMES) requestAnimationFrame(() => step(frame + 1));
+  }
+  requestAnimationFrame(() => step(0));
 }
 
 // scrollToolBodyToBottom(descendant)

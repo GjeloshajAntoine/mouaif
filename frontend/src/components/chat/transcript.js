@@ -8,7 +8,7 @@
 // matches the rest of the transcript which is also imperative.
 
 import { renderMarkdown } from '../../markdown.js';
-import { afterTranscriptAppend, scrollToolBodyToBottom } from './scroll.js';
+import { afterTranscriptAppend, scrollToolBodyToBottom, pinTranscriptAfterSettle } from './scroll.js';
 import {
   isSubagentTool,
   normalizeToolName,
@@ -1576,6 +1576,10 @@ function scrollTranscriptToBottomImpl(refs) {
   el.scrollTop = el.scrollHeight;
   refs.pendingCount.current = 0;
   updateJumpButton(refs);
+  // Re-pin once layout settles: markdown code blocks and reflowing tool
+  // cards can grow a frame after this synchronous pin, which would
+  // otherwise strand the newest row a few pixels below the fold.
+  pinTranscriptAfterSettle(refs);
 }
 
 // finalizeLiveMessage(message, refs)
