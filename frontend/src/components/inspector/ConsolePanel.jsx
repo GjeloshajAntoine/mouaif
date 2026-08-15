@@ -10,7 +10,11 @@ export function ConsolePanel(props) {
     if (!scroller.current) return;
     const vl = createVirtualList({
       scroller: scroller.current,
-      itemHeight: 52,
+      // 64 px — taller than the previous 52 so the body has room for
+      // a 2-line wrap (line-clamp) instead of a single truncating line.
+      // A stack-trace expansion still goes through the detail sheet
+      // because the virtual list is fixed-height on purpose.
+      itemHeight: 64,
       overscan: 6,
       key: (item) => item.id,
       render: (item, node) => {

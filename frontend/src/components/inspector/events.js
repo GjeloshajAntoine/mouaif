@@ -3,7 +3,20 @@
 import { argToString } from './format.js';
 
 export function createEventHandlers(state) {
-  const { consoleEntries, networkEntries, reqMap, consoleVL, networkVL, statusEl, cdpSend, onNavigate } = state;
+  const { consoleEntries, networkEntries, reqMap, consoleVL, networkVL, cdpSend, onNavigate } = state;
+
+  // countRefs — optional refs the InspectorView supplies so pushConsole /
+  // pushNetwork can fire a single number on every event. The state lives
+  // in a ref so a CDP burst doesn't queue 2000 Preact rerenders; the
+  // parent reads the count and calls setCount in its own microtask.
+  // Tests that don't pass refs in still work — fall back to silent stubs.
+  const consoleCountRef = state.consoleCountRef || { current: null };
+  const networkCountRef = state.networkCountRef || { current: null };
+  // setStatusRef — optional wrapper the InspectorView supplies so the
+  // event layer can surface connection-side messages (e.g. the backfill
+  // summary) on the same status pill as the HTTP/WS layers. Ref shape
+  // ( .current = fn ) keeps the upgrade mechanical from its DOM-ref predecessor.
+  const setStatusRef = state.setStatusRef || { current: null };
 
   function touchEntry(e) { e.rev = (e.rev || 0) + 1; }
 
@@ -13,6 +26,7 @@ export function createEventHandlers(state) {
       const data = consoleEntries.current.slice(-2000);
       try { vl.setData(data); vl.scrollToIndex(data.length - 1); } catch { /* vl destroyed */ consoleVL.current = null; }
     }
+    if (consoleCountRef.current) consoleCountRef.current(data.length);
   }
 
   function pushNetwork() {
@@ -21,6 +35,7 @@ export function createEventHandlers(state) {
       const data = networkEntries.current.slice(-2000);
       try { vl.setData(data); } catch { /* vl destroyed */ networkVL.current = null; }
     }
+    if (networkCountRef.current) networkCountRef.current(data.length);
   }
 
   function onConsoleEvent(params) {
@@ -214,9 +229,9 @@ export function createEventHandlers(state) {
     // chronological: pre-attach resources first, live traffic after.
     networkEntries.current = entries.concat(networkEntries.current);
     pushNetwork();
-    if (statusEl.current) {
+    if (setStatusRef.current) {
       const n = entries.length;
-      statusEl.current.textContent = 'connected · ' + n + ' pre-attach resource' + (n === 1 ? '' : 's') + ' backfilled from the loaded page';
+      setStatusRef.current('connected — ' + n + ' pre-attach resource' + (n === 1 ? '' : 's') + ' backfilled from the loaded page');
     }
   }
 

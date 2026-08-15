@@ -187,6 +187,32 @@ function PanelCard(props) {
   );
 }
 
+// StatusPill — colored leading-dot pill that surfaces the current
+// connection state. The previous design was a muted <span ref>;
+// the new one uses Preact state so the tone updates on every
+// change and the user can read the connection at a glance. The
+// tone is derived from the text by classifyStatus, so callers
+// keep their imperative `setStatus("saved.")` shape.
+function classifyStatus(msg) {
+  if (!msg) return 'idle';
+  const m = String(msg).toLowerCase();
+  if (/fail|error|disconnected|reject|abort|invalid|missing|denied|unknown/.test(m)) return 'danger';
+  if (/warn/.test(m)) return 'warn';
+  if (/reload|saved|connected|navigat|opened|closed|fetching|loading|saving|connecting|navigating|opening/.test(m)) return 'busy';
+  if (/targets/.test(m)) return 'ok';
+  return 'info';
+}
+function StatusPill(props) {
+  const tone = classifyStatus(props.text);
+  return h('span', {
+    class: 'inspector__statuspill inspector__statuspill--' + tone,
+    role: 'status',
+    'aria-live': 'polite'
+  },
+    h('span', { class: 'inspector__statuspill-dot', 'aria-hidden': 'true' }),
+    h('span', { class: 'inspector__statuspill-text' }, props.text || '')
+  );
+}
 function InspectActionsMenu(props) {
   const [open, setOpen] = useState(false);
   const actionsRef = useRef(null);
@@ -237,13 +263,36 @@ const PANEL_ICONS = {
     h('path', { d: 'M3 4h7v7H3V4Zm0 9h7v7H3v-7Zm9-9h9v4h-9V4Zm0 6h9v10h-9V10Z', fill: 'currentColor' })
   )
 };
-
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
   const navUrlInput = useRef(null);
   const saveBtn = useRef(null);
-  const statusEl = useRef(null);
+  // status pill — Preact state instead of a DOM ref. The previous
+  // design wrote text directly to a muted <span ref>; the new one is
+  // a colored leading-dot pill that re-renders on every change so the
+  // user can read the connection state at a glance. The imperative
+  // call paths (save / load / navigate / open new tab / close tab /
+  // reload) still say `setStatus('saved.')`; classifyStatus picks a
+  // tone from the text.
+  const [statusText, setStatusText] = useState('');
+  function setStatus(value) { setStatusText(value == null ? '' : String(value)); }
+  // setStatusRef / countRefs — refs the events.js side hooks into. The
+  // state lives in a ref-shape because the previous upgrade was
+  // mechanical from a DOM ref. Wrapping setStatus this way also lets
+  // render closures (the panelbar badges, the events.js backfill
+  // summary) all share one definition of the pill's text. We populate
+  // them in render (not useEffect) so the very first event the WS
+  // delivers — often before the first effect tick — already finds the
+  // callback attached.
+  const setStatusRef = useRef(setStatus);
+  setStatusRef.current = setStatus;
+  const [consoleCount, setConsoleCount] = useState(0);
+  const [networkCount, setNetworkCount] = useState(0);
+  const consoleCountRef = useRef((n) => setConsoleCount(n | 0));
+  const networkCountRef = useRef((n) => setNetworkCount(n | 0));
+  consoleCountRef.current = (n) => setConsoleCount(n | 0);
+  networkCountRef.current = (n) => setNetworkCount(n | 0);
   const [debuggerUrl, setDebuggerUrl] = useState('');
   const [defaultUrl, setDefaultUrl] = useState('');
   const [targets, setTargets] = useState([]);
@@ -317,10 +366,16 @@ useEffect(() => {
   function initCdp() {
     conn.current = createCdpConnection();
     const state = {
-      consoleEntries, networkEntries, reqMap, consoleVL, networkVL, statusEl,
+      consoleEntries, networkEntries, reqMap, consoleVL, networkVL,
       cdpSend: conn.current.cdpSend,
       onNavigate: onTargetNavigated,
-      rerender
+      rerender,
+      // setStatusRef — wraps the imperative setStatus so the event layer
+      // can also surface connection-side messages (notably the backfill
+      // summary) on the same status pill. Passed by-ref so the events
+      // module reads .current on every call and bridges to the latest
+      // setter without a stale-closure trap.
+      setStatusRef, consoleCountRef, networkCountRef
     };
     eventHandlers.current = createEventHandlers(state);
     return conn.current;
@@ -337,7 +392,7 @@ useEffect(() => {
     setDetailItem(null);
     if (consoleVL.current) { try { consoleVL.current.setData([]); } catch { /* ignore */ } }
     if (networkVL.current) { try { networkVL.current.setData([]); } catch { /* ignore */ } }
-    if (statusEl.current) statusEl.current.textContent = '';
+    setStatus('');
   }
 
   function connect(target) {
@@ -348,16 +403,16 @@ useEffect(() => {
     setPhase('inspect');
     consoleEntries.current = [];
     networkEntries.current = [];
-    if (statusEl.current) statusEl.current.textContent = 'connecting…';
+    setStatus('connecting…');
     const result = c.connect(debuggerUrl, target.id);
     if (result.error) {
-      if (statusEl.current) statusEl.current.textContent = result.error;
+      setStatus(result.error);
       return;
     }
     result.ws.addEventListener('open', () => {
-      if (statusEl.current) statusEl.current.textContent = 'connected to ' + (target.title || target.url || target.id);
-      c.cdpSend('Runtime.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Runtime.enable failed: ' + err.message; });
-      c.cdpSend('Network.enable').catch((err) => { if (statusEl.current) statusEl.current.textContent = 'Network.enable failed: ' + err.message; });
+      setStatus('connected to ' + (target.title || target.url || target.id));
+      c.cdpSend('Runtime.enable').catch((err) => { setStatus('Runtime.enable failed: ' + err.message); });
+      c.cdpSend('Network.enable').catch((err) => { setStatus('Network.enable failed: ' + err.message); });
       c.cdpSend('Page.enable').catch(() => { /* preview unavailable */ });
       c.cdpSend('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] }).catch(() => { /* emulation unavailable */ });
       c.cdpSend('Performance.enable').catch(() => { /* metrics unavailable */ });
@@ -376,17 +431,16 @@ useEffect(() => {
       handlers.backfillResources();
     });
     result.ws.addEventListener('close', (ev) => {
-      if (statusEl.current) {
-        const code = ev && typeof ev.code === 'number' ? ev.code : 0;
-        statusEl.current.textContent = 'disconnected (code ' + code + ')';
-      }
+      const code = ev && typeof ev.code === 'number' ? ev.code : 0;
+        setStatus('disconnected (code ' + code + ')');
+      
     });
     result.ws.addEventListener('error', () => {
       // The browser WS error event carries no message. If the server
       // rejected the upgrade it sent a typed JSON body as the close
       // reason — show that instead of the generic "WebSocket error".
       const proxyMsg = c.lastProxyError && c.lastProxyError.current;
-      if (statusEl.current) statusEl.current.textContent = proxyMsg || 'WebSocket error';
+      setStatus(proxyMsg || 'WebSocket error');
     });
     rerender();
   }
@@ -395,16 +449,16 @@ useEffect(() => {
     let r;
     try {
       r = await fetchJson('/api/inspector/config');
-      if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+      if (r.status !== 200) { setStatus('HTTP ' + r.status); return; }
       setDebuggerUrl(r.body.url || '');
       setDefaultUrl(r.body.defaultUrl || '');
       if (urlInput.current) urlInput.current.value = r.body.url || '';
-      if (statusEl.current) statusEl.current.textContent = (r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl;
+      setStatus((r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl);
       rerender();
       // Auto-discover on mount when a debugger URL is already saved.
       // Returning users land on the targets list directly instead of
       // being sent back to the setup screen on every visit. Deferred
-      // to the next tick so the targets phase's statusEl <div> is
+      // to the next tick so the targets phase's StatusPill is
       // mounted by the time loadTargets writes to it — the setup
       // phase's <span> would otherwise receive the message.
       if (r.body.url) setTimeout(loadTargets, 0);
@@ -414,38 +468,38 @@ useEffect(() => {
       // surface as an unhandled rejection that the user can't see and
       // that also aborts the auto-discovery chain. Surface it on the
       // status line instead.
-      if (statusEl.current) statusEl.current.textContent = 'inspector: ' + (e && e.message || String(e));
+      setStatus('inspector: ' + (e && e.message || String(e)));
     }
   }
 
   async function saveConfig() {
     if (!urlInput.current) return;
     const next = (urlInput.current.value || '').trim();
-    if (!next) { if (statusEl.current) statusEl.current.textContent = 'url is required'; return; }
+    if (!next) { setStatus('url is required'); return; }
     saveBtn.current.disabled = true;
-    if (statusEl.current) statusEl.current.textContent = 'saving…';
+    setStatus('saving…');
     let r;
     try { r = await fetchJson('/api/inspector/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: next }) }); }
-    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; if (saveBtn.current) saveBtn.current.disabled = false; return; }
+    catch (e) { setStatus('network error'); if (saveBtn.current) saveBtn.current.disabled = false; return; }
     if (saveBtn.current) saveBtn.current.disabled = false;
-    if (r.status !== 200) { if (statusEl.current) statusEl.current.textContent = 'HTTP ' + r.status; return; }
+    if (r.status !== 200) { setStatus('HTTP ' + r.status); return; }
     setDebuggerUrl(r.body.url || next);
-    if (statusEl.current) statusEl.current.textContent = 'saved.';
+    setStatus('saved.');
   }
 
   async function loadTargets() {
-    if (statusEl.current) statusEl.current.textContent = 'fetching targets…';
+    setStatus('fetching targets…');
     let r;
     try { r = await fetchJson('/api/inspector/targets'); }
-    catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    catch (e) { setStatus('network error'); return; }
     if (r.status !== 200) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = msg;
+      setStatus(msg);
       return;
     }
     setTargets(r.body.targets || []);
     setPhase('targets');
-    if (statusEl.current) statusEl.current.textContent = (r.body.targets || []).length + ' targets';
+    setStatus((r.body.targets || []).length + ' targets');
     rerender();
   }
 
@@ -458,25 +512,24 @@ useEffect(() => {
       const name = t.title || t.url || 'this tab';
       if (!window.confirm('Close tab “' + name + '”?')) return;
     }
-    if (statusEl.current) statusEl.current.textContent = (action === 'close' ? 'closing ' : 'reloading ') + (t.title || t.url || 'tab') + '…';
+    setStatus((action === 'close' ? 'closing ' : 'reloading ') + (t.title || t.url || 'tab') + '…');
     let r;
     try {
       r = await fetchJson('/api/inspector/' + (action === 'close' ? 'close' : 'reload'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: t.id }) });
     } catch (e) {
-      if (statusEl.current) statusEl.current.textContent = 'network error';
+      setStatus('network error');
       return;
     }
     if (r.status !== 200 || !r.body || !r.body.ok) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = (action === 'close' ? 'close' : 'reload') + ' failed: ' + msg;
+      setStatus((action === 'close' ? 'close' : 'reload') + ' failed: ' + msg);
       return;
     }
     if (action === 'close') {
-      if (statusEl.current) statusEl.current.textContent = 'closed';
+      setStatus('closed');
       loadTargets(); // the closed tab disappears from the list
-    } else if (statusEl.current) {
-      statusEl.current.textContent = 'reloaded';
-    }
+    } else setStatus('reloaded');
+      
   }
 
   // openAttachedPageInNewTab — "open in a new tab" for the page currently
@@ -489,20 +542,20 @@ useEffect(() => {
     const target = currentTarget;
     if (!target || !target.url) return;
     const url = target.url;
-    if (statusEl.current) statusEl.current.textContent = 'opening ' + url + ' in a new tab…';
+    setStatus('opening ' + url + ' in a new tab…');
     let r;
     try {
       r = await fetchJson('/api/inspector/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
     } catch (e) {
-      if (statusEl.current) statusEl.current.textContent = 'network error opening new tab';
+      setStatus('network error opening new tab');
       return;
     }
     if (r.status !== 200 || !r.body || !r.body.target) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = 'new tab failed: ' + msg;
+      setStatus('new tab failed: ' + msg);
       return;
     }
-    if (statusEl.current) statusEl.current.textContent = 'opened ' + url + ' in a new tab';
+    setStatus('opened ' + url + ' in a new tab');
   }
 
   // closeAttachedTarget — deletes the tab being inspected. Confirms with
@@ -516,17 +569,17 @@ useEffect(() => {
     if (!target || !target.id) return;
     const name = target.title || target.url || 'this tab';
     if (!window.confirm('Close tab “' + name + '”?')) return;
-    if (statusEl.current) statusEl.current.textContent = 'closing tab…';
+    setStatus('closing tab…');
     let r;
     try {
       r = await fetchJson('/api/inspector/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
     } catch (e) {
-      if (statusEl.current) statusEl.current.textContent = 'network error closing tab';
+      setStatus('network error closing tab');
       return;
     }
     if (r.status !== 200 || !r.body || !r.body.ok) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = 'close failed: ' + msg;
+      setStatus('close failed: ' + msg);
       return;
     }
     disconnect();
@@ -542,20 +595,20 @@ useEffect(() => {
   async function reloadAttachedTarget() {
     const target = currentTarget;
     if (!target || !target.id) return;
-    if (statusEl.current) statusEl.current.textContent = 'reloading…';
+    setStatus('reloading…');
     let r;
     try {
       r = await fetchJson('/api/inspector/reload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
     } catch (e) {
-      if (statusEl.current) statusEl.current.textContent = 'network error reloading';
+      setStatus('network error reloading');
       return;
     }
     if (r.status !== 200 || !r.body || !r.body.ok) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = 'reload failed: ' + msg;
+      setStatus('reload failed: ' + msg);
       return;
     }
-    if (statusEl.current) statusEl.current.textContent = 'reloaded';
+    setStatus('reloaded');
   }
 
   // navigateAttachedTarget — navigates the tab being inspected to a new
@@ -566,24 +619,24 @@ useEffect(() => {
     const input = navUrlInput.current;
     if (!target || !target.id || !input) return;
     let wanted = (input.value || '').trim();
-    if (!wanted) { if (statusEl.current) statusEl.current.textContent = 'enter a url first'; return; }
+    if (!wanted) { setStatus('enter a url first'); return; }
     // Convenience: bare hosts like "localhost:3000" get http:// so the
     // user doesn't have to type the scheme.
     if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(wanted)) wanted = 'http://' + wanted;
-    if (statusEl.current) statusEl.current.textContent = 'navigating to ' + wanted + '…';
+    setStatus('navigating to ' + wanted + '…');
     let r;
     try {
       r = await fetchJson('/api/inspector/navigate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id, url: wanted }) });
     } catch (e) {
-      if (statusEl.current) statusEl.current.textContent = 'network error navigating';
+      setStatus('network error navigating');
       return;
     }
     if (r.status !== 200 || !r.body || (typeof r.body.frameId !== 'string' && !r.body.errorText)) {
       const msg = (r.body && (r.body.error || r.body.errorText)) ? (r.body.error || r.body.errorText) : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = 'navigate failed: ' + msg;
+      setStatus('navigate failed: ' + msg);
       return;
     }
-    if (statusEl.current) statusEl.current.textContent = 'navigating to ' + wanted + '…';
+    setStatus('navigating to ' + wanted + '…');
   }
 
   // attachByPageUrl — one-step inspect: the user types a page URL and
@@ -594,18 +647,18 @@ useEffect(() => {
     const input = pageUrlInput.current;
     if (!input) return;
     let wanted = (input.value || '').trim();
-    if (!wanted) { if (statusEl.current) statusEl.current.textContent = 'enter a page url first'; return; }
+    if (!wanted) { setStatus('enter a page url first'); return; }
     // Convenience: bare hosts like "localhost:3000" get http:// so the
     // user doesn't have to type the scheme.
     if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(wanted)) wanted = 'http://' + wanted;
-    if (statusEl.current) statusEl.current.textContent = 'opening ' + wanted + '…';
+    setStatus('opening ' + wanted + '…');
     let r;
     try {
       r = await fetchJson('/api/inspector/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: wanted }) });
-    } catch (e) { if (statusEl.current) statusEl.current.textContent = 'network error'; return; }
+    } catch (e) { setStatus('network error'); return; }
     if (r.status !== 200 || !r.body || !r.body.target) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      if (statusEl.current) statusEl.current.textContent = msg;
+      setStatus(msg);
       return;
     }
     connect(r.body.target);
@@ -622,7 +675,7 @@ useEffect(() => {
           h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
         ),
         h('div', { class: 'row row--actions' },
-          h('span', { ref: statusEl, class: 'status', 'aria-live': 'polite' }),
+          h(StatusPill, { text: statusText }),
           h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
           h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
         )
@@ -647,7 +700,7 @@ useEffect(() => {
           h('button', { class: 'btn btn--primary', type: 'button', onClick: attachByPageUrl }, 'Open & inspect'),
           h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Refresh targets')
         ),
-        h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
+        h(StatusPill, { text: statusText }),
         targets.length
           ? h('ul', { class: 'inspector__row-targets', 'aria-label': 'Discoverable targets' },
               targets.map((t) => h(TargetRow, {
@@ -804,26 +857,37 @@ useEffect(() => {
         // Close button moved to InspectActionsMenu so the nav row
         // carries only the URL field + Go (the most common action).
       ),
-      // Panel toolbar — icon-only chips in a single row. Each chip
-      // toggles its panel. The text labels live in the tooltip +
-      // aria-label; the panel icon (PANEL_ICONS above) is the only
-      // on-screen content. The "Show all" reset moved into the
-      // InspectActionsMenu overflow so the panelbar stays exactly
-      // 4 chips wide and fits a 360 px viewport without wrapping.
+      // Panelbar — 2-line chips with a corner entry-count badge for
+      // the row-shaped panels (console, network). Preview/Info are not
+      // countable so they stay unbadged but still print the label under
+      // the glyph, so the whole row reads identically at a glance — no
+      // icon-only buttons hiding behind aria-labels.
       h('div', { class: 'inspector__panelbar', role: 'group', 'aria-label': 'Optional panels' },
         PANELS.map((p) => {
           const on = visiblePanels.has(p.id);
+          const count = p.id === 'console' ? consoleCount
+            : p.id === 'network' ? networkCount
+            : 0;
+          const badgeText = count > 999 ? '999+' : String(count);
+          const showBadge = on && count > 0;
           return h('button', {
-            class: 'inspector__panelchip' + (on ? ' is-on' : ''),
+            class: 'inspector__panelchip' + (on ? ' is-on' : '') + (showBadge ? ' has-badge' : ''),
             type: 'button',
-            'aria-label': (on ? 'Hide ' : 'Show ') + p.label,
+            'aria-label': (on ? 'Hide ' : 'Show ') + p.label + (showBadge ? ' (' + badgeText + ' entries)' : ''),
             'aria-pressed': String(on),
             title: (on ? 'Hide ' : 'Show ') + p.label,
+            'data-panel-id': p.id,
             onClick: () => togglePanel(p.id)
-          }, PANEL_ICONS[p.id]);
+          },
+            h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, PANEL_ICONS[p.id]),
+            h('span', { class: 'inspector__panelchip-label' }, p.label),
+            showBadge
+              ? h('span', { class: 'inspector__panelchip-badge', 'aria-hidden': 'true' }, badgeText)
+              : null
+          );
         })
       ),
-      h('div', { ref: statusEl, class: 'status inspector__status', 'aria-live': 'polite' }),
+      h(StatusPill, { text: statusText }),
       noPanelsVisible
         ? h('div', { class: 'inspector__panels-empty', role: 'status' },
             h('p', null, 'No panels visible.'),
