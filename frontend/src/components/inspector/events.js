@@ -61,6 +61,86 @@ export function createEventHandlers(state) {
     pushConsole();
   }
 
+    // evaluateExpression — run a snippet the user typed in the editable
+  // JavaScript console (JsConsole) inside the inspected page. Uses
+  // includeCommandLineAPI so `$0`, `$`, `$$`, `inspect` etc. behave like
+  // the real DevTools console. The result is appended to the console log
+  // as an entry — either the JSON-serialised value (for value types) or
+  // the RemoteObject description (for objects/functions) — and a thrown
+  // exception is reported as an error row instead of failing silently.
+  // Returns the result value/description so the caller can act on it.
+  async function evaluateExpression(expression) {
+    const ts = Date.now();
+    const mkId = () => 'c' + ts + '-' + consoleEntries.current.length;
+    if (!cdpSend || !expression || !String(expression).trim()) return null;
+    let entry;
+    try {
+      const r = await cdpSend('Runtime.evaluate', {
+        expression: String(expression),
+        includeCommandLineAPI: true,
+        returnByValue: true,
+        awaitPromise: true,
+        objectGroup: 'mouaif-console'
+      });
+      entry = {
+        id: mkId(),
+        kind: 'console',
+        level: 'info',
+        text: '',
+        args: [],
+        url: null, line: null, stack: null,
+        ts
+      };
+      const result = r && r.result;
+      if (r && r.exceptionDetails) {
+        const ex = r.exceptionDetails;
+        entry.level = 'error';
+        entry.text = (ex.exception && (ex.exception.description || ex.exception.value)) || ex.text || 'Uncaught exception';
+        if (ex.exception) entry.args = [ex.exception];
+        const st = ex.stackTrace && ex.stackTrace.callFrames;
+        if (st && st.length) {
+          entry.url = st[0].url || null;
+          entry.line = st[0].lineNumber != null ? st[0].lineNumber + 1 : null;
+          entry.stack = st.map((f) => '  at ' + (f.functionName || '(anon)') + ' (' + (f.url || '') + ':' + ((f.lineNumber || 0) + 1) + ':' + ((f.columnNumber || 0) + 1) + ')').join('\n');
+        }
+      } else if (result && typeof result.value !== 'undefined') {
+        // Value types come back serialised by returnByValue; show them
+        // as plain text (matching how console.log renders primitives).
+        // JSON.stringify can throw on circular structures — fall back
+        // to the CDP description instead of dropping the row.
+        let asText;
+        try {
+          asText = typeof result.value === 'string' ? result.value : JSON.stringify(result.value);
+        } catch {
+          asText = result.description || String(result.value);
+        }
+        entry.text = asText;
+        if (typeof result.value === 'string') entry.args = [{ type: 'string', value: result.value }];
+      } else if (result && (result.description || result.objectId)) {
+        // Objects / functions: keep the RemoteObject so the row renderer
+        // can paint a preview just like a live console.log(object).
+        entry.text = result.description || '';
+        entry.args = [result];
+      } else {
+        entry.text = 'undefined';
+        entry.args = [{ type: 'undefined' }];
+      }
+    } catch (e) {
+      entry = {
+        id: mkId(),
+        kind: 'console',
+        level: 'error',
+        text: 'Runtime.evaluate failed: ' + (e && e.message || e),
+        args: [],
+        url: null, line: null, stack: null,
+        ts
+      };
+    }
+    consoleEntries.current.push(entry);
+    pushConsole();
+    return entry;
+  }
+
   function onExceptionEvent(params) {
     const ex = params.exceptionDetails || {};
     const text = (ex.exception && (ex.exception.description || ex.exception.value)) || ex.text || 'exception';
@@ -348,6 +428,6 @@ export function createEventHandlers(state) {
     onResponseReceived, onLoadingFinished, onLoadingFailed,
     onFrameNavigated, onNavigatedWithinDocument,
     pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
-    loadResponseBody, backfillResources
+    loadResponseBody, backfillResources, evaluateExpression
   };
 }

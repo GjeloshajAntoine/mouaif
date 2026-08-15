@@ -312,9 +312,19 @@ When its toolbar chip is on, the Console panel subscribes to `Runtime.consoleAPI
 
 Tapping a row opens a **detail sheet**: the full message, the source location, and the complete stack trace for exceptions and traced logs.
 
-The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 52 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
+The panel keeps the last **2,000** entries in memory and renders them through a [Virtual list](virtual-list.md) with a fixed 64 px row height and an overscan of 6. The new bottom is auto-scrolled into view when an event arrives.
 
 `Runtime.enable` is sent on connection. If the call rejects, the failure shows in the status line and the rest of the view keeps working (we don't tear down on a single failed command).
+
+### JavaScript console
+Below the log scroller, the Console panel also ships an editable **JavaScript console** (`JsConsole`) — a CodeMirror editor that evaluates expressions in the inspected page over the same CDP connection. Press **Enter** to run the current expression; **Shift+Enter** inserts a newline; **Ctrl+Space** forces the autocomplete menu. The input clears after a successful run, matching the DevTools REPL, and the result is appended to the same console log as a new row (value types are serialized with `returnByValue`; objects/functions render their RemoteObject preview; exceptions render as error rows with a stack trace).
+The console evaluates with `Runtime.evaluate` and `includeCommandLineAPI: true`, so `$0`, `$`, `$$`, `$x`, `inspect`, `copy`, `clear`, and the other Chrome command-line helpers behave like the real console.
+**Autosuggestion** layers three sources, all returned as CodeMirror `Completion` objects with `detail` and `type` so the picker reads like DevTools rather than a bare word list:
+1. **Live page globals** — a one-shot `Object.getOwnPropertyNames(globalThis)` snapshot of the page's global property names (evaluated via CDP `Runtime.evaluate`), fetched once and filtered by the typed prefix (case-insensitive).
+2. **Property completion** — after typing `obj.`, the console asks the page for `Object.getOwnPropertyNames(Object(obj))` on demand, so `document.` suggests `document.body`, `document.querySelector`, etc. in real time.
+3. **Element references** — a capped `document.querySelectorAll('[id]')` scan surfaces element IDs (and common element globals like `head` / `body`) by name, with `#id` shown as the completion detail. This snapshot is cached for 2 s so it stays fresh without a CDP round-trip per keystroke.
+A curated static table of browser APIs (`window`, `document`, `fetch`, `localStorage`, `getComputedStyle`, …), console helpers, and JS keywords/literals rounds out the list so the menu is populated even before the page answers.
+The CodeMirror autocomplete picker is styled to match the inspector's dark surfaces (`mouaif-console-autocomplete`) with 44 px touch rows, monospace labels, and type icons. The editor chunk is shared with the File editor's CodeMirror bundle, so the autocomplete extensions cost no extra network fetch beyond the existing `codemirror` chunk.
 
 ## Network panel
 
