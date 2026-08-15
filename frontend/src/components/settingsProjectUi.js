@@ -18,6 +18,7 @@ export function sectionIcon(kind) {
     case 'tools': return h('span', attrs, h('span', { class: 'ico-wrench' }));
     case 'files': return h('span', attrs, h('span', { class: 'ico-doc' }));
     case 'agents': return h('span', attrs, h('span', { class: 'ico-people' }));
+    case 'skills': return h('span', attrs, h('span', { class: 'ico-spark' }));
     case 'more': return h('span', attrs, h('span', { class: 'ico-grid' }));
     default: return h('span', attrs);
   }

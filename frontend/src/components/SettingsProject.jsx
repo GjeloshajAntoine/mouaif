@@ -1227,24 +1227,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
             )
           ),
           h('li', { class: 'settings-project__item settings-project__item--col' },
-            h('div', { class: 'settings-project__item-row' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Skills'),
-                h('div', { class: 'settings-project__item-note' }, 'Inject .agents/skills/*/SKILL.md files. Disable the family here or in the chat Tools popup. ', h('span', { class: 'settings-project__item-status' }, skillsStatusMsg))
-              ),
-              h('label', { class: 'switch' },
-                h('input', {
-                  id: 'sp-skills',
-                  type: 'checkbox',
-                  role: 'switch',
-                  checked: skillsOn,
-                  onChange: onSkillsToggle
-                }),
-                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-              )
-            )
-          ),
-          h('li', { class: 'settings-project__item settings-project__item--col' },
             h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
               h('div', { class: 'settings-project__item-note' },
@@ -1266,6 +1248,38 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 type: 'button',
                 onClick: () => setAgentFilePickerOpen(true)
               }, 'Pick file…')
+            )
+          )
+        )
+      ),
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+          sectionIcon('skills'),
+          h('span', null, 'Skills'),
+          h('details', { class: 'settings-project__info' },
+            h('summary', { 'aria-label': 'About skills' }, '?'),
+            h('div', { class: 'settings-project__info-body' },
+              h('p', null, 'Skills are Agent Skills stored in .agents/skills/*/SKILL.md. When on, the model sees a metadata catalog and can activate a skill when it matches the task. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
+            )
+          )
+        ),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Inject skills into chats'),
+                h('div', { class: 'settings-project__item-note' }, 'Project-wide gate for .agents/skills/*/SKILL.md files. Off locks them out of every chat; on lets each chat opt out. ', h('span', { class: 'settings-project__item-status' }, skillsStatusMsg))
+              ),
+              h('label', { class: 'switch' },
+                h('input', {
+                  id: 'sp-skills',
+                  type: 'checkbox',
+                  role: 'switch',
+                  checked: skillsOn,
+                  onChange: onSkillsToggle
+                }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+              )
             )
           )
         )
