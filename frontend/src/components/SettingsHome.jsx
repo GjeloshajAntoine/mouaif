@@ -47,7 +47,8 @@ export function SettingsHomeView() {
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Providers'),
       h('ul', { class: 'group__list' },
-        rowLi('settings/providers', 'Providers', { detail: providerSummary })
+        rowLi('settings/providers', 'Providers', { detail: providerSummary }),
+        rowLi('settings/projects', 'Projects', { sub: 'registered folders' })
       )
     ),
     // ---- App defaults: settings that apply everywhere unless a project

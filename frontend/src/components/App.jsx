@@ -19,6 +19,7 @@ import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
 import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
 import { SettingsTagsView } from './SettingsTags.jsx';
 import { SettingsPricingView } from './SettingsPricing.jsx';
+import { SettingsProjectsView } from './SettingsProjects.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
@@ -113,6 +114,7 @@ export function App() {
     && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
     && view.name !== 'settingsTags'
     && view.name !== 'settingsPricing'
+    && view.name !== 'settingsProjects'
     && view.name !== 'settingsAccess'
     && view.name !== 'settingsAbout';
   let body = null;
@@ -136,6 +138,7 @@ export function App() {
   else if (view.name === 'settingsMcpRegistry') body = h(SettingsMcpRegistryView, { projectDir: view.projectDir });
   else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });
   else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
+  else if (view.name === 'settingsProjects') body = h(SettingsProjectsView, null);
   else if (view.name === 'settingsAccess') body = h(AccessSettingsView, null);
   else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
   else if (view.name === 'inspector') body = h(Suspense, {

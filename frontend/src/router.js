@@ -55,6 +55,7 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsAgentEdit', id, projectDir: params.get('projectDir') || '' };
   }
+  if (h === 'settings/projects') return { name: 'settingsProjects' };
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/notifications') return { name: 'settingsNotifications' };
   // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
