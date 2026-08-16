@@ -148,7 +148,7 @@ async function handleChats(req, res, parsed, sessionToken) {
     }
   }
 
-  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize?, draft? }
+  // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize?, draft?, draftAttachments? }
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const id = decodeURIComponent(m[1]);

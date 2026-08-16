@@ -547,6 +547,7 @@ export async function send(state, refs, { content, attachments, clearComposerDra
         queueComposerDraftSave(text, projectDir, chatId, refs, state._updateChat || (() => Promise.resolve()));
       }
       setImageAttachments(atts);
+      if (state._updateChat) state._updateChat({ draftAttachments: atts }).catch(() => {});
       setChatStatus(refs, 'a response is already streaming — your message is back in the composer', 'busy');
       state.streaming = false;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);

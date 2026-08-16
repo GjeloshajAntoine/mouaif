@@ -25,17 +25,22 @@ export function fileToImageAttachment(file) {
   });
 }
 
-// addImagesFromFiles(files, { setImageAttachments, setChatStatus })
+// addImagesFromFiles(files, { setImageAttachments, setChatStatus, updateChat })
 //
 // Read a list of files, filter to images, and append the result to
 // the image-attachments list (capped at 8). Surface a status pill
-// so the user knows something happened.
-export async function addImagesFromFiles(files, { setImageAttachments, setChatStatus }) {
+// so the user knows something happened. When updateChat is provided,
+// the new list is persisted as the chat's image draft.
+export async function addImagesFromFiles(files, { setImageAttachments, setChatStatus, updateChat }) {
   const list = Array.from(files || []).filter((f) => f && /^image\/(png|jpe?g|webp|gif)$/i.test(f.type || ''));
   if (!list.length) return;
   try {
     const items = (await Promise.all(list.map(fileToImageAttachment))).filter(Boolean);
-    setImageAttachments((prev) => prev.concat(items).slice(0, 8));
+    setImageAttachments((prev) => {
+      const next = prev.concat(items).slice(0, 8);
+      if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
+      return next;
+    });
     setChatStatus(
       items.length === 1 ? 'image attached' : (items.length + ' images attached'),
       'success'
@@ -67,7 +72,11 @@ export function onImagePickerChange(e, handlers) {
   addImagesFromFiles(e.currentTarget.files, handlers);
 }
 
-// removeImageAttachment(idx, setImageAttachments)
-export function removeImageAttachment(idx, setImageAttachments) {
-  setImageAttachments((prev) => prev.filter((_, i) => i !== idx));
+// removeImageAttachment(idx, setImageAttachments, updateChat)
+export function removeImageAttachment(idx, setImageAttachments, updateChat) {
+  setImageAttachments((prev) => {
+    const next = prev.filter((_, i) => i !== idx);
+    if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
+    return next;
+  });
 }

@@ -269,7 +269,20 @@ const MIGRATIONS = [
         d.exec("ALTER TABLE chat_store ADD COLUMN max_output_tokens TEXT DEFAULT ''");
       }
     }
+  },
+{
+  name: '2026-08-16-add-draft-attachments',
+  description: 'Add draft_attachments column to chat_store for pending composer image drafts',
+  run() {
+    require('./chatdb.js').ensureChatTables();
+    const d = db();
+    const cols = d.prepare("PRAGMA table_info('chat_store')").all();
+    const hasCol = cols.some((c) => c.name === 'draft_attachments');
+    if (!hasCol) {
+      d.exec("ALTER TABLE chat_store ADD COLUMN draft_attachments TEXT");
+    }
   }
+}
 ];
 
 function runMigrations() {

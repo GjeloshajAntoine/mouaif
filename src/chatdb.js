@@ -31,6 +31,7 @@ const CREATE_CHAT_TABLE = `
     thinking_level TEXT DEFAULT '',
     max_output_tokens TEXT DEFAULT '',
     draft         TEXT NOT NULL DEFAULT '',
+    draft_attachments TEXT,
     tools         TEXT,
     agent_id      TEXT,
     agent_files   INTEGER,
@@ -97,8 +98,16 @@ function rowToChat(row) {
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
     skills: row.skills === null ? undefined : (row.skills === 1)
   };
-  // tools: null/undefined -> all tools; [] -> advertise none; [names] -> filter
-  if (row.tools !== null) {
+  // draftAttachments: null/'' -> undefined (no image draft); otherwise the
+// JSON array of pending image attachments for the composer.
+  if (row.draft_attachments) {
+  try {
+    const parsed = JSON.parse(row.draft_attachments);
+    if (Array.isArray(parsed)) chat.draftAttachments = parsed;
+  } catch { /* keep undefined */ }
+}
+// tools: null/undefined -> all tools; [] -> advertise none; [names] -> filter
+if (row.tools !== null) {
     try { chat.tools = JSON.parse(row.tools); } catch { /* keep undefined */ }
   }
   // Drop undefined tools so the caller can distinguish "not set" from "empty array"
@@ -121,6 +130,7 @@ function chatToRow(projectDir, chat) {
     thinking_level: chat.thinkingLevel || '',
     max_output_tokens: chat.maxOutputTokens || '',
     draft: chat.draft || '',
+    draft_attachments: (chat.draftAttachments === undefined || chat.draftAttachments === null) ? null : JSON.stringify(chat.draftAttachments),
     tools: chat.tools === undefined ? null : JSON.stringify(chat.tools),
     // agent_id is a legacy column from the removed chat-persona design.
     // It stays in the schema for old DBs but is always written as null.
@@ -207,10 +217,10 @@ function createChat(projectDir, chat) {
   const row = chatToRow(projectDir, chat);
   d.prepare(`
     INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-      trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, tools,
+      trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
       agent_id, agent_files, skills)
     VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-      @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @tools,
+      @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
       @agent_id, @agent_files, @skills)
   `).run(row);
   return rowToChat(d.prepare(
@@ -235,7 +245,7 @@ function updateChat(projectDir, chatId, patch) {
       prompt_id = @prompt_id, provider_id = @provider_id,
       model_id = @model_id, thinking_level = @thinking_level,
       max_output_tokens = @max_output_tokens,
-      draft = @draft, tools = @tools,
+      draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
       agent_id = @agent_id, agent_files = @agent_files,
       skills = @skills
     WHERE project_dir = @project_dir AND id = @id

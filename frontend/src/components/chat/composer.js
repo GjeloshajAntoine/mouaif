@@ -48,7 +48,7 @@ export function clearComposerDraft(projectDir, chatId, refs, updateChat) {
     clearTimeout(refs.draftSaveTimer.current);
     refs.draftSaveTimer.current = null;
   }
-  return updateChat({ draft: '' });
+  return updateChat({ draft: '', draftAttachments: null });
 }
 
 // onComposerInput(refs, projectDir, chatId, updateChat)

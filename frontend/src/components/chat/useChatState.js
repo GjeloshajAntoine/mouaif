@@ -34,7 +34,7 @@ import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueCo
 import { syncThinkingSelect } from './thinking.js';
 import { send as sendTurn, runShellCommand, runMcpCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
-import { addImagesFromFiles } from './imageInput.js';
+import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
 //
@@ -667,6 +667,10 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
           autoresize(refs);
         }
         if (promptInput.current) setComposerText(promptInput.current.value);
+// Restore any pending image draft from the chat record.
+if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
+  setImageAttachments(c.draftAttachments);
+}
         if (chatName.current) chatName.current.textContent = c.title || chatId;
         state.thinkingLevel = c.thinkingLevel || '';
         state.maxOutputTokens = c.maxOutputTokens || '';
@@ -1000,13 +1004,13 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
       const files = e.clipboardData && e.clipboardData.files;
       if (files && Array.from(files).some((f) => /^image\//i.test(f.type || ''))) {
         e.preventDefault();
-        addImagesFromFiles(files, { setImageAttachments, setChatStatus: (txt, st) => setChatStatus(refs, txt, st) });
+        addImagesFromFiles(files, { setImageAttachments, setChatStatus: (txt, st) => setChatStatus(refs, txt, st), updateChat: updateChatBound });
       }
     },
     onImagePickerChange: (e) => {
-      addImagesFromFiles(e.currentTarget.files, { setImageAttachments, setChatStatus: (txt, st) => setChatStatus(refs, txt, st) });
+      addImagesFromFiles(e.currentTarget.files, { setImageAttachments, setChatStatus: (txt, st) => setChatStatus(refs, txt, st), updateChat: updateChatBound });
     },
-    onRemoveImage: (idx) => setImageAttachments((prev) => prev.filter((_, i) => i !== idx)),
+    onRemoveImage: (idx) => removeImageAttachment(idx, setImageAttachments, updateChatBound),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
     onCancelRunning,
     onBack: () => { window.location.hash = '#/projects'; },

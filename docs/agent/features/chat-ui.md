@@ -39,6 +39,9 @@ server (`409 EALREADY_RUNNING`). The send path in
 treats that status specially: it drops the optimistic bubble, restores the
 composer (text, attachments, and the debounced draft), and shows a busy status
 instead of an error card, so the same-disk poll cannot wipe the message.
+Image attachments are also persisted as a chat-level draft. `chat_store`
+carries a `draft_attachments` column (JSON array), written alongside the text
+`draft` field. The composer restores it on reopen and clears it after a send.
 
 - Build: [frontend/vite.config.js](../../frontend/vite.config.js), `frontend/index.html`, [frontend/src/main.jsx](../../frontend/src/main.jsx), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Vite emits hashed assets under `frontend/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
 - Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/` route prefers `frontend/dist/`, falls back to `frontend/` for dev.

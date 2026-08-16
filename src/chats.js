@@ -97,6 +97,9 @@ dbPatch.maxOutputTokens = typeof patch.maxOutputTokens === 'string' ? patch.maxO
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
 dbPatch.draft = typeof patch.draft === 'string' ? patch.draft : '';
 }
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'draftAttachments')) {
+  dbPatch.draftAttachments = Array.isArray(patch.draftAttachments) && patch.draftAttachments.length ? patch.draftAttachments : null;
+}
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
 if (patch.tools === null) {
 dbPatch.tools = null;
