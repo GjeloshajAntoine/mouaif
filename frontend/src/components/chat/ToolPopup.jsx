@@ -119,42 +119,21 @@ export function ToolPopup(props) {
   }
 
   // MCP authorization — same layered model as the chat Tools card and
-  // the project settings tree: an "MCP default" gate row (the project's
-  // shared fallback) plus one Off/Ask/Allow segment per MCP server group
-  // (the per-server override, showing the effective mode). Writes go
-  // through onSaveMcpAuth so the card and settings page stay in sync.
+  // the project settings tree: one Off/Ask/Allow segment per MCP server
+  // group (the per-server override, showing the effective mode). Writes
+  // go through onSaveMcpAuth so the card and settings page stay in sync.
   const mcpAuthState = mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
-  const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));
-  if (firstMcp >= 0) {
-    const onSaveMcp = (patch) => onSaveMcpAuth && onSaveMcpAuth(patch);
-    groups.splice(firstMcp, 0, {
-      id: 'mcp',
-      name: 'MCP default',
-      description: 'gate for servers without an override',
-      checked: (mcpAuthState.mode || 'ask') !== 'off',
-      hideCheckbox: true,
-      control: h(McpAuthSeg, {
-        name: 'MCP default',
-        slug: null,
-        servers: mcpAuthState.servers,
-        shared: mcpAuthState,
-        namePrefix: 'popup-mcp',
-        onSave: onSaveMcp
-      }),
-      tools: []
+  for (const g of groups) {
+    if (!g.id.startsWith('mcp-')) continue;
+    const slug = g.id.slice(4);
+    g.control = h(McpAuthSeg, {
+      name: g.name,
+      slug,
+      servers: mcpAuthState.servers,
+      shared: mcpAuthState,
+      namePrefix: 'popup-mcp',
+      onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
     });
-    for (const g of groups) {
-      if (!g.id.startsWith('mcp-')) continue;
-      const slug = g.id.slice(4);
-      g.control = h(McpAuthSeg, {
-        name: g.name,
-        slug,
-        servers: mcpAuthState.servers,
-        shared: mcpAuthState,
-        namePrefix: 'popup-mcp',
-        onSave: onSaveMcp
-      });
-    }
   }
 
   function handleToggleGroup(groupId, checked) {
@@ -162,17 +141,11 @@ export function ToolPopup(props) {
       if (onToggleAgentFiles) onToggleAgentFiles(checked);
       return;
     }
-    if (groupId === 'skills') {
-      if (onToggleSkills) onToggleSkills(checked);
-      return;
-    }
-    // MCP default gate: the group checkbox is a quick Off ↔ Ask for the
-    // project's shared MCP fallback (same shortcut as the chat card).
-    if (groupId === 'mcp') {
-      if (onSaveMcpAuth) onSaveMcpAuth({ mode: checked ? 'ask' : 'off' });
-      return;
-    }
-    if (onToggleToolGroup) {
+  if (groupId === 'skills') {
+    if (onToggleSkills) onToggleSkills(checked);
+    return;
+  }
+  if (onToggleToolGroup) {
       const group = groups.find((g) => g.id === groupId);
       if (group) onToggleToolGroup(group.tools.map((t) => t.id), checked);
     }

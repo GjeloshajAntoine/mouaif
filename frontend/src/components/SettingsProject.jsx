@@ -464,12 +464,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     }
   }
 
-  function pickMcpMode(newMode) {
-    const allowlist = newMode === 'allow' ? [] : mcpAuth.allowlist;
-    setMcpAuth((prev) => Object.assign({}, prev, { mode: newMode, allowlist }));
-    saveMcpAuthorization({ mode: newMode, allowlist });
-  }
-
   function pickServerAuthMode(slug, newMode) {
     setMcpAuth((prev) => {
       const entry = prev.servers && prev.servers[slug];
@@ -763,30 +757,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 
     const servers = (mcpServers || []).filter((s) => s && s.id);
     if (servers.length) {
-    groups.push({
-      id: 'mcp',
-      name: 'MCP default',
-      description: 'gate for MCP servers without an override',
-      checked: (mcpAuth.mode || 'ask') !== 'off',
-      hideCheckbox: true,
-      control: h(McpAuthSeg, {
-          name: 'MCP default',
-          slug: null,
-          servers: mcpAuth.servers,
-          shared: mcpAuth,
-          namePrefix: 'sp-mcp',
-          onSave: (patch) => {
-            if (!patch) return;
-            const mode = patch.mode || 'ask';
-            const allowlist = Array.isArray(patch.allowlist) ? patch.allowlist : [];
-            setMcpAuth((prev) => Object.assign({}, prev, { mode, allowlist }));
-            saveMcpAuthorization({ mode, allowlist });
-          }
-        }),
-        tools: [],
-        extra: mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null
-      });
-
       for (const server of servers) {
         const slug = server.slug || server.id;
         const entry = mcpAuth.servers && mcpAuth.servers[slug];
@@ -871,11 +841,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
   function toggleSettingsGroup(groupId, checked) {
     const mode = checked ? 'ask' : 'off';
-    if (groupId === 'shell') pickShellMode(mode);
-    else if (groupId === 'subagent') pickSubagentMode(mode);
-    else if (groupId === 'task') pickTaskMode(mode);
-    else if (groupId === 'webpreview') pickWebpreviewMode(mode);
-    else if (groupId === 'report_progress') pickProgressMode(mode);
+  if (groupId === 'shell') pickShellMode(mode);
+  else if (groupId === 'subagent') pickSubagentMode(mode);
+  else if (groupId === 'task') pickTaskMode(mode);
+  else if (groupId === 'webpreview') pickWebpreviewMode(mode);
+  else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') {
       const names = toolsCatalog
@@ -883,7 +853,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         .map((tool) => tool.name);
       pickFileGroupMode(names, mode);
     }
-    else if (groupId === 'mcp') pickMcpMode(mode);
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
 
