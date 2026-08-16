@@ -2,22 +2,20 @@
 
 ## Overview
 
-`mouaif` ships an **MCP client** that talks to any [Model Context Protocol](https://modelcontextprotocol.io/) server the user configures. MCP servers are the third-party tool ecosystem — Filesystem, Git, Postgres, Playwright, custom internal tools — they speak JSON-RPC over stdio or Streamable HTTP and advertise their tools. Once a server is configured for a project, the AI client surfaces its `tools/list` as part of the model's tool set, intercepts `tool_call` events, dispatches them to the running MCP server, and feeds the result back as a `tool` message.
-
-The server itself stays plain Node. The `@modelcontextprotocol/sdk` is scoped to a single module ([src/mcp.js](../../src/mcp.js)) so MCP transport handling stays localized.
+`mouaif` includes an **MCP client** that connects to any [Model Context Protocol](https://modelcontextprotocol.io/) server. MCP servers provide third-party integrations (such as databases, custom APIs, browser automation, or search) over stdio or HTTP transports. Once a server is configured, its tools are automatically made available to the AI assistant in your chat sessions.
 
 ## Usage
 
-### Scope: app-wide or per project
+### Scope: global or per-project
 
-Every MCP server is configured in exactly one of two scopes:
+Every MCP server can be configured in one of two scopes:
 
-- **App** — stored in the app SQLite store (`~/.mouaif/store.sqlite`) under `mcp.servers`. The server is visible to every project: its tools are advertised in any chat, and its child process runs per context (each project gets its own spawn).
-- **Project** — committed to `<projectDir>/.mcp.json` under `servers`, so it can be reviewed and shared with the repo.
+- **Global (App-wide)** — configured in **Settings → MCP**. Available across all registered projects and chats.
+- **Project-scoped** — saved in your project's `.mcp.json` file so it can be committed and shared with team members.
 
-A project sees the **union** of both scopes; a project entry whose slug matches an app entry shadows it (the settings resolution order, decisions §2). The shadowed app entry still exists in the app store — the app-wide MCP settings list can edit, start, or delete it — but the chat in that project only sees the project entry.
+A project sees the combination of both scopes, with project-level entries overriding global entries with the same name.
 
-The two scopes have two homes in Settings, each its own page (no tabs):
+The two scopes can be managed from Settings:
 
 - **Settings → App defaults → MCP servers** (`#/settings/mcp`) — the app-wide list, available in every project. No project is needed; Start/Stop work without one (the session lives in the shared `app` context and is reachable from every chat). A **Project servers** row at the bottom deep-links into a project's list by path. Tool-call permissions (the app-level gate) are deliberately *not* edited here — they live with the other tool checkboxes in **Settings → This project → Tools** and the chat tools card, so this page manages servers only and never shows a permission control that could be mistaken for a per-server toggle.
 - **Settings → This project → MCP servers** (under **More settings**; `#/settings/mcp?projectDir=…`) — the single per-project entry point. It shows the merged server list (app entries first, each marked with an **app** / **project** badge, and **sorted alphabetically by name** within each scope group) with compact, edge-to-edge rows that match the Agents list: status and tool count, inline lifecycle actions, and a link to the server editor (`#/settings/mcp/<id>?projectDir=…`). Per-server and shared-gate authorization live in **Settings → This project → Tools** (the MCP rows of the tool tree) and the per-tool layer lives in the server editor; see Authorization below.

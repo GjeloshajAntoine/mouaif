@@ -1055,37 +1055,33 @@ function buildLandingPage(outDir) {
 </section>
 
 <section class="section" id="how-to-run">
-  <h2>How to run</h2>
-  <p class="lead">One Node process serves the API, the mobile UI, and the SSE chat stream.</p>
-  <pre><code class="language-bash">git clone &lt;repo-url&gt;
-cd mouaif
-npm install
-npm run build:web       # build the mobile UI into frontend/dist/
-mouaif serve             # http://127.0.0.1:5732</code></pre>
-  <p>Open <code>http://127.0.0.1:5732/</code> on your phone or any browser. Tap <strong>+ Add project</strong> to pick a folder, configure a provider in <strong>Settings</strong>, then define that project's model IDs in its <code>.mouaif.json</code>.</p>
+  <h2>Quick start</h2>
+  <p class="lead">Start the assistant server with a single command:</p>
+  <pre><code class="language-bash">mouaif serve</code></pre>
+  <p>Open <code>http://127.0.0.1:5732/</code> on your phone or desktop browser. Tap <strong>+ Add project</strong> to pick a folder, connect an AI provider in <strong>Settings</strong>, and start chatting.</p>
 </section>
 
 <section class="section" id="projects">
   <h2>How projects work</h2>
-  <p class="lead">A project is a directory registered with the server, plus per-project settings that live next to your code.</p>
+  <p class="lead">A project is any directory on your computer, paired with settings tailored to that codebase.</p>
   <ul>
-    <li><strong>Registration</strong> — register a folder as a project (pick an existing directory or create a new one).</li>
-    <li><strong>Settings</strong> — per-project overrides in <code>&lt;projectDir&gt;/.mouaif.json</code>, committed with the repo. App-level defaults stay in <code>~/.mouaif/store.sqlite</code>.</li>
-    <li><strong>Models</strong> — providers are app-level; model IDs are user-defined per project and reference a provider.</li>
-    <li><strong>Chats</strong> — persisted per project and listed under a project card.</li>
+    <li><strong>Project workspace</strong> — register any workspace directory or create a new one directly from the UI.</li>
+    <li><strong>Scoped configuration</strong> — customize prompts, tools, and model choices per project.</li>
+    <li><strong>Provider flexibility</strong> — connect global providers once, then select models per project or chat.</li>
+    <li><strong>Persistent chats</strong> — chats and turn history are saved and organized under each project card.</li>
   </ul>
-  <p>See <a href="features/project-card.html">Project card</a> and <a href="features/folder-picker.html">Folder picker</a> for the full picture.</p>
+  <p>See <a href="features/project-card.html">Project card</a> and <a href="features/folder-picker.html">Folder picker</a> for details.</p>
 </section>
 
 <section class="section" id="mcp-tools">
-  <h2>MCP &amp; tools</h2>
-  <p class="lead">Give the model real tools — native or third-party MCP servers — each with its own authorization gate.</p>
+  <h2>Tools &amp; integrations</h2>
+  <p class="lead">Give the model real tools — terminal execution, file inspection, task management, and third-party MCP servers.</p>
   <ul>
-    <li><strong>Native tools</strong> — <code>shell</code>, <code>read_file</code>, <code>list_files</code>, <code>search_files</code>, <code>write_file</code>, <code>subagent</code>, <code>task</code>, <code>ask_user</code>.</li>
-    <li><strong>MCP servers</strong> — stdio or Streamable HTTP, app-wide or per project, surfaced as the model's tool set.</li>
-    <li><strong>Authorization</strong> — per-project <code>off</code> / <code>ask</code> / <code>allow</code> gate on every call.</li>
+    <li><strong>Native capabilities</strong> — terminal commands, reading and editing files, task tracking, interactive prompts, and agent delegation.</li>
+    <li><strong>Model Context Protocol (MCP)</strong> — easily connect custom or registry MCP servers for browser automation, database queries, and more.</li>
+    <li><strong>Safety &amp; permissions</strong> — complete control with per-tool authorization gates (Ask, Allow, or Off).</li>
   </ul>
-  <p>See <a href="features/mcp.html">MCP</a>, <a href="features/shell-tool.html">Shell tool</a>, and <a href="features/file-tools.html">File tools</a>.</p>
+  <p>See <a href="features/tool-authorization.html">Tool authorization</a>, <a href="features/mcp.html">MCP</a>, and <a href="features/shell-tool.html">Shell tool</a>.</p>
 </section>
 `;
   const html = htmlPage({

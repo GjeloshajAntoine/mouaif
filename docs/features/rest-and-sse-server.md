@@ -1,31 +1,28 @@
-# REST + SSE server
+# Assistant server & CLI
 
 ## Overview
 
-`mouaif serve` starts an HTTP server that exposes a small REST surface plus a Server-Sent Events stream. Clients subscribe to `/events` and receive broadcasts whenever `POST /data` mutates the shared store.
+mouaif runs as a local background process and CLI that hosts the mobile web interface, orchestrates AI provider requests, and manages real-time conversational streaming.
 
 ## Usage
 
-````bash
-mouaif serve --port 5732 --host 0.0.0.0
-````
+Start the server using the default port (`5732`):
 
-Endpoints:
+```bash
+mouaif serve
+```
 
-| Method | Path       | Description                          |
-|--------|------------|--------------------------------------|
-| GET    | `/`        | Server info                          |
-| GET    | `/data`    | Get stored data                      |
-| POST   | `/data`    | Update data (send JSON body)         |
-| GET    | `/events`  | Subscribe to Server-Sent Events      |
+### Options
 
-## Behavior
+```bash
+mouaif serve --port 9000       # use a custom port
+mouaif serve --watch           # restart automatically on local source changes
+mouaif info                    # show package version and default port
+```
 
-- CORS is permissive (`*`) for all routes; `OPTIONS` is handled and the
-	advertised methods include `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
-- SSE clients receive a `connected` event on attach and a heartbeat comment every 30 s.
-- Mutating `POST /data` triggers an SSE `data-update` event for every connected client.
+Once running, open `http://127.0.0.1:5732/` in any browser on your machine or phone.
 
 ## Related
 
-- Per-chat NDJSON traces are documented in [Chat UI](./chat-ui.md). They do not reuse this global SSE broadcast path; each trace is a project-local file.
+- [Chat UI](./chat-ui.md) — the web interface.
+- [App and project settings](./app-and-project-settings.md) — configuration hierarchy and defaults.

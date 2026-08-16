@@ -34,6 +34,7 @@ Each card's summary line reflects live state (e.g. `1 connected`, `3 models pric
 | `#/settings/project/output[?projectDir=<abs path>]` | `SettingsProjectView` (`page: 'output'`) | **File tool options** — the `toolOutput` profile (one three-option preset select: Small / Balanced / Full) with a live JSON readout, a sibling of Technical details under Settings → Project. |
 | `#/settings/copilot` | — (legacy alias) | Old GitHub Copilot OAuth screen. The `client_id` field now lives in the Copilot provider form; this hash redirects to `#/settings/providers/github-copilot`. |
 | `#/settings/tags[?projectDir=<abs path>]` | `SettingsTagsView` | Per-project file tagging (decisions §15). Resolves the registered project id from `projectDir` when no `projectId` is passed. |
+| `#/settings/access` | `AccessSettingsView` | Manage access authentication, change password, enroll/remove WebAuthn passkeys, and sign out. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |
 
 The provider form has all fields on one screen: provider id (locked after creation), API base URL, authentication mode, an API key (when the auth is `apikey`) or an OAuth-account <select> with an inline sign-in helper (when the auth is `oauth`). On the **new**-provider screen the provider `<select>` defaults to `openai-compatible` (the first, API-key-only entry). The active option is marked with the `selected` attribute rather than a controlled `value` prop on the `<select>`; a controlled `value` set before the `<option>` children are attached is silently dropped by the DOM, which made the picker fall through to the *last* entry (`github-copilot`) and open the new-provider form on the OAuth-only screen for no reason. The reserved `github-copilot` provider hides the API base URL row (the base URL is hard-coded) and replaces the auth `<select>` with a static "OAuth (required)" badge. The provider's `hint` is also promoted to a colored notice so the OAuth requirement is unmistakable on a phone. The same reserved-rail hides the `apikey` row and forces `auth: oauth` at save time, so a user cannot submit a model the server would later reject with `ENOAUTH`.
@@ -48,20 +49,17 @@ Project settings use a regular, single-column form: a quiet path and scope intro
 
 The project view's groups are scoped on purpose: a **Chat defaults** group holds settings that live in `.mouaif.json` and apply to chats in this project (prompt style today; anything left on its default follows the app-level value). Per-chat actions are never mixed into a project group — a per-chat action next to a project setting reads as "this writes `.mouaif.json`", which it does not. The trace toggle, trace export, and delete-chat all live on the **Technical details** page instead. Reach it from the chat's settings button → the **Technical details** link at the bottom of project settings, which carries the `chatId`. The page shows the chat-scoped trace/export/delete controls only when a `chatId` is on the route; without one it shows just the raw `.mouaif.json` editor and the resolved settings.
 
-The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness. It is part of the Preact + Vite bundle built with `npm run build:web` and served from `frontend/dist/`.
+The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors, and safe-area awareness.
 
 ## Behavior
 
-- **Provider connections are upserted by id.** Saving `openai-compatible` again updates that provider's global connection without creating a duplicate.
-- **Models remain project-defined.** `GET /api/ai/models?projectDir=...` reads the project's resolved `models` array. When a chat starts, the server combines the selected model with the matching app-level provider connection.
-- **`POST /api/settings/app/reset` is destructive on purpose.** The body lists the keys to remove; the rest of the app object is preserved. This is a `REPLACE` of the app object with the listed keys omitted, not a deep merge. A bad key in the list returns 400. Resettable keys are the `DEFAULTS` keys plus the additive app keys that have no in-code default — `modelPricing` and `githubCopilot` — so the pricing table and the custom Copilot OAuth client can actually be cleared (`RESETTABLE_APP_KEYS` in [src/index.js](../../src/index.js)).
-- **`DELETE /api/settings/app/providers/:id` returns 404 when unknown.** The UI confirms with the user before deleting a provider connection.
-- **API keys are stored in plaintext in the SQLite store.** The keyring is for OAuth tokens only (decision §11). The doc is honest about this; the project-level encryption-when-resting decision is open and out of scope for this commit.
-- **OAuth provider connections carry `auth: 'oauth'` and an optional `oauthAccount`.** An OAuth connection has any stale API key removed. The AI client resolves the keyring entry through `src/auth.js → authProviderFor(model)` after hydrating the project model with its provider connection.
-- **`github-copilot` is reserved.** The UI lists it in the provider dropdown (per decision §10) but forces the auth select to `oauth` and disables the `apikey` option, so a user cannot submit a model the server would later reject with `ENOAUTH`. The reserved list is the same one in `src/ai.js → ENDPOINTS` (decision §10, "the last is reserved; its auth flow ships in a later commit").
+- **Global provider connections** — editing an existing provider updates its settings globally across all projects.
+- **Project overrides** — models and prompt styles customized in project settings apply specifically to that project.
+- **Reset app settings** — the "Reset all app settings" button in Settings → About allows resetting global settings to defaults while leaving all on-disk project files untouched.
+- **Provider deletion** — removing a provider connection prompts for confirmation.
 
 ## Related
 
 - Storage: [docs/features/app-and-project-settings.md](./app-and-project-settings.md).
+- Access security: [docs/features/access-authentication.md](./access-authentication.md).
 - Chat proxy that consumes the models list: [docs/features/ai-client.md](./ai-client.md).
-- The model record shape (the one this UI edits) is defined in [docs/features/ai-client.md](./ai-client.md) § "Model record".

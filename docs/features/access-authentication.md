@@ -74,3 +74,8 @@ Browser clients use an HttpOnly session cookie. Non-browser REST clients can use
 ```bash
 curl --user 'alice:a-long-password' http://127.0.0.1:5732/api/settings
 ```
+
+## Related
+
+- [Settings UI](./settings-ui.md) — managing settings and access in the mobile web interface.
+- [Provider authentication](./auth.md) — connecting AI providers via API keys and OAuth.

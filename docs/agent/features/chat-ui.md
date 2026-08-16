@@ -2,6 +2,31 @@
 
 > Agent-facing reference for [`docs/features/chat-ui.md`](../../features/chat-ui.md). The human-facing surface lives in that file; the implementation details, wire shapes, and source paths live here.
 
+## HTTP (chat-aware)
+
+| Method | Path | Body / Query | Response |
+|--------|------|--------------|----------|
+| GET    | `/api/chats/:id/messages?projectDir=<abs>` | — | `{ messages: [{ role, content, ts }] }` (422 on corrupt file) |
+| POST   | `/api/chats/:id/messages` | `{ projectDir, role, content }` | `{ message }` (201) |
+| DELETE | `/api/chats/:id/messages?projectDir=<abs>` | — | `{ ok: true, removed }` |
+| POST   | `/api/chats/:id/messages/stream` | `{ projectDir, modelId, providerId?, content }` | **SSE stream** of `message` / `done` / `error` events; `providerId` resolves live-catalog models that are not stored in the optional project `models` array. |
+| GET    | `/api/ai/models?projectDir=<abs>` | — | `{ models: [{ id, provider, label, auth }], providers: [..] }` — project-level model list (the `models` array in `.mouaif.json`). |
+| GET    | `/api/ai/models/providers` | — | `{ providers: [{ id }] }` — configured app-level provider connections, with no credentials. |
+| GET    | `/api/ai/models/live?provider=<id>` | — | `{ models: [{ id, label, contextWindow? }], fetchedAt, cached }` — live catalog from the upstream `/models` endpoint (or curated for Anthropic/Copilot). Cached 1h per `provider:credHash`. 400 on unknown provider; 502 `{ error, code: 'EUPSTREAM' }` on upstream failure; 8 s `AbortController` timeout. |
+
+## Build and Dev
+
+```bash
+npm install
+npm run build:web   # writes frontend/dist/
+node bin/mouaif.js serve
+```
+
+Dev with HMR:
+```bash
+npm run dev:web      # vite dev server on :5173 (not used by the Node server)
+```
+
 ## Implementation notes
 
 When a chat page is reloaded while an agent run is still active on the
@@ -39,13 +64,13 @@ server (`409 EALREADY_RUNNING`). The send path in
 treats that status specially: it drops the optimistic bubble, restores the
 composer (text, attachments, and the debounced draft), and shows a busy status
 instead of an error card, so the same-disk poll cannot wipe the message.
+
 Image attachments are also persisted as a chat-level draft. `chat_store`
 carries a `draft_attachments` column (JSON array), written alongside the text
 `draft` field. The composer restores it on reopen and clears it after a send.
 
-- Build: [frontend/vite.config.js](../../frontend/vite.config.js), `frontend/index.html`, [frontend/src/main.jsx](../../frontend/src/main.jsx), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Vite emits hashed assets under `frontend/dist/assets/`. Current production output is about 69 KB JS + 26 KB CSS, about 22 KB + 5 KB gzipped.
-- Server: [src/index.js](../../src/index.js) → `handleChats()` now also handles `/api/chats/:id/messages[/:action]` and delegates the stream to `handleChatStream()`. The static `/` route prefers `frontend/dist/`, falls back to `frontend/` for dev.
-- Messages: [src/messages.js](../../src/messages.js) — per-chat file `<projectDir>/.mouaif.messages.<chatId>.json`. Robust read (drops malformed entries), throws `MOUAIF_PROJECT_PARSE_ERROR` (422) only if the file itself is corrupt.
-- Trace: [src/trace.js](../../src/trace.js) — per-chat NDJSON writer, no-op when `chat.trace` is false or the directory can't be created.
-- Bottom nav: Projects / Inspector / Settings. Settings contains provider connections, provider authentication, and the raw project-settings editor.
-- Dropped (intentionally): the previous `AI test` panel and the `Virtual list demo`. They were dev-time affordances; the chat view replaces the AI test, while the Inspector now consumes the virtual-list primitive.
+- Build: [frontend/vite.config.js](../../frontend/vite.config.js), `frontend/index.html`, [frontend/src/main.jsx](../../frontend/src/main.jsx), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Vite emits hashed assets under `frontend/dist/assets/`.
+- Server: [src/index.js](../../src/index.js) → `handleChats()` handles `/api/chats/:id/messages[/:action]` and delegates streaming to `handleChatStream()`. The static `/` route prefers `frontend/dist/`, falls back to `frontend/` for dev.
+- Messages: per-chat storage in SQLite database `~/.mouaif/store.sqlite`.
+- Trace: [src/trace.js](../../src/trace.js) — per-chat NDJSON writer (`<projectDir>/.mouaif/traces/<chatId>.ndjson`), no-op when `chat.trace` is false.
+- Bottom nav: Projects / Inspector / Settings.

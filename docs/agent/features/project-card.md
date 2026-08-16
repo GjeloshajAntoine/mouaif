@@ -2,6 +2,26 @@
 
 > Agent-facing reference for [`docs/features/project-card.md`](../../features/project-card.md). The human-facing surface lives in that file; the implementation details, wire shapes, and source paths live here.
 
+## On-disk shape
+
+A project's chats metadata is stored in `<projectDir>/.mouaif.json` (or database when DB storage is enabled):
+
+```json
+{
+  "promptSize": "extensive",
+  "chats": [
+    {
+      "id": "2e5d3d07",
+      "title": "Refactor auth",
+      "createdAt": "2026-07-14T12:34:00.000Z",
+      "lastOpenedAt": null,
+      "trace": true,
+      "promptSize": "extensive"
+    }
+  ]
+}
+```
+
 ### HTTP
 
 | Method | Path | Body / Query | Response |

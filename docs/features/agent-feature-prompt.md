@@ -51,9 +51,8 @@ When discovered agent files are shown in the chat card, every file row has a che
 
 ## Related
 
-- [docs/features/prompt-profiles.md](./prompt-profiles.md) — the tool works best with the `very-small` profile, where tool schemas are hidden behind `discover_tool`.
-- [docs/features/tool-authorization.md](./tool-authorization.md) — the auth state that the feature summary and tool report.
-- [docs/features/agents.md](./agents.md) — the agent state reported by the feature system.
-- [docs/features/file-tagging.md](./file-tagging.md) — the tagging state reported by the feature system.
-- [docs/features/file-tools.md](./file-tools.md) — file tool authorization state reported.
-- Source: `src/agentFeatures.js`, `src/index.js`, `src/ai.js`.
+- [Prompt-size profiles](./prompt-profiles.md) — selecting between very-small, average, and extensive prompt profiles.
+- [Tool authorization](./tool-authorization.md) — tool authorization rules and options.
+- [Agents](./agents.md) — subagent delegation personas.
+- [File tagging](./file-tagging.md) — tagging context files in projects.
+- [Native file tools](./file-tools.md) — reading and managing files.

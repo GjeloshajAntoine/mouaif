@@ -2,6 +2,54 @@
 
 > Agent-facing reference for [`docs/features/auth.md`](../../features/auth.md). The human-facing surface lives in that file; the implementation details, wire shapes, and source paths live here.
 
+## Programmatic (Node)
+
+```js
+const auth = require('mouaif/src/auth.js');
+
+// Store a token blob (any string). Conventionally JSON: { accessToken, refreshToken, expiresAt, scope }.
+await auth.setToken('openai', 'me@example.com', JSON.stringify({
+  accessToken: '...', refreshToken: '...', expiresAt: 1730000000, scope: 'openid profile'
+}));
+
+// Read it back. null if no such account.
+const blob = auth.getToken('openai', 'me@example.com');
+
+// Delete. Idempotent.
+auth.deleteToken('openai', 'me@example.com');
+
+// The non-secret account index. The UI lists this; the keychain is never read directly.
+auth.listAccounts();
+// -> { openai: ['me@example.com'], anthropic: [], google: [], 'github-copilot': [] }
+```
+
+```js
+// The AI client uses the OAuth access token exactly the same way it uses
+// an apiKey, so per-provider builders don't have to know about OAuth.
+const ai = require('mouaif/src/ai.js');
+
+await ai.streamChat({
+  model: {
+    id: 'gpt-4o-mini',
+    provider: 'openai-compatible',   // AI client provider (request shape)
+    baseUrl: 'https://api.openai.com',
+    auth: 'oauth',
+    oauthAccount: 'me@example.com'   // optional; auto-resolved if exactly one is signed in
+  },
+  messages: [{ role: 'user', content: 'hi' }],
+  onEvent: (name, data) => { /* ... */ }
+});
+```
+
+```js
+auth.registerExchange('openai', async ({ pending, code }) => {
+  // 1) POST to the provider's token endpoint with code + code_verifier.
+  // 2) Return the access token + (optional) refresh token.
+  // 3) The callback will store it in the keychain and update the index.
+  return { accessToken: '...', refreshToken: '...', account: 'me@example.com' };
+});
+```
+
 ## HTTP surface
 
 | Method | Path | Body / Query | Response |
