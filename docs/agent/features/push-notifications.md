@@ -53,6 +53,8 @@ Subscriptions are tied to the browser session through a one-way hash of the sess
 
 The push event handlers are compiled into `dist/sw.js` via the Vite build plugin in `vite.config.js`. The service worker is registered in production builds only (dev mode skips it for HMR speed). Notification actions use same-origin `fetch()` with the HttpOnly session cookie; failures fall back to opening the chat.
 
+The page-reported visibility table is keyed by the worker-side **real client id** (`event.source.id`) so the push handler can match each report against the clients returned by `clients.matchAll()`. The page's own random UUID (`_pageClientId()` in `sw-registration.js`) is only a fallback for engines where `event.source` is unavailable; keying the table by that UUID alone made the "this chat is visible" state un-matchable on Safari/iOS, where the one-shot `event.source.id` report is not populated, so notifications appeared over an open chat.
+
 ### Permission prompt timeouts
 
 The frontend push manager (`frontend/src/components/push.js`) wraps `Notification.requestPermission()` and `navigator.serviceWorker.ready` in deadlines so the Notifications settings screen can never stay locked on `busy`. A permission prompt that never resolves (headless browser, a browser that defers the prompt until a user gesture, or a failed service-worker install) unblocks after 30 s for the prompt and 10 s for the worker, and the **Enable** control re-enables with an explanatory status. The settings screen also releases its `busy` flag in a `finally` block so every toggle path — including disable — always returns the UI to a usable state.

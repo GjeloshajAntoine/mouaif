@@ -214,7 +214,14 @@ self.addEventListener('message', (event) => {
   // state snapshot arrives on the transferred port immediately, so a
   // push that lands right after page load is already suppressible.
   if (event.data && event.data.type === 'VISIBILITY_PORT' && event.ports && event.ports[0]) {
-    const clientId = event.data.clientId;
+    // Key the persistent channel by the real client id (event.source.id)
+    // when available, so the push handler can match the report against
+    // the clients returned by clients.matchAll(). The page's random
+    // clientId (sw-registration.js) is only a fallback for engines where
+    // event.source is missing; a UUID that never equals client.id made
+    // the page-reported "this chat is visible" state un-matchable on
+    // Safari/iOS, so notifications appeared over an open chat.
+    const clientId = (event.source && event.source.id) || event.data.clientId;
     const port = event.ports[0];
     port.onmessage = (msg) => {
       if (msg.data && msg.data.type === 'VISIBILITY_STATE') updateClientView(clientId, msg.data);
