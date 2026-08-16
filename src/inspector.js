@@ -665,6 +665,7 @@ module.exports = {
   fetchInspectorTargets,
   openInspectorTarget,
   closeInspectorTarget,
+  sendTargetCommand,
   reloadInspectorTarget,
   navigateInspectorTarget,
   // WS proxy

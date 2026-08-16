@@ -39,7 +39,7 @@
 //                              is the richer object surfaced to the UI
 //                              in the tool_result SSE event.
 
-const { openInspectorTarget, sendTargetCommand, closeInspectorTarget } = require('../inspector.js');
+const { openInspectorTarget, sendTargetCommand, closeInspectorTarget, fetchInspectorTargets } = require('../inspector.js');
 
 // Thumbnail dimensions: width is fixed, height is proportionally scaled
 // from the captured viewport (so a tall page stays tall). Capped so a
@@ -215,7 +215,12 @@ async function runWebpreview(opts) {
       const layout = (metrics && metrics.layoutViewport) || {};
       const width = clampPositive(layout.clientWidth, DEFAULT_VIEWPORT.width) || DEFAULT_VIEWPORT.width;
       const height = clampPositive(layout.clientHeight, DEFAULT_VIEWPORT.height) || DEFAULT_VIEWPORT.height;
-      const dpr = clampPositive(metrics && metrics.devicePixelRatio, 4) || 1;
+      // devicePixelRatio is absent from some Chrome builds (e.g. the
+      // headless shell used for the Inspector). Default to 1 so the
+      // clip scale below stays 1:1 instead of shrinking to a fraction.
+      const dpr = (metrics && metrics.devicePixelRatio > 0)
+        ? clampPositive(metrics.devicePixelRatio, 4)
+        : 1;
       viewport = { width, height, dpr };
     } catch { /* keep defaults if getLayoutMetrics isn't supported */ }
 
@@ -274,11 +279,20 @@ async function runWebpreview(opts) {
       };
     }
 
-    // Pick a friendly title from the captured page; modern Chrome's
-    // /json/list refreshes the target record on navigation, but
-    // freshly-opened tabs may still report ''. Fall back to the
-    // hostname so the chat card never shows an empty label.
-    const title = (target && target.title) || url.hostname;
+    // Pick a friendly title from the captured page. The open-time
+    // target record often reports '' for a fresh tab, so re-fetch the
+    // target list after load — Chrome refreshes the record's title once
+    // the page has navigated. Fall back to the hostname only when no
+    // title is discoverable so the chat card never shows an empty label.
+    let title = (target && target.title) || '';
+    if (!title) {
+      try {
+        const list = await fetchInspectorTargets(null);
+        const live = Array.isArray(list) && list.find((x) => x && x.id === targetId);
+        if (live && typeof live.title === 'string' && live.title.trim()) title = live.title;
+      } catch { /* title is cosmetic; keep the hostname fallback */ }
+    }
+    if (!title) title = url.hostname;
     const dataUrl = 'data:image/jpeg;base64,' + data;
 
     // Result shape the chat UI renders: thumbnail + meta. The
