@@ -130,7 +130,7 @@ export function App() {
   else if (view.name === 'settingsProjectOutput') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'output' });
   else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
   else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
-  else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir, initialId: view.id || '' });
+  else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir, initialId: view.id || '', scope: view.scope || '' });
   else if (view.name === 'settingsAgents') body = h(SettingsAgentsView, { projectDir: view.projectDir });
   else if (view.name === 'settingsAgentEdit') body = h(SettingsAgentEditView, { id: view.id, projectDir: view.projectDir });
   else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });

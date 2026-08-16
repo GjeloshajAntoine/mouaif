@@ -7,13 +7,15 @@
 // while the current one has unsaved changes asks for confirmation
 // so the user does not silently lose work.
 //
+// Supports two scopes:
+//   - App-wide: stored globally in SQLite database.
+//   - Project: stored in <projectDir>/.mouaif.json.
+//
 // The prompt's optional **chat preset** (tools + agent files + skills)
 // uses the SAME controls as the rest of the settings: the standard
 // `ToolTree` (the same one the chat Tools card and Settings → Project
 // use) and synthetic `agent-files` / `skills` groups that mirror
-// the chat's ToolPopup. There is no bespoke checklist — a prompt
-// preset is a per-chat allowlist, so it lists the same tools the
-// chat can pick.
+// the chat's ToolPopup.
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
@@ -27,7 +29,6 @@ async function copyText(text) {
     await navigator.clipboard.writeText(text || '');
     return true;
   } catch {
-    // Fallback for non-secure contexts / older browsers.
     try {
       const ta = document.createElement('textarea');
       ta.value = text || '';
@@ -43,30 +44,22 @@ async function copyText(text) {
 }
 
 function resolveProjectDir(view) {
-  if (view && view.projectDir) return view.projectDir;
+  if (view && typeof view.projectDir === 'string') return view.projectDir;
   return (activeProject.value && activeProject.value.dir) || '';
 }
 
-// agentFileNameOf(entry) -> string
-// Defensive accessor for agent-file entries (the /api/features payload
-// uses { name, size } while the chat path also emits { name, relPath }).
 function agentFileNameOf(entry) {
   if (!entry) return '';
   if (typeof entry === 'string') return entry;
   return entry.name || entry.relPath || '';
 }
 
-// skillIdOf(entry) -> string
-// Skill entries from the catalog carry `id` (the kebab-case skill name).
 function skillIdOf(entry) {
   if (!entry) return '';
   if (typeof entry === 'string') return entry;
   return entry.id || entry.name || '';
 }
 
-// Compare two presets for "saved state" equality. Returns true when
-// the two presets would serialize to the same payload (so the dirty
-// flag clears on Save). Both null is "equal" (both have no preset).
 function presetsEqual(a, b) {
   const norm = (p) => {
     if (!p) return null;
@@ -91,26 +84,22 @@ function presetsEqual(a, b) {
 }
 
 export function SettingsPromptsView(props) {
-  const projectDir = resolveProjectDir(props);
+  const rawProjectDir = resolveProjectDir(props);
+  // If explicitly opened from Settings -> App defaults (via route or props.scope === 'app'),
+  // or if there is no projectDir, target scope is app.
+  const isAppScopedRoute = (props && props.scope === 'app') || !rawProjectDir;
+  const projectDir = isAppScopedRoute ? '' : rawProjectDir;
 
-  // List of prompts for the project (fetched once on mount / project change).
   const [prompts, setPrompts] = useState([]);
-
-  // The id of the prompt currently being edited in the dropdown. The
-  // sentinel NEW_PROMPT_ID represents an unsaved "new prompt" form.
-  // `initialId` (from a legacy deep link) seeds the picker after the
-  // list loads; until then we leave it as the sentinel so the form
-  // is empty by default.
   const [selectedId, setSelectedId] = useState(NEW_PROMPT_ID);
   const initialId = (props && props.initialId) || '';
+
+  // Scope for the prompt currently being created/edited: 'project' or 'app'
+  const [promptScope, setPromptScope] = useState(projectDir ? 'project' : 'app');
 
   // Editable fields.
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-
-  // Preset state. `tools` is a Set<string> of model-facing tool names
-  // (native family names + MCP slugs). `agentFiles` and `skills` are
-  // booleans. The whole object is `null` when the preset is off.
   const [preset, setPreset] = useState(null);
 
   // Status + busy flags.
@@ -118,19 +107,13 @@ export function SettingsPromptsView(props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copyStatus, setCopyStatus] = useState('Copy');
-  // Built-in prompt-size profiles (Very small / Average / Extensive).
-  // Their system messages are the "default prompts" a user can copy
-  // into the content editor as a starting point.
+
   const [profiles, setProfiles] = useState([]);
   const [showProfileCopy, setShowProfileCopy] = useState(false);
 
-  // Dirty tracking. The dropdown switcher consults this to decide
-  // whether to confirm before discarding edits.
-  const [loadedSnapshot, setLoadedSnapshot] = useState({ title: '', content: '', preset: null });
+  const [loadedSnapshot, setLoadedSnapshot] = useState({ title: '', content: '', preset: null, scope: projectDir ? 'project' : 'app' });
 
-  // Catalog + locks for the ToolTree. Loaded from the project once,
-  // then threaded into `buildToolGroups` every render so the
-  // checkbox state reflects the latest preset edits.
+  // ToolTree data
   const [toolsCatalog, setToolsCatalog] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [agentFilesAvailable, setAgentFilesAvailable] = useState([]);
@@ -139,25 +122,15 @@ export function SettingsPromptsView(props) {
   const [skillsProjectLocked, setSkillsProjectLocked] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Refs to keep callbacks stable across renders so the dropdown
-  // change handler can read the latest "dirty" state without being
-  // recreated on every keystroke.
   const dirtyRef = useRef(false);
   const loadedRef = useRef(loadedSnapshot);
   loadedRef.current = loadedSnapshot;
 
-  // -------------------------------------------------------------------
-  // Loading
-  // -------------------------------------------------------------------
-
   async function loadPrompts() {
-    if (!projectDir) {
-      setPrompts([]);
-      return;
-    }
+    const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
-    try { r = await fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { return; }
+    try { r = await fetchJson('/api/prompts' + qs); }
+    catch { return; }
     if (r.status !== 200) return;
     const list = r.body.prompts || [];
     setPrompts(list);
@@ -174,23 +147,19 @@ export function SettingsPromptsView(props) {
           systemMessage: p.systemMessage || ''
         })));
       }
-    } catch { /* leave profiles empty; the helper just won't render */ }
+    } catch { /* ignore */ }
   }
 
   async function loadProjectData() {
-    if (!projectDir) return;
     setDataLoaded(false);
-    // Catalog and MCP servers feed `buildToolGroups`. The agent-files
-    // and skills discovery + project locks feed the synthetic groups.
-    // Four parallel reads; any failure keeps the empty defaults so
-    // the preset still saves — the user just won't see MCP tools in
-    // the tree if the catalog failed.
+    const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     const [toolsRes, mcpRes, featuresRes, projectRes] = await Promise.all([
-      fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)).catch(() => ({ status: 0, body: {} })),
-      fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)).catch(() => ({ status: 0, body: {} })),
-      fetchJson('/api/features?projectDir=' + encodeURIComponent(projectDir)).catch(() => ({ status: 0, body: {} })),
-      fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(projectDir)).catch(() => ({ status: 0, body: {} }))
+      fetchJson('/api/tools/list' + qs).catch(() => ({ status: 0, body: {} })),
+      fetchJson('/api/mcp/servers' + qs).catch(() => ({ status: 0, body: {} })),
+      projectDir ? fetchJson('/api/features' + qs).catch(() => ({ status: 0, body: {} })) : Promise.resolve({ status: 200, body: {} }),
+      projectDir ? fetchJson('/api/settings/project' + qs).catch(() => ({ status: 0, body: {} })) : Promise.resolve({ status: 200, body: {} })
     ]);
+
     if (toolsRes.status === 200 && Array.isArray(toolsRes.body.tools)) {
       setToolsCatalog(toolsRes.body.tools);
     }
@@ -208,14 +177,14 @@ export function SettingsPromptsView(props) {
     setDataLoaded(true);
   }
 
-  // Load the prompt currently selected in the dropdown into the form.
-  // For NEW_PROMPT_ID, just clear the form.
   function applyPromptToForm(p) {
     if (!p) {
-      const snap = { title: '', content: '', preset: null };
+      const defaultScope = projectDir ? 'project' : 'app';
+      const snap = { title: '', content: '', preset: null, scope: defaultScope };
       setTitle(snap.title);
       setContent(snap.content);
       setPreset(snap.preset);
+      setPromptScope(defaultScope);
       setLoadedSnapshot(snap);
       dirtyRef.current = false;
       return;
@@ -228,33 +197,25 @@ export function SettingsPromptsView(props) {
           skills: pp.skills === true
         }
       : null;
-    const snap = { title: p.title || '', content: p.content || '', preset: nextPreset };
+    const itemScope = p.scope || (projectDir ? 'project' : 'app');
+    const snap = { title: p.title || '', content: p.content || '', preset: nextPreset, scope: itemScope };
     setTitle(snap.title);
     setContent(snap.content);
     setPreset(nextPreset);
+    setPromptScope(itemScope);
     setLoadedSnapshot(snap);
     dirtyRef.current = false;
   }
 
-  // -------------------------------------------------------------------
-  // Dirty tracking
-  // -------------------------------------------------------------------
-
   function isDirty() {
     if (title !== loadedSnapshot.title) return true;
     if (content !== loadedSnapshot.content) return true;
+    if (promptScope !== loadedSnapshot.scope) return true;
     if (!presetsEqual(preset, loadedSnapshot.preset)) return true;
     return false;
   }
 
-  // -------------------------------------------------------------------
-  // Preset mutators (same logic the old edit view used)
-  // -------------------------------------------------------------------
-
   function presetActive() { return !!preset; }
-  function toolSelected(name) {
-    return !!(preset && preset.tools && preset.tools.has(name));
-  }
   function setToolSelected(name, checked) {
     setPreset((prev) => {
       const base = prev || { tools: new Set(), agentFiles: false, skills: false };
@@ -287,90 +248,63 @@ export function SettingsPromptsView(props) {
   }
   function togglePresetOn(checked) {
     if (checked) {
-      // Seed an empty preset so toggling on yields a non-null object
-      // the UI can attach rows to. Saving normalizes an all-false
-      // preset to null, so the user can flip the master switch back
-      // off and the record stays clean.
       setPreset({ tools: new Set(), agentFiles: false, skills: false });
       return;
     }
     setPreset(null);
   }
 
-  // -------------------------------------------------------------------
-  // Effects
-  // -------------------------------------------------------------------
-
   useEffect(() => { loadPrompts(); }, [projectDir]);
-  useEffect(() => { if (projectDir) loadProjectData(); }, [projectDir]);
+  useEffect(() => { loadProjectData(); }, [projectDir]);
   useEffect(() => { loadProfiles(); }, []);
 
-  // Once the list loads, apply a legacy `initialId` (from the old
-  // two-step URL `settings/prompts/:id`) by switching the picker to
-  // that prompt. NEW_PROMPT_ID and the empty string are ignored.
   useEffect(() => {
     if (!initialId) return;
-    if (selectedId !== NEW_PROMPT_ID) return; // already moved off the sentinel
+    if (selectedId !== NEW_PROMPT_ID) return;
     if (!prompts.length) return;
     const p = prompts.find((x) => x.id === initialId);
     if (!p) return;
     setSelectedId(p.id);
     applyPromptToForm(p);
-    // We only want to honor initialId on the first load; further
-    // edits in this session should follow the dropdown. eslint
-    // would flag `applyPromptToForm` as a dep; it's stable enough
-    // (it only calls setters) that omitting is safe.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompts, initialId]);
 
-  // Keep dirtyRef in sync. Recomputed on every render — cheap.
-  dirtyRef.current = isDirty();
-
-  // -------------------------------------------------------------------
-  // Dropdown change handler — confirm if dirty, then load the new prompt.
-  // -------------------------------------------------------------------
-
-  function onSelectPrompt(e) {
-    const nextId = e.currentTarget.value;
+  function handleSelectPrompt(nextId) {
     if (nextId === selectedId) return;
     if (dirtyRef.current) {
       const ok = confirm('Discard unsaved changes to this prompt?');
-      if (!ok) {
-        // Revert the <select> to the current value. We do that by
-        // re-rendering with the original value via a forced update.
-        e.currentTarget.value = selectedId;
-        return;
-      }
+      if (!ok) return;
     }
     setSelectedId(nextId);
+    setStatusMsg({ text: '', kind: '' });
+    setShowProfileCopy(false);
     if (nextId === NEW_PROMPT_ID) {
       applyPromptToForm(null);
-      setStatusMsg({ text: '', kind: '' });
       return;
     }
     const p = prompts.find((x) => x.id === nextId);
-    if (p) {
-      applyPromptToForm(p);
-      setStatusMsg({ text: 'loaded "' + (p.title || p.id) + '"', kind: 'success' });
-    }
+    applyPromptToForm(p || null);
   }
 
-  // -------------------------------------------------------------------
-  // Save / delete / copy / new
-  // -------------------------------------------------------------------
-
   async function save() {
-    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     const t = title.trim();
     const c = content.trim();
     if (!c) { setStatusMsg({ text: 'prompt content is required', kind: 'error' }); return; }
+
     setIsSaving(true);
     setStatusMsg({ text: 'saving…', kind: 'busy' });
-    const body = { projectDir, title: t, content: c };
+
+    const isNew = selectedId === NEW_PROMPT_ID;
+    const effectiveScope = isNew ? promptScope : (loadedSnapshot.scope || 'project');
+    const targetDir = effectiveScope === 'app' ? '' : (projectDir || '');
+
+    const body = {
+      projectDir: targetDir,
+      scope: effectiveScope,
+      title: t,
+      content: c
+    };
+
     if (presetActive()) {
-      // Normalize the local Set into an array for the wire payload.
-      // Empty tools list + both toggles off collapses to null so the
-      // stored preset is the canonical "no preset" shape.
       const p = preset;
       const hasAny = (p.tools && p.tools.size > 0) || p.agentFiles || p.skills;
       body.preset = hasAny ? {
@@ -381,29 +315,44 @@ export function SettingsPromptsView(props) {
     } else {
       body.preset = null;
     }
-    const isNew = selectedId === NEW_PROMPT_ID;
+
     const url = isNew
       ? '/api/prompts'
       : '/api/prompts/' + encodeURIComponent(selectedId);
     const method = isNew ? 'POST' : 'PATCH';
+
     let r;
-    try { r = await fetchJson(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsSaving(false); return; }
+    try {
+      r = await fetchJson(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      setStatusMsg({ text: 'network error', kind: 'error' });
+      setIsSaving(false);
+      return;
+    }
     setIsSaving(false);
+
     if (r.status !== 200 && r.status !== 201) {
       setStatusMsg({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error' });
       return;
     }
-    // Reload the list so the new / updated prompt is in the dropdown.
+
     await loadPrompts();
-    // Switch to the saved prompt (or stay on the updated one).
+
     const saved = r.body.prompt;
     if (saved && saved.id) {
       setSelectedId(saved.id);
       applyPromptToForm(saved);
     } else {
-      // Fallback: just re-snapshot the current form values.
-      setLoadedSnapshot({ title: t, content: c, preset: preset ? { ...preset, tools: new Set(preset.tools) } : null });
+      setLoadedSnapshot({
+        title: t,
+        content: c,
+        preset: preset ? { ...preset, tools: new Set(preset.tools) } : null,
+        scope: effectiveScope
+      });
       dirtyRef.current = false;
     }
     setStatusMsg({ text: 'saved.', kind: 'success' });
@@ -411,16 +360,31 @@ export function SettingsPromptsView(props) {
 
   async function deletePrompt() {
     if (selectedId === NEW_PROMPT_ID) return;
-    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     if (!confirm('Delete this prompt? Chats that referenced it will fall back to no custom prompt.')) return;
+
     setIsDeleting(true);
     setStatusMsg({ text: 'deleting…', kind: 'busy' });
+
+    const currentP = prompts.find((x) => x.id === selectedId);
+    const itemScope = (currentP && currentP.scope) || loadedSnapshot.scope || (projectDir ? 'project' : 'app');
+    const targetDir = itemScope === 'app' ? '' : (projectDir || '');
+    const qs = targetDir ? '?projectDir=' + encodeURIComponent(targetDir) : '?scope=app';
+
     let r;
-    try { r = await fetchJson('/api/prompts/' + encodeURIComponent(selectedId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
-    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsDeleting(false); return; }
-    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); setIsDeleting(false); return; }
+    try {
+      r = await fetchJson('/api/prompts/' + encodeURIComponent(selectedId) + qs, { method: 'DELETE' });
+    } catch {
+      setStatusMsg({ text: 'network error', kind: 'error' });
+      setIsDeleting(false);
+      return;
+    }
+    if (r.status !== 200) {
+      setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' });
+      setIsDeleting(false);
+      return;
+    }
+
     await loadPrompts();
-    // Jump to the "new prompt" entry so the form is empty and ready.
     setSelectedId(NEW_PROMPT_ID);
     applyPromptToForm(null);
     setIsDeleting(false);
@@ -433,13 +397,10 @@ export function SettingsPromptsView(props) {
     if (selectedId !== NEW_PROMPT_ID) {
       const p = prompts.find((x) => x.id === selectedId);
       if (p) {
-        // Always copy the SAVED content (not the in-flight edit), so
-        // a user can grab a known-good prompt even mid-typing.
         text = p.content || '';
         label = p.title || p.id;
       }
     } else {
-      // For a brand-new prompt, copy whatever's in the textarea.
       text = content;
     }
     const ok = await copyText(text);
@@ -456,88 +417,74 @@ export function SettingsPromptsView(props) {
     setSelectedId(NEW_PROMPT_ID);
     applyPromptToForm(null);
     setStatusMsg({ text: '', kind: '' });
+    setShowProfileCopy(false);
   }
-  // Copy a built-in prompt-size profile's system message into the
-  // content editor as a starting point. This replaces the current
-  // content in place; the user can then edit and Save it as their
-  // own custom prompt.
+
   function copyProfileIntoContent(profile) {
-    if (!profile || !profile.systemMessage) return;
-    if (content && content !== profile.systemMessage) {
+    if (!profile) return;
+    if (content.trim()) {
       const ok = confirm('Replace the current prompt content with the "' + (profile.label || profile.id) + '" default?');
       if (!ok) return;
     }
-    setContent(profile.systemMessage);
+    setContent(profile.systemMessage || '');
     setShowProfileCopy(false);
-    setStatusMsg({ text: 'loaded "' + (profile.label || profile.id) + '" default \u2014 edit and Save.', kind: 'success' });
+    setStatusMsg({ text: 'loaded ' + (profile.label || profile.id) + ' profile', kind: 'success' });
   }
 
-  // -------------------------------------------------------------------
-  // Preset group building (same logic the old edit view used)
-  // -------------------------------------------------------------------
-
   function buildPresetGroups() {
-    const selected = preset ? Array.from(preset.tools) : [];
-    const groups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
-    // Re-mark each LEAF row's `checked` from the preset's local Set so a
-    // tool the user just picked shows checked even when the catalog
-    // is empty / the group is `alwaysExpanded`. Do NOT re-mark the
-    // group row's `checked` for native / MCP groups: their group id
-    // (e.g. "files", "mcp-chrome-debug") is not a tool name and never
-    // appears in `preset.tools`, so a naive override would clobber
-    // `buildToolGroups`'s `allToolsOn` calculation and leave the
-    // group checkbox visually off even when every child is on —
-    // which is what made clicking the group header flip everything
-    // off instead of on. `buildToolGroups` already derives the right
-    // `checked` (and ToolTree derives `indeterminate` from the leaf
-    // counts) for every native / MCP group; only the synthetic
-    // `agent-files` / `skills` groups we add below need an override.
-    for (const g of groups) {
-      for (const t of (g.tools || [])) {
-        t.checked = !!(preset && preset.tools && preset.tools.has(t.id));
-      }
-    }
-    if (agentFilesAvailable.length) {
-      groups.push({
+    // `buildToolGroups` takes a Set/array of selected tool names (or null
+    // for "everything on"). Feed it the preset's selected tool names so the
+    // group and leaf checkboxes reflect the saved preset, not a hardcoded
+    // all-on state.
+    const selected = preset && preset.tools ? Array.from(preset.tools) : [];
+    const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
+
+    const out = rawGroups.slice();
+
+    if (agentFilesAvailable.length > 0) {
+      const isLocked = agentFilesProjectLocked;
+      const count = agentFilesAvailable.length;
+      out.push({
         id: 'agent-files',
-        name: 'Agent files',
-        description: (preset && preset.agentFiles) ? 'on for chats using this prompt' : 'off',
-        checked: !!(preset && preset.agentFiles),
-        disabled: !!agentFilesProjectLocked,
-        disabledReason: agentFilesProjectLocked ? 'Locked off by Settings → Project.' : '',
-        alwaysExpanded: true,
-        tools: agentFilesAvailable.map((f) => ({
-          id: f, name: f, description: '',
-          checked: !!(preset && preset.agentFiles),
-          disabled: !!agentFilesProjectLocked
-        }))
+        title: 'Agent files',
+        subtitle: count + (count === 1 ? ' file' : ' files') + ' · ' + agentFilesAvailable.join(', '),
+        checked: !isLocked && !!(preset && preset.agentFiles),
+        disabled: isLocked,
+        description: isLocked
+          ? 'Locked off by project settings'
+          : ((preset && preset.agentFiles) ? 'on for chats using this prompt' : 'off'),
+        tools: []
       });
     }
-    if (skillsAvailable.length) {
-      groups.push({
+
+    if (skillsAvailable.length > 0) {
+      const isLocked = skillsProjectLocked;
+      const count = skillsAvailable.length;
+      out.push({
         id: 'skills',
-        name: 'Skills',
-        description: (preset && preset.skills) ? 'on for chats using this prompt' : 'off',
-        checked: !!(preset && preset.skills),
-        disabled: !!skillsProjectLocked,
-        disabledReason: skillsProjectLocked ? 'Locked off by Settings → Project.' : '',
-        alwaysExpanded: true,
-        tools: skillsAvailable.map((s) => ({
-          id: s, name: s, description: '',
-          checked: !!(preset && preset.skills),
-          disabled: !!skillsProjectLocked
-        }))
+        title: 'Skills',
+        subtitle: count + (count === 1 ? ' skill' : ' skills') + ' · ' + skillsAvailable.join(', '),
+        checked: !isLocked && !!(preset && preset.skills),
+        disabled: isLocked,
+        description: isLocked
+          ? 'Locked off by project settings'
+          : ((preset && preset.skills) ? 'on for chats using this prompt' : 'off'),
+        tools: []
       });
     }
-    return groups;
+
+    return out;
   }
 
   function handlePresetToggleGroup(groupId, checked) {
     if (groupId === 'agent-files') { setAgentFiles(checked); return; }
     if (groupId === 'skills') { setSkills(checked); return; }
-    const group = buildPresetGroups().find((g) => g.id === groupId);
-    if (group) setToolsSelected((group.tools || []).map((t) => t.id), checked);
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+    const names = (group.tools || []).map((t) => t.id).filter(Boolean);
+    if (names.length) setToolsSelected(names, checked);
   }
+
   function handlePresetToggleTool(groupId, toolId, checked) {
     if (groupId === 'agent-files') { setAgentFiles(checked); return; }
     if (groupId === 'skills') { setSkills(checked); return; }
@@ -550,47 +497,30 @@ export function SettingsPromptsView(props) {
     skillsAvailable, skillsProjectLocked
   ]);
 
-  // -------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------
-
-  if (!projectDir) {
-    return h(Fragment, null,
-      h('div', { class: 'view-head' },
-        h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
-        h('h2', { class: 'view-title' }, 'Custom prompts')
-      ),
-      h('section', null,
-        h('p', { class: 'hint' }, 'No project selected. Open a chat to pick a project, or use the picker to add a new one.'),
-        h('div', { class: 'row row--actions' },
-          h('a', { href: '#/projects/new', class: 'btn btn--primary' }, 'Open project picker')
-        )
-      )
-    );
-  }
-
   const isNew = selectedId === NEW_PROMPT_ID;
-  const dirty = dirtyRef.current;
+  const dirty = isDirty();
+  dirtyRef.current = dirty;
   const currentPrompt = !isNew ? prompts.find((p) => p.id === selectedId) : null;
   const copyDisabled = isNew && !content;
 
+  const backHref = projectDir
+    ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir))
+    : '#/settings';
+
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project', class: 'view-back', 'aria-label': 'Back to project' }, '←'),
-      h('h2', { class: 'view-title' }, 'Custom prompts')
+      h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back' }, '←'),
+      h('h2', { class: 'view-title' }, projectDir ? 'Custom prompts · this project' : 'Custom prompts · app defaults')
     ),
     h('section', null,
       h('p', { class: 'hint hint--compact' },
-        'Per-project system prompts. Saved in the project\u2019s .mouaif.json alongside other settings.'
+        projectDir
+          ? 'System prompts for this project. Shows project prompts (committed to .mouaif.json) plus app-wide prompts from the SQLite store.'
+          : 'App-wide system prompts available in every project. Stored in the app SQLite database.'
       ),
-      h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
+      projectDir ? h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)) : null,
 
       // ---- Picker ----------------------------------------------------
-      // Single dropdown: pick a prompt to edit, or "+ New prompt" for
-      // a blank form. The Copy button next to it copies the selected
-      // prompt's content (works for both saved prompts and the new
-      // prompt draft). A "New" button is also exposed for users who
-      // would rather click than change the dropdown.
       h('div', { class: 'row prompts__picker' },
         h('label', { class: 'label', for: 'sp-picker' }, 'Prompt'),
         h('div', { class: 'prompts__picker-row' },
@@ -598,25 +528,26 @@ export function SettingsPromptsView(props) {
             class: 'input prompts__select',
             id: 'sp-picker',
             value: selectedId,
-            onChange: onSelectPrompt
+            onChange: (e) => handleSelectPrompt(e.currentTarget.value)
           },
             h('option', { value: NEW_PROMPT_ID }, '+ New prompt'),
             prompts.length === 0
               ? h('option', { value: '', disabled: true }, '(no saved prompts yet)')
               : prompts.map((p) =>
-                h('option', { value: p.id, key: p.id },
-                  (p.title || p.id) +
-                  (p.preset && Object.keys(p.preset).length ? '  \u2022 preset' : '')
+                  h('option', { key: p.id, value: p.id },
+                    (p.title || p.id) +
+                    (p.scope ? ' [' + p.scope + ']' : '') +
+                    (p.preset ? ' • preset' : '')
+                  )
                 )
-              )
           ),
           h('button', {
             type: 'button',
             class: 'btn prompts__copy' + (copyStatus === 'Copied' ? ' is-copied' : (copyStatus === 'Copy failed' ? ' is-error' : '')),
-            onClick: copyCurrent,
             disabled: copyDisabled,
+            onClick: copyCurrent,
             'aria-label': 'Copy current prompt to clipboard',
-            title: 'Copy this prompt\u2019s content to the clipboard'
+            title: 'Copy this prompt’s content to the clipboard'
           }, copyStatus),
           h('button', {
             type: 'button',
@@ -626,6 +557,35 @@ export function SettingsPromptsView(props) {
         ),
         dirty ? h('p', { class: 'hint prompts__dirty' }, 'Unsaved changes — switch prompts to discard or hit Save.') : null
       ),
+
+      // ---- Scope selector (when creating a new prompt with an active project) ----
+      isNew && projectDir ? h('div', { class: 'row' },
+        h('label', { class: 'label' }, 'Scope'),
+        h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Prompt scope' },
+          [
+            { value: 'project', label: 'This project' },
+            { value: 'app', label: 'App default' }
+          ].map((m) =>
+            h('label', { key: m.value, class: 'seg__item' + (promptScope === m.value ? ' seg__item--on' : '') },
+              h('input', {
+                type: 'radio',
+                name: 'sp-prompt-scope',
+                value: m.value,
+                checked: promptScope === m.value,
+                onChange: () => setPromptScope(m.value)
+              }),
+              h('span', { class: 'seg__pill' }, m.label)
+            )
+          )
+        )
+      ) : (!isNew && currentPrompt ? h('div', { class: 'row' },
+        h('span', { class: 'hint hint--compact' },
+          'Scope: ',
+          h('span', { class: 'mcp__scope mcp__scope--' + (currentPrompt.scope === 'app' ? 'app' : 'project') },
+            currentPrompt.scope === 'app' ? 'app' : 'project'
+          )
+        )
+      ) : null),
 
       // ---- Editor ----------------------------------------------------
       h('div', { class: 'row' },
@@ -641,6 +601,7 @@ export function SettingsPromptsView(props) {
           placeholder: 'My custom prompt'
         })
       ),
+
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
         h('textarea', {
@@ -649,7 +610,7 @@ export function SettingsPromptsView(props) {
           class: 'input prompts__textarea',
           id: 'spe-content',
           rows: 6,
-          placeholder: 'You are a helpful assistant specialized in\u2026'
+          placeholder: 'You are a helpful assistant specialized in…'
         }),
         h('div', { class: 'prompts__from-default' },
           h('button', {
@@ -659,33 +620,27 @@ export function SettingsPromptsView(props) {
             'aria-expanded': String(showProfileCopy)
           }, 'Copy from default'),
           h('span', { class: 'hint hint--compact' },
-            'Start from a built-in prompt-size profile, then edit.')
+            'Start from a built-in prompt-size profile, then edit.'
+          )
         ),
         showProfileCopy ? h('div', { class: 'prompts__profile-pick' },
           profiles.length
             ? profiles.map((p) =>
-              h('button', {
-                type: 'button',
-                class: 'btn btn--ghost prompts__profile-option',
-                key: p.id,
-                onClick: () => copyProfileIntoContent(p)
-              },
-              h('span', { class: 'prompts__profile-name' }, p.label),
-              h('span', { class: 'prompts__profile-desc' }, p.description)
+                h('button', {
+                  type: 'button',
+                  class: 'btn btn--ghost prompts__profile-option',
+                  key: p.id,
+                  onClick: () => copyProfileIntoContent(p)
+                },
+                  h('span', { class: 'prompts__profile-name' }, p.label),
+                  h('span', { class: 'prompts__profile-desc' }, p.description)
+                )
               )
-            )
             : h('p', { class: 'hint' }, 'profiles unavailable')
         ) : null
       ),
 
       // ---- Prompt preset --------------------------------------------
-      // A preset is chat-default packaging: when a chat references
-      // this prompt, its tool allowlist and agent-files / skills
-      // toggles ride along. It only ADDS capability — a chat
-      // already inheriting all tools keeps them, and the project's
-      // off/ask/allow gate stays authoritative. The master switch
-      // decides whether the prompt even carries a preset; the tool
-      // tree and toggles underneath are inert while it is off.
       h('div', { class: 'row prompts__preset' },
         h('label', { class: 'prompts__preset-head' },
           h('span', { class: 'label prompt-label' }, 'Chat preset'),
@@ -709,21 +664,22 @@ export function SettingsPromptsView(props) {
           )
         ),
         h('p', { class: 'hint hint--compact prompts__preset-note' },
-          'Tools are additive — a chat that already has a tool keeps it, and the project\u2019s Off/Ask/Allow still wins. ',
+          'Tools are additive — a chat that already has a tool keeps it, and the project’s Off/Ask/Allow still wins. ',
           'Agent files inject AGENTS.md / CLAUDE.md. Skills inject .agents/skills/*/SKILL.md. ',
           'The project can lock any of these off; the preset cannot override that lock.'
         )
       ),
+
       !presetActive() ? null : h('div', { class: 'row prompts__preset-body' },
         dataLoaded
           ? h(ToolTree, {
-            groups,
-            onToggleGroup: handlePresetToggleGroup,
-            onToggleTool: handlePresetToggleTool,
-            collapsedByDefault: true,
-            class: 'prompts__preset-tree'
-          })
-          : h('div', { class: 'prompts__preset-loading' }, 'loading tools\u2026')
+              groups,
+              onToggleGroup: handlePresetToggleGroup,
+              onToggleTool: handlePresetToggleTool,
+              collapsedByDefault: true,
+              class: 'prompts__preset-tree'
+            })
+          : h('div', { class: 'prompts__preset-loading' }, 'loading tools…')
       ),
 
       // ---- Actions ---------------------------------------------------
@@ -733,14 +689,14 @@ export function SettingsPromptsView(props) {
           type: 'button',
           onClick: save,
           disabled: isSaving || (!dirty && !isNew)
-        }, isSaving ? 'Saving\u2026' : (isNew ? 'Create' : 'Save')),
+        }, isSaving ? 'Saving…' : (isNew ? 'Create' : 'Save')),
         h('button', {
           class: 'btn btn--danger',
           type: 'button',
           onClick: deletePrompt,
           hidden: isNew,
           disabled: isDeleting
-        }, isDeleting ? 'Deleting\u2026' : 'Delete'),
+        }, isDeleting ? 'Deleting…' : 'Delete'),
         h('span', {
           class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''),
           'aria-live': 'polite'

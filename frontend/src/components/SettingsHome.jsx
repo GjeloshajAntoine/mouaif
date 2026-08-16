@@ -58,6 +58,7 @@ export function SettingsHomeView() {
       h('div', { class: 'group__title' }, 'App defaults', h('span', { class: 'group__title-note' }, 'Apply to every project')),
       h('ul', { class: 'group__list' },
         rowLi('settings/defaults', 'Chat defaults', { detail: promptSize }),
+        rowLi('settings/prompts', 'Custom prompts', { sub: 'app-wide system prompts' }),
         rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),

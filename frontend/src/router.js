@@ -63,20 +63,18 @@ function parseHash() {
   // working by resolving straight to that provider's edit view.
   if (h === 'settings/copilot') return { name: 'settingsProviderEdit', id: 'github-copilot' };
   if (h === 'settings/pricing') return { name: 'settingsPricing' };
-  // settings/prompts is project-scoped. The active project (set when
-  // the user opened a chat or visited Settings → Project) is the
-  // source of truth. The route hash can override it for testing
-  // (e.g. settings/prompts?projectDir=...).
+  // settings/prompts can be app-wide (Settings → App defaults → Custom prompts)
+  // or project-scoped (Settings → This project → Custom prompts).
   if (h === 'settings/prompts' || h.startsWith('settings/prompts?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '', id: '' };
+    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '', id: '', scope: params.get('scope') || '' };
   }
   if (h.startsWith('settings/prompts/')) {
     const rest = h.slice('settings/prompts/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsPrompts', id, projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsPrompts', id, projectDir: params.get('projectDir') || '', scope: params.get('scope') || '' };
   }
   // #/settings/mcp/registry routes to the browse view (before the generic
   // settings/mcp match, which only catches hash === settings/mcp or ?qs).
