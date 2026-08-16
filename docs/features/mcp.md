@@ -1,10 +1,5 @@
 # MCP — Model Context Protocol servers
 
-<!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
--->
-
 ## Overview
 
 `mouaif` ships an **MCP client** that talks to any [Model Context Protocol](https://modelcontextprotocol.io/) server the user configures. MCP servers are the third-party tool ecosystem — Filesystem, Git, Postgres, Playwright, custom internal tools — they speak JSON-RPC over stdio or Streamable HTTP and advertise their tools. Once a server is configured for a project, the AI client surfaces its `tools/list` as part of the model's tool set, intercepts `tool_call` events, dispatches them to the running MCP server, and feeds the result back as a `tool` message.
@@ -71,7 +66,7 @@ On a brand-new chat, the transcript carries a **Tools available to the model** c
     (no tools — start the server in Settings → MCP)
 ```
 
-- The **parent checkbox** flips the whole server's tools in the per-chat `tools` filter at once (on/off), same as any native tool group — the checkbox only filters which of its tools the model sees in this chat; it does **not** gate server startup (that is the per-server auth mode / on-demand lifecycle). The checkbox is checked when every discovered tool on that server is visible, unchecked when none are visible, and mixed when only some child tools are selected.
+- The **parent checkbox** flips the whole server's tools in the per-chat `tools` filter at once (on/off), same as any native tool group — the server itself is always on, so this never gates the server, just which of its tools the model sees in this chat. The checkbox is checked when every discovered tool on that server is visible, unchecked when none are visible, and mixed when only some child tools are selected.
 - Each server row has its own **collapse toggle** on the left. Folding it hides just that server's tool list — other servers stay open. The choice is per-MCP, not global, so the user can keep long lists collapsed without losing the rest of the surface. State is per-chat and resets when switching chats. **Every server starts collapsed** on a fresh chat — the picker doesn't expand the whole tool list by default. Only the chevron expands/collapses; only the checkbox changes the filter.
 - Each **child checkbox** flips that single tool in the per-chat `tools` filter. The composed name (`mcp__<serverSlug>__<toolName>`) is the key the model sees in the tools array, so an unchecked row drops the tool from the next model turn and the parent checkbox updates in sync.
 - Empty tool lists (server not yet started and no cache) render no children; the row shows a **↻ reload** control that starts the server on demand, and the children populate once it is running. The model's first call to that server also starts it transparently.
@@ -98,8 +93,8 @@ The app store has no server registry, so the app layer carries only the single s
 
 The Settings UI mirrors the layering everywhere the tool tree appears:
 
-- **Chat tools card** — the transcript's Tools card shows an **MCP default** row (the project's shared gate) plus one **Off / Ask / Allow** segment per configured MCP server. The segment shows the *effective* mode (the per-server override, or the gate when there is none); picking a mode writes `authorization.servers.<slug>`. Each server row's checkbox flips all its tools in the per-chat filter at once, and the leaves toggle single tools. The compact UI does not expose an override-reset button; clear an override by setting its `servers.<slug>` value to `null` in `.mcp.json`.
-- **Settings → This project → Tools** — the same tree: the **MCP default** row carries the project gate, and each server row carries its Off/Ask/Allow override segment. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Each server row's checkbox is that override's Off ↔ Ask shortcut. Auto-approve patterns set in the project file are still honored, but project-level allowlists have no textarea here anymore — edit them from the raw `.mcp.json` / `.mouaif.json`.
+- **Chat tools card** — the transcript's Tools card shows one **Off / Ask / Allow** segment per configured MCP server. The segment shows the *effective* mode (the per-server override, or the gate when there is none); picking a mode writes `authorization.servers.<slug>`. Each server row's checkbox flips all its tools in the per-chat filter at once, and the leaves toggle single tools. The compact UI does not expose an override-reset button; clear an override by setting its `servers.<slug>` value to `null` in `.mcp.json`.
+- **Settings → This project → Tools** — the same tree: each server row carries its Off/Ask/Allow override segment. The row description states whether the mode is an override or inherited (`override: ask` / `default (ask)`). Each server row's checkbox is that override's Off ↔ Ask shortcut. Auto-approve patterns set in the project file are still honored, but project-level allowlists have no textarea here anymore — edit them from the raw `.mcp.json` / `.mouaif.json`.
 - **App-level gate** — the fallback mode (+ Auto-approve list) for every project without its own gate is persisted via `PUT /api/tools/authorization` with `{ scope: 'app', mcp: { mode?, allowlist? } }` and read with `GET /api/tools/authorization?scope=app`. It has no dedicated editor page; project permission rows live in **Settings → This project → Tools**.
 - **Server editor** (`#/settings/mcp/<id>`) — the per-tool layer as an **Inherit / Off / Ask / Allow** select under **Discovered tools** (project-scoped servers only).
 
@@ -120,47 +115,6 @@ The authorization module ([docs/features/tool-authorization.md](./tool-authoriza
 
 A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of the chat and re-arms on next chat open (the user can tap Start to re-spawn).
 
-### REST
-
-| Method | Path | Body / Query | Response |
-|--------|------|--------------|----------|
-| `GET`    | `/api/mcp/servers?projectDir=<abs>` | `projectDir` optional — without it only app-scoped servers; with it the merged app + project view | `{ servers: [{ id, name, slug, transport, command, url, args, env, headers, cwd, scope, status, tools? }] }` |
-| `POST`   | `/api/mcp/servers` | `{ projectDir?, scope?, transport?, name, command?, url?, headers?, args?, env?, cwd? }` — `transport` is `'stdio'` (default) or `'http'`; `scope` is `'project'` (default, requires `projectDir`) or `'app'` | `{ server }` (201) |
-| `PATCH`  | `/api/mcp/servers/:id` | `{ projectDir?, transport?, name?, command?, url?, headers?, args?, env?, cwd? }` — `scope` is fixed at creation and ignored in patches | `{ server }` (stops running session) |
-| `DELETE` | `/api/mcp/servers/:id?projectDir=<abs>` | `projectDir` optional | `{ ok, removed }` (stops running session) |
-| `POST`   | `/api/mcp/servers/:id/start` | `{ projectDir? }` | `{ server }` (status reflects the new state) |
-| `POST`   | `/api/mcp/servers/:id/stop` | `{ projectDir? }` | `{ ok }` |
-| `GET`    | `/api/mcp/servers/:id/tools?projectDir=<abs>` | `projectDir` optional | `{ tools: [{ name, description, inputSchema }] }` (forces a re-discovery) |
-| `POST`   | `/api/mcp/call` | `{ projectDir, serverId, toolName, args }` | `{ ok, content: [...], isError? }` |
-
-Every server record carries `scope: 'app' | 'project'` so the UI can badge rows and route edits to the right file. `/api/mcp/call` still requires `projectDir` — it runs through the project's chat + authorization context.
-
-The AI client dispatches through the in-process `mcp` module; it does not round-trip through HTTP. The REST endpoints are for the Settings UI and for tests.
-
-### Programmatic (Node)
-
-```js
-const mcp = require('mouaif/src/mcp.js');
-
-// Add a server.
-const server = mcp.addServer(projectDir, {
-  name: 'filesystem',
-  command: 'node',
-  args: ['./servers/filesystem.js', projectDir]
-});
-
-// Start it (async: spawns, handshakes, discovers).
-const ready = await mcp.startServer(projectDir, server.id);
-console.log(ready.tools); // [{ name, description, inputSchema }, ...]
-
-// Call a tool.
-const out = await mcp.callTool(projectDir, ready.slug, 'read_file', { path: 'README.md' });
-console.log(out.content); // [{ type: 'text', text: '...' }]
-
-// Tear down.
-await mcp.stopServer(projectDir, server.id);
-```
-
 ## Behavior
 
 - **Listings are sorted alphabetically by name.** `listServers` returns the merged view sorted case-insensitively by display name within the existing app-before-project scope grouping (scope wins, then name), so the Settings list is deterministic and easy to scan no matter what order servers were added in. The order is presentation-only — it does not change which entry shadows another or where a store write lands.
@@ -177,15 +131,6 @@ await mcp.stopServer(projectDir, server.id);
 - **Project output paths work across MCP servers.** Mouaif answers MCP `roots/list` with the active project. Before dispatching any MCP tool, standard project-relative output arguments (`filePath`, `outputPath`, `outputDirPath`, `requestFilePath`, and `responseFilePath`) are converted to absolute paths and rejected if they escape the project. This is independent of the server or tool name and lets tools save artifacts directly for models without image input support.
 - **No new SSE events for the AI client itself.** Tool dispatch reuses the existing `tool_call` / `tool_result` events; the AI client's parse path accumulates OpenAI-compatible `tool_call` deltas by index and flushes them when the upstream signals `finish_reason: tool_calls`.
 - **Server child is tracked in-memory only.** A `process.exit` reaps the child; a crash surfaces as `errored` status with the typed code in the inline error.
-
-## Implementation notes
-
-- Source: [src/mcp.js](../../src/mcp.js). Public surface: `listServers`, `getServer`, `addServer`, `updateServer`, `removeServer`, `startServer`, `stopServer`, `stopAll`, `listDiscoveredTools`, `callTool`, `composedToolNameFor`, `listComposedToolSpecs`, `resolveMerged`. The merged app + project view comes from `resolveMerged(projectDir)`; scope-aware writes route through `findServerAnyScope` so a shadowed app entry stays editable. `startServer()` picks `StdioClientTransport` or `StreamableHTTPClientTransport` from the SDK based on `entry.transport`.
-- Server wiring: [src/ai.js](../../src/ai.js) → `streamChat()`. After the upstream finishes streaming, accumulated `tool_call` deltas are dispatched through `mcp.callTool()`. Tool results are surfaced as `tool_result` SSE events, not fed back into the same stream.
-- HTTP wiring: [src/http-server.js](../../src/http-server.js) → `handleMcp()` in [src/server-handlers-misc.js](../../src/server-handlers-misc.js). The Settings UI hits the REST surface; the AI client never goes through HTTP.
-- SDK isolation: the `@modelcontextprotocol/sdk` is loaded lazily in `getSdk()`. A failure to load the SDK (e.g. a fresh checkout with no `node_modules`) surfaces as `EMODULE` on every server action — the rest of the server boots cleanly without MCP.
-- Frontend: [frontend/src/components/SettingsMcp.jsx](../../frontend/src/components/SettingsMcp.jsx) (list + editor views) and the home card on [frontend/src/components/SettingsHome.jsx](../../frontend/src/components/SettingsHome.jsx). Tool cards in the chat are rendered by `appendToolCallCard` / `appendToolResultCard` in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js).
-- Lifecycle: running MCP server children are stopped on `/api/restart` (`mcp.stopAll()` inside `handleRestart` in [src/server-handlers-misc.js](../../src/server-handlers-misc.js)).
 
 ## Related
 
