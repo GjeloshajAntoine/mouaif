@@ -27,6 +27,7 @@ const NATIVE_TOOL_CHOICES = [
   { value: 'shell', label: 'shell' },
   { value: 'subagent', label: 'subagent' },
   { value: 'task', label: 'task' },
+  { value: 'webpreview', label: 'webpreview' },
   { value: 'report_progress', label: 'report_progress' },
   { value: 'ask_user', label: 'ask_user' },
   { value: 'list_features', label: 'list_features' },

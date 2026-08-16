@@ -497,7 +497,7 @@ async function streamChat(opts) {
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task']) {
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
           const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);

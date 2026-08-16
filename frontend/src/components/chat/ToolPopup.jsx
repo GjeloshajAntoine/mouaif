@@ -103,6 +103,7 @@ export function ToolPopup(props) {
     ask_user: 'ask_user',
     report_progress: 'report_progress',
     task: 'task',
+    webpreview: 'webpreview',
     files: 'file'
   };
   for (const g of groups) {

@@ -397,6 +397,7 @@ disabled: skillState.disabled.has(s.id)
       try { toolSpecs.push(require('./tools/subagent.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
+      try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
       if (fileToolsEnabled) {
         try {
           const fileTools = require('./tools/files.js');
@@ -417,7 +418,7 @@ disabled: skillState.disabled.has(s.id)
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task']) {
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview']) {
           const cfg = authState.tools[family];
           if (cfg && cfg.mode === 'off') {
             const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);

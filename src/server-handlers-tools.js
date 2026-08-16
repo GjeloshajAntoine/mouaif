@@ -196,6 +196,7 @@ pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: '
 pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'features', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
 pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
     try {
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {

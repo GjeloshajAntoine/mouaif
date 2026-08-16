@@ -66,12 +66,14 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
   const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
+  const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
   const [askUserMode, setAskUserMode] = useState('ask');
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
   const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
   const [progressStatusMsg, setProgressStatusMsg] = useState('');
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
+  const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
   const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
   const [toolsCatalog, setToolsCatalog] = useState([]);
 
@@ -201,6 +203,11 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       setTaskAuth({
         mode: (task && task.mode) || 'ask',
         allowlist: task && Array.isArray(task.allowlist) ? task.allowlist : []
+      });
+      const webpreview = authz.status === 200 && authz.body.tools && authz.body.tools.webpreview;
+      setWebpreviewAuth({
+        mode: (webpreview && webpreview.mode) || 'ask',
+        allowlist: webpreview && Array.isArray(webpreview.allowlist) ? webpreview.allowlist : []
       });
       const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
@@ -422,6 +429,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
+  function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 
   function pickAskUserMode(newMode) {
     setAskUserMode(newMode);
@@ -696,6 +704,24 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
+    const webpreviewTool = catalog.find((t) => t.name === 'webpreview');
+    if (webpreviewTool) {
+      groups.push({
+        id: 'webpreview',
+        name: 'Web preview',
+        description: shortDesc(webpreviewTool.description),
+        title: webpreviewTool.description || '',
+        checked: isOn(webpreviewAuth.mode),
+        control: toolModeSegs('Web preview', segMode(webpreviewAuth.mode), pickWebpreviewMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        tools: [leaf(webpreviewTool, { checked: isOn(webpreviewAuth.mode) })],
+        extra: webpreviewStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, webpreviewStatusMsg) : null
+      });
+    }
+
     const askTool = catalog.find((t) => t.name === 'ask_user');
     if (askTool) {
       groups.push({
@@ -848,6 +874,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     if (groupId === 'shell') pickShellMode(mode);
     else if (groupId === 'subagent') pickSubagentMode(mode);
     else if (groupId === 'task') pickTaskMode(mode);
+    else if (groupId === 'webpreview') pickWebpreviewMode(mode);
     else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') {
