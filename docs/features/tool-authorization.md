@@ -1,10 +1,5 @@
 # Tool authorization — gating what tools the model may run
 
-<!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
--->
-
 ## Overview
 
 Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. The user picks one of three primary modes per tool and project — **Off**, **Ask**, **Allow** — from a one-tap segmented control in project settings. An allowlist is an advanced refinement of Ask, not a fourth choice. The default is `ask`, so first use prompts for approval.
@@ -85,22 +80,6 @@ For `subagent` calls the card also shows a **model picker**: the user may select
 
 The composer `/shell` slash command uses the same gate. A `/shell` invocation in `ask` mode shows the same card; the only difference is the source line ("user-typed slash command" instead of "model-initiated call").
 
-### REST
-
-| Method | Path | Body / Query | Response |
-|--------|------|--------------|----------|
-| `GET`  | `/api/tools/authorization?projectDir=<abs>` | — | `{ tools: { shell: { mode, allowlist, defaultTimeoutMs, maxTimeoutMs, source: 'project' | 'app' | 'default' }, ... }, mcp: { mode, allowlist, servers: { <slug>: { mode, allowlist? } }, tools: { <composedName>: { mode, allowlist? } } } }` |
-| `GET`  | `/api/tools/authorization?scope=app` | — | `{ mcp: { mode, allowlist, servers: {}, tools: {} } }` — the app-level MCP gate only (server/tool maps are always empty at the app layer) |
-| `PUT`  | `/api/tools/authorization` | `{ projectDir, tools: { ... }, mcp: { mode?, servers?, tools? } }` | `{ tools: { ... }, mcp: { ... } }` (echo) |
-| `PUT`  | `/api/tools/authorization` | `{ scope: 'app', mcp: { mode?, allowlist? } }` | `{ mcp: { ... } }` — writes the app-level MCP gate; no `projectDir`, and `servers` / `tools` are rejected |
-| `GET`  | `/api/tools/authorization/pending?projectDir=<abs>&chatId=<id>` | — | `{ pending: [{ callId, tool, cmd?, path?, query?, summary?, timeoutMs?, projectDir }] }` |
-| `POST` | `/api/tools/authorization/cancel` | `{ projectDir, chatId }` | `{ ok: true, cancelled: <number>, running: <boolean> }` |
-| `POST` | `/api/tools/authorization/decision` | `{ chatId, callId, decision: 'allow-once' | 'allow-session' | 'deny' }` | `{ ok: true }` |
-
-The `PUT` `mcp` key accepts any combination of `mode` (the shared fallback), `servers` (a map of slug → `{ mode, allowlist? }` or `null` to clear), and `tools` (a map of composed tool name → `{ mode, allowlist? }` or `null` to clear). Entries are merged; a `null` value deletes the override. `servers` keys are normalized to the server's canonical slug on write — a caller that keys an override by the server's display *id* (they diverge for names like `chrome-debug` → `chrome_debug`) stores and clears the same slug entry, so id-keyed writes no longer vanish.
-
-The `decision` endpoint is the only path the UI uses to answer a pending prompt. It validates the chat and project ownership before recording the decision. Direct REST calls retry with the same opaque `callId` after approval; model calls remain blocked on their SSE stream. Reopening a chat calls the pending endpoint so authorization and ask-user cards can be shown again after navigation. The cancel endpoint denies pending prompts and aborts the active chat run when possible, which gives the mobile UI a visible escape hatch for a wedged stream.
-
 ## Behavior
 
 - **Default: `ask`.** New tools land with `ask` so the first call always requires a tap. A user who wants a friction-free experience flips to `allowlist` with a tight regex set.
@@ -113,14 +92,6 @@ The `decision` endpoint is the only path the UI uses to answer a pending prompt.
 - **Mode changes are not retroactive.** Flipping a tool from `allow` to `ask` mid-session revokes the blanket grant and the next call is asked again. Flipping to `off` drops the tool from the next request's tool list and rejects any in-flight call with `ETOOL_DISABLED`; the model's prior `tool_result` history is left untouched.
 - **Audit log.** Every decision is appended to the per-chat trace file (decision §5) as a `system event` line (`{ type: 'auth_decision', tool, callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 - **A parked prompt survives reload, tab switch, and refocus.** A run waiting on an authorization / `ask_user` prompt never emits new transcript rows (the `tool_call` row is withheld until the user approves), so the client's 1 s reconcile poll (`reconcileRunningChat`) treats the pending queue itself as the "genuinely waiting" signal. While the server reports the chat as `running`, the poll re-drains `GET /api/tools/authorization/pending` every tick and re-mounts each card (deduped by `callId`), so a card missed on the first paint finally lands. As long as a prompt is pending the run is never settled as "done" — the status reads **waiting for you…** and the browser push (`chat-<id>-attention`, `requireInteraction`) is not superseded.
-
-## Implementation notes
-
-- Source: `src/tools/authorization.js` (new module) — `effectiveMode(projectDir, tool)`, `authorize({ projectDir, chatId, call })`, `recordDecision(chatId, callId, decision)`. `getAppMcpAuthorization()` / `setAppMcpAuthorization(patch)` read and write the app-level MCP gate (`mcp.authorization` in the app store), which `mcpLayeredConfig` already consumes as layer 4.
-- The runner calls `authorize(...)` as the first line of its hot path. A `null` decision means "no prompt needed, execute"; a `{ prompt: true }` decision means "the server has emitted a `tool_call` event to the UI and is waiting for a `decision` event on the same SSE stream." The runner blocks until the decision resolves; a UI-side abort cancels the pending prompt and returns `EABORTED` to the upstream.
-- The chat touch route clears in-memory grants before updating `lastOpenedAt`; grants never enter `.mouaif.json`.
-- The Settings UI lives in `frontend/src/components/SettingsProject.jsx` under the **Tools** tree. Each tool row is one line: title, a one-line note (which reads "Hidden from the model — costs no tokens." in `off` mode), and a segmented **Off / Ask / Allow** control (`toolModeSegs`). Picking **Allow** clears any stored patterns. `ask_user` stays binary (`off` / `ask`). The Settings → Project tree no longer renders allowlist textareas — patterns in the project file are still honored, but are edited from the raw JSON in Technical details. MCP authorization renders through the same tree everywhere the tree appears: the chat tools card and the project settings tree both show an **MCP default** row (the project's shared gate) plus one **Off / Ask / Allow** segment per configured MCP server (the per-server override — the segment shows the effective mode and gains a ↺ reset when an override is set). The shared control lives in `McpAuthSeg` / `mcpEffective` in [frontend/src/components/settings/toolAuth.js](../../frontend/src/components/settings/toolAuth.js), wired into the chat card by [frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js) and into settings by `SettingsProject.jsx`. The server edit view (`SettingsMcpEditView`) adds the per-tool layer as an **Inherit / Off / Ask / Allow** select under "Discovered tools", and the app MCP page ([frontend/src/components/SettingsMcp.jsx](../../frontend/src/components/SettingsMcp.jsx)) carries the app-level **Default permission** row, which keeps its own **Auto-approve list** textarea. Project rows write `{ projectDir, mcp: { mode?, servers?, tools? } }`; the app row writes `{ scope: 'app', mcp: { mode?, allowlist? } }`.
-- The Authorization card in the chat composer exposes Allow once, Allow for this session, and Deny as tap-accessible controls with no hover-only affordance.
 
 ## Related
 

@@ -71,8 +71,6 @@ The caps are app-level knobs. Override them in the app store:
 The `tool` message the model sees is a small header followed by the body, so the model can read its own response cleanly:
 
 ```text
-# File: src/index.js
-# Lines: 1-72
 
 <file body>
 ```
@@ -80,58 +78,26 @@ The `tool` message the model sees is a small header followed by the body, so the
 `list_files` groups entries by directory (one `# dir/` header per group, then bare filenames) so the path prefix is printed once instead of on every row:
 
 ```text
-# Listing: src/**/*.js
-# Count: 3
 
-# src/
   auth.js
   logout.js
-# src/utils/
   new.js
 ```
 
 `search_files` groups matches by file the same way — one `# path` header per file, then `line: text` rows:
 
 ```text
-# Search: function (login|logout)
-# Matches: 2
 
-# src/auth.js
 1: export function login() {}
-# src/logout.js
 1: export function logout() {}
 ```
 
 ```text
-# Wrote: src/utils/new.js
-# Chars: 21 · 1 lines
 ```
 
 The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card. When a file-tool result reaches the UI as the plain-text header form above (subagent-nested results, tool-replay from the message store, or the model-facing `content` string), the frontend re-parses it back into the structured shape: it reads the `# Count:` / `# Matches:` (and `# Skipped:`) header lines and rebuilds the `entries` / `matches` arrays from the grouped body, so the card's count and the collapsed "N files" / "N matches" summary are accurate and consistent with the object path.
 
 The collapsed summary flags truncation instead of presenting a capped total as complete. A truncated `list_files` card reads `1000 files (capped at 1000)` and a truncated `search_files` card reads `200 matches (capped at 200)`, matching the inline header the model already receives (`# Count: N (capped at M)` / `# Matches: N (capped at M matches / B chars)`). The text-reparse path extracts the same `truncated` + cap fields from those header lines, so subagent-nested results and message-store replays show the same annotation as the live SSE path.
-
-## HTTP surface
-
-| Method | Path | Purpose |
-|---|---|---|
-| `PUT` | `/api/settings/project` | Toggle `tools.file.enabled` (same payload as `tools.shell.enabled`) |
-| `GET` | `/api/tools/authorization?projectDir=…` | Read the resolved `tools.file` config |
-| `PUT` | `/api/tools/authorization` | Set `tools.file.mode` / `allowlist` (same shape as `tools.shell`) |
-| `GET` | `/api/chats/:id/tool-preview?projectDir=…` | Returns the file-tool specs the model would see, with `fileToolsEnabled: true/false` and the five entries listed in `tools` |
-
-The file tools are dispatched by the same `tool_call` flow as the shell tool inside the AI client. There is no separate `/api/tools/file/*` HTTP endpoint — the model-facing tools all run in-process through the same dispatcher.
-
-## Implementation notes
-
-- New module: [src/tools/files.js](../../src/tools/files.js). Public surface: `SPECS` (five OpenAI-compatible function specs), `FILE_TOOL_NAMES` (frozen array of the five), `isFileToolName(name)`, `runFileTool(name, opts)`, `resolveSandbox(projectDir)` (re-export of the shell tool's helper for parity).
-- The AI client collects file-tool specs alongside shell and MCP specs in [src/ai.js](../../src/ai.js) `streamChat` and reduces them through `promptProfiles.reduceToolSpecs` like every other advertised tool, so the per-profile tool budget is uniform across shell, file, and MCP.
-- The dispatcher in `streamChat` (`dispatchTool` in [src/ai.js](../../src/ai.js)) routes all five names to `runFileTool`. `write_file` intentionally writes the complete supplied body. `edit_file` is a distinct, non-destructive replacement operation: it accepts `path` or `file`, requires `oldText` and `newText`, and returns `ENO_MATCH` or `EMULTI_MATCH` without changing the file when the target is stale or ambiguous. Matching treats `LF`, `CRLF`, and legacy `CR` as equivalent, and collapses runs of spaces/tabs inside a line, so a block that differs from the file only by indentation or extra whitespace still matches; the match position is then mapped back to the original source byte offsets, and replacement lines use the target file's dominant line ending, so an LF payload can safely edit a CRLF checkout without producing mixed endings. It writes through a temporary sibling and rename so interruption cannot leave a partial file.
-- Matching is relaxed where it was needlessly strict, without weakening the path-safety contract: `list_files` treats a bare directory pattern (`src`) as `src/**` and matches globs case-insensitively, so "list src" and `README*` return results instead of an empty list; `search_files` treats a misspelled or not-yet-created `path` as a subtree search under its nearest existing ancestor instead of silently returning zero matches; and `parseReferences` in [src/tags.js](../../src/tags.js) resolves bare `@basename` mentions against the tagged map (then the on-disk scan) when the exact path is unknown.
-- The authorization module ([src/tools/authorization.js](../../src/tools/authorization.js)) now treats `file` as a native tool alongside `shell`. The `NATIVE_TOOLS = new Set(['shell', 'file'])` set is the single source of truth; adding a future native tool is a one-line addition. The per-tool summary on the "Authorization required" card is `args.path` for file tools (so the allowlist regex can match the path), `args.cmd` for `shell`, and the first string argument for MCP tools.
-- The path-safety contract is the same as [src/tags.js](../../src/tags.js): every model-supplied path is normalized to POSIX-relative, then resolved back through `realpath` (walking up to the first existing ancestor for `write_file`-style paths that don't exist yet), with the same `EOUTSIDE_PROJECT` error shape. Symlinks that point outside the project root are rejected.
-- Mobile UI ([frontend/src/components/SettingsProject.jsx](../../frontend/src/components/SettingsProject.jsx)): the **File tools** row in the project Tools tree, with the same Off / Ask / Allow segment and Off ↔ Ask checkbox shortcut as every other tool row. The allowlist `<textarea>` was removed from Settings → Project; `tools.file.allowlist` patterns in `.mouaif.json` are still honored but are edited from the raw JSON (Technical details).
-- Tests: [scripts/test-file-tools.js](../../scripts/test-file-tools.js). Coverage includes glob compilation, OpenAI spec shape, `resolveSandbox`, every tool's happy path and error paths (`EOUTSIDE_PROJECT`, `EBADINPUT`, `ETOOL_CAP`, `EUNKNOWN_TOOL`, `ENOENT`), line-ending-tolerant `edit_file` matching in both directions, mixed-ending ambiguity detection, the `list_files` skip-dir behavior, the `search_files` path-filter and bad-regex paths, the `write_file` overwrite + nested-directory creation, and the `fileReadMaxBytes` cap override.
 
 ## Related
 

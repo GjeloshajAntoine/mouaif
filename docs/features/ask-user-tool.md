@@ -1,10 +1,5 @@
 # Ask the user tool — let the model pause and ask structured questions
 
-<!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
--->
-
 ## Overview
 
 `mouaif` ships a built-in `ask_user` tool the model can invoke. The tool lets the model pause the chat, ask the user a structured question with a list of options (**2 or more, no upper bound** — the card scrolls long lists), and wait for an answer. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. The selection + extra text is returned to the model as a single `tool` message; the chat picks up where it left off.
@@ -72,40 +67,6 @@ data: { "id": "call_abc123", "name": "ask_user", "ok": true,
 
 When a nested `subagent` call invokes `ask_user`, the same `ask_user_required` event fires with `parentTool: "subagent"`, and the chat UI routes the card into the subagent's live container instead of the top-level transcript.
 
-### REST
-
-The question card is driven by the existing authorization-decision endpoint, extended to carry a structured `payload`:
-
-| Method | Path | Body / Query | Response |
-|--------|------|--------------|----------|
-| `POST` | `/api/tools/authorization/decision` | `{ projectDir, chatId, callId, decision: 'allow-once', payload: { choice, extra } }` | `{ ok: true }` |
-
-The `payload` is optional. For every other tool (`shell`, `subagent`, the file tools, MCP) the existing `decision: 'allow-once' | 'allow-session' | 'allow-always' | 'deny'` enum is unchanged. `ask_user` ignores `allow-session` / `allow-always` — the user is always the source of truth — but the server still accepts the values for forward-compat.
-
-### Programmatic (Node)
-
-```js
-const { validateArgs, buildResult, clampExtra } = require('mouaif/src/tools/ask.js');
-
-const payload = validateArgs({
-  question: 'Pick a default branch?',
-  options: [
-    { label: 'main',  value: 'main',  description: 'the canonical default' },
-    { label: 'trunk', value: 'trunk' }
-  ],
-  multiSelect: false
-});
-
-const r = buildResult({
-  choice: 'main',
-  extra: clampExtra('use the trunk for hotfixes too'),
-  options: payload.options,
-  multiSelect: payload.multiSelect,
-  cancelled: false
-});
-// r: { ok: true, content: '<json string>', result: { answered, choice, extra, options, multiSelect, cancelled } }
-```
-
 ## Behavior
 
 - **Always prompts.** A call always renders the question card and waits for the user. There is no `allow` mode — the model never decides on the user's behalf.
@@ -120,18 +81,6 @@ const r = buildResult({
 - **Multi-turn loop.** The result is fed back to the model as a `tool` message, so the model can chain calls (ask a question, read the answer, ask a follow-up, finish). There is no fixed tool-turn limit; cancellation comes from the user dismissing the card.
 - **Audit log.** Every decision is appended to the per-chat NDJSON trace (decision §5) as a `system event` line (`{ type: 'auth_decision', tool: 'ask_user', callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 - **No new runtime dependencies.** The runner is a plain function; the chat UI handles the input side. No third-party form libraries, no new SSE machinery — the existing `authorization_required` pipeline carries the question payload through a dedicated `ask_user_required` event.
-
-## Implementation notes
-
-- Source: `src/tools/ask.js` (new module) — `SPEC` (the model-facing tool spec), `validateArgs(args)`, `buildResult({ choice, extra, options, multiSelect, cancelled })`, `clampExtra(value)`, and the length constants (`MAX_QUESTION_CHARS`, `MAX_OPTION_CHARS`, `MAX_EXTRA_CHARS`). There is no options-count cap; the `minItems: 2` floor is enforced in the JSON Schema and in `validateArgs`.
-- `src/tools/authorization.js` adds `ask_user` to `NATIVE_TOOLS` and a new `BINARY_MODE_TOOLS` set. `normalizeConfig` clamps any legacy `allow` / `allowlist` value to `ask` for `ask_user`. `recordDecision(projectDir, chatId, callId, decision, payload)` accepts an optional structured `payload` and resolves `wait()` with `{ decision: 'allow', payload }` so the runner can fold the user's answer into the `tool` message. The `payload` parameter is generic — any future native tool can attach its own structured answer without a new endpoint.
-- `src/ai.js` registers the spec alongside `shell` / `subagent` / file tools, validates the args before the gate runs (validation errors return an `EBADINPUT` `tool_result` without prompting the user), and emits a dedicated `ask_user_required` SSE event with the validated question + options. The wait() resolved value is captured into `callOptsAnswerPayload` and forwarded to the dispatcher. The subagent wrapper forwards `ask_user_required` with `parentTool: 'subagent'` so the chat UI can route the card into the subagent's live container.
-- The `dispatchTool('ask_user', ...)` branch is a thin shim: it reads `callOpts.answerPayload`, builds the result with the canonical helper, and returns `{ ok, content, result }` in the same shape every other tool uses. No new dependencies, no new wire format.
-- `src/index.js` extends the `/api/tools/authorization/decision` handler to forward the optional `payload` to `authGate.recordDecision`. The `/api/tools/list` and `/api/chats/:id/tool-preview` endpoints now advertise `ask_user` alongside the other native tools.
-- The `Settings → Project → Tools` view (`frontend/src/components/SettingsProject.jsx`) shows an **Ask the user** row with a single `<select>` (`ask` / `off`). The mode auto-saves on change; there is no allowlist input.
-- The chat UI (`frontend/src/components/chat/cards.js`) listens for `ask_user_required` events and renders a dedicated card with the question, the options as tap targets (44 px min height) inside a scrolling container, the always-on extra textarea, and the two action buttons. The styling lives in `frontend/src/features.css` under the `.tool-card--ask-user` block; the options container (`.tool-card__ask-options`) is capped at `13.5rem` and scrolls vertically so long option lists stay usable on a phone.
-- Mobile-first layout: every interactive control is at least 44 px tall, the option cards are full-width with the label and a wrapped description, the textarea is monospaced-friendly and clamps to 1000 chars, and the action buttons are sticky-friendly (no absolute positioning, no hover-only affordances).
-- New test: `scripts/test-ask-user.js` (40 assertions, covers the spec shape, validation rules, result-builder paths, the binary-mode gate, the `off` denial, the `ask` -> payload round trip via `recordDecision`, and the `getAuthorization` listing). No new runtime dependencies.
 
 ## Related
 

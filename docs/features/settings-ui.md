@@ -10,39 +10,6 @@ Project settings use a simple mobile-first list. Technical details (the raw `.mo
 
 ## Usage
 
-### REST
-
-| Method | Path | Body / Query | Response |
-|--------|------|--------------|----------|
-| GET    | `/api/settings` | — | `{ home, defaults, app }` (redacted: allowlisted keys only, provider/model `apiKey` dropped) |
-| GET    | `/api/settings/project?projectDir=<abs path>` | — | `{ project, path }` (raw project file, `{}` if it doesn't exist; redacted for the client) |
-| GET    | `/api/settings/resolved?projectDir=<abs path>` | — | `{ resolved }` (defaults + app + project, project wins; redacted for the client) |
-| PUT    | `/api/settings/app` | `{ ...patch }` | `{ app }` (shallow-merged) |
-| PUT    | `/api/settings/project` | `{ projectDir, ...patch }` | `{ project, path }` |
-| POST   | `/api/settings/app/providers` | `{ id, baseUrl?, apiKey?, auth?, oauthAccount? }` | `{ provider, providers }` |
-| DELETE | `/api/settings/app/providers/:id` | — | `{ ok, removed, providers }` (404 if unknown) |
-| POST   | `/api/settings/app/reset` | `{ keys: [...] }` | `{ app, reset }` (replaces the app object with the listed keys removed) |
-
-Examples:
-
-````bash
-# Add or update an app-level provider connection.
-curl -X POST http://localhost:5732/api/settings/app/providers \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"openai-compatible","baseUrl":"https://api.openai.com/v1","apiKey":"sk-...","auth":"apikey"}'
-
-# Delete a provider connection.
-curl -X DELETE http://localhost:5732/api/settings/app/providers/openai-compatible
-
-# Reset all app-level keys to defaults.
-curl -X POST http://localhost:5732/api/settings/app/reset \
-  -H 'Content-Type: application/json' \
-  -d '{"keys":["models","promptSize","authAccounts","projects","flags"]}'
-
-# Read project-level settings (raw, no merge).
-curl 'http://localhost:5732/api/settings/project?projectDir=/path/to/project'
-````
-
 ### Mobile UI
 
 The mobile UI exposes a **Settings** destination in the bottom tab bar at `/`. The screen is a stack of focused sub-views, each with its own back link; the bottom tab bar is hidden on the sub-views so the content owns the full viewport height.
@@ -92,34 +59,6 @@ The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors
 - **API keys are stored in plaintext in the SQLite store.** The keyring is for OAuth tokens only (decision §11). The doc is honest about this; the project-level encryption-when-resting decision is open and out of scope for this commit.
 - **OAuth provider connections carry `auth: 'oauth'` and an optional `oauthAccount`.** An OAuth connection has any stale API key removed. The AI client resolves the keyring entry through `src/auth.js → authProviderFor(model)` after hydrating the project model with its provider connection.
 - **`github-copilot` is reserved.** The UI lists it in the provider dropdown (per decision §10) but forces the auth select to `oauth` and disables the `apikey` option, so a user cannot submit a model the server would later reject with `ENOAUTH`. The reserved list is the same one in `src/ai.js → ENDPOINTS` (decision §10, "the last is reserved; its auth flow ships in a later commit").
-
-## Implementation notes
-
-- **Secret redaction** — API keys are accepted on provider writes but are never
-  serialized back to the browser. Settings responses replace the key with
-  `hasApiKey: true`; the UI uses that boolean to render `key: •••`. This
-  applies to app, project, resolved, provider-create, and provider-delete
-  responses.
-
-- **Allowlisted client fields** — `settingsForClient()` does **not** spread the
-  whole app-level store. It copies only the keys the web UI actually reads
-  (`CLIENT_SETTINGS_KEYS`: `providers`, `models`, `projects`, `promptSize`,
-  `githubCopilot`, `modelPricing`, `authAccounts`, `flags`) and drops everything
-  else. Server-only bookkeeping — in-flight OAuth flows (`authPending`, which
-  carry a PKCE `codeVerifier` and CSRF `state`) and the CDP `inspectorDebuggerUrl`
-  — therefore never reaches the browser, and a future key stashed in the app
-  store cannot leak by accident.
-
-- **Abandoned OAuth flows are pruned** — an `authPending` record is only removed
-  on a successful exchange or an explicit cancel. If the user closes the sign-in
-  tab, the record (with its PKCE verifier) would leak forever. `auth.prunePending()`
-  drops records older than 1h and runs once at server start (`createServer()`),
-  best-effort.
-
-- Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. Provider endpoints are `POST /api/settings/app/providers` and `DELETE /api/settings/app/providers/:id`; legacy app-model endpoints remain readable for backward compatibility but are not used by the current UI.
-- Store support: [src/settings.js](../../src/settings.js) adds `setAppReplace(next)` for the reset path. The default `setApp(patch)` is shallow-merge; reset needs replace semantics to drop keys rather than re-set them.
-- Mobile UI: [frontend/index.html](../../frontend/index.html), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/main.jsx](../../frontend/src/main.jsx). The settings screen is a stack of focused sub-views routed by the hash (`#/settings`, `#/settings/providers/<id>`, …); the bottom tab bar is hidden on sub-views so the content owns the full viewport height. `/api/settings` is fetched on demand and cached briefly in module scope; cache-busting `force: true` happens on save, delete, and the about-reset path.
-- **Settings shared bits** (declared at the top of [main.jsx](../../frontend/src/main.jsx)) — `loadApp`, `saveApp`, `resetAppKeys`, `loadAccounts`, `appProviders`, `providerDef`, `authNsForProvider`, `setStatus`, and the `SETTINGS_PROVIDERS` constant. The provider list is the single source of truth for the `<select>` and matches `src/ai.js → ENDPOINTS`.
 
 ## Related
 

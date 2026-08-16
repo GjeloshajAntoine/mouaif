@@ -26,12 +26,6 @@ The default model-facing limit is 64 KiB per tool result. A server operator can 
 - Base64 image data is omitted from textual tool feedback because image blocks are attached separately as vision content.
 - Existing stored chats are compacted when their tool history is reconstructed. No database migration or transcript rewrite is required.
 
-## Implementation notes
-
-`src/toolFeedback.js` owns UTF-8-safe head/tail truncation, image payload removal, and subagent compaction. `src/ai.js` applies it at the live tool-to-model boundary, while `src/messages.js` applies the same rule to historical tool results.
-
-The separation is intentional: `exec.result` is the rich representation for the user interface and persistence, while compacted content is only the `role: "tool"` message sent upstream.
-
 ## Related
 
 - [AI client](./ai-client.md)

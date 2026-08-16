@@ -1,10 +1,5 @@
 # Chrome Debug MCP — model-driven browser automation
 
-<!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
--->
-
 ## Overview
 
 `.mcp.json` ships a preset MCP server entry, **`chrome-debug`**, that wraps Anthropic's [`chrome-devtools-mcp`](https://www.npmjs.com/package/chrome-devtools-mcp) package and launches an isolated **headless** stable Chrome instance for browser automation. The result: the model gets a tool surface for driving a live page (`take_snapshot`, `click`, `type_text`, `navigate`, …) without requiring users to start Chrome with a debug port first, and without needing a desktop display (works on servers, CI, and Docker).
@@ -68,13 +63,6 @@ If you need both surfaces on the exact same browser, edit the MCP row back to an
 - **Args are not shell-parsed.** Each flag is a single token passed straight to the child; the same rule as every other MCP server (decision §18).
 - **Artifact paths stay in the project.** Chrome tools inherit mouaif's generic MCP output-path handling: project-relative artifact paths are converted to absolute project paths, and MCP `roots/list` exposes the active project. See [MCP](./mcp.md).
 - **Failure is contained.** A `chrome-debug` crash surfaces as `EMCP_TRANSPORT` and marks just that server `errored` — the rest of the chat (and every other MCP server) keeps running.
-
-## Implementation notes
-
-- Source: this is a **config-only change** — `.mcp.json` carries the new entry; no source code is touched. The runtime surface is the existing [src/mcp.js](../../src/mcp.js) (registry + stdio client) and [src/tools/authorization.js](../../src/tools/authorization.js) (the authorization gate that wraps every tool call).
-- Inspector host source: [src/inspector.js](../../src/inspector.js) → `defaultDebuggerUrl()` resolves to `MOUAIF_CHROME_URL` or `http://127.0.0.1:9222`. The MCP preset intentionally does not mirror that default; it favors zero-setup browser launch unless the user opts back into `--browser-url=...`.
-- MCP preset shape: see [docs/features/mcp.md](./mcp.md) for the full server-entry contract (`name`, `slug`, `command`, `args`, `env`, `cwd`, `createdAt`; the last-known tool list is cached in the app store, not in the file).
-- Tool routing: when the model emits a `tool_call` whose name starts with `mcp__chrome_debug__`, [src/ai.js](../../src/ai.js) `streamChat()` parses the slug, dispatches through `mcp.callTool()`, and the result rides the same `tool_call` / `tool_result` SSE events as any other tool.
 
 ## Related
 

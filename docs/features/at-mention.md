@@ -57,21 +57,6 @@ The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=
 | Actions   | Tool catalog from the project settings (`state.tools.catalog`) |
 | Model     | Current chat model (`state.chat.modelId`)              |
 
-## Implementation notes
-
-- Source: `frontend/src/components/chat/atMention.js` — standalone imperative module. Mounted and unmounted via `mountAtMention(textarea, popupEl, preactState, argBarEl)` which returns a cleanup function. The 4th argument is a `<div>` that receives parameter suggestion chips.
-- `mountAtMention` accepts an optional 4th argument — the arg bar DOM node. When missing, no chips are shown.
-- The server's `/api/tools/list` now includes `parameters` (JSON Schema `{ properties, required }`) for every tool. File tool parameters come from `SPECS`; MCP tool parameters come from `listComposedToolSpecs` via the MCP SDK.
-- The popup `<div>` lives inside `.chat-view__composer` as its first child (before the buttons and textarea), positioned above the textarea with `position: absolute; bottom: 100%`.
-- State is module-level (one instance). The `uiState` reference points to the Preact mutable state bag so `buildItems` can read project dir, tools catalog, and chat model without passing them on every keystroke.
-- Files are fetched on mount and every 5 s via a `setInterval` in the `ChatView` mount effect. The scan endpoint is called once per project-dir change (cached in `scanCache`).
-- The `@` detection walks backwards from the cursor to find `@` preceded by whitespace or start-of-string. The query ends at the cursor and cannot contain whitespace.
-- `filterItems` applies a `REST_PER_CATEGORY` cap (4 items per section) only when the query is empty; any typed query searches the full item list with only the 200-file global cap.
-- **Direct invocation** happens in `stream.js` `send()` — the popup itself never invokes tools. It always inserts `@<name>` into the composer, and the typed-Enter path in `send()` decides whether to dispatch (shell/MCP at start-of-text with args) or send to the model.
-- Argument parsing in `tools.js` (`parseToolArgs`): tries JSON first, then `key=value` pairs. Unparseable text returns `null`, causing the tool dispatch to skip and fall through to normal model send.
-- **Arg bar:** When a tool with `parameters` is selected, `selectItem()` calls `renderArgBar(props, required, filled)` which creates a chip for each unfilled parameter. Required args are marked with `.is-required` (bold/accent border). `appendArg(key, prop)` appends ` key=\`\`` for string types or ` key= ` for booleans/numbers, then updates the bar to remove the filled chip. The bar is cleared when a non-tool item (file, model) is selected or the popup is remounted.
-- Mobile-first: the popup is full-width inside the composer, capped at 240 px height with scroll, uses system font stacks and touch-friendly tap targets (≥ 36 px). The arg bar uses small chips (22 px height) that wrap to a second row on narrow screens.
-
 ## Related
 
 - [docs/features/file-tagging.md](./file-tagging.md) — the tag system that feeds the Files section.

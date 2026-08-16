@@ -1,7 +1,5 @@
 # PWA — install, offline shell, update prompts
 
-The mobile UI served at `/` (the root) is a Progressive Web App: it ships a manifest, a service worker, and the iOS-specific meta tags needed for an Add-to-Home-Screen experience. The feature is opt-in for the user (a browser decides when to surface the install prompt) and the chat surface stays fundamentally a live one — the SW guards the API and SSE endpoints out of its cache. Its manifest identity is `/`, so an installation follows the domain that serves mouaif without a hard-coded hostname.
-
 ## Overview
 
 The PWA scaffolding covers four things:
@@ -17,14 +15,11 @@ There is no command to run. The PWA plumbing is built into every `npm run build:
 
 ````markdown
 ```bash
-# Generate icons (idempotent — checks PNG signatures first).
 node frontend/build/generate-icons.js
 node frontend/build/check-icons.js
 
-# Build the bundle + emit dist/sw.js.
 npm run build:web
 
-# Run the live-server smoke test for manifest, SW headers, icons.
 node scripts/test-pwa.js
 ```
 ````
@@ -71,19 +66,6 @@ Opening `/web/` in a browser still 301-redirects to `/` so old bookmarks and any
 - **Offline indicator.** The off banner ("You are offline. Showing the last cached view.") appears when the browser fires `offline` or when a same-origin app-shell fetch fails. Multiple banners stack: offline at the top, update immediately below.
 - **Scope.** Strictly the app shell at `/`. `/api/settings`, `/api/ai/*`, `/events`, `/data`, `/oauth/callback`, and any future same-origin endpoint are untouched by the SW. The SW logs `[mouaif-sw]` warnings for visible problems (partial precache) but does not throw — the chat UI works as a normal web page if the SW is unavailable (private mode, restrictive embedding, etc.).
 - **Dev mode.** `npm run dev:web` does not register the SW. Stale code in the cache would defeat Vite's HMR, so registration is a no-op when `import.meta.env.PROD` is `false`.
-
-## Implementation notes
-
-- **Build pipeline.** `frontend/public/manifest.webmanifest` and `frontend/public/icons/*.png` are static; Vite's default `publicDir` copies them into `dist/` at build time, and `base: '/'` in `frontend/vite.config.js` keeps every emitted URL at the root. `frontend/build/sw-src.js` is the SW source — a small Vite plugin in `frontend/vite.config.js` reads it on `generateBundle`, replaces `__CACHE_VERSION__` with the first 8 hex chars of `sha256(sw body)`, and emits `dist/sw.js`.
-- **Server.** `src/server-web-static.js` serves the built `frontend/dist/` at the root (falling back to the pre-build `frontend/` for development). `applyPwaHeaders()` sets:
-  - `Service-Worker-Allowed: /` and `Cache-Control: no-cache` on `/sw.js`,
-  - `Cache-Control: public, max-age=31536000, immutable` on fingerprinted `.js`, `.css`, `.png`, `.webp`, `.svg`, `.ico`,
-  - `Cache-Control: public, max-age=300` on `manifest.webmanifest`.
-  The `/favicon.ico` endpoint serves the real `icons/favicon-32.png`. A legacy `/web/` route 301-redirects to `/` so old bookmarks keep resolving (the hash fragment survives the redirect).
-- **Client side.** `frontend/src/sw-registration.js` registers `/sw.js` with `scope: '/'` (no-op in dev), tracks `navigator.onLine` and same-origin app-shell fetch failures to keep an `offline` signal current. `frontend/src/components/PwaBanners.jsx` renders the offline + update banners into the app shell between the header and the main content.
-- **Update semantics.** The SW calls `skipWaiting()` on install so the new worker activates immediately. `clients.claim()` lets it intercept the next fetch without a navigation. The page opts in to a reload at `controllerchange` time — the user pressing Reload is what writes the new controller; we don't force-reload mid-action.
-- **Lint.** `npm run lint` runs `node -c` on every `.js` file in `bin/`, `src/`, and `frontend/build/`. Three new scripts (`generate-icons.js`, `sw-src.js`, `check-icons.js`) plus `vite.config.js` are wired into the lint chain.
-- **Tests.** `scripts/test-pwa.js` stands up an in-process server on an ephemeral port and asserts: `<link rel="manifest">` and `<link rel="apple-touch-icon">` in `/`, manifest JSON shape (`id`/`start_url`/`scope` all `/`), theme color + icons, SW JS body + `Service-Worker-Allowed: /` + `no-cache` + `install`/`activate`/`fetch` handlers + `/api/` bypass, every icon reachable as `image/png` with the PNG magic intact, favicon now returns 200, and the hashed CSS asset carries `immutable`.
 
 ## Related
 

@@ -47,14 +47,6 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 - **Pricing.** Built-in defaults were added for common Mistral, Groq, and DeepSeek model ids in `src/usage.js`; unknown ids fall back to `--` on the cost line (or a per-model `pricing` override).
 - **No OAuth.** All four are API-key-only. `AI_TO_AUTH_PROVIDER` maps each to its own keyring namespace (`azure`, `mistral`, `groq`, `deepseek`) so a key stored under one provider is never reused as a credential for another.
 
-## Implementation notes
-
-- Source: [src/ai-endpoints.js](../../src/ai-endpoints.js) — four new `ENDPOINTS` entries with `chatPath`, `authHeader`, `listModels`, plus `BUILDERS` / `PARSERS` rows pointing at the existing OpenAI-shaped builder/parser. Azure additionally appends `api-version` in `buildOpenAIRequest`.
-- Settings list: [frontend/src/api.js](../../frontend/src/api.js) `SETTINGS_PROVIDERS` — one row per provider with `label`, `defaultBaseUrl`, `hint` (no `oauth` flag).
-- Auth mapping: [src/auth.js](../../src/auth.js) `AI_TO_AUTH_PROVIDER` — each maps to its own keyring namespace; there is **no** `SUPPORTED_PROVIDERS` entry for these API-key-only providers (they are never offered an OAuth / keychain account, so `serviceName` is never called on them).
-- No new REST endpoints; the server wiring (`/api/ai/models/live`, `/api/ai/chat`) iterates `ai.ENDPOINTS` and needs no provider-specific code.
-- Tests: [scripts/test-model-lists.js](../../scripts/test-model-lists.js) covers the new adapters (URLs, headers, error mapping, builder shape).
-
 ## Related
 
 - [docs/features/ai-client.md](./ai-client.md) — the proxy architecture all providers ride on.

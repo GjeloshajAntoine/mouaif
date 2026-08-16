@@ -2,7 +2,14 @@
 
 Static-page-ready docs for every feature in mouaif. Each file in `features/` is a self-contained page that can be rendered with any static site generator (GitHub Pages, VitePress, Docusaurus, plain HTML).
 
-The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that turns this tree into a navigable static HTML site in `docs-dist/`. Run `npm run docs:build` to regenerate it; CI runs the build on every push and fails if the committed `docs-dist/` is out of date. The script has no external dependencies — it embeds a small markdown renderer that covers the subset used in this tree (headings, fenced code, ordered/unordered lists with nesting, GFM tables, blockquotes, inline code, bold/italic/strikethrough, links, images).
+Two trees live here, one audience each:
+
+- `features/` — the **human-facing surface** of each feature: what it does, how to use it, and observable behavior. No implementation detail, wire shapes, or source paths.
+- `agent/features/` — the **agent-facing implementation notes** for the same features: REST endpoints, wire shapes, source paths, and internals. Each file mirrors a `features/` page and links back to it.
+
+The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that turns this tree into a navigable static HTML site in `docs-dist/`. Run `npm run docs:build` to regenerate it; CI runs the build on every push and fails if the committed `docs-dist/` is out of date. The script has no external dependencies — it embeds a small markdown renderer that covers the subset used in this tree (headings, fenced code, ordered/unordered lists with nesting, GFM tables, blockquotes, inline code, bold/italic/strikethrough, links, images). The build emits a presentation landing page, a feature-card index, the architectural decisions, one page per `features/` doc, and a parallel `agent/` tree (plus `agent-notes.html`) for the implementation notes.
+
+The split is maintained by `scripts/split-docs.js`, a one-shot migration helper that moves `Implementation notes`, `REST`/`HTTP`/`API`, `Backend`, `Server endpoints`, `Storage`, `Test fixture`, and `Programmatic` sections from `features/` into `agent/features/`. Run it when a new feature doc lands so the two trees stay in sync.
 
 ## Index
 

@@ -1,10 +1,5 @@
 # Web preview tool (`webpreview`)
 
-<!--
-  Static-page-ready. No SSG shortcodes. Update docs/README.md in the
-  same commit that adds this file.
--->
-
 ## Overview
 
 `webpreview` is a built-in native tool that lets the model open a URL in the Chrome instance the Inspector tab talks to, capture a small JPEG screenshot of what is on the page, and surface the thumbnail inline in the chat transcript. The user sees a compact card next to the tool call — title, URL, dimensions — and tapping it opens a full-screen modal showing the screenshot at full size with the standard close button. The same `devtools/chrome` bridge the Inspector uses is reused: no separate browser is launched, and a single Chrome can run both the Inspector tab and every `webpreview` call.
@@ -76,18 +71,6 @@ Modes (`off` / `ask` / `allowlist` / `allow`) follow the same rules as every oth
   - `EMODULE` — the runner module failed to load.
   - `EWEBPREVIEW` — unhandled exception inside the runner (network drop, etc.).
 - **Modal closes the chat native way.** `data-web-preview-id` on every card is the bridge between the imperative renderer (no Preact access) and the Preact modal (`<WebpreviewModal>` in `frontend/src/components/chat/WebpreviewModal.jsx`). A document-level click delegate emits a `requestOpen(id)` event, Chat.jsx subscribes, and the modal mounts over the chat. Tapping the backdrop or the close button calls the same `closeActive()` so the open state is consistent.
-
-## Implementation notes
-
-- Server source: [src/tools/webpreview.js](../../src/tools/webpreview.js) — the runner, the spec, `parseUrl()` for input validation, and the load-wait bridge over the per-target WebSocket.
-- AI wiring: [src/ai-stream.js](../../src/ai-stream.js) — spec is collected with the rest of the native tools (`try { toolSpecs.push(require('./tools/webpreview.js').SPEC); }`), the authorization filter strips `webpreview` from the advertised list at `mode: 'off'`, and the dispatcher routes `name === 'webpreview'` to `runWebpreview({ url, signal })`. Failures land in the same `tool_result` envelope as every other tool.
-- Authorization: [src/tools/authorization.js](../../src/tools/authorization.js) — `webpreview` is appended to `NATIVE_TOOLS` so the standard per-tool gate (`off` / `ask` / `allowlist` / `allow`) applies, and `getAuthorization()` exposes the resolved config alongside shell / subagent / etc.
-- Inspector bridge: [src/inspector.js](../../src/inspector.js) — `openInspectorTarget()`, `sendTargetCommand()`, `closeInspectorTarget()`. The runner uses the same `webSocketDebuggerUrl` resolution flow the Inspector UI does, falling back to the legacy `/json/new` HTTP PUT when a remote-debugging endpoint lacks a browser-level WS.
-- Frontend renderer: [frontend/src/components/chat/toolRender.js](../../frontend/src/components/chat/toolRender.js) → `renderWebpreviewToolResult()`. Stamps `data-web-preview-id` on the card, publishes the payload (url, title, thumbnail, …) to the shared `webpreviewState.js` map.
-- Modal: [frontend/src/components/chat/WebpreviewModal.jsx](../../frontend/src/components/chat/WebpreviewModal.jsx). Same close-button + backdrop-tap-to-dismiss + Escape pattern as the Git and CLI modals. `<img>` uses `object-fit: contain` so a tall page never crops while staying inside the sheet.
-- State bridge: [frontend/src/components/chat/webpreviewState.js](../../frontend/src/components/chat/webpreviewState.js). Holds a payload map and a `subscribe()` channel. A document-level click delegate converts a tap on any `.tool-card[data-web-preview-id]` into a `requestOpen(id)` event so the modal mounts the right payload.
-- Tools card: [frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js) and [frontend/src/components/ToolTree.jsx](../../frontend/src/components/ToolTree.jsx). The native tool group includes `webpreview`; the card renders the standard Off/Ask/Allow segment so projects can pin `allowlist` patterns once and skip the prompt for trusted hosts.
-- CSS: [frontend/src/tool-cards.css](../../frontend/src/tool-cards.css) (`tool-preview__webpreview*`) holds the in-transcript thumbnail; [frontend/src/chat-composer.css](../../frontend/src/chat-composer.css) (`wp__*`) holds the modal. The thumbnail card is mobile-first: full-bleed inside the transcript row, capped at 240 px tall (`280 px` ≥ 720 px), with a 36 × 36 tap target inherited from the parent tool card.
 
 ## Related
 

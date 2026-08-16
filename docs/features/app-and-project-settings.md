@@ -34,38 +34,6 @@ settings.setApp({ promptSize: 'extensive' });
 settings.setProject('/path/to/project', { promptSize: 'very-small' });
 ```
 
-### HTTP
-
-The mobile UI talks to the server, not the store directly.
-
-| Method | Path                              | Body / Query                                  | Response                          |
-|--------|-----------------------------------|-----------------------------------------------|-----------------------------------|
-| GET    | `/api/settings`                   | —                                             | `{ home, defaults, app }`         |
-| GET    | `/api/settings/resolved`          | `?projectDir=<absolute path>`                 | `{ resolved }`                    |
-| PUT    | `/api/settings/app`               | JSON object (shallow-merged into app store)   | `{ app }`                         |
-| PUT    | `/api/settings/project`           | `{ "projectDir": "<abs path>", ...patch }`    | `{ project, path }`               |
-| GET    | `/api/usage/builtin`              | —                                             | `{ ids, table }` — built-in model-pricing table for the Settings → Model pricing page |
-
-Examples:
-
-````bash
-# Read defaults + current app values.
-curl http://localhost:5732/api/settings
-
-# Read the resolved view for a project.
-curl 'http://localhost:5732/api/settings/resolved?projectDir=/c/Users/Admin/code/myapp'
-
-# Update app-level setting.
-curl -X PUT http://localhost:5732/api/settings/app \
-  -H 'Content-Type: application/json' \
-  -d '{"promptSize":"extensive"}'
-
-# Override at project level.
-curl -X PUT http://localhost:5732/api/settings/project \
-  -H 'Content-Type: application/json' \
-  -d '{"projectDir":"/c/Users/Admin/code/myapp","promptSize":"very-small"}'
-````
-
 ## Behavior
 
 - **Defaults** (`src/settings.js` → `DEFAULTS`): `{ providers: [], models: [], projects: [], authAccounts: {}, promptSize: 'average', toolFeedbackMaxBytes: 65536, toolOutput: { size: 'average', structure: 'full' }, notifications: {…}, flags: {} }`. The floor for every resolution. Trace is intentionally absent because it is opt-in per chat. The app store also carries additive keys with no in-code default — their absence is the default: `modelPricing` (per-model USD pricing for the cost line in [Usage metrics](./usage-metrics.md); a small built-in table in [src/usage.js](../../src/usage.js) covers the model ids the providers ship today) and `githubCopilot` (custom OAuth client id).
@@ -78,14 +46,6 @@ curl -X PUT http://localhost:5732/api/settings/project \
 - **Redaction round-trips**: `PUT /api/settings/app` and `PUT /api/settings/project` both sanitize `providers`/`models` patches before persisting — the response-only `hasApiKey` marker is stripped, and an entry re-submitted without `apiKey` keeps the previously stored key (so saving a redacted snapshot never wipes secrets).
 - **Corrupt project file**: the GET returns HTTP 422 with `code: 'MOUAIF_PROJECT_PARSE_ERROR'`. The PUT overwrites the file with the patch merged into the current best-effort state.
 - **Concurrency**: `better-sqlite3` is synchronous and single-process. Reads are safe; concurrent writes from the same process are serialized by the event loop. No transactions beyond a single prepared statement.
-
-## Implementation notes
-
-- New runtime dependency: `better-sqlite3` (`^11`). Lands in this commit.
-- New file: [src/settings.js](../../src/settings.js). Public surface: `getApp`, `setApp`, `getProject`, `setProject`, `getResolved`, `getProjectPath`, `DEFAULTS`, `MOUAIF_HOME`, `close`.
-- Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. The existing `GET /`, `GET /data`, `POST /data`, `GET /events` surface is unchanged.
-- `MOUAIF_HOME` is overridable via the `MOUAIF_HOME` env var for tests and power users. Default: `~/.mouaif/`.
-- Model pricing table: a `modelPricing` key on the app store, shaped as `{ "<modelId>": { inputPer1K, outputPer1K } }`. Edited through Settings → Model pricing; consumed by [src/usage.js](../../src/usage.js) and surfaced in the chat UI as the per-turn cost line. See [docs/features/usage-metrics.md](./usage-metrics.md).
 
 ## Related
 

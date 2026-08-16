@@ -1,7 +1,5 @@
 # Agent feature prompt and tool
 
-<!-- Static-page-ready. No SSG shortcodes. Update docs/README.md in the same commit that adds this file. -->
-
 ## Overview
 
 The agent feature prompt is a dynamic system message injected into every chat stream that tells the model which mouaif features are enabled, disabled, or authorized for the current project and chat session. It is accompanied by a `list_features` tool the model can call at any time to get the complete structured feature state — especially useful under the `very-small` prompt profile, where tool descriptions are trimmed.
@@ -44,33 +42,12 @@ The tool bypasses the authorization gate — it is read-only metadata and never 
 
 When discovered agent files are shown in the chat card, every file row has a checkbox next to the file name. Because agent-file injection is currently a chat-level on/off state, toggling any row controls whether all discovered files are injected on the next turn. The card lists discovered files even when the current chat has agent files disabled, so the chat card and Settings → Project remain consistent. The checkboxes are disabled and marked as locked when agent files are disabled in project settings.
 
-## REST
-
-| Method | Path | Query | Response |
-|--------|------|-------|----------|
-| `GET` | `/api/features` | `?projectDir=<abs>` | `{ features: { tools, mcp, agentFiles, agentSkills, fileTagging, trace, promptProfile } }` |
-
-The REST endpoint returns the same structured state the `list_features` tool returns, without requiring a chat to be active.
-
 ## Behavior
 
 - **Always injected** — the feature summary is always added as a system message (unless no feature is enabled, in which case it is omitted to save tokens). Even if every tool is `off`, the prompt profile and trace state are still reported.
 - **No tokens wasted** — the summary is short (typically 5–10 lines). The detailed state is on-demand via the tool.
 - **Authorization bypass** — `list_features` is exempt from the authorization gate; it never prompts the user. It is a metadata tool, not an execution tool.
 - **Live state** — the feature summary is recalculated on every stream turn, so it always reflects the current project and chat settings. The tool call also reads live state.
-
-## Implementation notes
-
-- Source: `src/agentFeatures.js` (new module). Public surface:
-  - `buildFeatureSummary({ chat, projectDir, project, authz, mcpServers })` → string or null
-  - `LIST_FEATURES_SPEC` — tool spec object
-  - `dispatchListFeatures(args, opts)` → `{ ok, content, result }`
-- Injection happens in `src/index.js` `handleChatStream`, after agent files and before tagged files. The call collects the project record, authorization state, and MCP server list, then passes them to `buildFeatureSummary`.
-- Tool registration in `src/ai.js`:
-  - `LIST_FEATURES_SPEC` is pushed into the `toolSpecs` array alongside `shell`, `subagent`, `ask_user`, and file tools.
-  - In `runOneCall`, `list_features` is handled before the authorization gate (alongside `discover_tool`) so it never triggers an authorization prompt.
-  - In `dispatchTool`, `list_features` is dispatched before the file tools, returning the structured JSON state.
-- The REST endpoint `GET /api/features` is registered in `src/index.js` as a standalone route so the UI can inspect the feature state without a chat.
 
 ## Related
 
