@@ -1,10 +1,11 @@
 # Custom prompts
 
-User-authored **system** prompts, stored per project. Each chat can reference one custom prompt, which is automatically injected as the first message of every stream turn. A prompt can also carry a **chat preset** — a tool allowlist, an agent-files toggle, and a skills toggle — that ride along whenever a chat uses that prompt. The preset uses the same controls as the rest of the settings: the standard tool tree (the one the chat Tools card and Settings → Project use), plus synthetic agent-files and skills groups that mirror the chat's ToolPopup.
-
 ## Overview
 
-Custom prompts let you define reusable system messages that are prepended to every chat turn. They are stored in the project's `.mouaif.json` file alongside other settings, so they can be committed to version control and shared with collaborators.
+Custom prompts let you define reusable system messages that are prepended to every chat turn. Prompts can be configured at two scopes:
+
+- **App defaults** — stored in the app SQLite database (`~/.mouaif/store.sqlite`) under `prompts`, available across all projects.
+- **Project-specific** — stored in `<projectDir>/.mouaif.json` alongside other project settings, committed to version control. Project prompts take precedence over app prompts with the same ID.
 
 The role is fixed to `system`: a custom prompt is always the opening system message of the turn, never an injected `user` or `assistant` message. Prepending a fake user/assistant message before the transcript would bias the conversation; if you need that, write it into the actual transcript.
 
@@ -14,19 +15,19 @@ A prompt can additionally define a **preset** (`preset.tools` + `preset.agentFil
 
 ### Managing prompts (Settings UI)
 
-1. Open a chat in the project you want to configure (or visit **Settings → Project overrides** and load a project directory).
-2. From **Settings → Project overrides → Custom prompts**, the project is already in scope — no path to type.
-3. The **Prompt** dropdown lists every saved prompt for the project (with a `• preset` tag for ones that carry a tool/agent-file/skills preset) plus a `+ New prompt` entry for a blank form. Pick a prompt to load its title, content, and preset into the editor below.
-   - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
-- **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt. Loading a default replaces the current content (after a confirmation if it has unsaved text).
-4. Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
+Prompts can be managed from two locations in Settings:
+1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
+2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-Existing prompts can be opened, edited, or deleted from the same screen. Deleting a prompt **cascade-clears `promptId`** on every chat in the project that referenced it, so subsequent turns no longer try to inject the missing prompt. The dropdown has a **Copy** button next to it that copies the currently selected prompt's saved content to the clipboard — works for any prompt in the list, including pre-existing ones the user did not author in the current session. For a brand-new (unsaved) prompt, Copy grabs whatever is in the content textarea.
+The **Prompt** dropdown lists every saved prompt (with scope badges and a `• preset` tag for ones that carry a tool/agent-file/skills preset) plus a `+ New prompt` entry for a blank form. Pick a prompt to load its title, content, and preset into the editor.
 
-Switching the dropdown to a different prompt while the current one has unsaved changes asks for confirmation before discarding the edits; the status line also shows an "Unsaved changes" hint so the user always knows.
+- **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
+- **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
+- **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
+- Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
 
 ### Legacy deep links
-Older `settings/prompts/:id` URLs (from before the dropdown UI shipped) still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.
+Older `settings/prompts/:id` URLs still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.
 
 ### Defining a chat preset
 
@@ -49,21 +50,9 @@ The REST API can still set `chat.promptId` directly for a chat-specific override
 
 The prompt is not visible in the transcript — it is prepended server-side when building the upstream message array.
 
-### API
-
-Prompts are managed via REST endpoints on the mouaif server. The `projectDir` parameter is required on every call.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/prompts?projectDir=<abs>` | List all prompts for a project |
-| `GET` | `/api/prompts/:id?projectDir=<abs>` | Get a single prompt |
-| `POST` | `/api/prompts` | Create a prompt. Body: `{ projectDir, title?, content }` |
-| `PATCH` | `/api/prompts/:id` | Update a prompt. Body: `{ projectDir, title?, content? }` |
-| `DELETE` | `/api/prompts/:id?projectDir=<abs>` | Delete a prompt. Returns `{ ok, removed, clearedChats }` |
-
 ### Schema
 
-Each prompt is stored as an object in the `prompts` array of the project's `.mouaif.json`:
+Each prompt is stored as an object:
 
 ```json
 {
@@ -102,14 +91,3 @@ If the referenced prompt carries a `preset`, the chat's **effective** per-chat c
 - **Skills** (`preset.skills`) become the per-chat value passed to `agentSkills.resolve` and the `list_features` summary, so a preset can turn skill injection on (or back on for a chat that has it explicitly off) for a chat.
 
 The preset is merged onto the chat record **in memory only** for that request (`effectiveChat`); the persisted chat record is never modified. The project's authorization gate (`off` / `ask` / `allow` per tool, the project-level `agentFiles: false` lock, and the project-level `skills: false` lock) is read *after* the merge and stays authoritative — a project lock overrides a preset's value.
-
-## Implementation notes
-
-- Backend: [src/prompts.js](../../src/prompts.js) — CRUD module plus `normalizePreset`, `getPromptPreset`, and `effectivePresetConfig`. No new runtime dependencies.
-- Routes: `handlePrompts()`, mounted at `/api/prompts/*` from [src/server-handlers-prompts.js](../../src/server-handlers-prompts.js) (dispatched in [src/http-server.js](../../src/http-server.js)). The DELETE handler calls [src/chats.js](../../src/chats.js) `clearPromptId()` to cascade-clear references in chats.
-- Chat schema: [src/chats.js](../../src/chats.js) — `promptId` field on the chat, allowed in `updateChat`. `normalizeChat` coerces empty / non-string values to `null`. Prompts are per-project; `preset` lives on the prompt record, not the chat.
-- Stream injection + preset linkage: `handleChatStream()` in [src/server-handlers-chats.js](../../src/server-handlers-chats.js) builds `effectiveChat` from the prompt preset and feeds it to the agent-files resolver, the per-chat `enabledTools` filter, the skills catalog (`agentSkills.catalogMessage`), and the agent-features summary (`buildFeatureSummary`). The `/system-prompt` endpoint mirrors the same logic so the transcript's first message reflects the preset.
-- Frontend: [frontend/src/components/SettingsPrompts.jsx](../../frontend/src/components/SettingsPrompts.jsx) — single dropdown-driven view (no separate list screen). A `<select>` lists every saved prompt for the project plus a `+ New prompt` entry; the form below edits the selected prompt in place. A **Copy** button next to the dropdown copies the currently selected prompt's **saved** content to the clipboard (works for any prompt, including pre-existing ones). A **Copy from default** button under the content field loads one of the three built-in prompt-size profiles (from `GET /api/prompt-profiles`) into the content editor as a starting point. A **New** button clears the form. Switching the dropdown to a different prompt while the current one has unsaved changes asks for confirmation before discarding. A `dirty` snapshot is kept in component state and compared on every render. The Chat preset section reuses the standard `ToolTree` from [frontend/src/components/ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) and synthetic agent-files / skills groups that mirror the chat's ToolPopup. The `tools` field accepts both native family names and MCP tool ids (`mcp__<slug>__<tool>`), matching the chat's per-chat allowlist. Styles in [frontend/src/settings.css](../../frontend/src/settings.css).
-- Chat UI: the chat's prompt is a per-chat selection, independent of agents (which are subagent delegation targets — see [agents.md](./agents.md)).
-- Prompts are per-project. Each project owns its own list. There is no app-level prompt library.
-- Deleting a prompt cascade-clears `promptId` on every chat in the project; the response includes a `clearedChats` count.
