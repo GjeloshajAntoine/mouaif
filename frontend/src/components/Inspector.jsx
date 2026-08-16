@@ -167,6 +167,50 @@ function TargetRow(props) {
   );
 }
 
+// SizeDropdown — a compact select-style control for the Preview panel
+// header. Shows the current viewport preset and a chevron; tapping it
+// opens a popover list of the presets (with their pixel dimensions).
+// Uses the same popover pattern as the target-row and actions menus.
+function SizeDropdown(props) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useClickOutside(ref, () => setOpen(false), open);
+  const current = VIEWPORT_PRESETS.find((p) => p.id === props.sizeId) || VIEWPORT_PRESETS[0];
+  return h('div', { ref, class: 'inspector__size' },
+    h('button', {
+      class: 'inspector__size-btn',
+      type: 'button',
+      'aria-haspopup': 'listbox',
+      'aria-expanded': String(open),
+      'aria-label': 'Preview size: ' + current.label,
+      title: 'Preview size',
+      onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+    },
+      h('span', { class: 'inspector__size-btn-label' }, current.label),
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+        h('path', { d: 'M7 10l5 5 5-5z', fill: 'currentColor' })
+      )
+    ),
+    h('div', {
+      class: 'inspector__size-pop',
+      hidden: !open,
+      role: 'listbox',
+      onClick: (e) => e.stopPropagation()
+    },
+      VIEWPORT_PRESETS.map((p) => h('button', {
+        class: 'inspector__size-opt' + (props.sizeId === p.id ? ' is-on' : ''),
+        type: 'button',
+        role: 'option',
+        'aria-selected': String(props.sizeId === p.id),
+        onClick: () => { setOpen(false); props.onChange(p.id); }
+      },
+        h('span', { class: 'inspector__size-opt-label' }, p.label),
+        h('span', { class: 'inspector__size-opt-dims' }, p.width ? (p.width + '×' + p.height) : 'native')
+      ))
+    )
+  );
+}
+
 function PanelCard(props) {
   const isVisible = props.isVisible;
   const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
@@ -175,7 +219,10 @@ function PanelCard(props) {
     'data-panel': props.id
   },
     h('div', { class: 'inspector__panel-head' },
-      h('span', { class: 'inspector__panel-label' }, props.label),
+      h('div', { class: 'inspector__panel-head-left' },
+        h('span', { class: 'inspector__panel-label' }, props.label),
+        props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
+      ),
       h('button', {
         class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
         type: 'button',
@@ -898,20 +945,6 @@ applyViewport(viewportId);
         // Close button moved to InspectActionsMenu so the nav row
         // carries only the URL field + Go (the most common action).
       ),
-      // Viewport size bar — device-size presets applied to the inspected
-      // page via CDP emulation. Mobile-first segmented control: the active
-      // preset is accent-filled, the others are muted chips. 'Auto' clears
-      // the override and returns the page to its real browser size.
-      h('div', { class: 'inspector__sizes', role: 'group', 'aria-label': 'Preview size' },
-        VIEWPORT_PRESETS.map((p) => h('button', {
-          class: 'inspector__sizechip' + (viewportId === p.id ? ' is-on' : ''),
-          type: 'button',
-          'aria-pressed': String(viewportId === p.id),
-          title: p.width ? (p.label + ' · ' + p.width + '×' + p.height) : (p.label + ' — native size'),
-          'data-size-id': p.id,
-          onClick: () => applyViewport(p.id)
-        }, p.label))
-      ),
       // Panelbar — 2-line chips with a corner entry-count badge for
       // the row-shaped panels (console, network). Preview/Info are not
       // countable so they stay unbadged but still print the label under
@@ -956,6 +989,8 @@ applyViewport(viewportId);
               grow: idx === 0,
               isVisible: visiblePanels.has(id),
               onToggle: togglePanel,
+              sizeId: viewportId,
+              onSizeChange: id === 'preview' ? applyViewport : null,
               key: id
             }, renderPanelBody(id)))
           )

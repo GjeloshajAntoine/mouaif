@@ -142,38 +142,79 @@
   font-size: 0.84rem;
   font-weight: 600;
 }
-/* ---- Inspector: viewport size presets --------------------------- */
-.inspector__sizes {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  padding: 0 10px 8px;
+/* ---- Inspector: viewport size dropdown -------------------------- */
+/* A compact dropdown in the Preview panel header. The trigger shows the
+current preset label + chevron; tapping opens a listbox of presets with
+their pixel dimensions. Uses the same popover idiom as the target-row
+and actions menus, sized for a 360 px phone. */
+.inspector__size {
+  position: relative;
 }
-.inspector__sizechip {
-  flex: 1 1 0;
-  min-width: 0;
+.inspector__size-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
-  color: var(--muted);
-  background: var(--surface);
+  color: var(--fg-soft);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
   cursor: pointer;
-  min-height: 36px;
-  padding: 0 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 28px;
+  padding: 0 8px;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__sizechip:hover { color: var(--fg); border-color: var(--border-strong); }
-.inspector__sizechip.is-on {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 4px rgba(110,168,254,.2);
+.inspector__size-btn:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__size-btn[aria-expanded="true"] {
+  background: var(--surface-3);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.inspector__size-btn svg { display: block; }
+.inspector__size-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 148px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inspector__size-pop[hidden] { display: none; }
+.inspector__size-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-height: 36px;
+}
+.inspector__size-opt:hover { background: var(--surface-2); }
+.inspector__size-opt.is-on {
+  background: var(--surface-2);
+}
+.inspector__size-opt.is-on .inspector__size-opt-label { color: var(--accent); font-weight: 700; }
+.inspector__size-opt-dims {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
 }
 .inspector__panelbar {
   display: flex;
@@ -236,6 +277,12 @@
   padding: 4px 6px 4px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+}
+.inspector__panel-head-left {
+display: flex;
+align-items: center;
+gap: 8px;
+min-width: 0;
 }
 .inspector__panel-label {
   font-size: 0.72rem;
