@@ -62,6 +62,8 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
+  // App-level custom prompts. Empty by default.
+  prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`
   // controls the byte cap (`very-small`, `average`, `full`, `extensive`);
   // `structure` controls the layout (`full`, `concise`). Lives in the same

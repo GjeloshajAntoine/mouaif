@@ -1,9 +1,7 @@
 'use strict';
-
 // Prompts + agent features + project agents REST handlers. Extracted
 // from the original single-file http-server.js. Shared helpers live in
 // src/server-shared.js.
-
 const {
   sendJSON,
   qs,
@@ -17,14 +15,13 @@ const {
 } = require('./server-shared.js');
 
 // ---- Prompts API ---------------------------------------------------------
-// Custom per-project prompts. Stored in the project file as project.prompts.
+// Custom prompts. Stored in the app SQLite database or in project.prompts.
 // Routes:
-//   GET    /api/prompts?projectDir=<abs>          -> { prompts }
-//   GET    /api/prompts/:id?projectDir=<abs>      -> { prompt }
-//   POST   /api/prompts   body: { projectDir, title?, content, role? } -> { prompt }
-//   PATCH  /api/prompts/:id  body: { projectDir, title?, content?, role? } -> { prompt }
-//   DELETE /api/prompts/:id?projectDir=<abs>      -> { ok: true }
-
+//   GET    /api/prompts[?projectDir=<abs>][&scope=app|project]  -> { prompts }
+//   GET    /api/prompts/:id[?projectDir=<abs>][&scope=app|project] -> { prompt }
+//   POST   /api/prompts   body: { projectDir?, scope?, title?, content, role? } -> { prompt }
+//   PATCH  /api/prompts/:id  body: { projectDir?, scope?, title?, content?, role? } -> { prompt }
+//   DELETE /api/prompts/:id[?projectDir=<abs>][&scope=app|project] -> { ok: true }
 async function handlePrompts(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -40,25 +37,25 @@ async function handlePrompts(req, res, parsed) {
     return errCodeToHttpStatus(e && e.code);
   }
 
-  // GET /api/prompts?projectDir=<abs>
+  // GET /api/prompts[?projectDir=<abs>]
   if (urlPath === '/api/prompts' && method === 'GET') {
     const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const scope = qs(q, 'scope');
     try {
-      return sendJSON(res, 200, { prompts: prompts.listPrompts(dir) });
+      return sendJSON(res, 200, { prompts: prompts.listPrompts(dir, { scope }) });
     } catch (e) {
       return sendJSON(res, promptError(e), { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
-  // GET /api/prompts/:id?projectDir=<abs>
+  // GET /api/prompts/:id[?projectDir=<abs>]
   const getMatch = urlPath.match(/^\/api\/prompts\/([^/]+)$/);
   if (getMatch && method === 'GET') {
     const id = decodeURIComponent(getMatch[1]);
     const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const scope = qs(q, 'scope');
     try {
-      const p = prompts.getPrompt(dir, id);
+      const p = prompts.getPrompt(dir, id, { scope });
       if (!p) return sendJSON(res, 404, { error: 'Prompt not found', id });
       return sendJSON(res, 200, { prompt: p });
     } catch (e) {
@@ -66,12 +63,15 @@ async function handlePrompts(req, res, parsed) {
     }
   }
 
-  // POST /api/prompts  body: { projectDir, title?, content, role? }
+  // POST /api/prompts  body: { projectDir?, scope?, title?, content, role? }
   if (urlPath === '/api/prompts' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = projectDirFrom(body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const scope = body.scope || (dir ? 'project' : 'app');
+    if (!dir && scope === 'project') {
+      return sendJSON(res, 400, { error: 'projectDir is required for project-scoped prompts' });
+    }
     try {
       const p = prompts.createPrompt(dir, body || {});
       return sendJSON(res, 201, { prompt: p });
@@ -80,13 +80,12 @@ async function handlePrompts(req, res, parsed) {
     }
   }
 
-  // PATCH /api/prompts/:id  body: { projectDir, title?, content?, role? }
+  // PATCH /api/prompts/:id  body: { projectDir?, scope?, title?, content?, role? }
   if (getMatch && method === 'PATCH') {
     const id = decodeURIComponent(getMatch[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = projectDirFrom(body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
       const p = prompts.updatePrompt(dir, id, body || {});
       if (!p) return sendJSON(res, 404, { error: 'Prompt not found', id });
@@ -96,15 +95,29 @@ async function handlePrompts(req, res, parsed) {
     }
   }
 
-  // DELETE /api/prompts/:id?projectDir=<abs>
+  // DELETE /api/prompts/:id[?projectDir=<abs>]
   if (getMatch && method === 'DELETE') {
     const id = decodeURIComponent(getMatch[1]);
     const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const scope = qs(q, 'scope');
     try {
       let clearedChats = 0;
       const removed = prompts.deletePrompt(dir, id, {
-        onRemoved: (deletedId) => { clearedChats = chats.clearPromptId(dir, deletedId); }
+        scope,
+        onRemoved: (deletedId) => {
+          if (dir) {
+            clearedChats = chats.clearPromptId(dir, deletedId);
+          } else {
+            try {
+              const allProjects = require('./projects.js').listProjects();
+              for (const prj of allProjects) {
+                if (prj && prj.path) {
+                  clearedChats += chats.clearPromptId(prj.path, deletedId);
+                }
+              }
+            } catch { /* non-fatal */ }
+          }
+        }
       });
       if (!removed) return sendJSON(res, 404, { error: 'Prompt not found', id });
       return sendJSON(res, 200, { ok: true, removed: id, clearedChats });
@@ -151,7 +164,6 @@ async function handleFeatures(req, res, parsed) {
 //   GET    /api/agents/:name?projectDir=<abs>    -> { agent } | 404
 //   PATCH  /api/agents/:name  body: { projectDir, name?, content?, tools?, modelId? }
 //   DELETE /api/agents/:name?projectDir=<abs>
-
 async function handleAgents(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;

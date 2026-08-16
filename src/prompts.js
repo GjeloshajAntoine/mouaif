@@ -1,14 +1,14 @@
 'use strict';
-
-// Custom prompts — user-authored system prompts, stored per project.
+// Custom prompts — user-authored system prompts, stored in app SQLite or per project.
 //
 // Implements the "Custom prompts" feature from .github/copilot-instructions.md §4.
-// Prompts live in `<projectDir>/.mouaif.json` under a `prompts` array, so they
-// can be committed to the repo and edited by hand alongside project settings.
+// Prompts can be stored globally in the app SQLite database (`prompts` key in app settings)
+// or per project in `<projectDir>/.mouaif.json` under a `prompts` array.
+// Project prompts take precedence over app prompts with the same id.
 //
-// Schema (inside project.prompts):
+// Schema (inside app or project.prompts):
 //   {
-//     id:        'short-kebab-id',           // unique within the project
+//     id:        'short-kebab-id',           // unique within the scope
 //     title:     'Concise label',            // shown in the UI picker
 //     content:   'You are a helpful…',       // the prompt text
 //     role:      'system',                   // locked; the field is kept
@@ -41,7 +41,6 @@
 // At stream time, the server prepends the prompt as a `system` message
 // before the user message. If the prompt carries a `preset`, the chat's
 // tool / agent-file settings also pick it up (see below).
-
 const crypto = require('crypto');
 const settings = require('./settings.js');
 
@@ -68,6 +67,7 @@ const VALID_ROLES = new Set(['system']);
 // authoritative, so listing a tool here can never turn on something
 // the project turned off.
 const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview']);
+
 // MCP tool ids in the catalog look like `mcp__<slug>__<tool>`. Anything
 // starting with this prefix is accepted as a tool name in the preset,
 // mirroring `chat.tools`.
@@ -100,6 +100,7 @@ function normalizePreset(raw) {
     : undefined;
   const agentFiles = typeof raw.agentFiles === 'boolean' ? raw.agentFiles : undefined;
   const skills = typeof raw.skills === 'boolean' ? raw.skills : undefined;
+
   if ((!tools || !tools.length) && agentFiles === undefined && skills === undefined) return null;
   return {
     tools: tools || undefined,
@@ -125,20 +126,81 @@ function normalizePrompt(raw) {
 
 // ---- CRUD ---------------------------------------------------------------
 
-function listPrompts(projectDir) {
-  const project = settings.getProject(projectDir);
-  const raw = Array.isArray(project.prompts) ? project.prompts : [];
+function getPromptsList(projectDir) {
+  if (projectDir) {
+    const project = settings.getProject(projectDir);
+    return Array.isArray(project.prompts) ? project.prompts : [];
+  }
+  const app = settings.getApp();
+  return Array.isArray(app.prompts) ? app.prompts : [];
+}
+
+function savePromptsList(projectDir, list) {
+  if (projectDir) {
+    settings.setProject(projectDir, { prompts: list });
+  } else {
+    settings.setApp({ prompts: list });
+  }
+}
+
+function listPrompts(projectDir, opts = {}) {
+  // If no projectDir is provided, returns app-level prompts with scope: 'app'.
+  if (!projectDir) {
+    const raw = getPromptsList('');
+    const out = [];
+    for (const p of raw) {
+      const n = normalizePrompt(p);
+      if (n) out.push({ ...n, scope: 'app' });
+    }
+    return out;
+  }
+
+  // If explicit scope is requested:
+  if (opts && opts.scope === 'project') {
+    const raw = getPromptsList(projectDir);
+    const out = [];
+    for (const p of raw) {
+      const n = normalizePrompt(p);
+      if (n) out.push({ ...n, scope: 'project' });
+    }
+    return out;
+  }
+  if (opts && opts.scope === 'app') {
+    const raw = getPromptsList('');
+    const out = [];
+    for (const p of raw) {
+      const n = normalizePrompt(p);
+      if (n) out.push({ ...n, scope: 'app' });
+    }
+    return out;
+  }
+
+  // Merged: project prompts take precedence over app prompts with the same id.
+  const appRaw = getPromptsList('');
+  const projRaw = getPromptsList(projectDir);
   const out = [];
-  for (const p of raw) {
+  const seenIds = new Set();
+
+  for (const p of projRaw) {
     const n = normalizePrompt(p);
-    if (n) out.push(n);
+    if (n) {
+      out.push({ ...n, scope: 'project' });
+      seenIds.add(n.id);
+    }
+  }
+  for (const p of appRaw) {
+    const n = normalizePrompt(p);
+    if (n && !seenIds.has(n.id)) {
+      out.push({ ...n, scope: 'app' });
+      seenIds.add(n.id);
+    }
   }
   return out;
 }
 
-function getPrompt(projectDir, promptId) {
+function getPrompt(projectDir, promptId, opts = {}) {
   if (!promptId || typeof promptId !== 'string') return null;
-  return listPrompts(projectDir).find(p => p.id === promptId) || null;
+  return listPrompts(projectDir, opts).find(p => p.id === promptId) || null;
 }
 
 function createPrompt(projectDir, opts) {
@@ -147,10 +209,11 @@ function createPrompt(projectDir, opts) {
     e.code = 'EBADINPUT';
     throw e;
   }
-  const project = settings.getProject(projectDir);
-  const list = Array.isArray(project.prompts) ? project.prompts.slice() : [];
+  const targetDir = (opts && opts.scope === 'app') ? '' : (projectDir || '');
+  const rawList = getPromptsList(targetDir);
+  const list = rawList.slice();
   const prompt = normalizePrompt({
-    id: newPromptId(),
+    id: typeof opts.id === 'string' && opts.id.trim() ? opts.id.trim() : newPromptId(),
     title: typeof opts.title === 'string' && opts.title.trim() ? opts.title.trim() : '',
     content: opts.content,
     role: 'system',
@@ -164,16 +227,30 @@ function createPrompt(projectDir, opts) {
     throw e;
   }
   list.push(prompt);
-  settings.setProject(projectDir, { prompts: list });
-  return prompt;
+  savePromptsList(targetDir, list);
+  return { ...prompt, scope: targetDir ? 'project' : 'app' };
 }
 
 function updatePrompt(projectDir, promptId, patch) {
   if (!promptId) return null;
-  const project = settings.getProject(projectDir);
-  const list = Array.isArray(project.prompts) ? project.prompts.slice() : [];
-  const idx = list.findIndex(p => p && p.id === promptId);
+  const targetDir = (patch && patch.scope === 'app') ? '' : (projectDir || '');
+  const rawList = getPromptsList(targetDir);
+  const list = rawList.slice();
+  let idx = list.findIndex(p => p && p.id === promptId);
+  let effectiveDir = targetDir;
+
+  if (idx < 0 && targetDir && (!patch || !patch.scope)) {
+    const appList = getPromptsList('').slice();
+    const appIdx = appList.findIndex(p => p && p.id === promptId);
+    if (appIdx >= 0) {
+      idx = appIdx;
+      effectiveDir = '';
+      list.length = 0;
+      list.push(...appList);
+    }
+  }
   if (idx < 0) return null;
+
   const current = normalizePrompt(list[idx]);
   if (!current) return null;
   if (patch && typeof patch.title === 'string') {
@@ -182,38 +259,45 @@ function updatePrompt(projectDir, promptId, patch) {
   if (patch && typeof patch.content === 'string' && patch.content.trim()) {
     current.content = patch.content;
   }
-  // `preset` accepts an object (set/overwrite), null/undefined (clear), or
-  // an explicit { preset: null } to remove the preset entirely. Absent key
-  // leaves it untouched so PATCH stays partial.
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'preset')) {
     current.preset = patch.preset == null ? null : normalizePreset(patch.preset);
   }
-  // role is locked to 'system'. Accept and ignore any patch.role so a
-  // hand-edited .mouaif.json with a non-system role round-trips safely.
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'role') && !VALID_ROLES.has(patch.role)) {
     // no-op
   }
   current.updatedAt = new Date().toISOString();
   list[idx] = current;
-  settings.setProject(projectDir, { prompts: list });
-  return current;
+  savePromptsList(effectiveDir, list);
+  return { ...current, scope: effectiveDir ? 'project' : 'app' };
 }
 
 function deletePrompt(projectDir, promptId, opts) {
   if (!promptId) return false;
-  const project = settings.getProject(projectDir);
-  if (!Array.isArray(project.prompts)) return false;
-  const before = project.prompts.length;
-  project.prompts = project.prompts.filter(p => p && p.id !== promptId);
-  if (project.prompts.length === before) return false;
-  settings.setProject(projectDir, { prompts: project.prompts });
-  // Optional post-delete hook. The HTTP handler passes a function that
-  // cascade-clears `promptId` on every chat in the project so a chat
-  // never carries a dangling reference. Hooks are only invoked when a
-  // prompt was actually removed.
+  const targetDir = (opts && opts.scope === 'app') ? '' : (projectDir || '');
+  const rawList = getPromptsList(targetDir);
+  let list = rawList.slice();
+  let before = list.length;
+  list = list.filter(p => p && p.id !== promptId);
+  let effectiveDir = targetDir;
+
+  if (list.length === before) {
+    if (targetDir && (!opts || !opts.scope)) {
+      const appRaw = getPromptsList('');
+      const appList = appRaw.filter(p => p && p.id !== promptId);
+      if (appList.length !== appRaw.length) {
+        savePromptsList('', appList);
+        if (opts && typeof opts.onRemoved === 'function') {
+          try { opts.onRemoved(promptId); } catch (e) { /* swallow */ }
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  savePromptsList(effectiveDir, list);
   if (opts && typeof opts.onRemoved === 'function') {
-    try { opts.onRemoved(promptId); }
-    catch (e) { /* swallow; the prompt is gone either way */ }
+    try { opts.onRemoved(promptId); } catch (e) { /* swallow */ }
   }
   return true;
 }
@@ -225,7 +309,7 @@ function deletePrompt(projectDir, promptId, opts) {
 // prompt is missing or carries no preset. Missing/corrupt project files
 // resolve to null so a bad preset never breaks the tool loop.
 function getPromptPreset(projectDir, promptId) {
-  if (!projectDir || !promptId) return null;
+  if (!promptId) return null;
   try {
     const p = getPrompt(projectDir, promptId);
     return p && p.preset ? p.preset : null;

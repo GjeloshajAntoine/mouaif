@@ -161,6 +161,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'models',         // user-defined models
   'projects',       // registered project cards
   'promptSize',     // default prompt-size profile
+  'prompts',        // app-level custom prompts
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
