@@ -125,47 +125,25 @@ function buildToolsCard(state) {
     else if (g.id === 'task') g.control = makeSegVNode('task', g.id);
     else if (g.id === 'ask_user') g.control = makeSegVNode('ask_user', g.id);
     else if (g.id === 'report_progress') g.control = makeSegVNode('report_progress', g.id);
+    else if (g.id === 'webpreview') g.control = makeSegVNode('webpreview', g.id);
     else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
   }
 
-  // MCP authorization — same layered model as project settings:
-  // an "MCP default" gate row (the project's shared fallback, layers
-  // 3-4) plus one Off/Ask/Allow segment per MCP server group (the
-  // per-server override, layer 2, showing the effective mode). Writes
-  // go through state._saveMcpAuth so the card re-renders in place.
+  // MCP authorization — one Off/Ask/Allow segment per MCP server group
+  // (the per-server override, showing the effective mode). Writes go
+  // through state._saveMcpAuth so the card re-renders in place.
   const mcpAuth = state.mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
-  const mcpServers = state.mcpServers || [];
-  const firstMcp = groups.findIndex((g) => g.id.startsWith('mcp-'));
-  if (firstMcp >= 0) {
-    const onSaveMcp = (patch) => state._saveMcpAuth && state._saveMcpAuth(patch);
-    groups.splice(firstMcp, 0, {
-      id: 'mcp',
-      name: 'MCP default',
-      description: 'gate for servers without an override',
-      checked: (mcpAuth.mode || 'ask') !== 'off',
-      hideCheckbox: true,
-      control: h(McpAuthSeg, {
-        name: 'MCP default',
-        slug: null,
-        servers: mcpAuth.servers,
-        shared: mcpAuth,
-        namePrefix: 'chat-mcp',
-        onSave: onSaveMcp
-      }),
-      tools: []
+  for (const g of groups) {
+    if (!g.id.startsWith('mcp-')) continue;
+    const slug = g.id.slice(4);
+    g.control = h(McpAuthSeg, {
+      name: g.name,
+      slug,
+      servers: mcpAuth.servers,
+      shared: mcpAuth,
+      namePrefix: 'chat-mcp',
+      onSave: (patch) => state._saveMcpAuth && state._saveMcpAuth(patch)
     });
-    for (const g of groups) {
-      if (!g.id.startsWith('mcp-')) continue;
-      const slug = g.id.slice(4);
-      g.control = h(McpAuthSeg, {
-        name: g.name,
-        slug,
-        servers: mcpAuth.servers,
-        shared: mcpAuth,
-        namePrefix: 'chat-mcp',
-        onSave: onSaveMcp
-      });
-    }
   }
 
   // Render the Preact ToolTree into a container div.
@@ -179,12 +157,6 @@ function buildToolsCard(state) {
   const collapsed = state._toolTreeCollapsed || null;
 
   function onToggleGroup(groupId, checked) {
-    // MCP default gate: the group checkbox is a quick Off ↔ Ask for the
-    // project's shared MCP fallback (same shortcut as native groups).
-    if (groupId === 'mcp') {
-      if (state._saveMcpAuth) state._saveMcpAuth({ mode: checked ? 'ask' : 'off' });
-      return;
-    }
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
     if (state._toggleToolGroup) state._toggleToolGroup(group.tools.map((tool) => tool.id), checked);

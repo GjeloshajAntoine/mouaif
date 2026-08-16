@@ -795,13 +795,16 @@ export function appendToolResultCard(toolResult, refs) {
     }
   }
   // Expand errors automatically so the user sees what went wrong
-  // without an extra tap. Successful results stay collapsed.
+  // without an extra tap. Successful results stay collapsed — except
+  // for `webpreview`, whose body IS the clickable thumbnail the user
+  // opens the modal from. Collapsing it would force a two-tap flow
+  // (expand the card, then tap the thumbnail); keeping it open
+  // matches every other full-bleed inline card (progress, ask_user,
+  // authorization, subagent) and surfaces the call for one-tap access.
   if (!toolResult.ok) card.classList.add('is-expanded');
-  // Collapse on success: a card the user never touched (the running
-  // card auto-expanded to stream live output) folds away on success,
-  // keeping the transcript compact. For subagents the body stays
-  // visible even collapsed (see the .tool-card--subagent CSS rule),
-  // so the final nested chat is still readable; shell folds fully.
+  else if (normalizeToolName(toolResult.name) === 'webpreview') {
+    if (!card._userCollapsed) card.classList.add('is-expanded');
+  }
   else if (!card._userCollapsed) card.classList.remove('is-expanded');
   afterTranscriptAppend(refs, true);
 }

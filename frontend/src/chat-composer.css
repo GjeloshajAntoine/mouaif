@@ -1158,3 +1158,180 @@
 }
 .gm__error p { margin: 0 0 10px; }
 .gm__error .btn { min-height: 36px; font-size: 0.78rem; }
+
+/* ---- Web preview modal ----------------------------------------------- */
+/*
+   Same full-screen overlay + sheet pattern as the Git modal
+   (.gm__overlay / .gm__sheet). Tapping the dark backdrop dismisses
+   the modal; tapping the close icon button does the same; Escape
+   also closes. The image is object-fit:contain so a tall page (e.g.
+   a long landing page) keeps its full strip visible without
+   horizontal scroll on phone. */
+.wp__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  /* Honor the safe-area inset on mobile so the close button and
+     footer don't slide under the OS chrome. */
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  animation: gm__fade-in 120ms ease-out;
+}
+.wp__sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (min-width: 720px) {
+  .wp__overlay {
+    padding: 24px;
+    align-items: center;
+    justify-content: center;
+  }
+  .wp__sheet {
+    flex: 0 1 960px;
+    max-width: 1120px;
+    width: 100%;
+    height: min(86vh, 860px);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  }
+}
+.wp__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  min-height: 44px;
+}
+.wp__head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+.wp__title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp__url {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Keep the host visible even when the path is long. */
+  direction: rtl;
+  text-align: left;
+}
+.wp__close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.wp__close:hover,
+.wp__close:focus-visible {
+  background: var(--surface-3);
+  color: var(--fg);
+  outline: 0;
+}
+.wp__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  overflow: auto;
+}
+.wp__img {
+  display: block;
+  /* object-fit:contain keeps the page's full strip visible without
+     cropping the long edge; the wrapper already scrolls. */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.wp__empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.wp__empty p { margin: 0 0 4px; font-size: 0.86rem; }
+.wp__empty-hint { color: var(--muted-2); font-size: 0.76rem; }
+.wp__foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  min-height: 36px;
+}
+.wp__foot-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.66rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp__open-link {
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 5px 10px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.wp__open-link:hover,
+.wp__open-link:focus-visible {
+  background: var(--accent);
+  color: var(--on-accent);
+  outline: 0;
+}
+

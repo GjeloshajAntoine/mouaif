@@ -12,6 +12,8 @@ import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
+import { WebpreviewModal } from './WebpreviewModal.jsx';
+import { subscribe as subscribeWebPreview, closeActive as closeWebPreview, getActivePayload } from './webpreviewState.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -30,6 +32,11 @@ export function ChatView(props) {
 
   const { projectDir, chatId } = props;
   const [FileEditor, setFileEditor] = useState(null);
+  // Active webpreview card id; setting it opens the modal. '' = closed.
+  // The renderer stashes payloads; we read from getActivePayload so the
+  // modal never holds stale data after a re-render mid-open.
+  const [webPreviewId, setWebPreviewId] = useState('');
+  const [webPreviewPayload, setWebPreviewPayload] = useState(null);
 
   useEffect(() => {
     if (!fileEditorOpen || FileEditor) return;
@@ -41,6 +48,19 @@ export function ChatView(props) {
     });
     return () => { cancelled = true; };
   }, [fileEditorOpen, FileEditor]);
+
+  // Subscribe to webpreview open/close events. The renderer emits
+  // via `requestOpen(id)` (see webpreviewState.js); ChatView mirrors
+  // the active id + payload into Preact state so the modal mounts.
+  // The unsubscribe runs on chat-switch cleanup so a stale event
+  // from a different chat never flips our state.
+  useEffect(() => {
+    const off = subscribeWebPreview((id, payload) => {
+      setWebPreviewId(id || '');
+      setWebPreviewPayload(payload || null);
+    });
+    return () => { off(); };
+  }, []);
 
   const atMentionRef = useRef(null);
   const atArgBarRef = useRef(null);
@@ -281,6 +301,16 @@ export function ChatView(props) {
     ),
     fileEditorOpen && FileEditor
       ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
+      : null,
+    webPreviewId && webPreviewPayload
+      ? h(WebpreviewModal, {
+          preview: webPreviewPayload,
+          onClose: () => {
+            closeWebPreview();
+            setWebPreviewId('');
+            setWebPreviewPayload(null);
+          }
+        })
       : null
   );
 }

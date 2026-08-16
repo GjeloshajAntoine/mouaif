@@ -38,6 +38,7 @@ The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that
 - [Anthropic prompt caching](features/prompt-caching.md) — cacheable system block + discounted cache-aware cost for Claude models, including OAuth.
 - [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
 - [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
+- [Web preview tool](features/webpreview.md) — built-in `webpreview` tool that lets the model open a URL in the debug Chrome, capture a small screenshot of what is on the page, and surface a clickable thumbnail in the chat. Tapping the thumbnail opens a full-screen modal with the standard close button.
 - [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.
 - [Per-run model choice on subagent approval](features/auth-model-picker.md) — the authorization card's model picker: pick which model executes a delegated `subagent` run, for that call only.
 - [Tool feedback compaction](features/tool-feedback-compaction.md) — preserve complete tool cards and transcripts while capping the copy returned to the model at 64 KiB per result.

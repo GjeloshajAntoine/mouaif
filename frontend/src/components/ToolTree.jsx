@@ -23,7 +23,7 @@
 // Props:
 //   groups: Array<{
 //     id, name, description?, checked, disabled?, disabledReason?, title?,
-//     hideCheckbox?: boolean,        // omit the group checkbox (e.g. MCP default)
+//     hideCheckbox?: boolean,        // omit the group checkbox
 //     alwaysExpanded?: boolean,      // render children without a chevron
 //     control?: any,                 // right-aligned Preact node
 //     tools: Array<{ id, name, description?, title?, checked,
@@ -121,7 +121,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
         // <label>, so tapping the name text does not flip anything.
         // A disabled group is a hard lock (server off, project
         // locked, …): the checkbox is inert and the row explains why.
-        // Groups can set `hideCheckbox: true` (e.g. "MCP default" gate).
+  // Groups can set `hideCheckbox: true` to omit the checkbox.
         group.hideCheckbox
           ? null
           : h('input', {
@@ -306,7 +306,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     used: usedTools.has(t.name)
   }, extra || {});
 
-  for (const name of ['shell', 'subagent', 'ask_user', 'task']) {
+  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview']) {
     const t = catalog.find((x) => x && x.name === name);
     if (!t) continue;
     groups.push({

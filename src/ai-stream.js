@@ -227,6 +227,13 @@ async function runSingleToolCall(c, cx) {
       let summary;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'webpreview') {
+        // Show the URL the model wants to open so the user can tell
+        // at a glance which site it'll preview — beats the generic
+        // first-arg fallback because every webpreview call has a
+        // `url` argument anyway.
+        summary = (args && args.url) || '';
+      }
       else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
         summary = (args && (args.path || args.file)) || (args && args.query) || '';
       } else if (String(c.name).startsWith('mcp__')) {
@@ -458,6 +465,11 @@ async function streamChat(opts) {
     const ft = require('./tools/files.js');
     for (const name of ft.FILE_TOOL_NAMES) toolSpecs.push(ft.SPECS[name]);
   } catch { /* file tools module unavailable; skip */ }
+  // Native web-preview tool: opens a URL in the debug Chrome and
+  // returns a small JPEG thumbnail. Same CDP bridge as the Inspector
+  // tab, gated by the project-level `webpreview` authorization mode.
+  try { toolSpecs.push(require('./tools/webpreview.js').SPEC); }
+  catch { /* webpreview module unavailable; skip */ }
   try {
     if (opts && opts.projectDir) {
       const mcpMod = require('./mcp.js');
@@ -1598,6 +1610,32 @@ async function streamChat(opts) {
         args,
         settings: callOpts && callOpts.appSettings
       });
+    }
+
+    // Native web-preview tool: opens a URL in the debug Chrome and
+    // returns a small JPEG screenshot of what is on the page. The
+    // chat UI renders it as a thumbnail card; tapping the card
+    // opens a full-screen modal with a close button. Authorize is
+    // handled by the dispatch gate above (it treats `webpreview` as
+    // a native family like the others), so the runner does not see
+    // a denial again — it just runs.
+    if (name === 'webpreview') {
+      let wp;
+      try { wp = require('./tools/webpreview.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'webpreview tool module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      try {
+        const out = await wp.runWebpreview({
+          url: args && args.url,
+          signal: callOpts && callOpts.signal
+        });
+        return out;
+      } catch (e) {
+        const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
     }
 
     // MCP tools (mcp__<serverSlug>__<toolName>).

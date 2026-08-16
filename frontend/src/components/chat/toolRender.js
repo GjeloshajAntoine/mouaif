@@ -11,6 +11,7 @@ import {
   normalizeToolName,
   parsePlainFileToolResult
 } from './tools.js';
+import { publish as publishWebPreview } from './webpreviewState.js';
 
 // renderToolMeta(parent, items)
 //
@@ -254,6 +255,72 @@ function renderShellToolResult(body, r) {
   renderPreviewPre(body, out.length ? out.join('\n\n') : '(exit ' + (r.exitCode ?? 0) + ', no output)', 'tool-preview__terminal');
 }
 
+// renderWebpreviewToolResult(body, r)
+//
+// Renders the `webpreview` result as a clickable thumbnail card:
+//   <thumbnail> https://example.com/  · 2.1 KB · 640×480
+//
+// Tapping the card opens the full-screen WebpreviewModal mounted by
+// the chat view. The modal and its dispatcher are owned by Chat.jsx,
+// not this renderer, so we just stamp `data-web-preview-id` on the
+// card and stash the payload in `./webpreviewState.js` for the click
+// delegate. Re-renders (live stream → final) re-use the same id so
+// the in-place body fill updates the thumbnail without disturbing an
+// already-open modal.
+//
+// Failures render as a normal `<pre>` so the user sees the typed
+// error and the model never gets a misleading "no preview" answer.
+function renderWebpreviewToolResult(body, r) {
+  body.classList.add('tool-preview', 'tool-preview--webpreview');
+  if (typeof r === 'string') r = coerceToolResult(r, 'webpreview');
+  if (!r || r.error) {
+    return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+  }
+  // Re-use an existing id on `data-web-preview-id` so the live →
+  // final render rebinds to the same modal slot. Stable id means
+  // the click delegate doesn't need to be swapped when the body
+  // fill happens.
+  const card = body.closest && body.closest('.tool-card');
+  let id = card && card.dataset && card.dataset.webPreviewId;
+  if (!id) {
+    id = 'wp_' + Math.random().toString(36).slice(2, 10);
+    if (card && card.dataset) card.dataset.webPreviewId = id;
+  }
+  const meta = [];
+  if (r.width && r.height) meta.push(r.width + ' × ' + r.height);
+  if (r.sizeBytes) meta.push(formatKb(r.sizeBytes));
+  if (r.capturedAt) meta.push('captured');
+  meta.push('tap to open');
+  renderToolMeta(body, [r.title || r.url, ...meta]);
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-preview__webpreview';
+  if (r.thumbnail) {
+    const img = document.createElement('img');
+    img.className = 'tool-preview__webpreview-img';
+    img.src = r.thumbnail;
+    img.alt = 'Web preview of ' + (r.url || r.title || 'preview');
+    img.loading = 'lazy';
+    img.draggable = 'false';
+    wrap.appendChild(img);
+  }
+  const caption = document.createElement('div');
+  caption.className = 'tool-preview__webpreview-caption';
+  caption.textContent = r.url || '';
+  wrap.appendChild(caption);
+  body.appendChild(wrap);
+  // Publish the payload for the click delegate. Re-renders upsert
+  // so the latest copy wins; a re-rendered card overwrites the old
+  // entry but reuses the same id, so any in-flight open modal
+  // continues to show the latest payload when it next reads
+  // (which it doesn't, but downstream consumers do).
+  publishWebPreview(id, r);
+}
+
+function formatKb(bytes) {
+  if (!bytes || !isFinite(bytes)) return '';
+  return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+}
+
 // renderGenericToolResult(body, r)
 //
 // Fallback for tools without a dedicated renderer (MCP tools, etc.).
@@ -395,6 +462,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'edit_file') return renderEditFileToolResult(body, r);
   if (name === 'write_file') return renderWriteFileToolResult(body, r);
   if (name === 'task') return renderTaskToolResult(body, r);
+  if (name === 'webpreview') return renderWebpreviewToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after

@@ -116,6 +116,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
   if (name === 'subagent') return args.task || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
+  if (name === 'webpreview') return args.url || '';
   try { return JSON.stringify(args, null, 2); }
   catch { return String(args); }
 }
