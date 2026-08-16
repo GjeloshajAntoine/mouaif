@@ -9,7 +9,7 @@
 //   PUT    /api/projects/:id/tags
 //   POST   /api/projects/:id/tags/scan
 //   DELETE /api/projects/:id/tags/files/<relPath>
-import { h, Fragment } from 'preact';
+import { h, Fragment, render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { createVirtualList } from '../virtual-list.js';
@@ -264,10 +264,8 @@ export function SettingsTagsView(props) {
       render: (file, node) => {
         // Preact requires explicit rendering into the dom node for virtualization, 
         // but now we'll pass our vnode to Preact's render
-        import('preact').then(({ render: preactRender }) => {
-          node.className = 'tags__virtual-slot';
-          preactRender(renderRow(file), node);
-        });
+        node.className = 'tags__virtual-slot';
+        render(renderRow(file), node);
       }
     });
     setVirtualList(vl);
