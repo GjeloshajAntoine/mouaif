@@ -3,14 +3,15 @@
 // it runs under plain `node` like every other script in this repo.
 //
 // Source layout:
-//   docs/README.md            -> docs-dist/index.html     (feature index landing page)
+//   docs/README.md            -> docs-dist/index.html     (presentation landing page)
 //   docs/decisions.md         -> docs-dist/decisions.html
 //   docs/features/<slug>.md   -> docs-dist/features/<slug>.html
 //   docs/features/_<x>.md     -> skipped (templates / drafts)
 //
 // Output layout:
 //   docs-dist/
-//     index.html
+//     index.html                  (presentation landing page)
+//     documentation.html          (feature card index)
 //     decisions.html
 //     assets/site.css
 //     features/<slug>.html
@@ -430,6 +431,12 @@ function listFeatureFiles() {
     .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
     .sort();
 }
+function listAgentFeatureFiles() {
+  if (!fs.existsSync(path.join(DOCS_DIR, 'agent', 'features'))) return [];
+  return fs.readdirSync(path.join(DOCS_DIR, 'agent', 'features'))
+    .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
+    .sort();
+}
 
 // Recursively copy docs/features/images/ into docs-dist/features/images/.
 // Features embed their screenshots as `./images/<feature>/<shot>.png` in
@@ -627,12 +634,194 @@ table tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 760px) {
   .site { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; order: 2; }
+  .main { padding: 20px 16px 48px 16px; order: 1; }
+}
+/* Top navigation (shared across pages). */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.topnav-brand {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.topnav-brand .logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.topnav-links {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.topnav-links a {
+  padding: 7px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.topnav-links a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+/* Full-width layout (landing page has no sidebar). */
+.site--full .main {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+/* Landing page. */
+.hero {
+  padding: 56px 32px 40px;
+  text-align: center;
+}
+.hero .eyebrow {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+.hero h1 {
+  font-size: 52px;
+  margin: 0 0 14px;
+  letter-spacing: -0.02em;
+}
+.hero .tagline {
+  max-width: 640px;
+  margin: 0 auto 24px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.6;
+}
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn--primary:hover { filter: brightness(1.06); }
+/* Feature sections with a screenshot + copy. */
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: center;
+  margin: 56px 0;
+}
+.feature--flip .shot { order: 2; }
+.feature--flip .feature-copy { order: 1; }
+.feature-copy h2 { margin-top: 0; padding-top: 0; border-top: 0; }
+.feature-copy p, .feature-copy li { color: var(--muted); }
+.shot {
+  position: relative;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.shot-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 11px;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+  z-index: 0;
+}
+.shot img {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+}
+.shot figcaption {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.section {
+  margin: 56px 0;
+}
+.section h2 {
+  font-size: 22px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.section p, .section li { color: var(--muted); }
+.section .lead { color: var(--text); }
+@media (max-width: 760px) {
+  .site { grid-template-columns: 1fr; }
   .sidebar { position: static; max-height: none; }
   .main { padding: 20px 16px 48px 16px; }
+  .topnav { padding: 10px 14px; gap: 8px; }
+  .topnav-links { gap: 2px; }
+  .topnav-links a { padding: 7px 8px; font-size: 13px; }
+  .hero { padding: 40px 16px 32px; }
+  .hero h1 { font-size: 40px; }
+  .hero .tagline { font-size: 15px; }
+  .feature { grid-template-columns: 1fr; gap: 20px; }
+  .feature--flip .shot { order: 0; }
+  .feature--flip .feature-copy { order: 0; }
 }
 `;
 
-function htmlPage({ title, body, sidebar, description }) {
+function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = false }) {
+  const siteClass = fullWidth ? ' class="site site--full"' : ' class="site"';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -643,7 +832,8 @@ function htmlPage({ title, body, sidebar, description }) {
   <link rel="stylesheet" href="./assets/site.css" />
 </head>
 <body>
-  <div class="site">
+  ${topnav}
+  <div${siteClass}>
     ${sidebar}
     <main class="main">
       ${body}
@@ -653,6 +843,23 @@ function htmlPage({ title, body, sidebar, description }) {
 </body>
 </html>
 `;
+}
+
+// Shared top navigation bar. Used by every page so the primary sections
+// (landing, how-to-run, projects, MCP & tools, documentation) are always
+// one tap away, matching the "presentation page first, docs second" goal.
+function renderTopNav() {
+  return `<nav class="topnav" aria-label="Primary">
+  <a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>
+  <div class="topnav-links">
+    <a href="index.html">Home</a>
+    <a href="index.html#how-to-run">How to run</a>
+    <a href="index.html#projects">Projects</a>
+    <a href="index.html#mcp-tools">MCP &amp; tools</a>
+    <a href="documentation.html">Documentation</a>
+    <a href="agent-notes.html">Agent notes</a>
+  </div>
+</nav>`;
 }
 
 // ---- Build orchestration ----------------------------------------------
@@ -683,16 +890,216 @@ function buildFeaturePages(features, renderSidebar, outDir) {
       title: f.title,
       body,
       sidebar: renderSidebar(f.slug),
-      description: f.blurb || f.title
+      description: f.blurb || f.title,
+      topnav: renderTopNav()
     });
     // Feature pages are at features/<slug>.html, so the CSS path is
-    // ../assets/site.css.
-    const out = html.replace('href="./assets/site.css"', 'href="../assets/site.css"');
+    // ../assets/site.css, and root-level links (index, documentation,
+    // decisions) need a ../ prefix too. The sidebar already emits
+    // features/<slug>.html links, which are correct from inside features/.
+    const out = html
+      .replace('href="./assets/site.css"', 'href="../assets/site.css"')
+      .replace(/href="documentation\.html"/g, 'href="../documentation.html"')
+      .replace(/href="index\.html(#|")/g, 'href="../index.html$1')
+      .replace(/href="decisions\.html"/g, 'href="../decisions.html"')
+      // Sidebar feature links are emitted as features/<slug>.html; from
+      // inside features/<slug>.html they need a ../ prefix to resolve.
+      .replace(/href="features\//g, 'href="../features/');
     fs.writeFileSync(path.join(featureDir, f.slug + '.html'), out);
   }
 }
+// Build the agent-facing implementation notes tree (docs/agent/features/*.md).
+// These pages mirror the human feature pages but contain only the technical
+// reference (REST, wire shapes, source paths). The docs-dist/agent/ prefix
+// keeps the two audiences separate so the presentation site never bleeds
+// implementation detail into the landing/docs pages.
+function buildAgentFeaturePages(agentFeatures, outDir) {
+  const agentDir = path.join(outDir, 'agent');
+  fs.mkdirSync(agentDir, { recursive: true });
+  const linkItem = (slug, title) => {
+    const href = slug + '.html';
+    return '<li><a href="' + href + '">' + escapeHtml(title) + '</a></li>';
+  };
+  for (const f of agentFeatures) {
+    const src = readDocFile('agent/features/' + f.slug + '.md');
+    const ctx = { rewriteMd: true };
+    const body = renderMarkdown(src, ctx);
+    const sidebar = `<aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">agent notes</div>
+<h2>Overview</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../documentation.html">Documentation</a></li>
+<li><a href="../decisions.html">Architectural decisions</a></li>
+<li><a href="../agent-notes.html">Agent notes</a></li>
+</ul>
+<h2>Implementation notes</h2>
+<ul>
+${agentFeatures.map((a) => linkItem(a.slug, a.title)).join('\n    ')}
+</ul>
+</aside>`;
+    const html = htmlPage({
+      title: f.title + ' — implementation notes',
+      body,
+      sidebar,
+      description: 'Agent-facing implementation notes for ' + f.title,
+      topnav: renderTopNav()
+    });
+    // Agent pages are at agent/<slug>.html (one level deep), so root-level
+    // links need a ../ prefix, and sibling agent pages are relative.
+    const out = html
+      .replace('href="./assets/site.css"', 'href="../assets/site.css"')
+      .replace(/href="documentation\.html"/g, 'href="../documentation.html"')
+      .replace(/href="index\.html(#|")/g, 'href="../index.html$1')
+      .replace(/href="decisions\.html"/g, 'href="../decisions.html"')
+      .replace(/href="agent-notes\.html"/g, 'href="../agent-notes.html"');
+    fs.writeFileSync(path.join(agentDir, f.slug + '.html'), out);
+  }
+}
+// Build the agent-notes index page listing all implementation-note pages.
+function buildAgentNotesPage(agentFeatures, outDir) {
+  const cards = agentFeatures.map((f) => {
+    return `<a class="feature-card" href="agent/${f.slug}.html"><h3>${escapeHtml(f.title)}</h3><p>${escapeHtml(f.blurb || '')}</p></a>`;
+  }).join('\n        ');
+  const body = `
+<h1>Agent notes — implementation reference</h1>
+<p>Agent-facing implementation notes, wire shapes, and source paths. Each page mirrors a human-facing feature page in <code>docs/features/*.md</code>; the technical reference lives here.</p>
+<div class="features-grid">
+${cards}
+</div>
+`;
+  const sidebar = `<aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">agent notes</div>
+<h2>Overview</h2>
+<ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="documentation.html">Documentation</a></li>
+<li><a href="decisions.html">Architectural decisions</a></li>
+</ul>
+</aside>`;
+  const html = htmlPage({
+    title: 'Agent notes',
+    body,
+    sidebar,
+    description: 'mouaif — agent-facing implementation notes index',
+    topnav: renderTopNav()
+  });
+  fs.writeFileSync(path.join(outDir, 'agent-notes.html'), html);
+}
 
-function buildIndexPage(features, sidebarHtmlStr, outDir) {
+// Screenshot placeholder markup. When a real PNG lands at the path (or the
+// caller passes a src), the <img> renders on top of the dashed fallback slot.
+function shotFigure(src, alt, caption) {
+  const img = src ? `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt || caption || '')}" loading="lazy" />` : '';
+  const fallback = img ? escapeHtml(alt || caption || 'Screenshot placeholder') : '';
+  const spacer = img ? '' : '<div style="min-height:220px"></div>';
+  const cap = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : '';
+  return `<figure class="shot">
+  <div class="shot-fallback">${fallback}</div>
+  ${spacer}${img}
+  ${cap}
+</figure>`;
+}
+
+function buildLandingPage(outDir) {
+  const body = `
+<section class="hero">
+  <p class="eyebrow">Mobile-first AI coding assistant</p>
+  <h1>mouaif</h1>
+  <p class="tagline">A CLI tool with an integrated HTTP server and a mobile-first web UI. Chat with your AI providers, manage projects, inspect a running page over CDP, and give the model native shell, file, and MCP tools — all from one process, no API key leaving your box.</p>
+  <div class="hero-actions">
+    <a class="btn btn--primary" href="#how-to-run">Run it</a>
+    <a class="btn" href="documentation.html">Read the docs</a>
+  </div>
+</section>
+
+<section class="feature" id="chats">
+  <div class="feature-copy">
+    <h2>Projects &amp; chats</h2>
+    <p>Registered projects group chats under a project card. Pick a folder, open a chat, and stream responses back over SSE.</p>
+    <ul>
+      <li>Project-grouped chat list, scrolling inside each card</li>
+      <li>Model picker with per-provider sections and search</li>
+      <li>Per-message cost and token speed</li>
+    </ul>
+  </div>
+  ${shotFigure('features/images/project-card/chats-tab.png', 'mouaif projects and chats view', 'Projects & chats')}
+</section>
+
+<section class="feature feature--flip" id="inspector">
+  <div class="feature-copy">
+    <h2>Inspector</h2>
+    <p>A from-scratch, mobile-friendly DevTools-style UI on top of Chrome DevTools Protocol. Preview, console, network, and info panels stacked vertically.</p>
+    <ul>
+      <li>Live console with an editable JavaScript console</li>
+      <li>Network request inspection</li>
+      <li>Target management: reload, navigate, close</li>
+    </ul>
+  </div>
+  ${shotFigure('features/images/inspector/mobile-360-all-on.png', 'mouaif inspector view', 'Inspector')}
+</section>
+
+<section class="feature" id="settings">
+  <div class="feature-copy">
+    <h2>Settings &amp; auth</h2>
+    <p>App-level defaults and per-project overrides, provider connections, and OAuth sign-in — all from the mobile Settings tab.</p>
+    <ul>
+      <li>App settings vs project settings, project wins</li>
+      <li>Provider connections and model catalogs</li>
+      <li>OS keychain OAuth tokens</li>
+    </ul>
+  </div>
+  ${shotFigure('features/images/settings-ui/project-settings.png', 'mouaif settings view', 'Settings')}
+</section>
+
+<section class="section" id="how-to-run">
+  <h2>How to run</h2>
+  <p class="lead">One Node process serves the API, the mobile UI, and the SSE chat stream.</p>
+  <pre><code class="language-bash">git clone &lt;repo-url&gt;
+cd mouaif
+npm install
+npm run build:web       # build the mobile UI into frontend/dist/
+mouaif serve             # http://127.0.0.1:5732</code></pre>
+  <p>Open <code>http://127.0.0.1:5732/</code> on your phone or any browser. Tap <strong>+ Add project</strong> to pick a folder, configure a provider in <strong>Settings</strong>, then define that project's model IDs in its <code>.mouaif.json</code>.</p>
+</section>
+
+<section class="section" id="projects">
+  <h2>How projects work</h2>
+  <p class="lead">A project is a directory registered with the server, plus per-project settings that live next to your code.</p>
+  <ul>
+    <li><strong>Registration</strong> — register a folder as a project (pick an existing directory or create a new one).</li>
+    <li><strong>Settings</strong> — per-project overrides in <code>&lt;projectDir&gt;/.mouaif.json</code>, committed with the repo. App-level defaults stay in <code>~/.mouaif/store.sqlite</code>.</li>
+    <li><strong>Models</strong> — providers are app-level; model IDs are user-defined per project and reference a provider.</li>
+    <li><strong>Chats</strong> — persisted per project and listed under a project card.</li>
+  </ul>
+  <p>See <a href="features/project-card.html">Project card</a> and <a href="features/folder-picker.html">Folder picker</a> for the full picture.</p>
+</section>
+
+<section class="section" id="mcp-tools">
+  <h2>MCP &amp; tools</h2>
+  <p class="lead">Give the model real tools — native or third-party MCP servers — each with its own authorization gate.</p>
+  <ul>
+    <li><strong>Native tools</strong> — <code>shell</code>, <code>read_file</code>, <code>list_files</code>, <code>search_files</code>, <code>write_file</code>, <code>subagent</code>, <code>task</code>, <code>ask_user</code>.</li>
+    <li><strong>MCP servers</strong> — stdio or Streamable HTTP, app-wide or per project, surfaced as the model's tool set.</li>
+    <li><strong>Authorization</strong> — per-project <code>off</code> / <code>ask</code> / <code>allow</code> gate on every call.</li>
+  </ul>
+  <p>See <a href="features/mcp.html">MCP</a>, <a href="features/shell-tool.html">Shell tool</a>, and <a href="features/file-tools.html">File tools</a>.</p>
+</section>
+`;
+  const html = htmlPage({
+    title: 'mouaif',
+    body,
+    sidebar: '',
+    description: 'mouaif — mobile-first AI coding assistant',
+    topnav: renderTopNav(),
+    fullWidth: true
+  });
+  fs.writeFileSync(path.join(outDir, 'index.html'), html);
+}
+
+function buildDocumentationPage(features, sidebarHtmlStr, outDir) {
   const cards = features.map((f) => {
     // Render the blurb through the same inline pipeline the feature pages
     // use, so backticked identifiers and links show up as <code> and <a>
@@ -701,7 +1108,7 @@ function buildIndexPage(features, sidebarHtmlStr, outDir) {
     return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(f.title)}</h3><p>${blurbHtml}</p></a>`;
   }).join('\n        ');
   const body = `
-<h1>mouaif — feature documentation</h1>
+<h1>mouaif — documentation</h1>
 <p>One page per shipped feature. The source of truth is the <code>docs/features/*.md</code> tree; this site is generated by <code>npm run docs:build</code>.</p>
 <h2>Feature index</h2>
 <div class="features-grid">
@@ -711,12 +1118,13 @@ function buildIndexPage(features, sidebarHtmlStr, outDir) {
 <p>Locked-in stack, storage, and build order: see <a href="decisions.html">decisions.html</a>.</p>
 `;
   const html = htmlPage({
-    title: 'Index',
+    title: 'Documentation',
     body,
     sidebar: sidebarHtmlStr,
-    description: 'mouaif — feature documentation index'
+    description: 'mouaif — feature documentation index',
+    topnav: renderTopNav()
   });
-  fs.writeFileSync(path.join(outDir, 'index.html'), html);
+  fs.writeFileSync(path.join(outDir, 'documentation.html'), html);
 }
 
 function buildDecisionsPage(sidebarHtmlStr, outDir) {
@@ -726,7 +1134,8 @@ function buildDecisionsPage(sidebarHtmlStr, outDir) {
     title: 'Architectural decisions',
     body,
     sidebar: sidebarHtmlStr,
-    description: 'Locked-in stack, storage, and build order for mouaif.'
+    description: 'Locked-in stack, storage, and build order for mouaif.',
+    topnav: renderTopNav()
   });
   fs.writeFileSync(path.join(outDir, 'decisions.html'), html);
 }
@@ -788,6 +1197,18 @@ function main() {
     });
   }
 
+  // Agent-facing implementation notes (docs/agent/features/*.md). Each page
+  // mirrors a human feature page; the file list on disk is the source of truth.
+  const agentFeatures = listAgentFeatureFiles().map((f) => {
+    const slug = f.replace(/\.md$/, '');
+    const src = readDocFile('agent/features/' + f);
+    return {
+      slug,
+      title: extractFirstH1(src) || slug,
+      blurb: extractBlurb(src, 160)
+    };
+  });
+
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(path.join(outDir, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(outDir, 'assets', 'site.css'), SITE_CSS);
@@ -809,8 +1230,10 @@ function main() {
   <div class="tag">v1.0.0</div>
   <h2>Overview</h2>
   <ul>
-    <li><a href="index.html"${activeSlug === '' ? ' class="is-active"' : ''}>Index</a></li>
+    <li><a href="index.html"${activeSlug === 'home' ? ' class="is-active"' : ''}>Home</a></li>
+    <li><a href="documentation.html"${activeSlug === 'documentation' ? ' class="is-active"' : ''}>Documentation</a></li>
     <li><a href="decisions.html"${activeSlug === 'decisions' ? ' class="is-active"' : ''}>Architectural decisions</a></li>
+    <li><a href="agent-notes.html"${activeSlug === 'agent-notes' ? ' class="is-active"' : ''}>Agent notes</a></li>
   </ul>
   <h2>Features</h2>
   <ul>
@@ -819,11 +1242,15 @@ function main() {
 </aside>`;
   };
 
-  buildIndexPage(features, renderSidebar(''), outDir);
+  buildLandingPage(outDir);
+  buildDocumentationPage(features, renderSidebar('documentation'), outDir);
   buildDecisionsPage(renderSidebar('decisions'), outDir);
   buildFeaturePages(features, renderSidebar, outDir);
+  buildAgentNotesPage(agentFeatures, outDir);
+  buildAgentFeaturePages(agentFeatures, outDir);
 
-  process.stdout.write('[docs] built ' + features.length + ' feature page(s) + index + decisions -> ' +
+  process.stdout.write('[docs] built landing + documentation + decisions + ' + features.length +
+    ' feature page(s) + ' + agentFeatures.length + ' agent note page(s) -> ' +
     path.relative(ROOT, outDir) + '/\n');
 }
 
