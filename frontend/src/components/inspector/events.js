@@ -319,6 +319,27 @@ export function createEventHandlers(state) {
     return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55, captureBeyondViewport: true });
   }
 
+  // setViewportSize — apply a device-metrics override to the inspected
+  // page so the user can preview it at a chosen size (phone, tablet,
+  // desktop) without resizing the real browser window. Pass `null` to
+  // clear the override and return the page to its native size. The
+  // override is a live CDP emulation, so it also changes how the page
+  // reflows — media queries, breakpoints, and responsive layout all
+  // respond as if the browser were that size.
+  async function setViewportSize(preset) {
+    if (!preset) {
+      await cdpSend('Emulation.clearDeviceMetricsOverride');
+      return;
+    }
+    await cdpSend('Emulation.setDeviceMetricsOverride', {
+      width: preset.width,
+      height: preset.height,
+      deviceScaleFactor: preset.deviceScaleFactor || 1,
+      mobile: !!preset.mobile,
+      screenWidth: preset.width,
+      screenHeight: preset.height
+    });
+  }
   // clickAt — forward a tap on the live preview to the page. The x/y here
   // are device-pixel coordinates within the full-page screenshot
   // (captureBeyondViewport), computed by PreviewPanel from the image's
@@ -428,6 +449,6 @@ export function createEventHandlers(state) {
     onResponseReceived, onLoadingFinished, onLoadingFailed,
     onFrameNavigated, onNavigatedWithinDocument,
     pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
-    loadResponseBody, backfillResources, evaluateExpression
+    loadResponseBody, backfillResources, evaluateExpression, setViewportSize
   };
 }

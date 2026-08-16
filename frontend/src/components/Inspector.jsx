@@ -62,6 +62,23 @@ const PANELS = [
   { id: 'overview', label: 'Info'    }
 ];
 const PANEL_STATE_KEY = 'mouaif:inspector:panels';
+// Viewport size presets — device-metrics overrides the user can apply
+// to the inspected page from the preview toolbar. `null` (the
+// "Auto" / native-size entry) clears the override so the page renders
+// at the real browser window size again. Presets mirror common
+// responsive breakpoints: a small phone, a large phone, a tablet, and
+// a laptop. `mobile: true` is only set for the phone entries because
+// it flips the viewport meta / DPR behaviour that modern sites key
+// responsive design off; tablet and laptop stay desktop-style so
+// sites don't unexpectedly switch their media queries.
+const VIEWPORT_PRESETS = [
+{ id: 'auto',   label: 'Auto', width: null, height: null },
+{ id: 'phone',  label: 'Phone', width: 375, height: 667, mobile: true },
+{ id: 'phone+', label: 'Phone+', width: 414, height: 896, mobile: true },
+{ id: 'tablet', label: 'Tablet', width: 768, height: 1024 },
+{ id: 'laptop', label: 'Laptop', width: 1280, height: 800 }
+];
+const VIEWPORT_STATE_KEY = 'mouaif:inspector:viewport';
 function loadPanelState() {
   try {
     const raw = localStorage.getItem(PANEL_STATE_KEY);
@@ -303,6 +320,12 @@ export function InspectorView() {
   // not switch between panels, it shows all toggled-on panels stacked.
   const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
   const [detailItem, setDetailItem] = useState(null);
+  // viewportId — the active device-metrics preset for the inspected
+  // page ('auto' clears the override). Persisted to localStorage so the
+  // user's last preview size survives re-attach and reload.
+  const [viewportId, setViewportId] = useState(() => {
+    try { return localStorage.getItem(VIEWPORT_STATE_KEY) || 'auto'; } catch { return 'auto'; }
+  });
   const [phase, setPhase] = useState('setup');
   const [, setTick] = useState(0);
   const consoleEntries = useRef([]);
@@ -395,6 +418,20 @@ useEffect(() => {
     setStatus('');
   }
 
+  // applyViewport — push the chosen size preset to the inspected page
+  // via CDP Emulation.setDeviceMetricsOverride (or clear it for 'auto').
+  // Persists the choice so re-attach / reload restore the same size.
+  function applyViewport(id) {
+    const next = id || 'auto';
+    setViewportId(next);
+    try { localStorage.setItem(VIEWPORT_STATE_KEY, next); } catch { /* ignore */ }
+    const handlers = eventHandlers.current;
+    const preset = VIEWPORT_PRESETS.find((p) => p.id === next);
+    if (handlers && handlers.setViewportSize) {
+      handlers.setViewportSize(preset && preset.width ? preset : null).catch(() => { /* emulation unavailable */ });
+    }
+  }
+
   function connect(target) {
     if (conn.current) disconnect();
     const c = initCdp();
@@ -414,6 +451,10 @@ useEffect(() => {
       c.cdpSend('Runtime.enable').catch((err) => { setStatus('Runtime.enable failed: ' + err.message); });
       c.cdpSend('Network.enable').catch((err) => { setStatus('Network.enable failed: ' + err.message); });
       c.cdpSend('Page.enable').catch(() => { /* preview unavailable */ });
+// Restore the user's last preview size (device-metrics override).
+// Runs right after Page.enable so the override is applied before the
+// first screenshot capture. 'auto' clears any previous override.
+applyViewport(viewportId);
       c.cdpSend('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] }).catch(() => { /* emulation unavailable */ });
       c.cdpSend('Performance.enable').catch(() => { /* metrics unavailable */ });
       c.cdpOn('Runtime.consoleAPICalled', handlers.onConsoleEvent);
@@ -856,6 +897,20 @@ useEffect(() => {
         }, 'Go')
         // Close button moved to InspectActionsMenu so the nav row
         // carries only the URL field + Go (the most common action).
+      ),
+      // Viewport size bar — device-size presets applied to the inspected
+      // page via CDP emulation. Mobile-first segmented control: the active
+      // preset is accent-filled, the others are muted chips. 'Auto' clears
+      // the override and returns the page to its real browser size.
+      h('div', { class: 'inspector__sizes', role: 'group', 'aria-label': 'Preview size' },
+        VIEWPORT_PRESETS.map((p) => h('button', {
+          class: 'inspector__sizechip' + (viewportId === p.id ? ' is-on' : ''),
+          type: 'button',
+          'aria-pressed': String(viewportId === p.id),
+          title: p.width ? (p.label + ' · ' + p.width + '×' + p.height) : (p.label + ' — native size'),
+          'data-size-id': p.id,
+          onClick: () => applyViewport(p.id)
+        }, p.label))
       ),
       // Panelbar — 2-line chips with a corner entry-count badge for
       // the row-shaped panels (console, network). Preview/Info are not
