@@ -220,34 +220,36 @@ export function ChatView(props) {
           }
         }),
       ),
-      h('a', {
-        class: 'chat-view__iconbtn',
-        href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
-        'aria-label': 'Project settings',
-        title: 'Settings'
-      },
-        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-          h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })
+      h('div', { class: 'chat-view__head-icons' },
+          h('a', {
+            class: 'chat-view__iconbtn',
+            href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
+            'aria-label': 'Project settings',
+            title: 'Settings'
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+              h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' })
+            )
+          ),
+          h(ToolPopup, {
+            tools: s.state.tools,
+            mcpServers: s.state.mcpServers,
+            usedTools: s.state.usedTools,
+            agentFiles: s.state.agentFiles,
+            skills: s.state.skills,
+            toolAuth: s.state.toolAuth,
+            mcpAuth: s.state.mcpAuth,
+            onToggleTool: s.state._toggleTool,
+            onToggleToolGroup: s.state._toggleToolGroup,
+            onToggleAgentFiles: s.state._toggleAgentFiles,
+            onToggleSkills: s.state._toggleSkills,
+            onSaveToolAuth: s.state._saveToolAuth,
+            onSaveMcpAuth: s.state._saveMcpAuth,
+            // Render stamps keep ref-backed authorization and catalog data fresh.
+            authStamp,
+            toolDataStamp
+          })
         )
-      ),
-      h(ToolPopup, {
-        tools: s.state.tools,
-        mcpServers: s.state.mcpServers,
-        usedTools: s.state.usedTools,
-        agentFiles: s.state.agentFiles,
-        skills: s.state.skills,
-        toolAuth: s.state.toolAuth,
-        mcpAuth: s.state.mcpAuth,
-        onToggleTool: s.state._toggleTool,
-        onToggleToolGroup: s.state._toggleToolGroup,
-        onToggleAgentFiles: s.state._toggleAgentFiles,
-        onToggleSkills: s.state._toggleSkills,
-        onSaveToolAuth: s.state._saveToolAuth,
-        onSaveMcpAuth: s.state._saveMcpAuth,
-        // Render stamps keep ref-backed authorization and catalog data fresh.
-        authStamp,
-        toolDataStamp
-      })
     ),
     h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
     h('button', {
