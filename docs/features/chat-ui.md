@@ -6,7 +6,7 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Interface structure
 
-- **Header bar** — includes the chat switcher to jump between conversations in the same project, the active model picker button, a quick model refresh action, and options to rename, export trace, or delete the chat. The model picker, thinking-level select, project-settings gear, and tool-popup icons are laid out so the two icons (gear + globe) stack vertically on narrow viewports and sit inline with the model row on wider screens.
+- **Header bar** — includes the chat switcher to jump between conversations in the same project, the active model picker button, a quick model refresh action, and options to rename, export trace, or delete the chat. The header is a compact two-line bar: the back button, chat title, and usage chips sit on the top line, while the model picker (a text-sized dropdown showing the model id only) and thinking-level select drop to a second line. The two header icons (project-settings gear and tool-popup globe) stack one per line on the right, matching the top line's height.
 - **Transcript area** — displays conversational messages with markdown support, expandable system prompt details, inline tool run cards with live execution status, and per-message usage metrics.
 - **Floating composer** — includes actions to attach files or images, an auto-expanding input box, keyboard shortcuts (`Enter` to send, `Shift+Enter` for newlines), and a responsive send button.
 
