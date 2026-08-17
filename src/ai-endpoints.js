@@ -877,9 +877,20 @@ function buildOpenAIRequest(model, messages, stream) {
       : def.staticHeaders);
   }
   if (model && model.headers && typeof model.headers === 'object') Object.assign(headers, model.headers);
+  // Claude routed through OpenRouter supports Anthropic prompt caching,
+  // but only when the OpenAI-shaped request carries explicit
+  // cache_control breakpoints on message content blocks. The native
+  // Anthropic builder adds them; the plain OpenAI body has none, so
+  // Claude-via-OpenRouter would get a 0% cache hit on every turn. Inject
+  // the same breakpoints (last system message + penultimate message) the
+  // native path uses. Other OpenAI-shaped providers are untouched.
+  const effectiveMessages = isOpenRouterAnthropicModel(model)
+    ? injectOpenRouterAnthropicCache(messages)
+    : messages;
+
   const body = {
     model: model.id,
-    messages,
+    messages: effectiveMessages,
     stream: !!stream
   };
   if (stream && (model.provider === 'openai-compatible' || model.provider === 'openrouter'
@@ -1063,6 +1074,70 @@ function markPenultimateMessage(messages) {
   if (last && typeof last === 'object' && !last.cache_control) {
     last.cache_control = { type: 'ephemeral' };
   }
+}
+
+// isOpenRouterAnthropicModel(model) — true for a Claude model routed
+// through OpenRouter. OpenRouter forwards Anthropic prompt caching but
+// only when the OpenAI-shaped request carries explicit `cache_control`
+// breakpoints on message content blocks; the vanilla OpenAI body has
+// none, so Claude-via-OpenRouter never gets a cache hit without this.
+// The slug is vendor-prefixed (`anthropic/claude-...`); we match the
+// vendor prefix so every current and future Claude slug is covered.
+function isOpenRouterAnthropicModel(model) {
+  return !!(model && model.provider === 'openrouter'
+    && typeof model.id === 'string'
+    && /^anthropic\//i.test(model.id));
+}
+
+// markOpenAIMessageCache(message) — add a cache_control breakpoint to an
+// OpenAI-shaped message by wrapping/annotating its content parts. Mirrors
+// markPenultimateMessage but for the OpenAI content shape OpenRouter
+// consumes: a plain string is wrapped in a single text part, and the last
+// part of an existing array gets the marker. Returns a NEW message object
+// so the caller never mutates the shared conversation array.
+function markOpenAIMessageCache(message) {
+  if (!message || message.content == null) return message;
+  if (typeof message.content === 'string') {
+    if (!message.content) return message;
+    return Object.assign({}, message, {
+      content: [{ type: 'text', text: message.content, cache_control: { type: 'ephemeral' } }]
+    });
+  }
+  if (Array.isArray(message.content) && message.content.length) {
+    const parts = message.content.map((p) => (p && typeof p === 'object') ? Object.assign({}, p) : p);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (parts[i] && typeof parts[i] === 'object') {
+        if (!parts[i].cache_control) parts[i].cache_control = { type: 'ephemeral' };
+        break;
+      }
+    }
+    return Object.assign({}, message, { content: parts });
+  }
+  return message;
+}
+
+// injectOpenRouterAnthropicCache(messages) — return a copy of the
+// conversation with cache_control breakpoints placed the same way
+// buildAnthropicRequest places them on the native path: the LAST system
+// message (the stable profile + agent files + custom prompt block) and
+// the penultimate message (the deepest point of the replayed prefix:
+// system + history). The final message is never marked — a breakpoint on
+// the current turn is ignored and its content is not part of the stable
+// prefix. The input array is never mutated.
+function injectOpenRouterAnthropicCache(messages) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+  const out = messages.slice();
+  // Last system message → cache the stable system prefix.
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i] && out[i].role === 'system') { out[i] = markOpenAIMessageCache(out[i]); break; }
+  }
+  // Penultimate message → cache system + tools + history once there is
+  // any history to replay (caching engages from the second request).
+  if (out.length >= 2) {
+    const idx = out.length - 2;
+    out[idx] = markOpenAIMessageCache(out[idx]);
+  }
+  return out;
 }
 
 function buildAnthropicRequest(model, messages, stream, specs) {
