@@ -134,96 +134,93 @@ export function ChatView(props) {
           h('span', null, 'Context --'),
           h('span', null, 'Total --')
         )
-),
-h('div', { class: 'chat-view__model-line', 'aria-label': 'Chat model controls' },
-h(ModelPickerField, {
-models: picker.models,
-value: picker.value,
-variant: 'chat',
-open: picker.open,
-onOpenChange: onPickerOpenChange,
-noProviders: !s.state.providers.length,
-pinned: picker.pinned,
-onTogglePin: onPickerTogglePin,
-recent: picker.recent,
-extraProviders: picker.providers,
-refresh: onRefreshAllProviders,
-refreshEmpty: 'Refresh models',
-ariaLabel: 'Pick model',
-onOpen: onPickerOpen,
-onChange: onPickerPick
-},
-h('div', { class: 'chat-view__picker-maxout' },
-h('input', {
-ref: refs.maxOutputTokens,
-class: 'input chat-view__picker-maxout-input',
-type: 'number',
-min: 1,
-inputMode: 'numeric',
-placeholder: 'Max output tokens (blank = default)',
-'aria-label': 'Max output tokens',
-onBlur: (e) => {
-const v = e.currentTarget.value.trim();
-if (v && s.state.chat) {
-s.state.maxOutputTokens = v;
-if (v !== (s.state.chat.maxOutputTokens || '')) {
-s.updateChat({ maxOutputTokens: v });
-}
-} else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
-s.state.maxOutputTokens = '';
-s.updateChat({ maxOutputTokens: '' });
-}
-},
-onKeydown: (e) => {
-if (e.key === 'Enter') e.currentTarget.blur();
-}
-})
-)
-),
-h('div', { class: 'chat-view__thinking-control' },
-h('svg', { class: 'chat-view__thinking-icon', viewBox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8, 'aria-hidden': 'true' },
-h('path', { d: 'M9.5 4.5A3.5 3.5 0 0 0 6 8v.4A3.6 3.6 0 0 0 4 11.6c0 1.2.6 2.4 1.6 3.1A3.4 3.4 0 0 0 9 19h1V5.5a1 1 0 0 0-.5-1Zm5 0A3.5 3.5 0 0 1 18 8v.4a3.6 3.6 0 0 1 2 3.2c0 1.2-.6 2.4-1.6 3.1A3.4 3.4 0 0 1 15 19h-1V5.5a1 1 0 0 1 .5-1Z' }),
-h('path', { d: 'M7 9.5h3M14 9.5h3M7.5 14H10M14 14h2.5' })
-),
-h('select', {
-ref: refs.thinkingLevel,
-class: 'input chat-view__thinking-select',
-'aria-label': 'Thinking level',
-'data-allow-custom': '1',
-onChange: (e) => {
-const v = e.currentTarget.value;
-s.state.thinkingLevel = v;
-const customInput = s.refs.thinkingLevelCustom && s.refs.thinkingLevelCustom.current;
-if (customInput) {
-customInput.hidden = v !== '__custom__';
-if (v === '__custom__') customInput.focus();
-}
-if (v !== '__custom__' && s.state.chat) {
-s.updateChat({ thinkingLevel: v });
-}
-}
-}),
-h('input', {
-ref: refs.thinkingLevelCustom,
-class: 'input chat-view__thinking-custom',
-type: 'text',
-hidden: true,
-placeholder: 'Custom thinking',
-'aria-label': 'Custom thinking level',
-onBlur: (e) => {
-const v = e.currentTarget.value.trim();
-if (v && s.state.chat) {
-s.state.thinkingLevel = v;
-s.updateChat({ thinkingLevel: v });
-}
-},
-onKeydown: (e) => {
-if (e.key === 'Enter') e.currentTarget.blur();
-}
-})
-)
-),
-h('div', { class: 'chat-view__head-icons' },
+      ),
+      h('div', { class: 'chat-view__model-row' },
+        h(ModelPickerField, {
+          models: picker.models,
+          value: picker.value,
+          variant: 'chat',
+          open: picker.open,
+          onOpenChange: onPickerOpenChange,
+          noProviders: !s.state.providers.length,
+          pinned: picker.pinned,
+          onTogglePin: onPickerTogglePin,
+          recent: picker.recent,
+          extraProviders: picker.providers,
+          refresh: onRefreshAllProviders,
+          refreshEmpty: 'Refresh models',
+          ariaLabel: 'Pick model',
+          onOpen: onPickerOpen,
+          onChange: onPickerPick
+        },
+        h('div', { class: 'chat-view__picker-maxout' },
+          h('input', {
+            ref: refs.maxOutputTokens,
+            class: 'input chat-view__picker-maxout-input',
+            type: 'number',
+            min: 1,
+            inputMode: 'numeric',
+            placeholder: 'Max output tokens (blank = default)',
+            'aria-label': 'Max output tokens',
+            onBlur: (e) => {
+              const v = e.currentTarget.value.trim();
+              if (v && s.state.chat) {
+                s.state.maxOutputTokens = v;
+                if (v !== (s.state.chat.maxOutputTokens || '')) {
+                  s.updateChat({ maxOutputTokens: v });
+                }
+              } else if (!v && s.state.chat && s.state.chat.maxOutputTokens) {
+                s.state.maxOutputTokens = '';
+                s.updateChat({ maxOutputTokens: '' });
+              }
+            },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }
+          })
+        )
+      ),
+      h('select', {
+        ref: refs.thinkingLevel,
+          class: 'input chat-view__thinking-select',
+          'aria-label': 'Thinking level',
+          'data-allow-custom': '1',
+          onChange: (e) => {
+            const v = e.currentTarget.value;
+            s.state.thinkingLevel = v;
+            // Show/hide the custom input
+            const customInput = s.refs.thinkingLevelCustom && s.refs.thinkingLevelCustom.current;
+            if (customInput) {
+              customInput.hidden = v !== '__custom__';
+              if (v === '__custom__') customInput.focus();
+            }
+            if (v !== '__custom__' && s.state.chat) {
+              s.updateChat({ thinkingLevel: v });
+            }
+          }
+        }),
+        h('input', {
+          ref: refs.thinkingLevelCustom,
+          class: 'input chat-view__thinking-custom',
+          type: 'text',
+          hidden: true,
+          placeholder: 'e.g. 4096, minimal, low, high',
+          'aria-label': 'Custom thinking level',
+          onBlur: (e) => {
+            const v = e.currentTarget.value.trim();
+            if (v && s.state.chat) {
+              s.state.thinkingLevel = v;
+              s.updateChat({ thinkingLevel: v });
+            }
+          },
+          onKeydown: (e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }
+        }),
+      ),
+      h('div', { class: 'chat-view__head-icons' },
           h('a', {
             class: 'chat-view__iconbtn',
             href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
@@ -267,9 +264,9 @@ h('div', { class: 'chat-view__head-icons' },
         h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
       ),
       h('span', { class: 'chat-view__jump-count' }, '')
-),
-h('div', { class: 'chat-view__composer-row' },
-h('div', { class: 'chat-view__composer-tool' },
+    ),
+    h('div', { class: 'chat-view__composer-row' },
+      h('div', { class: 'chat-view__composer-tool' },
         h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
       ),
       h('div', { class: 'chat-view__composer' },

@@ -52,98 +52,15 @@
 .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
 .chat-view__back:active { background: var(--surface-3); }
 
-/* ---- Thin model line + picker ------------------------------------ */
+/* ---- Model row + picker ------------------------------------------ */
 
-.chat-view__model-line {
-  flex: 1 1 11rem;
+.chat-view__model-row {
+  flex: 1 1 160px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
-  min-width: 8rem;
-  max-width: 15rem;
-}
-
-.chat-view__model-line .mp--chat {
-  flex: 1 1 auto;
-  max-width: none;
-  min-width: 0;
-}
-
-/* Keep the 44px tap area, but render only a hairline below the text. */
-.chat-view__model-line .mp__trigger {
-  min-height: var(--tap);
-  padding: 0 1.1rem 0 0.1rem;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: 0;
-}
-.chat-view__model-line .mp__trigger:hover,
-.chat-view__model-line .mp__trigger:active,
-.chat-view__model-line .mp__trigger[aria-expanded="true"] {
-  background: transparent;
-  border-bottom-color: var(--accent);
-}
-.chat-view__model-line .mp__stack {
-  display: block;
-}
-.chat-view__model-line .mp__id {
-  display: block;
-  font-size: 0.72rem;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-view__model-line .mp__provider {
-  display: none;
-}
-.chat-view__model-line .mp__caret {
-  position: absolute;
-  right: 0.2rem;
-}
-
-.chat-view__model-line .chat-view__thinking-control {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 0 1 5.5rem;
-  min-width: 4.5rem;
-  height: var(--tap);
-  color: var(--fg-soft);
-}
-.chat-view__model-line .chat-view__thinking-icon {
-  position: absolute;
-  left: 0.1rem;
-  z-index: 1;
-  width: 0.85rem;
-  height: 0.85rem;
-  pointer-events: none;
-}
-.chat-view__model-line .chat-view__thinking-select {
-  width: 100%;
-  max-width: none;
-  height: var(--tap);
-  padding: 0 0.85rem 0 1.1rem;
-  font-size: 0.68rem;
-  background-color: transparent;
-  background-position: right 0.1rem center;
-  border: 0;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: 0;
-}
-.chat-view__model-line .chat-view__thinking-select:hover,
-.chat-view__model-line .chat-view__thinking-select:focus {
-  border-bottom-color: var(--accent);
-}
-.chat-view__model-line .chat-view__thinking-custom:not([hidden]) {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.25rem);
-  width: min(11rem, calc(100vw - 1.25rem));
-  max-width: none;
-  z-index: 45;
-  box-shadow: var(--shadow-md);
+  gap: 2px 4px;
+  min-width: 96px;
 }
 /* Stack the two header icon buttons (project settings + tool popup)
 onto two lines so they don't crowd the model row on narrow mobile
@@ -1186,7 +1103,7 @@ transition: color 80ms ease, background 80ms ease;
 .mp__row.is-ghost .mp__row-meta { color: var(--warning); }
 /* ---- Shared viewport-sheet + chat top-bar variants --------------- */
 /* Every model field uses the same phone modal as the chat picker.
-   `mp--chat` adds compact top-bar sizing; `mp--sheet` owns the
+   `mp--chat` only adds compact top-bar sizing; `mp--sheet` owns the
    modal placement and can also be used in cards/forms. */
 .mp--chat {
 position: relative;

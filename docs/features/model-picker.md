@@ -2,16 +2,16 @@
 
 ## Overview
 
-The **model picker** opens from a thin, single-line control in the chat top bar. The control keeps a full-size touch target while using only an underline for visual chrome, leaving more room for the conversation.
+The **model picker** is the popover that opens from the header's model trigger. It allows you to search, filter by provider, and switch active models effortlessly across both phone and desktop screens.
 
-The same searchable picker is also used in subagent authorization cards and agent persona editors.
+The same model picker is also used in subagent authorization cards and agent persona editors.
 
 ## Usage
 
-1. Tap the underlined **model trigger** in the chat top bar.
+1. Tap the **model trigger** in the chat header (showing the current model and provider).
 2. The model picker opens:
-   - On phones, it expands as a full-width viewport sheet.
-   - On wider screens, it floats below the top bar.
+   - On phones, it expands to a full-width sheet anchored to the viewport.
+   - On wider screens, it floats comfortably below the header.
 3. Type in the search input to filter models by name or slug.
 4. Tap a provider chip (`All`, `Anthropic`, `OpenRouter`, `OpenAI`, etc.) to scope the list to a specific provider.
 5. Tap any row to select the model for the current conversation.
