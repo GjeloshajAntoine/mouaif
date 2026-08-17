@@ -1135,29 +1135,29 @@ flex: 1 1 80px;
 min-width: 0;
 max-width: 200px;
 }
-/* Chat top-bar trigger: single line, text-sized — a compact dropdown
-   that reads like an inline label (model id + caret), not a tall
-   form control. The provider subline is hidden so the trigger height
-   stays short on the model row. */
+/* Chat top-bar trigger: single line, text-sized — styled to match the
+   adjacent thinking-level select (surface-2 fill, 1px border, --r-sm
+   corners) so the two controls read as the same kind of dropdown.
+   The provider subline is hidden so the trigger height stays short. */
 .mp--chat > .mp__trigger {
   min-height: 26px;
   height: 26px;
   padding: 0 8px;
   gap: 4px;
   align-items: center;
-  border-radius: var(--r-pill);
-  background: transparent;
-  border-color: transparent;
-}
-.mp--chat > .mp__trigger:hover,
-.mp--chat > .mp__trigger:active,
-.mp--chat > .mp__trigger[aria-expanded="true"] {
+  border-radius: var(--r-sm);
   background: var(--surface-2);
-  border-color: var(--border);
+  border: 1px solid var(--border);
+}
+.mp--chat > .mp__trigger:hover {
+  border-color: var(--accent);
+}
+.mp--chat > .mp__trigger:active {
+  border-color: var(--accent);
 }
 .mp--chat > .mp__trigger[aria-expanded="true"] {
   border-color: var(--accent);
-  background: var(--surface-3);
+  background: var(--surface-2);
 }
 .mp--chat > .mp__trigger .mp__stack {
   flex-direction: row;
@@ -1169,7 +1169,7 @@ max-width: 200px;
   font-weight: 500;
 }
 .mp--chat > .mp__trigger .mp__caret {
-  font-size: 0.62rem;
+  font-size: 0.72rem;
 }
 .mp--chat > .mp__trigger .mp__provider {
   display: none;
