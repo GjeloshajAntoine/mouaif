@@ -11,14 +11,19 @@
 }
 
 .chat-view__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1px 4px;
-  padding: 4px 8px 6px;
-  border-bottom: 1px solid var(--border);
-  flex: 0 0 auto;
-  position: relative;
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 1px 4px;
+/* No vertical padding: the head hugs its content (back button,
+title, usage chips, model row) so there is no visible gap between
+the app header and the title, and no gap between the usage chips
+and the model picker row below. Vertical rhythm comes from the
+border-bottom + the flex `gap` only. */
+padding: 0 8px;
+border-bottom: 1px solid var(--border);
+flex: 0 0 auto;
+position: relative;
 }
 
 .chat-view__setup {
@@ -65,15 +70,18 @@
 .chat-view__title-stack { order: 1; }
 .chat-view__head-icons { order: 2; }
 .chat-view__model-row {
-  order: 3;
-  flex: 1 1 100%;
-  width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  min-width: 96px;
-  padding-top: 2px;
+order: 3;
+flex: 1 1 100%;
+width: 100%;
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 2px 6px;
+min-width: 96px;
+/* No padding-top: the head's flex gap already spaces the model
+row away from the title/usage line above. Adding padding here
+duplicated the gap and pushed the picker down by 2px. */
+padding-top: 0;
 }
 /* One icon button per line: the two header actions (project settings
    + tool popup) stack vertically so the top row stays short and the
