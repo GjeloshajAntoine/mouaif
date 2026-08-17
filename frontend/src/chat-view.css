@@ -54,8 +54,18 @@
 
 /* ---- Model row + picker ------------------------------------------ */
 
+/* Two-line header: the back button, title/usage stack and the icon
+   column share the top line; the model options (model picker + thinking
+   level) drop onto a full-width second line below them. flex `order`
+   keeps the icons visually on the top row even though the model row
+   sits before them in the DOM. */
+.chat-view__back { order: 0; }
+.chat-view__title-stack { order: 1; }
+.chat-view__head-icons { order: 2; }
 .chat-view__model-row {
-  flex: 1 1 160px;
+  order: 3;
+  flex: 1 1 100%;
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -69,15 +79,15 @@ up vertically without a visible separator. */
 .chat-view__head-icons {
   flex: 0 0 auto;
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 4px;
   min-width: var(--tap-sm);
 }
 .chat-view__head-icons > .chat-view__iconbtn,
 .chat-view__head-icons > .chat-view__toolbar-btn {
-  margin: 1px 0;
+  margin: 0;
 }
 /* The gear is an anchor <a> with no built-in chrome — give it the
 same round icon-button look as the globe so the two read as a
@@ -1110,6 +1120,22 @@ position: relative;
 flex: 1 1 80px;
 min-width: 0;
 max-width: 180px;
+}
+/* Chat top-bar trigger: single line — show the model id only and hide
+   the provider subline so the trigger height matches the thinking
+   select on the model row. */
+.mp--chat > .mp__trigger {
+  min-height: var(--tap);
+  height: var(--tap);
+  align-items: center;
+}
+.mp--chat > .mp__trigger .mp__stack {
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+}
+.mp--chat > .mp__trigger .mp__provider {
+  display: none;
 }
 .mp--sheet > .mp__pop {
 z-index: 46;
