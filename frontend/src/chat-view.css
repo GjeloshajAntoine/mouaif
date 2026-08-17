@@ -1101,9 +1101,9 @@ transition: color 80ms ease, background 80ms ease;
 /* Ghost row (active model that is no longer in the catalog) */
 .mp__row.is-ghost .mp__row-id { color: var(--warning); }
 .mp__row.is-ghost .mp__row-meta { color: var(--warning); }
-/* ---- Shared viewport-sheet + chat top-bar variants --------------- */
+/* ---- Shared viewport-sheet + chat dock variants ------------------ */
 /* Every model field uses the same phone modal as the chat picker.
-   `mp--chat` only adds compact top-bar sizing; `mp--sheet` owns the
+   `mp--chat` adds compact dock sizing; `mp--sheet` owns the
    modal placement and can also be used in cards/forms. */
 .mp--chat {
 position: relative;

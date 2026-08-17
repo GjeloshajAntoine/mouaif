@@ -1,8 +1,8 @@
 // mouaif web — shared model picker field
 //
-// A Preact version of the chat top bar's model picker: a two-line
+// A Preact version of the chat model dock's picker: a two-line
 // trigger (model id over provider id) that opens the same modal the
-// chat head shows — search input, per-provider filter chips, model
+// bottom dock shows — search input, per-provider filter chips, model
 // sections grouped by provider, a refresh button, and an inline
 // empty-state card. It is the drop-in replacement for the old single
 // <select> model dropdowns that only listed project model ids.
