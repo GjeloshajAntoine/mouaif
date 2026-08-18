@@ -9,7 +9,7 @@
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson, route } from '../api.js';
-import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, createCdpConnection } from './inspector/index.js';
+import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 // Short human label for a Chrome DevTools target type. Chrome uses a
@@ -29,6 +29,16 @@ const TYPE_META = {
 function targetMeta(t) {
   const type = (t && t.type) || 'other';
   return TYPE_META[type] || TYPE_META.other;
+}
+// closeMessage — body text for the in-app confirm sheet. Shows the
+// tab's title so the user is closing the right thing; falls back to
+// the host (or the target id) when the title is empty. The text is
+// deliberately short — the sheet is mobile-first, a single paragraph
+// fits the 360 px width with comfortable line-height.
+function closeMessage(t) {
+  if (!t) return 'Close this tab?';
+  const name = t.title || (t.url ? hostOf(t) : '') || t.id || 'this tab';
+  return 'Close “' + name + '”?';
 }
 // hostOf — extract `host[:port]` from a target URL so we can show it
 // as a subtitle alongside the title. Returns '' for non-http(s) targets
@@ -367,6 +377,15 @@ export function InspectorView() {
   // not switch between panels, it shows all toggled-on panels stacked.
   const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
   const [detailItem, setDetailItem] = useState(null);
+  // closePending — when non-null, the ConfirmSheet is shown and the
+  // captured `target` is the page the user is about to close. A small
+  // object instead of two pieces of state so cancel + confirm are
+  // single-key updates and the sheet can read both fields without
+  // racing (e.g. null target, open: true). `action` distinguishes
+  // the two entry points ('row' = targets list, 'attached' =
+  // inspect-phase header menu) so the confirm callback can route to
+  // the right code path without keeping two separate flags.
+  const [closePending, setClosePending] = useState(null);
   // viewportId — the active device-metrics preset for the inspected
   // page ('auto' clears the override). Persisted to localStorage so the
   // user's last preview size survives re-attach and reload.
@@ -596,28 +615,21 @@ applyViewport(viewportId);
   // talks CDP directly to the debug Chrome.
   async function actionTarget(t, action) {
     if (!t || !t.id) return;
-    if (action === 'close') {
-      const name = t.title || t.url || 'this tab';
-      if (!window.confirm('Close tab “' + name + '”?')) return;
-    }
-    setStatus((action === 'close' ? 'closing ' : 'reloading ') + (t.title || t.url || 'tab') + '…');
+    if (action === 'close') { requestClose('row', t); return; }
+    setStatus('reloading ' + (t.title || t.url || 'tab') + '…');
     let r;
     try {
-      r = await fetchJson('/api/inspector/' + (action === 'close' ? 'close' : 'reload'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: t.id }) });
+      r = await fetchJson('/api/inspector/reload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: t.id }) });
     } catch (e) {
       setStatus('network error');
       return;
     }
     if (r.status !== 200 || !r.body || !r.body.ok) {
       const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      setStatus((action === 'close' ? 'close' : 'reload') + ' failed: ' + msg);
+      setStatus('reload failed: ' + msg);
       return;
     }
-    if (action === 'close') {
-      setStatus('closed');
-      loadTargets(); // the closed tab disappears from the list
-    } else setStatus('reloaded');
-      
+    setStatus('reloaded');
   }
 
   // openAttachedPageInNewTab — "open in a new tab" for the page currently
@@ -652,11 +664,77 @@ applyViewport(viewportId);
   // targets list and refreshes it. While the close is in flight the
   // current connection stays open so we can report the outcome; it is
   // torn down right before going back to the target list.
-  async function closeAttachedTarget() {
-    const target = currentTarget;
+  function closeAttachedTarget() {
+  const target = currentTarget;
+  if (!target || !target.id) { setStatus('nothing to close'); return; }
+  requestClose('attached', target);
+}
+
+
+  // requestClose / cancelClose / confirmClose — the in-app confirmation
+  // flow for Close tab (it replaced the previous window.confirm, which
+  // some embedded web views auto-dismiss and returned false without ever
+  // showing a UI, so the rest of actionTarget early-returned and the
+  // user saw exactly "the button does nothing").
+  //
+  // requestClose(action, target) — captures the target + origin so the
+  // sheet can survive a re-render and the confirm callback knows which
+  // code path to run ('row' = targets list, 'attached' = inspect-phase
+  // header menu).
+  //
+  // cancelClose() — closes the sheet, no side effects, no network call.
+  // A returning status pill ("closed" / "closing tab…" / "connected to
+  // <title>") is not restored: the close path is the user's last tap,
+  // and clearing the sheet is feedback enough.
+  //
+  // confirmClose() — closes the sheet and dispatches to the matching
+  // runCloseRow / runCloseAttached flow. Both flows are async; the
+  // sheet unmounts so the status pill is visible underneath while the
+  // network round-trip runs. Errors surface on the pill instead of
+  // re-opening the sheet, so the user always sees a single source of
+  // truth about what happened.
+  function requestClose(action, target) {
     if (!target || !target.id) return;
-    const name = target.title || target.url || 'this tab';
-    if (!window.confirm('Close tab “' + name + '”?')) return;
+    setClosePending({ action, target });
+  }
+  function cancelClose() {
+    setClosePending(null);
+  }
+  async function confirmClose() {
+    const pending = closePending;
+    if (!pending || !pending.target || !pending.target.id) { setClosePending(null); return; }
+    const target = pending.target;
+    setClosePending(null);
+    if (pending.action === 'row') await runCloseRow(target);
+    else await runCloseAttached(target);
+  }
+  // runCloseRow — close path used by the targets list: the target may
+  // be a tab we never attached to, so just DELETE it via CDP and refresh
+  // the list on success. Failure surfaces on the status pill.
+  async function runCloseRow(target) {
+    setStatus('closing ' + (target.title || target.url || 'tab') + '…');
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+    } catch (e) {
+      setStatus('network error');
+      return;
+    }
+    if (r.status !== 200 || !r.body || !r.body.ok) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      setStatus('close failed: ' + msg);
+      return;
+    }
+    setStatus('closed');
+    loadTargets();
+  }
+  // runCloseAttached — close path used by the inspect-phase header menu:
+  // the target is the page being inspected, so the in-flight CDP
+  // connection survives the network round-trip and is torn down AFTER
+  // the close succeeds (so status messages from the close can still
+  // reach the pill). On success the user is returned to the targets
+  // list, which is refreshed so the closed tab disappears.
+  async function runCloseAttached(target) {
     setStatus('closing tab…');
     let r;
     try {
@@ -803,6 +881,15 @@ applyViewport(viewportId);
               h('p', null, 'No targets found.'),
               h('p', { class: 'inspector__row-targets-empty-hint' }, 'Open a tab in Chrome and tap ', h('strong', null, 'Refresh targets'), ' to discover it.')
             )
+          ,
+          closePending ? h(ConfirmSheet, {
+            open: true,
+            title: 'Close tab?',
+            message: closeMessage(closePending.target),
+            confirmLabel: 'Close tab',
+            onCancel: cancelClose,
+            onConfirm: confirmClose
+          }) : null
       )
     );
   }
@@ -999,7 +1086,15 @@ applyViewport(viewportId);
       item: detailItem,
       onClose: () => { setDetailItem(null); rerender(); },
       onLoadBody: () => handlers && handlers.loadResponseBody(detailItem)
-    })
+    }),
+    closePending ? h(ConfirmSheet, {
+      open: true,
+      title: 'Close tab?',
+      message: closeMessage(closePending.target),
+      confirmLabel: 'Close tab',
+      onCancel: cancelClose,
+      onConfirm: confirmClose
+    }) : null
   );
 }
 

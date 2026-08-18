@@ -44,7 +44,17 @@ Use the top navigation bar to:
 - Enter a new URL to navigate the tab.
 - **Reload** the page.
 - **Open new tab** in the attached browser.
-- **Close tab** when done.
+- **Close tab** when done — opens an in-app confirmation sheet (see below).
+
+### Closing a tab
+
+Close tab is destructive, so the Inspector prompts for confirmation before sending the request to Chrome. Both entry points (the per-row `…` menu in the targets list and the header overflow menu of an attached tab) open the same in-app sheet:
+
+- The sheet shows the tab's title in quotes (or the URL host when the title is empty) so the user can confirm the right target.
+- **Cancel** dismisses the sheet with no network call.
+- **Close tab** sends `POST /api/inspector/close` with `{ targetId }`. On success the Inspector disconnects the live CDP session, returns to the targets list, and refreshes the target list so the closed tab disappears. Failures surface on the status pill instead of re-opening the sheet.
+
+The previous design used `window.confirm`, which some embedded web views auto-dismiss and return `false` without rendering a dialog; the close handler then early-returned and the user saw the button as inert (no status pill, no network call). The in-app sheet renders inline so it always renders, always accepts input, and obeys the mobile-first UI rules (≥ 44 × 44 px tap targets, safe-area padding).
 
 ## Related
 

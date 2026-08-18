@@ -1065,7 +1065,46 @@ margin-right: 8px;
   padding: 4px 6px;
   max-height: 300px;
   overflow-y: auto;
-}/* ---- Inspector: status pill ---------------------------------------- */
+}
+/* ---- Inspector: confirm sheet -------------------------------------- */
+/* Reuses the .inspector__overlay / .inspector__sheet primitive from the
+detail sheet, but adds a tighter body and a row of two buttons so a
+short message + two 44 px tap targets fits the sheet on the smallest
+phones without scrolling. The cancel button uses --surface to stay
+neutral against the confirm button's --danger variant. */
+.inspector__sheet--confirm {
+max-height: 50dvh;
+}
+.inspector__sheet-body--confirm {
+padding: 12px 14px calc(16px + var(--safe-bottom, 0px)) 14px;
+}
+.inspector__confirm-msg {
+margin: 4px 2px 12px;
+color: var(--fg);
+font-size: 0.9rem;
+line-height: 1.45;
+}
+.inspector__confirm-actions {
+display: flex;
+gap: 8px;
+justify-content: flex-end;
+}
+.inspector__confirm-actions .btn {
+min-height: 44px;
+min-width: 88px;
+padding: 0 16px;
+font-size: 0.85rem;
+}
+.inspector__confirm-actions .btn[data-danger="1"] {
+background: var(--danger);
+color: var(--bg);
+border-color: transparent;
+}
+.inspector__confirm-actions .btn[data-danger="1"]:hover {
+background: var(--danger-soft);
+color: var(--danger);
+}
+/* ---- Inspector: status pill ---------------------------------------- */
 .inspector__statuspill {
   display: inline-flex;
   align-items: center;
