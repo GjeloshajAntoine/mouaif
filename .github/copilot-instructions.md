@@ -78,4 +78,5 @@ These features exist or are planned. Keep this list in sync with the codebase as
 
 - CLI: Node.js, `commander`, HTTP server with REST + SSE ([src/index.js](../src/index.js), [bin/mouaif.js](../bin/mouaif.js)).
 - Default port: `5732`. New features must respect this and not change it silently.
+- **Do not restart the server with the CLI.** The running `mouaif` server is managed by the host app, not the agent. Never run `mouaif serve`, restart, or stop commands on the server via the CLI.
 - Keep the existing REST + SSE surface stable unless a feature explicitly requires a new endpoint; in that case, document it in the matching `docs/features/*.md` file.
