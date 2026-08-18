@@ -519,32 +519,10 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
     // (shell_output chunks need the body visible). From replayed
     // persisted data the result soon replaces the card anyway.
     if (!isReplay) card.classList.add('is-expanded');
-  } else {
-    // Every other tool gets a placeholder body so expanding the card
-    // while it's still running never shows a blank area. It carries
-    // the full argument payload — the header only shows a 220-char
-    // truncation — plus a running hint. There is no live stream for
-    // these tools, so the card stays collapsed by default and the
-    // result renderer replaces the content when tool_result lands
-    // (renderToolResultBody clears body.textContent first).
-    const body = document.createElement('div');
-    body.className = 'tool-card__body';
-    const live = document.createElement('div');
-    live.className = 'tool-card__call-live';
-    const hint = document.createElement('div');
-    hint.className = 'tool-card__call-hint';
-    hint.textContent = isReplay ? 'Waiting for results…' : 'Running…';
-    live.appendChild(hint);
-    const argText = toolCall.args == null ? '' : formatToolArgs(toolCall.args, toolCall.name);
-    if (argText) {
-      const argsPre = document.createElement('pre');
-      argsPre.className = 'tool-card__call-args';
-      argsPre.textContent = argText;
-      live.appendChild(argsPre);
-    }
-    body.appendChild(live);
-    card.appendChild(body);
-  }
+}
+// Other tools have no expandable body until a tool_result arrives.
+// Their header already shows the call arguments; creating a body here
+// would expose placeholder text instead of actual tool output.
   transcriptInsert(refs, card);
   afterTranscriptAppend(refs, true);
 }

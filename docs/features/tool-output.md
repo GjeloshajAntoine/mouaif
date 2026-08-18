@@ -31,8 +31,6 @@ Below the stored-value readout, an **Example** block shows what the model would 
 
 The profile applies to every model-facing tool result: the live multi-turn tool loop and the reconstructed history fed to the model when a chat resumes. `concise` never alters the stored transcript or SSE events — it only shapes the `role: "tool"` message sent upstream, at the same boundary as the existing byte-cap compaction.
 
-Expanded tool cards use a contrasting surface, bordered output area, and full foreground text so displayed content remains distinct from the surrounding transcript.
-
 ## Related
 
 - [Native file tools](./file-tools.md)

@@ -22,14 +22,14 @@
 .tool-card--authorization { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, transparent); }
 
 .tool-card.is-expanded {
-background: var(--surface-2);
-border-color: var(--border);
-padding-bottom: 4px;
+  background: transparent;
+  border-color: transparent;
+  padding-bottom: 2px;
 }
 .tool-card.is-expanded .tool-card__head {
-margin: 0;
-padding: 2px 0;
-border-bottom: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 .tool-card__head {
@@ -128,10 +128,10 @@ border-bottom: 1px solid var(--border);
   display: block;
   overflow-y: auto;
   max-height: 40dvh;
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r-sm);
-color: var(--fg);
+background: transparent;
+border: 0;
+border-radius: 0;
+color: var(--fg-soft);
   font-size: 0.72rem;
   line-height: 1.42;
   white-space: pre-wrap;
