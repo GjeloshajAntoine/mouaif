@@ -56,6 +56,7 @@ curl -X DELETE 'http://localhost:5732/api/chats/<id>?projectDir=/path/to/project
 
 ## Implementation notes
 
+- **Responsive chat list height** — `.project-card__chats` uses `max-height: min(28dvh, 22rem)` with an `8.5rem` floor so the per-card chat list scales with the dynamic viewport (taller phones get more rows) without letting one card dominate the dashboard. The card itself is a flex column in [`frontend/src/projects.css`](../../frontend/src/projects.css), so the `<ul>` scrolls internally with no JS measurement.
 - Chats module: [src/chats.js](../../src/chats.js). Public surface: `listChats`, `getChat`, `createChat`, `updateChat`, `deleteChat`, `touchChat`, `chatTotalCost`, plus `PROJECT_FILE` and the `newChatId` helper (exported for tests). `chatTotalCost(projectDir, chatId)` sums every assistant message's `cost.total` and returns `{ total, known, currency }`; `known` is false when no assistant message had a cost block. The GET /api/chats handler attaches the result to each chat as a `totalCost` field so the mobile list can render the cost without a per-chat fetch.
 - Server wiring: [src/index.js](../../src/index.js) → `handleChats()`. New routes mounted under `/api/chats` and `/api/chats/:id` (with `/touch` and `/:projectDir` variants). The project-card commit also adds `PATCH /api/projects/registered/:id` to support the rename option.
 - Project rename: [src/projects.js](../../src/projects.js) → `renameProject(pid, newName)`. Trims and validates. Returns `null` on empty name or unknown id.
