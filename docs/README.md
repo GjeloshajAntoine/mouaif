@@ -1,82 +1,17 @@
-# mouaif — Feature documentation
+# mouaif documentation
 
-Static-page-ready docs for every feature in mouaif. Each file in `features/` is a self-contained page that can be rendered with any static site generator (GitHub Pages, VitePress, Docusaurus, plain HTML).
+Use these guides to install mouaif, connect accounts, secure access, and learn what the app can do.
 
-Two trees live here, one audience each:
+## User guide
 
-- `features/` — the **human-facing surface** of each feature: what it does, how to use it, and observable behavior. No implementation detail, wire shapes, or source paths.
-- `agent/features/` — the **agent-facing implementation notes** for the same features: REST endpoints, wire shapes, source paths, and internals. Each file mirrors a `features/` page and links back to it.
+- [Getting started](features/getting-started.md) — install, run, update, and complete first setup.
+- [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
+- [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 
-The repo ships a tiny self-contained build script, `scripts/build-docs.js`, that turns this tree into a navigable static HTML site in `docs-dist/`. Run `npm run docs:build` to regenerate it; CI runs the build on every push and fails if the committed `docs-dist/` is out of date. The script has no external dependencies — it embeds a small markdown renderer that covers the subset used in this tree (headings, fenced code, ordered/unordered lists with nesting, GFM tables, blockquotes, inline code, bold/italic/strikethrough, links, images). The build emits a presentation landing page, a feature-card index, the architectural decisions, one page per `features/` doc, and a parallel `agent/` tree (plus `agent-notes.html`) for the implementation notes.
+## Build the documentation
 
-The split is maintained by `scripts/split-docs.js`, a one-shot migration helper that moves `Implementation notes`, `REST`/`HTTP`/`API`, `Backend`, `Server endpoints`, `Storage`, `Test fixture`, and `Programmatic` sections from `features/` into `agent/features/`. Run it when a new feature doc lands so the two trees stay in sync.
+```bash
+npm run docs:build
+```
 
-## Index
-
-<!-- New feature docs must be added here in the same commit that introduces them. -->
-
-- [REST + SSE server](features/rest-and-sse-server.md) — baseline shipped in `v1.0.0`.
-- [App and project settings](features/app-and-project-settings.md) — defaults → app SQLite store → per-project `.mouaif.json`, project wins.
-- [Project settings storage](features/project-settings-storage.md) — opt a project into DB-backed settings so no `.mouaif.json` is written to the working tree.
-- [Settings UI](features/settings-ui.md) — REST endpoints for global provider connections and project settings, plus the mobile Settings section in `/`.
-- [Projects in Settings](features/projects-in-settings.md) — registered-project list reachable from Settings, with per-row links to project settings and rename / unregister actions.
-- [Virtual list primitive](features/virtual-list.md) — windowed, recycled, no forced reflow. Powers the chat list and the inspector tree.
-- [New-project folder picker](features/folder-picker.md) — list subdirs anywhere on the filesystem, create new folders, register projects.
-- [Project card](features/project-card.md) — per-project card in the mobile UI: chat list (scrolling inside the card), New chat, options menu (rename / unregister), per-project rename endpoint. Chats persisted in `<projectDir>/.mouaif.json`.
-- [Chat UI](features/chat-ui.md) — Preact + Vite mobile shell with chat, projects, inspector, and settings; provider authentication is integrated into Settings.
-- [Model picker](features/model-picker.md) — chat-head popover for picking `(providerId, modelId)`; per-provider sections, search, ghost row for unavailable active model, and an actionable empty-state card. Rendered by the shared `ModelPickerField`.
-- [PWA](features/pwa.md) — installable mobile shell: manifest, hand-rolled service worker (precache the shell, network-first for navigations, cache-first for fingerprinted assets, bypass `/api/*` and SSE), iOS Add-to-Home-Screen, offline + "new version" banners.
-- [Inspector](features/inspector.md) — from-scratch mobile-friendly DevTools-style UI on top of CDP over WebSocket. Four optional panels (Preview / Console / Network / Info) toggled on and off from a per-panel toolbar chip; visible panels are stacked vertically and unmount when hidden so their capture loops stop. Targets list with a type chip + overflow menu + auto-discovery on mount; tab management (reload / navigate / close). Mobile shell's fourth tab. The Console panel now also ships an editable JavaScript console (CodeMirror) with live autosuggestion from the page's globals, property names, and element IDs.
-- [AI client](features/ai-client.md) — server-side proxy + SSE streaming for 10 providers (OpenAI-compatible, Anthropic, Gemini, Ollama, OpenRouter, GitHub Copilot reserved, Azure OpenAI, Mistral, Groq, DeepSeek). Apikey only; OAuth lands in follow-up commits.
-- [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek as first-class OpenAI-shaped API-key providers: deployment-URL base for Azure (with automatic `api-version`), Bearer-key chat for the others, live model catalogs, built-in pricing defaults.
-- [Auth](features/auth.md) — `@napi-rs/keyring` token store, loopback OAuth callback, non-secret account index. Per-provider sign-in lands in one commit per provider.
-- [Access authentication](features/access-authentication.md) — CLI user/password setup, expiring setup links, QR and short codes, authenticated sessions, and WebAuthn passkeys.
-- [Anthropic OAuth](features/oauth-anthropic.md) — PKCE S256 browser flow against `platform.claude.com`, `Authorization: Bearer` on the Messages API, refresh-token grant, no-browser fallback.
-- [OpenRouter](features/openrouter.md) — one API key, many models over an OpenAI-shaped endpoint. API key or PKCE sign-in (`https://openrouter.ai/auth`); the issued key is stored in the `openrouter` keyring namespace.
-- [Custom prompts](features/custom-prompts.md) — user-authored system prompts stored per project, with direct per-chat API override.
-- [MCP](features/mcp.md) — Model Context Protocol servers as user tools. App-wide or per-project stdio server registry, tool discovery, in-chat tool_call/tool_result cards.
-- [MCP Registry Browser](features/mcp-registry-browser.md) — browse the official MCP Registry from Settings, with popularity scores and one-tap installation.
-- [Chrome Debug MCP](features/chrome-debug-mcp.md) — preset `chrome-debug` MCP entry pairing the model with the same Chrome instance the Inspector tab talks to (port 9222).
-- [Usage metrics](features/usage-metrics.md) — per-message cost in USD and live token speed rendered under each turn; pricing lives on the model record and in app settings, with sensible defaults.
-- [File tagging](features/file-tagging.md) — annotate project files with tags, pin excerpts, and auto-inject them into new chat messages; tags live in the project's `.mouaif.json`.
-- [Progress tool (`report_progress`)](features/progress-tool.md) — live progress bar in transcript for long-running model operations.
-- [Legacy `report_progress` tool](features/legacy-progress-tool.md) — compatibility path for persisted or external `report_progress` calls.
-- [Trace to file](features/trace.md) — per-chat NDJSON export to `<projectDir>/.mouaif/traces/<chatId>.ndjson`, independent of chat storage.
-- [Anthropic prompt caching](features/prompt-caching.md) — cacheable system block + discounted cache-aware cost for Claude models, including OAuth.
-- [Interactive browser notifications](features/push-notifications.md) — follow background chats, answer simple questions, approve or deny tools, and configure completion/error alerts.
-- [Shell tool](features/shell-tool.md) — built-in `shell` tool the model can invoke; runs commands in the project directory and returns stdout / stderr / exit code / duration over SSE.
-- [Web preview tool](features/webpreview.md) — built-in `webpreview` tool that lets the model open a URL in the debug Chrome, capture a small screenshot of what is on the page, and surface a clickable thumbnail in the chat. Tapping the thumbnail opens a full-screen modal with the standard close button.
-- [Tool authorization](features/tool-authorization.md) — per-project authorization gate (`off` / `ask` / `allowlist` / `allow`) for every tool call and every `/shell` composer command.
-- [Per-run model choice on subagent approval](features/auth-model-picker.md) — the authorization card's model picker: pick which model executes a delegated `subagent` run, for that call only.
-- [Tool feedback compaction](features/tool-feedback-compaction.md) — preserve complete tool cards and transcripts while capping the copy returned to the model at 64 KiB per result.
-- [Native file tools](features/file-tools.md) — built-in `read_file`, `list_files`, `search_files`, `write_file` tools the model can call to find, read, and edit project files. Same authorization gate as `shell`.
-- [Tool output profile](features/tool-output.md) — per-project `toolOutput` setting (size + structure) for how much of a tool result the model sees, edited from Settings → Project → File tool options.
-- [File toolbar](features/file-toolbar.md) — a toolbar next to the composer with a dropdown for the file editor and a git modal (staged / unstaged / recent commits, all expandable).
-- [Files modal — edit any text file, preview images](features/files-modal-text-and-images.md) — the file editor accepts every text file (unknown extensions are sniffed) and renders image files (PNG/JPG/GIF/WebP/SVG/BMP/ICO) in a preview pane; new `GET /api/file-media` endpoint.
-- [Ask the user tool](features/ask-user-tool.md) — built-in `ask_user` tool the model can invoke to pause the chat and ask the user a structured question with 2-4 options. The user always has a free-form "extra answer" textarea alongside their pick, so the response is never constrained to the offered options. Binary authorization mode (`off` / `ask`).
-- [Prompt-size profiles](features/prompt-profiles.md) — `very-small | average | extensive` system-prompt profiles resolved per chat, layered in front of any custom prompt and the transcript.
-- [Agents](features/agents.md) — named personas stored in `.mouaif.json`, used exclusively as delegation targets for the `subagent` tool.
-- [iOS touch scroll](features/ios-touch-scroll.md) — make the chat transcript touch-scrollable on iOS Safari: no `overflow: hidden` on `.app__main--flush` or `.chat-view` (the transcript is the only scroll container in the tree), plus html/body locked to the viewport (`height: 100%; overflow: hidden`) with the safe-area insets moved onto `.app__shell` so the document itself can never scroll and compete with the internal scrollers.
-- [Markdown renderer](features/markdown-renderer.md) — zero-dependency CommonMark renderer for assistant bubbles: tables, task lists, auto-links, backslash escapes, horizontal rules.
-- [Chat error surfacing](features/chat-error-surfacing.md) — failed turns are emitted over SSE, rendered as inline error bubbles, and persisted as system messages so they survive reloads.
-- [Tool tree](features/tool-tree.md) — compact hierarchical checkbox list for tool visibility, shared across chat view, project settings, and authorization flows. Auto-checks tools used in the current chat.
-- [@-mention autocomplete](features/at-mention.md) — type `@` in the chat composer to search and insert files, tools/actions, or the current agent model.
-- [Agent feature prompt and tool](features/agent-feature-prompt.md) — dynamic system context telling the model which features are enabled, plus a `list_features` tool for the full structured state on demand.
-- [Skills](features/skills.md) — reusable `.agents/skills/*/SKILL.md` instructions with project, chat, and per-skill disable controls.
-- [Model bookmarks (pinned & recently used)](features/model-bookmarks.md) — per-project pinned and recently used models at the top of the model picker, persisted in localStorage.
-- [Chat storage](features/chat-storage.md) — SQLite-backed chat and message persistence; JSON file storage removed.
-- [Chat switcher](features/chat-switcher.md) — inline dropdown in the chat header to switch between project chats without leaving the view.
-- [Tool popup](features/tool-popup.md) — floating popover in the composer toolbar to toggle available tools, authorization modes, MCP servers, and agent files.
-- [Agent file picker](features/agent-file-picker.md) — browse the project and tap a file to fill the **File names to look for** agent-files setting in project settings.
-- [Task tool](features/task-tool.md) — built-in `task` tool for creating, tracking progress on, and completing structured tasks within a chat. Tasks render as rich inline cards with progress bars.
-- [Thinking level](features/thinking-level.md) — per-chat dropdown for model reasoning/thinking effort, with options sourced from the provider when available (OpenAI `reasoning_effort`, Anthropic `thinking.budget_tokens`, Gemini `thinkingConfig`, Ollama `think`) plus fallback presets.
-- [Max output tokens](features/max-output-tokens.md) — per-chat override of the output token cap, set in the model picker and sent as `max_completion_tokens` (OpenAI-shaped) or `max_tokens` (Anthropic).
-- [Restart API](features/restart-api.md) — `POST /api/restart` respawns a fresh worker via the CLI supervisor, or exits with code 0 when no launcher is available.
-- [Chat streaming performance](features/chat-streaming-performance.md) — streaming assistant text appends per-token text nodes instead of rebuilding the bubble, removing O(n²) work on long turns.
-- [Chat load performance](features/chat-load-performance.md) — SQL-side cost aggregation, a cheap transcript revision marker for polling, lazy collapsed tool-result bodies, and fewer redundant refreshes keep long chats fast to open.
-- [Run settle latch](features/run-settle-latch.md) — a returned-to chat with a stale server `running` flag settles at "done" once and stays settled, instead of oscillating between streaming and done on every poll.
-- [Live tool preview](features/live-tool-preview.md) — buffered per-chat replay of transient tool streams (`shell_output`, `subagent_event`, `progress_update`) so a second tab or a returning page renders a running chat's live tool output instead of "Waiting for results…".
-
-## Architectural decisions
-
-See [decisions.md](decisions.md) for the locked-in stack, storage, and build order.
+The generated public navigation links only to these user guides. Maintainer references remain in the repository for contributors but are not shown in the public navigation.

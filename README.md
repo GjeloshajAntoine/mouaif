@@ -1,94 +1,106 @@
 # mouaif 🚀
 
-A CLI tool with an integrated HTTP server, an in-app project picker, and a mobile-first web UI. The CLI serves a single Node process on `http://127.0.0.1:5732` that exposes a REST + SSE surface for AI chat, project management, settings, and auth. The mobile UI at `/` is a Preact + Vite bundle that talks to the server over the same origin — no API key ever leaves the box.
+mouaif is a mobile-first AI coding assistant for local projects. Connect your preferred AI providers, chat about a project, and choose which coding tools the assistant may use.
 
-## What you get
+## Requirements
 
-- **CLI**: `mouaif serve` (port 5732 by default), `mouaif info`.
-- **HTTP server**: REST + SSE. SSE for chat streaming (`POST /api/chats/:id/messages/stream`).
-- **Mobile UI** at `http://127.0.0.1:5732/`: projects, chats, settings, sign-in. Preact + Vite, served by the same Node process. No framework-specific state layer — `@preact/signals` only.
-- **Storage**: app-level settings and chat transcripts in `~/.mouaif/store.sqlite` (better-sqlite3). Per-project settings in `<projectDir>/.mouaif.json`. Opt-in trace streams in `<projectDir>/.mouaif/traces/<chatId>.ndjson` for committing a chat's history with the project.
-- **Auth**: API keys live in the app SQLite store. OAuth tokens live in the OS keychain via `@napi-rs/keyring` (Windows Credential Manager / macOS Keychain / Linux Secret Service). A loopback callback at `GET /oauth/callback` completes provider sign-in; the UI polls `/api/auth/status` until the account is visible.
-- **Five AI providers** in the AI client: `openai-compatible`, `anthropic`, `gemini`, `ollama`, `github-copilot`. The first four are apikey-only in the bundled build; Anthropic supports OAuth via a per-provider flow. Copilot is reserved (auth flow lands in a follow-up).
+- Node.js 18 or newer
+- A supported AI provider account, or a local Ollama installation
 
-## Quick start
+## Install
 
 ```bash
 git clone <repo-url>
 cd mouaif
 npm install
-npm link                  # puts `mouaif` on your PATH
-npm run build:web         # build the mobile UI into frontend/dist/
-mouaif serve              # http://127.0.0.1:5732
+npm run build:web
+npm link
 ```
 
-Open `http://127.0.0.1:5732/` on your phone (or any browser, mobile-first). Tap **+ Add project** to pick a folder, configure a provider in **Settings**, then define that project's model IDs in its `.mouaif.json`. The models appear in the chat picker; send a message and the response streams back over SSE.
+`npm link` makes the `mouaif` command available in your terminal.
 
-## CLI commands
+## Run
 
 ```bash
-mouaif serve               # start the HTTP server (default port 5732)
-mouaif serve --watch       # restart when local source files change
-mouaif serve -p 9000       # custom port
-mouaif info                # show package version + default port
+mouaif serve
 ```
 
-The server is a single Node process. CORS is permissive so the same `127.0.0.1:5732` origin can serve both the API and the mobile UI without preflight.
+Open `http://127.0.0.1:5732/` in a browser. Keep the terminal open while using mouaif and press `Ctrl+C` to stop it.
 
-## HTTP surface
+Useful commands:
 
-A live self-description lives at `GET /` and lists every route. Highlights:
+```bash
+mouaif serve --port 9000     # use another port
+mouaif serve --host 0.0.0.0 # listen on your local network
+mouaif info                  # show version and default port
+```
 
-| Surface | Routes |
-|---|---|
-| Settings | `GET /api/settings`, `GET /api/settings/resolved?projectDir=…`, `GET /api/settings/project?projectDir=…`, `PUT /api/settings/app`, `PUT /api/settings/project`, `POST /api/settings/app/providers`, `DELETE /api/settings/app/providers/:id`, `POST /api/settings/app/reset` |
-| Projects | `GET /api/projects?dir=…`, `POST /api/projects` (actions: `list`, `create`, `register`), `GET /api/projects/registered`, `DELETE /api/projects/registered/:id`, `PATCH /api/projects/registered/:id` |
-| Chats | `GET /api/chats?projectDir=…`, `POST /api/chats`, `GET/PATCH/DELETE /api/chats/:id`, `POST /api/chats/:id/touch`, `GET/POST/DELETE /api/chats/:id/messages`, `POST /api/chats/:id/messages/stream` (SSE) |
-| AI | `GET /api/ai/models?projectDir=…`, `POST /api/ai/chat` (SSE) |
-| Auth | `GET /api/auth/accounts`, `GET /api/auth/status?provider=…`, `DELETE /api/auth/accounts/:provider/:account`, `POST /api/auth/sign-in/anthropic` |
-| OAuth | `GET /oauth/callback` (browser redirect), `POST /oauth/callback` (no-browser fallback) |
-| Mobile UI | `GET /` (serves `frontend/dist/`, falls back to `frontend/` for dev) |
+## First setup
 
-The chat stream is the hot path: a single round-trip per user turn. The server appends the user message, calls the upstream provider, streams `message` / `done` / `error` events back as SSE, and appends the assistant message on `done`. If the chat's `trace` flag is on, every event is also written to `<projectDir>/.mouaif/traces/<chatId>.ndjson`.
+1. Open the **Chats** tab and tap **Add project**.
+2. Choose an existing folder or create one.
+3. Open **Settings → Providers** and connect an AI provider.
+4. Open the project settings and add or select a model.
+5. Create a chat and send your first message.
 
-## Configuration
+## Authentication
 
-| Env var | Default | Effect |
-|---|---|---|
-| `MOUAIF_HOME` | `~/.mouaif` | App-level SQLite + state root. |
-| `MOUAIF_ALLOW_ANY_ROOT` | unset | When `1`, allows `/api/projects` paths outside the user home. |
-| `MOUAIF_ANTHROPIC_API_BASE` | `https://api.anthropic.com` | Anthropic token endpoint (test override). |
+### Connect an AI provider
 
-## Mobile UI
+Open **Settings → Providers**, select a provider, then enter its API key or use **Sign in** when offered. Supported connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek.
 
-The Preact + Vite bundle is mobile-first: 360–430 px primary viewport, 44 × 44 px touch targets, system font stack, safe-area aware, no hover-only affordances. The top-level views are Projects, Inspector, and Settings. Settings contains provider connections, authentication, and project overrides; the old `#/auth` route redirects there.
+### Protect access to mouaif
+
+Access authentication is optional. Generate an expiring setup link, QR code, and short code:
+
+```bash
+mouaif serve --auth-setup
+```
+
+Set credentials from the CLI while keeping the password out of shell history:
+
+```bash
+MOUAIF_PASSWORD='a-long-password' \
+  mouaif serve --auth --user alice
+```
+
+PowerShell:
+
+```powershell
+$env:MOUAIF_PASSWORD = 'a-long-password'
+mouaif serve --auth --user alice
+```
+
+After setup, require login on future starts with:
+
+```bash
+mouaif serve --auth
+```
+
+Use HTTPS and `--public-origin` before making mouaif available outside the computer running it.
+
+## App abilities
+
+- Organize chats by local project and select models per chat.
+- Attach files and images, use custom prompts, and control reasoning options.
+- Let the assistant read and edit project files.
+- Run approved non-interactive shell commands and view live output.
+- Track tasks, answer structured questions, and delegate work to project agents.
+- Connect additional tools through MCP.
+- Preview pages and inspect console and network activity in the Inspector.
+- Gate tools per project with **Off**, **Ask**, or **Allow**.
+- Export chat traces and receive browser notifications for long-running work.
 
 ## Documentation
 
-Every shipped feature has a static-page-ready doc in [docs/features/](docs/features/) and the locked-in stack is in [docs/decisions.md](docs/decisions.md). New features land in the same commit as their docs and a one-line entry in [docs/README.md](docs/README.md).
+- [Getting started](docs/features/getting-started.md)
+- [Authentication](docs/features/authentication.md)
+- [App abilities](docs/features/app-abilities.md)
 
-## Project structure
+Build the static documentation site with:
 
-```
-mouaif/
-├── bin/mouaif.js             # CLI entry (commander)
-├── src/
-│   ├── index.js              # HTTP server: REST + SSE routing
-│   ├── ai.js                 # Server-side AI client (5 providers + SSE proxy)
-│   ├── auth.js               # OS keychain wrapper + per-provider exchange registry
-│   ├── oauth-anthropic.js    # Anthropic OAuth flow (PKCE S256)
-│   ├── settings.js           # App + project settings store
-│   ├── projects.js           # Filesystem browse + registered projects
-│   ├── chats.js              # Per-project chat list
-│   ├── messages.js           # Per-chat transcript
-│   ├── trace.js              # Per-chat NDJSON trace writer
-│   └── web/                  # Preact + Vite mobile UI
-│       ├── index.html
-│       ├── vite.config.js
-│       ├── src/              # main.jsx, style.css, virtual-list.js
-│       └── dist/             # build output (committed for `mouaif serve`)
-├── docs/                     # decisions.md, features/*.md
-└── package.json
+```bash
+npm run docs:build
 ```
 
 ## License

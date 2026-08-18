@@ -45,6 +45,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
+const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities'];
 
 // ---- Markdown renderer ------------------------------------------------
 
@@ -845,20 +846,17 @@ function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = 
 `;
 }
 
-// Shared top navigation bar. Used by every page so the primary sections
-// (landing, how-to-run, projects, MCP & tools, documentation) are always
-// one tap away, matching the "presentation page first, docs second" goal.
+// Shared public navigation. Maintainer references may still be generated for
+// direct use, but they are intentionally absent from the user-facing menu.
 function renderTopNav() {
-  return `<nav class="topnav" aria-label="Primary">
-  <a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>
-  <div class="topnav-links">
-    <a href="index.html">Home</a>
-    <a href="index.html#how-to-run">How to run</a>
-    <a href="index.html#projects">Projects</a>
-    <a href="index.html#mcp-tools">MCP &amp; tools</a>
-    <a href="documentation.html">Documentation</a>
-    <a href="agent-notes.html">Agent notes</a>
-  </div>
+return `<nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="index.html">Home</a>
+<a href="features/getting-started.html">Getting started</a>
+<a href="features/authentication.html">Authentication</a>
+<a href="features/app-abilities.html">App abilities</a>
+</div>
 </nav>`;
 }
 
@@ -1004,114 +1002,73 @@ function shotFigure(src, alt, caption) {
 }
 
 function buildLandingPage(outDir) {
-  const body = `
+const body = `
 <section class="hero">
-  <p class="eyebrow">Mobile-first AI coding assistant</p>
-  <h1>mouaif</h1>
-  <p class="tagline">A CLI tool with an integrated HTTP server and a mobile-first web UI. Chat with your AI providers, manage projects, inspect a running page over CDP, and give the model native shell, file, and MCP tools — all from one process, no API key leaving your box.</p>
-  <div class="hero-actions">
-    <a class="btn btn--primary" href="#how-to-run">Run it</a>
-    <a class="btn" href="documentation.html">Read the docs</a>
-  </div>
+<p class="eyebrow">Mobile-first AI coding assistant</p>
+<h1>mouaif</h1>
+<p class="tagline">Run an AI coding workspace for your local projects, connect the model providers you choose, and control which tools the assistant may use.</p>
+<div class="hero-actions">
+<a class="btn btn--primary" href="features/getting-started.html">Get started</a>
+<a class="btn" href="features/authentication.html">Set up authentication</a>
+<a class="btn" href="features/app-abilities.html">Explore app abilities</a>
+</div>
 </section>
-
-<section class="feature" id="chats">
-  <div class="feature-copy">
-    <h2>Projects &amp; chats</h2>
-    <p>Registered projects group chats under a project card. Pick a folder, open a chat, and stream responses back over SSE.</p>
-    <ul>
-      <li>Project-grouped chat list, scrolling inside each card</li>
-      <li>Model picker with per-provider sections and search</li>
-      <li>Per-message cost and token speed</li>
-    </ul>
-  </div>
-  ${shotFigure('features/images/project-card/chats-tab.png', 'mouaif projects and chats view', 'Projects & chats')}
+<section class="section" id="start">
+<h2>Install and run</h2>
+<pre><code class="language-bash">git clone &lt;repo-url&gt;
+cd mouaif
+npm install
+npm run build:web
+npm link
+mouaif serve</code></pre>
+<p>Open <code>http://127.0.0.1:5732/</code>, add a project folder, connect a provider in <strong>Settings → Providers</strong>, and create your first chat.</p>
+<p><a href="features/getting-started.html">Read the complete getting-started guide →</a></p>
 </section>
-
-<section class="feature feature--flip" id="inspector">
-  <div class="feature-copy">
-    <h2>Inspector</h2>
-    <p>A from-scratch, mobile-friendly DevTools-style UI on top of Chrome DevTools Protocol. Preview, console, network, and info panels stacked vertically.</p>
-    <ul>
-      <li>Live console with an editable JavaScript console</li>
-      <li>Network request inspection</li>
-      <li>Target management: reload, navigate, close</li>
-    </ul>
-  </div>
-  ${shotFigure('features/images/inspector/mobile-360-all-on.png', 'mouaif inspector view', 'Inspector')}
+<section class="section" id="auth">
+<h2>Protect app access</h2>
+<p>Generate an expiring setup link, QR code, and short code:</p>
+<pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
+<p>Or set a user while keeping the password out of shell history:</p>
+<pre><code class="language-bash">MOUAIF_PASSWORD='a-long-password' \\
+  mouaif serve --auth --user alice</code></pre>
+<p><a href="features/authentication.html">Read provider and access authentication setup →</a></p>
 </section>
-
-<section class="feature" id="settings">
-  <div class="feature-copy">
-    <h2>Settings &amp; auth</h2>
-    <p>App-level defaults and per-project overrides, provider connections, and OAuth sign-in — all from the mobile Settings tab.</p>
-    <ul>
-      <li>App settings vs project settings, project wins</li>
-      <li>Provider connections and model catalogs</li>
-      <li>OS keychain OAuth tokens</li>
-    </ul>
-  </div>
-  ${shotFigure('features/images/settings-ui/project-settings.png', 'mouaif settings view', 'Settings')}
-</section>
-
-<section class="section" id="how-to-run">
-  <h2>Quick start</h2>
-  <p class="lead">Start the assistant server with a single command:</p>
-  <pre><code class="language-bash">mouaif serve</code></pre>
-  <p>Open <code>http://127.0.0.1:5732/</code> on your phone or desktop browser. Tap <strong>+ Add project</strong> to pick a folder, connect an AI provider in <strong>Settings</strong>, and start chatting.</p>
-</section>
-
-<section class="section" id="projects">
-  <h2>How projects work</h2>
-  <p class="lead">A project is any directory on your computer, paired with settings tailored to that codebase.</p>
-  <ul>
-    <li><strong>Project workspace</strong> — register any workspace directory or create a new one directly from the UI.</li>
-    <li><strong>Scoped configuration</strong> — customize prompts, tools, and model choices per project.</li>
-    <li><strong>Provider flexibility</strong> — connect global providers once, then select models per project or chat.</li>
-    <li><strong>Persistent chats</strong> — chats and turn history are saved and organized under each project card.</li>
-  </ul>
-  <p>See <a href="features/project-card.html">Project card</a> and <a href="features/folder-picker.html">Folder picker</a> for details.</p>
-</section>
-
-<section class="section" id="mcp-tools">
-  <h2>Tools &amp; integrations</h2>
-  <p class="lead">Give the model real tools — terminal execution, file inspection, task management, and third-party MCP servers.</p>
-  <ul>
-    <li><strong>Native capabilities</strong> — terminal commands, reading and editing files, task tracking, interactive prompts, and agent delegation.</li>
-    <li><strong>Model Context Protocol (MCP)</strong> — easily connect custom or registry MCP servers for browser automation, database queries, and more.</li>
-    <li><strong>Safety &amp; permissions</strong> — complete control with per-tool authorization gates (Ask, Allow, or Off).</li>
-  </ul>
-  <p>See <a href="features/tool-authorization.html">Tool authorization</a>, <a href="features/mcp.html">MCP</a>, and <a href="features/shell-tool.html">Shell tool</a>.</p>
+<section class="section" id="abilities">
+<h2>What you can do</h2>
+<ul>
+<li>Organize chats by local project and choose models per chat.</li>
+<li>Let the assistant read and edit files, run approved commands, track tasks, and delegate to agents.</li>
+<li>Connect extra tools through MCP.</li>
+<li>Preview and inspect browser pages from the mobile-friendly Inspector.</li>
+<li>Control every tool with Off, Ask, or Allow permissions.</li>
+</ul>
+<p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>
 </section>
 `;
-  const html = htmlPage({
-    title: 'mouaif',
-    body,
-    sidebar: '',
-    description: 'mouaif — mobile-first AI coding assistant',
-    topnav: renderTopNav(),
-    fullWidth: true
-  });
-  fs.writeFileSync(path.join(outDir, 'index.html'), html);
+const html = htmlPage({
+title: 'mouaif',
+body,
+sidebar: '',
+description: 'Install, configure, and use the mouaif AI coding assistant.',
+topnav: renderTopNav(),
+fullWidth: true
+});
+fs.writeFileSync(path.join(outDir, 'index.html'), html);
 }
-
 function buildDocumentationPage(features, sidebarHtmlStr, outDir) {
-  const cards = features.map((f) => {
-    // Render the blurb through the same inline pipeline the feature pages
-    // use, so backticked identifiers and links show up as <code> and <a>
-    // in the cards too.
-    const blurbHtml = renderInline(escapeHtml(f.blurb || ''), { rewriteMd: true });
-    return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(f.title)}</h3><p>${blurbHtml}</p></a>`;
-  }).join('\n        ');
-  const body = `
-<h1>mouaif — documentation</h1>
-<p>One page per shipped feature. The source of truth is the <code>docs/features/*.md</code> tree; this site is generated by <code>npm run docs:build</code>.</p>
-<h2>Feature index</h2>
+const publicFeatures = PUBLIC_GUIDE_SLUGS
+.map((slug) => features.find((f) => f.slug === slug))
+.filter(Boolean);
+const cards = publicFeatures.map((f) => {
+const blurbHtml = renderInline(escapeHtml(f.blurb || ''), { rewriteMd: true });
+return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(f.title)}</h3><p>${blurbHtml}</p></a>`;
+}).join('\n        ');
+const body = `
+<h1>mouaif user guide</h1>
+<p>Everything needed to install, run, authenticate, and use the app.</p>
 <div class="features-grid">
-        ${cards}
+${cards}
 </div>
-<h2>Architectural decisions</h2>
-<p>Locked-in stack, storage, and build order: see <a href="decisions.html">decisions.html</a>.</p>
 `;
   const html = htmlPage({
     title: 'Documentation',
@@ -1153,12 +1110,11 @@ function main() {
     process.stderr.write('error: docs/ directory not found at ' + DOCS_DIR + '\n');
     process.exit(2);
   }
-  // Resolve the index from docs/README.md so the order and the blurbs are
-  // driven by the same source as the GitHub-rendered page.
-  const readmeSrc = readDocFile('README.md');
-  const indexSection = readmeSrc.split(/^##\s+Index\s*$/m)[1] || '';
-  // The "Index" section ends at the next "##" heading.
-  const indexBlock = indexSection.split(/\n##\s+/)[0] || '';
+// Resolve feature links from docs/README.md when a maintainer source index is
+// present. Public guide order is defined separately by PUBLIC_GUIDE_SLUGS.
+const readmeSrc = readDocFile('README.md');
+const indexSection = readmeSrc.split(/^##\s+(?:Feature source index|Index)\s*$/m)[1] || '';
+const indexBlock = indexSection.split(/\n##\s+/)[0] || '';
   const parsed = indexBlock.split('\n')
     .map(parseFeatureListItem)
     .filter(Boolean);
@@ -1215,28 +1171,24 @@ function main() {
   // pages are at features/<slug>.html, so the CSS link target is
   // ../assets/site.css from inside a feature page (root pages use
   // ./assets/site.css).
-  const renderSidebar = (activeSlug) => {
-    const linkItem = (slug, title) => {
-      const cls = activeSlug === slug ? ' class="is-active"' : '';
-      const href = slug ? 'features/' + slug + '.html' : 'index.html';
-      return '<li><a' + cls + ' href="' + href + '">' + escapeHtml(title) + '</a></li>';
-    };
-    return `<aside class="sidebar">
-  <h1><span class="logo">m</span> mouaif docs</h1>
-  <div class="tag">v1.0.0</div>
-  <h2>Overview</h2>
-  <ul>
-    <li><a href="index.html"${activeSlug === 'home' ? ' class="is-active"' : ''}>Home</a></li>
-    <li><a href="documentation.html"${activeSlug === 'documentation' ? ' class="is-active"' : ''}>Documentation</a></li>
-    <li><a href="decisions.html"${activeSlug === 'decisions' ? ' class="is-active"' : ''}>Architectural decisions</a></li>
-    <li><a href="agent-notes.html"${activeSlug === 'agent-notes' ? ' class="is-active"' : ''}>Agent notes</a></li>
-  </ul>
-  <h2>Features</h2>
-  <ul>
-    ${features.map((f) => linkItem(f.slug, f.title)).join('\n    ')}
-  </ul>
+const publicFeatures = PUBLIC_GUIDE_SLUGS
+.map((slug) => features.find((f) => f.slug === slug))
+.filter(Boolean);
+const renderSidebar = (activeSlug) => {
+const linkItem = (slug, title) => {
+const cls = activeSlug === slug ? ' class="is-active"' : '';
+return '<li><a' + cls + ' href="features/' + slug + '.html">' + escapeHtml(title) + '</a></li>';
+};
+return `<aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="index.html"${activeSlug === 'home' ? ' class="is-active"' : ''}>Home</a></li>
+${publicFeatures.map((f) => linkItem(f.slug, f.title)).join('\n')}
+</ul>
 </aside>`;
-  };
+};
 
   buildLandingPage(outDir);
   buildDocumentationPage(features, renderSidebar('documentation'), outDir);
