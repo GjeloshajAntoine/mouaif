@@ -29,10 +29,10 @@ import { useRef, useEffect } from 'preact/hooks';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, indentOnInput, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { bracketMatching, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 
 // ---- Static completion tables -----------------------------------------
 // Browser APIs most useful in a page console. Kept as a small curated
@@ -320,7 +320,7 @@ export function JsConsole(props) {
         indentOnInput(),
         bracketMatching(),
         highlightActiveLine(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(oneDarkHighlightStyle),
         keymap.of(consoleKeymap),
         autocompletion({
           override: [source],

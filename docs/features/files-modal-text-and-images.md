@@ -24,7 +24,7 @@ Tap the **Files** item in the file toolbar dropdown (next to the composer). The 
 
 ### Right-hand pane modes
 
-- **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row.
+- **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`.
 - **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type.
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 
