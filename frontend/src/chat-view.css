@@ -76,12 +76,16 @@ width: 100%;
 display: flex;
 flex-wrap: wrap;
 align-items: center;
+/* Center the two dropdowns horizontally and add breathing room
+below the model row before the transcript. The row sits inside a
+flex-wrap head with a 1px row gap, so we pull it up by 6px with a
+negative top margin to tuck it closer to the usage chips, and add
+the same 6px as bottom margin so the total row height is unchanged
+— only the vertical balance shifts toward the bottom. */
+justify-content: center;
 gap: 2px 6px;
 min-width: 96px;
-/* No padding-top: the head's flex gap already spaces the model
-row away from the title/usage line above. Adding padding here
-duplicated the gap and pushed the picker down by 2px. */
-padding-top: 0;
+margin: -6px 0 6px;
 }
 /* One icon button per line: the two header actions (project settings
    + tool popup) stack vertically so the top row stays short and the
@@ -851,6 +855,13 @@ white-space: nowrap;
 color: var(--muted);
 font-size: 0.72rem;
 flex: 0 0 auto;
+/* Center the ▾ glyph vertically. Without this, the caret inherits
+the <button> user-agent line-height and sits flush with the top
+edge of the trigger. */
+display: inline-flex;
+align-items: center;
+justify-content: center;
+line-height: 1;
 }
 .mp__pop {
 position: absolute;
@@ -1177,10 +1188,20 @@ max-width: 200px;
   font-weight: 500;
 }
 .mp--chat > .mp__trigger .mp__caret {
-  font-size: 0.72rem;
+font-size: 0.72rem;
+/* Center the ▾ glyph in the 26 px trigger: as plain text inside a
+<button>, the caret inherits the user-agent button's normal
+line-height, which leaves a visible gap below the arrow and makes
+it look glued to the top edge. Inline-flex + line-height: 1 puts
+the glyph exactly on the trigger's vertical center, matching the
+centered SVG caret on the adjacent thinking-level <select>. */
+display: inline-flex;
+align-items: center;
+justify-content: center;
+line-height: 1;
 }
 .mp--chat > .mp__trigger .mp__provider {
-  display: none;
+display: none;
 }
 .mp--sheet > .mp__pop {
 z-index: 46;
