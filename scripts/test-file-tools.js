@@ -237,6 +237,49 @@ function writeFile(p, content) {
   assert(eTrim.ok === true, 'edit_file matches block despite indentation and blank line padding');
   assert(fs.readFileSync(trimFile, 'utf8').includes('return 42;'), 'edit_file applied trimmed replacement');
 
+  // Formatter-tolerant matching accepts harmless wrapping, blank lines, and
+  // punctuation spacing while preserving the unique-match safety rule.
+  const layoutFile = path.join(root, 'layout.js');
+  writeFile(layoutFile, [
+    'function toggleSettingsGroup(groupId, checked) {',
+    "  if (groupId === 'shell') pickShellMode(mode);",
+    '',
+    "  else if (groupId === 'files') {",
+    '    const names = toolsCatalog',
+    "      .filter((tool) => tool && tool.kind === 'native')",
+    '      .map((tool) => tool.name);',
+    '    pickFileGroupMode(names, mode);',
+    '  }',
+    '}',
+    ''
+  ].join('\n'));
+  const eLayout = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: {
+      path: 'layout.js',
+      oldText: "function toggleSettingsGroup(groupId, checked) {\nif (groupId==='shell') pickShellMode(mode);\nelse if (groupId === 'files') {\nconst names=toolsCatalog.filter((tool)=>tool && tool.kind === 'native').map((tool)=>tool.name);\npickFileGroupMode(names,mode);\n}\n}",
+      newText: 'function toggleSettingsGroup() {\n  return true;\n}'
+    }
+  });
+  assert(eLayout.ok === true, 'edit_file matches formatter-only layout differences');
+  assert(fs.readFileSync(layoutFile, 'utf8') === 'function toggleSettingsGroup() {\n  return true;\n}\n', 'edit_file replaces the full layout-tolerant span');
+
+  const changedCodeFile = path.join(root, 'changed-code.js');
+  writeFile(changedCodeFile, 'const total = one + two;\n');
+  const eChangedCode = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'changed-code.js', oldText: 'const total = one - two;', newText: 'const total = 0;' }
+  });
+  assert(eChangedCode.ok === false && eChangedCode.result.error.code === 'ENO_MATCH', 'edit_file does not ignore changed punctuation');
+
+  const changedStringFile = path.join(root, 'changed-string.js');
+  writeFile(changedStringFile, "const label = 'two words';\n");
+  const eChangedString = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'changed-string.js', oldText: "const label = 'twowords';", newText: "const label = 'fixed';" }
+  });
+  assert(eChangedString.ok === false && eChangedString.result.error.code === 'ENO_MATCH', 'edit_file preserves meaningful string whitespace');
+
   writeFile(path.join(root, 'duplicate.txt'), 'same\nsame\n');
   const e4 = await files.runFileTool('edit_file', { projectDir: root, args: { path: 'duplicate.txt', oldText: 'same', newText: 'x' } });
   assert(e4.ok === false && e4.result.error.code === 'EMULTI_MATCH', 'edit_file rejects ambiguous oldText');

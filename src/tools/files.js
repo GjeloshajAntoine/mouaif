@@ -701,7 +701,7 @@ async function runEditFile(opts) {
   const needle = softNormalizeWithOffsets(oldText);
   const target = softNormalizeWithOffsets(source.normalized);
 
-  // Strategy 1: Direct soft match on collapsed whitespace.
+  // Strategy 1: Direct soft match on collapsed horizontal whitespace.
   let normStart = -1;
   let normEnd = -1;
   const first = target.norm.indexOf(needle.norm);
@@ -712,9 +712,63 @@ async function runEditFile(opts) {
     normStart = target.off[first];
     normEnd = target.off[first + needle.norm.length];
   } else {
-    // Strategy 2: Line-trimmed block match (ignoring leading/trailing blank lines
-    // in oldText and line-by-line whitespace variations).
-    const needleLines = needle.norm.split('\n');
+    // Strategy 2: Formatter-tolerant match. Whitespace between punctuation is
+    // insignificant, while a separator between word characters remains
+    // significant (`return x` must not match `returnx`). This accepts line
+    // wraps, blank lines, and spacing around operators without accepting
+    // changed code.
+    function layoutNormalizeWithOffsets(text) {
+      let norm = '';
+      const starts = [];
+      const ends = [];
+      const isWord = (c) => !!c && /[\p{L}\p{N}_$]/u.test(c);
+      let quote = '';
+      let escaped = false;
+      for (let i = 0; i < text.length;) {
+        const c = text[i];
+        if (quote || !/\s/u.test(c)) {
+          starts.push(i);
+          ends.push(i + 1);
+          norm += c;
+          if (quote) {
+            if (escaped) escaped = false;
+            else if (c === '\\') escaped = true;
+            else if (c === quote) quote = '';
+          } else if (c === "'" || c === '"' || c === '`') {
+            quote = c;
+          }
+          i++;
+          continue;
+        }
+        const wsStart = i;
+        while (i < text.length && /\s/u.test(text[i])) i++;
+        const prev = norm[norm.length - 1] || '';
+        const next = text[i] || '';
+        if (isWord(prev) && isWord(next)) {
+          starts.push(wsStart);
+          ends.push(i);
+          norm += ' ';
+        }
+      }
+      return { norm, starts, ends };
+    }
+    const layoutNeedle = layoutNormalizeWithOffsets(oldText);
+    const layoutTarget = layoutNormalizeWithOffsets(source.normalized);
+    if (layoutNeedle.norm) {
+      const layoutFirst = layoutTarget.norm.indexOf(layoutNeedle.norm);
+      if (layoutFirst >= 0) {
+        if (layoutTarget.norm.indexOf(layoutNeedle.norm, layoutFirst + layoutNeedle.norm.length) >= 0) {
+          throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
+        }
+        normStart = layoutTarget.starts[layoutFirst];
+        normEnd = layoutTarget.ends[layoutFirst + layoutNeedle.norm.length - 1];
+      }
+    }
+
+    // Strategy 3: Line-trimmed block match (ignoring leading/trailing blank
+    // lines in oldText and line-by-line whitespace variations).
+    if (normStart < 0 || normEnd < 0) {
+      const needleLines = needle.norm.split('\n');
     let nStart = 0;
     let nEnd = needleLines.length;
     while (nStart < nEnd && !needleLines[nStart].trim()) nStart++;
@@ -768,10 +822,9 @@ async function runEditFile(opts) {
       throw err('ENO_MATCH', msg);
     }
   }
+  }
 
-  // Map the collapsed match position back to the original byte offsets:
-  // target.off[first] is the source.normalized char index, which we then
-  // resolve through source.offsets (the original byte offsets).
+  // Map the normalized source positions back to original byte offsets.
   const originalStart = source.offsets[normStart];
   const originalEnd = source.offsets[normEnd];
   const replaced = original.slice(originalStart, originalEnd);
