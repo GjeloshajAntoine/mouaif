@@ -144,6 +144,7 @@ export function ModelPickerField(props) {
   const [q, setQ] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const rootRef = useRef(null);
   const popRef = useRef(null);
   const searchRef = useRef(null);
@@ -186,7 +187,10 @@ export function ModelPickerField(props) {
   // these in that order lets callers populate a live catalog without the
   // component reading stale models during the opening event.
   useEffect(() => {
-    if (!effectiveOpen) return;
+    if (!effectiveOpen) {
+      setOptionsOpen(false);
+      return;
+    }
     if (onOpenRef.current) onOpenRef.current();
     requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
   }, [effectiveOpen]);
@@ -358,6 +362,18 @@ export function ModelPickerField(props) {
           value: q,
           onInput: (e) => setQ(e.currentTarget.value)
         }),
+        children ? h('button', {
+          type: 'button',
+          class: 'mp__options' + (optionsOpen ? ' is-active' : ''),
+          'aria-label': optionsOpen ? 'Hide model options' : 'Show model options',
+          title: 'Model options',
+          'aria-expanded': String(optionsOpen),
+          onClick: () => setOptionsOpen(!optionsOpen)
+        },
+        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, fill: 'currentColor', 'aria-hidden': 'true' },
+          h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z' })
+        )
+        ) : null,
         refresh ? h('button', {
           type: 'button',
           class: 'mp__refresh',
@@ -378,7 +394,10 @@ export function ModelPickerField(props) {
       onClick: closeAndRestoreFocus
         }, '×')
       ),
-      children ? children : null,
+      children ? h('div', {
+        class: 'mp__options-panel',
+        hidden: !optionsOpen
+      }, children) : null,
       providers.length ? h('div', { class: 'mp__chips', role: 'tablist', 'aria-label': 'Filter by provider' },
         [{ id: 'all', label: 'All' }].concat(providers.map((p) => ({ id: p, label: p }))).map((c) =>
           h('button', {
