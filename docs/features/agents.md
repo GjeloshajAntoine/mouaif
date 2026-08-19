@@ -22,7 +22,7 @@ Provider and prompt size are **never** configurable on an agent — the model pi
 
 ### Manage agents
 
-Open **Settings → Project → Agents** (in the *Project add-ons* group, alongside MCP servers and Custom prompts). The list view (`#/settings/agents`) shows one row per agent with its tool count and model pin; tapping a row opens the edit view (`#/settings/agents/<name>`). All edits on the edit view auto-save.
+Open **Settings → Project → Agents** (in the *Project add-ons* group, alongside MCP servers and Custom prompts). The project settings list shows each agent as a compact, single-line name without model or tool descriptions. The dedicated list view (`#/settings/agents`) shows one row per agent with its tool count and model pin; tapping a row opens the edit view (`#/settings/agents/<name>`). All edits on the edit view auto-save.
 
 - **+ Add agent** opens `#/settings/agents/new`, asks for a name and instructions, creates the agent, and redirects to its edit view.
 - **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.

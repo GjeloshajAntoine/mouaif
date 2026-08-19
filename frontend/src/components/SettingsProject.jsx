@@ -1300,11 +1300,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
                 href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()),
                 'aria-label': 'Configure ' + a.name
               },
-                h('span', { class: 'group__row-body' },
-                  h('span', { class: 'group__row-label' }, a.name),
-                  h('span', { class: 'settings-project__link-sub' }, a.modelId || 'Inherits chat model')
-                ),
-                h('span', { class: 'group__row-detail' }, a.tools === undefined ? 'All tools' : (a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))),
+                h('span', { class: 'group__row-label' }, a.name),
                 h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
               )
             ))
