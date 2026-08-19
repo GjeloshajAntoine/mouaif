@@ -29,7 +29,11 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 - **Touch-friendly** — comfortable tap targets (≥ 44 × 44 px) and smooth mobile scrolling.
 - **Virtual keyboard support** — the composer adjusts automatically as the on-screen keyboard opens and closes.
-- **Auto-scroll & unpin** — the transcript follows new streaming messages automatically when at the bottom; scrolling up shows a jump-to-bottom button.
+- **Auto-scroll & unpin** — the transcript follows new streaming messages automatically when at the bottom; scrolling up shows a jump-to-bottom button. While pinned, it also follows existing rows that expand after rendering, such as tool cards, decoded images, and asynchronously laid-out markdown.
+
+## Implementation notes
+
+The transcript observes DOM mutations and geometry changes for both its viewport and direct message rows. Geometry changes re-pin only when the reader is already at the bottom; scrolling up disables automatic movement so reading history is not interrupted.
 
 ## Related
 

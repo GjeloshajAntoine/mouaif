@@ -824,13 +824,14 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
     // a few (or many) pixels above the newest content — the "scroll
     // issues" the user reported.
     //
-    // A ResizeObserver on the scroll container itself won't fire here:
-    // its border box is fixed by the flex layout, only the *content*
-    // height changes. So watch the content two ways: a MutationObserver
-    // for streaming text nodes and DOM growth, and a capture-phase
-    // `load` listener for images that change layout when they decode.
-    // Either way, re-pin only while pinned and not during a chunked
-    // render/backfill (which manages the scroll itself).
+    // Watch both sides of the scroll geometry. Mutations catch newly
+    // appended text and nodes, while ResizeObserver catches changes that
+    // do not mutate the transcript: the composer/header taking more room
+    // from the viewport, or an existing message/tool card growing after
+    // asynchronous layout. Observe each direct transcript row because the
+    // container's own border box only reports viewport-size changes.
+    // Re-pin only while pinned and not during a chunked render/backfill
+    // (which manages the scroll itself).
     let repinScheduled = false;
     function repinIfPinned() {
       if (repinScheduled) return;
@@ -844,9 +845,30 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         el.scrollTop = el.scrollHeight;
       });
     }
+    let ro = null;
+    let observedRows = new Set();
+    function observeTranscriptGeometry() {
+      if (!ro) return;
+      const nextRows = new Set(el.children);
+      for (const row of observedRows) {
+        if (!nextRows.has(row)) ro.unobserve(row);
+      }
+      for (const row of nextRows) {
+        if (!observedRows.has(row)) ro.observe(row);
+      }
+      observedRows = nextRows;
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(repinIfPinned);
+      ro.observe(el);
+      observeTranscriptGeometry();
+    }
     let mo = null;
     if (typeof MutationObserver !== 'undefined') {
-      mo = new MutationObserver(repinIfPinned);
+      mo = new MutationObserver(() => {
+        observeTranscriptGeometry();
+        repinIfPinned();
+      });
       mo.observe(el, { childList: true, subtree: true, characterData: true });
     }
     function onLoadCapture(e) {
@@ -857,6 +879,8 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('load', onLoadCapture, true);
       if (mo) mo.disconnect();
+      if (ro) ro.disconnect();
+      observedRows.clear();
     };
   }, [projectDir, chatId]);
 
