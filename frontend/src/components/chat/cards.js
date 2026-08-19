@@ -567,12 +567,8 @@ function buildAuthModelPicker(state, request) {
     ? { providerId: chat.providerId, modelId: chat.modelId }
     : null;
 
-  const host = document.createElement('div');
-  host.className = 'tool-card__auth-model';
-  const label = document.createElement('label');
-  label.className = 'tool-card__auth-model-label';
-  label.textContent = 'Run this subagent on';
-  host.appendChild(label);
+const host = document.createElement('div');
+host.className = 'tool-card__auth-model';
 
   // The picker holds its own selection; expose it for the decision
   // payload. Picking a model sets the override; tapping the

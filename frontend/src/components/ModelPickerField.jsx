@@ -418,9 +418,8 @@ export function ModelPickerField(props) {
           tabindex: '0',
           onClick: pickClear
         },
-        h('span', { class: 'mp__clear-id' }, clearLabel),
-        h('span', { class: 'mp__clear-meta' }, 'use the default')
-        ) : null,
+h('span', { class: 'mp__clear-id' }, clearLabel)
+) : null,
         showingFullList && pinned ? renderBookmarkSection('Pinned', list.filter((m) => pinned.has(keyOf(m)))) : null,
         showingFullList && recent ? renderRecentSection(recent, list, pinned) : null,
         !groups.length ? h('div', { class: 'mp__empty' },

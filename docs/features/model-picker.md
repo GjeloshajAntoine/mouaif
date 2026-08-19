@@ -4,7 +4,7 @@
 
 The **model picker** is the popover that opens from the header's model trigger. It allows you to search, filter by provider, and switch active models effortlessly across both phone and desktop screens.
 
-The same model picker is also used in subagent authorization cards and agent persona editors. Those locations use the same compact, single-line trigger styling as chat while retaining a mobile-sized touch target.
+The same model picker is also used in subagent authorization cards and agent persona editors. Those locations use the same compact, single-line trigger styling as chat while retaining a mobile-sized touch target, and they render no extra descriptive text — the dropdown reads exactly like the chat header's picker.
 
 ## Usage
 

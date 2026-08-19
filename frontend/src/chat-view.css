@@ -1033,7 +1033,6 @@ background: var(--accent);
 }
 .mp__clear-id { font-weight: 500; flex: 1 1 auto; }
 .mp__clear.is-active .mp__clear-id { color: var(--accent); }
-.mp__clear-meta { font-size: 0.62rem; color: var(--muted); flex: 0 0 auto; }
 .mp__section { padding: 0; }
 .mp__section-head {
 display: flex;

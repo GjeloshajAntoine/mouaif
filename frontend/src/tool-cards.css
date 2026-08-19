@@ -708,20 +708,14 @@ color: var(--fg-soft);
 }
 
 /* Per-run model picker on the subagent authorization card. Mobile
-   first: the same trigger + modal the chat top bar uses, with a small
-   label above it so the user can pick which model executes the run. */
+first: the same trigger + modal the chat top bar uses, with no extra
+description — it reads exactly like the chat header's picker. */
 .tool-card--authorization .tool-card__auth-model {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 6px 0 2px 17px;
-  padding-right: 10px;
-}
-.tool-card--authorization .tool-card__auth-model-label {
-  font-size: 0.68rem;
-  color: var(--fg-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+display: flex;
+flex-direction: column;
+gap: 3px;
+margin: 6px 0 2px 17px;
+padding-right: 10px;
 }
 .tool-card--authorization .tool-card__auth-model-field {
   position: relative;
