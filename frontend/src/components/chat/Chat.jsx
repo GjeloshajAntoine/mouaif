@@ -12,8 +12,9 @@ import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
+import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
-import { subscribe as subscribeWebPreview, closeActive as closeWebPreview, getActivePayload } from './webpreviewState.js';
+import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload } from './webpreviewState.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -32,11 +33,11 @@ export function ChatView(props) {
 
   const { projectDir, chatId } = props;
   const [FileEditor, setFileEditor] = useState(null);
-  // Active webpreview card id; setting it opens the modal. '' = closed.
-  // The renderer stashes payloads; we read from getActivePayload so the
-  // modal never holds stale data after a re-render mid-open.
-  const [webPreviewId, setWebPreviewId] = useState('');
-  const [webPreviewPayload, setWebPreviewPayload] = useState(null);
+// The latest webpreview capture lives in a fixed dock above the composer.
+// The full-screen viewer is a separate local toggle so dismissing the viewer
+// leaves the small user-facing preview available.
+const [webPreviewPayload, setWebPreviewPayload] = useState(() => getActivePayload());
+const [webPreviewOpen, setWebPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!fileEditorOpen || FileEditor) return;
@@ -49,18 +50,22 @@ export function ChatView(props) {
     return () => { cancelled = true; };
   }, [fileEditorOpen, FileEditor]);
 
-  // Subscribe to webpreview open/close events. The renderer emits
-  // via `requestOpen(id)` (see webpreviewState.js); ChatView mirrors
-  // the active id + payload into Preact state so the modal mounts.
-  // The unsubscribe runs on chat-switch cleanup so a stale event
-  // from a different chat never flips our state.
-  useEffect(() => {
-    const off = subscribeWebPreview((id, payload) => {
-      setWebPreviewId(id || '');
-      setWebPreviewPayload(payload || null);
-    });
-    return () => { off(); };
-  }, []);
+// Subscribe to captures published by the imperative tool renderer. A new
+// capture replaces the dock image but never opens the full viewer without a
+// user tap. Clear it when switching chats so previews cannot leak across chats.
+useEffect(() => {
+const off = subscribeWebPreview((payload) => {
+setWebPreviewPayload(payload || null);
+if (!payload) setWebPreviewOpen(false);
+});
+setWebPreviewPayload(getActivePayload());
+return () => { off(); };
+}, []);
+useEffect(() => {
+clearWebPreview();
+setWebPreviewPayload(null);
+setWebPreviewOpen(false);
+}, [projectDir, chatId]);
 
   const atMentionRef = useRef(null);
   const atArgBarRef = useRef(null);
@@ -251,9 +256,9 @@ export function ChatView(props) {
           })
         )
     ),
-    h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
-    h('button', {
-      ref: refs.jumpBtn,
+h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
+h('button', {
+ref: refs.jumpBtn,
       class: 'chat-view__jump',
       type: 'button',
       hidden: true,
@@ -263,9 +268,14 @@ export function ChatView(props) {
       h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
         h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
       ),
-      h('span', { class: 'chat-view__jump-count' }, '')
-    ),
-    h('div', { class: 'chat-view__composer-row' },
+h('span', { class: 'chat-view__jump-count' }, '')
+),
+h(WebpreviewDock, {
+preview: webPreviewPayload,
+onOpen: () => setWebPreviewOpen(true),
+onDismiss: () => clearWebPreview()
+}),
+h('div', { class: 'chat-view__composer-row' },
       h('div', { class: 'chat-view__composer-tool' },
         h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
       ),
@@ -304,15 +314,11 @@ export function ChatView(props) {
     fileEditorOpen && FileEditor
       ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
       : null,
-    webPreviewId && webPreviewPayload
-      ? h(WebpreviewModal, {
-          preview: webPreviewPayload,
-          onClose: () => {
-            closeWebPreview();
-            setWebPreviewId('');
-            setWebPreviewPayload(null);
-          }
-        })
-      : null
+webPreviewOpen && webPreviewPayload
+? h(WebpreviewModal, {
+preview: webPreviewPayload,
+onClose: () => setWebPreviewOpen(false)
+})
+: null
   );
 }

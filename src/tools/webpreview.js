@@ -9,8 +9,8 @@
 // the URL in a debug-managed tab, waits for the page to settle, and
 // then captures a single small JPEG screenshot via `Page.captureScreenshot`.
 // The result is returned to the chat as { url, title, thumbnail, ... }
-// so the UI can render a thumbnail card next to the tool call and
-// re-use the same image inline in the modal that opens on tap.
+// so the UI can render a small dock between the transcript and composer and
+// re-use the same image in the full viewer that opens on a user tap.
 //
 // Per-call lifecycle:
 //   1. Open the URL in a fresh tab via inspector.openInspectorTarget.
@@ -18,10 +18,12 @@
 //   3. Give layout / paint a tiny grace window so a static snapshot
 //      isn't the empty pre-load frame.
 //   4. Call `Page.captureScreenshot` with a viewport clamp (640x480 max)
-//      so the result stays well under the model-feedback cap (the image
-//      is also sent back to the model as a `image_url` block).
+//      so the user-facing UI payload stays small. The screenshot bytes are
+//      not appended to the model conversation.
 //   5. Close the tab (`Target.closeTarget`) so server restarts don't leak
-//      preview tabs. A failed capture still closes the tab.
+//      preview tabs. A failed capture still closes the tab. Calling the tool
+//      again for the same URL opens a fresh tab and acts as an agent-triggered
+//      reload of the user-facing preview.
 //
 // The tool is project-scope-free: there is no working-directory check
 // (the inspector handles its own auth shape). Authorization gates the
@@ -295,13 +297,10 @@ async function runWebpreview(opts) {
     if (!title) title = url.hostname;
     const dataUrl = 'data:image/jpeg;base64,' + data;
 
-    // Result shape the chat UI renders: thumbnail + meta. The
-    // model-facing tool message is a short text envelope (so its
-    // 64 KiB feedback cap isn't eaten by image bytes); the image
-    // rides alongside as an `image_url` part attached to the same
-    // tool message (see postToolImageMessages in src/ai-stream.js),
-    // which the multimodal providers (Anthropic / OpenAI-shaped /
-    // Gemini / Ollama) all accept as a multimodal input.
+    // Result shape the chat UI renders: thumbnail + meta. The screenshot is
+    // user-facing only: src/ai-stream.js emits the rich result to the UI but does
+    // not append its image bytes to the model conversation. The model receives
+    // the compact summary below and can call webpreview again to refresh it.
     const result = {
       ok: true,
       url: finalUrl,
@@ -314,20 +313,6 @@ async function runWebpreview(opts) {
       targetId
     };
     const summary = { ok: true, url: finalUrl, title, sizeBytes: decoded.length, width: capW, height: capH, targetId };
-
-    // Expose the inline image for both the chat UI (result.thumbnail)
-    // and the model-facing image_url feed. The image_parts helper in
-    // src/ai-stream.js walks `result.content`; we mirror the chunk
-    // shape MCP image results use so a single line dispatches both
-    // the thumbnail card and the multimodal follow-up.
-    result.content = [{
-      type: 'image',
-      mimeType: 'image/jpeg',
-      // The model-feedback loader strips out `thumbnail` so we keep
-      // it on `result` only; the model-facing image block lives on
-      // `content[*].data` as a CDN-safe data URL.
-      data: dataUrl
-    }];
 
     return { ok: true, content: JSON.stringify(summary), result };
   } finally {
@@ -347,9 +332,9 @@ const SPEC = {
     // shapes are accepted, where the screenshot comes from, and
     // how the user is going to see it. Keep the wording sharp —
     // it is part of the model's tool-pick decision tree.
-    description: 'Open a web URL in the debug Chrome used by the Inspector tab and return a small screenshot of what is on the page. ' +
-      'Use this when you want to inspect what a URL actually looks like (visual layout, error overlays, ' +
-      'preview imagery, styling) instead of guessing from text. The chat UI renders the thumbnail in a card; the user can tap it to open the full screenshot in a modal. ' +
+    description: 'Refresh the user-facing preview of a web URL in the debug Chrome used by the Inspector tab. ' +
+      'The screenshot is shown only to the user in a small dock between the chat scroll and textbox; tapping it opens the full image. ' +
+      'Call this tool again with the URL whenever the user preview should reload. The screenshot is not returned to you for visual analysis. ' +
       'Only http and https URLs are accepted.',
     parameters: {
       type: 'object',

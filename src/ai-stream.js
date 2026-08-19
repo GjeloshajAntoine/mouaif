@@ -372,7 +372,11 @@ async function runSingleToolCall(c, cx) {
   onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
 
   pushToolMessage(c.name, modelContentForTool(c.name, exec));
-  return { exec, imageParts: toolResultImageParts(exec && exec.result) };
+  // webpreview screenshots are rendered for the user in the preview dock. The
+  // model only receives the compact JSON result and can call the tool again to
+  // reload the page; it does not receive or inspect the image bytes.
+  const imageParts = c.name === 'webpreview' ? [] : toolResultImageParts(exec && exec.result);
+  return { exec, imageParts };
 }
 
 async function streamChat(opts) {

@@ -68,6 +68,13 @@ const imageHistory = messages.reconstructUpstreamHistory([
 ]);
 check('historical image payload is omitted', imageHistory[1] && !imageHistory[1].content.includes('A'.repeat(100)), imageHistory[1] && imageHistory[1].content.slice(0, 200));
 check('historical image omission marker is present', imageHistory[1] && imageHistory[1].content.includes('image payload omitted'), imageHistory[1] && imageHistory[1].content);
+const previewResult = { ok: true, url: 'https://example.com/', thumbnail: imageData };
+const previewHistory = messages.reconstructUpstreamHistory([
+  { role: 'tool', phase: 'call', toolCallId: 'call_preview', name: 'webpreview', args: { url: previewResult.url }, content: '{}' },
+  { role: 'tool', phase: 'result', toolCallId: 'call_preview', name: 'webpreview', ok: true, content: JSON.stringify(previewResult) }
+]);
+check('historical user preview is omitted', previewHistory[1] && !previewHistory[1].content.includes('A'.repeat(100)), previewHistory[1] && previewHistory[1].content.slice(0, 200));
+check('historical user preview has an omission marker', previewHistory[1] && previewHistory[1].content.includes('user preview image omitted'), previewHistory[1] && previewHistory[1].content);
 
 // ---- toolOutput profile (size + structure) ------------------------------
 const bigJson = JSON.stringify({ ok: true, items: Array.from({ length: 50 }, (_, i) => ({ id: i, name: 'item ' + i, data: 'x'.repeat(100) })) }, null, 2);

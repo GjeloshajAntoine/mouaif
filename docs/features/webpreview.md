@@ -2,11 +2,11 @@
 
 ## Overview
 
-`webpreview` is a built-in tool that allows the model to open a URL, capture a screenshot, and present a thumbnail directly in the chat transcript. Tapping the thumbnail opens a full-screen image viewer.
+`webpreview` refreshes a user-facing screenshot of a web URL. The latest image appears in a compact dock between the chat scroll and the message textbox; the AI can trigger a refresh, but the screenshot is not returned to the AI for visual analysis.
 
 ## Usage
 
-When the model analyzes web pages, it can invoke `webpreview`:
+The AI can show or reload a preview by invoking the tool with the current URL:
 
 ```json
 {
@@ -19,23 +19,25 @@ When the model analyzes web pages, it can invoke `webpreview`:
 
 ### In the chat UI
 
-- **Transcript thumbnail** — successful web previews render an image thumbnail card with page title and dimensions.
-- **Full-screen modal** — tap the card to inspect the full-resolution screenshot.
-- **Open in browser** — tap "Open in new tab" inside the modal to navigate directly to the page in your default browser.
+- **Preview dock** — the latest successful capture is shown above the composer, outside the scrolling transcript.
+- **Full image** — tap the thumbnail row to open the screenshot in a full-screen viewer.
+- **Dismiss** — tap the dock's close button to remove the preview without changing the chat.
+- **Open in browser** — the full viewer can open the original URL in a new browser tab.
+- **Reload by the AI** — another `webpreview` call replaces the dock image with a fresh capture.
 
 ### Authorization
 
-`webpreview` uses your project's tool authorization permissions (`Ask`, `Allow`, or `Off`), with optional URL regex pattern matching in project settings.
+`webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns.
 
-## Behavior
+## Implementation notes
 
-- **Inspector integration** — uses the same Chrome debug endpoint configured for the Inspector tab (`http://127.0.0.1:9222`).
-- **One tab per capture** — opens a temporary headless tab, captures the screenshot, and immediately cleans up the tab.
-- **Multimodal AI feedback** — the resulting image is passed to vision-capable models (e.g. Claude, GPT-4o, Gemini) so the AI can reason about visual page layout.
-- **Interactive popup** — tapping any preview thumbnail opens a full-screen image modal.
+- The native runner in `src/tools/webpreview.js` opens a temporary debug-Chrome tab, waits for the page, captures a JPEG, and closes the tab.
+- `frontend/src/components/chat/webpreviewState.js` bridges imperative tool results to `WebpreviewDock.jsx`.
+- The dock is rendered directly between `.chat-view__transcript` and `.chat-view__composer-row` in `frontend/src/components/chat/Chat.jsx`.
+- Screenshot bytes are emitted in the rich UI result only. `src/ai-stream.js` does not append them as model image input; the model receives compact URL, title, size, and dimension metadata.
+- Repeating the tool call opens a fresh temporary tab, so each call functions as a reload.
 
 ## Related
 
-- [Inspector](./inspector.md) — inspecting live pages.
-- [Chrome Debug MCP](./chrome-debug-mcp.md) — full browser automation.
+- [Inspector](./inspector.md) — inspecting and interacting with live browser pages.
 - [Tool authorization](./tool-authorization.md) — approving or gating tool execution.

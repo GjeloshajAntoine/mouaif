@@ -737,80 +737,9 @@ color: var(--fg-soft);
   min-height: var(--tap);
 }
 
-/* ---- Web preview tool card ------------------------------------------- */
-/*
-   The card shows a small JPEG screenshot of the page the model
-   captured. Tapping it opens a full-screen modal (see chat
-   WebpreviewModal + gm__overlay-style sheet) with the same close
-   button + backdrop-tap-to-dismiss as every other full-screen
-   modal in the chat.
-
-   Mobile-first: full-bleed inside the transcript row, with a soft
-   rounding and a tap target ≥ 36 px so a finger lands cleanly.
-   The thumbnail keeps its aspect ratio, capped at the chat row's
-   intrinsic width so the transcript never has to scroll horizontally
-   on a 360-430 px phone. */
+/* ---- Web preview tool result ----------------------------------------- */
+/* The screenshot itself lives in the fixed preview dock above the composer.
+   The transcript card contains only a compact textual status when expanded. */
 .tool-preview--webpreview {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
   padding: 0;
 }
-.tool-preview__webpreview {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  overflow: hidden;
-  cursor: pointer;
-  /* Touch target minimum: even on the smaller thumbnail widths
-     the card stays above 36 px tall, so an explicit min-height
-     is unnecessary; the presence of a clear border communicates
-     tap affordance. */
-  transition: border-color 120ms ease, background 120ms ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.tool-preview__webpreview:hover,
-.tool-preview__webpreview:focus-visible {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  outline: 0;
-}
-.tool-preview__webpreview-img {
-  display: block;
-  width: 100%;
-  height: auto;
-  /* Cap the rendered size: the JPEG is at most 640x480 from the
-     server, but a long chat row holds the thumbnail alongside the
-     chevron + name + summary, so 56 dvh / ~280 px desktop / ~240 px
-     mobile keeps things from dominating the transcript. */
-  max-height: 240px;
-  object-fit: cover;
-  /* Center so a portrait page doesn't pin to the left when the
-     row is narrower; background matches the surface so the gap
-     looks like a deliberate pad. */
-  background: var(--surface-2);
-}
-@media (min-width: 720px) {
-  .tool-preview__webpreview-img {
-    max-height: 280px;
-  }
-}
-.tool-preview__webpreview-caption {
-  padding: 4px 6px 5px;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  line-height: 1.3;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-top: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl; /* keep the host (always visible) on the right of the caption */
-  text-align: left;
-}
-.tool-preview__webpreview-caption:empty { display: none; }

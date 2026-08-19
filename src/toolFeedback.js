@@ -132,6 +132,11 @@ function omitImagePayloads(value, seen) {
       out[key] = '[image payload omitted; attached separately]';
     } else if (isImage && key === 'url' && typeof item === 'string' && item.startsWith('data:image/')) {
       out[key] = '[image payload omitted; attached separately]';
+    } else if (key === 'thumbnail' && typeof item === 'string' && item.startsWith('data:image/')) {
+      // webpreview keeps its screenshot on `result.thumbnail` for the UI rather
+      // than in a generic image block. Historical tool feedback must strip it
+      // too, otherwise the next model turn receives the user-only preview.
+      out[key] = '[user preview image omitted]';
     } else {
       out[key] = omitImagePayloads(item, visited);
     }
@@ -169,8 +174,10 @@ function compactToolFeedback(options) {
     // Images are already attached to the following vision message by ai.js.
     // Avoid paying again for their base64 representation in role=tool text.
     const sanitized = omitImagePayloads(opts.result);
-    if (safeJson(sanitized, '').includes('[image payload omitted; attached separately]')) {
-      content = safeJson(sanitized, content);
+    const sanitizedJson = safeJson(sanitized, '');
+    if (sanitizedJson.includes('[image payload omitted; attached separately]')
+      || sanitizedJson.includes('[user preview image omitted]')) {
+      content = sanitizedJson;
     }
   }
 

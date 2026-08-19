@@ -18,6 +18,7 @@ import {
   formatReadableToolResult
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
+import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape } from './utils.js';
 import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
 import { setPromptSize } from './meta.js';
@@ -700,8 +701,14 @@ export function appendToolResultCard(toolResult, refs) {
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
-  const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
-  const summary = toolResult.ok ? formatResultSummary(toolResult && toolResult.name, rawR) : null;
+const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+const summary = toolResult.ok ? formatResultSummary(toolResult && toolResult.name, rawR) : null;
+// Publish a successful capture immediately. Tool result bodies are lazy and
+// usually stay collapsed, so relying on renderToolResultBody would delay the
+// dock until the user expanded a transcript card.
+if (toolResult.ok && normalizeToolName(toolResult.name) === 'webpreview' && rawR && rawR.thumbnail) {
+publishWebPreview(rawR);
+}
   if (!card) {
     card = document.createElement('div');
     card.className = 'tool-card tool-card--result';
@@ -772,18 +779,11 @@ export function appendToolResultCard(toolResult, refs) {
       body.dataset.lazyResult = '1';
     }
   }
-  // Expand errors automatically so the user sees what went wrong
-  // without an extra tap. Successful results stay collapsed — except
-  // for `webpreview`, whose body IS the clickable thumbnail the user
-  // opens the modal from. Collapsing it would force a two-tap flow
-  // (expand the card, then tap the thumbnail); keeping it open
-  // matches every other full-bleed inline card (progress, ask_user,
-  // authorization, subagent) and surfaces the call for one-tap access.
-  if (!toolResult.ok) card.classList.add('is-expanded');
-  else if (normalizeToolName(toolResult.name) === 'webpreview') {
-    if (!card._userCollapsed) card.classList.add('is-expanded');
-  }
-  else if (!card._userCollapsed) card.classList.remove('is-expanded');
+// Expand errors automatically so the user sees what went wrong.
+// Successful results stay collapsed; webpreview publishes its image to the
+// dedicated dock above the composer rather than expanding in the transcript.
+if (!toolResult.ok) card.classList.add('is-expanded');
+else if (!card._userCollapsed) card.classList.remove('is-expanded');
   afterTranscriptAppend(refs, true);
 }
 

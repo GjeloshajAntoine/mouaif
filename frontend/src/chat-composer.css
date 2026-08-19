@@ -239,6 +239,80 @@
   overflow-y: auto;
 }
 
+/* ---- User web preview dock ---------------------------------------- */
+.webpreview-dock {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 6px 10px 0;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+.webpreview-dock__open {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 56px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.webpreview-dock__open:active { background: var(--surface-3); }
+.webpreview-dock__image {
+  width: 72px;
+  height: 54px;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: cover;
+  object-position: top;
+  border-radius: calc(var(--r-sm) - 1px);
+  background: var(--surface);
+}
+.webpreview-dock__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.webpreview-dock__title,
+.webpreview-dock__url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.webpreview-dock__title { font-size: 0.78rem; font-weight: 600; }
+.webpreview-dock__url { font: 0.66rem/1.3 var(--font-mono, monospace); color: var(--muted); }
+.webpreview-dock__expand { flex: 0 0 auto; color: var(--muted); font-size: 0.85rem; }
+.webpreview-dock__dismiss {
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 56px;
+  padding: 0;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.webpreview-dock__dismiss:active { background: var(--surface-3); }
+
 /* ---- Composer ----------------------------------------------------- */
 
 .chat-view__composer {
@@ -1247,10 +1321,10 @@
 }
 .wp__close {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   border: 0;
   background: transparent;
   color: var(--fg-soft);
