@@ -534,12 +534,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     saveAgentFiles(checked, agentFileNames);
   }
 
-  function onSkillsToggle(e) {
-    const checked = e.target.checked;
-    setSkillsOn(checked);
-    patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
-  }
-
   function onAgentFilePicked(relPath) {
     if (!relPath) { setAgentFilePickerOpen(false); return; }
     const current = agentFileNames.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -625,7 +619,20 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       description: shortDesc(t.description),
       title: t.description || ''
     }, extra || {});
-
+    groups.push({
+      id: 'skills',
+      name: 'Skills',
+      description: 'Inject matching project skills into chats',
+      title: 'Agent Skills stored in .agents/skills/*/SKILL.md. Off locks them out of every chat; on lets each chat opt out.',
+      checked: skillsOn,
+      tools: [{
+        id: 'skills',
+        name: 'Skills',
+        description: 'Inject matching project skills into chats',
+        checked: skillsOn
+      }],
+      extra: skillsStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, skillsStatusMsg) : null
+    });
     const shellTool = catalog.find((t) => t.name === 'shell');
     if (shellTool) {
       groups.push({
@@ -841,11 +848,15 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   }
   function toggleSettingsGroup(groupId, checked) {
     const mode = checked ? 'ask' : 'off';
-  if (groupId === 'shell') pickShellMode(mode);
-  else if (groupId === 'subagent') pickSubagentMode(mode);
-  else if (groupId === 'task') pickTaskMode(mode);
-  else if (groupId === 'webpreview') pickWebpreviewMode(mode);
-  else if (groupId === 'report_progress') pickProgressMode(mode);
+    if (groupId === 'skills') {
+      setSkillsOn(checked);
+      patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
+    }
+    else if (groupId === 'shell') pickShellMode(mode);
+    else if (groupId === 'subagent') pickSubagentMode(mode);
+    else if (groupId === 'task') pickTaskMode(mode);
+    else if (groupId === 'webpreview') pickWebpreviewMode(mode);
+    else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') {
       const names = toolsCatalog
@@ -1248,39 +1259,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
           )
         )
       ),
-      h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('skills'),
-          h('span', null, 'Skills'),
-          h('details', { class: 'settings-project__info' },
-            h('summary', { 'aria-label': 'About skills' }, '?'),
-            h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Skills are Agent Skills stored in .agents/skills/*/SKILL.md. When on, the model sees a metadata catalog and can activate a skill when it matches the task. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
-            )
-          )
-        ),
-        h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-            h('div', { class: 'settings-project__item-row' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-skills' }, 'Inject skills into chats'),
-                h('div', { class: 'settings-project__item-note' }, 'Project-wide gate for .agents/skills/*/SKILL.md files. Off locks them out of every chat; on lets each chat opt out. ', h('span', { class: 'settings-project__item-status' }, skillsStatusMsg))
-              ),
-              h('label', { class: 'switch' },
-                h('input', {
-                  id: 'sp-skills',
-                  type: 'checkbox',
-                  role: 'switch',
-                  checked: skillsOn,
-                  onChange: onSkillsToggle
-                }),
-                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-              )
-            )
-          )
-        )
-      ),
-
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('agents'),
