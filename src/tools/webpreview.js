@@ -15,11 +15,11 @@
 // Per-call lifecycle:
 //   1. Open the URL in a fresh tab via inspector.openInspectorTarget.
 //   2. Wait for `Page.loadEventFired` (timeout 10s).
-//   3. Give layout / paint a tiny grace window so a static snapshot
-//      isn't the empty pre-load frame.
-//   4. Call `Page.captureScreenshot` with a viewport clamp (640x480 max)
-//      so the user-facing UI payload stays small. The screenshot bytes are
-//      not appended to the model conversation.
+//   3. Apply the Inspector's small-phone viewport (375 × 667) and give
+//      responsive layout / paint a tiny grace window.
+//   4. Call `Page.captureScreenshot` for that mobile viewport so the
+//      reduced chat image has the same proportions as Inspector. The
+//      screenshot bytes are not appended to the model conversation.
 //   5. Close the tab (`Target.closeTarget`) so server restarts don't leak
 //      preview tabs. A failed capture still closes the tab. Calling the tool
 //      again for the same URL opens a fresh tab and acts as an agent-triggered
@@ -43,16 +43,16 @@
 
 const { openInspectorTarget, sendTargetCommand, closeInspectorTarget, fetchInspectorTargets } = require('../inspector.js');
 
-// Thumbnail dimensions: width is fixed, height is proportionally scaled
-// from the captured viewport (so a tall page stays tall). Capped so a
-// pathological aspect ratio doesn't bloat the result.
-const THUMB_WIDTH_MAX = 640;
-const THUMB_HEIGHT_MAX = 480;
+// Match the Inspector's small-phone viewport preset. Keeping this capture
+// mobile-sized makes the reduced chat image a faithful miniature of the
+// Inspector preview instead of a landscape desktop crop.
+const THUMB_WIDTH_MAX = 375;
+const THUMB_HEIGHT_MAX = 667;
 
 // Largest image we accept from CDP. CDP returns either base64-encoded
 // data or a binary stream; either way we re-validate against this cap
-// before returning the image to the chat. 2 MiB is enough for a 640x480
-// JPEG at quality ~0.85 and well under any model-feedback rail.
+// before returning the image to the chat. 2 MiB is ample for a 375 × 667
+// JPEG at quality 70 and well under any model-feedback rail.
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 // Default polling cadence while waiting for the load event. The CDP
@@ -62,10 +62,9 @@ const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const LOAD_TIMEOUT_MS = 10_000;
 const POST_LOAD_GRACE_MS = 250;
 
-// Default viewport used when `Page.getLayoutMetrics` is missing
-// (some Chrome builds omit the field). 800x600@1x is the Inspector
-// default and matches the chat thumbnail card's typical slot.
-const DEFAULT_VIEWPORT = { width: 800, height: 600, dpr: 1 };
+// The capture uses the same small-phone dimensions as Inspector's Phone
+// preset. This is also the fallback when a Chrome build omits layout metrics.
+const DEFAULT_VIEWPORT = { width: THUMB_WIDTH_MAX, height: THUMB_HEIGHT_MAX, dpr: 1 };
 
 const err = (code, message, extra) => Object.assign(new Error(message), { code, ...(extra || {}) });
 
@@ -207,8 +206,21 @@ async function runWebpreview(opts) {
     if (!loadResult.ok) {
       // no-op; documented above.
     }
-    // Post-load grace. Tiny enough to feel instant, enough that
-    // fonts and one line of async content has settled.
+    // Use the same emulated viewport as Inspector's Phone preset. Applying a
+    // metrics override triggers responsive media-query reflow immediately, so a
+    // reload is unnecessary and would add another load-timeout cycle.
+    try {
+      await sendTargetCommand(null, targetId, 'Emulation.setDeviceMetricsOverride', {
+        width: THUMB_WIDTH_MAX,
+        height: THUMB_HEIGHT_MAX,
+        deviceScaleFactor: 1,
+        mobile: true,
+        screenWidth: THUMB_WIDTH_MAX,
+        screenHeight: THUMB_HEIGHT_MAX
+      });
+    } catch { /* capture still works at the native viewport */ }
+    // Post-emulation grace. Tiny enough to feel instant, enough that
+    // responsive layout, fonts, and one line of async content have settled.
     await sleep(POST_LOAD_GRACE_MS);
 
     let viewport = DEFAULT_VIEWPORT;
