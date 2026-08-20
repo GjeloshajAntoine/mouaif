@@ -197,11 +197,25 @@ function updateClientView(clientId, data) {
   }
 }
 
+function chatIdFromHash(hash) {
+  const match = /^#\/chat\/([^/?#]+)/.exec(typeof hash === 'string' ? hash : '');
+  if (!match) return '';
+  try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+}
+function reportedViewMatchesChat(view, targetUrl) {
+  if (!view || Date.now() - view.at > CLIENT_VIEW_TTL || !view.visible) return false;
+  const reportedChatId = chatIdFromHash(view.hash);
+  const targetChatId = chatIdFromHash(targetUrl.hash);
+  return !!reportedChatId && reportedChatId === targetChatId;
+}
 function reportedClientMatchesChat(clientId, targetUrl) {
-  const view = clientViews.get(clientId);
-  if (!view || Date.now() - view.at > CLIENT_VIEW_TTL) return false;
-  if (!view.visible) return false;
-  return view.hash === targetUrl.hash;
+  return reportedViewMatchesChat(clientViews.get(clientId), targetUrl);
+}
+function anyReportedViewMatchesChat(targetUrl) {
+  for (const view of clientViews.values()) {
+    if (reportedViewMatchesChat(view, targetUrl)) return true;
+  }
+  return false;
 }
 
 self.addEventListener('message', (event) => {
@@ -255,41 +269,54 @@ self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
-    const chatVisible = windows.some((client) => {
+    const reportedChatVisible = !!targetUrl && anyReportedViewMatchesChat(targetUrl);
+    const chatVisible = !!targetUrl && windows.some((client) => {
       // Suppress only when the user is ACTUALLY looking at the app.
-      if (!targetUrl) return false;
       // The page's own report is authoritative — it always knows
       // document.visibilityState exactly, on every engine.
       if (reportedClientMatchesChat(client.id, targetUrl)) return true;
-      // Fallback for a client that never checked in (old bundle,
-      // browser without SW controller): use the client-reported
-      // properties. `client.focused` alone is not enough: on mobile
-      // (iOS PWA in particular) a window can stay "focused" while the
-      // screen is locked or another app is on top, which would hide
-      // the notification the user should be seeing. `visibilityState`
-      // (supported on Chromium WindowClients) is the authoritative
-      // signal; when it's unavailable we fail OPEN (show the
-      // notification) because suppression is only an optimization and
-      // silently dropping an alert is the worse failure mode.
       try {
+        const clientChatId = chatIdFromHash(new URL(client.url).hash);
+        const targetChatId = chatIdFromHash(targetUrl.hash);
+        if (!clientChatId || clientChatId !== targetChatId) return false;
+        // A visibility report may use the page UUID on engines where
+        // event.source.id is missing. Accept it only while a matching
+        // WindowClient still exists, so a closed tab's report cannot
+        // suppress notifications for the full five-minute TTL.
+        if (reportedChatVisible) return true;
+        // Fallback for an old/uncontrolled page with no report. A
+        // non-visible state always wins; when the property is missing,
+        // focused still reliably identifies the active app window.
         if (client.visibilityState !== undefined && client.visibilityState !== 'visible') return false;
-        if (client.visibilityState === undefined) return false; // no data: never suppress
-        return client.focused && new URL(client.url).hash === targetUrl.hash;
+        return client.focused === true;
       } catch { return false; }
     });
-    if (chatVisible) return;
-    const notifTag = tag || 'default';
-    // showNotification with a matching tag replaces an existing
-    // notification on every engine we support — except iOS Safari,
-    // which keeps old notifications until the user acts on them. An
-    // updatable progress alert would therefore stack a new alert on
-    // top of every previous one on iPhone/iPad. Prune the same tag
-    // from the OS queue ourselves before showing the new alert so
-    // replace works there too.
-    if (notifTag !== 'default') {
-      const stale = await self.registration.getNotifications({ tag: notifTag });
-      if (stale.length) stale.forEach((n) => n.close());
-    }
+const queued = await self.registration.getNotifications();
+if (chatVisible) {
+// Entering or staying in the target chat makes its queued alerts stale.
+// Clear them as well as suppressing the incoming push so the tray does
+// not keep showing notifications for content already on screen.
+if (payload && payload.chatId) {
+queued.forEach((notification) => {
+if (notification.data && notification.data.chatId === payload.chatId) notification.close();
+});
+}
+return;
+}
+const notifTag = tag || 'default';
+// iOS can retain replaced notifications. Prune both the exact tag and
+// every legacy status-slot tag for this chat before showing a progress,
+// completion, or error update.
+const statusKinds = new Set(['progress', 'completion', 'error']);
+const incomingIsStatus = payload && statusKinds.has(payload.kind);
+queued.forEach((notification) => {
+const sameTag = notifTag !== 'default' && notification.tag === notifTag;
+const sameStatusSlot = incomingIsStatus
+&& notification.data
+&& notification.data.chatId === payload.chatId
+&& statusKinds.has(notification.data.kind);
+if (sameTag || sameStatusSlot) notification.close();
+});
     await self.registration.showNotification(title || 'mouaif', {
       body: body || '',
       tag: notifTag,

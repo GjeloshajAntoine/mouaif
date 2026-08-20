@@ -53,7 +53,7 @@ Subscriptions are tied to the browser session through a one-way hash of the sess
 
 The push event handlers are compiled into `dist/sw.js` via the Vite build plugin in `vite.config.js`. The service worker is registered in production builds only (dev mode skips it for HMR speed). Notification actions use same-origin `fetch()` with the HttpOnly session cookie; failures fall back to opening the chat.
 
-The page-reported visibility table is keyed by the worker-side **real client id** (`event.source.id`) so the push handler can match each report against the clients returned by `clients.matchAll()`. The page's own random UUID (`_pageClientId()` in `sw-registration.js`) is only a fallback for engines where `event.source` is unavailable; keying the table by that UUID alone made the "this chat is visible" state un-matchable on Safari/iOS, where the one-shot `event.source.id` report is not populated, so notifications appeared over an open chat.
+The page-reported visibility table is keyed by the worker-side **real client id** (`event.source.id`) when available; the page's random UUID (`_pageClientId()` in `sw-registration.js`) remains a fallback for engines where `event.source` is unavailable. Suppression compares every fresh report with the currently open windows by parsed chat ID rather than full hashes, so fallback-keyed reports and harmless query-string differences cannot make a visible chat appear unmatched. If `WindowClient.visibilityState` is unavailable, a focused matching client is also treated as visible. Suppressing an incoming push closes queued notifications for that chat, while status pushes prune legacy progress/completion/error tags for the same chat ID.
 
 ### Permission prompt timeouts
 

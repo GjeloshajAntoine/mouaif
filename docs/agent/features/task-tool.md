@@ -17,13 +17,13 @@
 Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so each "row" is a line):
 
 ```text
-🔔 Refactor auth · 12K tok · $0.0312
-    ▓▓▓▓░░░░░░ 40%
-    Fix push layout — 2 of 5
+Refactor auth · 12K tok · $0.0312
+[####------] 40%
+Fix push layout — 2 of 5
 ```
 
 - **Title row** — chat name on the left, running turn usage on the right: total tokens (formatted via `usage.formatTokens`, e.g. `12K tok`) plus the accumulated price (`usage.formatCost`) when pricing is known. Token and cost totals accumulate across every upstream round of the turn (including tool rounds).
-- **Bar row** — 10-cell ascii bar (`▓` filled / `░` empty) with the percentage.
+- **Bar row** — 10-cell ASCII bar (`#` filled / `-` empty) with the percentage.
 - **Task row** — the task title with its `current of total` counts.
 
 Generic `report_progress` notifications keep the simpler `"<pct>% — <message>"` body.

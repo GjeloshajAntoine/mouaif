@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-
+const vm = require('node:vm');
 process.env.MOUAIF_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-push-home-'));
 
 const webpush = require('web-push');
@@ -87,5 +87,28 @@ assert.ok(deliveries[0].options.vapidDetails.privateKey, 'delivery configures th
 const chatPushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server-handlers-chats.js'), 'utf8');
 assert.ok(chatPushSource.includes("const statusPushTag = 'chat-' + chatId + '-status'"), 'chat streams define one shared status push tag');
 assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send progress pushes under a second tag');
-
-console.log('push notifications: 22 assertions passed');
+assert.ok(chatPushSource.includes("'[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']'"), 'task status uses a true ASCII progress bar');
+assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'task status avoids Unicode block glyphs');
+const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'sw-src.js'), 'utf8');
+const swContext = {
+URL,
+Date,
+Map,
+Set,
+Request: class Request {},
+fetch: async () => ({}),
+caches: {},
+self: {
+location: { origin: 'https://mouaif.test' },
+clients: {},
+registration: {},
+addEventListener() {}
+}
+};
+vm.runInNewContext(swSource.replace("'__CACHE_VERSION__'", "'test'"), swContext);
+assert.equal(swContext.chatIdFromHash('#/chat/chat-1?projectDir=%2Ftmp'), 'chat-1', 'chat matching ignores projectDir query data');
+assert.equal(swContext.chatIdFromHash('#/chat/chat%202'), 'chat 2', 'chat matching decodes the route id');
+assert.equal(swContext.chatIdFromHash('#/projects'), '', 'non-chat routes do not match chat notifications');
+assert.ok(swSource.includes('const reportedChatVisible = !!targetUrl && anyReportedViewMatchesChat(targetUrl)'), 'visibility suppression accepts fallback-keyed reports while a chat window remains open');
+assert.ok(swSource.includes("statusKinds = new Set(['progress', 'completion', 'error'])"), 'status cleanup covers all replaceable status types');
+console.log('push notifications: 29 assertions passed');

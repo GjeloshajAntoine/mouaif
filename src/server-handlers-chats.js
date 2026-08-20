@@ -1141,14 +1141,14 @@ async function handleChatStream(req, res, chatId, sessionToken) {
           ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
           : null;
         if (data.kind === 'task') {
-          // Task notifications get a structured, UI-like plain-text layout
-          // (push bodies can't do real alignment, so each "row" is a line):
+          // Task notifications use a plain ASCII layout so status text
+          // renders consistently across Android, iOS, and desktop:
           //   title row:  <chat title> · <tokens> · <price>
-          //   bar row:    ▓▓▓▓░░░░░░ 40%
+          //   bar row:    [####------] 40%
           //   task row:   <task title> — 2 of 5
           const barWidth = 10;
           const filled = pctNum == null ? 0 : Math.round((pctNum / 100) * barWidth);
-          const bar = '▓'.repeat(filled) + '░'.repeat(barWidth - filled) + (pctNum == null ? '' : ' ' + pctNum + '%');
+          const bar = '[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']' + (pctNum == null ? '' : ' ' + pctNum + '%');
           const counts = (data.current != null && data.total != null)
             ? data.current + ' of ' + data.total
             : (data.message || '');
