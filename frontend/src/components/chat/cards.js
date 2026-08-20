@@ -6,7 +6,6 @@
 
 import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
-import { isSubagentTool, normalizeToolName } from './tools.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';

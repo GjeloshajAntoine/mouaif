@@ -8,7 +8,7 @@
 // Sub-modules live in the inspector/ directory.
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
-import { fetchJson, route } from '../api.js';
+import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
@@ -368,7 +368,6 @@ export function InspectorView() {
   consoleCountRef.current = (n) => setConsoleCount(n | 0);
   networkCountRef.current = (n) => setNetworkCount(n | 0);
   const [debuggerUrl, setDebuggerUrl] = useState('');
-  const [defaultUrl, setDefaultUrl] = useState('');
   const [targets, setTargets] = useState([]);
   const [currentTarget, setCurrentTarget] = useState(null);
   // visiblePanels: a Set of panel IDs currently rendered. Hydrated from
@@ -557,9 +556,8 @@ applyViewport(viewportId);
     try {
       r = await fetchJson('/api/inspector/config');
       if (r.status !== 200) { setStatus('HTTP ' + r.status); return; }
-      setDebuggerUrl(r.body.url || '');
-      setDefaultUrl(r.body.defaultUrl || '');
-      if (urlInput.current) urlInput.current.value = r.body.url || '';
+    setDebuggerUrl(r.body.url || '');
+    if (urlInput.current) urlInput.current.value = r.body.url || '';
       setStatus((r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl);
       rerender();
       // Auto-discover on mount when a debugger URL is already saved.
@@ -1098,4 +1096,3 @@ applyViewport(viewportId);
   );
 }
 
-function forceUpdate() { route.value = Object.assign({}, route.value); }
