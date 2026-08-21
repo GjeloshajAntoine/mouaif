@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'e8c2f833';
+const CACHE_VERSION = 'e8c5fbce';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -308,20 +308,14 @@ const notifTag = tag || 'default';
 // every legacy status-slot tag for this chat before showing a progress,
 // completion, or error update.
 const statusKinds = new Set(['progress', 'completion', 'error']);
-const attentionKinds = new Set(['ask_user', 'tool_authorization']);
 const incomingIsStatus = payload && statusKinds.has(payload.kind);
-// A completion or error means the turn has finished, so any pending
-// question or tool-authorization prompt for this chat is already
-// resolved — a user who answered in-app (not via the notification
-// action) would otherwise be left with a stale attention prompt
-// sitting beside the fresh status. Close the attention slot too.
-const incomingClearsAttention = payload && (payload.kind === 'completion' || payload.kind === 'error');
 queued.forEach((notification) => {
 const sameTag = notifTag !== 'default' && notification.tag === notifTag;
-const sameChat = notification.data && notification.data.chatId === payload.chatId;
-const sameStatusSlot = incomingIsStatus && sameChat && statusKinds.has(notification.data.kind);
-const staleAttention = incomingClearsAttention && sameChat && attentionKinds.has(notification.data.kind);
-if (sameTag || sameStatusSlot || staleAttention) notification.close();
+const sameStatusSlot = incomingIsStatus
+&& notification.data
+&& notification.data.chatId === payload.chatId
+&& statusKinds.has(notification.data.kind);
+if (sameTag || sameStatusSlot) notification.close();
 });
     await self.registration.showNotification(title || 'mouaif', {
       body: body || '',
