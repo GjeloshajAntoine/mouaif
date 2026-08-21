@@ -101,6 +101,13 @@ export function registerServiceWorker() {
 
   navigator.serviceWorker.addEventListener('message', (event) => {
     const msg = event.data || {};
+    if (msg.type === 'GET_VISIBILITY_STATE' && event.ports && event.ports[0]) {
+      // A service worker can be suspended between pushes, which erases
+      // its in-memory visibility table. Answer a push-time query from the
+      // newly awakened worker with the page's current, authoritative state.
+      event.ports[0].postMessage(visibilitySnapshot());
+      return;
+    }
     if (msg.type === 'NAVIGATE' && msg.url) {
       const url = new URL(msg.url, window.location.origin);
       if (url.origin !== window.location.origin) return;
@@ -214,6 +221,15 @@ export function refreshProjectsOnVisible() {
 
 let _visibilityReporting = false;
 
+function visibilitySnapshot() {
+  return {
+    type: 'VISIBILITY_STATE',
+    hash: window.location.hash || '',
+    visible: document.visibilityState === 'visible',
+    focused: typeof document.hasFocus === 'function' ? document.hasFocus() : false
+  };
+}
+
 export function startVisibilityReporting() {
   if (_visibilityReporting) return;
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -221,15 +237,8 @@ export function startVisibilityReporting() {
 
   let port = null;
 
-  const snapshot = () => ({
-    type: 'VISIBILITY_STATE',
-    hash: window.location.hash || '',
-    visible: document.visibilityState === 'visible',
-    focused: typeof document.hasFocus === 'function' ? document.hasFocus() : false
-  });
-
   const report = () => {
-    const state = snapshot();
+    const state = visibilitySnapshot();
     try { if (port) port.postMessage(state); } catch { port = null; }
     // Fallback for the window before the channel is established (or
     // engines where controller is briefly null): a one-shot message.

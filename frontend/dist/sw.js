@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'e8c5fbce';
+const CACHE_VERSION = 'bd5db834';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -218,6 +218,35 @@ function anyReportedViewMatchesChat(targetUrl) {
   return false;
 }
 
+function queryClientView(client) {
+  // Service workers are routinely suspended between events, clearing
+  // clientViews. Ask each live page for fresh state when a push arrives
+  // instead of treating that process-local cache as durable.
+  return new Promise((resolve) => {
+    if (!client || typeof client.postMessage !== 'function' || typeof MessageChannel !== 'function') {
+      resolve(null);
+      return;
+    }
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = (view) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { channel.port1.close(); } catch { /* best-effort */ }
+      resolve(view && typeof view === 'object' ? { ...view, at: Date.now() } : null);
+    };
+    const timer = setTimeout(() => finish(null), 1000);
+    channel.port1.onmessage = (event) => finish(event.data);
+    if (typeof channel.port1.start === 'function') channel.port1.start();
+    try {
+      client.postMessage({ type: 'GET_VISIBILITY_STATE' }, [channel.port2]);
+    } catch {
+      finish(null);
+    }
+  });
+}
+
 self.addEventListener('message', (event) => {
   // The page may post `{ type: 'SKIP_WAITING' }` after the user
   // accepts an "Update available — reload" prompt.
@@ -269,11 +298,24 @@ self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
-    const reportedChatVisible = !!targetUrl && anyReportedViewMatchesChat(targetUrl);
-    const chatVisible = !!targetUrl && windows.some((client) => {
+    const freshViews = targetUrl ? await Promise.all(windows.map(queryClientView)) : [];
+    freshViews.forEach((view, index) => {
+      if (view) updateClientView(windows[index].id, view);
+    });
+    const hasFreshViews = freshViews.some(Boolean);
+    const reportedChatVisible = !!targetUrl && (
+      freshViews.some((view) => reportedViewMatchesChat(view, targetUrl))
+      // Compatibility fallback for an older open page that does not yet
+      // answer GET_VISIBILITY_STATE. Never let it override a fresh hidden
+      // response from the current bundle.
+      || (!hasFreshViews && anyReportedViewMatchesChat(targetUrl))
+    );
+    const chatVisible = !!targetUrl && windows.some((client, index) => {
       // Suppress only when the user is ACTUALLY looking at the app.
-      // The page's own report is authoritative — it always knows
-      // document.visibilityState exactly, on every engine.
+      // A push-time page response is authoritative and survives service-
+      // worker suspension because it is requested after every wake-up.
+      const freshView = freshViews[index];
+      if (freshView) return reportedViewMatchesChat(freshView, targetUrl);
       if (reportedClientMatchesChat(client.id, targetUrl)) return true;
       try {
         const clientChatId = chatIdFromHash(new URL(client.url).hash);

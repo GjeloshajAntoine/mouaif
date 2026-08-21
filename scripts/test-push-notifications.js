@@ -90,25 +90,92 @@ assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send pro
 assert.ok(chatPushSource.includes("'[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']'"), 'task status uses a true ASCII progress bar');
 assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'task status avoids Unicode block glyphs');
 const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'sw-src.js'), 'utf8');
+const swHandlers = {};
+const shownNotifications = [];
+let pageVisible = true;
+class TestMessageChannel {
+constructor() {
+const port1 = { onmessage: null, start() {}, close() {} };
+const port2 = { onmessage: null, start() {}, close() {} };
+port1.postMessage = (data) => { if (port2.onmessage) port2.onmessage({ data }); };
+port2.postMessage = (data) => { if (port1.onmessage) port1.onmessage({ data }); };
+this.port1 = port1;
+this.port2 = port2;
+}
+}
+const testClient = {
+id: 'client-1',
+url: 'https://mouaif.test/#/chat/chat-1?projectDir=%2Ftmp',
+focused: true,
+visibilityState: 'visible',
+postMessage(message, ports) {
+assert.equal(message.type, 'GET_VISIBILITY_STATE', 'push asks the live page for current visibility');
+ports[0].postMessage({
+type: 'VISIBILITY_STATE',
+hash: '#/chat/chat-1?projectDir=%2Ftmp',
+visible: pageVisible,
+focused: pageVisible
+});
+}
+};
+const swClients = {
+matchAll: async () => [testClient],
+claim: async () => {},
+openWindow: async () => null
+};
+const swRegistration = {
+getNotifications: async () => [],
+showNotification: async (title, options) => { shownNotifications.push({ title, options }); }
+};
 const swContext = {
 URL,
 Date,
 Map,
 Set,
+Promise,
+MessageChannel: TestMessageChannel,
+setTimeout,
+clearTimeout,
 Request: class Request {},
 fetch: async () => ({}),
 caches: {},
+clients: swClients,
 self: {
 location: { origin: 'https://mouaif.test' },
-clients: {},
-registration: {},
-addEventListener() {}
+clients: swClients,
+registration: swRegistration,
+addEventListener(type, handler) { swHandlers[type] = handler; }
 }
 };
 vm.runInNewContext(swSource.replace("'__CACHE_VERSION__'", "'test'"), swContext);
 assert.equal(swContext.chatIdFromHash('#/chat/chat-1?projectDir=%2Ftmp'), 'chat-1', 'chat matching ignores projectDir query data');
 assert.equal(swContext.chatIdFromHash('#/chat/chat%202'), 'chat 2', 'chat matching decodes the route id');
 assert.equal(swContext.chatIdFromHash('#/projects'), '', 'non-chat routes do not match chat notifications');
-assert.ok(swSource.includes('const reportedChatVisible = !!targetUrl && anyReportedViewMatchesChat(targetUrl)'), 'visibility suppression accepts fallback-keyed reports while a chat window remains open');
+assert.ok(swSource.includes("client.postMessage({ type: 'GET_VISIBILITY_STATE' }, [channel.port2])"), 'push-time suppression queries live pages after worker restarts');
 assert.ok(swSource.includes("statusKinds = new Set(['progress', 'completion', 'error'])"), 'status cleanup covers all replaceable status types');
-console.log('push notifications: 29 assertions passed');
+
+function dispatchPush() {
+let pending = Promise.resolve();
+swHandlers.push({
+data: { json: () => ({
+title: 'Chat one',
+body: 'Response complete',
+tag: 'chat-chat-1-status',
+data: { kind: 'completion', chatId: 'chat-1', url: '/#/chat/chat-1?projectDir=%2Ftmp' }
+}) },
+waitUntil(promise) { pending = promise; }
+});
+return pending;
+}
+
+(async () => {
+await dispatchPush();
+assert.equal(shownNotifications.length, 0, 'a fresh visible-chat response suppresses the push after worker restart');
+pageVisible = false;
+await dispatchPush();
+assert.equal(shownNotifications.length, 1, 'a fresh hidden-chat response still shows the push');
+console.log('push notifications: 32 assertions passed');
+})().catch((err) => {
+console.error(err);
+process.exitCode = 1;
+});
