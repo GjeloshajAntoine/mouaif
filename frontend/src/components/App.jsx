@@ -148,7 +148,11 @@ export function App() {
   return h('div', { class: 'app__shell' },
     h(Header, null),
     h(PwaBanners, null),
-    h('main', { class: 'app__main' + (showTabBar ? '' : ' app__main--flush') }, body),
+    h('main', {
+      class: 'app__main'
+        + (showTabBar ? '' : ' app__main--flush')
+        + (view.name === 'chat' ? ' app__main--chat' : '')
+    }, body),
     showTabBar ? h(BottomNav, null) : null
   );
 }

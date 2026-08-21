@@ -308,10 +308,9 @@
 .chat-view__jump {
   position: absolute;
   right: 14px;
-  /* No --safe-bottom here: the shell's padding-bottom reserves the
-     home-indicator area (see .app__shell), so 64px already clears
-     the composer + inset. */
-  bottom: 64px;
+  /* Clear both the composer and the home-indicator inset now owned by
+     the status row at the bottom of the chat. */
+  bottom: calc(64px + var(--safe-bottom));
   z-index: 6;
   display: inline-flex;
   align-items: center;
