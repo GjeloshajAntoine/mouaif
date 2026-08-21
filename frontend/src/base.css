@@ -57,9 +57,10 @@
 
   /* Layout */
   --safe-top:    env(safe-area-inset-top, 0px);
-  /* Halved so the home-indicator inset reserves only half the bottom
-     margin (the full inset reads as a large empty strip on iOS). */
-  --safe-bottom: calc(env(safe-area-inset-bottom, 0px) / 2);
+  /* Use the native inset directly. Fractional typed arithmetic is not
+     supported consistently by iOS WebKit and is rewritten by CSS minifiers,
+     which can invalidate every declaration that consumes this token. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   --pad-x: 10px;
   --pad-y: 6px;
   --gap: 6px;
@@ -182,6 +183,27 @@ overflow: hidden;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* In standalone iOS WebKit, the fixed containing block can still use a
+   stale visual-viewport height and stop above the home-indicator region.
+   A standalone app has no browser toolbar, so the large viewport is the
+   correct edge-to-edge canvas. Anchor the document and app to 100lvh and
+   use absolute positioning to avoid the short fixed containing block. */
+@media (display-mode: standalone) {
+  html,
+  body {
+    height: 100vh;
+    height: 100lvh;
+  }
+
+  #app {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    height: 100vh;
+    height: 100lvh;
+  }
 }
 
 /* ---- Utility classes (reduce CSS bloat) ------------------------- */

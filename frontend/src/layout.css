@@ -16,8 +16,9 @@ height: 100%;
 max-width: 30rem;
 min-width: 0;
 margin: 0 auto;
-position: relative;
-overflow: hidden;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
   /* Safe-area insets live here, not on <html>/<body>: html/body are
      locked to the viewport (height 100%; overflow hidden, see
      base.css) so the document can never become a scroll container
@@ -388,6 +389,9 @@ overflow: hidden;
   /* Extend the bar surface through the home-indicator area. Controls remain
      in the 50px content row; only the background/padding reaches the edge. */
   padding: 0 4px calc(2px + var(--safe-bottom));
+  /* Opaque fallback matters on iOS versions without color-mix(): without it,
+     the declaration is dropped and the safe-area portion looks like a gap. */
+  background: var(--surface);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: saturate(160%) blur(20px);
   backdrop-filter: saturate(160%) blur(20px);
