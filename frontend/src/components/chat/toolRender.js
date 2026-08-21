@@ -88,6 +88,22 @@ function imageBlockToElement(block) {
   return img;
 }
 
+// resourceImageBlock(block) -> normalized image block | null
+//
+// MCP `resource` content blocks can carry an image blob
+// ({ type:'resource', resource:{ blob, mimeType:'image/*' } }). Map
+// those to the shape imageBlockToElement understands so they render
+// inline instead of as a JSON stub.
+function resourceImageBlock(block) {
+  const res = block && block.resource;
+  if (!res || typeof res !== 'object') return null;
+  const mimeType = res.mimeType || res.mime_type || res.mediaType || res.media_type || '';
+  if (!/^image\//i.test(mimeType)) return null;
+  const data = res.blob || res.data || res.base64;
+  if (typeof data !== 'string' || !data) return null;
+  return { type: 'image', data, mimeType };
+}
+
 // renderReadFileToolResult(body, r)
 function renderReadFileToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--file');
@@ -284,7 +300,12 @@ function renderGenericToolResult(body, r) {
         const img = imageBlockToElement(c);
         if (img) body.appendChild(img);
         else lines.push('[image]');
-      } else if (c && c.type === 'resource') lines.push('[resource] ' + JSON.stringify(c.resource || c));
+      } else if (c && c.type === 'resource') {
+        const imgBlock = resourceImageBlock(c);
+        const img = imgBlock && imageBlockToElement(imgBlock);
+        if (img) body.appendChild(img);
+        else lines.push('[resource] ' + JSON.stringify(c.resource || c));
+      }
       else lines.push(String(c && (c.text || c.type) || c));
     }
     if (lines.length) renderPreviewPre(body, lines.join('\n'), 'tool-preview__pre');
@@ -432,7 +453,7 @@ export function formatToolResult(toolResult) {
     const parts = r.content.map((c) => {
       if (c && typeof c.text === 'string') return c.text;
       if (c && c.type === 'image') return '[image]';
-      if (c && c.type === 'resource') return JSON.stringify(c.resource || c);
+      if (c && c.type === 'resource') return resourceImageBlock(c) ? '[image]' : JSON.stringify(c.resource || c);
       return JSON.stringify(c);
     });
     return parts.join('\n');

@@ -1121,9 +1121,29 @@ async function streamChat(opts) {
     if (!result || !Array.isArray(result.content)) return [];
     const out = [];
     for (const block of result.content) {
-      if (!block || block.type !== 'image') continue;
-      const data = block.data || block.base64;
-      const mimeType = block.mimeType || block.mime_type || block.mediaType || block.media_type || 'image/png';
+      if (!block || typeof block !== 'object') continue;
+      // MCP tools return images two ways: a top-level `image` content block
+      // ({ type:'image', data, mimeType }) or an embedded `resource` block
+      // ({ type:'resource', resource:{ blob, mimeType } }) — screenshot,
+      // chart, and diagram servers commonly use the resource shape. Accept
+      // both so those images actually reach the model instead of being
+      // silently dropped.
+      let data = null;
+      let mimeType = null;
+      if (block.type === 'image') {
+        data = block.data || block.base64;
+        mimeType = block.mimeType || block.mime_type || block.mediaType || block.media_type || 'image/png';
+      } else if (block.type === 'resource' && block.resource && typeof block.resource === 'object') {
+        const res = block.resource;
+        const resMime = res.mimeType || res.mime_type || res.mediaType || res.media_type || '';
+        // Only forward binary resources that are actually images; text
+        // resources ride along in the stringified tool result instead.
+        const blob = res.blob || res.data || res.base64;
+        if (typeof blob === 'string' && blob && /^image\//i.test(resMime)) {
+          data = blob;
+          mimeType = resMime;
+        }
+      }
       if (typeof data === 'string' && data) {
         const url = data.startsWith('data:') ? data : ('data:' + mimeType + ';base64,' + data);
         out.push({ type: 'image_url', image_url: { url } });
