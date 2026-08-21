@@ -155,10 +155,9 @@ the page reads as a single surface, not two stacked bands. */
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   /* The shell owns the safe-area padding now (layout.css); body just
-fills the viewport. The standalone auth frame sizes itself inside
-#app. Body uses the same fallback-first dynamic viewport unit order
-as html (see the html comment above), so the two never end up with
-different heights. */
+     fills and paints the viewport. The fixed #app box below is anchored
+     by all four viewport edges, so installed iOS PWAs do not inherit a
+     stale or reduced 100dvh height that stops above the home indicator. */
   height: 100vh;
 height: 100dvh;
 min-height: 0;
@@ -175,11 +174,14 @@ overflow: hidden;
 }
 
 #app {
-display: block;
-width: 100%;
-height: 100%;
-min-width: 0;
-overflow: hidden;
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ---- Utility classes (reduce CSS bloat) ------------------------- */
