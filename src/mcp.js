@@ -637,17 +637,19 @@ function getSession(projectDir, serverId) {
   return _sessions.get(keyOf(projectDir, serverId)) || null;
 }
 
-// findSessionBySlug checks the project context first, then the 'app'
-// context: an app-scoped server started from the Settings UI (no project)
-// is still reachable from a chat in any project.
+// findSessionBySlug stays inside the requested runtime context. In
+// particular, a project chat must not reuse an app-context process:
+// that process was initialized without the project's roots/list entry,
+// so artifact tools would reject valid project paths as out of scope.
+// App-scoped configuration is still available to every project; its
+// process is simply started once per project when first called.
 function findSessionBySlug(projectDir, serverSlug) {
-  for (const key of [scopeKey(projectDir), 'app']) {
-    const set = _byProject.get(key);
-    if (!set) continue;
-    for (const id of set) {
-      const s = _sessions.get(key + '::' + id);
-      if (s && s.entry && s.entry.slug === serverSlug) return { id, session: s };
-    }
+  const key = scopeKey(projectDir);
+  const set = _byProject.get(key);
+  if (!set) return null;
+  for (const id of set) {
+    const s = _sessions.get(key + '::' + id);
+    if (s && s.entry && s.entry.slug === serverSlug) return { id, session: s };
   }
   return null;
 }
@@ -876,21 +878,25 @@ async function startServer(projectDir, serverId) {
       requestInit: { headers: entry.headers || {} }
     });
   } else {
-    // cwd anchor: relative entry.cwd resolves against the chat's projectDir.
+    // Canonicalize an existing project root before comparing cwd values.
+    // Projects opened through a symlink otherwise compare their real cwd
+    // (for example /mnt/work/app) with the lexical projectDir alias
+    // (/home/me/app) and incorrectly look outside the project.
+    const projectResolved = hasProject ? canonicalProjectRoot(projectDir) : null;
+    // cwd anchor: relative entry.cwd resolves against the canonical project.
     // Without a project context (app-scope start from the Settings UI) a
     // relative cwd has no anchor — fall back to the process cwd; absolute
     // cwd values still work. The project-containment check only applies
     // when there is a project to be contained in.
     const cwd = entry.cwd
-      ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(hasProject ? projectDir : process.cwd(), entry.cwd))
-      : (hasProject ? projectDir : process.cwd());
-    const cwdResolved = path.resolve(cwd);
-    if (hasProject) {
+      ? (path.isAbsolute(entry.cwd) ? entry.cwd : path.resolve(projectResolved || process.cwd(), entry.cwd))
+      : (projectResolved || process.cwd());
+    const cwdResolved = canonicalFilesystemPath(cwd);
+    if (projectResolved) {
       // Sanity check: cwd must be inside projectDir (decision §4's
       // "outside project" rule, applied to the spawn directory).
-      const projectResolved = path.resolve(projectDir);
       const rel = path.relative(projectResolved, cwdResolved);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
         throw err('EOUTSIDE_PROJECT', 'Server cwd must be inside the project directory', { cwd: cwdResolved });
       }
     }
@@ -936,8 +942,9 @@ async function startServer(projectDir, serverId) {
   // active project as a file URL so their canonical path boundary matches ours.
   if (hasProject && typeof client.setRequestHandler === 'function') {
     const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+    const projectRoot = canonicalProjectRoot(projectDir);
     client.setRequestHandler(ListRootsRequestSchema, () => ({
-      roots: [{ uri: pathToFileURL(path.resolve(projectDir)).href, name: path.basename(path.resolve(projectDir)) }]
+      roots: [{ uri: pathToFileURL(projectRoot).href, name: path.basename(projectRoot) }]
     }));
   }
 
@@ -1097,16 +1104,57 @@ const MCP_OUTPUT_PATH_KEYS = new Set([
   'responseFilePath'
 ]);
 
+function canonicalFilesystemPath(value) {
+  const absolute = path.resolve(value);
+  let probe = absolute;
+  const suffix = [];
+  while (true) {
+    try {
+      const real = fs.realpathSync(probe);
+      return path.resolve(real, ...suffix.reverse());
+    } catch {
+      const parent = path.dirname(probe);
+      if (parent === probe) return absolute;
+      suffix.push(path.basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+function canonicalProjectRoot(projectDir) {
+  return canonicalFilesystemPath(projectDir);
+}
+
+function isPathInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
 function resolveMcpOutputPaths(projectDir, args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
-  const root = path.resolve(projectDir);
+  const lexicalRoot = path.resolve(projectDir);
+  const root = canonicalProjectRoot(projectDir);
   const next = Object.assign({}, args);
   for (const key of MCP_OUTPUT_PATH_KEYS) {
     const value = next[key];
     if (typeof value !== 'string' || !value.trim()) continue;
-    const resolved = path.resolve(root, value);
-    const relative = path.relative(root, resolved);
-    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+
+    let resolved;
+    if (path.isAbsolute(value)) {
+      const absolute = path.resolve(value);
+      // An absolute path may use the symlink alias through which the project
+      // was opened. Preserve its project-relative suffix while mapping it to
+      // the canonical root advertised through MCP roots/list.
+      const lexicalRelative = path.relative(lexicalRoot, absolute);
+      resolved = isPathInside(lexicalRoot, absolute)
+        ? path.resolve(root, lexicalRelative)
+        : absolute;
+    } else {
+      resolved = path.resolve(root, value);
+    }
+
+    resolved = canonicalFilesystemPath(resolved);
+    if (!isPathInside(root, resolved)) {
       throw err('EBADINPUT', key + ' must be inside the project directory', { key });
     }
     next[key] = resolved;

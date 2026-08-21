@@ -42,6 +42,38 @@ async function main() {
     check('MCP output path rejects escape', e && e.code === 'EBADINPUT', e && e.message);
   }
 
+  // A project can be opened through a symlink while MCP servers resolve the
+  // same directory to its real on-disk path. Both spellings must remain in
+  // scope and be normalized to the canonical root advertised by roots/list.
+  const linkedParent = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-link-'));
+  const linkedProject = path.join(linkedParent, 'project-link');
+  try {
+    fs.symlinkSync(projectDir, linkedProject, 'dir');
+    const relativeViaLink = mcp.resolveMcpOutputPaths(linkedProject, { filePath: 'artifacts/link.png' });
+    const absoluteViaLink = mcp.resolveMcpOutputPaths(linkedProject, { filePath: path.join(linkedProject, 'artifacts', 'absolute.png') });
+    check('MCP relative path accepts symlinked project root', relativeViaLink.filePath === path.join(projectDir, 'artifacts', 'link.png'));
+    check('MCP absolute path accepts symlinked project root', absoluteViaLink.filePath === path.join(projectDir, 'artifacts', 'absolute.png'));
+
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-outside-'));
+    const outsideLink = path.join(projectDir, 'outside-link');
+    try {
+      fs.symlinkSync(outsideDir, outsideLink, 'dir');
+      mcp.resolveMcpOutputPaths(projectDir, { filePath: path.join(outsideLink, 'escape.png') });
+      check('MCP output path rejects symlink escape', false);
+    } catch (e) {
+      check('MCP output path rejects symlink escape', e && e.code === 'EBADINPUT', e && e.message);
+    } finally {
+      try { fs.rmSync(outsideLink, { force: true }); } catch { /* ignore */ }
+      try { fs.rmSync(outsideDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  } catch (e) {
+    check('MCP relative path accepts symlinked project root', false, e.message);
+    check('MCP absolute path accepts symlinked project root', false, e.message);
+    check('MCP output path rejects symlink escape', false, e.message);
+  } finally {
+    try { fs.rmSync(linkedParent, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
   const serverScript = path.join(__dirname, 'test-mcp-server.js');
   if (!fs.existsSync(serverScript)) {
     console.error('Missing test server script at ' + serverScript);
@@ -146,6 +178,25 @@ async function main() {
   check('removeServer clears from list', !after.some(s => s.id === server.id));
   check('removeServer clears DB cache', settings.getMcpToolCache(projectDir, server.id) === null);
   check('listComposedToolSpecs empty after remove', mcp.listComposedToolSpecs(projectDir).length === 0);
+
+  // An app-scoped server started from Application settings has no project
+  // root. A project call must start its own project-context session instead
+  // of reusing that rootless process, or artifact tools reject valid paths.
+  const appServer = mcp.addServer(null, {
+    scope: mcp.APP_SCOPE,
+    name: 'App Root Test',
+    command: process.execPath,
+    args: [serverScript],
+    env: {}
+  });
+  await mcp.startServer(null, appServer.id);
+  const appCall = await mcp.callTool(projectDir, appServer.slug, 'echo', { text: 'project context' });
+  check('project call through app server succeeds', appCall && appCall.ok === true);
+  check('app server keeps separate app and project sessions',
+    mcp._sessions.has('app::' + appServer.id) && mcp._sessions.has(projectDir + '::' + appServer.id));
+  await mcp.stopServer(projectDir, appServer.id);
+  await mcp.stopServer(null, appServer.id);
+  mcp.removeServer(null, appServer.id);
 
   // 10) stopAll is a no-op when nothing is running.
   await mcp.stopAll();
