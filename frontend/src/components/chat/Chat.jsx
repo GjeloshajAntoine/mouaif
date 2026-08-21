@@ -316,8 +316,16 @@ h('div', { class: 'chat-view__composer-row' },
       : null,
 webPreviewOpen && webPreviewPayload
 ? h(WebpreviewModal, {
-preview: webPreviewPayload,
-onClose: () => setWebPreviewOpen(false)
+  preview: webPreviewPayload,
+  onClose: () => setWebPreviewOpen(false),
+  onRefresh: () => {
+    const url = (webPreviewPayload && webPreviewPayload.url) || '';
+    if (!url || !refs.promptInput.current) return;
+    const text = 'Take a fresh webpreview of ' + url;
+    refs.promptInput.current.value = text;
+    refs.promptInput.current.focus();
+    if (typeof onComposerInput === 'function') onComposerInput();
+  }
 })
 : null
   );
