@@ -18,10 +18,10 @@ The AI can show or reload a preview by invoking the tool with the current URL:
 ```
 
 ### In the chat UI
-- **Compact card** — the latest successful capture is shown above the composer, outside the scrolling transcript, as a small card with a thumbnail, the page title, host, and a relative capture time. It stays narrow so it reads as a dock, not a full-width banner.
-- **Mobile proportion** — the capture uses the Inspector's 375 × 667 Phone viewport and preserves that aspect ratio in chat.
-- **Full image** — tap the card to open the screenshot in a full-screen viewer.
-- **Dismiss** — the small circular close button on the card removes the preview without changing the chat.
+- **Right-aligned miniature** — the latest successful capture is shown above the composer, outside the scrolling transcript, as a small phone-proportioned image. The screenshot is the only content in chat; page title/host/time are shown only in the full-screen viewer.
+- **Mobile proportion** — the capture uses the Inspector's 375 × 667 Phone viewport and the dock preserves that aspect ratio.
+- **Full image** — tap the card to open the screenshot in a full-screen viewer (title, URL, host, capture time, Refresh and Open-in-new-tab are all there).
+- **Dismiss** — a small circular close button on the card's top-right border removes the preview without changing the chat.
 - **Open in browser** — the full viewer can open the original URL in a new browser tab.
 - **Reload by the AI** — another `webpreview` call replaces the card's image with a fresh capture.
 

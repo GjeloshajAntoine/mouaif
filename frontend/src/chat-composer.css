@@ -241,130 +241,71 @@
 
 /* ---- User web preview dock ---------------------------------------- */
 /*
-The dock is a single card pinned between the chat scroll and the
-composer. The whole card is one tap target (the open button), the
-dismiss button sits *inside* the card on the right edge so it can
-never overflow the touch area. On mobile the card takes the full
-chat width; on tablet/desktop it grows to a comfortable reading
-width and stays centred.
+The dock is a small, right-aligned phone-proportioned image pinned
+between the chat scroll and the composer. The screenshot is the only
+content in chat — metadata is reserved for the full-screen viewer. A
+small circular dismiss button sits on the card's top-right border so
+it's tappable without covering the preview. Tapping the card opens the
+full-screen viewer.
 */
 .webpreview-dock {
   position: relative;
   flex: 0 0 auto;
-  align-self: stretch;
-  width: 100%;
-  max-width: 18rem;
-  margin: 0.3rem 0.5rem 0;
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
+  align-self: flex-end;
+  width: min(26%, 6.5rem);
+  min-width: 5.5rem;
+  margin: 0.4rem 0.75rem 0;
 }
 .webpreview-dock__open {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 34px;
-  padding: 3px 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
   border-radius: var(--r-md);
-  color: inherit;
-  text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background 80ms ease, border-color 80ms ease;
   overflow: hidden;
 }
 .webpreview-dock__open:hover,
 .webpreview-dock__open:focus-visible {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
   outline: 0;
 }
-.webpreview-dock__open:active {
-  background: var(--surface);
-}
-.webpreview-dock__thumb {
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  display: block;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
+.webpreview-dock__open:active { opacity: 0.86; }
 .webpreview-dock__image {
-  width: 100%;
-  height: 100%;
   display: block;
-  object-fit: cover;
-  object-position: top center;
-}
-.webpreview-dock__meta {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  overflow: hidden;
-}
-.webpreview-dock__title {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--fg);
-  line-height: 1.1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.webpreview-dock__sub {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-  font-size: 0.58rem;
-  color: var(--muted);
-  overflow: hidden;
-}
-.webpreview-dock__host {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.webpreview-dock__sep { opacity: 0.6; }
-.webpreview-dock__time {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.webpreview-dock__chevron {
-  display: none;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: top;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
 }
 .webpreview-dock__dismiss {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
+  position: absolute;
+  top: 0.5rem;
+  right: -0.5rem;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
-  align-self: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--fg-soft);
-  background: var(--surface-2);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   border: 1px solid var(--border);
   border-radius: 50%;
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 .webpreview-dock__dismiss svg {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 .webpreview-dock__dismiss:hover,
 .webpreview-dock__dismiss:focus-visible {
