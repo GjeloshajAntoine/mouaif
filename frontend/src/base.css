@@ -130,12 +130,14 @@ html {
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  /* Subtle accent-tinted glow at the top so the page does not feel
-     like a black void; a soft vignette at the bottom anchors the
-     tab bar visually. The two gradients are warm-cold balanced so
-     the page reads as a single surface, not two stacked bands. */
+margin: 0;
+padding: 0;
+width: 100%;
+min-width: 0;
+/* Subtle accent-tinted glow at the top so the page does not feel
+like a black void; a soft vignette at the bottom anchors the
+tab bar visually. The two gradients are warm-cold balanced so
+the page reads as a single surface, not two stacked bands. */
   /* The page used to carry a soft accent-tinted glow at the top and
      a vignette at the bottom. On a phone the glow only blurred the
      contrast between the page and the cards sitting on it, so the
@@ -153,17 +155,15 @@ body {
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   /* The shell owns the safe-area padding now (layout.css); body just
-     fills the viewport. min-height: 100dvh stays for the standalone
-     auth pages (access-auth), which render their own full-height
-     frame and scroll internally. Body uses the same dynamic viewport
-     unit as html (see the html comment above) so the two never end up
-     different heights. */
-  height: 100dvh;
+fills the viewport. The standalone auth frame sizes itself inside
+#app. Body uses the same fallback-first dynamic viewport unit order
+as html (see the html comment above), so the two never end up with
+different heights. */
   height: 100vh;
-  overflow: hidden;
-  min-height: 100dvh;
+height: 100dvh;
+min-height: 0;
+overflow: hidden;
 }
-
 ::selection { background: var(--accent-soft); color: var(--fg); }
 
 /* Better focus ring on keyboard nav; invisible on touch. */
@@ -174,7 +174,13 @@ body {
   border-radius: var(--r-sm);
 }
 
-#app { display: block; }
+#app {
+display: block;
+width: 100%;
+height: 100%;
+min-width: 0;
+overflow: hidden;
+}
 
 /* ---- Utility classes (reduce CSS bloat) ------------------------- */
 .truncate {

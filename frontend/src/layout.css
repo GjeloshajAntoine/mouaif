@@ -6,19 +6,18 @@
 .app__shell {
   display: flex;
   flex-direction: column;
-  /* Bound the shell to the viewport height so a flex child (the
-     chat view in --flush mode) can scroll internally instead of
-     growing the whole page. min-height keeps short pages from
-     collapsing. */
-  /* 100vh keeps the shell bounded on iOS 14/15.0–15.3, which do not
-     understand dynamic viewport units. Supporting Safari replaces it
-     with 100dvh so browser-chrome expansion and rotation use the live
-     visual viewport. */
-  height: 100vh;
-  height: 100dvh;
-  max-width: 480px;
-  margin: 0 auto;
-  position: relative;
+  /* Bound the shell to the app root so a flex child (the chat view
+in --flush mode) can scroll internally instead of growing the
+whole page. The root already resolves the 100vh fallback and
+100dvh enhancement in base.css; inheriting that size here avoids
+a second, potentially conflicting viewport calculation. */
+  width: 100%;
+height: 100%;
+max-width: 30rem;
+min-width: 0;
+margin: 0 auto;
+position: relative;
+overflow: hidden;
   /* Safe-area insets live here, not on <html>/<body>: html/body are
      locked to the viewport (height 100%; overflow hidden, see
      base.css) so the document can never become a scroll container
