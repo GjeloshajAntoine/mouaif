@@ -97,24 +97,24 @@
 * { box-sizing: border-box; }
 
 html,
+html,
 body {
-  margin: 0;
-  padding: 0;
-  /* Lock the document to the viewport. The document must never become
-     a scroll container: the app scrolls inside .app__main (and the
-     chat transcript scrolls inside the chat view). Locking html/body
-     stops the *page* from rubber-banding or double-scrolling against
-     those inner scrollers on iOS. `height: 100%` chains from the
-     initial containing block; #app below re-anchors to the real
-     viewport edges with `position: fixed; inset: 0`, which is the one
-     box iOS Safari sizes correctly in both the browser and an
-     installed standalone PWA. */
-  height: 100%;
-  overflow: hidden;
-  /* Kill the elastic overscroll / rubber-band on the whole document so
-     a drag that reaches the end of an inner scroller does not drag the
-     page instead. */
-  overscroll-behavior: none;
+	margin: 0;
+	padding: 0;
+	/* Lock the document to the viewport. The document must never become
+	   a scroll container: the app scrolls inside .app__main (and the
+	   chat transcript scrolls inside the chat view). Locking html/body
+	   stops the *page* from rubber-banding or double-scrolling against
+	   those inner scrollers on iOS. The `dvh` height tracks the browser
+	   toolbar; the standalone override below swaps to `lvh` for the
+	   toolbar-free installed PWA. */
+	height: 100vh;
+	height: 100dvh;
+	overflow: hidden;
+	/* Kill the elastic overscroll / rubber-band on the whole document so
+	   a drag that reaches the end of an inner scroller does not drag the
+	   page instead. */
+	overscroll-behavior: none;
 }
 
 html {
@@ -152,15 +152,36 @@ body {
   border-radius: var(--r-sm);
 }
 
-/* The app fills the visual viewport edge to edge. `position: fixed;
-   inset: 0` anchors to the viewport in both the browser and an installed
-   standalone PWA, so no per-display-mode height override is needed — the
-   earlier 100vh/100dvh/100lvh juggling was the source of the
-   double-scroll. The shell inside carries the safe-area insets. */
+/* The app fills the visual viewport edge to edge. In the browser,
+   `position: fixed; inset: 0` tracks the visual viewport correctly.
+   The shell inside carries the safe-area insets. */
 #app {
 	position: fixed;
 	inset: 0;
 	overflow: hidden;
+}
+
+/* Installed standalone PWA on iOS. A standalone app has no browser
+   toolbar, so the *large* viewport (100lvh) is the true edge-to-edge
+   canvas. A `position: fixed` box there can resolve its bottom against
+   a stale/short visual-viewport height and stop above the home
+   indicator — that is the dead margin below the composer. Pin the
+   document to 100lvh and switch #app to an absolutely-positioned,
+   full-height box so it reaches the physical bottom edge. */
+@media (display-mode: standalone) {
+	html,
+	body {
+		height: 100vh;
+		height: 100lvh;
+	}
+
+	#app {
+		position: absolute;
+		inset: 0 auto auto 0;
+		width: 100%;
+		height: 100vh;
+		height: 100lvh;
+	}
 }
 
 /* ---- Utility classes (reduce CSS bloat) ------------------------- */
