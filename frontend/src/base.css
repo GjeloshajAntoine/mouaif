@@ -96,73 +96,51 @@
 
 * { box-sizing: border-box; }
 
-html {
-  touch-action: manipulation;
+html,
+body {
   margin: 0;
   padding: 0;
-  /* The background lives on html too (not only body): with the
-     safe-area padding on the shell, the inset strips at the
-     top/bottom of the screen would otherwise show the default
+  /* Lock the document to the viewport. The document must never become
+     a scroll container: the app scrolls inside .app__main (and the
+     chat transcript scrolls inside the chat view). Locking html/body
+     stops the *page* from rubber-banding or double-scrolling against
+     those inner scrollers on iOS. `height: 100%` chains from the
+     initial containing block; #app below re-anchors to the real
+     viewport edges with `position: fixed; inset: 0`, which is the one
+     box iOS Safari sizes correctly in both the browser and an
+     installed standalone PWA. */
+  height: 100%;
+  overflow: hidden;
+  /* Kill the elastic overscroll / rubber-band on the whole document so
+     a drag that reaches the end of an inner scroller does not drag the
+     page instead. */
+  overscroll-behavior: none;
+}
+
+html {
+  touch-action: manipulation;
+  /* The background lives on html too (not only body): the safe-area
+     inset strips at the top/bottom would otherwise show the default
      white canvas. */
   background:
     radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
     var(--bg);
-  /* The document must never become a scroll container. The safe-area
-     insets used to live on <html> as padding; combined with the
-     shell's 100dvh that pushed the document 47+34 px past the bottom
-     of the screen on a notched iPhone, making the *page* scrollable
-     alongside the transcript / settings sections — the two fought for
-     the touch gesture and the composer ended up below the home
-     indicator. html/body are now locked to the viewport (height
-     100%, overflow hidden) and the shell carries the insets itself
-     (see .app__shell in layout.css). */
-  /* Match the shell's viewport unit. `height: 100%` on the root would
-     resolve against the initial containing block, which on iOS Safari
-     is the *large* viewport (taller than the visible area when the
-     browser toolbar is up). The shell sizes itself with 100dvh (the
-     small/dynamic viewport), so if html/body were taller than the
-     shell the page would sit at the top with a gap at the bottom.
-     Using the same dynamic unit here keeps the whole document exactly
-     the shell's height. The 100vh line is the fallback for iOS
-     < 15.4, which does not understand dvh. */
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
 }
 
 body {
-margin: 0;
-padding: 0;
-width: 100%;
-min-width: 0;
-/* Subtle accent-tinted glow at the top so the page does not feel
-like a black void; a soft vignette at the bottom anchors the
-tab bar visually. The two gradients are warm-cold balanced so
-the page reads as a single surface, not two stacked bands. */
-  /* The page used to carry a soft accent-tinted glow at the top and
-     a vignette at the bottom. On a phone the glow only blurred the
-     contrast between the page and the cards sitting on it, so the
-     cards looked like they floated on a fog. The page is now a flat
-     near-black; cards and the new project hero bring their own
-     surfaces, which keeps the hierarchy clear. The vignette is
-     kept very faint so the bottom tab bar still feels anchored. */
+  width: 100%;
+  min-width: 0;
+  /* Flat near-black page; cards and the project hero bring their own
+     surfaces so the hierarchy stays clear. A very faint accent glow at
+     the bottom anchors the tab bar. */
   background:
     radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
     var(--bg);
-  background-attachment: fixed;
   color: var(--fg);
   font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-  /* The shell owns the safe-area padding now (layout.css); body just
-     fills and paints the viewport. The fixed #app box below is anchored
-     by all four viewport edges, so installed iOS PWAs do not inherit a
-     stale or reduced 100dvh height that stops above the home indicator. */
-  height: 100vh;
-height: 100dvh;
-min-height: 0;
-overflow: hidden;
 }
 ::selection { background: var(--accent-soft); color: var(--fg); }
 
@@ -174,36 +152,15 @@ overflow: hidden;
   border-radius: var(--r-sm);
 }
 
+/* The app fills the visual viewport edge to edge. `position: fixed;
+   inset: 0` anchors to the viewport in both the browser and an installed
+   standalone PWA, so no per-display-mode height override is needed — the
+   earlier 100vh/100dvh/100lvh juggling was the source of the
+   double-scroll. The shell inside carries the safe-area insets. */
 #app {
-  display: block;
-  position: fixed;
-  inset: 0;
-  width: auto;
-  height: auto;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* In standalone iOS WebKit, the fixed containing block can still use a
-   stale visual-viewport height and stop above the home-indicator region.
-   A standalone app has no browser toolbar, so the large viewport is the
-   correct edge-to-edge canvas. Anchor the document and app to 100lvh and
-   use absolute positioning to avoid the short fixed containing block. */
-@media (display-mode: standalone) {
-  html,
-  body {
-    height: 100vh;
-    height: 100lvh;
-  }
-
-  #app {
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: 100%;
-    height: 100vh;
-    height: 100lvh;
-  }
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
 }
 
 /* ---- Utility classes (reduce CSS bloat) ------------------------- */

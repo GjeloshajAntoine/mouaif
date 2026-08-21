@@ -6,29 +6,25 @@
 .app__shell {
   display: flex;
   flex-direction: column;
-  /* Bound the shell to the app root so a flex child (the chat view
-in --flush mode) can scroll internally instead of growing the
-whole page. The root already resolves the 100vh fallback and
-100dvh enhancement in base.css; inheriting that size here avoids
-a second, potentially conflicting viewport calculation. */
-  width: 100%;
-height: 100%;
+  	/* Fill #app (fixed, inset 0 — the visual viewport). A single
+	   `height: 100%` chains from that box, so the shell never runs its
+	   own viewport-unit calculation and a flex child (the chat view in
+	   --flush mode) can scroll internally instead of growing the page. */
+	width: 100%;
+	height: 100%;
 max-width: 30rem;
 min-width: 0;
 margin: 0 auto;
   position: relative;
   overflow: hidden;
   background: var(--bg);
-  /* Safe-area insets live here, not on <html>/<body>: html/body are
-     locked to the viewport (height 100%; overflow hidden, see
-     base.css) so the document can never become a scroll container
-     that competes with the transcript / settings sections for the
-     touch gesture on iOS. The shell is border-box (global
-     box-sizing: border-box), so 100dvh + this padding still fills
-     exactly the visible area: the header sits below the notch, the
-     status row / tab bar float above the home indicator, and the
-     viewport never overflows. */
-  padding-top: var(--safe-top);
+	/* Safe-area insets live here, not on <html>/<body>: the document is
+	   locked to the viewport (base.css) so it can never become a scroll
+	   container that competes with the inner scrollers for the touch
+	   gesture on iOS. The shell is border-box, so height 100% + this
+	   padding still fills exactly the visible area: the header sits
+	   below the notch and the tab bar floats above the home indicator. */
+	padding-top: var(--safe-top);
   /* Bottom navigation owns the home-indicator inset so its surface reaches
      the screen edge instead of floating above a separate empty strip.
      Flush routes pass the inset to their bottom control surface. */
