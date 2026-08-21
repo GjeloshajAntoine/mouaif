@@ -20,20 +20,22 @@ The Project card is the main organizational view in mouaif: each registered proj
 
 ## Behavior
 
-- **Independent scrolling** — each card's chat list scrolls internally to prevent tall chat lists from pushing the rest of your dashboard out of view.
-- **Responsive height** — the per-card chat list's `max-height` scales with the dynamic viewport (`min(28dvh, 22rem)`) so taller phones get more chats visible before scrolling internally, with an `8.5rem` floor so very short viewports still show a few rows. A legacy fixed `161px` cap was replaced with these responsive units.
+- **Independent scrolling** — each card's chat list scrolls internally to prevent tall chat lists from pushing the rest of your dashboard out of view. Vertical overscroll is contained so reaching the first or last chat does not move the dashboard behind the list.
+- **Compact height** — the per-card chat list is capped at `10.0625rem` (161px), keeping about three rows visible before the list scrolls. The cap is applied with `max-height`; a `min-height` does not constrain a populated list and was the reason the previous size fix had no effect on normal phone viewports.
 - **Recency sorting** — recently opened conversations stay pinned to the top of the card.
 - **Cost tracking** — running costs are aggregated per chat and shown directly in the list.
 
 ## Implementation notes
 
-The chat list is a `<ul class="project-card__chats">` whose `max-height` is computed in CSS — no JS measurement is needed. The card itself is already a flex column, so the `<ul>` sits at the bottom of the card and scrolls inside its own box.
+The chat list is a `<ul class="project-card__chats">` with a fixed CSS cap — no JS measurement is needed. The card itself is a flex column, so the `<ul>` sits at the bottom and scrolls inside its own box. `overscroll-behavior-y: contain` keeps an edge gesture in the list instead of chaining it to `.app__main`.
 
 ```css
 .project-card__chats {
-  max-height: min(28dvh, 22rem);
-  min-height: 8.5rem;
+  max-height: 10.0625rem;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 ```
 

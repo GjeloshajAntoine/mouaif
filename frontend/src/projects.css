@@ -136,15 +136,14 @@
 .project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
-/* Responsive cap: scale with the dynamic viewport (dvh) so a phone with a
-   taller screen gets more chats before scrolling internally. The min()
-   keeps the list from over-growing on very tall foldables / desktop where
-   the dashboard should show several cards instead of one giant chat list.
-   161px (~3 rows) was the legacy floor; on small phones (~6.5dvh) that is
-   enough for ~3 rows, on a 390x844 phone (~22dvh) it shows ~6 rows. */
-max-height: min(28dvh, 22rem);
-min-height: 8.5rem;
+/* Keep each project card compact and make this list the gesture owner.
+   The previous `min-height` fix had no effect on normal phones because the
+   larger `28dvh` max-height still controlled the rendered list height. */
+max-height: 10.0625rem; /* 161px — about three chat rows */
 overflow-y: auto;
+-webkit-overflow-scrolling: touch;
+overscroll-behavior-y: contain;
+touch-action: pan-y;
 margin: 0;
 padding: 0;
 list-style: none;
