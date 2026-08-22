@@ -817,11 +817,13 @@ table tr:last-child td { border-bottom: 0; }
 .site { grid-template-columns: minmax(0, 1fr); }
 .sidebar { position: static; max-height: none; }
 .main { padding: 20px 16px 48px 16px; }
-/* Compact top nav: the brand sits on the first row; the links move to a
- * single horizontally-scrolling row beneath it, so the sticky nav never
- * balloons to two wrapped rows on a narrow phone. The links keep a
- * tap-friendly ≥44px height. */
+/* Compact top nav: the brand always occupies its own full-width line, so the
+* links reliably drop to a full-width second row beneath it at every mobile
+* width (there is no awkward mid-range state where the links sit beside the
+* brand but are no longer right-pushed). The links stay in a single
+* horizontally-scrolling row and keep a tap-friendly ≥44px height. */
 .topnav { padding: 6px 14px; gap: 6px 14px; align-items: center; }
+.topnav-brand { flex: 1 0 100%; }
 .topnav-links { gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .topnav-links::-webkit-scrollbar { display: none; }
 .topnav-links a { padding: 10px 12px; font-size: 13px; }
