@@ -541,6 +541,15 @@ table tr:last-child td { border-bottom: 0; }
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
 }
+/* Full-width layout (landing page has no sidebar). */
+.site--full {
+  grid-template-columns: minmax(0, 1fr);
+}
+.site--full .main {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+}
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -592,12 +601,13 @@ table tr:last-child td { border-bottom: 0; }
   color: var(--accent);
   font-weight: 600;
 }
-.main { padding: 28px 32px 64px 32px; max-width: 920px; }
+.main { padding: 28px 32px 64px 32px; max-width: 920px; min-width: 0; }
 .main h1 { font-size: 28px; margin: 0 0 4px 0; }
 .main h1 + p { color: var(--muted); margin-top: 0; }
 .main h2 { font-size: 20px; margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); }
 .main h3 { font-size: 16px; margin-top: 24px; }
 .main p, .main li { line-height: 1.6; }
+.main p, .main li, .main a, .main td, .main th { overflow-wrap: break-word; word-break: break-word; }
 .main ul, .main ol { padding-left: 22px; }
 .main li + li { margin-top: 4px; }
 
@@ -634,9 +644,10 @@ table tr:last-child td { border-bottom: 0; }
 }
 
 @media (max-width: 760px) {
-  .site { grid-template-columns: 1fr; }
-  .sidebar { position: static; max-height: none; order: 2; }
-  .main { padding: 20px 16px 48px 16px; order: 1; }
+.site { grid-template-columns: minmax(0, 1fr); }
+.site.site--full .main { margin: 0; max-width: none; }
+.sidebar { position: static; max-height: none; order: 2; }
+.main { padding: 20px 16px 48px 16px; order: 1; }
 }
 /* Top navigation (shared across pages). */
 .topnav {
@@ -649,6 +660,7 @@ table tr:last-child td { border-bottom: 0; }
   position: sticky;
   top: 0;
   z-index: 20;
+  flex-wrap: wrap;
 }
 .topnav-brand {
   font-weight: 700;
@@ -657,6 +669,7 @@ table tr:last-child td { border-bottom: 0; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 .topnav-brand .logo {
   display: inline-flex;
@@ -686,11 +699,6 @@ table tr:last-child td { border-bottom: 0; }
   background: var(--surface-2);
   color: var(--text);
   text-decoration: none;
-}
-/* Full-width layout (landing page has no sidebar). */
-.site--full .main {
-  max-width: 1000px;
-  margin: 0 auto;
 }
 /* Landing page. */
 .hero {
@@ -806,18 +814,23 @@ table tr:last-child td { border-bottom: 0; }
 .section p, .section li { color: var(--muted); }
 .section .lead { color: var(--text); }
 @media (max-width: 760px) {
-  .site { grid-template-columns: 1fr; }
-  .sidebar { position: static; max-height: none; }
-  .main { padding: 20px 16px 48px 16px; }
-  .topnav { padding: 10px 14px; gap: 8px; }
-  .topnav-links { gap: 2px; }
-  .topnav-links a { padding: 7px 8px; font-size: 13px; }
-  .hero { padding: 40px 16px 32px; }
-  .hero h1 { font-size: 40px; }
-  .hero .tagline { font-size: 15px; }
-  .feature { grid-template-columns: 1fr; gap: 20px; }
-  .feature--flip .shot { order: 0; }
-  .feature--flip .feature-copy { order: 0; }
+.site { grid-template-columns: minmax(0, 1fr); }
+.sidebar { position: static; max-height: none; }
+.main { padding: 20px 16px 48px 16px; }
+/* Compact top nav: the brand sits on the first row; the links move to a
+ * single horizontally-scrolling row beneath it, so the sticky nav never
+ * balloons to two wrapped rows on a narrow phone. The links keep a
+ * tap-friendly ≥44px height. */
+.topnav { padding: 6px 14px; gap: 6px 14px; align-items: center; }
+.topnav-links { gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.topnav-links::-webkit-scrollbar { display: none; }
+.topnav-links a { padding: 10px 12px; font-size: 13px; }
+.hero { padding: 40px 16px 32px; }
+.hero h1 { font-size: 40px; }
+.hero .tagline { font-size: 15px; }
+.feature { grid-template-columns: 1fr; gap: 20px; }
+.feature--flip .shot { order: 0; }
+.feature--flip .feature-copy { order: 0; }
 }
 `;
 
