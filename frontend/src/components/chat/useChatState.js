@@ -985,21 +985,42 @@ setRunningVisible(false);
       if (timer) { clearTimeout(timer); timer = null; }
       tick();
     };
+    function resumeNow() {
+      if (stopped) return;
+      if (timer) clearTimeout(timer);
+      // Queue rather than calling tick directly so pageshow, focus, and
+      // visibilitychange emitted in the same resume collapse to one sync.
+      timer = setTimeout(tick, 0);
+    }
     function onVisibility() {
       // Becoming visible: tick immediately instead of waiting out the
       // slow interval, then resume the fast cadence. Becoming hidden:
       // just reschedule at the slow cadence (no immediate tick).
       if (stopped) return;
       if (timer) { clearTimeout(timer); timer = null; }
-      if (document.visibilityState === 'visible') tick();
+      if (document.visibilityState === 'visible') resumeNow();
       else schedule();
+    }
+    function onPageShow() {
+      // Installed PWAs can be restored from the page cache without a
+      // visibility transition. Reconcile the retained ChatView in place.
+      resumeNow();
+    }
+    function onWindowFocus() {
+      // iOS standalone mode may foreground via focus only. The route does
+      // not change, so use the same incremental revision sync as polling.
+      if (document.visibilityState === 'visible') resumeNow();
     }
     schedule();
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onWindowFocus);
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onWindowFocus);
     };
   }, [chatId, projectDir]);
 
