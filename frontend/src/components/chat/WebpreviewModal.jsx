@@ -28,30 +28,36 @@ const VIEWPORT_PRESETS = [
   { id: 'tablet', label: 'Tablet', width: 768, height: 1024 },
   { id: 'laptop', label: 'Laptop', width: 1280, height: 800 }
 ];
-
-// Native selects open the platform's touch-friendly picker on phones. A
-// custom size supplied by the model remains visible as the selected option.
+const CUSTOM_VIEWPORT_ID = 'custom';
+const MIN_VIEWPORT_DIM = 64;
+const MAX_VIEWPORT_DIM = 2048;
+// Native selects open the platform's touch-friendly picker on phones. Custom
+// captures share one stable option; their exact dimensions live in the fields
+// shown below the header.
 function SizeSelect({ value, onChange, busy }) {
   const isPreset = VIEWPORT_PRESETS.some((preset) => preset.id === value);
   return h('select', {
     class: 'wp__size-select',
-    value,
+    value: isPreset ? value : CUSTOM_VIEWPORT_ID,
     disabled: busy,
     'aria-label': 'Capture size',
     onChange: (event) => onChange && onChange(event.currentTarget.value)
   },
-    !isPreset && value
-      ? h('option', { value }, 'Custom · ' + value.replace('x', '×'))
-      : null,
     VIEWPORT_PRESETS.map((preset) => h('option', { key: preset.id, value: preset.id },
       preset.label + ' · ' + preset.width + '×' + preset.height
-    ))
+    )),
+    h('option', { value: CUSTOM_VIEWPORT_ID }, 'Custom')
   );
 }
 
 export function WebpreviewModal({ preview, onClose, onRecapture }) {
-// One value is enough: a preset id or a custom WIDTHxHEIGHT string.
-const [selectedViewport, setSelectedViewport] = useState(() => viewportValue(preview && preview.viewport));
+  // One value is enough: a preset id or a custom WIDTHxHEIGHT string.
+  const initialViewport = viewportValue(preview && preview.viewport);
+  const initialCustomSize = customSizeFromViewport(initialViewport, preview);
+  const [selectedViewport, setSelectedViewport] = useState(initialViewport);
+  const [customWidth, setCustomWidth] = useState(String(initialCustomSize.width));
+  const [customHeight, setCustomHeight] = useState(String(initialCustomSize.height));
+  const [customError, setCustomError] = useState('');
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') {
@@ -83,21 +89,41 @@ const [selectedViewport, setSelectedViewport] = useState(() => viewportValue(pre
 // is a preset id or a 'WIDTHxHEIGHT' string. The local flag keeps the
 // controls disabled while the capture runs.
 const [recapturing, setRecapturing] = useState(false);
-async function onRecaptureClick(nextViewport) {
-if (recapturing || !onRecapture) return;
-const previousViewport = selectedViewport;
-const viewport = nextViewport || selectedViewport || 'phone';
-setSelectedViewport(viewport);
-setRecapturing(true);
-try {
-const out = await onRecapture(viewport);
-if (!out || !out.ok) setSelectedViewport(previousViewport);
-} catch {
-setSelectedViewport(previousViewport);
-} finally {
-setRecapturing(false);
-}
-}
+  async function onRecaptureClick(nextViewport) {
+    if (recapturing || !onRecapture) return;
+    const previousViewport = selectedViewport;
+    const viewport = nextViewport || selectedViewport || 'phone';
+    setSelectedViewport(viewport);
+    setRecapturing(true);
+    try {
+      const out = await onRecapture(viewport);
+      if (!out || !out.ok) setSelectedViewport(previousViewport);
+    } catch {
+      setSelectedViewport(previousViewport);
+    } finally {
+      setRecapturing(false);
+    }
+  }
+  function onSizeChange(nextViewport) {
+    setCustomError('');
+    if (nextViewport === CUSTOM_VIEWPORT_ID) {
+      setSelectedViewport(customWidth + 'x' + customHeight);
+      return;
+    }
+    onRecaptureClick(nextViewport);
+  }
+  function onCustomSubmit(event) {
+    event.preventDefault();
+    const widthValue = parseCustomDimension(customWidth);
+    const heightValue = parseCustomDimension(customHeight);
+    if (!widthValue || !heightValue) {
+      setCustomError('Enter width and height from 64 to 2048 px.');
+      return;
+    }
+    setCustomError('');
+    onRecaptureClick(widthValue + 'x' + heightValue);
+  }
+  const isCustomViewport = !VIEWPORT_PRESETS.some((preset) => preset.id === selectedViewport);
   const meta = [];
   if (width && height) meta.push(width + ' × ' + height);
   if (preview && preview.viewport && preview.viewport.label) meta.push('viewport ' + preview.viewport.label);
@@ -130,12 +156,12 @@ h('path', { d: 'M4 12a8 8 0 0 1 13.66-5.66L20 4 M20 4v5h-5 M20 12a8 8 0 0 1-13.6
 ),
 h('span', null, 'Refresh')
 ),
-h(SizeSelect, {
-value: selectedViewport,
-busy: recapturing,
-onChange: onRecaptureClick
-}),
-h('button', {
+          h(SizeSelect, {
+            value: selectedViewport,
+            busy: recapturing,
+            onChange: onSizeChange
+          }),
+          h('button', {
 class: 'wp__close',
 type: 'button',
 'aria-label': 'Close preview',
@@ -147,7 +173,44 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
 )
 )
 )
-),
+      ),
+      isCustomViewport
+        ? h('form', { class: 'wp__custom-size', onSubmit: onCustomSubmit },
+            h('label', { class: 'wp__custom-field' },
+              h('span', null, 'Width'),
+              h('input', {
+                class: 'wp__custom-input',
+                type: 'number',
+                inputMode: 'numeric',
+                min: MIN_VIEWPORT_DIM,
+                max: MAX_VIEWPORT_DIM,
+                step: 1,
+                value: customWidth,
+                disabled: recapturing,
+                onInput: (event) => setCustomWidth(event.currentTarget.value),
+                'aria-label': 'Custom preview width'
+              })
+            ),
+            h('span', { class: 'wp__custom-times', 'aria-hidden': 'true' }, '×'),
+            h('label', { class: 'wp__custom-field' },
+              h('span', null, 'Height'),
+              h('input', {
+                class: 'wp__custom-input',
+                type: 'number',
+                inputMode: 'numeric',
+                min: MIN_VIEWPORT_DIM,
+                max: MAX_VIEWPORT_DIM,
+                step: 1,
+                value: customHeight,
+                disabled: recapturing,
+                onInput: (event) => setCustomHeight(event.currentTarget.value),
+                'aria-label': 'Custom preview height'
+              })
+            ),
+            h('button', { class: 'wp__custom-apply', type: 'submit', disabled: recapturing }, 'Apply'),
+            customError ? h('div', { class: 'wp__custom-error', role: 'alert' }, customError) : null
+          )
+        : null,
       h('div', { class: 'wp__body' },
         thumbnail
           ? h('img', {
@@ -178,10 +241,23 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
   );
 }
 function viewportValue(vp) {
-if (!vp) return 'phone';
-if (VIEWPORT_PRESETS.some((preset) => preset.id === vp.id)) return vp.id;
-if (vp.width && vp.height) return vp.width + 'x' + vp.height;
-return 'phone';
+  if (!vp) return 'phone';
+  if (VIEWPORT_PRESETS.some((preset) => preset.id === vp.id)) return vp.id;
+  if (vp.width && vp.height) return vp.width + 'x' + vp.height;
+  return 'phone';
+}
+function customSizeFromViewport(value, preview) {
+  const match = typeof value === 'string' && value.match(/^(\d+)x(\d+)$/);
+  if (match) return { width: Number(match[1]), height: Number(match[2]) };
+  return {
+    width: (preview && preview.width) || 375,
+    height: (preview && preview.height) || 667
+  };
+}
+function parseCustomDimension(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < MIN_VIEWPORT_DIM || parsed > MAX_VIEWPORT_DIM) return 0;
+  return parsed;
 }
 function hostFromUrl(url) {
   if (!url) return '';

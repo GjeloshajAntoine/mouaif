@@ -1292,6 +1292,7 @@ asks the model to recapture the same URL. */
   }
 }
 .wp__head {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -1387,8 +1388,67 @@ border: 1px solid var(--border);
 border-radius: var(--r-sm);
 }
 .wp__size-select:focus-visible {
-border-color: var(--accent);
-outline: 0;
+  border-color: var(--accent);
+  outline: 0;
+}
+.wp__custom-size {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+  padding: 0.625rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.wp__custom-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.wp__custom-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.625rem;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.wp__custom-input:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+.wp__custom-times {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+.wp__custom-apply {
+  min-height: 44px;
+  padding: 0 0.875rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+}
+.wp__custom-apply:disabled {
+  opacity: 0.6;
+}
+.wp__custom-error {
+  grid-column: 1 / -1;
+  color: var(--danger, #ef4444);
+  font-size: 0.72rem;
 }
 .wp__close {
 flex: 0 0 auto;
@@ -1415,6 +1475,29 @@ min-height: 44px;
 .wp__close svg {
   width: 14px;
   height: 14px;
+}
+@media (max-width: 430px) {
+  .wp__head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .wp__head-text {
+    flex-basis: calc(100% - 52px);
+    min-height: 44px;
+    justify-content: center;
+  }
+  .wp__head-actions {
+    width: 100%;
+  }
+  .wp__action--refresh,
+  .wp__size-select {
+    flex: 1 1 0;
+  }
+  .wp__close {
+    position: absolute;
+    top: calc(var(--safe-top, 0px) + 8px);
+    right: 4px;
+  }
 }
 .wp__body {
   flex: 1 1 auto;
