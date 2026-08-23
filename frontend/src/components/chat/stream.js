@@ -329,25 +329,34 @@ export function stopStreamRecovery(state) {
 // (page reload, tab switch, or the transcript not being up yet) gets
 // re-mounted on a later tick instead of being lost.
 export async function loadPendingAuthorization(state, refs) {
-  const { projectDir, chatId } = state.props;
-  if (!projectDir || !chatId || !refs.transcript.current) return 0;
-  let r;
-  try {
-    r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
-  } catch { return 0; }
-  if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return 0;
-  let count = 0;
-  for (const request of r.body.pending) {
-    if (!request || !request.callId) continue;
-    count++;
-    if (request.tool === 'ask_user' && request.args) {
-      const data = Object.assign({}, request.args, { callId: request.callId, tool: request.tool });
-      mountOverlayCard(refs, request.callId, () => askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st)));
-    } else {
-      mountOverlayCard(refs, request.callId, () => authorizationCard(request, projectDir, chatId, refs, null, state));
-    }
-  }
-  return count;
+const { projectDir, chatId } = state.props;
+if (!projectDir || !chatId || !refs.transcript.current) return 0;
+const isCurrentChat = () => state.props.projectDir === projectDir && state.props.chatId === chatId;
+let r;
+try {
+r = await fetchJson('/api/tools/authorization/pending?projectDir=' + encodeURIComponent(projectDir) + '&chatId=' + encodeURIComponent(chatId));
+} catch { return 0; }
+// ChatView can be reused when hash navigation switches chats. Do not let a
+// slow response from the page we just left mount its approval card into the
+// page we returned to.
+if (!isCurrentChat() || !refs.transcript.current) return 0;
+if (r.status !== 200 || !r.body || !Array.isArray(r.body.pending)) return 0;
+let count = 0;
+for (const request of r.body.pending) {
+if (!request || !request.callId) continue;
+count++;
+if (request.tool === 'ask_user' && request.args) {
+const data = Object.assign({}, request.args, { callId: request.callId, tool: request.tool });
+mountOverlayCard(refs, request.callId, () => {
+if (isCurrentChat()) askUserCard(data, projectDir, chatId, refs, (txt, st) => setChatStatus(refs, txt, st));
+});
+} else {
+mountOverlayCard(refs, request.callId, () => {
+if (isCurrentChat()) authorizationCard(request, projectDir, chatId, refs, null, state);
+});
+}
+}
+return count;
 }
 
 export async function cancelRunningChat(state, refs) {
@@ -963,20 +972,24 @@ export async function reconcileRunningChat(state, refs) {
       const last = state.messages[state.messages.length - 1];
       const midTool = last && last.role === 'tool' && last.phase === 'call';
       const stable = !moved && !midTool && state.messages.length > 0 && !liveConnected;
-
-      if (state.runSettled) {
-        state.watchingRun = false;
-        state.watchingStableTicks = 0;
-        if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-        return;
-      }
-
-      state.watchingRun = true;
-      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-      if (!prevWatching || moved || stable || state.pendingAuthCount > 0) {
-        state.pendingAuthCount = await loadPendingAuthorization(state, refs);
-      }
-      if (state.pendingAuthCount > 0) {
+// Even a locally settled run must re-check the pending queue. The page can
+// remain open in the background after the stable-tick guard latches; if an
+// authorization request arrives later, returning to the same hash does not
+// remount ChatView. Checking before the settled early-return lets the prompt
+// clear the latch and become actionable immediately.
+if (!prevWatching || moved || stable || state.pendingAuthCount > 0 || state.runSettled) {
+state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+}
+if (state.pendingAuthCount > 0) state.runSettled = false;
+if (state.runSettled) {
+state.watchingRun = false;
+state.watchingStableTicks = 0;
+if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+return;
+}
+state.watchingRun = true;
+if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+if (state.pendingAuthCount > 0) {
         state.watchingStableTicks = 0;
         setChatStatus(refs, 'waiting for you…', 'busy');
       } else if (stable) {

@@ -725,18 +725,28 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
             }
           }
         })();
-        if (c.running) {
-          setRunningVisible(true);
-          // Subscribe to the per-chat live stream so a reloaded page
-          // (returning to a chat that lost its SSE socket) still renders
-          // in-flight shell output and subagent activity into the tool
-          // cards, instead of pinning them on "Waiting for results…"
-          // until the run settles.
-          subscribeLive(state, refs);
-          loadPendingAuthorization(state, refs);
-        } else {
-          setRunningVisible(false);
-        }
+if (c.running) {
+setRunningVisible(true);
+// A retained ChatView may have settled an earlier torn-run snapshot while
+// the user was on another page. Reopening a server-running chat must clear
+// that latch before subscribing/polling, otherwise a pending approval that
+// arrived while away is skipped as already done.
+state.runSettled = false;
+state.watchingStableTicks = 0;
+state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+if (cancelled || state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
+if (state.pendingAuthCount > 0) {
+state.watchingRun = true;
+setChatStatus(refs, 'waiting for you…', 'busy');
+}
+// Subscribe after the pending snapshot is mounted. Live replay still
+// supplies output that happened while away, and call-id de-duping prevents
+// the same authorization card from being shown twice.
+subscribeLive(state, refs);
+} else {
+state.pendingAuthCount = 0;
+setRunningVisible(false);
+}
         updateSetupVisibility(state, refs);
         updateSwitch(activeProfileId(state), refs);
       } catch (err) {
