@@ -4,7 +4,11 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
 
 const COLORS = ['#ff5f57', '#ffd60a', '#32d74b', '#0a84ff'];
-
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+function clampZoom(value) {
+return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
 function pointFor(event, canvas) {
 const rect = canvas.getBoundingClientRect();
 return {
@@ -12,11 +16,22 @@ x: (event.clientX - rect.left) * (canvas.width / rect.width),
 y: (event.clientY - rect.top) * (canvas.height / rect.height)
 };
 }
+function midpoint(a, b) {
+return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+function distance(a, b) {
+return Math.hypot(b.x - a.x, b.y - a.y);
+}
 
 export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose }) {
 const canvasRef = useRef(null);
+const wrapRef = useRef(null);
 const drawingRef = useRef(false);
 const lastRef = useRef(null);
+const pointersRef = useRef(new Map());
+const pinchRef = useRef(null);
+const panRef = useRef(null);
+const zoomRef = useRef(1);
 const [color, setColor] = useState(COLORS[0]);
 const [note, setNote] = useState('');
 const [pickerOpen, setPickerOpen] = useState(false);
@@ -42,14 +57,63 @@ source.src = image.dataUrl;
 return () => { cancelled = true; };
 }, [image]);
 
+function applyZoom(value, focus) {
+const wrap = wrapRef.current;
+const before = canvasRef.current && canvasRef.current.getBoundingClientRect();
+const next = clampZoom(value);
+zoomRef.current = next;
+setZoom(next);
+if (!wrap || !before || !focus || before.width <= 0 || before.height <= 0) return;
+const wrapRect = wrap.getBoundingClientRect();
+const imageX = (focus.x - before.left) / before.width;
+const imageY = (focus.y - before.top) / before.height;
+const viewportX = focus.x - wrapRect.left;
+const viewportY = focus.y - wrapRect.top;
+requestAnimationFrame(() => {
+const canvas = canvasRef.current;
+if (!canvas || !wrap) return;
+const after = canvas.getBoundingClientRect();
+wrap.scrollLeft = Math.max(0, imageX * after.width - viewportX);
+wrap.scrollTop = Math.max(0, imageY * after.height - viewportY);
+});
+}
 function start(event) {
-if (mode !== 'draw' || !ready || !canvasRef.current) return;
+if (!ready || !canvasRef.current) return;
+pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+try { canvasRef.current.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
+if (pointersRef.current.size === 2) {
+const points = Array.from(pointersRef.current.values());
+pinchRef.current = { distance: distance(points[0], points[1]), zoom: zoomRef.current };
+panRef.current = null;
+drawingRef.current = false;
+lastRef.current = null;
+return;
+}
+if (mode === 'pan') {
+const wrap = wrapRef.current;
+panRef.current = wrap ? { x: event.clientX, y: event.clientY, left: wrap.scrollLeft, top: wrap.scrollTop } : null;
+return;
+}
 drawingRef.current = true;
 lastRef.current = pointFor(event, canvasRef.current);
-try { canvasRef.current.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
 }
 function move(event) {
-if (!drawingRef.current || !canvasRef.current || !lastRef.current) return;
+if (!pointersRef.current.has(event.pointerId) || !canvasRef.current) return;
+pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+if (pointersRef.current.size >= 2 && pinchRef.current) {
+const points = Array.from(pointersRef.current.values()).slice(0, 2);
+const currentDistance = distance(points[0], points[1]);
+if (pinchRef.current.distance > 0) {
+applyZoom(pinchRef.current.zoom * (currentDistance / pinchRef.current.distance), midpoint(points[0], points[1]));
+}
+return;
+}
+if (mode === 'pan' && panRef.current && wrapRef.current) {
+wrapRef.current.scrollLeft = panRef.current.left - (event.clientX - panRef.current.x);
+wrapRef.current.scrollTop = panRef.current.top - (event.clientY - panRef.current.y);
+return;
+}
+if (!drawingRef.current || !lastRef.current) return;
 const canvas = canvasRef.current;
 const next = pointFor(event, canvas);
 const ctx = canvas.getContext('2d');
@@ -63,7 +127,10 @@ ctx.lineTo(next.x, next.y);
 ctx.stroke();
 lastRef.current = next;
 }
-function end() {
+function end(event) {
+if (event && event.pointerId !== undefined) pointersRef.current.delete(event.pointerId);
+if (pointersRef.current.size < 2) pinchRef.current = null;
+panRef.current = null;
 drawingRef.current = false;
 lastRef.current = null;
 }
@@ -106,7 +173,7 @@ h('span', null, 'Draw on the Inspector image')
 ),
 h('button', { type: 'button', class: 'draft-craft__close', onClick: onClose, 'aria-label': 'Close image annotator' }, '×')
 ),
-h('div', { class: 'draft-craft__canvas-wrap' + (mode === 'pan' ? ' is-panning' : '') },
+h('div', { ref: wrapRef, class: 'draft-craft__canvas-wrap' + (mode === 'pan' ? ' is-panning' : '') },
 h('canvas', {
 ref: canvasRef,
 class: 'draft-craft__canvas',
@@ -116,14 +183,14 @@ onPointerMove: move,
 onPointerUp: end,
 onPointerCancel: end,
 onPointerLeave: end,
-'aria-label': 'Inspector screenshot annotation canvas'
+'aria-label': 'Inspector screenshot annotation canvas. Pinch with two fingers to zoom.'
 })
 ),
 h('div', { class: 'draft-craft__annotator-tools' },
 h('div', { class: 'draft-craft__zoom', role: 'group', 'aria-label': 'Image zoom' },
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => setZoom((value) => Math.max(1, value - 0.25)), disabled: zoom <= 1, 'aria-label': 'Zoom out' }, '−'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current - 0.25), disabled: zoom <= MIN_ZOOM, 'aria-label': 'Zoom out' }, '−'),
 h('span', { 'aria-live': 'polite' }, Math.round(zoom * 100) + '%'),
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => setZoom((value) => Math.min(4, value + 0.25)), disabled: zoom >= 4, 'aria-label': 'Zoom in' }, '+'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current + 0.25), disabled: zoom >= MAX_ZOOM, 'aria-label': 'Zoom in' }, '+'),
 h('button', { class: 'btn btn--small' + (mode === 'pan' ? ' is-active' : ''), type: 'button', onClick: () => setMode((value) => value === 'pan' ? 'draw' : 'pan'), 'aria-pressed': String(mode === 'pan') }, mode === 'pan' ? 'Draw' : 'Pan')
 ),
 h('div', { class: 'draft-craft__colors', role: 'group', 'aria-label': 'Annotation color' },

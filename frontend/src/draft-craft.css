@@ -153,11 +153,12 @@ background-position: 0 0, 0 0.625rem, 0.625rem -0.625rem, -0.625rem 0;
 display: block;
 max-width: none;
 height: auto;
+/* Pointer events drive drawing, panning, and two-finger pinch zoom.
+Prevent the browser's page gesture from stealing those touches. */
 touch-action: none;
 cursor: crosshair;
 }
 .draft-craft__canvas-wrap.is-panning .draft-craft__canvas {
-touch-action: pan-x pan-y;
 cursor: grab;
 }
 .draft-craft__annotator-tools {
