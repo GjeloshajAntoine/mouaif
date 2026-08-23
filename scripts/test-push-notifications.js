@@ -93,6 +93,7 @@ const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build',
 const swHandlers = {};
 const shownNotifications = [];
 let pageVisible = true;
+let pageResponds = true;
 class TestMessageChannel {
 constructor() {
 const port1 = { onmessage: null, start() {}, close() {} };
@@ -110,6 +111,7 @@ focused: true,
 visibilityState: 'visible',
 postMessage(message, ports) {
 assert.equal(message.type, 'GET_VISIBILITY_STATE', 'push asks the live page for current visibility');
+if (!pageResponds) return;
 ports[0].postMessage({
 type: 'VISIBILITY_STATE',
 hash: '#/chat/chat-1?projectDir=%2Ftmp',
@@ -152,16 +154,18 @@ assert.equal(swContext.chatIdFromHash('#/chat/chat-1?projectDir=%2Ftmp'), 'chat-
 assert.equal(swContext.chatIdFromHash('#/chat/chat%202'), 'chat 2', 'chat matching decodes the route id');
 assert.equal(swContext.chatIdFromHash('#/projects'), '', 'non-chat routes do not match chat notifications');
 assert.ok(swSource.includes("client.postMessage({ type: 'GET_VISIBILITY_STATE' }, [channel.port2])"), 'push-time suppression queries live pages after worker restarts');
+assert.ok(swSource.includes('freshViews.some((view) =>'), 'only a fresh visible-page response can suppress a push');
 assert.ok(swSource.includes("statusKinds = new Set(['progress', 'completion', 'error'])"), 'status cleanup covers all replaceable status types');
 
-function dispatchPush() {
+function dispatchPush(kind = 'completion') {
 let pending = Promise.resolve();
+const authorization = kind === 'tool_authorization';
 swHandlers.push({
 data: { json: () => ({
-title: 'Chat one',
-body: 'Response complete',
-tag: 'chat-chat-1-status',
-data: { kind: 'completion', chatId: 'chat-1', url: '/#/chat/chat-1?projectDir=%2Ftmp' }
+title: authorization ? 'Authorization needed' : 'Chat one',
+body: authorization ? 'shell is waiting for approval.' : 'Response complete',
+tag: authorization ? 'chat-chat-1-attention' : 'chat-chat-1-status',
+data: { kind, chatId: 'chat-1', url: '/#/chat/chat-1?projectDir=%2Ftmp' }
 }) },
 waitUntil(promise) { pending = promise; }
 });
@@ -174,7 +178,11 @@ assert.equal(shownNotifications.length, 0, 'a fresh visible-chat response suppre
 pageVisible = false;
 await dispatchPush();
 assert.equal(shownNotifications.length, 1, 'a fresh hidden-chat response still shows the push');
-console.log('push notifications: 32 assertions passed');
+pageVisible = true;
+pageResponds = false;
+await dispatchPush('tool_authorization');
+assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
+console.log('push notifications: 34 assertions passed');
 })().catch((err) => {
 console.error(err);
 process.exitCode = 1;

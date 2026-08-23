@@ -178,8 +178,9 @@ self.addEventListener('fetch', (event) => {
 // a persistent MessageChannel to the worker and reports { hash,
 // visible, focused } on load, on visibilitychange/focus/blur, and on
 // hashchange (see sw-registration.js — startVisibilityReporting). The
-// push handler below consults this table first and only falls back to
-// client-reported properties for a client that never checked in.
+// push handler still makes a fresh request for every notification: cached
+// reports and client properties only support bookkeeping and must never
+// suppress an alert when a suspended page cannot answer.
 const clientViews = new Map(); // clientId -> { hash, visible, focused, at }
 const CLIENT_VIEW_TTL = 5 * 60 * 1000; // stale entries are ignored
 
@@ -208,15 +209,7 @@ function reportedViewMatchesChat(view, targetUrl) {
   const targetChatId = chatIdFromHash(targetUrl.hash);
   return !!reportedChatId && reportedChatId === targetChatId;
 }
-function reportedClientMatchesChat(clientId, targetUrl) {
-  return reportedViewMatchesChat(clientViews.get(clientId), targetUrl);
-}
-function anyReportedViewMatchesChat(targetUrl) {
-  for (const view of clientViews.values()) {
-    if (reportedViewMatchesChat(view, targetUrl)) return true;
-  }
-  return false;
-}
+
 
 function queryClientView(client) {
   // Service workers are routinely suspended between events, clearing
@@ -302,37 +295,15 @@ self.addEventListener('push', (event) => {
     freshViews.forEach((view, index) => {
       if (view) updateClientView(windows[index].id, view);
     });
-    const hasFreshViews = freshViews.some(Boolean);
-    const reportedChatVisible = !!targetUrl && (
-      freshViews.some((view) => reportedViewMatchesChat(view, targetUrl))
-      // Compatibility fallback for an older open page that does not yet
-      // answer GET_VISIBILITY_STATE. Never let it override a fresh hidden
-      // response from the current bundle.
-      || (!hasFreshViews && anyReportedViewMatchesChat(targetUrl))
-    );
-    const chatVisible = !!targetUrl && windows.some((client, index) => {
-      // Suppress only when the user is ACTUALLY looking at the app.
-      // A push-time page response is authoritative and survives service-
-      // worker suspension because it is requested after every wake-up.
-      const freshView = freshViews[index];
-      if (freshView) return reportedViewMatchesChat(freshView, targetUrl);
-      if (reportedClientMatchesChat(client.id, targetUrl)) return true;
-      try {
-        const clientChatId = chatIdFromHash(new URL(client.url).hash);
-        const targetChatId = chatIdFromHash(targetUrl.hash);
-        if (!clientChatId || clientChatId !== targetChatId) return false;
-        // A visibility report may use the page UUID on engines where
-        // event.source.id is missing. Accept it only while a matching
-        // WindowClient still exists, so a closed tab's report cannot
-        // suppress notifications for the full five-minute TTL.
-        if (reportedChatVisible) return true;
-        // Fallback for an old/uncontrolled page with no report. A
-        // non-visible state always wins; when the property is missing,
-        // focused still reliably identifies the active app window.
-        if (client.visibilityState !== undefined && client.visibilityState !== 'visible') return false;
-        return client.focused === true;
-      } catch { return false; }
-    });
+    // Suppress only when a page answers this push-time query and confirms
+    // that the target chat is visible. A suspended or recently closed PWA
+    // can remain in clients.matchAll() with stale `focused: true` and a
+    // stale cached visibility report while its JavaScript cannot answer.
+    // Treating that stale state as visible intermittently discarded the
+    // authorization push exactly when the app was no longer usable. If no
+    // fresh answer arrives, showing the alert is the safe outcome.
+    const chatVisible = !!targetUrl && freshViews.some((view) =>
+      reportedViewMatchesChat(view, targetUrl));
 const queued = await self.registration.getNotifications();
 if (chatVisible) {
 // Entering or staying in the target chat makes its queued alerts stale.
