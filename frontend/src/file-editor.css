@@ -272,8 +272,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fe__editor-actions { flex: 0 0 auto; display: flex; gap: 4px; }
-.fe__editor-actions .btn { min-height: 32px; padding: 0 10px; font-size: 0.8rem; }
+.fe__editor-actions { flex: 0 0 auto; display: flex; gap: 4px; overflow-x: auto; }
+.fe__editor-actions .btn { min-height: var(--tap); padding: 0 10px; font-size: 0.8rem; }
 
 .fe__editor-host {
   flex: 1 1 auto;

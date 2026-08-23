@@ -45,7 +45,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
-const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities'];
+const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities', 'draft-craft'];
 
 // ---- Markdown renderer ------------------------------------------------
 
@@ -1055,6 +1055,7 @@ mouaif serve</code></pre>
 <li>Let the assistant read and edit files, run approved commands, track tasks, and delegate to agents.</li>
 <li>Connect extra tools through MCP.</li>
 <li>Preview and inspect browser pages from the mobile-friendly Inspector.</li>
+<li>Use <strong>Draft Craft</strong> to add selected code or an annotated Inspector image to any chat draft.</li>
 <li>Control every tool with Off, Ask, or Allow permissions.</li>
 </ul>
 <p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>

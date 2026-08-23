@@ -20,8 +20,9 @@
    13. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
    14. inspector.css   — inspector setup, targets, tabs, panels
    15. file-editor.css — file editor overlay
-   16. tool-tree.css   — tool tree component
-   17. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
+   16. draft-craft.css — draft handoff picker and image annotator
+   17. tool-tree.css   — tool tree component
+   18. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
 */
 
 @import './base.css';
@@ -39,5 +40,6 @@
 @import './tool-cards.css';
 @import './inspector.css';
 @import './file-editor.css';
+@import './draft-craft.css';
 @import './tool-tree.css';
 @import './features.css';

@@ -83,6 +83,7 @@ Use HTTPS and `--public-origin` before making mouaif available outside the compu
 
 - Organize chats by local project and select models per chat.
 - Attach files and images, use custom prompts, and control reasoning options.
+- Use **Draft Craft** to send selected code or an annotated Inspector image to any chat draft.
 - Let the assistant read and edit project files.
 - Run approved non-interactive shell commands and view live output.
 - Track tasks, answer structured questions, and delegate work to project agents.

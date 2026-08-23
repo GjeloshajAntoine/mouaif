@@ -12,6 +12,7 @@ import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
+import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
 // Short human label for a Chrome DevTools target type. Chrome uses a
 // handful of types: `page` (a normal tab), `iframe`, `service_worker`,
 // `background_page` (extension), and a few rarely-seen ones
@@ -376,7 +377,8 @@ export function InspectorView() {
   // not switch between panels, it shows all toggled-on panels stacked.
   const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
   const [detailItem, setDetailItem] = useState(null);
-  // closePending — when non-null, the ConfirmSheet is shown and the
+const [draftCraftImage, setDraftCraftImage] = useState(null);
+// closePending — when non-null, the ConfirmSheet is shown and the
   // captured `target` is the page the user is about to close. A small
   // object instead of two pieces of state so cancel + confirm are
   // single-key updates and the sheet can read both fields without
@@ -961,7 +963,12 @@ applyViewport(viewportId);
   // scroller — their body height is bounded by CSS so a busy page
   // doesn't force-grow the panel past the available viewport.
   const renderPanelBody = (id) => {
-    if (id === 'preview') return h(PreviewPanel, { capture: handlers && handlers.captureScreenshot, clickAt: handlers && handlers.clickAt, subscribe: conn.current && conn.current.cdpOn });
+    if (id === 'preview') return h(PreviewPanel, {
+capture: handlers && handlers.captureScreenshot,
+clickAt: handlers && handlers.clickAt,
+subscribe: conn.current && conn.current.cdpOn,
+onDraftCraft: (image) => image && setDraftCraftImage(image)
+});
     if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
     if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
     return h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) });
@@ -1080,8 +1087,14 @@ applyViewport(viewportId);
             }, renderPanelBody(id)))
           )
     ),
-    h(DetailSheet, {
-      item: detailItem,
+    draftCraftImage ? h(DraftCraftAnnotator, {
+image: draftCraftImage,
+pageTitle: t && t.title,
+pageUrl: t && t.url,
+onClose: () => setDraftCraftImage(null)
+}) : null,
+h(DetailSheet, {
+item: detailItem,
       onClose: () => { setDetailItem(null); rerender(); },
       onLoadBody: () => handlers && handlers.loadResponseBody(detailItem)
     }),

@@ -10,6 +10,7 @@ mouaif organizes AI-assisted work by project. Each project can have its own mode
 - Create multiple chats for each project and switch between them from the chat header.
 - Pick and bookmark a model for each chat.
 - Attach text files and images to a message.
+- Use **Draft Craft** to add selected file code or an annotated Inspector image to any chat draft.
 - Read streamed responses with Markdown, token usage, speed, and estimated cost.
 - Rename, trace, or delete chats from the chat menu.
 

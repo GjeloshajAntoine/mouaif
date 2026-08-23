@@ -38,6 +38,7 @@ import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
+import { DraftCraftSheet } from './DraftCraftSheet.jsx';
 
 // ---- Language detection ------------------------------------------------
 
@@ -146,7 +147,8 @@ export function FileEditorView(props) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorStatus, setEditorStatus] = useState('');
-
+  const [draftCraftOpen, setDraftCraftOpen] = useState(false);
+  const [draftCraftPayload, setDraftCraftPayload] = useState(null);
   const editorHostRef = useRef(null);
   const viewRef = useRef(null);     // CodeMirror EditorView
   // editorFull hides the file list so the editor takes the whole
@@ -432,6 +434,24 @@ export function FileEditorView(props) {
     openPath(entry.relPath);
   }
 
+  function openDraftCraft() {
+    if (!openFile || !viewRef.current) return;
+    const selection = viewRef.current.state.selection.main;
+    if (selection.empty) {
+      setEditorStatus('Select code before using Draft Craft.');
+      viewRef.current.focus();
+      return;
+    }
+    const code = viewRef.current.state.sliceDoc(selection.from, selection.to);
+    const startLine = viewRef.current.state.doc.lineAt(selection.from).number;
+    const endLine = viewRef.current.state.doc.lineAt(selection.to).number;
+    setDraftCraftPayload({
+      projectDir,
+      text: 'Selected code from ' + openFile.relPath + ':' + startLine + (endLine !== startLine ? '-' + endLine : '') + '\n```' + (openFile.ext || '').replace(/^\./, '') + '\n' + code + '\n```'
+    });
+    setDraftCraftOpen(true);
+  }
+
   function parentRel() {
     const d = currentDir.current || '';
     if (!d || d === projectDir) return null;
@@ -656,10 +676,17 @@ export function FileEditorView(props) {
                 h('div', { class: 'fe__editor-head' },
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
                   h('div', { class: 'fe__editor-actions' },
-                    h('button', {
-                      class: 'btn',
-                      type: 'button',
-                      onClick: revert,
+h('button', {
+class: 'btn fe__draft-craft',
+type: 'button',
+onClick: openDraftCraft,
+disabled: saving,
+title: 'Add the selected code to any chat draft'
+}, 'Draft Craft'),
+h('button', {
+class: 'btn',
+type: 'button',
+onClick: revert,
                       disabled: !dirty || saving,
                       title: 'Revert to the last saved version'
                     }, 'Revert'),
@@ -679,11 +706,21 @@ export function FileEditorView(props) {
                 )
               )
             : h('div', { class: 'fe__editor-empty' },
-                h('p', null, 'Pick a file from the list to start editing, or tap an image to preview it.'),
-                h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcrumb to jump to a folder.')
-              )
-        )
-      )
-    )
-  );
+h('p', null, 'Pick a file from the list to start editing, or tap an image to preview it.'),
+h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcrumb to jump to a folder.')
+)
+)
+),
+h(DraftCraftSheet, {
+open: draftCraftOpen,
+payload: draftCraftPayload,
+onClose: () => setDraftCraftOpen(false),
+onAdded: (result) => {
+setDraftCraftOpen(false);
+setEditorStatus('Selected code added with Draft Craft.');
+if (props.onDraftCraftAdded) props.onDraftCraftAdded(result);
+}
+})
+)
+);
 }

@@ -24,6 +24,8 @@ export function ChatView(props) {
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
     chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
     setFileEditorOpen,
+    setImageAttachments,
+    setComposerText,
     setChatSwitcherOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
@@ -34,6 +36,16 @@ export function ChatView(props) {
 
   const { projectDir, chatId } = props;
   const [FileEditor, setFileEditor] = useState(null);
+  function onDraftCraftAdded(result) {
+    if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
+    const chat = result.chat;
+    if (refs.promptInput.current) {
+      refs.promptInput.current.value = chat.draft || '';
+      setComposerText(chat.draft || '');
+      if (refs._autoresize) refs._autoresize();
+    }
+    setImageAttachments(Array.isArray(chat.draftAttachments) ? chat.draftAttachments : []);
+  }
 // The latest webpreview capture lives in a fixed dock above the composer.
 // The full-screen viewer is a separate local toggle so dismissing the viewer
 // leaves the small user-facing preview available.
@@ -313,7 +325,7 @@ h('div', { class: 'chat-view__composer-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
     fileEditorOpen && FileEditor
-      ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false) })
+      ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
       : null,
 webPreviewOpen && webPreviewPayload
 ? h(WebpreviewModal, {

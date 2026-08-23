@@ -26,6 +26,7 @@ export function PreviewPanel(props) {
   // the page's intrinsic size is essentially constant between captures,
   // so the previous frame's natural size is a safe approximation.
   const lastDims = useRef({ w: 0, h: 0 });
+  const latestImage = useRef(null);
 
   useEffect(() => {
     if (!props.capture) return;
@@ -77,6 +78,7 @@ export function PreviewPanel(props) {
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const blob = new Blob([bytes], { type: 'image/jpeg' });
+      latestImage.current = { dataUrl: 'data:image/jpeg;base64,' + r.data, width: 0, height: 0 };
       const next = URL.createObjectURL(blob);
       const img = imgRef.current;
       const frame = frameRef.current;
@@ -101,6 +103,10 @@ export function PreviewPanel(props) {
           if (cur) {
             lastDims.current.w = cur.naturalWidth || lastDims.current.w;
             lastDims.current.h = cur.naturalHeight || lastDims.current.h;
+            if (latestImage.current) {
+              latestImage.current.width = cur.naturalWidth || 0;
+              latestImage.current.height = cur.naturalHeight || 0;
+            }
             cur.onload = prevOnload || null;
           }
         };
@@ -212,6 +218,12 @@ export function PreviewPanel(props) {
   }
 
   return h('div', { class: 'inspector__preview' },
+    h('button', {
+      class: 'btn inspector__draft-craft',
+      type: 'button',
+      disabled: !imgSrc,
+      onClick: () => props.onDraftCraft && props.onDraftCraft(latestImage.current),
+    }, 'Draft Craft'),
     h('div', {
       ref: frameRef,
       class: 'inspector__preview-frame',

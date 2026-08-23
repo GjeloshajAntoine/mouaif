@@ -997,6 +997,7 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
   setImageAttachments, setFileEditorOpen,
+  setComposerText,
   // Reactive model-picker props (rendered by ModelPickerField)
   picker,
   // Actions bound for direct use in the JSX
