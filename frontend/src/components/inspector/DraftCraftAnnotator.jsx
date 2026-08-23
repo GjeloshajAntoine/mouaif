@@ -7,8 +7,18 @@ import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
 const COLORS = ['#ff5f57', '#ffd60a', '#32d74b', '#0a84ff'];
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
+const MAX_MARKERS = 26;
 function clampZoom(value) {
 return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
+function clamp(value) {
+return Math.min(1, Math.max(0, value));
+}
+function markerLabel(index, style) {
+return style === 'letters' ? String.fromCharCode(65 + index) : String(index + 1);
+}
+function markerTextColor(color) {
+return color === '#ffd60a' ? '#111111' : '#ffffff';
 }
 function pointFor(event, canvas) {
 const rect = canvas.getBoundingClientRect();
@@ -16,6 +26,34 @@ return {
 x: (event.clientX - rect.left) * (canvas.width / rect.width),
 y: (event.clientY - rect.top) * (canvas.height / rect.height)
 };
+}
+function markerPoint(event, stage, constrain = false) {
+if (!stage) return null;
+const rect = stage.getBoundingClientRect();
+if (!constrain && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) return null;
+return {
+x: clamp((event.clientX - rect.left) / rect.width),
+y: clamp((event.clientY - rect.top) / rect.height)
+};
+}
+function paintMarker(ctx, marker, label, width) {
+const radius = Math.max(14, width / 46);
+const x = marker.x * ctx.canvas.width;
+const y = marker.y * ctx.canvas.height;
+ctx.save();
+ctx.beginPath();
+ctx.arc(x, y, radius, 0, Math.PI * 2);
+ctx.fillStyle = marker.color;
+ctx.fill();
+ctx.lineWidth = Math.max(3, radius / 7);
+ctx.strokeStyle = '#ffffff';
+ctx.stroke();
+ctx.fillStyle = markerTextColor(marker.color);
+ctx.font = '700 ' + Math.round(radius * 1.05) + 'px system-ui, sans-serif';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText(label, x, y + radius * 0.04);
+ctx.restore();
 }
 function midpoint(a, b) {
 return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -26,15 +64,20 @@ return Math.hypot(b.x - a.x, b.y - a.y);
 
 export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose }) {
 const canvasRef = useRef(null);
+const stageRef = useRef(null);
 const wrapRef = useRef(null);
 const drawingRef = useRef(false);
 const lastRef = useRef(null);
 const pointersRef = useRef(new Map());
 const pinchRef = useRef(null);
 const panRef = useRef(null);
+const markerDragRef = useRef(null);
 const zoomRef = useRef(1);
 const [color, setColor] = useState(COLORS[0]);
 const [note, setNote] = useState('');
+const [markers, setMarkers] = useState([]);
+const [markerStyle, setMarkerStyle] = useState('numbers');
+const [dragMarker, setDragMarker] = useState(null);
 const [pickerOpen, setPickerOpen] = useState(false);
 const [payload, setPayload] = useState(null);
 const [ready, setReady] = useState(false);
@@ -135,8 +178,50 @@ panRef.current = null;
 drawingRef.current = false;
 lastRef.current = null;
 }
+function startMarkerDrag(event, markerId = null) {
+if (!ready || (markerId === null && markers.length >= MAX_MARKERS)) return;
+event.preventDefault();
+event.stopPropagation();
+const marker = markerId === null ? null : markers.find((item) => item.id === markerId);
+markerDragRef.current = { markerId, pointerId: event.pointerId };
+setDragMarker({
+label: markerLabel(markerId === null ? markers.length : markers.indexOf(marker), markerStyle),
+color: marker ? marker.color : color,
+clientX: event.clientX,
+clientY: event.clientY
+});
+try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
+}
+function moveMarkerDrag(event) {
+if (!markerDragRef.current || markerDragRef.current.pointerId !== event.pointerId) return;
+event.preventDefault();
+setDragMarker((current) => current ? { ...current, clientX: event.clientX, clientY: event.clientY } : current);
+}
+function endMarkerDrag(event) {
+const drag = markerDragRef.current;
+if (!drag || drag.pointerId !== event.pointerId) return;
+event.preventDefault();
+event.stopPropagation();
+const point = markerPoint(event, stageRef.current);
+if (point) {
+setMarkers((current) => {
+if (drag.markerId !== null) return current.map((item) => item.id === drag.markerId ? { ...item, ...point } : item);
+if (current.length >= MAX_MARKERS) return current;
+return current.concat([{ id: Date.now() + Math.random(), ...point, color, text: '' }]);
+});
+}
+markerDragRef.current = null;
+setDragMarker(null);
+}
+function updateMarkerText(id, text) {
+setMarkers((current) => current.map((marker) => marker.id === id ? { ...marker, text } : marker));
+}
+function removeMarker(id) {
+setMarkers((current) => current.filter((marker) => marker.id !== id));
+}
 function clearMarks() {
 setReady(false);
+setMarkers([]);
 const canvas = canvasRef.current;
 if (!canvas) return;
 const source = new Image();
@@ -151,14 +236,24 @@ source.src = image.dataUrl;
 function openPicker() {
 const canvas = canvasRef.current;
 if (!canvas || !ready) return;
-const context = ['Inspector image', pageTitle || '', pageUrl || '', note.trim()].filter(Boolean).join('\n');
+const output = document.createElement('canvas');
+output.width = canvas.width;
+output.height = canvas.height;
+const ctx = output.getContext('2d');
+ctx.drawImage(canvas, 0, 0);
+markers.forEach((marker, index) => paintMarker(ctx, marker, markerLabel(index, markerStyle), canvas.width));
+const markerNotes = markers.map((marker, index) => {
+const label = markerLabel(index, markerStyle);
+return marker.text.trim() ? label + '. ' + marker.text.trim() : label + '.';
+});
+const context = ['Inspector image', pageTitle || '', pageUrl || '', note.trim(), markerNotes.length ? 'Annotations:\n' + markerNotes.join('\n') : ''].filter(Boolean).join('\n');
 setPayload({
 text: context,
-textLabel: 'Inspector context',
+textLabel: markers.length ? markers.length + ' matched annotation' + (markers.length === 1 ? '' : 's') : 'Inspector context',
 image: {
 type: 'image',
 mimeType: 'image/png',
-dataUrl: canvas.toDataURL('image/png'),
+dataUrl: output.toDataURL('image/png'),
 name: 'draft-craft-inspector.png'
 }
 });
@@ -175,17 +270,29 @@ h('span', null, 'Draw on the Inspector image')
 h('button', { type: 'button', class: 'draft-craft__close', onClick: onClose, 'aria-label': 'Close image annotator' }, '×')
 ),
 h('div', { ref: wrapRef, class: 'draft-craft__canvas-wrap' + (mode === 'pan' ? ' is-panning' : '') },
+h('div', { ref: stageRef, class: 'draft-craft__canvas-stage', style: { width: (zoom * 100) + '%' } },
 h('canvas', {
 ref: canvasRef,
 class: 'draft-craft__canvas',
-style: { width: (zoom * 100) + '%' },
 onPointerDown: start,
 onPointerMove: move,
 onPointerUp: end,
 onPointerCancel: end,
 onPointerLeave: end,
 'aria-label': 'Inspector screenshot annotation canvas. Pinch with two fingers to zoom.'
-})
+}),
+markers.map((marker, index) => h('button', {
+key: marker.id,
+type: 'button',
+class: 'draft-craft__image-marker',
+style: { left: (marker.x * 100) + '%', top: (marker.y * 100) + '%', background: marker.color, color: markerTextColor(marker.color) },
+onPointerDown: (event) => startMarkerDrag(event, marker.id),
+onPointerMove: moveMarkerDrag,
+onPointerUp: endMarkerDrag,
+onPointerCancel: endMarkerDrag,
+'aria-label': 'Move annotation ' + markerLabel(index, markerStyle)
+}, markerLabel(index, markerStyle)))
+)
 ),
 h('div', { class: 'draft-craft__annotator-tools' },
 h('div', { class: 'draft-craft__zoom', role: 'group', 'aria-label': 'Image zoom' },
@@ -206,10 +313,41 @@ onClick: () => setColor(value)
 }))
 ),
 h('button', { class: 'btn btn--small', type: 'button', onClick: clearMarks, disabled: !ready }, 'Clear'),
+h('section', { class: 'draft-craft__markers', 'aria-label': 'Matched image annotations' },
+h('div', { class: 'draft-craft__marker-bar' },
+h('div', null,
+h('strong', null, 'Marker dots'),
+h('span', null, 'Drag the next dot onto the image')
+),
+h('select', { class: 'input draft-craft__marker-style', value: markerStyle, onChange: (event) => setMarkerStyle(event.currentTarget.value), 'aria-label': 'Marker label style' },
+h('option', { value: 'numbers' }, '1, 2, 3'),
+h('option', { value: 'letters' }, 'A, B, C')
+),
+h('button', {
+type: 'button',
+class: 'draft-craft__marker-source',
+style: { background: color, color: markerTextColor(color) },
+disabled: !ready || markers.length >= MAX_MARKERS,
+onPointerDown: startMarkerDrag,
+onPointerMove: moveMarkerDrag,
+onPointerUp: endMarkerDrag,
+onPointerCancel: endMarkerDrag,
+'aria-label': markers.length >= MAX_MARKERS ? 'Maximum markers reached' : 'Drag marker ' + markerLabel(markers.length, markerStyle) + ' onto image'
+}, markers.length >= MAX_MARKERS ? '✓' : markerLabel(markers.length, markerStyle))
+),
+markers.length
+? h('ol', { class: 'draft-craft__marker-list' }, markers.map((marker, index) => h('li', { key: marker.id },
+h('span', { class: 'draft-craft__marker-label', style: { background: marker.color, color: markerTextColor(marker.color) } }, markerLabel(index, markerStyle)),
+h('input', { class: 'input', value: marker.text, onInput: (event) => updateMarkerText(marker.id, event.currentTarget.value), placeholder: 'Text for ' + markerLabel(index, markerStyle), 'aria-label': 'Text for annotation ' + markerLabel(index, markerStyle) }),
+h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(marker.id), 'aria-label': 'Remove annotation ' + markerLabel(index, markerStyle) }, '×')
+)))
+: h('p', { class: 'draft-craft__marker-empty' }, 'No marker dots on the image yet.')
+),
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' }),
 h('button', { class: 'btn btn--primary', type: 'button', onClick: openPicker, disabled: !ready }, 'Add to chat draft')
 )
 ),
+dragMarker ? h('span', { class: 'draft-craft__drag-marker', style: { left: dragMarker.clientX + 'px', top: dragMarker.clientY + 'px', background: dragMarker.color, color: markerTextColor(dragMarker.color) }, 'aria-hidden': 'true' }, dragMarker.label) : null,
 h(DraftCraftSheet, {
 open: pickerOpen,
 payload,

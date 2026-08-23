@@ -149,8 +149,15 @@ background-image: linear-gradient(45deg, #111722 25%, transparent 25%), linear-g
 background-size: 1.25rem 1.25rem;
 background-position: 0 0, 0 0.625rem, 0.625rem -0.625rem, -0.625rem 0;
 }
+.draft-craft__canvas-stage {
+position: relative;
+flex: 0 0 auto;
+min-width: 100%;
+line-height: 0;
+}
 .draft-craft__canvas {
 display: block;
+width: 100%;
 max-width: none;
 height: auto;
 /* Pointer events drive drawing, panning, and two-finger pinch zoom.
@@ -161,8 +168,40 @@ cursor: crosshair;
 .draft-craft__canvas-wrap.is-panning .draft-craft__canvas {
 cursor: grab;
 }
+.draft-craft__image-marker,
+.draft-craft__marker-source,
+.draft-craft__marker-label,
+.draft-craft__drag-marker {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+border: 0.15rem solid #fff;
+border-radius: 50%;
+color: #fff;
+font: 700 0.78rem/1 system-ui, sans-serif;
+box-shadow: 0 0.1rem 0.35rem rgba(0, 0, 0, 0.6);
+}
+.draft-craft__image-marker {
+position: absolute;
+width: var(--tap);
+height: var(--tap);
+transform: translate(-50%, -50%);
+touch-action: none;
+cursor: grab;
+}
+.draft-craft__drag-marker {
+position: fixed;
+z-index: 120;
+width: 2rem;
+height: 2rem;
+transform: translate(-50%, -50%);
+pointer-events: none;
+}
 .draft-craft__annotator-tools {
-flex: 0 0 auto;
+flex: 0 1 auto;
+max-height: 52dvh;
+overflow-y: auto;
+overscroll-behavior: contain;
 display: grid;
 grid-template-columns: 1fr auto;
 gap: 0.5rem;
@@ -194,6 +233,60 @@ box-shadow: inset 0 0 0 0.08rem rgba(255,255,255,.45);
 cursor: pointer;
 }
 .draft-craft__color.is-active { border-color: var(--fg); }
+.draft-craft__markers {
+grid-column: 1 / -1;
+display: grid;
+gap: 0.45rem;
+padding: 0.6rem;
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+background: var(--surface-2);
+}
+.draft-craft__marker-bar {
+display: grid;
+grid-template-columns: minmax(0, 1fr) auto auto;
+align-items: center;
+gap: 0.45rem;
+}
+.draft-craft__marker-bar strong,
+.draft-craft__marker-bar span { display: block; }
+.draft-craft__marker-bar strong { font-size: 0.82rem; line-height: 1.2; }
+.draft-craft__marker-bar span { margin-top: 0.15rem; color: var(--muted); font-size: 0.7rem; line-height: 1.25; }
+.draft-craft__marker-style { width: auto; min-height: var(--tap); padding-inline: 0.5rem; }
+.draft-craft__marker-source {
+width: var(--tap);
+height: var(--tap);
+touch-action: none;
+cursor: grab;
+}
+.draft-craft__marker-source:disabled { opacity: 0.5; cursor: not-allowed; }
+.draft-craft__marker-list {
+display: grid;
+gap: 0.4rem;
+margin: 0;
+padding: 0;
+list-style: none;
+}
+.draft-craft__marker-list li {
+display: grid;
+grid-template-columns: 2rem minmax(0, 1fr) var(--tap);
+align-items: center;
+gap: 0.4rem;
+}
+.draft-craft__marker-label { width: 2rem; height: 2rem; }
+.draft-craft__marker-list .input { min-width: 0; min-height: var(--tap); }
+.draft-craft__marker-remove {
+width: var(--tap);
+height: var(--tap);
+border: 0;
+border-radius: 50%;
+background: transparent;
+color: var(--muted);
+font: inherit;
+font-size: 1.25rem;
+cursor: pointer;
+}
+.draft-craft__marker-empty { margin: 0; color: var(--muted); font-size: 0.74rem; }
 .draft-craft__note { grid-column: 1 / -1; resize: none; }
 .draft-craft__annotator-tools > .btn--primary { grid-column: 1 / -1; }
 .inspector__draft-craft {

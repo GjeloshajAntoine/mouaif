@@ -10,10 +10,11 @@ Draft Craft adds material to any existing chat draft without sending it immediat
 
 1. Open **Inspector** and connect to a browser tab.
 2. In the **Preview** panel, tap **Draft Craft**.
-3. Pinch with two fingers to zoom from 100% to 400%, or use the **−** and **+** controls. Switch between **Pan** and **Draw**, annotate the image, and optionally add a note.
-4. Tap **Add to chat draft**, then choose a project and pick a chat from the project-style chat list.
+3. Pinch with two fingers to zoom from 100% to 400%, or use the **−** and **+** controls. Switch between **Pan** and **Draw** to make freehand marks.
+4. In **Marker dots**, choose sequential numbers or letters, then drag the next dot from the marker bar onto the image. Add text in the matching row below. Existing dots can be dragged to a new image position or removed.
+5. Optionally add a general image note, then tap **Add to chat draft** and choose a project and chat.
 
-The pinch midpoint stays under your fingers while zooming. In **Pan** mode, drag the image to move around the zoomed screenshot. The annotated image is appended to that chat’s pending image attachments. The page title, URL, and optional note are appended to the text draft.
+The pinch midpoint stays under your fingers while zooming. In **Pan** mode, drag the image to move around the zoomed screenshot. Marker labels increase automatically up to 26 dots. The exported image contains each dot, while the text draft includes the corresponding numbered or lettered annotation list along with the page title, URL, and general note.
 
 ### Selected file code
 
