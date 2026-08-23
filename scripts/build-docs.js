@@ -820,13 +820,13 @@ table tr:last-child td { border-bottom: 0; }
 /* Compact top nav: the brand always occupies its own full-width line, so the
 * links reliably drop to a full-width second row beneath it at every mobile
 * width (there is no awkward mid-range state where the links sit beside the
-* brand but are no longer right-pushed). The links stay in a single
-* horizontally-scrolling row and keep a tap-friendly ≥44px height. */
+* brand but are no longer right-pushed). Both rows fill the available width;
+* links stay on one horizontally-scrolling row with tap-friendly ≥44px height. */
 .topnav { padding: 6px 14px; gap: 6px 14px; align-items: center; }
-.topnav-brand { flex: 1 0 100%; }
-.topnav-links { gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.topnav-brand { flex: 1 0 100%; min-height: 44px; }
+.topnav-links { flex: 1 1 100%; min-width: 0; gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .topnav-links::-webkit-scrollbar { display: none; }
-.topnav-links a { padding: 10px 12px; font-size: 13px; }
+.topnav-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 12px; font-size: 13px; }
 .hero { padding: 40px 16px 32px; }
 .hero h1 { font-size: 40px; }
 .hero .tagline { font-size: 15px; }
