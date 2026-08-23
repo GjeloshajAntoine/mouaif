@@ -159,8 +159,35 @@ export async function setProjectStorage(projectDir, dbBacked) {
   return { dbBacked: !!r.body.dbBacked, project: r.body.project || {}, path: r.body.path || null };
 }
 
+// ---- Web preview refresh ----------------------------------------------
+// Direct user-facing refresh of the web preview from the full-screen
+// viewer. The user can change the capture resolution with `viewport`
+// (preset id like 'phone'/'tablet', or a 'WIDTHxHEIGHT' string). Returns
+// the native tool result ({ ok, url, title, thumbnail, width, height,
+// viewport, ... }) or throws a decoded error on a non-2xx response.
+export async function requestWebpreview({ projectDir, chatId, url, viewport, callId }) {
+  const body = { projectDir, chatId, url };
+  if (viewport) body.viewport = viewport;
+  if (callId) body.callId = callId;
+  const r = await fetchJson('/api/tools/webpreview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (r.status === 409 && r.body && r.body.code === 'EAUTH_REQUIRED') {
+    const e = new Error(r.body.error || 'Authorization required');
+    e.code = 'EAUTH_REQUIRED';
+    e.callId = r.body.callId || '';
+    throw e;
+  }
+  if (r.status !== 200) {
+    const e = new Error((r.body && r.body.error) || 'HTTP ' + r.status);
+    e.code = (r.body && r.body.code) || 'EHTTP';
+    throw e;
+  }
+  return r.body;
+}
 // ---- Tiny toast helper -----------------------------------------------
-
 export function setStatus(ref, text, state) {
   if (!ref || !ref.current) return;
   ref.current.textContent = text || '';

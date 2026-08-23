@@ -238,7 +238,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // mobile UI ships it as a query string. PUT and DELETE carry it in
   // the JSON body.
   if (urlPath === '/api/chats' || urlPath.startsWith('/api/chats/')) {
-    return handleChats(req, res, parsed, sessionToken);
+    return handleChats(req, res, parsed, sessionToken, lifecycle);
   }
 
   // Prompts (custom per-project prompts)

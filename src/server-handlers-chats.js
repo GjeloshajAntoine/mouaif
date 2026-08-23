@@ -32,8 +32,9 @@ const {
   liveChat
 } = require('./server-shared.js');
 
-async function handleChats(req, res, parsed, sessionToken) {
-  const urlPath = parsed.pathname;
+async function handleChats(req, res, parsed, sessionToken, lifecycle = {}) {
+const urlPath = parsed.pathname;
+
   const method = req.method;
   const q = parsed.query || {};
 
@@ -398,7 +399,9 @@ disabled: skillState.disabled.has(s.id)
       try { toolSpecs.push(require('./tools/ask.js').SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
-      if (fileToolsEnabled) {
+try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
+if (fileToolsEnabled) {
+
         try {
           const fileTools = require('./tools/files.js');
           for (const n of fileTools.FILE_TOOL_NAMES) toolSpecs.push(fileTools.SPECS[n]);
@@ -418,7 +421,7 @@ disabled: skillState.disabled.has(s.id)
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview']) {
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
           const cfg = authState.tools[family];
           if (cfg && cfg.mode === 'off') {
             const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -569,16 +572,14 @@ disabled: skillState.disabled.has(s.id)
   // writes both events to the trace file (if the chat's trace flag
   // is on). One round-trip per user turn.
   const streamMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages\/stream$/);
-  if (streamMatch && method === 'POST') {
-    return handleChatStream(req, res, streamMatch[1], sessionToken);
-  }
-
-  return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+if (streamMatch && method === 'POST') {
+return handleChatStream(req, res, streamMatch[1], sessionToken, lifecycle);
 }
-
+return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+}
 // Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
 // the route table above stays compact.
-async function handleChatStream(req, res, chatId, sessionToken) {
+async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) {
   const _pushSessionId = push.sessionIdFromToken(sessionToken);
   const body = await readJsonOr400(req, res);
   if (!body) return;
@@ -1008,7 +1009,9 @@ async function handleChatStream(req, res, chatId, sessionToken) {
     shellEnabled,
     fileToolsEnabled,
     appSettings,
-    promptSize: resolvedProfileId,
+lifecycle,
+promptSize: resolvedProfileId,
+
     toolOutput: resolvedToolOutput,
     thinkingLevel: thinkingLevel || chat.thinkingLevel || '',
     maxOutputTokens: maxOutputTokens || chat.maxOutputTokens || '',

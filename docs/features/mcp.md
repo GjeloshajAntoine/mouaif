@@ -136,4 +136,5 @@ A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of th
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE events, the parse path that accumulates OpenAI-compatible deltas.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — the gate every tool call passes through.
 - [docs/features/trace.md](./trace.md) — `tool_call` and `tool_result` lines on the NDJSON trace (decision §5).
+- [docs/features/mcp-error-modal.md](./mcp-error-modal.md) — the Settings modal for typed MCP server lifecycle failures.
 - Decision: [docs/decisions.md §18](../decisions.md) (this feature) and §10 (AI client wire format), §16 (the shell tool that established the tool model).

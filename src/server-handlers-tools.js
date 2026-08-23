@@ -197,7 +197,9 @@ pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', sourc
 pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
-    try {
+pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'restart', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
+try {
+
       const ft = require('./tools/files.js');
       for (const name of ft.FILE_TOOL_NAMES) {
         const spec = ft.SPECS && ft.SPECS[name];
@@ -367,9 +369,69 @@ pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', sourc
     return sendJSON(res, 200, { ok: true });
   }
 
-  // POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, modelId?, providerId? }
-  // Direct subagent dispatch from the composer (@agent <task>). Runs the
-  // native subagent tool through the same authorization gate and the
+  // POST /api/tools/webpreview  body: { projectDir, chatId, url, viewport? }
+  // Direct user-facing refresh of the web preview from the full-screen
+  // viewer (and the dock's Dismiss/Refresh cycle). The user may change the
+  // capture resolution with `viewport` (preset id or "WIDTHxHEIGHT"). The
+  // run goes through the same webpreview authorization gate as the
+  // model-driven path, so a disabled tool (mode 'off') is refused and an
+  // 'ask'-gated project still prompts. The result is returned as plain JSON
+  // (no SSE stream) — the chat UI publishes the fresh screenshot into its
+  // preview dock exactly as a model-driven capture does.
+  if (urlPath === '/api/tools/webpreview' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
+    const url = body && typeof body.url === 'string' ? body.url.trim() : '';
+    const viewport = body && typeof body.viewport === 'string' ? body.viewport : '';
+    const callId = (body && typeof body.callId === 'string' && body.callId) ||
+      ('ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!url) return sendJSON(res, 400, { error: 'url is required' });
+    if (!chatId) return sendJSON(res, 400, { error: 'chatId is required' });
+    if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
+    // Gate through the same authorization module the model path uses. The URL
+    // is the summary (matching the allowlist by hostname / full URL) and the
+    // flow is 'retry' so a prompt resolves as a normal user decision.
+    let authorization;
+    try {
+      authorization = await require('./tools/authorization.js').authorize({
+        projectDir, chatId, callId, tool: 'webpreview', url, summary: url, flow: 'retry'
+      });
+    } catch (e) {
+      const status = e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED' ? 403 : 400;
+      return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
+    }
+    if (authorization.decision === 'prompt') {
+      return sendJSON(res, 409, {
+        ok: false,
+        code: 'EAUTH_REQUIRED',
+        chatId,
+        callId,
+        tool: 'webpreview',
+        url,
+        projectDir
+      });
+    }
+    // Run the native capture. Only the user-facing result is returned; the
+    // screenshot is published to the dock by the same tool-publish hook the
+    // model path uses.
+    let wp;
+    try { wp = require('./tools/webpreview.js'); }
+    catch (e) {
+      return sendJSON(res, 500, { ok: false, error: 'webpreview tool module unavailable: ' + (e.message || e), code: 'EMODULE' });
+    }
+    try {
+      const out = await wp.runWebpreview({ url, viewport: viewport || undefined });
+      return sendJSON(res, 200, out);
+    } catch (e) {
+      return sendJSON(res, 500, { ok: false, error: e.message || String(e), code: e.code || 'EWEBPREVIEW' });
+    }
+  }
+// POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, modelId?, providerId? }
+// Direct subagent dispatch from the composer (@agent <task>). Runs the
+// native subagent tool through the same authorization gate and the
   // same dispatcher the model-driven loop uses — one tool_call +
   // tool_result pair, returned in the JSON body (no SSE stream).
   if (urlPath === '/api/tools/subagent' && method === 'POST') {

@@ -66,15 +66,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
   const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [askUserMode, setAskUserMode] = useState('ask');
+const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
+const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
+const [askUserMode, setAskUserMode] = useState('ask');
+
   const [shellStatusMsg, setShellStatusMsg] = useState('');
   const [fileStatusMsg, setFileStatusMsg] = useState('');
   const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
   const [progressStatusMsg, setProgressStatusMsg] = useState('');
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
-  const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
-  const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
+const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
+const [restartStatusMsg, setRestartStatusMsg] = useState('');
+const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
+
   const [toolsCatalog, setToolsCatalog] = useState([]);
 
   // MCP authorization
@@ -205,11 +209,17 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
         allowlist: task && Array.isArray(task.allowlist) ? task.allowlist : []
       });
       const webpreview = authz.status === 200 && authz.body.tools && authz.body.tools.webpreview;
-      setWebpreviewAuth({
-        mode: (webpreview && webpreview.mode) || 'ask',
-        allowlist: webpreview && Array.isArray(webpreview.allowlist) ? webpreview.allowlist : []
-      });
-      const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
+setWebpreviewAuth({
+mode: (webpreview && webpreview.mode) || 'ask',
+allowlist: webpreview && Array.isArray(webpreview.allowlist) ? webpreview.allowlist : []
+});
+const restart = authz.status === 200 && authz.body.tools && authz.body.tools.restart_app;
+setRestartAuth({
+mode: (restart && restart.mode) || 'ask',
+allowlist: restart && Array.isArray(restart.allowlist) ? restart.allowlist : []
+});
+const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
+
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
       const mcp = authz.status === 200 && authz.body && authz.body.mcp;
       setMcpAuth({
@@ -429,9 +439,10 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
   function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
-  function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
+function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
+function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
+function pickAskUserMode(newMode) {
 
-  function pickAskUserMode(newMode) {
     setAskUserMode(newMode);
     setAskUserStatusMsg('saving…');
     fetchJson('/api/tools/authorization', {
@@ -723,8 +734,26 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
       });
     }
 
-    const askTool = catalog.find((t) => t.name === 'ask_user');
-    if (askTool) {
+    const restartTool = catalog.find((t) => t.name === 'restart_app');
+if (restartTool) {
+groups.push({
+id: 'restart_app',
+name: 'Restart app',
+description: shortDesc(restartTool.description),
+title: restartTool.description || '',
+checked: isOn(restartAuth.mode),
+control: toolModeSegs('Restart app', segMode(restartAuth.mode), pickRestartMode, [
+{ value: 'off', label: 'Off' },
+{ value: 'ask', label: 'Ask' },
+{ value: 'allow', label: 'Allow' }
+]),
+tools: [leaf(restartTool, { checked: isOn(restartAuth.mode) })],
+extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, restartStatusMsg) : null
+});
+}
+const askTool = catalog.find((t) => t.name === 'ask_user');
+if (askTool) {
+
       groups.push({
         id: 'ask_user',
         name: 'Ask user',
@@ -856,7 +885,9 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     else if (groupId === 'subagent') pickSubagentMode(mode);
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
-    else if (groupId === 'report_progress') pickProgressMode(mode);
+else if (groupId === 'restart_app') pickRestartMode(mode);
+else if (groupId === 'report_progress') pickProgressMode(mode);
+
     else if (groupId === 'ask_user') pickAskUserMode(mode);
     else if (groupId === 'files') {
       const names = toolsCatalog

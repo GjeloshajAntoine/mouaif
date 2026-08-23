@@ -125,7 +125,9 @@ function buildToolsCard(state) {
     else if (g.id === 'ask_user') g.control = makeSegVNode('ask_user', g.id);
     else if (g.id === 'report_progress') g.control = makeSegVNode('report_progress', g.id);
     else if (g.id === 'webpreview') g.control = makeSegVNode('webpreview', g.id);
-    else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
+else if (g.id === 'restart_app') g.control = makeSegVNode('restart_app', g.id);
+else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
+
   }
 
   // MCP authorization — one Off/Ask/Allow segment per MCP server group

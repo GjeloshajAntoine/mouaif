@@ -92,8 +92,14 @@ function buildFeatureSummary(opts) {
     }
   }
 
-  // --- MCP servers ---
-  if (Array.isArray(mcpServers) && mcpServers.length) {
+  // app restart
+if (authz && authz.tools && authz.tools.restart_app) {
+const s = authz.tools.restart_app;
+if (s.mode !== 'off') feat.push('[restart app](off|ask|allow) → ' + s.mode + ' — graceful supervisor relaunch from chat');
+}
+// --- MCP servers ---
+if (Array.isArray(mcpServers) && mcpServers.length) {
+
     // NOTE: the MCP line deliberately carries ONLY the configured server
     // count — never the live running/stopped status. The feature summary
     // rides inside the cached system block of Anthropic prompt caching;
@@ -188,7 +194,7 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview']) {
+    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',

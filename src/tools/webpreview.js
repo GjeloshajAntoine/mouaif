@@ -15,11 +15,11 @@
 // Per-call lifecycle:
 //   1. Open the URL in a fresh tab via inspector.openInspectorTarget.
 //   2. Wait for `Page.loadEventFired` (timeout 10s).
-//   3. Apply the Inspector's small-phone viewport (375 × 667) and give
-//      responsive layout / paint a tiny grace window.
-//   4. Call `Page.captureScreenshot` for that mobile viewport so the
-//      reduced chat image has the same proportions as Inspector. The
-//      screenshot bytes are not appended to the model conversation.
+//   3. Apply the requested viewport (default the Inspector's phone preset,
+//      375 × 667) and give responsive layout / paint a tiny grace window.
+//   4. Call `Page.captureScreenshot` for that viewport so the reduced chat
+//      image has the same proportions. The screenshot bytes are not
+//      appended to the model conversation.
 //   5. Close the tab (`Target.closeTarget`) so server restarts don't leak
 //      preview tabs. A failed capture still closes the tab. Calling the tool
 //      again for the same URL opens a fresh tab and acts as an agent-triggered
@@ -34,20 +34,42 @@
 // Public surface:
 //   SPEC                    — the OpenAI-compatible tool spec (used by
 //                              the AI client when collecting tool specs).
-//   runWebpreview({ url, signal })
+//   runWebpreview({ url, viewport, signal })
 //                            -> Promise<{ ok, content, result }>
 //                              where `content` is the string fed to the
 //                              model as the `tool` message and `result`
 //                              is the richer object surfaced to the UI
 //                              in the tool_result SSE event.
+//                              `viewport` is a preset id ('phone',
+//                              'phone+', 'tablet', 'laptop') or a
+//                              'WIDTHxHEIGHT' string; it overrides the
+//                              default 375 × 667 phone capture.
+//   resolveViewport(raw)            — normalize a viewport arg.
+//   VIEWPORTS / DEFAULT_VIEWPORT_ID — the preset table + default.
 
 const { openInspectorTarget, sendTargetCommand, closeInspectorTarget, fetchInspectorTargets } = require('../inspector.js');
 
-// Match the Inspector's small-phone viewport preset. Keeping this capture
-// mobile-sized makes the reduced chat image a faithful miniature of the
-// Inspector preview instead of a landscape desktop crop.
+// Capture viewports. A preset is the default (and what the dock miniature
+// is tuned for); the agent or user can pick a different one to preview a
+// page at a tablet/laptop size, or pass a custom `WIDTHxHEIGHT`. The
+// `mobile` flag matches the Inspector's preset semantics: phone entries set
+// `mobile: true` so the viewport meta / DPR behaviour flips, tablet and
+// laptop stay desktop-style so media queries behave like a real browser
+// window.
 const THUMB_WIDTH_MAX = 375;
 const THUMB_HEIGHT_MAX = 667;
+const VIEWPORTS = Object.freeze({
+  phone: { id: 'phone', label: 'Phone', width: THUMB_WIDTH_MAX, height: THUMB_HEIGHT_MAX, mobile: true },
+  'phone+': { id: 'phone+', label: 'Phone+', width: 414, height: 896, mobile: true },
+  tablet: { id: 'tablet', label: 'Tablet', width: 768, height: 1024, mobile: false },
+  laptop: { id: 'laptop', label: 'Laptop', width: 1280, height: 800, mobile: false }
+});
+const DEFAULT_VIEWPORT_ID = 'phone';
+const DEFAULT_VIEWPORT = VIEWPORTS[DEFAULT_VIEWPORT_ID];
+// Guard the custom-size path. A runaway width/height would make a
+// capture exceed MAX_IMAGE_BYTES (or time out); clamp into a sane range.
+const MIN_VIEWPORT_DIM = 64;
+const MAX_VIEWPORT_DIM = 2048;
 
 // Largest image we accept from CDP. CDP returns either base64-encoded
 // data or a binary stream; either way we re-validate against this cap
@@ -64,8 +86,6 @@ const POST_LOAD_GRACE_MS = 250;
 
 // The capture uses the same small-phone dimensions as Inspector's Phone
 // preset. This is also the fallback when a Chrome build omits layout metrics.
-const DEFAULT_VIEWPORT = { width: THUMB_WIDTH_MAX, height: THUMB_HEIGHT_MAX, dpr: 1 };
-
 const err = (code, message, extra) => Object.assign(new Error(message), { code, ...(extra || {}) });
 
 // Validate a URL the model supplied. Accept http(s) only — ftp, file,
@@ -161,9 +181,43 @@ function sleep(ms) {
 
 // Compose a positive integer ≤ max from any value (NaN/negative -> max).
 function clampPositive(value, max) {
-  const n = Number(value);
-  if (!isFinite(n) || n <= 0) return max;
-  return Math.min(Math.round(n), max);
+const n = Number(value);
+if (!isFinite(n) || n <= 0) return max;
+return Math.min(Math.round(n), max);
+}
+// Clamp a custom WIDTH/HEIGHT into the supported capture range. Below the
+// minimum a capture is useless (and a 1x1 thumbnail reads as broken), and
+// above MAX_VIEWPORT_DIM it blows past the image byte cap.
+function clampDim(value) {
+const n = Math.round(Number(value));
+if (!isFinite(n) || n <= 0) return MIN_VIEWPORT_DIM;
+return Math.min(MAX_VIEWPORT_DIM, Math.max(MIN_VIEWPORT_DIM, n));
+}
+// Normalize a viewport argument into a concrete capture rectangle.
+//
+// Accepts either a known preset id (its `mobile` semantics are kept) or a
+// `WIDTHxHEIGHT` string (e.g. '1280x800' / '1280×800'), which defaults to a
+// desktop-style (non-mobile) capture. Unknown or malformed values fall back
+// to the default phone preset so a bad model arg never breaks the tool.
+function resolveViewport(raw) {
+const input = raw || DEFAULT_VIEWPORT_ID;
+if (typeof input === 'string') {
+const key = String(input).trim().toLowerCase();
+if (VIEWPORTS[key]) return VIEWPORTS[key];
+// Allow '1280x800' and '1280×800' and lowercase / spaced forms.
+const m = String(input).match(/^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i);
+if (m) {
+const width = clampDim(Number(m[1]));
+const height = clampDim(Number(m[2]));
+return { id: 'custom', label: width + '×' + height, width, height, mobile: false };
+}
+}
+return DEFAULT_VIEWPORT;
+}
+// Safe presentational label for a viewport, used in the tool summary.
+function viewportLabel(vp) {
+if (!vp) return DEFAULT_VIEWPORT.label;
+return (vp.label || (vp.width + '×' + vp.height));
 }
 
 // runWebpreview — open URL, wait for load, screenshot, close tab.
@@ -173,8 +227,11 @@ function clampPositive(value, max) {
 // CDP round-trip; we still close the opened tab in `finally` so the
 // session never leaks Chrome tabs on a cancelled run.
 async function runWebpreview(opts) {
-  const url = parseUrl(opts && opts.url);
-  const finalUrl = url.href;
+const url = parseUrl(opts && opts.url);
+const finalUrl = url.href;
+// Resolve the capture size up front so both the emulation step and the
+// result meta report the same rectangle the user (or model) asked for.
+const captureVp = resolveViewport(opts && opts.viewport);
 
   let target;
   try {
@@ -206,29 +263,34 @@ async function runWebpreview(opts) {
     if (!loadResult.ok) {
       // no-op; documented above.
     }
-    // Use the same emulated viewport as Inspector's Phone preset. Applying a
-    // metrics override triggers responsive media-query reflow immediately, so a
-    // reload is unnecessary and would add another load-timeout cycle.
+    // Emulate the chosen viewport. Applying a metrics override triggers
+    // responsive media-query reflow immediately, so a reload is unnecessary
+    // and would add another load-timeout cycle.
     try {
       await sendTargetCommand(null, targetId, 'Emulation.setDeviceMetricsOverride', {
-        width: THUMB_WIDTH_MAX,
-        height: THUMB_HEIGHT_MAX,
+        width: captureVp.width,
+        height: captureVp.height,
         deviceScaleFactor: 1,
-        mobile: true,
-        screenWidth: THUMB_WIDTH_MAX,
-        screenHeight: THUMB_HEIGHT_MAX
+        mobile: !!captureVp.mobile,
+        screenWidth: captureVp.width,
+        screenHeight: captureVp.height
       });
     } catch { /* capture still works at the native viewport */ }
     // Post-emulation grace. Tiny enough to feel instant, enough that
     // responsive layout, fonts, and one line of async content have settled.
     await sleep(POST_LOAD_GRACE_MS);
 
-    let viewport = DEFAULT_VIEWPORT;
+    // Re-read the real layout after the override so the capture clip matches
+    // what the page actually laid out to (the override width/height are the
+    // target, but a page can report a smaller clientWidth when the emulation
+    // is not honoured). Fall back to the requested rectangle when metrics are
+    // unavailable.
+    let viewport = { width: captureVp.width, height: captureVp.height, dpr: 1 };
     try {
       const metrics = await sendTargetCommand(null, targetId, 'Page.getLayoutMetrics');
       const layout = (metrics && metrics.layoutViewport) || {};
-      const width = clampPositive(layout.clientWidth, DEFAULT_VIEWPORT.width) || DEFAULT_VIEWPORT.width;
-      const height = clampPositive(layout.clientHeight, DEFAULT_VIEWPORT.height) || DEFAULT_VIEWPORT.height;
+      const width = clampPositive(layout.clientWidth, captureVp.width) || captureVp.width;
+      const height = clampPositive(layout.clientHeight, captureVp.height) || captureVp.height;
       // devicePixelRatio is absent from some Chrome builds (e.g. the
       // headless shell used for the Inspector). Default to 1 so the
       // clip scale below stays 1:1 instead of shrinking to a fraction.
@@ -236,14 +298,14 @@ async function runWebpreview(opts) {
         ? clampPositive(metrics.devicePixelRatio, 4)
         : 1;
       viewport = { width, height, dpr };
-    } catch { /* keep defaults if getLayoutMetrics isn't supported */ }
+    } catch { /* keep the requested size if getLayoutMetrics isn't supported */ }
 
     // Capture a viewport-sized JPEG. The clip rectangle is in CSS
     // pixels, scaled by 1/devicePixelRatio so a HiDPI page is
     // captured at its CSS size, not its raw pixel size (which would
-    // blow past THUMB_WIDTH_MAX for a 2x DPR display).
-    const capW = Math.min(THUMB_WIDTH_MAX, viewport.width);
-    const capH = Math.min(THUMB_HEIGHT_MAX, viewport.height);
+    // blow past the requested width for a 2x DPR display).
+    const capW = Math.min(captureVp.width, viewport.width);
+    const capH = Math.min(captureVp.height, viewport.height);
     const capResult = await sendTargetCommand(null, targetId, 'Page.captureScreenshot', {
       format: 'jpeg',
       quality: 70,
@@ -308,25 +370,33 @@ async function runWebpreview(opts) {
     }
     if (!title) title = url.hostname;
     const dataUrl = 'data:image/jpeg;base64,' + data;
-
-    // Result shape the chat UI renders: thumbnail + meta. The screenshot is
-    // user-facing only: src/ai-stream.js emits the rich result to the UI but does
-    // not append its image bytes to the model conversation. The model receives
-    // the compact summary below and can call webpreview again to refresh it.
-    const result = {
-      ok: true,
-      url: finalUrl,
-      title,
-      sizeBytes: decoded.length,
-      width: capW,
-      height: capH,
-      capturedAt: new Date().toISOString(),
-      thumbnail: dataUrl,
-      targetId
-    };
-    const summary = { ok: true, url: finalUrl, title, sizeBytes: decoded.length, width: capW, height: capH, targetId };
-
-    return { ok: true, content: JSON.stringify(summary), result };
+// The viewport the capture was taken at. `viewportLabel` uses the friendly
+// preset label when the size came from a preset; a custom size shows the
+// `WxH` string so the user knows exactly what they picked.
+const viewportMeta = {
+  id: captureVp.id,
+  label: viewportLabel(captureVp),
+  width: capW,
+  height: capH
+};
+// Result shape the chat UI renders: thumbnail + meta. The screenshot is
+// user-facing only: src/ai-stream.js emits the rich result to the UI but does
+// not append its image bytes to the model conversation. The model receives
+// the compact summary below and can call webpreview again to refresh it.
+const result = {
+  ok: true,
+  url: finalUrl,
+  title,
+  sizeBytes: decoded.length,
+  width: capW,
+  height: capH,
+  viewport: viewportMeta,
+  capturedAt: new Date().toISOString(),
+  thumbnail: dataUrl,
+  targetId
+};
+const summary = { ok: true, url: finalUrl, title, sizeBytes: decoded.length, width: capW, height: capH, viewport: viewportMeta, targetId };
+return { ok: true, content: JSON.stringify(summary), result };
   } finally {
     // Don't leak Chrome tabs. Closing is best-effort; a failure
     // (Chrome already restarted the target) does not change the
@@ -347,11 +417,16 @@ const SPEC = {
     description: 'Refresh the user-facing preview of a web URL in the debug Chrome used by the Inspector tab. ' +
       'The screenshot is shown only to the user in a small dock between the chat scroll and textbox; tapping it opens the full image. ' +
       'Call this tool again with the URL whenever the user preview should reload. The screenshot is not returned to you for visual analysis. ' +
-      'Only http and https URLs are accepted.',
+      'Only http and https URLs are accepted. Optionally set `viewport` to capture at a different size: ' +
+      'a preset id ("phone", "phone+", "tablet", "laptop") or a "WIDTHxHEIGHT" string (e.g. "1280x800").',
     parameters: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'HTTP or HTTPS URL to load. Required.' }
+        url: { type: 'string', description: 'HTTP or HTTPS URL to load. Required.' },
+        viewport: {
+          type: 'string',
+          description: 'Capture size. One of "phone" (375x667), "phone+" (414x896), "tablet" (768x1024), "laptop" (1280x800), or a "WIDTHxHEIGHT" string. Defaults to "phone".'
+        }
       },
       required: ['url'],
       additionalProperties: false
@@ -364,6 +439,9 @@ module.exports = {
   runWebpreview,
   // exported for tests
   parseUrl,
+  resolveViewport,
+  VIEWPORTS,
+  DEFAULT_VIEWPORT_ID,
   THUMB_WIDTH_MAX,
   THUMB_HEIGHT_MAX,
   MAX_IMAGE_BYTES

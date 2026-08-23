@@ -5,19 +5,21 @@
 // helpers live in src/server-shared.js.
 
 const {
-  sendJSON,
-  qs,
-  readJsonBody,
-  readJsonOr400,
-  runningKey,
-  runningChats,
-  runningChatCancels,
-  firstStringValue,
-  chats,
-  liveChat,
-  mcp,
-  inspector
+sendJSON,
+qs,
+readJsonBody,
+readJsonOr400,
+runningKey,
+runningChats,
+runningChatCancels,
+firstStringValue,
+chats,
+liveChat,
+mcp,
+inspector
 } = require('./server-shared.js');
+const { requestRestart } = require('./restart.js');
+
 
 // ---- MCP API ------------------------------------------------------------
 // MCP server registry + lifecycle + tool dispatch (docs/decisions.md §18).
@@ -311,31 +313,14 @@ async function handleRestart(req, res, parsed, lifecycle = {}) {
   try { body = await readJsonBody(req); } catch (e) {
     if (e && e.status) return sendJSON(res, e.status, { error: e.message });
   }
-  const reason = (body && typeof body.reason === 'string') ? body.reason : 'user-requested';
-  const delayMs = (body && Number.isFinite(body.delayMs))
-    ? Math.max(0, Math.min(body.delayMs, 5000))
-    : 150;
-  if (lifecycle.restarting) {
-    return sendJSON(res, 409, { ok: false, restarting: true, error: 'Restart already in progress' });
-  }
-  lifecycle.restarting = true;
-  sendJSON(res, 200, { ok: true, restarting: true, reason, delayMs, mode: lifecycle.restart ? 'relaunch' : 'exit' });
-  setTimeout(async () => {
-    try { process.stdout.write('[mouaif] restart requested: ' + reason + '\n'); } catch (_) {}
-    try { await mcp.stopAll(); } catch (_) { /* best-effort */ }
-    if (typeof lifecycle.restart === 'function') {
-      try {
-        await lifecycle.restart({ reason });
-        lifecycle.restarting = false;
-        return;
-      }
-      catch (e) {
-        try { process.stderr.write('[mouaif] restart failed: ' + (e && e.message || e) + '\n'); } catch (_) {}
-        lifecycle.restarting = false;
-      }
-    }
-    process.exit(0);
-  }, delayMs).unref();
+  const result = requestRestart({
+lifecycle,
+reason: body && body.reason,
+delayMs: body && body.delayMs,
+defaultDelayMs: 150
+});
+return sendJSON(res, result.ok ? 200 : 409, result);
+
 }
 
 async function handleInspector(req, res, parsed) {

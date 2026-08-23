@@ -14,7 +14,8 @@ import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
-import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload } from './webpreviewState.js';
+import { requestWebpreview } from '../../api.js';
+import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -316,17 +317,48 @@ h('div', { class: 'chat-view__composer-row' },
       : null,
 webPreviewOpen && webPreviewPayload
 ? h(WebpreviewModal, {
-  preview: webPreviewPayload,
-  onClose: () => setWebPreviewOpen(false),
-  onRefresh: () => {
-    const url = (webPreviewPayload && webPreviewPayload.url) || '';
-    if (!url || !refs.promptInput.current) return;
-    const text = 'Take a fresh webpreview of ' + url;
-    refs.promptInput.current.value = text;
-    refs.promptInput.current.focus();
-    if (typeof onComposerInput === 'function') onComposerInput();
-  }
+preview: webPreviewPayload,
+onClose: () => setWebPreviewOpen(false),
+onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, { projectDir, chatId, refs })
 })
 : null
-  );
+);
+}
+// recaptureWebPreview — user-initiated re-capture of the web preview at a
+// chosen resolution. Uses the direct /api/tools/webpreview endpoint (NOT a
+// model round-trip) so the user sees the new screenshot immediately, then
+// publishes it into the dock. `viewport` is a preset id or a 'WIDTHxHEIGHT'
+// string; when the webpreview tool is disabled the endpoint returns 403 and
+// we surface a hint on the status line rather than silently failing.
+async function recaptureWebPreview(payload, viewport, ctx) {
+  const url = payload && payload.url;
+  if (!url) return null;
+  const projectDir = ctx && ctx.projectDir;
+  const chatId = ctx && ctx.chatId;
+  const refs = ctx && ctx.refs;
+  if (!projectDir || !chatId) return null;
+  let out = null;
+  try {
+    out = await requestWebpreview({
+      projectDir,
+      chatId,
+      url,
+      viewport: viewport || undefined,
+      callId: 'ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+    });
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    const statusRef = refs && refs.status;
+    if (statusRef && statusRef.current) {
+      statusRef.current.textContent = e && e.code === 'EAUTH_REQUIRED' ? 'Authorize web preview to recapture' : 'Preview recapture failed: ' + msg;
+    }
+    return null;
+  }
+  // Publish the fresh result so the dock updates in place.
+if (out && out.ok && out.result && out.result.thumbnail) {
+publishWebPreview(out.result);
+} else if (out && !out.ok && refs && refs.status && refs.status.current) {
+refs.status.current.textContent = 'Preview recapture failed: ' + ((out.result && out.result.error) || out.error || 'capture failed');
+}
+return out;
 }

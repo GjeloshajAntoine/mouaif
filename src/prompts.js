@@ -66,7 +66,7 @@ const VALID_ROLES = new Set(['system']);
 // authorization gate (off/ask/allow for `file`, `shell`, …) stays
 // authoritative, so listing a tool here can never turn on something
 // the project turned off.
-const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview']);
+const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app']);
 
 // MCP tool ids in the catalog look like `mcp__<slug>__<tool>`. Anything
 // starting with this prefix is accepted as a tool name in the preset,

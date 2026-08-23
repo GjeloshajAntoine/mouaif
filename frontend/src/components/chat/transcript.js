@@ -378,7 +378,9 @@ const TOOL_VERBS = {
   write_file: 'Wrote',
   shell: 'Ran',
   subagent: 'Subagent',
-  ask_user: 'Question'
+ask_user: 'Question',
+restart_app: 'Restarted'
+
 };
 
 function toolCardLabel(toolName) {
@@ -694,7 +696,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
 // Render a tool_result event. If a matching tool_call card is on
 // screen, update it; otherwise append a fresh card so the user can
 // see the result regardless of order. Tap the header row to expand.
-export function appendToolResultCard(toolResult, refs) {
+export function appendToolResultCard(toolResult, refs, isReplay) {
   if (!refs.transcript.current) return;
   const id = toolResult.id;
   let card = id ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(id) + '"]') : null;
@@ -782,8 +784,9 @@ publishWebPreview(rawR);
 // Expand errors automatically so the user sees what went wrong.
 // Successful results stay collapsed; webpreview publishes its image to the
 // dedicated dock above the composer rather than expanding in the transcript.
-if (!toolResult.ok) card.classList.add('is-expanded');
-else if (!card._userCollapsed) card.classList.remove('is-expanded');
+if (!toolResult.ok) {
+card.classList.add('is-expanded');
+} else if (!card._userCollapsed) card.classList.remove('is-expanded');
   afterTranscriptAppend(refs, true);
 }
 
@@ -1204,9 +1207,9 @@ function renderMessageRow(state, refs, m) {
       return;
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
-  } else if (m.role === 'tool' && m.phase === 'result') {
-    appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs);
-  } else {
+} else if (m.role === 'tool' && m.phase === 'result') {
+  appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs, true);
+} else {
     appendMessageToTranscript(m, false, refs, state);
   }
 }

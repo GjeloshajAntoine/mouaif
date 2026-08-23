@@ -1310,82 +1310,33 @@ asks the model to recapture the same URL. */
   overflow: hidden;
 }
 .wp__title {
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: var(--fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+font-size: 0.84rem;
+font-weight: 600;
+color: var(--fg);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
 }
-.wp__url-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.wp__url {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--font-mono, monospace);
-  font-size: 0.7rem;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.wp__url-copy {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 4px 8px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
-}
-.wp__url-copy:hover,
-.wp__url-copy:focus-visible {
-  background: var(--surface-3);
-  color: var(--fg);
-  border-color: var(--border-strong);
-  outline: 0;
-}
-.wp__url-copy--active,
-.wp__url-copy:active {
-  background: var(--surface-3);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.wp__url-copy-label {
-  line-height: 1;
-}
-.wp__host {
-  font-size: 0.66rem;
-  color: var(--muted-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.wp__title-sub {
+font-size: 0.66rem;
+color: var(--muted-2);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
 }
 .wp__head-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 4px;
 }
 .wp__action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 44px;
-  min-height: 36px;
-  padding: 4px 10px;
+min-height: 44px;
+padding: 4px 10px;
   font-size: 0.74rem;
   font-weight: 600;
   color: var(--fg-soft);
@@ -1404,24 +1355,47 @@ asks the model to recapture the same URL. */
   outline: 0;
 }
 .wp__action:active {
-  background: var(--surface);
+background: var(--surface);
 }
 .wp__action--refresh {
-  color: var(--accent);
-  border-color: var(--accent);
+color: var(--accent);
+border-color: var(--accent);
 }
 .wp__action--refresh:hover,
 .wp__action--refresh:focus-visible {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
+background: var(--accent);
+color: var(--on-accent);
+border-color: var(--accent);
+}
+.wp__action:disabled {
+opacity: 0.6;
+cursor: default;
+}
+/* A native select keeps capture-size controls compact and uses the phone's
+own touch picker instead of maintaining a custom popover. */
+.wp__size-select {
+flex: 0 1 7.5rem;
+min-width: 0;
+min-height: 44px;
+padding: 0 0.5rem;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+.wp__size-select:focus-visible {
+border-color: var(--accent);
+outline: 0;
 }
 .wp__close {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  min-height: 30px;
+flex: 0 0 auto;
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
   border: 0;
   background: transparent;
   color: var(--fg-soft);
@@ -1510,3 +1484,153 @@ asks the model to recapture the same URL. */
   outline: 0;
 }
 
+/* ---- MCP error modal ------------------------------------------------ */
+/* Full-screen overlay + sheet pattern (same as .gm__overlay / .gm__sheet).
+   Shows the full typed MCP failure — code, message, tool, and the raw
+   result body — instead of the collapsed transcript card's one-liner. */
+.mcp-err__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 62;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  animation: gm__fade-in 120ms ease-out;
+}
+.mcp-err__sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (min-width: 720px) {
+  .mcp-err__overlay {
+    padding: 32px;
+    align-items: center;
+    justify-content: center;
+  }
+  .mcp-err__sheet {
+    flex: 0 1 560px;
+    max-width: 640px;
+    width: 100%;
+    height: min(70vh, 560px);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  }
+}
+.mcp-err__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  background: var(--danger-soft);
+  border-bottom: 1px solid var(--border);
+}
+.mcp-err__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+.mcp-err__close {
+flex: 0 0 auto;
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mcp-err__close:hover,
+.mcp-err__close:focus-visible {
+  background: var(--surface-3);
+  color: var(--fg);
+  outline: 0;
+}
+.mcp-err__close svg {
+  width: 16px;
+  height: 16px;
+}
+.mcp-err__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mcp-err__tool {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.mcp-err__code {
+  align-self: flex-start;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-pill);
+  padding: 3px 10px;
+}
+.mcp-err__message {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.mcp-err__raw {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+.mcp-err__foot {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  min-height: 44px;
+}
+.mcp-err__foot .btn { min-height: 36px; font-size: 0.78rem; }

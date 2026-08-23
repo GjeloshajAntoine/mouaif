@@ -460,9 +460,12 @@ async function streamChat(opts) {
   try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); }
   catch { /* list_features tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/task.js').SPEC); }
-  catch { /* task tool module unavailable; skip */ }
-  try {
-    const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
+catch { /* task tool module unavailable; skip */ }
+try { toolSpecs.push(require('./tools/restart.js').SPEC); }
+catch { /* restart tool module unavailable; skip */ }
+try {
+const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
+
     if (skillSpec) toolSpecs.push(skillSpec);
   } catch { /* skills unavailable; skip */ }
   try {
@@ -501,7 +504,7 @@ async function streamChat(opts) {
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview']) {
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
           const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -1257,8 +1260,22 @@ async function streamChat(opts) {
       }
     }
 
-    // Native subagent tool. It delegates to the same model with the same
-    // project tool surface, including MCP. The nested call intentionally omits
+    // Native app restart tool. Authorization is handled by the shared gate;
+// this dispatcher schedules the graceful relaunch after its result has had
+// time to flush through the current chat stream.
+if (name === 'restart_app') {
+try {
+return require('./tools/restart.js').runRestart(args, {
+lifecycle: callOpts && callOpts.lifecycle
+});
+} catch (e) {
+const r = { error: { code: e.code || 'ERESTART', message: e.message || String(e) } };
+return { ok: false, content: JSON.stringify(r), result: r };
+}
+}
+// Native subagent tool. It delegates to the same model with the same
+// project tool surface, including MCP. The nested call intentionally omits
+
     // only `subagent` itself to avoid unbounded recursive delegation loops.
     // Authorization uses the parent chat id so the existing chat popup/card is
     // reused for any nested tool or MCP call that needs approval.
@@ -1437,8 +1454,10 @@ async function streamChat(opts) {
         signal,
         projectDir: callOpts && callOpts.projectDir,
         chatId: callOpts && callOpts.chatId,
-        appSettings: callOpts && callOpts.appSettings,
-        promptSize: callOpts && callOpts.promptSize,
+appSettings: callOpts && callOpts.appSettings,
+lifecycle: callOpts && callOpts.lifecycle,
+promptSize: callOpts && callOpts.promptSize,
+
         toolOutput: callOpts && callOpts.toolOutput,
         enabledTools: nestedEnabled,
         // Marker the shell dispatcher reads to re-emit live output
@@ -1651,15 +1670,16 @@ async function streamChat(opts) {
         return { ok: false, content: JSON.stringify(r), result: r };
       }
       try {
-        const out = await wp.runWebpreview({
-          url: args && args.url,
-          signal: callOpts && callOpts.signal
-        });
-        return out;
-      } catch (e) {
-        const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };
-        return { ok: false, content: JSON.stringify(r), result: r };
-      }
+const out = await wp.runWebpreview({
+url: args && args.url,
+viewport: args && args.viewport,
+signal: callOpts && callOpts.signal
+});
+return out;
+} catch (e) {
+const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };
+return { ok: false, content: JSON.stringify(r), result: r };
+}
     }
 
     // MCP tools (mcp__<serverSlug>__<toolName>).
@@ -1671,16 +1691,42 @@ async function streamChat(opts) {
         return { ok: false, content: JSON.stringify(r), result: r };
       }
       const parsed = mcpMod.parseServerSlugAndToolName(name);
-      if (parsed) {
-        let out;
-        try {
-          out = await mcpMod.callTool(callOpts.projectDir, parsed.serverSlug, parsed.toolName, args);
-        } catch (e) {
-          out = { ok: false, content: [{ type: 'text', text: 'MCP error: ' + (e.message || e) }], isError: true };
-        }
-        const result = { content: out.content, isError: !!out.isError };
-        return { ok: !!out.ok, content: JSON.stringify(result), result };
-      }
+if (parsed) {
+let error = null;
+let out;
+try {
+out = await mcpMod.callTool(callOpts.projectDir, parsed.serverSlug, parsed.toolName, args);
+} catch (e) {
+error = {
+code: (e && e.code) || 'EMCP_RPC',
+message: (e && e.message) || String(e)
+};
+if (e && e.serverSlug) error.serverSlug = e.serverSlug;
+if (e && e.toolName) error.toolName = e.toolName;
+      out = { ok: false, content: [{ type: 'text', text: 'MCP error: ' + (error.message || error.code) }], isError: true };
+    }
+    // MCP servers may report an error as a normal result with isError=true.
+    // Give that path the same typed envelope as a thrown transport/RPC error.
+    if (!out.ok && !error) {
+      const text = Array.isArray(out.content)
+        ? out.content.find((block) => block && block.type === 'text' && block.text)
+        : null;
+      error = {
+        code: 'EMCP_RPC',
+        message: (text && text.text) || 'MCP tool failed',
+        serverSlug: parsed.serverSlug,
+        toolName: parsed.toolName
+      };
+    }
+    const result = {
+      content: out.content,
+      isError: !!out.isError,
+      serverSlug: parsed.serverSlug,
+      toolName: parsed.toolName
+    };
+    if (error) result.error = error;
+return { ok: !!out.ok, content: JSON.stringify(result), result };
+}
     }
 
     // Unknown tool.

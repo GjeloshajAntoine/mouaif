@@ -103,8 +103,10 @@ export function ToolPopup(props) {
     ask_user: 'ask_user',
     report_progress: 'report_progress',
     task: 'task',
-    webpreview: 'webpreview',
-    files: 'file'
+webpreview: 'webpreview',
+restart_app: 'restart_app',
+files: 'file'
+
   };
   for (const g of groups) {
     const authName = segNames[g.id];

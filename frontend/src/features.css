@@ -6,12 +6,31 @@
 
 .mcp__list { list-style: none; margin: 0 0 6px; padding: 0; }
 .mcp__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
-.mcp__row { overflow: hidden; background: var(--surface); display: flex; align-items: center; }
-.mcp__row-main { color: var(--fg); cursor: pointer; flex: 1 1 auto; min-width: 0; }
+.mcp__row { overflow: hidden; background: var(--surface); display: flex; flex-wrap: wrap; align-items: center; }
+.mcp__row-main { color: var(--fg); cursor: pointer; flex: 1 1 12rem; min-width: 0; }
 .mcp__row-main:active { background: var(--surface-2); }
 .mcp__row-name { font-weight: 600; font-size: 0.88rem; }
 .mcp__row-sub { font-size: 0.72rem; color: var(--fg-soft); }
-.mcp__row-err { padding: 6px 10px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--danger); word-break: break-all; flex-basis: 100%; }
+.mcp__row-err {
+width: 100%;
+min-height: 44px;
+padding: 0.5rem 0.65rem;
+border: 0;
+border-top: 1px solid var(--border);
+background: transparent;
+font: inherit;
+font-size: 0.7rem;
+line-height: 1.4;
+color: var(--danger);
+text-align: left;
+display: flex;
+align-items: center;
+gap: 0.5rem;
+cursor: pointer;
+}
+.mcp__row-err:disabled { cursor: default; opacity: 1; }
+.mcp__row-err-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.mcp__row-err-more { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
 /* Disabled-server notice: the Start button is unavailable and the row
    explains why instead of leaving a dead control. */
 .mcp__row-off { color: var(--muted); }
