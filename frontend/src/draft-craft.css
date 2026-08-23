@@ -12,6 +12,7 @@ display: flex;
 align-items: flex-end;
 justify-content: center;
 }
+.draft-craft__overlay--top { align-items: flex-start; }
 .draft-craft__sheet {
 width: 100%;
 max-height: 88dvh;
@@ -19,6 +20,9 @@ overflow-y: auto;
 background: var(--surface);
 border-radius: var(--r-lg) var(--r-lg) 0 0;
 box-shadow: var(--shadow-lg);
+}
+.draft-craft__overlay--top .draft-craft__sheet {
+border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 .draft-craft__handle {
 width: 2.5rem;
@@ -67,6 +71,45 @@ font-size: 0.74rem;
 font-weight: 600;
 color: var(--fg-soft);
 }
+.draft-craft__chats {
+max-height: 10.0625rem;
+overflow-y: auto;
+-webkit-overflow-scrolling: touch;
+overscroll-behavior-y: contain;
+margin: 0;
+padding: 0;
+list-style: none;
+background: var(--surface-2);
+border-radius: var(--r-md);
+scrollbar-width: thin;
+}
+.draft-craft__chats li + li { border-top: 1px solid var(--border); }
+.draft-craft__chat {
+width: 100%;
+min-height: var(--tap);
+display: flex;
+align-items: center;
+gap: 0.5rem;
+padding: 0.4rem 0.75rem;
+border: 0;
+background: transparent;
+color: var(--fg);
+font: inherit;
+text-align: left;
+cursor: pointer;
+}
+.draft-craft__chat:active,
+.draft-craft__chat.is-selected { background: var(--accent-soft); }
+.draft-craft__chat-title {
+flex: 1 1 auto;
+min-width: 0;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+font-size: 0.88rem;
+}
+.draft-craft__chat-meta { flex: 0 0 auto; color: var(--muted); font-size: 0.72rem; }
+.draft-craft__chat-empty { padding: 1rem; text-align: center; color: var(--muted); font-size: 0.78rem; }
 .draft-craft__summary {
 display: flex;
 justify-content: space-between;
@@ -99,6 +142,8 @@ min-height: 0;
 overflow: auto;
 display: flex;
 align-items: flex-start;
+touch-action: pan-x pan-y;
+overscroll-behavior: contain;
 background-color: #05070a;
 background-image: linear-gradient(45deg, #111722 25%, transparent 25%), linear-gradient(-45deg, #111722 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #111722 75%), linear-gradient(-45deg, transparent 75%, #111722 75%);
 background-size: 1.25rem 1.25rem;
@@ -106,10 +151,14 @@ background-position: 0 0, 0 0.625rem, 0.625rem -0.625rem, -0.625rem 0;
 }
 .draft-craft__canvas {
 display: block;
-width: 100%;
+max-width: none;
 height: auto;
 touch-action: none;
 cursor: crosshair;
+}
+.draft-craft__canvas-wrap.is-panning .draft-craft__canvas {
+touch-action: pan-x pan-y;
+cursor: grab;
 }
 .draft-craft__annotator-tools {
 flex: 0 0 auto;
@@ -120,6 +169,20 @@ padding: 0.65rem 0.75rem;
 background: var(--surface);
 border-top: 1px solid var(--border);
 }
+.draft-craft__zoom {
+grid-column: 1 / -1;
+display: flex;
+align-items: center;
+gap: 0.4rem;
+}
+.draft-craft__zoom span {
+min-width: 3.25rem;
+text-align: center;
+font-size: 0.76rem;
+color: var(--fg-soft);
+}
+.draft-craft__zoom .btn { min-width: var(--tap); }
+.draft-craft__zoom .is-active { color: var(--accent-hi); background: var(--accent-soft); }
 .draft-craft__colors { display: flex; align-items: center; gap: 0.5rem; }
 .draft-craft__color {
 width: var(--tap);
@@ -136,7 +199,23 @@ cursor: pointer;
 width: 100%;
 margin-top: 0.4rem;
 }
-.fe__draft-craft { color: var(--accent-hi); }
+.fe__draft-craft-top {
+width: 100%;
+min-height: var(--tap);
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 0.45rem;
+border: 0;
+border-radius: var(--r-sm);
+background: var(--accent-soft);
+color: var(--accent-hi);
+font: inherit;
+font-size: 0.82rem;
+font-weight: 600;
+cursor: pointer;
+}
+.fe__draft-craft-top:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (min-width: 45rem) {
 .draft-craft__sheet { max-width: 30rem; border-radius: var(--r-lg); margin-bottom: 1rem; }
 .draft-craft__annotator { max-width: 50rem; margin: auto; max-height: 92dvh; border-radius: var(--r-lg); overflow: hidden; }

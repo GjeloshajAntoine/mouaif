@@ -447,7 +447,7 @@ export function FileEditorView(props) {
     const endLine = viewRef.current.state.doc.lineAt(selection.to).number;
     setDraftCraftPayload({
       projectDir,
-      text: 'Selected code from ' + openFile.relPath + ':' + startLine + (endLine !== startLine ? '-' + endLine : '') + '\n```' + (openFile.ext || '').replace(/^\./, '') + '\n' + code + '\n```'
+      text: openFile.relPath + ':' + startLine + (endLine !== startLine ? '-' + endLine : '') + '\n' + code
     });
     setDraftCraftOpen(true);
   }
@@ -502,7 +502,19 @@ export function FileEditorView(props) {
   },
     h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : '') },
       h('div', { class: 'fe__head' },
-        // In full-editor mode the file list (and the
+h('button', {
+class: 'fe__draft-craft-top',
+type: 'button',
+onClick: openDraftCraft,
+disabled: !openFile || saving,
+title: 'Add the selected code to any chat draft'
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M4 4h16v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V4Zm2 2v9h4a2 2 0 0 0 4 0h4V6H6Z', fill: 'currentColor' })
+),
+h('span', null, 'Draft Craft')
+),
+// In full-editor mode the file list (and the
           // breadcrumb + nav bar) is gone, so we render a
           // minimal header with just the toggle (to switch
           // back to split) and Close. The toggle icon shows
@@ -677,13 +689,6 @@ export function FileEditorView(props) {
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
                   h('div', { class: 'fe__editor-actions' },
 h('button', {
-class: 'btn fe__draft-craft',
-type: 'button',
-onClick: openDraftCraft,
-disabled: saving,
-title: 'Add the selected code to any chat draft'
-}, 'Draft Craft'),
-h('button', {
 class: 'btn',
 type: 'button',
 onClick: revert,
@@ -714,6 +719,7 @@ h('p', { class: 'fe__editor-hint' }, 'Tip: type a path above or use the breadcru
 h(DraftCraftSheet, {
 open: draftCraftOpen,
 payload: draftCraftPayload,
+placement: 'top',
 onClose: () => setDraftCraftOpen(false),
 onAdded: (result) => {
 setDraftCraftOpen(false);

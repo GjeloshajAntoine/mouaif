@@ -7,6 +7,13 @@ function chatLabel(chat) {
 const title = chat && typeof chat.title === 'string' ? chat.title.trim() : '';
 return title || 'New chat';
 }
+function chatMeta(chat) {
+const raw = chat && (chat.lastOpenedAt || chat.createdAt);
+if (!raw) return '';
+const date = new Date(raw);
+if (Number.isNaN(date.getTime())) return '';
+return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 async function loadAllChats(projectDir) {
 const rows = [];
@@ -23,7 +30,7 @@ if (!page.length || page.length < pageSize) break;
 return rows;
 }
 
-export function DraftCraftSheet({ open, payload, onClose, onAdded }) {
+export function DraftCraftSheet({ open, payload, onClose, onAdded, placement = 'bottom' }) {
 const [projects, setProjects] = useState([]);
 const [projectDir, setProjectDir] = useState('');
 const [chats, setChats] = useState([]);
@@ -68,7 +75,7 @@ setStatus('Loading chats…');
 loadAllChats(projectDir).then((list) => {
 if (cancelled) return;
 setChats(list);
-setChatId((current) => list.some((chat) => chat.id === current) ? current : (list[0] ? list[0].id : ''));
+setChatId((current) => list.some((chat) => chat.id === current) ? current : '');
 setStatus(list.length ? '' : 'This project has no chats yet.');
 setLoading(false);
 }).catch(() => {
@@ -119,7 +126,7 @@ setSaving(false);
 }
 }
 
-return h('div', { class: 'draft-craft__overlay', role: 'presentation', onClick: onClose },
+return h('div', { class: 'draft-craft__overlay draft-craft__overlay--' + placement, role: 'presentation', onClick: onClose },
 h('section', {
 class: 'draft-craft__sheet',
 role: 'dialog',
@@ -142,10 +149,25 @@ h('select', { class: 'input', value: projectDir, onChange: (event) => setProject
 projects.map((project) => h('option', { key: project.id || project.path, value: project.path }, project.name || project.path))
 )
 ),
-h('label', { class: 'draft-craft__field' },
-h('span', null, 'Chat'),
-h('select', { class: 'input', value: chatId, onChange: (event) => setChatId(event.currentTarget.value), disabled: loading || saving || !chats.length },
-chats.map((chat) => h('option', { key: chat.id, value: chat.id }, chatLabel(chat)))
+h('div', { class: 'draft-craft__field' },
+h('span', null, 'Chats'),
+h('ul', { class: 'draft-craft__chats', 'aria-label': 'Choose a chat' },
+loading
+? h('li', { class: 'draft-craft__chat-empty' }, 'Loading chats…')
+: chats.length
+? chats.map((chat) => h('li', { key: chat.id },
+h('button', {
+class: 'draft-craft__chat' + (chatId === chat.id ? ' is-selected' : ''),
+type: 'button',
+onClick: () => setChatId(chat.id),
+disabled: saving,
+'aria-pressed': String(chatId === chat.id)
+},
+h('span', { class: 'draft-craft__chat-title' }, chatLabel(chat)),
+h('span', { class: 'draft-craft__chat-meta' }, chatMeta(chat))
+)
+))
+: h('li', { class: 'draft-craft__chat-empty' }, 'No chats in this project.')
 )
 ),
 h('div', { class: 'draft-craft__summary' },

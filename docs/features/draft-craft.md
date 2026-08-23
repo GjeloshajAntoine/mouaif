@@ -10,8 +10,8 @@ Draft Craft adds material to any existing chat draft without sending it immediat
 
 1. Open **Inspector** and connect to a browser tab.
 2. In the **Preview** panel, tap **Draft Craft**.
-3. Draw on the captured page image and optionally add a note.
-4. Tap **Add to chat draft**, then choose a project and chat.
+3. Zoom from 100% to 400%, switch between **Pan** and **Draw**, annotate the image, and optionally add a note.
+4. Tap **Add to chat draft**, then choose a project and pick a chat from the project-style chat list.
 
 The annotated image is appended to that chat’s pending image attachments. The page title, URL, and optional note are appended to the text draft.
 
@@ -19,10 +19,10 @@ The annotated image is appended to that chat’s pending image attachments. The 
 
 1. Open a chat’s file toolbar and choose **Files**.
 2. Open a text file and select code in the editor.
-3. Tap **Draft Craft**.
+3. Tap **Draft Craft** at the top of the Files modal.
 4. Choose a project and chat, then tap **Add to draft**.
 
-Draft Craft includes the source path and selected line range with the code. Existing draft text is preserved and the selection is appended.
+Draft Craft appends only the file path with line range and the selected code. It adds no prose or Markdown fence around the selection. Existing draft text is preserved.
 
 ## Implementation notes
 

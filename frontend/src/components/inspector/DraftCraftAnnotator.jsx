@@ -22,6 +22,8 @@ const [note, setNote] = useState('');
 const [pickerOpen, setPickerOpen] = useState(false);
 const [payload, setPayload] = useState(null);
 const [ready, setReady] = useState(false);
+const [zoom, setZoom] = useState(1);
+const [mode, setMode] = useState('draw');
 
 useEffect(() => {
 if (!image || !image.dataUrl || !canvasRef.current) return;
@@ -41,7 +43,7 @@ return () => { cancelled = true; };
 }, [image]);
 
 function start(event) {
-if (!ready || !canvasRef.current) return;
+if (mode !== 'draw' || !ready || !canvasRef.current) return;
 drawingRef.current = true;
 lastRef.current = pointFor(event, canvasRef.current);
 try { canvasRef.current.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
@@ -104,10 +106,11 @@ h('span', null, 'Draw on the Inspector image')
 ),
 h('button', { type: 'button', class: 'draft-craft__close', onClick: onClose, 'aria-label': 'Close image annotator' }, '×')
 ),
-h('div', { class: 'draft-craft__canvas-wrap' },
+h('div', { class: 'draft-craft__canvas-wrap' + (mode === 'pan' ? ' is-panning' : '') },
 h('canvas', {
 ref: canvasRef,
 class: 'draft-craft__canvas',
+style: { width: (zoom * 100) + '%' },
 onPointerDown: start,
 onPointerMove: move,
 onPointerUp: end,
@@ -117,6 +120,12 @@ onPointerLeave: end,
 })
 ),
 h('div', { class: 'draft-craft__annotator-tools' },
+h('div', { class: 'draft-craft__zoom', role: 'group', 'aria-label': 'Image zoom' },
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => setZoom((value) => Math.max(1, value - 0.25)), disabled: zoom <= 1, 'aria-label': 'Zoom out' }, '−'),
+h('span', { 'aria-live': 'polite' }, Math.round(zoom * 100) + '%'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => setZoom((value) => Math.min(4, value + 0.25)), disabled: zoom >= 4, 'aria-label': 'Zoom in' }, '+'),
+h('button', { class: 'btn btn--small' + (mode === 'pan' ? ' is-active' : ''), type: 'button', onClick: () => setMode((value) => value === 'pan' ? 'draw' : 'pan'), 'aria-pressed': String(mode === 'pan') }, mode === 'pan' ? 'Draw' : 'Pan')
+),
 h('div', { class: 'draft-craft__colors', role: 'group', 'aria-label': 'Annotation color' },
 COLORS.map((value) => h('button', {
 key: value,
