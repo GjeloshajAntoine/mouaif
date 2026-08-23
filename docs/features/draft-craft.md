@@ -42,3 +42,5 @@ Content-Type: application/json
 ```
 
 Image drafts keep the existing eight-image limit. Draft Craft does not send a message or start a model run.
+
+Project and chat loading are tracked independently so an overlapping response cannot leave the picker in a permanent loading state. Requests also time out with a retryable error instead of showing an endless spinner.
