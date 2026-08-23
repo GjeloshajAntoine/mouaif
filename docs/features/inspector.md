@@ -24,6 +24,7 @@ You can toggle each of the four panels on and off to customize your workspace:
 - **Interactive tapping** — tap anywhere on the screenshot to click elements or interact with the page remotely.
 - **Scroll & navigation** — scroll through tall pages and follow links in real-time.
 - **Viewport size presets** — a dropdown in the Preview panel header applies a CDP device-metrics override to the inspected page: **Auto** (native size), **Phone** (375×667), **Phone+** (414×896), **Tablet** (768×1024), and **Laptop** (1280×800). The page reflows live so media queries and responsive breakpoints respond as if the browser were that size.
+- **Draft Craft annotation** — draw on the latest preview and add it to a chat draft. The full-screen annotation surface renders above the app dock, including on narrow mobile viewports.
 
 ### 2. Console panel
 - **Live logs** — see `console.log`, `info`, `warn`, and `error` messages with timestamps and severity indicators.

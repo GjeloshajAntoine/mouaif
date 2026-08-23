@@ -1,5 +1,6 @@
 // Draft Craft image annotator for the Inspector preview.
 import { h } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
 
@@ -164,7 +165,7 @@ name: 'draft-craft-inspector.png'
 setPickerOpen(true);
 }
 
-return h('div', { class: 'draft-craft__annotator-overlay', role: 'presentation' },
+const annotator = h('div', { class: 'draft-craft__annotator-overlay', role: 'presentation' },
 h('section', { class: 'draft-craft__annotator', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Annotate Inspector image with Draft Craft' },
 h('header', { class: 'draft-craft__annotator-head' },
 h('div', null,
@@ -219,4 +220,7 @@ onClose();
 }
 })
 );
+// Inspector sections animate into view, which creates a stacking context.
+// Render the modal at the document root so the app dock cannot paint over it.
+return typeof document === 'undefined' ? annotator : createPortal(annotator, document.body);
 }
