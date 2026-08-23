@@ -104,6 +104,34 @@ async function handleGit(req, res, parsed) {
   }
 }
 
+// Parse `git status --porcelain=v1 -z` into the two working-tree sections.
+// Untracked entries use `??`; they belong in the unstaged section even though
+// their worktree status character is `?` rather than a tracked-file status.
+function parsePorcelainStatus(stdout) {
+  const records = String(stdout || '').split('\0').filter((s) => s.length > 0);
+  const staged = [];
+  const unstaged = [];
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i];
+    const xy = rec.slice(0, 2);
+    let path = rec.slice(3);
+    if (xy[0] === 'R' || xy[0] === 'C') {
+      const target = records[i + 1];
+      if (target !== undefined) {
+        path = path + ' -> ' + target;
+        i++;
+      }
+    }
+    const statusText = xyToText(xy);
+    if (xy[0] !== ' ' && xy[0] !== '?') {
+      staged.push({ path, status: xy[0], statusText, diff: '' });
+    }
+    if (xy[1] !== ' ') {
+      unstaged.push({ path, status: xy[1], statusText, diff: '' });
+    }
+  }
+  return { staged, unstaged };
+}
 // ---- Git info API ---------------------------------------------------------
 //
 // GET /api/git/info?projectDir=<abs>
@@ -189,30 +217,7 @@ async function handleGitInfo(req, res, parsed) {
   // ---- Parse porcelain v1 -z status -------------------------------------
   // One record per change. A renamed file is `XY old\0new\0` (the path
   // is followed by the rename target inside the same record).
-  const records = statusRes.stdout.split('\0').filter((s) => s.length > 0);
-  const staged = [];
-  const unstaged = [];
-  for (let i = 0; i < records.length; i++) {
-    const rec = records[i];
-    const xy = rec.slice(0, 2);
-    let path = rec.slice(3);
-    if (xy[0] === 'R' || xy[0] === 'C') {
-      // Consume the rename/copy target that git appended as its own
-      // NUL-terminated record.
-      const target = records[i + 1];
-      if (target !== undefined) {
-        path = path + ' -> ' + target;
-        i++;
-      }
-    }
-    const statusText = xyToText(xy);
-    if (xy[0] !== ' ' && xy[0] !== '?') {
-      staged.push({ path, status: xy[0], statusText, diff: '' });
-    }
-    if (xy[1] !== ' ' && xy[1] !== '?') {
-      unstaged.push({ path, status: xy[1], statusText, diff: '' });
-    }
-  }
+  const { staged, unstaged } = parsePorcelainStatus(statusRes.stdout);
 
   // ---- Recent commits ----------------------------------------------------
   const logRes = await run([
@@ -429,4 +434,4 @@ async function handleGitCommitFiles(req, res, parsed) {
   return sendJSON(res, 200, { ok: true, files });
 }
 
-module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles };
+module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles, parsePorcelainStatus };

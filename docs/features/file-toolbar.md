@@ -28,7 +28,7 @@ Below the header are four collapsible sections (Stash first):
 
 - **Stash** — the stash list, at the top of the body. A **Stash up** button at the top creates a new stash (`git stash`). Each stash entry has **Apply**, **Pop**, and **Drop** actions.
 - **Staged changes** — files staged with `git add`, each expanding into its cached diff.
-- **Unstaged changes** — modifications to tracked files.
+- **Unstaged changes** — modifications to tracked files plus untracked files that have not yet been added. Untracked entries are labeled **Untracked** and appear without a diff because they have no committed baseline.
 - **Recent commits** — the most recent commits (20 on first load). Tap **Load more** at the bottom to fetch the next 20, backed by `GET /api/git/commits?projectDir=...&offset=N&count=20`. Expanding a commit fetches its full changed-file list on demand via `GET /api/git/commit-files?projectDir=...&hash=...` (no 3-commit or diff-line caps — every file in the commit is listed).
 
 A transient notice bar under the header shows the result of push / pull / checkout / stash operations (success or the raw git stderr).
