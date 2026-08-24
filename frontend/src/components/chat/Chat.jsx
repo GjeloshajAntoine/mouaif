@@ -14,6 +14,7 @@ import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
+import { authorizationCard } from './cards.js';
 import { requestWebpreview } from '../../api.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 
@@ -331,7 +332,12 @@ webPreviewOpen && webPreviewPayload
 ? h(WebpreviewModal, {
 preview: webPreviewPayload,
 onClose: () => setWebPreviewOpen(false),
-onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, { projectDir, chatId, refs })
+onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, {
+projectDir,
+chatId,
+refs,
+onAuthorizationRequired: () => setWebPreviewOpen(false)
+})
 })
 : null
 );
@@ -341,32 +347,46 @@ onRecapture: (viewport) => recaptureWebPreview(webPreviewPayload, viewport, { pr
 // model round-trip) so the user sees the new screenshot immediately, then
 // publishes it into the dock. `viewport` is a preset id or a 'WIDTHxHEIGHT'
 // string; when the webpreview tool is disabled the endpoint returns 403 and
-// we surface a hint on the status line rather than silently failing.
+// we surface a hint on the status line rather than silently failing. In
+// Ask mode, mount the standard authorization card and retry with the same
+// call ID so an approved size change actually reaches the capture runner.
 async function recaptureWebPreview(payload, viewport, ctx) {
-  const url = payload && payload.url;
-  if (!url) return null;
-  const projectDir = ctx && ctx.projectDir;
-  const chatId = ctx && ctx.chatId;
-  const refs = ctx && ctx.refs;
-  if (!projectDir || !chatId) return null;
-  let out = null;
-  try {
-    out = await requestWebpreview({
-      projectDir,
-      chatId,
-      url,
-      viewport: viewport || undefined,
-      callId: 'ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-    });
-  } catch (e) {
-    const msg = (e && e.message) || String(e);
-    const statusRef = refs && refs.status;
-    if (statusRef && statusRef.current) {
-      statusRef.current.textContent = e && e.code === 'EAUTH_REQUIRED' ? 'Authorize web preview to recapture' : 'Preview recapture failed: ' + msg;
-    }
-    return null;
-  }
-  // Publish the fresh result so the dock updates in place.
+const url = payload && payload.url;
+if (!url) return null;
+const projectDir = ctx && ctx.projectDir;
+const chatId = ctx && ctx.chatId;
+const refs = ctx && ctx.refs;
+if (!projectDir || !chatId) return null;
+const callId = 'ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const request = () => requestWebpreview({
+projectDir,
+chatId,
+url,
+viewport: viewport || undefined,
+callId
+});
+let out = null;
+try {
+out = await request();
+} catch (e) {
+if (e && e.code === 'EAUTH_REQUIRED') {
+if (ctx && typeof ctx.onAuthorizationRequired === 'function') ctx.onAuthorizationRequired();
+let resumed = null;
+const decision = await authorizationCard({
+callId: e.callId || callId,
+tool: 'webpreview',
+cmd: url,
+projectDir
+}, projectDir, chatId, refs, async () => { resumed = await request(); });
+if (decision !== 'deny') out = resumed;
+} else {
+const msg = (e && e.message) || String(e);
+const statusRef = refs && refs.status;
+if (statusRef && statusRef.current) statusRef.current.textContent = 'Preview recapture failed: ' + msg;
+return null;
+}
+}
+// Publish the fresh result so the dock updates in place.
 if (out && out.ok && out.result && out.result.thumbnail) {
 publishWebPreview(out.result);
 } else if (out && !out.ok && refs && refs.status && refs.status.current) {

@@ -39,15 +39,14 @@ To capture at a different size, add a `viewport` argument — a preset id (`"pho
 - **Reload by the AI** — another `webpreview` call replaces the card's image with a fresh capture.
 
 ### Authorization
-
-`webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns.
+`webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns. In `Ask` mode, changing the resolution closes the viewer and shows the standard authorization card in the chat; approving it retries the capture at the selected size.
 
 ## Implementation notes
 
 - The native runner in `src/tools/webpreview.js` opens a temporary debug-Chrome tab, waits for the page, applies the requested viewport (default 375 × 667 phone), captures a JPEG, and closes the tab. It accepts a `viewport` arg via the model spec, and `resolveViewport()` maps preset ids or `WIDTHxHEIGHT` strings (clamped) to a capture rectangle.
 - `frontend/src/components/chat/webpreviewState.js` bridges imperative tool results to `WebpreviewDock.jsx`.
 - The dock is rendered directly between `.chat-view__transcript` and `.chat-view__composer-row` in `frontend/src/components/chat/Chat.jsx`.
-- The full-screen viewer (`WebpreviewModal.jsx`) shows the capture resolution in its footer meta and exposes a **Refresh** button plus a native **Size** selector. Its **Custom** option validates width and height before sending a `WIDTHxHEIGHT` viewport. These controls call `POST /api/tools/webpreview` (implemented in `src/server-handlers-tools.js`) to re-capture at a chosen size. That endpoint goes through the same `webpreview` authorization gate as the model path.
+- The full-screen viewer (`WebpreviewModal.jsx`) shows the capture resolution in its footer meta and exposes a **Refresh** button plus a native **Size** selector. Its **Custom** option validates width and height before sending a `WIDTHxHEIGHT` viewport. These controls call `POST /api/tools/webpreview` (implemented in `src/server-handlers-tools.js`) to re-capture at a chosen size. That endpoint goes through the same `webpreview` authorization gate as the model path; `Chat.jsx` handles `EAUTH_REQUIRED` by mounting the shared authorization card and retrying with the original call ID after approval.
 - Screenshot bytes are emitted in the rich UI result only. `src/ai-stream.js` does not append them as model image input; the model receives compact URL, title, size, dimension, and viewport metadata.
 - Repeating the tool call opens a fresh temporary tab, so each call functions as a reload.
 
