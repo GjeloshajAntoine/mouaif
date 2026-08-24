@@ -211,31 +211,45 @@ function reportedViewMatchesChat(view, targetUrl) {
 }
 
 
+const pendingViewQueries = new Map(); // queryId -> { clientId, finish(view) }
+let viewQuerySequence = 0;
+
 function queryClientView(client) {
   // Service workers are routinely suspended between events, clearing
   // clientViews. Ask each live page for fresh state when a push arrives
   // instead of treating that process-local cache as durable.
   return new Promise((resolve) => {
-    if (!client || typeof client.postMessage !== 'function' || typeof MessageChannel !== 'function') {
+    if (!client || typeof client.postMessage !== 'function') {
       resolve(null);
       return;
     }
-    const channel = new MessageChannel();
+    const queryId = 'view-' + Date.now() + '-' + (++viewQuerySequence);
+    const channel = typeof MessageChannel === 'function' ? new MessageChannel() : null;
     let settled = false;
     const finish = (view) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { channel.port1.close(); } catch { /* best-effort */ }
+      pendingViewQueries.delete(queryId);
+      try { if (channel) channel.port1.close(); } catch { /* best-effort */ }
       resolve(view && typeof view === 'object' ? { ...view, at: Date.now() } : null);
     };
+    pendingViewQueries.set(queryId, { clientId: client.id || '', finish });
     const timer = setTimeout(() => finish(null), 1000);
-    channel.port1.onmessage = (event) => finish(event.data);
-    if (typeof channel.port1.start === 'function') channel.port1.start();
+    if (channel) {
+      channel.port1.onmessage = (event) => finish(event.data);
+      if (typeof channel.port1.start === 'function') channel.port1.start();
+    }
     try {
-      client.postMessage({ type: 'GET_VISIBILITY_STATE' }, [channel.port2]);
+      const message = { type: 'GET_VISIBILITY_STATE', queryId };
+      if (channel) client.postMessage(message, [channel.port2]);
+      else client.postMessage(message);
     } catch {
-      finish(null);
+      // Some WebKit versions reject a transferred MessagePort even though
+      // ordinary Client.postMessage works. Retry without transfer and let
+      // VISIBILITY_STATE_RESPONSE resolve this query.
+      try { client.postMessage({ type: 'GET_VISIBILITY_STATE', queryId }); }
+      catch { finish(null); }
     }
   });
 }
@@ -268,6 +282,14 @@ self.addEventListener('message', (event) => {
   // navigator.serviceWorker.controller at registration time).
   if (event.data && event.data.type === 'VISIBILITY_STATE' && event.source && event.source.id) {
     updateClientView(event.source.id, event.data);
+  }
+  // iOS WebKit may drop the MessagePort transferred with a visibility
+  // query. The page mirrors its answer as a regular service-worker message;
+  // resolve the matching fresh query only when it came from that client.
+  if (event.data && event.data.type === 'VISIBILITY_STATE_RESPONSE' && event.data.queryId) {
+    const pending = pendingViewQueries.get(event.data.queryId);
+    const sourceId = event.source && event.source.id ? event.source.id : '';
+    if (pending && (!pending.clientId || pending.clientId === sourceId)) pending.finish(event.data.state);
   }
   // Navigate to a specific URL (e.g. deep link from notification click).
   // Clients that want to move an EXISTING app window (iOS PWA: no

@@ -94,6 +94,7 @@ const swHandlers = {};
 const shownNotifications = [];
 let pageVisible = true;
 let pageResponds = true;
+let pageUsesPlainReply = false;
 class TestMessageChannel {
 constructor() {
 const port1 = { onmessage: null, start() {}, close() {} };
@@ -112,12 +113,21 @@ visibilityState: 'visible',
 postMessage(message, ports) {
 assert.equal(message.type, 'GET_VISIBILITY_STATE', 'push asks the live page for current visibility');
 if (!pageResponds) return;
-ports[0].postMessage({
+const state = {
 type: 'VISIBILITY_STATE',
 hash: '#/chat/chat-1?projectDir=%2Ftmp',
 visible: pageVisible,
 focused: pageVisible
+};
+if (pageUsesPlainReply) {
+swHandlers.message({
+data: { type: 'VISIBILITY_STATE_RESPONSE', queryId: message.queryId, state },
+source: testClient,
+ports: []
 });
+return;
+}
+ports[0].postMessage(state);
 }
 };
 const swClients = {
@@ -153,7 +163,8 @@ vm.runInNewContext(swSource.replace("'__CACHE_VERSION__'", "'test'"), swContext)
 assert.equal(swContext.chatIdFromHash('#/chat/chat-1?projectDir=%2Ftmp'), 'chat-1', 'chat matching ignores projectDir query data');
 assert.equal(swContext.chatIdFromHash('#/chat/chat%202'), 'chat 2', 'chat matching decodes the route id');
 assert.equal(swContext.chatIdFromHash('#/projects'), '', 'non-chat routes do not match chat notifications');
-assert.ok(swSource.includes("client.postMessage({ type: 'GET_VISIBILITY_STATE' }, [channel.port2])"), 'push-time suppression queries live pages after worker restarts');
+assert.ok(swSource.includes("type: 'GET_VISIBILITY_STATE', queryId"), 'push-time suppression queries live pages with a correlatable id');
+assert.ok(swSource.includes("type === 'VISIBILITY_STATE_RESPONSE'"), 'plain-message visibility replies support iOS WebKit');
 assert.ok(swSource.includes('freshViews.some((view) =>'), 'only a fresh visible-page response can suppress a push');
 assert.ok(swSource.includes("statusKinds = new Set(['progress', 'completion', 'error'])"), 'status cleanup covers all replaceable status types');
 
@@ -175,6 +186,10 @@ return pending;
 (async () => {
 await dispatchPush();
 assert.equal(shownNotifications.length, 0, 'a fresh visible-chat response suppresses the push after worker restart');
+pageUsesPlainReply = true;
+await dispatchPush('tool_authorization');
+assert.equal(shownNotifications.length, 0, 'a visible iOS chat suppresses auth push through the plain-message fallback');
+pageUsesPlainReply = false;
 pageVisible = false;
 await dispatchPush();
 assert.equal(shownNotifications.length, 1, 'a fresh hidden-chat response still shows the push');
@@ -182,7 +197,7 @@ pageVisible = true;
 pageResponds = false;
 await dispatchPush('tool_authorization');
 assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
-console.log('push notifications: 34 assertions passed');
+console.log('push notifications: 36 assertions passed');
 })().catch((err) => {
 console.error(err);
 process.exitCode = 1;

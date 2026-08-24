@@ -101,11 +101,28 @@ export function registerServiceWorker() {
 
   navigator.serviceWorker.addEventListener('message', (event) => {
     const msg = event.data || {};
-    if (msg.type === 'GET_VISIBILITY_STATE' && event.ports && event.ports[0]) {
+    if (msg.type === 'GET_VISIBILITY_STATE') {
       // A service worker can be suspended between pushes, which erases
       // its in-memory visibility table. Answer a push-time query from the
       // newly awakened worker with the page's current, authoritative state.
-      event.ports[0].postMessage(visibilitySnapshot());
+      //
+      // Prefer the transferred port, but also send a plain service-worker
+      // message keyed by queryId. iOS WebKit can deliver client.postMessage
+      // while silently dropping a transferred MessagePort; without this
+      // fallback the visible chat times out and shows its own auth alert.
+      const state = visibilitySnapshot();
+      if (event.ports && event.ports[0]) {
+        try { event.ports[0].postMessage(state); } catch { /* use fallback below */ }
+      }
+      if (msg.queryId) {
+        const response = { type: 'VISIBILITY_STATE_RESPONSE', queryId: msg.queryId, state };
+        try {
+          const worker = event.source && typeof event.source.postMessage === 'function'
+            ? event.source
+            : navigator.serviceWorker.controller;
+          if (worker) worker.postMessage(response);
+        } catch { /* best-effort; the worker will show the alert on timeout */ }
+      }
       return;
     }
     if (msg.type === 'NAVIGATE' && msg.url) {
