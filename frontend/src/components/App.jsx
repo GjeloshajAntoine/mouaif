@@ -1,5 +1,5 @@
 // mouaif web — App shell, Header, BottomTab
-import { h, Fragment } from 'preact';
+import { h } from 'preact';
 import { lazy, Suspense } from 'preact/compat';
 import { useEffect } from 'preact/hooks';
 import { route, activeProject, setActiveProject } from '../api.js';
@@ -25,7 +25,41 @@ import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
 
 const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
-
+const ROUTES = {
+chats: [ProjectsView],
+picker: [ProjectPickerView, ({ dir }) => ({ dir })],
+chat: [ChatView, ({ chatId, projectDir }) => ({ chatId, projectDir })],
+settings: [SettingsHomeView],
+settingsProviders: [SettingsProvidersView],
+settingsProviderNew: [SettingsProviderEditView, () => ({ id: '' })],
+settingsProviderEdit: [SettingsProviderEditView, ({ id }) => ({ id })],
+settingsProject: [SettingsProjectView, ({ projectDir, chatId }) => ({ projectDir, chatId })],
+settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId }) => ({ projectDir, chatId, page: 'technical' })],
+settingsProjectOutput: [SettingsProjectView, ({ projectDir }) => ({ projectDir, page: 'output' })],
+settingsDefaults: [SettingsDefaultsView],
+settingsNotifications: [SettingsNotificationsView],
+settingsPrompts: [SettingsPromptsView, ({ projectDir, id = '', scope = '' }) => ({ projectDir, initialId: id, scope })],
+settingsAgents: [SettingsAgentsView, ({ projectDir }) => ({ projectDir })],
+settingsAgentEdit: [SettingsAgentEditView, ({ id, projectDir }) => ({ id, projectDir })],
+settingsMcp: [SettingsMcpView, ({ projectDir }) => ({ projectDir })],
+settingsMcpEdit: [SettingsMcpEditView, ({ id, projectDir, scope }) => ({ id, projectDir, scope })],
+settingsMcpRegistry: [SettingsMcpRegistryView, ({ projectDir }) => ({ projectDir })],
+settingsTags: [SettingsTagsView, ({ projectId, projectDir }) => ({ projectId, projectDir })],
+settingsPricing: [SettingsPricingView],
+settingsProjects: [SettingsProjectsView],
+settingsAccess: [AccessSettingsView],
+settingsAbout: [SettingsAboutView]
+};
+const FULL_PAGE_ROUTES = new Set([
+'chat', 'picker', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
+]);
+function renderRoute(view) {
+if (view.name === 'inspector') return h(Suspense, {
+fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
+}, h(InspectorView));
+const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
+return h(View, getProps ? getProps(view) : null);
+}
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {
   chats: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
@@ -103,48 +137,8 @@ export function App() {
   useEffect(() => {
     if (chatDir && chatDir !== activeProject.value.dir) setActiveProject(chatDir, '');
   }, [chatDir]);
-  const showTabBar = view.name !== 'chat' && view.name !== 'picker'
-    && view.name !== 'settingsProviders' && view.name !== 'settingsProviderNew'
-    && view.name !== 'settingsProviderEdit' && view.name !== 'settingsProject'
-    && view.name !== 'settingsProjectTechnical'
-    && view.name !== 'settingsProjectOutput'
-    && view.name !== 'settingsDefaults' && view.name !== 'settingsNotifications'
-    && view.name !== 'settingsPrompts'
-    && view.name !== 'settingsAgents' && view.name !== 'settingsAgentEdit'
-    && view.name !== 'settingsMcp' && view.name !== 'settingsMcpEdit' && view.name !== 'settingsMcpRegistry'
-    && view.name !== 'settingsTags'
-    && view.name !== 'settingsPricing'
-    && view.name !== 'settingsProjects'
-    && view.name !== 'settingsAccess'
-    && view.name !== 'settingsAbout';
-  let body = null;
-  if (view.name === 'chats') body = h(ProjectsView, null);
-  else if (view.name === 'picker') body = h(ProjectPickerView, { dir: view.dir });
-  else if (view.name === 'chat') body = h(ChatView, { chatId: view.chatId, projectDir: view.projectDir });
-  else if (view.name === 'settings') body = h(SettingsHomeView, null);
-  else if (view.name === 'settingsProviders') body = h(SettingsProvidersView, null);
-  else if (view.name === 'settingsProviderNew') body = h(SettingsProviderEditView, { id: '' });
-  else if (view.name === 'settingsProviderEdit') body = h(SettingsProviderEditView, { id: view.id });
-  else if (view.name === 'settingsProject') body = h(SettingsProjectView, { projectDir: view.projectDir, chatId: view.chatId });
-  else if (view.name === 'settingsProjectTechnical') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'technical', chatId: view.chatId });
-  else if (view.name === 'settingsProjectOutput') body = h(SettingsProjectView, { projectDir: view.projectDir, page: 'output' });
-  else if (view.name === 'settingsDefaults') body = h(SettingsDefaultsView, null);
-  else if (view.name === 'settingsNotifications') body = h(SettingsNotificationsView, null);
-  else if (view.name === 'settingsPrompts') body = h(SettingsPromptsView, { projectDir: view.projectDir, initialId: view.id || '', scope: view.scope || '' });
-  else if (view.name === 'settingsAgents') body = h(SettingsAgentsView, { projectDir: view.projectDir });
-  else if (view.name === 'settingsAgentEdit') body = h(SettingsAgentEditView, { id: view.id, projectDir: view.projectDir });
-  else if (view.name === 'settingsMcp') body = h(SettingsMcpView, { projectDir: view.projectDir });
-  else if (view.name === 'settingsMcpEdit') body = h(SettingsMcpEditView, { id: view.id, projectDir: view.projectDir, scope: view.scope });
-  else if (view.name === 'settingsMcpRegistry') body = h(SettingsMcpRegistryView, { projectDir: view.projectDir });
-  else if (view.name === 'settingsTags') body = h(SettingsTagsView, { projectId: view.projectId, projectDir: view.projectDir });
-  else if (view.name === 'settingsPricing') body = h(SettingsPricingView, null);
-  else if (view.name === 'settingsProjects') body = h(SettingsProjectsView, null);
-  else if (view.name === 'settingsAccess') body = h(AccessSettingsView, null);
-  else if (view.name === 'settingsAbout') body = h(SettingsAboutView, null);
-  else if (view.name === 'inspector') body = h(Suspense, {
-    fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
-  }, h(InspectorView, null));
-  else body = h(ProjectsView, null);
+    const showTabBar = !FULL_PAGE_ROUTES.has(view.name);
+  const body = renderRoute(view);
   return h('div', { class: 'app__shell' },
     h(Header, null),
     h(PwaBanners, null),
