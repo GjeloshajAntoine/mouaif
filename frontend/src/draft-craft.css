@@ -293,23 +293,14 @@ cursor: pointer;
 width: 100%;
 margin-top: 0.4rem;
 }
-.fe__draft-craft-top {
-width: 100%;
-min-height: var(--tap);
-display: flex;
+.fe__editor-actions .fe__draft-craft {
+display: inline-flex;
 align-items: center;
-justify-content: center;
-gap: 0.45rem;
-border: 0;
-border-radius: var(--r-sm);
+gap: 0.35rem;
 background: var(--accent-soft);
 color: var(--accent-hi);
-font: inherit;
-font-size: 0.82rem;
 font-weight: 600;
-cursor: pointer;
 }
-.fe__draft-craft-top:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (min-width: 45rem) {
 .draft-craft__sheet { max-width: 30rem; border-radius: var(--r-lg); margin-bottom: 1rem; }
 .draft-craft__annotator { max-width: 50rem; margin: auto; max-height: 92dvh; border-radius: var(--r-lg); overflow: hidden; }

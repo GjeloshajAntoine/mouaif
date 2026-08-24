@@ -20,7 +20,7 @@ The pinch midpoint stays under your fingers while zooming. In **Pan** mode, drag
 
 1. Open a chat’s file toolbar and choose **Files**.
 2. Open a text file and select code in the editor.
-3. Tap **Draft Craft** at the top of the Files modal.
+3. Tap **Draft Craft** in the open file’s display bar, beside the file actions.
 4. Choose a project and chat, then tap **Add to draft**.
 
 Draft Craft appends only the file path with line range and the selected code. It adds no prose or Markdown fence around the selection. Existing draft text is preserved.

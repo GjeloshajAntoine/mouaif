@@ -501,19 +501,7 @@ export function FileEditorView(props) {
     onClick: (ev) => { /* clicks on the overlay do not close; the X does */ }
   },
     h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : '') },
-      h('div', { class: 'fe__head' },
-h('button', {
-class: 'fe__draft-craft-top',
-type: 'button',
-onClick: openDraftCraft,
-disabled: !openFile || saving,
-title: 'Add the selected code to any chat draft'
-},
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M4 4h16v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V4Zm2 2v9h4a2 2 0 0 0 4 0h4V6H6Z', fill: 'currentColor' })
-),
-h('span', null, 'Draft Craft')
-),
+h('div', { class: 'fe__head' },
 // In full-editor mode the file list (and the
           // breadcrumb + nav bar) is gone, so we render a
           // minimal header with just the toggle (to switch
@@ -687,14 +675,26 @@ h('span', null, 'Draft Craft')
               ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
-                  h('div', { class: 'fe__editor-actions' },
+h('div', { class: 'fe__editor-actions' },
+h('button', {
+class: 'btn fe__draft-craft',
+type: 'button',
+onClick: openDraftCraft,
+disabled: saving,
+title: 'Add the selected code to any chat draft'
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M4 4h16v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V4Zm2 2v9h4a2 2 0 0 0 4 0h4V6H6Z', fill: 'currentColor' })
+),
+h('span', null, 'Draft Craft')
+),
 h('button', {
 class: 'btn',
 type: 'button',
 onClick: revert,
-                      disabled: !dirty || saving,
-                      title: 'Revert to the last saved version'
-                    }, 'Revert'),
+disabled: !dirty || saving,
+title: 'Revert to the last saved version'
+}, 'Revert'),
                     h('button', {
                       class: 'btn btn--primary',
                       type: 'button',
