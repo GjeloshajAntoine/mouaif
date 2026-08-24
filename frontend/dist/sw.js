@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = '757f1650';
+const CACHE_VERSION = '15daf7b1';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -66,11 +66,8 @@ self.addEventListener('install', (event) => {
       // eslint-disable-next-line no-console
       console.warn('[mouaif-sw] precache partial:', failed.length, 'of', SHELL_URLS.length);
     }
-    // Skip waiting so the new SW moves into clients immediately
-    // after install. The page triggers clients.claim() in its
-    // controllerchange handler so the new SW intercepts the very
-    // next fetch without a full reload.
-    await self.skipWaiting();
+    // Stay in the waiting state until the user accepts the page's update
+    // banner. This avoids activating a new worker under an old JS bundle.
   })());
 });
 
@@ -167,36 +164,12 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// ---- Page-reported visibility (notification suppression) -------------
+// ---- Fresh page visibility (notification suppression) -----------------
 //
-// Suppressing an OS notification because "the user is already looking
-// at this chat" cannot rely on WindowClient.focused / visibilityState
-// alone: Safari (and the iOS PWA window in particular) reports stale or
-// missing values through clients.matchAll(), which made notifications
-// appear even while the chat was open on screen. The page itself always
-// knows document.visibilityState exactly, so each controlled page keeps
-// a persistent MessageChannel to the worker and reports { hash,
-// visible, focused } on load, on visibilitychange/focus/blur, and on
-// hashchange (see sw-registration.js — startVisibilityReporting). The
-// push handler still makes a fresh request for every notification: cached
-// reports and client properties only support bookkeeping and must never
-// suppress an alert when a suspended page cannot answer.
-const clientViews = new Map(); // clientId -> { hash, visible, focused, at }
-const CLIENT_VIEW_TTL = 5 * 60 * 1000; // stale entries are ignored
-
-function updateClientView(clientId, data) {
-  if (!clientId) return;
-  clientViews.set(clientId, {
-    hash: typeof data.hash === 'string' ? data.hash : '',
-    visible: data.visible === true,
-    focused: data.focused === true,
-    at: Date.now()
-  });
-  // Keep the map bounded: tabs that closed without a clean goodbye.
-  for (const [id, view] of clientViews) {
-    if (Date.now() - view.at > CLIENT_VIEW_TTL) clientViews.delete(id);
-  }
-}
+// WindowClient.focused / visibilityState are stale on Safari and iOS PWA.
+// Query every live page when a push arrives and suppress only when the page
+// answers with the target chat currently visible. No cached view state is
+// trusted: a suspended page cannot answer and must still receive the alert.
 
 function chatIdFromHash(hash) {
   const match = /^#\/chat\/([^/?#]+)/.exec(typeof hash === 'string' ? hash : '');
@@ -204,7 +177,7 @@ function chatIdFromHash(hash) {
   try { return decodeURIComponent(match[1]); } catch { return match[1]; }
 }
 function reportedViewMatchesChat(view, targetUrl) {
-  if (!view || Date.now() - view.at > CLIENT_VIEW_TTL || !view.visible) return false;
+  if (!view || !view.visible) return false;
   const reportedChatId = chatIdFromHash(view.hash);
   const targetChatId = chatIdFromHash(targetUrl.hash);
   return !!reportedChatId && reportedChatId === targetChatId;
@@ -215,9 +188,8 @@ const pendingViewQueries = new Map(); // queryId -> { clientId, finish(view) }
 let viewQuerySequence = 0;
 
 function queryClientView(client) {
-  // Service workers are routinely suspended between events, clearing
-  // clientViews. Ask each live page for fresh state when a push arrives
-  // instead of treating that process-local cache as durable.
+  // Ask each live page for fresh state when a push arrives. A page that
+  // cannot answer within the deadline is treated as hidden/suspended.
   return new Promise((resolve) => {
     if (!client || typeof client.postMessage !== 'function') {
       resolve(null);
@@ -260,29 +232,6 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-  // Persistent reporting channel (see sw-registration.js). The first
-  // state snapshot arrives on the transferred port immediately, so a
-  // push that lands right after page load is already suppressible.
-  if (event.data && event.data.type === 'VISIBILITY_PORT' && event.ports && event.ports[0]) {
-    // Key the persistent channel by the real client id (event.source.id)
-    // when available, so the push handler can match the report against
-    // the clients returned by clients.matchAll(). The page's random
-    // clientId (sw-registration.js) is only a fallback for engines where
-    // event.source is missing; a UUID that never equals client.id made
-    // the page-reported "this chat is visible" state un-matchable on
-    // Safari/iOS, so notifications appeared over an open chat.
-    const clientId = (event.source && event.source.id) || event.data.clientId;
-    const port = event.ports[0];
-    port.onmessage = (msg) => {
-      if (msg.data && msg.data.type === 'VISIBILITY_STATE') updateClientView(clientId, msg.data);
-    };
-    if (typeof port.start === 'function') port.start();
-  }
-  // One-shot state snapshot (fallback for engines without
-  // navigator.serviceWorker.controller at registration time).
-  if (event.data && event.data.type === 'VISIBILITY_STATE' && event.source && event.source.id) {
-    updateClientView(event.source.id, event.data);
-  }
   // iOS WebKit may drop the MessagePort transferred with a visibility
   // query. The page mirrors its answer as a regular service-worker message;
   // resolve the matching fresh query only when it came from that client.
@@ -314,9 +263,6 @@ self.addEventListener('push', (event) => {
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
     const freshViews = targetUrl ? await Promise.all(windows.map(queryClientView)) : [];
-    freshViews.forEach((view, index) => {
-      if (view) updateClientView(windows[index].id, view);
-    });
     // Suppress only when a page answers this push-time query and confirms
     // that the target chat is visible. A suspended or recently closed PWA
     // can remain in clients.matchAll() with stale `focused: true` and a

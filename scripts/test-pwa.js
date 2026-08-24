@@ -82,6 +82,7 @@ server.listen(0, '127.0.0.1', () => {
       assert(sw.body.indexOf('fetch') >= 0, 'sw: fetch handler present');
       assert(sw.body.indexOf('activate') >= 0, 'sw: activate handler present');
       assert(sw.body.indexOf('CACHE_VERSION') >= 0, 'sw: hash baked in');
+      assert((sw.body.match(/skipWaiting/g) || []).length === 1, 'sw: skipWaiting only runs after the user-approved update message');
       // SW must guard out /api/* (live data surface, must never be cached).
       assert(sw.body.indexOf('/api/') >= 0 || sw.body.indexOf('/api/') >= 0, 'sw: /api/ bypass present');
       assert(sw.body.indexOf("addEventListener('push'") >= 0, 'sw: push handler present');

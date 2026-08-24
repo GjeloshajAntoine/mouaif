@@ -90,6 +90,9 @@ assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send pro
 assert.ok(chatPushSource.includes("'[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']'"), 'task status uses a true ASCII progress bar');
 assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'task status avoids Unicode block glyphs');
 const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'sw-src.js'), 'utf8');
+const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'push-page-bridge.js'), 'utf8');
+assert.ok(bridgeSource.includes("type: 'VISIBILITY_STATE_RESPONSE'"), 'page bridge mirrors visibility over a plain iOS-safe message');
+assert.ok(!swSource.includes('VISIBILITY_PORT'), 'service worker does not retain a redundant visibility channel');
 const swHandlers = {};
 const shownNotifications = [];
 let pageVisible = true;
@@ -197,7 +200,7 @@ pageVisible = true;
 pageResponds = false;
 await dispatchPush('tool_authorization');
 assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
-console.log('push notifications: 36 assertions passed');
+console.log('push notifications: 38 assertions passed');
 })().catch((err) => {
 console.error(err);
 process.exitCode = 1;

@@ -13,7 +13,10 @@
 import { render, h } from 'preact';
 import { App } from './components/App.jsx';
 import { AccessGate } from './components/AccessAuth.jsx';
-import { registerServiceWorker, refreshProjectsOnVisible, consumePendingNotificationClick, startVisibilityReporting } from './sw-registration.js';
+import { registerServiceWorker } from './sw-registration.js';
+import { startConnectivityTracking } from './pwa-connectivity.js';
+import { consumePendingNotificationClick } from './notification-click.js';
+import { refreshProjectsOnVisible, startPushPageBridge } from './push-page-bridge.js';
 import { syncPushState } from './components/push.js';
 import './style.css';
 import './router.js';
@@ -23,21 +26,13 @@ import './router.js';
 const root = document.getElementById('app');
 if (root) render(h(AccessGate, null, h(App, null)), root);
 
-// Register the service worker (no-op in dev; see sw-registration.js
-// for the production-only path). Deferred until after first paint so
-// the SW install doesn't block the entry bundle download.
-registerServiceWorker();
-// Refresh the project list when a push-notification click brings the
-// app back to the foreground (see sw-registration.js).
+// Start page-side PWA services independently: connectivity, push messages,
+// cold-launch notification routing, and deferred worker registration.
+startConnectivityTracking();
+startPushPageBridge();
 refreshProjectsOnVisible();
-// Navigate to a chat when this page was launched (cold start / OS
-// relaunch) by a notification click that the SW stored in IndexedDB
-// (see sw-registration.js — consumePendingNotificationClick).
 consumePendingNotificationClick();
-// Report this page's visibility/hash to the service worker so it can
-// suppress push notifications for the chat the user is already
-// looking at (see sw-registration.js — startVisibilityReporting).
-startVisibilityReporting();
+registerServiceWorker();
 
 // Sync push notification state when the service worker is ready.
 if ('serviceWorker' in navigator) {

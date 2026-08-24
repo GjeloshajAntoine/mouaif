@@ -14,8 +14,10 @@
 | `frontend/build/sw-src.js` | Service worker push/notificationclick/notificationclose event handlers |
 | `frontend/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
 | `frontend/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
-| `frontend/src/main.jsx` | Push state sync on startup |
-| `frontend/src/sw-registration.js` | Registers the service worker and handles notification-click navigation messages |
+| `frontend/src/main.jsx` | Starts push state sync and page-side PWA services |
+| `frontend/src/sw-registration.js` | Registers the service worker and applies user-approved updates |
+| `frontend/src/push-page-bridge.js` | Answers fresh visibility queries and handles open-window navigation messages |
+| `frontend/src/notification-click.js` | Owns notification navigation and the iOS IndexedDB cold-launch handoff |
 
 ### API endpoints
 
@@ -53,7 +55,7 @@ Subscriptions are tied to the browser session through a one-way hash of the sess
 
 The push event handlers are compiled into `dist/sw.js` via the Vite build plugin in `vite.config.js`. The service worker is registered in production builds only (dev mode skips it for HMR speed). Notification actions use same-origin `fetch()` with the HttpOnly session cookie; failures fall back to opening the chat.
 
-The page-reported visibility table is keyed by the worker-side **real client id** (`event.source.id`) when available; the page's random UUID (`_pageClientId()` in `sw-registration.js`) remains a fallback for reporting. Service workers and PWA windows can be suspended independently, so cached reports and `WindowClient.focused` are never sufficient to suppress a push. On every push, `queryClientView()` sends `GET_VISIBILITY_STATE` over a temporary `MessageChannel` to every listed window; `registerServiceWorker()` answers with the current hash and `document.visibilityState`. Only a fresh response matched by parsed chat ID can suppress the alert. The one-second timeout deliberately falls through to showing it, covering iOS clients that remain listed with stale focused state after the PWA is backgrounded or closed. Suppressing an incoming push closes queued notifications for that chat, while status pushes prune legacy progress/completion/error tags for the same chat ID.
+Service workers and PWA windows can be suspended independently, so cached reports and `WindowClient.focused` are not used to suppress a push. On every push, `queryClientView()` sends `GET_VISIBILITY_STATE` over a temporary `MessageChannel` to every listed window; `startPushPageBridge()` answers with the current hash and `document.visibilityState`. The page also sends a query-ID-correlated regular message for iOS WebKit versions that drop the transferred port. Only a fresh response from the queried client, matched by parsed chat ID, can suppress the alert. The one-second timeout deliberately falls through to showing it, covering clients that remain listed after the PWA is backgrounded or closed. Suppressing an incoming push closes queued notifications for that chat, while status pushes prune legacy progress/completion/error tags for the same chat ID.
 
 ### Permission prompt timeouts
 

@@ -13,7 +13,8 @@
 // SKIP_WAITING, triggers controllerchange, and reloads the page).
 
 import { h, Fragment } from 'preact';
-import { offline, updateAvailable, applyUpdate } from '../sw-registration.js';
+import { updateAvailable, applyUpdate } from '../sw-registration.js';
+import { offline } from '../pwa-connectivity.js';
 
 function ReloadButton() {
   return h('button', {
