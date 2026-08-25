@@ -12,13 +12,22 @@ import {
 } from './push.js';
 
 const DEFAULTS = Object.freeze({
-  askUser: true,
-  toolAuthorization: true,
-  completion: true,
-  errors: true,
-  progress: true,
-  quickActions: true
+status: true,
+authorization: true,
+quickActions: true
 });
+function normalizePreferences(saved) {
+const prefs = saved || {};
+return {
+status: prefs.status !== undefined
+? prefs.status === true
+: prefs.progress !== false && prefs.completion !== false && prefs.errors !== false,
+authorization: prefs.authorization !== undefined
+? prefs.authorization === true
+: prefs.askUser !== false && prefs.toolAuthorization !== false,
+quickActions: prefs.quickActions !== false
+};
+}
 
 export function SettingsNotificationsView() {
   const [prefs, setPrefs] = useState(DEFAULTS);
@@ -31,7 +40,7 @@ export function SettingsNotificationsView() {
     setBusy(true);
     try {
       const app = await loadApp({ force: true });
-      setPrefs({ ...DEFAULTS, ...((app.app && app.app.notifications) || {}) });
+      setPrefs({ ...DEFAULTS, ...normalizePreferences(app.app && app.app.notifications) });
       const configResponse = await fetchJson('/api/push/config');
       if (configResponse.status !== 200) throw new Error((configResponse.body && configResponse.body.error) || 'Push key configuration failed');
       setPushConfig(configResponse.body);
@@ -128,7 +137,7 @@ export function SettingsNotificationsView() {
     ),
     h('section', { class: 'settings-notifications' },
       h('p', { class: 'hint hint--compact' },
-        'Follow a running chat from browser notifications. Attention alerts stay visible when the model needs an answer or tool approval.'),
+        'Follow a running chat with one ASCII status notification. Authorization alerts stay visible when the model needs an answer or tool approval.'),
       h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'This browser'),
         h('div', { class: 'group__list' },
@@ -186,16 +195,13 @@ export function SettingsNotificationsView() {
           'Keys are generated once and reused. iPhone and iPad use these standard Web Push keys through Apple Push Notification service; Apple developer keys are not required.')
       ),
       h('div', { class: 'group' },
-        h('div', { class: 'group__title' }, 'Chat events'),
-        h('div', { class: 'group__list' },
-          eventRow('askUser', 'Questions from the model', 'Answer two-choice questions directly when supported.'),
-          eventRow('toolAuthorization', 'Tool authorization', 'Allow once or deny without reopening the chat.'),
-          eventRow('completion', 'Response completed', 'Know when a background chat has finished.'),
-          eventRow('progress', 'Progress updates', 'Receive per-chat progress status from the model.'),
-          eventRow('errors', 'Chat errors', 'Be alerted when a background run fails.'),
-          eventRow('quickActions', 'Notification actions', 'Show safe quick actions on supported browsers.')
-        )
-      ),
+h('div', { class: 'group__title' }, 'Notification types'),
+h('div', { class: 'group__list' },
+eventRow('status', 'ASCII chat status', 'One replaceable progress, completion, or error status per chat.'),
+eventRow('authorization', 'Authorization', 'Questions and tool approvals that need your response.'),
+eventRow('quickActions', 'Authorization actions', 'Answer, allow once, or deny on supported browsers.')
+)
+),
       h('p', { class: 'hint hint--compact' },
         'When the target chat is already focused, the service worker suppresses its OS notification. Longer questions and multi-select answers open the full chat. On iPhone and iPad, install mouaif to the Home Screen before enabling notifications.')
     )

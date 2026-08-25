@@ -289,14 +289,18 @@ const notifTag = tag || 'default';
 // every legacy status-slot tag for this chat before showing a progress,
 // completion, or error update.
 const statusKinds = new Set(['progress', 'completion', 'error']);
+const authorizationKinds = new Set(['ask_user', 'tool_authorization']);
 const incomingIsStatus = payload && statusKinds.has(payload.kind);
+const incomingIsAuthorization = payload && authorizationKinds.has(payload.kind);
 queued.forEach((notification) => {
 const sameTag = notifTag !== 'default' && notification.tag === notifTag;
-const sameStatusSlot = incomingIsStatus
-&& notification.data
-&& notification.data.chatId === payload.chatId
+const sameChat = notification.data && payload
+&& notification.data.chatId === payload.chatId;
+const sameStatusSlot = incomingIsStatus && sameChat
 && statusKinds.has(notification.data.kind);
-if (sameTag || sameStatusSlot) notification.close();
+const sameAuthorizationSlot = incomingIsAuthorization && sameChat
+&& authorizationKinds.has(notification.data.kind);
+if (sameTag || sameStatusSlot || sameAuthorizationSlot) notification.close();
 });
     await self.registration.showNotification(title || 'mouaif', {
       body: body || '',

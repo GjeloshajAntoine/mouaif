@@ -15,7 +15,7 @@ Browser notifications let mouaif follow a running chat when the tab is in the ba
 3. Accept the browser's permission prompt.
 4. Optionally tap **Send test notification**.
 
-The same screen configures which chat events produce alerts and whether quick actions are shown. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
+The same screen exposes only two notification types: **ASCII chat status** and **Authorization**. Authorization quick actions can be toggled separately. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
 
 The **Server configuration** group shows the origin used by the notification service, the generated-key status, and the VAPID contact. Opening this screen repairs a missing VAPID pair automatically; there are no keys to copy into the browser.
 
@@ -38,7 +38,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 
-Attention alerts use `chat-{chatId}-attention`; progress, completion, and error alerts share `chat-{chatId}-status`. A completion or error alert therefore replaces the last progress alert, but cannot replace a question before the user has answered it. The service worker suppresses an alert only when the same chat ID is confirmed visible on screen by a fresh page response, regardless of query-parameter order or whether the open route includes `projectDir`. A page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Suppression also clears queued alerts for that chat because their content is already visible.
+Only two per-chat notification slots are used. Authorization alerts (`ask_user_required` and `authorization_required`) share `chat-{chatId}-attention`; all other chat status (`progress_update`, `done`, and `error`) shares `chat-{chatId}-status` and the same ASCII format. New notifications replace the older notification in their slot, so statuses cannot stack and a question cannot be replaced by ordinary status. The service worker suppresses an alert only when the same chat ID is confirmed visible on screen by a fresh page response, regardless of query-parameter order or whether the open route includes `projectDir`. A page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Suppression also clears queued alerts for that chat because their content is already visible.
 
 Because `WindowClient.focused` / `visibilityState` are unreliable on some engines (Safari, iOS PWA), the page is the authority on its own visibility. The service worker queries every live window when each push arrives, and only a current `{ hash, visible, focused }` response can suppress it; no cached visibility table is maintained. Responses normally use a transferred `MessagePort`; the page also mirrors each response as a query-ID-correlated service-worker message because some iOS WebKit releases deliver `Client.postMessage` but silently drop the transferred port. A suspended or recently closed PWA may remain temporarily listed as a focused client but cannot answer; in that case the alert is shown rather than discarded. Fresh responses are matched by parsed chat ID.
 
@@ -62,12 +62,9 @@ The app-level `notifications` setting stores:
 
 ```json
 {
-	"askUser": true,
-	"toolAuthorization": true,
-	"completion": true,
-	"errors": true,
-	"progress": true,
-	"quickActions": true
+"status": true,
+"authorization": true,
+"quickActions": true
 }
 ```
 
@@ -75,6 +72,6 @@ Browser permission and subscription are installation-specific. Event preferences
 
 ### Progress notifications
 
-The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-status`, so the OS replaces the previous status notification for that chat instead of stacking a separate progress and completion notification. Task status uses a true ASCII bar such as `[####------] 40%`; the final completion or error replaces it in place. Progress pushes are gated by the **Progress updates** toggle (`notifications.progress`), which defaults to on.
+The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-status`, so the OS replaces the previous status notification for that chat instead of stacking notifications. Every status uses a true ASCII bar such as `[####------] 40%`; completion uses `[##########] 100%`, and errors retain the same bar-shaped status layout. Status pushes are gated by the **ASCII chat status** toggle (`notifications.status`), which defaults to on.
 
 Progress from a nested `subagent` run flows to the same `progress_update` channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.

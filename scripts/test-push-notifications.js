@@ -87,8 +87,10 @@ assert.ok(deliveries[0].options.vapidDetails.privateKey, 'delivery configures th
 const chatPushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server-handlers-chats.js'), 'utf8');
 assert.ok(chatPushSource.includes("const statusPushTag = 'chat-' + chatId + '-status'"), 'chat streams define one shared status push tag');
 assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send progress pushes under a second tag');
-assert.ok(chatPushSource.includes("'[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']'"), 'task status uses a true ASCII progress bar');
-assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'task status avoids Unicode block glyphs');
+assert.ok(chatPushSource.includes("function asciiStatusBar(percent)"), 'chat streams define one ASCII status formatter');
+assert.ok(chatPushSource.includes("asciiStatusBar(pctNum) + (statusLine ? '\\n' + statusLine : '')"), 'generic progress uses the ASCII status format');
+assert.ok(chatPushSource.includes("asciiStatusBar(100) + '\\nResponse complete'"), 'completion uses the ASCII status format');
+assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'status avoids Unicode block glyphs');
 const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'sw-src.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'push-page-bridge.js'), 'utf8');
 assert.ok(bridgeSource.includes("type: 'VISIBILITY_STATE_RESPONSE'"), 'page bridge mirrors visibility over a plain iOS-safe message');
@@ -170,6 +172,7 @@ assert.ok(swSource.includes("type: 'GET_VISIBILITY_STATE', queryId"), 'push-time
 assert.ok(swSource.includes("type === 'VISIBILITY_STATE_RESPONSE'"), 'plain-message visibility replies support iOS WebKit');
 assert.ok(swSource.includes('freshViews.some((view) =>'), 'only a fresh visible-page response can suppress a push');
 assert.ok(swSource.includes("statusKinds = new Set(['progress', 'completion', 'error'])"), 'status cleanup covers all replaceable status types');
+assert.ok(swSource.includes("authorizationKinds = new Set(['ask_user', 'tool_authorization'])"), 'questions and approvals share the authorization slot');
 
 function dispatchPush(kind = 'completion') {
 let pending = Promise.resolve();
@@ -200,7 +203,7 @@ pageVisible = true;
 pageResponds = false;
 await dispatchPush('tool_authorization');
 assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
-console.log('push notifications: 38 assertions passed');
+console.log('push notifications: 42 assertions passed');
 })().catch((err) => {
 console.error(err);
 process.exitCode = 1;

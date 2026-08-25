@@ -72,14 +72,12 @@ const DEFAULTS = Object.freeze({
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,
-  // OS-level browser notifications. Attention events are on by default;
-  // quick actions let the user answer simple questions or approve once
-  // without opening the app.
+  // OS-level browser notifications have two user-facing channels: one
+  // replaceable ASCII status per chat, plus authorization prompts. Quick
+  // actions let the user answer or approve without opening the app.
   notifications: {
-    askUser: true,
-    toolAuthorization: true,
-    completion: true,
-    errors: true,
+    status: true,
+    authorization: true,
     quickActions: true
   },
   // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).

@@ -12,7 +12,7 @@
 
 ### Push notifications
 
-`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable status push notification as the `report_progress` tool (tag `chat-<id>-status`), so each update replaces the previous one and the final completion/error notification replaces the last task progress alert in place. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **Progress updates** toggle in Settings → Notifications (`notifications.progress`).
+`update_progress` and `complete` emit a `progress_update` stream event carrying the task title and counts (`kind: 'task'`, `title`, `current`, `total`, `status`, `message`). This flows through the same per-chat updatable status push notification as the `report_progress` tool (tag `chat-<id>-status`), so each update replaces the previous one and the final completion/error notification replaces the last task progress alert in place. Task **creation** is intentionally not pushed: a fresh task always starts at 0%, which would be a noise notification. The notification is gated by the **ASCII chat status** toggle in Settings → Notifications (`notifications.status`).
 
 Task pushes use a UI-like plain-text layout (push notifications don't support real alignment, so each "row" is a line):
 
@@ -26,4 +26,4 @@ Fix push layout — 2 of 5
 - **Bar row** — 10-cell ASCII bar (`#` filled / `-` empty) with the percentage.
 - **Task row** — the task title with its `current of total` counts.
 
-Generic `report_progress` notifications keep the simpler `"<pct>% — <message>"` body.
+Generic `report_progress` notifications use the same ASCII bar and message layout.

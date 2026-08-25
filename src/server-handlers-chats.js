@@ -914,27 +914,35 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   let appSettings = {};
   try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
 
+  const savedNotificationPrefs = appSettings.notifications || {};
   const notificationPrefs = Object.assign({
-    askUser: true,
-    toolAuthorization: true,
-    completion: true,
-    errors: true,
-    progress: true,
+    status: savedNotificationPrefs.progress !== false
+      && savedNotificationPrefs.completion !== false
+      && savedNotificationPrefs.errors !== false,
+    authorization: savedNotificationPrefs.askUser !== false
+      && savedNotificationPrefs.toolAuthorization !== false,
     quickActions: true
-  }, appSettings.notifications || {});
+  }, savedNotificationPrefs);
   const chatUrl = `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
-  // One replaceable status slot per chat. Progress, completion, and errors
-  // share this tag so a completed/error status replaces the last progress
-  // alert instead of leaving two background notifications visible.
+  // Exactly two notification channels exist per chat: one replaceable status
+  // slot rendered with an ASCII bar, and one authorization/attention slot.
   const statusPushTag = 'chat-' + chatId + '-status';
+
+  function asciiStatusBar(percent) {
+    const width = 10;
+    const normalized = percent == null ? null : Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    const filled = normalized == null ? 0 : Math.round((normalized / 100) * width);
+    return '[' + '#'.repeat(filled) + '-'.repeat(width - filled) + ']'
+      + (normalized == null ? '' : ' ' + normalized + '%');
+  }
 
   function sendChatPush(kind, options = {}) {
     if (!_pushSessionId) return;
-    const preferenceKey = kind === 'ask_user' ? 'askUser'
-      : kind === 'tool_authorization' ? 'toolAuthorization'
-        : kind === 'completion' ? 'completion'
-          : kind === 'error' ? 'errors'
-            : kind === 'progress' ? 'progress' : '';
+    const preferenceKey = kind === 'ask_user' || kind === 'tool_authorization'
+      ? 'authorization'
+      : kind === 'completion' || kind === 'error' || kind === 'progress'
+        ? 'status'
+        : '';
     if (preferenceKey && notificationPrefs[preferenceKey] === false) return;
     const data = Object.assign({ kind, chatId, projectDir, url: chatUrl }, options.data || {});
     push.sendPushToSession(_pushSessionId, {
@@ -1149,9 +1157,7 @@ promptSize: resolvedProfileId,
           //   title row:  <chat title> · <tokens> · <price>
           //   bar row:    [####------] 40%
           //   task row:   <task title> — 2 of 5
-          const barWidth = 10;
-          const filled = pctNum == null ? 0 : Math.round((pctNum / 100) * barWidth);
-          const bar = '[' + '#'.repeat(filled) + '-'.repeat(barWidth - filled) + ']' + (pctNum == null ? '' : ' ' + pctNum + '%');
+          const bar = asciiStatusBar(pctNum);
           const counts = (data.current != null && data.total != null)
             ? data.current + ' of ' + data.total
             : (data.message || '');
@@ -1164,20 +1170,19 @@ promptSize: resolvedProfileId,
             tag: statusPushTag
           });
         } else {
-          // Plain `report_progress` (non-task) update. Body shows the
-          // live percentage plus the running message; the chat title
-          // carries the cumulative token/cost label so the status line
-          // reads "progress + usage" even while the chat is open.
+          // Plain `report_progress` uses the same ASCII status shape as a
+          // task, so there is only one visual status notification format.
           const usageLabel = pushUsageLabel();
           const chatTitle = (chat && chat.title) || 'mouaif';
+          const statusLine = data.message || data.title || '';
           sendChatPush('progress', {
             title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
-            body: (pctNum != null ? pctNum + '% — ' : '') + (data.message || ''),
+            body: asciiStatusBar(pctNum) + (statusLine ? '\n' + statusLine : ''),
             tag: statusPushTag
           });
         }
       } else if (name === 'done') {
-        sendChatPush('completion', { body: 'Response complete', tag: statusPushTag });
+        sendChatPush('completion', { body: asciiStatusBar(100) + '\nResponse complete', tag: statusPushTag });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1283,7 +1288,7 @@ promptSize: resolvedProfileId,
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'stream failed'), tag: statusPushTag });
+    sendChatPush('error', { body: asciiStatusBar(null) + '\nError: ' + (errPayload.message || 'stream failed'), tag: statusPushTag });
     res.end();
     return;
   }
@@ -1310,7 +1315,7 @@ promptSize: resolvedProfileId,
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
-    sendChatPush('error', { body: 'Error: ' + (errPayload.message || 'upstream error'), tag: statusPushTag });
+    sendChatPush('error', { body: asciiStatusBar(null) + '\nError: ' + (errPayload.message || 'upstream error'), tag: statusPushTag });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
