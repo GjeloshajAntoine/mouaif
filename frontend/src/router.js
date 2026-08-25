@@ -37,11 +37,17 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsAgentEdit', id: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
   }
-  if (h === 'settings/project' || h.startsWith('settings/project?')) {
-    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-    const params = new URLSearchParams(qs);
-    return { name: 'settingsProject', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
-  }
+if (h === 'settings/project' || h.startsWith('settings/project?')) {
+const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+const params = new URLSearchParams(qs);
+const from = params.get('from') || '';
+return {
+name: 'settingsProject',
+projectDir: params.get('projectDir') || '',
+chatId: params.get('chatId') || '',
+from: from === 'projects' || from === 'settings/projects' ? from : ''
+};
+}
   // settings/agents is project-scoped (same resolution as prompts: the
   // active project is the default, ?projectDir= overrides).
   if (h === 'settings/agents' || h.startsWith('settings/agents?')) {
@@ -136,9 +142,7 @@ function parseHash() {
 }
 
 route.value = parseHash();
-
 window.addEventListener('hashchange', () => { route.value = parseHash(); });
-
 export function nav(toHash) {
-  window.location.hash = '#/' + toHash;
+window.location.hash = '#/' + toHash;
 }

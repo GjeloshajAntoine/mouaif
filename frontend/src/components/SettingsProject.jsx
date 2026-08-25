@@ -16,7 +16,7 @@ import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
-export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, page = 'main' } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
   const [projectPath, setProjectPath] = useState('…');
 
@@ -1127,7 +1127,23 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings', class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to settings' }, '←'),
+      h('a', {
+href: chatId()
+? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || ''))
+: from === 'projects'
+? '#/projects'
+: from === 'settings/projects'
+? '#/settings/projects'
+: '#/settings',
+class: 'view-back',
+'aria-label': chatId()
+? 'Back to chat'
+: from === 'projects'
+? 'Back to projects'
+: from === 'settings/projects'
+? 'Back to project list'
+: 'Back to settings'
+}, '←'),
       h('h2', { class: 'view-title' }, 'Project settings')
     ),
     h('section', { class: 'settings-project' },

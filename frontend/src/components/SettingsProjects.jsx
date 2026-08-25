@@ -95,7 +95,7 @@ projects.length === 0 ? h('li', { class: 'sprojects__empty' }, 'No projects yet.
 projects.map(p => h('li', { class: 'sprojects__row', key: p.id },
 h('a', {
 class: 'sprojects__main',
-href: '#/settings/project?projectDir=' + encodeURIComponent(p.path),
+href: '#/settings/project?projectDir=' + encodeURIComponent(p.path) + '&from=settings%2Fprojects',
 'aria-label': 'Project settings for ' + (p.name || p.path)
 },
 h('div', { class: 'sprojects__name' }, p.name || p.path),
