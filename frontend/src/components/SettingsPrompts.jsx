@@ -123,9 +123,12 @@ export function SettingsPromptsView(props) {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   const dirtyRef = useRef(false);
+  // Tracks whether the user has explicitly chosen a prompt (via the picker,
+  // "New", or delete) as opposed to the auto-select done on first load. Once
+  // true, the auto-select effect stops trying to move the picker again.
+  const userPickedRef = useRef(false);
   const loadedRef = useRef(loadedSnapshot);
   loadedRef.current = loadedSnapshot;
-
   async function loadPrompts() {
     const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
     let r;
@@ -257,16 +260,38 @@ export function SettingsPromptsView(props) {
   useEffect(() => { loadPrompts(); }, [projectDir]);
   useEffect(() => { loadProjectData(); }, [projectDir]);
   useEffect(() => { loadProfiles(); }, []);
-
+  // The routes render <SettingsPromptsView> with no `key`, so navigating
+  // between an app-scoped and a project-scoped prompts page reuses the same
+  // component instance and its refs/state persist. Reset the picker whenever
+  // the scope changes so the auto-select effect below re-runs for the freshly
+  // loaded prompt list (instead of keeping the previous scope's selection).
+  // Declared BEFORE that effect so it runs first.
   useEffect(() => {
-    if (!initialId) return;
+    userPickedRef.current = false;
+    setPrompts([]);
+    setSelectedId(NEW_PROMPT_ID);
+    applyPromptToForm(null);
+  }, [projectDir]);
+  useEffect(() => {
+    // Default the picker to an existing prompt (when one is saved) instead
+    // of always landing on the blank "+ New prompt" form. This only runs on
+    // first load (before the user has made any explicit picker choice) so it
+    // never fights the "New" / delete / dropdown interactions. A legacy deep
+    // link (`initialId`) wins; otherwise pick the first saved prompt.
+    if (userPickedRef.current) return;
     if (selectedId !== NEW_PROMPT_ID) return;
+    if (initialId) {
+      const p = prompts.find((x) => x.id === initialId);
+      if (!p) return;
+      setSelectedId(p.id);
+      applyPromptToForm(p);
+      return;
+    }
     if (!prompts.length) return;
-    const p = prompts.find((x) => x.id === initialId);
-    if (!p) return;
+    const p = prompts[0];
     setSelectedId(p.id);
     applyPromptToForm(p);
-  }, [prompts, initialId]);
+  }, [prompts, initialId, selectedId]);
 
   function handleSelectPrompt(nextId) {
     if (nextId === selectedId) return;
@@ -274,6 +299,7 @@ export function SettingsPromptsView(props) {
       const ok = confirm('Discard unsaved changes to this prompt?');
       if (!ok) return;
     }
+    userPickedRef.current = true;
     setSelectedId(nextId);
     setStatusMsg({ text: '', kind: '' });
     setShowProfileCopy(false);
@@ -385,6 +411,10 @@ export function SettingsPromptsView(props) {
     }
 
     await loadPrompts();
+    userPickedRef.current = true;
+    // After a delete, move the picker to the next remaining prompt (or the
+    // blank "+ New prompt" form when none are left) instead of leaving a
+    // dangling selection that no longer exists in the list.
     setSelectedId(NEW_PROMPT_ID);
     applyPromptToForm(null);
     setIsDeleting(false);
@@ -414,6 +444,7 @@ export function SettingsPromptsView(props) {
       const ok = confirm('Discard unsaved changes to this prompt?');
       if (!ok) return;
     }
+    userPickedRef.current = true;
     setSelectedId(NEW_PROMPT_ID);
     applyPromptToForm(null);
     setStatusMsg({ text: '', kind: '' });
@@ -503,6 +534,12 @@ export function SettingsPromptsView(props) {
   const currentPrompt = !isNew ? prompts.find((p) => p.id === selectedId) : null;
   const copyDisabled = isNew && !content;
 
+  // On the App-defaults screen every prompt is app-scoped by definition, so the
+  // per-option scope badge (["app"]) is redundant noise that reads as a weird
+  // item in the dropdown. Only badge scope on the project screen, where prompts
+  // may be project-owned or inherited from the app.
+  const showScopeBadge = !!projectDir;
+
   const backHref = projectDir
     ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir))
     : '#/settings';
@@ -536,7 +573,7 @@ export function SettingsPromptsView(props) {
               : prompts.map((p) =>
                   h('option', { key: p.id, value: p.id },
                     (p.title || p.id) +
-                    (p.scope ? ' [' + p.scope + ']' : '') +
+                    (showScopeBadge && p.scope ? ' [' + p.scope + ']' : '') +
                     (p.preset ? ' • preset' : '')
                   )
                 )

@@ -58,7 +58,17 @@ if (view.name === 'inspector') return h(Suspense, {
 fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
 }, h(InspectorView));
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
-return h(View, getProps ? getProps(view) : null);
+// Key the view on its identity parameters so navigating to the same route
+// with a different projectDir / id / scope remounts it (fresh state + refs).
+// Without this, e.g. #/settings/prompts ⇄ #/settings/prompts?projectDir=…
+// reuse one component instance and leave stale selection/state behind.
+const viewKey = view.name + '|' +
+(view.projectDir || '') + '|' +
+(view.id || '') + '|' +
+(view.scope || '') + '|' +
+(view.page || '') + '|' +
+(view.chatId || '');
+return h(View, { key: viewKey, ...(getProps ? getProps(view) : null) });
 }
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {

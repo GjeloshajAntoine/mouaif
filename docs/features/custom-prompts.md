@@ -19,7 +19,7 @@ Prompts can be managed from two locations in Settings:
 1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
 2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-The **Prompt** dropdown lists every saved prompt (with scope badges and a `• preset` tag for ones that carry a tool/agent-file/skills preset) plus a `+ New prompt` entry for a blank form. Pick a prompt to load its title, content, and preset into the editor.
+The **Prompt** dropdown lists every saved prompt (with a `• preset` tag for ones that carry a tool/agent-file/skills preset; scope badges — `[project]` / `[app]` — only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
