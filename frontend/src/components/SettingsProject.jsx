@@ -926,7 +926,9 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
     setAgentCreating(false);
     setAgentCreateStatus('');
     setAgentPresets((prev) => prev.concat(r.body.agent));
-    if (created) nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()));
+    if (created) {
+      nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()) + (from ? '&from=' + encodeURIComponent(from) : ''));
+    }
   }
 
   // What the model receives for a representative file-tool result under the
@@ -1322,7 +1324,7 @@ class: 'view-back',
             agentPresets.map(a => h('li', { key: a.name },
               h('a', {
                 class: 'group__row settings-project__agent-link',
-                href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()),
+                href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()) + (from ? '&from=' + encodeURIComponent(from) : ''),
                 'aria-label': 'Configure ' + a.name
               },
                 h('span', { class: 'group__row-label' }, a.name),

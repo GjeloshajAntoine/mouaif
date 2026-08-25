@@ -20,6 +20,14 @@ function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
   return (activeProject.value && activeProject.value.dir) || '';
 }
+// Where the user came from before the project-settings page, so Back on
+// the project page survives a trip into Agents and back. Mirrors the
+// `from` routing used by SettingsProjectView.
+function projectQS(projectDir, from) {
+  let s = 'projectDir=' + encodeURIComponent(projectDir || '');
+  if (from) s += '&from=' + encodeURIComponent(from);
+  return s;
+}
 
 // The tool allowlist choices shown on an agent's editor. Native tools
 // plus one entry per configured MCP server (appended at runtime).
@@ -92,6 +100,7 @@ export { toggleToolInList, toggleGroupInList };
 
 export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
+  const from = (props && props.from) || '';
   const [agents, setAgents] = useState([]);
   const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
 
@@ -130,7 +139,7 @@ export function SettingsAgentsView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to project' }, '←'),
+      h('a', { href: '#/settings/project?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to project' }, '←'),
       h('h2', { class: 'view-title' }, 'Agents')
     ),
     h('section', null,
@@ -146,7 +155,7 @@ export function SettingsAgentsView(props) {
           const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
           if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
           return h('li', { key: a.name, class: 'prompt-row' },
-            h('a', { class: 'prompt-row__main', href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(projectDir) },
+            h('a', { class: 'prompt-row__main', href: '#/settings/agents/' + encodeURIComponent(a.name) + '?' + projectQS(projectDir, from) },
               h('div', { class: 'prompt-row__title' }, a.name),
               h('div', { class: 'prompt-row__meta' }, bits.join(' · ')),
               h('div', { class: 'prompt-row__chev' }, '›')
@@ -156,7 +165,7 @@ export function SettingsAgentsView(props) {
       ),
       h('div', { class: 'row row--actions' },
         h('a', {
-          href: '#/settings/agents/new?projectDir=' + encodeURIComponent(projectDir),
+          href: '#/settings/agents/new?' + projectQS(projectDir, from),
           class: 'btn btn--primary'
         }, '+ Add agent'),
         h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
@@ -170,6 +179,7 @@ export function SettingsAgentEditView(props) {
   const agentName = (props && props.id && props.id !== 'new') ? props.id : '';
   const isNew = !!(props && props.id === 'new');
   const projectDir = resolveProjectDir(props);
+  const from = (props && props.from) || '';
   const [projectModels, setProjectModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
@@ -256,7 +266,7 @@ export function SettingsAgentEditView(props) {
     if (r.body.agent && r.body.agent.name && r.body.agent.name !== agentName) {
       const newName = r.body.agent.name;
       // The component will re-render with new props via navigation
-      nav('settings/agents/' + encodeURIComponent(newName) + '?projectDir=' + encodeURIComponent(projectDir));
+      nav('settings/agents/' + encodeURIComponent(newName) + '?' + projectQS(projectDir, from));
       return;
     }
     setStatusMsg({ text: 'saved', kind: 'success' });
@@ -326,7 +336,7 @@ export function SettingsAgentEditView(props) {
       setStatusMsg({ text: (r.body && r.body.error) || ('HTTP ' + r.status), kind: 'error' });
       return;
     }
-    nav('settings/agents/' + encodeURIComponent(r.body.agent.name) + '?projectDir=' + encodeURIComponent(projectDir));
+    nav('settings/agents/' + encodeURIComponent(r.body.agent.name) + '?' + projectQS(projectDir, from));
   }
 
   async function deleteAgent() {
@@ -338,7 +348,7 @@ export function SettingsAgentEditView(props) {
     try { r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
     catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsDeleting(false); return; }
     if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); setIsDeleting(false); return; }
-    nav('settings/agents?projectDir=' + encodeURIComponent(projectDir));
+    nav('settings/agents?' + projectQS(projectDir, from));
   }
 
   if (!projectDir) {
@@ -359,7 +369,7 @@ export function SettingsAgentEditView(props) {
   if (!agent) {
     return h(Fragment, null,
       h('div', { class: 'view-head' },
-        h('a', { href: '#/settings/agents?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
+        h('a', { href: '#/settings/agents?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
         h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
       ),
       h('section', null, h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text || 'loading…'))
@@ -380,7 +390,7 @@ export function SettingsAgentEditView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/agents?projectDir=' + encodeURIComponent(projectDir), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
+      h('a', { href: '#/settings/agents?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
       h('h2', { class: 'view-title' }, isNew ? 'Add agent' : agent.name)
     ),
     h('section', null,

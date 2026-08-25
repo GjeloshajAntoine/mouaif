@@ -53,13 +53,23 @@ from: from === 'projects' || from === 'settings/projects' ? from : ''
   if (h === 'settings/agents' || h.startsWith('settings/agents?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsAgents', projectDir: params.get('projectDir') || '' };
+    const from = params.get('from') || '';
+    return {
+      name: 'settingsAgents',
+      projectDir: params.get('projectDir') || '',
+      from: from === 'projects' || from === 'settings/projects' ? from : ''
+    };
   }
   if (h.startsWith('settings/agents/')) {
     const rest = h.slice('settings/agents/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsAgentEdit', id, projectDir: params.get('projectDir') || '' };
+    const from = params.get('from') || '';
+    return {
+      name: 'settingsAgentEdit', id,
+      projectDir: params.get('projectDir') || '',
+      from: from === 'projects' || from === 'settings/projects' ? from : ''
+    };
   }
   if (h === 'settings/projects') return { name: 'settingsProjects' };
   if (h === 'settings/defaults') return { name: 'settingsDefaults' };
