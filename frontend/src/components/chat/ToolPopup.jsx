@@ -12,6 +12,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
+import { CustomActionList } from './ActionSheet.jsx';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
@@ -61,7 +62,9 @@ export function ToolPopup(props) {
     skills,
     toolAuth,
     mcpAuth,
-    onToggleTool,
+customActions,
+onRunCustomAction,
+onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
     onToggleSkills,
@@ -243,18 +246,25 @@ files: 'file'
           }, '\u00D7')
         ),
         h('div', { class: 'tool-popup__body' },
-          h(ToolTree, {
-            groups,
-            onToggleGroup: handleToggleGroup,
-            onToggleTool: handleToggleTool,
-            collapsedByDefault: true,
-            class: 'tool-popup__tree'
-          })
-        ),
+h(CustomActionList, {
+actions: customActions,
+onRun: (action) => {
+setOpen(false);
+if (onRunCustomAction) onRunCustomAction(action);
+}
+}),
+h(ToolTree, {
+groups,
+onToggleGroup: handleToggleGroup,
+onToggleTool: handleToggleTool,
+collapsedByDefault: true,
+class: 'tool-popup__tree'
+})
+),
         h('div', { class: 'tool-popup__foot' },
           h('span', { class: 'tool-popup__foot-note' },
-            'Tools marked \u25CF have been used in this chat.'
-          )
+'Actions run immediately. Tools marked \u25CF have been used in this chat.'
+)
         )
       )
     )

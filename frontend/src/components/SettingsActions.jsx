@@ -3,6 +3,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { nav } from '../router.js';
+import { schemaJson } from './settings/actionSchema.js';
 function projectQS(projectDir) { return '?projectDir=' + encodeURIComponent(projectDir || ''); }
 function emptyAction() {
 return { id: '', label: '', description: '', kind: 'cli', command: '', timeoutMs: '', serverId: '', toolName: '', argsText: '{}' };
@@ -75,6 +76,17 @@ const server = servers.find((item) => item.id === form.serverId);
 setTools(server && Array.isArray(server.tools) ? server.tools : []);
 }, [servers, form.serverId]);
 function patch(key, value) { setForm((current) => ({ ...current, [key]: value })); }
+function selectMcpServer(serverId) {
+setForm((current) => ({ ...current, serverId, toolName: '', argsText: '{}' }));
+}
+function selectMcpTool(toolName) {
+const tool = tools.find((item) => item && item.name === toolName);
+setForm((current) => ({
+...current,
+toolName,
+argsText: tool ? schemaJson(tool.inputSchema || tool.parameters) : '{}'
+}));
+}
 async function save() {
 let args = {};
 if (form.kind === 'mcp') {
@@ -127,9 +139,9 @@ form.kind === 'cli' ? h(Fragment, null,
 h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-command' }, 'Command'), h('textarea', { class: 'input settings-project__mono', id: 'action-command', rows: 4, value: form.command, placeholder: 'npm test', onInput: (e) => patch('command', e.currentTarget.value), spellcheck: false })),
 h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-timeout' }, 'Timeout (ms, optional)'), h('input', { class: 'input', id: 'action-timeout', type: 'number', min: 1, max: 600000, inputmode: 'numeric', value: form.timeoutMs, placeholder: '30000', onInput: (e) => patch('timeoutMs', e.currentTarget.value) }))
 ) : h(Fragment, null,
-h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-server' }, 'MCP server'), h('select', { class: 'input', id: 'action-server', value: form.serverId, onChange: (e) => { patch('serverId', e.currentTarget.value); patch('toolName', ''); } }, h('option', { value: '' }, 'Choose a server'), servers.map((server) => h('option', { key: server.id, value: server.id }, server.name || server.id)))),
-h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-tool' }, 'MCP tool'), h('select', { class: 'input', id: 'action-tool', value: form.toolName, onChange: (e) => patch('toolName', e.currentTarget.value) }, h('option', { value: '' }, tools.length ? 'Choose a tool' : 'Start server to discover tools'), tools.map((tool) => h('option', { key: tool.name, value: tool.name }, tool.name)))),
-h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-args' }, 'Arguments (JSON)'), h('textarea', { class: 'input settings-project__mono', id: 'action-args', rows: 6, value: form.argsText, onInput: (e) => patch('argsText', e.currentTarget.value), spellcheck: false }))
+h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-server' }, 'MCP server'), h('select', { class: 'input', id: 'action-server', value: form.serverId, onChange: (e) => selectMcpServer(e.currentTarget.value) }, h('option', { value: '' }, 'Choose a server'), servers.map((server) => h('option', { key: server.id, value: server.id }, server.name || server.id)))),
+h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-tool' }, 'MCP tool'), h('select', { class: 'input', id: 'action-tool', value: form.toolName, onChange: (e) => selectMcpTool(e.currentTarget.value) }, h('option', { value: '' }, tools.length ? 'Choose a tool' : 'Start server to discover tools'), tools.map((tool) => h('option', { key: tool.name, value: tool.name }, tool.name)))),
+h('div', { class: 'row' }, h('label', { class: 'label', for: 'action-args' }, 'Arguments (JSON)'), h('textarea', { class: 'input settings-project__mono', id: 'action-args', rows: 6, value: form.argsText, onInput: (e) => patch('argsText', e.currentTarget.value), spellcheck: false }), h('p', { class: 'hint hint--compact' }, 'Selecting a tool prefills this object from its input schema. Replace placeholder values before saving.'))
 ),
 h('div', { class: 'row row--actions' },
 h('button', { class: 'btn btn--primary', type: 'button', onClick: save }, 'Save'),

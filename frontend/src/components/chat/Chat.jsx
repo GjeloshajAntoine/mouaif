@@ -11,7 +11,6 @@ import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
-import { ActionSheet } from './ActionSheet.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
@@ -38,7 +37,6 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction
 
   const { projectDir, chatId } = props;
 const [FileEditor, setFileEditor] = useState(null);
-const [actionSheetOpen, setActionSheetOpen] = useState(false);
 function onDraftCraftAdded(result) {
     if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
     const chat = result.chat;
@@ -259,8 +257,10 @@ setWebPreviewOpen(false);
             agentFiles: s.state.agentFiles,
             skills: s.state.skills,
             toolAuth: s.state.toolAuth,
-            mcpAuth: s.state.mcpAuth,
-            onToggleTool: s.state._toggleTool,
+mcpAuth: s.state.mcpAuth,
+customActions,
+onRunCustomAction: runCustomAction,
+onToggleTool: s.state._toggleTool,
             onToggleToolGroup: s.state._toggleToolGroup,
             onToggleAgentFiles: s.state._toggleAgentFiles,
             onToggleSkills: s.state._toggleSkills,
@@ -293,12 +293,7 @@ onDismiss: () => clearWebPreview()
 }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
-h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) }),
-h('button', {
-class: 'chat-view__action-btn', type: 'button',
-onClick: () => setActionSheetOpen(true),
-'aria-label': 'Open custom actions', title: 'Custom actions'
-}, '⚡')
+h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
 ),
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
@@ -332,9 +327,6 @@ onClick: () => setActionSheetOpen(true),
     h('div', { class: 'chat-view__status-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
-actionSheetOpen
-? h(ActionSheet, { actions: customActions, onRun: runCustomAction, onClose: () => setActionSheetOpen(false) })
-: null,
 fileEditorOpen && FileEditor
 ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
 : null,

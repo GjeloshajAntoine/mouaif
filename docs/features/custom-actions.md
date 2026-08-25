@@ -29,7 +29,7 @@ Choose **CLI**, give the action an ID, and enter a non-interactive command. The 
 
 ### MCP action
 
-Choose **MCP**, select a configured server and tool, then save the JSON arguments.
+Choose **MCP**, select a configured server and tool, then edit the prefilled JSON arguments. The editor builds the initial object from the tool’s input schema, using declared defaults, examples, or enum values when available and type-appropriate placeholders otherwise.
 
 ```json
 {
@@ -52,7 +52,7 @@ Choose **MCP**, select a configured server and tool, then save the JSON argument
 
 From a chat in that project:
 
-- Tap the lightning button above the composer and choose an action.
+- Open the existing **Tools** popup and tap an action in its **Actions** list.
 - Type `@test` as the complete composer message.
 
 An action uses its saved command or arguments. Ad-hoc arguments after the `@action-id` are not accepted.
