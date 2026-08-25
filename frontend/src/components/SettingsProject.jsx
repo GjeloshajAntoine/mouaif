@@ -1378,6 +1378,19 @@ class: 'view-back',
           h('li', null,
             h('a', {
               class: 'group__row settings-project__link-row',
+              'aria-label': 'Custom actions',
+              href: '#/settings/actions?projectDir=' + encodeURIComponent(loadedDir || '')
+            },
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Custom actions'),
+                h('span', { class: 'settings-project__link-sub' }, 'CLI and MCP shortcuts for the composer')
+              ),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+            )
+          ),
+          h('li', null,
+            h('a', {
+              class: 'group__row settings-project__link-row',
               href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir()) + (chatId() ? '&chatId=' + encodeURIComponent(chatId()) : '')
             },
               h('span', { class: 'group__row-body' },

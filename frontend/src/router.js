@@ -71,8 +71,19 @@ from: from === 'projects' || from === 'settings/projects' ? from : ''
       from: from === 'projects' || from === 'settings/projects' ? from : ''
     };
   }
-  if (h === 'settings/projects') return { name: 'settingsProjects' };
-  if (h === 'settings/defaults') return { name: 'settingsDefaults' };
+if (h === 'settings/actions' || h.startsWith('settings/actions?')) {
+const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+const params = new URLSearchParams(qs);
+return { name: 'settingsActions', projectDir: params.get('projectDir') || '' };
+}
+if (h.startsWith('settings/actions/')) {
+const rest = h.slice('settings/actions/'.length);
+const [id, qs] = rest.split('?');
+const params = new URLSearchParams(qs || '');
+return { name: 'settingsActionEdit', id: decodeURIComponent(id), projectDir: params.get('projectDir') || '' };
+}
+if (h === 'settings/projects') return { name: 'settingsProjects' };
+if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/notifications') return { name: 'settingsNotifications' };
   // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
   // screen. It now lives inside the Copilot provider form, so keep old links

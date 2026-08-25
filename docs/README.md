@@ -10,6 +10,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.
+- [Custom actions](features/custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the composer action sheet.
 
 ## Build the documentation
 

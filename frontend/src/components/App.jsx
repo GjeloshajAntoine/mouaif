@@ -14,6 +14,7 @@ import { SettingsAboutView } from './SettingsAbout.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
 import { SettingsPromptsView } from './SettingsPrompts.jsx';
 import { SettingsAgentsView, SettingsAgentEditView } from './SettingsAgents.jsx';
+import { SettingsActionsView, SettingsActionEditView } from './SettingsActions.jsx';
 import { SettingsMcpView } from './SettingsMcp.jsx';
 import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
 import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
@@ -41,6 +42,8 @@ settingsNotifications: [SettingsNotificationsView],
 settingsPrompts: [SettingsPromptsView, ({ projectDir, id = '', scope = '' }) => ({ projectDir, initialId: id, scope })],
 settingsAgents: [SettingsAgentsView, ({ projectDir, from }) => ({ projectDir, from })],
 settingsAgentEdit: [SettingsAgentEditView, ({ id, projectDir, from }) => ({ id, projectDir, from })],
+settingsActions: [SettingsActionsView, ({ projectDir }) => ({ projectDir })],
+settingsActionEdit: [SettingsActionEditView, ({ id, projectDir }) => ({ id, projectDir })],
 settingsMcp: [SettingsMcpView, ({ projectDir }) => ({ projectDir })],
 settingsMcpEdit: [SettingsMcpEditView, ({ id, projectDir, scope }) => ({ id, projectDir, scope })],
 settingsMcpRegistry: [SettingsMcpRegistryView, ({ projectDir }) => ({ projectDir })],

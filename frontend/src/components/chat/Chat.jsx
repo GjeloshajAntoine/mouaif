@@ -11,6 +11,7 @@ import { useChatState } from './useChatState.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
+import { ActionSheet } from './ActionSheet.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
@@ -23,8 +24,8 @@ export function ChatView(props) {
   const {
     refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-    chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
-    setFileEditorOpen,
+chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading, customActions,
+setFileEditorOpen,
     setImageAttachments,
     setComposerText,
     setChatSwitcherOpen,
@@ -32,12 +33,13 @@ export function ChatView(props) {
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
-    onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat
-  } = s;
+onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction
+} = s;
 
   const { projectDir, chatId } = props;
-  const [FileEditor, setFileEditor] = useState(null);
-  function onDraftCraftAdded(result) {
+const [FileEditor, setFileEditor] = useState(null);
+const [actionSheetOpen, setActionSheetOpen] = useState(false);
+function onDraftCraftAdded(result) {
     if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
     const chat = result.chat;
     if (refs.promptInput.current) {
@@ -290,9 +292,14 @@ onOpen: () => setWebPreviewOpen(true),
 onDismiss: () => clearWebPreview()
 }),
 h('div', { class: 'chat-view__composer-row' },
-      h('div', { class: 'chat-view__composer-tool' },
-        h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
-      ),
+h('div', { class: 'chat-view__composer-tool' },
+h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) }),
+h('button', {
+class: 'chat-view__action-btn', type: 'button',
+onClick: () => setActionSheetOpen(true),
+'aria-label': 'Open custom actions', title: 'Custom actions'
+}, '⚡')
+),
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
         h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
@@ -325,9 +332,12 @@ h('div', { class: 'chat-view__composer-row' },
     h('div', { class: 'chat-view__status-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
-    fileEditorOpen && FileEditor
-      ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
-      : null,
+actionSheetOpen
+? h(ActionSheet, { actions: customActions, onRun: runCustomAction, onClose: () => setActionSheetOpen(false) })
+: null,
+fileEditorOpen && FileEditor
+? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
+: null,
 webPreviewOpen && webPreviewPayload
 ? h(WebpreviewModal, {
 preview: webPreviewPayload,

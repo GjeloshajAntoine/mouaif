@@ -163,9 +163,28 @@ async function buildItems(projectDir) {
     }
   }
 
-  // 3b. Agents (subagent delegation personas) — selecting one inserts
-  // @<name> at the composer start; a leading @agent <task> dispatches
-  // the agent directly on send (see stream.js send()).
+  // 3b. Project custom actions — named CLI/MCP shortcuts. These are
+// directly invocable even when they take no user-supplied arguments.
+try {
+const cr = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
+if (cr.status === 200 && Array.isArray(cr.body && cr.body.actions)) {
+for (const action of cr.body.actions) {
+if (!action || !action.id || toolNames.has(action.id)) continue;
+out.push({
+id: 'custom-action:' + action.id,
+label: action.id,
+subtitle: (action.kind === 'mcp' ? 'MCP · ' : 'CLI · ') + (action.label || action.id),
+category: CATEGORY.ACTIONS, icon: 'action',
+insert: action.id,
+searchText: (action.id + ' ' + (action.label || '') + ' ' + (action.description || '')).toLowerCase(),
+params: null
+});
+}
+}
+} catch { /* no custom actions endpoint */ }
+// 3c. Agents (subagent delegation personas) — selecting one inserts
+// @<name> at the composer start; a leading @agent <task> dispatches
+// the agent directly on send (see stream.js send()).
   try {
     const ar = await fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir));
     if (ar.status === 200 && Array.isArray(ar.body && ar.body.agents)) {

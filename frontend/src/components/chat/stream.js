@@ -234,6 +234,44 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 
+// runCustomAction(action, state, refs)
+//
+// Execute a project-defined CLI or MCP shortcut without a model round-trip.
+// The server resolves the saved definition and applies the underlying tool's
+// authorization gate, so the browser never gets to substitute a command.
+export async function runCustomAction(action, state, refs) {
+if (!action || !action.id) return;
+const { projectDir, chatId } = state.props;
+const callId = 'action_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const toolName = 'action:' + action.id;
+if (refs.promptInput.current) refs.promptInput.current.value = '';
+refs._autoresize();
+appendToolCallCard({ id: callId, name: toolName, args: { action: action.label || action.id } }, refs);
+setChatStatus(refs, 'running ' + (action.label || action.id) + '…', 'busy');
+if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
+async function request() {
+return fetchJson('/api/actions/' + encodeURIComponent(action.id) + '/run', {
+method: 'POST', headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectDir, chatId, callId })
+});
+}
+let response;
+try {
+response = await request();
+if (response.status === 409 && response.body && response.body.code === 'EAUTH_REQUIRED') {
+let resumed = null;
+const decision = await authorizationCard(response.body, projectDir, chatId, refs, async () => { resumed = await request(); }, state);
+response = decision === 'deny' ? { status: 403, body: { ok: false, error: 'user denied' } } : resumed;
+}
+} catch (error) {
+response = { status: 500, body: { ok: false, error: String(error) } };
+}
+const body = response && response.body || {};
+appendToolResultCard({ id: callId, name: toolName, ok: response.status === 200 && body.ok !== false, result: body.result || body }, refs);
+if (response.status === 200 && body.ok !== false) setChatStatus(refs, (action.label || action.id) + ' done', 'success');
+else setChatStatus(refs, (action.label || action.id) + ' failed: ' + (body.error || body.code || 'unknown'), 'error');
+if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+}
 async function fetchRunState(projectDir, chatId) {
   const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/revision?projectDir=' + encodeURIComponent(projectDir));
   if (r.status !== 200 || !r.body) return null;
@@ -429,8 +467,14 @@ export async function send(state, refs, { content, attachments, clearComposerDra
   const atMatch = text.match(/^@(\S+)\s*(.*)$/);
   if (atMatch) {
     const toolName = atMatch[1];
-    const rest = atMatch[2].trim();
-    // @<agent> <task> — direct project-agent dispatch. Checked before
+const rest = atMatch[2].trim();
+// @<custom-action> — direct project shortcut. Custom actions do not
+// accept ad-hoc arguments; their command or MCP args are saved in settings.
+const customAction = Array.isArray(state.customActions)
+? state.customActions.find((action) => action && action.id.toLowerCase() === toolName.toLowerCase())
+: null;
+if (customAction && !rest) return runCustomAction(customAction, state, refs);
+// @<agent> <task> — direct project-agent dispatch. Checked before
     // the tool catalog: agent names live in .mouaif.json, not the tool
     // list. Only a leading @ with a non-empty task dispatches.
     if (rest && Array.isArray(state.agents) && state.agents.some(a => a && a.name === toolName)) {

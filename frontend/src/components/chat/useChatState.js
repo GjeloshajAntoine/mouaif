@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, runShellCommand, runMcpCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { send as sendTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 
@@ -65,7 +65,8 @@ export function useChatState(props) {
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
-  const chatSwitcherIdxRef = useRef(-1);
+const [customActions, setCustomActions] = useState([]);
+const chatSwitcherIdxRef = useRef(-1);
   // One React state value is the model picker's source of truth for the
   // rendered UI. The imperative chat bag still feeds streaming helpers,
   // but a sync produces one atomic props snapshot instead of six mirrors
@@ -297,6 +298,7 @@ const kickPoll = useRef(null);
   }
   const state = stateRef.current;
   state.props = { projectDir, chatId };
+state.customActions = customActions;
 
   const chatSwitcherTrigger = useRef(null);
   const chatSwitcherPop = useRef(null);
@@ -548,16 +550,17 @@ const kickPoll = useRef(null);
     async function load() {
       if (!projectDir || !chatId) return;
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents] = await Promise.all([
-          fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
-          loadModels(projectDir),
-          fetchJson('/api/ai/models/providers'),
-          fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir))
-        ]);
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents, rActions] = await Promise.all([
+fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
+loadModels(projectDir),
+fetchJson('/api/ai/models/providers'),
+fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir))
+]);
         // The tool catalog is the ONE chat-load request that is not fast
         // to resolve: GET /api/tools/list auto-starts every configured MCP
         // server that isn't already running (see docs/features/mcp.md), which
@@ -634,6 +637,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
+setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);
 
         // Fetch tool authorization settings for the tools card segments.
         try {
@@ -1026,14 +1030,15 @@ setRunningVisible(false);
 
   return {
     state, refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-  setImageAttachments, setFileEditorOpen,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
+setImageAttachments, setFileEditorOpen,
   setComposerText,
   // Reactive model-picker props (rendered by ModelPickerField)
   picker,
   // Actions bound for direct use in the JSX
   send,
-    updateChat: updateChatBound,
+runCustomAction: (action) => runCustomAction(action, state, refs),
+updateChat: updateChatBound,
     onPickerPick: onPickerPickBound,
     onPickerTogglePin: (m) => {
       if (!m) return;

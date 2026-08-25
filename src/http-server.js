@@ -73,6 +73,7 @@ const { handleAccess } = require('./server-handlers-access.js');
 const { handlePush } = require('./server-handlers-push.js');
 const { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles } = require('./server-handlers-git.js');
 const { handleTools } = require('./server-handlers-tools.js');
+const { handleActions } = require('./server-handlers-actions.js');
 const { handlePrompts, handleFeatures, handleAgents } = require('./server-handlers-prompts.js');
 const { handleMcp, handleRestart, handleInspector, handleToolAuthorization } = require('./server-handlers-misc.js');
 const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
@@ -272,7 +273,11 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   if (urlPath === '/api/git' && method === 'POST') {
     return handleGit(req, res, parsed);
   }
-
+  // Project custom actions — named CLI/MCP shortcuts configured in project
+  // settings and launched directly from the composer.
+  if (urlPath === '/api/actions' || urlPath.startsWith('/api/actions/')) {
+    return handleActions(req, res, parsed);
+  }
   // Tools — the native shell tool's direct REST surface (also the
   // /shell composer command). Model-initiated calls run inside the
   // AI client's tool loop and do not hit this endpoint.

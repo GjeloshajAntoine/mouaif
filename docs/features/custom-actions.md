@@ -1,0 +1,71 @@
+# Custom actions
+
+## Overview
+
+Custom actions are project-scoped shortcuts that run a saved CLI command or MCP tool without a model round-trip. They are stored in the project’s `customActions` setting and remain protected by the underlying Shell or MCP authorization mode.
+
+## Usage
+
+Open **Project settings → More settings → Custom actions**, then add an action.
+
+### CLI action
+
+Choose **CLI**, give the action an ID, and enter a non-interactive command. The command runs with the project folder as its working directory.
+
+```json
+{
+  "customActions": [
+    {
+      "id": "test",
+      "label": "Run tests",
+      "description": "Run the project test suite",
+      "kind": "cli",
+      "command": "npm test",
+      "timeoutMs": 120000
+    }
+  ]
+}
+```
+
+### MCP action
+
+Choose **MCP**, select a configured server and tool, then save the JSON arguments.
+
+```json
+{
+  "customActions": [
+    {
+      "id": "open-issues",
+      "label": "List open issues",
+      "kind": "mcp",
+      "serverId": "github",
+      "toolName": "list_issues",
+      "args": {
+        "state": "open"
+      }
+    }
+  ]
+}
+```
+
+### Run an action
+
+From a chat in that project:
+
+- Tap the lightning button above the composer and choose an action.
+- Type `@test` as the complete composer message.
+
+An action uses its saved command or arguments. Ad-hoc arguments after the `@action-id` are not accepted.
+
+## Implementation notes
+
+Definitions are available through these local REST endpoints:
+
+```text
+GET    /api/actions?projectDir=<absolute-path>
+POST   /api/actions
+DELETE /api/actions/:id?projectDir=<absolute-path>
+POST   /api/actions/:id/run
+```
+
+CLI execution delegates to the native Shell runner and its project authorization gate. MCP execution resolves the configured server and delegates to the selected MCP tool’s layered authorization gate. In **Ask** mode, the standard chat approval card appears before execution.
