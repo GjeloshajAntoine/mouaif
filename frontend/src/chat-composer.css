@@ -67,17 +67,6 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.file-toolbar__git-stats::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1.45rem;
-  height: 0.16rem;
-  border-radius: var(--r-pill);
-  background: var(--danger);
-  transform: translate(-50%, -50%) rotate(-32deg);
-}
 .file-toolbar__git-additions,
 .file-toolbar__git-deletions {
   position: absolute;
