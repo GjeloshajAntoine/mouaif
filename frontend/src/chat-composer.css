@@ -15,61 +15,93 @@
 
 /* Tool button container — sits left of the composer pill */
 .chat-view__composer-tool {
-flex: 0 0 auto;
-display: flex;
-flex-direction: column;
-align-items: center;
-align-self: stretch;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+
 /* ---- File toolbar button ------------------------------------------- */
+
 .file-toolbar {
-position: relative;
-flex: 1 0 auto;
-display: inline-flex;
-align-items: stretch;
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
 }
+
 .file-toolbar__trigger {
-position: relative;
-width: 44px; min-height: 44px; height: 100%; padding: 0;
-flex: 0 0 auto;
-color: var(--fg-soft);
-background: var(--surface-2);
-border: 1px solid var(--border);
-border-radius: 1.25rem;
-display: inline-flex; align-items: center; justify-content: center;
-cursor: pointer; transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
--webkit-tap-highlight-color: transparent;
+  position: relative;
+  width: 44px; height: 44px; padding: 0;
+  flex: 0 0 auto;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: color 80ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
-.file-toolbar__trigger:active { background: var(--surface); }
-.file-toolbar__trigger[aria-expanded="true"] {
-color: var(--accent);
-background: var(--surface-3);
+.file-toolbar__trigger::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: inherit;
+  transition: background 80ms ease, border-color 80ms ease;
 }
+.file-toolbar__trigger:hover { color: var(--fg); }
+.file-toolbar__trigger:hover::before { background: var(--surface-3); }
+.file-toolbar__trigger:active::before { background: var(--surface); }
+.file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); }
+.file-toolbar__trigger[aria-expanded="true"]::before { background: var(--surface-3); }
 .file-toolbar__git-stats {
-position: absolute;
-top: 0.18rem;
-left: 50%;
-transform: translateX(-50%);
-display: flex;
-gap: 0.22rem;
-font-size: 0.56rem;
-font-weight: 750;
-line-height: 1;
-font-variant-numeric: tabular-nums;
-white-space: nowrap;
-pointer-events: none;
+  position: absolute;
+  inset: 2px;
+  z-index: 2;
+  font-size: 0.5rem;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
-.file-toolbar__git-additions { color: var(--success); }
-.file-toolbar__git-deletions { color: var(--danger); }
+.file-toolbar__git-stats::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.45rem;
+  height: 0.16rem;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  transform: translate(-50%, -50%) rotate(-32deg);
+}
+.file-toolbar__git-additions,
+.file-toolbar__git-deletions {
+  position: absolute;
+  white-space: nowrap;
+}
+.file-toolbar__git-additions {
+  top: 0.25rem;
+  left: 0.3rem;
+  color: var(--success);
+}
+.file-toolbar__git-deletions {
+  right: 0.3rem;
+  bottom: 0.25rem;
+  color: var(--danger);
+}
 .file-toolbar__stack {
-display: flex;
-flex-direction: column;
-align-items: center;
-justify-content: center;
-gap: 2px;
-line-height: 0;
-transform: translateY(0.32rem);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 0;
 }
 .file-toolbar__stack svg {
   display: block;
@@ -338,7 +370,6 @@ flex-direction: row;
 flex-wrap: wrap;
 align-items: flex-end;
 gap: 2px;
-min-height: 44px;
 padding: 3px 2px 3px 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
