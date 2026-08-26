@@ -2,8 +2,7 @@
 
 ## Overview
 
-A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu:
-
+A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu. The button stretches to match the current composer height and shows the working tree's added-line count in green and deleted-line count in red above the icon.
 - **Files** — opens the CodeMirror-based project file editor popup.
 - **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry), **Staged changes**, **Unstaged changes**, and **Recent commits** (paginated — load more via `GET /api/git/commits`). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
@@ -12,7 +11,7 @@ The git actions that previously lived in the dropdown (status / diff / log / add
 
 ## Usage
 
-Tap the arrow button next to the text box to expand the menu:
+Tap the arrow button next to the text box to expand the menu. Its `+N` / `−N` indicators combine staged and unstaged text-line changes; binary changes are ignored. Counts refresh when the project changes, whenever the menu opens, and after closing the Git modal.
 
 | Item | Action |
 |------|--------|

@@ -13,14 +13,49 @@
 // a 2px gap, shows all icons clearly on every device.
 
 import { h } from 'preact';
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
+
+function parseNumstat(stdout) {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of String(stdout || '').split('\n')) {
+    const fields = line.split('\t');
+    if (/^\d+$/.test(fields[0])) additions += Number(fields[0]);
+    if (/^\d+$/.test(fields[1])) deletions += Number(fields[1]);
+  }
+  return { additions, deletions };
+}
+
+async function fetchGitStats(projectDir) {
+  if (!projectDir) return null;
+  const request = (args) => fetchJson('/api/git', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectDir, action: 'diff', args })
+  });
+  const [staged, unstaged] = await Promise.all([
+    request('--numstat --cached'),
+    request('--numstat')
+  ]);
+  const responses = [staged, unstaged].filter((result) => result.status === 200 && result.body && result.body.ok);
+  if (!responses.length) return null;
+  return responses.reduce((total, result) => {
+    const parsed = parseNumstat(result.body.stdout);
+    return {
+      additions: total.additions + parsed.additions,
+      deletions: total.deletions + parsed.deletions
+    };
+  }, { additions: 0, deletions: 0 });
+}
 
 export function FileToolbar(props) {
   const { projectDir, onOpenFileEditor } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
+  const [gitStats, setGitStats] = useState(null);
   const menuRef = useRef(null);
 
   // Lazy-load the git and CLI modals on first open, mirroring how the
@@ -52,7 +87,30 @@ export function FileToolbar(props) {
     return () => { cancelled = true; };
   }, [cliOpen, CliModal]);
 
+      const refreshGitStats = useCallback(async () => {
+    try {
+      setGitStats(await fetchGitStats(projectDir));
+    } catch (_) {
+      setGitStats(null);
+    }
+  }, [projectDir]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchGitStats(projectDir).then((stats) => {
+      if (!cancelled) setGitStats(stats);
+    }).catch(() => {
+      if (!cancelled) setGitStats(null);
+    });
+    return () => { cancelled = true; };
+  }, [projectDir]);
+
   useClickOutside(menuRef, () => setMenuOpen(false), menuOpen);
+
+  function handleTrigger() {
+    setMenuOpen(!menuOpen);
+    refreshGitStats();
+  }
 
   function handleFileEditor() {
     setMenuOpen(false);
@@ -64,21 +122,34 @@ export function FileToolbar(props) {
     setGitOpen(true);
   }
 
+  function handleGitClose() {
+    setGitOpen(false);
+    refreshGitStats();
+  }
+
   function handleCli() {
     setMenuOpen(false);
     setCliOpen(true);
   }
 
+  const statsLabel = gitStats
+    ? gitStats.additions + ' lines added, ' + gitStats.deletions + ' lines deleted'
+    : '';
+
   return h('div', { class: 'file-toolbar' },
     h('button', {
       class: 'file-toolbar__trigger',
       type: 'button',
-      onClick: () => setMenuOpen(!menuOpen),
-      'aria-label': 'File tools',
+      onClick: handleTrigger,
+      'aria-label': 'File tools' + (statsLabel ? '. ' + statsLabel : ''),
       'aria-haspopup': 'true',
       'aria-expanded': String(menuOpen),
-      title: 'File, git, and CLI tools'
+      title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
     },
+      gitStats ? h('span', { class: 'file-toolbar__git-stats', 'aria-hidden': 'true' },
+        h('span', { class: 'file-toolbar__git-additions' }, '+' + gitStats.additions),
+        h('span', { class: 'file-toolbar__git-deletions' }, '−' + gitStats.deletions)
+      ) : null,
       h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
           h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
@@ -105,7 +176,7 @@ export function FileToolbar(props) {
         h('span', null, 'Cli')
       )
     ),
-    gitOpen && GitModal ? h(GitModal, { projectDir, onClose: () => setGitOpen(false) }) : null,
+    gitOpen && GitModal ? h(GitModal, { projectDir, onClose: handleGitClose }) : null,
     cliOpen && CliModal ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
   );
 }

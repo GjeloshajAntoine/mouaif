@@ -15,48 +15,61 @@
 
 /* Tool button container — sits left of the composer pill */
 .chat-view__composer-tool {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding-bottom: 2px;
+flex: 0 0 auto;
+display: flex;
+flex-direction: column;
+align-items: center;
+align-self: stretch;
 }
-
 /* ---- File toolbar button ------------------------------------------- */
-
 .file-toolbar {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+position: relative;
+flex: 1 0 auto;
+display: inline-flex;
+align-items: stretch;
 }
-
 .file-toolbar__trigger {
-  width: 44px; height: 44px; padding: 0;
-  flex: 0 0 auto;
-  color: var(--fg-soft);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
-  -webkit-tap-highlight-color: transparent;
+position: relative;
+width: 44px; min-height: 44px; height: 100%; padding: 0;
+flex: 0 0 auto;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: 1.25rem;
+display: inline-flex; align-items: center; justify-content: center;
+cursor: pointer; transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+-webkit-tap-highlight-color: transparent;
 }
 .file-toolbar__trigger:hover { background: var(--surface-3); color: var(--fg); }
 .file-toolbar__trigger:active { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] {
-  color: var(--accent);
-  background: var(--surface-3);
+color: var(--accent);
+background: var(--surface-3);
 }
-
+.file-toolbar__git-stats {
+position: absolute;
+top: 0.18rem;
+left: 50%;
+transform: translateX(-50%);
+display: flex;
+gap: 0.22rem;
+font-size: 0.56rem;
+font-weight: 750;
+line-height: 1;
+font-variant-numeric: tabular-nums;
+white-space: nowrap;
+pointer-events: none;
+}
+.file-toolbar__git-additions { color: var(--success); }
+.file-toolbar__git-deletions { color: var(--danger); }
 .file-toolbar__stack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  line-height: 0;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+gap: 2px;
+line-height: 0;
+transform: translateY(0.32rem);
 }
 .file-toolbar__stack svg {
   display: block;
@@ -320,12 +333,13 @@ full-screen viewer.
 /* ---- Composer ----------------------------------------------------- */
 
 .chat-view__composer {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 3px 2px 3px 4px;
+display: flex;
+flex-direction: row;
+flex-wrap: wrap;
+align-items: flex-end;
+gap: 2px;
+min-height: 44px;
+padding: 3px 2px 3px 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 1.25rem;
