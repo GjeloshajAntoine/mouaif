@@ -10,6 +10,7 @@
 
 const { endpointFor, requireApiKey, BUILDERS, PARSERS, parseMiniMaxTextToolCalls } = require('./ai-endpoints.js');
 const toolFeedback = require('./toolFeedback.js');
+const usageMetrics = require('./usage.js');
 
 // ---- Streaming core ----------------------------------------------------
 
@@ -566,7 +567,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // the final `done` usage block so the server and chat UI can price the
   // cached tokens at the discounted rate.
   const usageCache = { readTokens: 0, creationTokens: 0 };
-  const delegatedUsage = { promptTokens: 0, completionTokens: 0 };
+  const delegatedUsage = { promptTokens: 0, completionTokens: 0, count: 0, costCount: 0 };
   let providerCost = null;
   let delegatedProviderCost = null;
   let completedToolRound = false;
@@ -633,8 +634,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // chat's total usage/cost matches what providers billed.
       const finalUsage = usageWithDelegated();
       const finalProviderCost = totalProviderCost();
-      onEvent('done', { usage: finalUsage, providerCost: finalProviderCost });
-      return { ok: true, usage: finalUsage, providerCost: finalProviderCost };
+      const finalDelegatedCost = delegatedCostTotal();
+      const finalTotalCost = totalRunCost();
+      onEvent('done', { usage: finalUsage, providerCost: finalProviderCost, delegatedCost: finalDelegatedCost });
+      return { ok: true, usage: finalUsage, providerCost: finalProviderCost, delegatedCost: finalDelegatedCost, totalCost: finalTotalCost };
     }
 
     for (const c of calls) {
@@ -1083,10 +1086,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   }
   } // end runUpstreamTurn
 
-  function usageWithDelegated() {
+  function usageWithDelegated(includeDelegated = true) {
     const u = {
-      promptTokens: (usage.promptTokens || 0) + (delegatedUsage.promptTokens || 0),
-      completionTokens: (usage.completionTokens || 0) + (delegatedUsage.completionTokens || 0)
+      promptTokens: (usage.promptTokens || 0) + (includeDelegated ? (delegatedUsage.promptTokens || 0) : 0),
+      completionTokens: (usage.completionTokens || 0) + (includeDelegated ? (delegatedUsage.completionTokens || 0) : 0)
     };
     // Cache totals are Anthropic-only and carry no delegated counterpart
     // (subagents may run on a different provider), so include them only
@@ -1098,26 +1101,62 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     return u;
   }
 
-  function totalProviderCost() {
-    const parent = (typeof providerCost === 'number' && isFinite(providerCost) && providerCost >= 0) ? providerCost : null;
-    const delegated = (typeof delegatedProviderCost === 'number' && isFinite(delegatedProviderCost) && delegatedProviderCost >= 0) ? delegatedProviderCost : null;
-    // Only publish an authoritative providerCost when the parent turn
-    // reported one too. If just a delegated call reported cost, leave
-    // providerCost null so src/index.js computes the whole turn from
-    // the aggregated token usage instead of showing only the subagent.
-    if (parent == null) return null;
-    return parent + (delegated || 0);
+  function parentProviderCost() {
+    return (typeof providerCost === 'number' && isFinite(providerCost) && providerCost >= 0) ? providerCost : null;
   }
-
+  function delegatedCostTotal() {
+    if (!delegatedUsage.count) return 0;
+    return delegatedUsage.costCount === delegatedUsage.count ? delegatedProviderCost : null;
+  }
+  function totalProviderCost() {
+    const parent = parentProviderCost();
+    const delegated = delegatedCostTotal();
+    // Keep this legacy aggregate for callers that consume providerCost. New
+    // callers can use delegatedCost/totalCost to avoid pricing nested tokens
+    // with the parent model when only one side has provider-reported billing.
+    if (parent == null || delegated == null) return null;
+    return parent + delegated;
+  }
+  function parentCostTotal() {
+    const exact = parentProviderCost();
+    if (exact != null) return exact;
+    try {
+      const app = opts && opts.appSettings ? opts.appSettings : require('./settings.js').getApp();
+      const estimate = usageMetrics.computeCost({ model, usage: usageWithDelegated(false), app });
+      return estimate && estimate.known ? estimate.total : null;
+    } catch { return null; }
+  }
+  function totalRunCost() {
+    const parent = parentCostTotal();
+    const delegated = delegatedCostTotal();
+    return parent == null || delegated == null ? null : parent + delegated;
+  }
+  function delegatedCostForResult(result) {
+    const total = Number(result && result.totalCost);
+    if (isFinite(total) && total >= 0) return total;
+    const exact = Number(result && result.providerCost);
+    if (isFinite(exact) && exact >= 0) return exact;
+    if (!result || !result.model || !result.usage) return null;
+    try {
+      const app = opts && opts.appSettings ? opts.appSettings : require('./settings.js').getApp();
+      const estimate = usageMetrics.computeCost({ model: result.model, usage: result.usage, app });
+      return estimate && estimate.known ? estimate.total : null;
+    } catch { return null; }
+  }
   function addDelegatedUsage(result) {
     if (!result || !result.ok) return;
+    delegatedUsage.count++;
     if (result.usage && typeof result.usage === 'object') {
       const promptTokens = Number(result.usage.promptTokens);
       const completionTokens = Number(result.usage.completionTokens);
       if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
       if (isFinite(completionTokens) && completionTokens > 0) delegatedUsage.completionTokens += completionTokens;
-    }    const cost = Number(result.providerCost);
-    if (isFinite(cost) && cost >= 0) delegatedProviderCost = (delegatedProviderCost || 0) + cost;
+    }
+    const cost = delegatedCostForResult(result);
+    if (cost != null) {
+      delegatedUsage.costCount++;
+      delegatedProviderCost = (delegatedProviderCost || 0) + cost;
+    }
   }
 
   function toolResultImageParts(result) {
@@ -1542,8 +1581,11 @@ promptSize: callOpts && callOpts.promptSize,
         flushCalls();
       }
       chat.push({ role: 'assistant', content: text });
+      const nestedModelRef = nestedModel && nestedModel.id
+        ? { id: nestedModel.id, pricing: nestedModel.pricing }
+        : null;
       const r = nested && nested.ok
-        ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost || null }
+        ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost ?? null, totalCost: nested.totalCost ?? null, model: nestedModelRef }
         : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
       return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
     }

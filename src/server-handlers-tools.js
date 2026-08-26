@@ -11,6 +11,8 @@ const {
   resolveModel,
   settings,
   chats,
+  messages,
+  usage,
   mcp,
   shellTool,
   ai,
@@ -495,13 +497,37 @@ try {
         }
       );
       const exec = out && out.exec;
+      const result = exec && exec.result;
       const toolCall = events.find((e) => e.name === 'tool_call');
+      if (exec && exec.ok && result && typeof result.text === 'string' && result.text) {
+        let total = Number(result.totalCost);
+        if (!(isFinite(total) && total >= 0) && result.model && result.usage) {
+          try {
+            const estimated = usage.computeCost({ model: result.model, usage: result.usage, app: appSettings });
+            total = estimated.known ? estimated.total : NaN;
+          } catch { total = NaN; }
+        }
+        const cost = isFinite(total) && total >= 0
+          ? { known: true, input: 0, output: 0, total, currency: 'USD' }
+          : { known: false, input: 0, output: 0, total: 0, currency: 'USD' };
+        try {
+          messages.appendMessage(projectDir, chatId, {
+            role: 'assistant',
+            content: result.text,
+            usage: result.usage || undefined,
+            cost,
+            modelId: result.model && result.model.id ? result.model.id : model.id
+          });
+          chats.recomputeProjectTotalCost(projectDir);
+        } catch { /* direct dispatch still returns its result if persistence fails */ }
+        result.cost = cost;
+      }
       const payload = {
         ok: !!(exec && exec.ok),
         id: callId,
         name: 'subagent',
         args,
-        result: exec && exec.result,
+        result,
         toolCall: toolCall ? { id: toolCall.data && toolCall.data.id, name: toolCall.data && toolCall.data.name, args: toolCall.data && toolCall.data.args } : { id: callId, name: 'subagent', args }
       };
       return sendJSON(res, 200, payload);

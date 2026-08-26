@@ -859,8 +859,12 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   // total (segment costs + final cost) equals the true per-round sum —
   // otherwise segment completion tokens are billed twice (once on the
   // segment, once inside the final aggregate).
-  let persistedSegmentCost = 0;
-  function accumulateRoundUsage(roundUsage) {
+let persistedSegmentCost = 0;
+// Nested subagents are separate billed model calls. ai-stream reports their
+// fully resolved total independently so it can be added without pretending
+// their tokens used the parent model's price.
+let delegatedCost = null;
+function accumulateRoundUsage(roundUsage) {
     if (!roundUsage) return;
     turnTokens += (Number(roundUsage.promptTokens) || 0) + (Number(roundUsage.completionTokens) || 0);
     const segCost = computeSegmentCost(roundUsage);
@@ -1189,6 +1193,9 @@ promptSize: resolvedProfileId,
         // the enriched event so the UI can render `--` cleanly; the
         // `known: false` flag tells it not to show a dollar sign.
         let enriched = data;
+        delegatedCost = data && typeof data.delegatedCost === 'number' && isFinite(data.delegatedCost) && data.delegatedCost >= 0
+          ? data.delegatedCost
+          : null;
         try {
           const app = settings.getApp();
           const providerCost = data && typeof data.providerCost === 'number' && isFinite(data.providerCost) && data.providerCost >= 0
@@ -1223,8 +1230,8 @@ promptSize: resolvedProfileId,
         //   - Charging the full aggregate here would double-bill the
         //     segment completion tokens; charging only this round's
         //     snapshot would drop the no-text rounds entirely.
-        // So: final cost = turnCost − persistedSegmentCost, and the
-        // usage block shows this round's own footprint (the aggregate
+        // So: final cost = parent turnCost + delegatedCost − persistedSegmentCost,
+        // and the usage block shows this round's own footprint (the aggregate
         // stays on the SSE event's usage block for the live "Context"
         // display). The SAME remainder rides the SSE `done` cost so the
         // in-flight chat total (segments + live final) matches the
@@ -1232,8 +1239,8 @@ promptSize: resolvedProfileId,
         const finalRoundUsage = pendingRoundUsage;
         pendingRoundUsage = null;
         let remainderCost = enriched.cost;
-        if (turnCostKnown && enriched.cost && enriched.cost.known) {
-          const remaining = Math.max(0, turnCost - persistedSegmentCost);
+        if (turnCostKnown && delegatedCost != null && enriched.cost && enriched.cost.known) {
+          const remaining = Math.max(0, turnCost + delegatedCost - persistedSegmentCost);
           remainderCost = {
             known: true,
             input: 0,

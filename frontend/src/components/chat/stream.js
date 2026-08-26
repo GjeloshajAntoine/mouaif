@@ -181,14 +181,21 @@ export async function runAgentCommand(agentName, task, state, refs) {
   }
   const body = r.body || {};
   appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
-  // Fold the agent's final text into the transcript as an assistant
-  // message so it survives reloads (tool cards are live-only here;
-  // the server does not persist direct tool invocations).
+  // Fold the persisted agent result into the live transcript immediately.
+  // Its usage/cost is included so the header Total updates before reload.
   const text = body.result && typeof body.result.text === 'string' ? body.result.text : '';
   if (text) {
-    const msg = { role: 'assistant', content: text, ts: new Date().toISOString() };
+    const msg = {
+      role: 'assistant',
+      content: text,
+      ts: new Date().toISOString(),
+      modelId: body.result.model && body.result.model.id,
+      usage: body.result.usage || undefined,
+      cost: body.result.cost || undefined
+    };
     state.messages = state.messages.concat([msg]);
     appendMessageToTranscript(msg, false, refs, state);
+    updateUsageSummary(state, null, refs);
   }
   if (r.status === 403) setChatStatus(refs, 'subagent tool is disabled for this project', 'error');
   else if (!body.ok) setChatStatus(refs, 'agent failed: ' + ((body.result && body.result.error && body.result.error.message) || body.error || 'unknown'), 'error');
