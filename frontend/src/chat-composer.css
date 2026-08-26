@@ -83,9 +83,10 @@ inset: 4px 3px 3px;
 z-index: 2;
 overflow: hidden;
 font-size: 0.38rem;
-font-weight: 800;
+font-weight: 900;
 line-height: 1;
 font-variant-numeric: tabular-nums;
+-webkit-text-stroke: 0.015rem currentColor;
 pointer-events: none;
 }
 .file-toolbar__git-additions,
@@ -98,12 +99,12 @@ white-space: nowrap;
 .file-toolbar__git-additions {
 top: 0;
 left: 0;
-color: #32e886;
+color: #39e77a;
 }
 .file-toolbar__git-deletions {
 right: 0;
 bottom: 0;
-color: #ff5263;
+color: #ff6673;
 }
 .file-toolbar__stack svg {
   display: block;
