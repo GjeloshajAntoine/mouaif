@@ -98,12 +98,12 @@ white-space: nowrap;
 .file-toolbar__git-additions {
 top: 0;
 left: 0;
-color: var(--success);
+color: #32e886;
 }
 .file-toolbar__git-deletions {
 right: 0;
 bottom: 0;
-color: var(--danger);
+color: #ff5263;
 }
 .file-toolbar__stack svg {
   display: block;
