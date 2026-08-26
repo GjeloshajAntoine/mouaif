@@ -32,7 +32,7 @@ setFileEditorOpen,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
-onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction
+onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions
 } = s;
 
   const { projectDir, chatId } = props;
@@ -260,6 +260,7 @@ setWebPreviewOpen(false);
 mcpAuth: s.state.mcpAuth,
 customActions,
 onRunCustomAction: runCustomAction,
+onRefreshCustomActions: refreshCustomActions,
 onToggleTool: s.state._toggleTool,
             onToggleToolGroup: s.state._toggleToolGroup,
             onToggleAgentFiles: s.state._toggleAgentFiles,

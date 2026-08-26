@@ -64,6 +64,7 @@ export function ToolPopup(props) {
     mcpAuth,
 customActions,
 onRunCustomAction,
+onRefreshCustomActions,
 onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
@@ -215,7 +216,11 @@ files: 'file'
       ref: triggerRef,
       class: 'chat-view__toolbar-btn tool-popup__trigger',
       type: 'button',
-      onClick: () => setOpen(!open),
+      onClick: () => {
+        const nextOpen = !open;
+        setOpen(nextOpen);
+        if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
+      },
       'aria-label': 'Toggle available tools',
       'aria-haspopup': 'true',
       'aria-expanded': String(open),

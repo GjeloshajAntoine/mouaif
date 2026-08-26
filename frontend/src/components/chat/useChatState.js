@@ -320,6 +320,15 @@ state.customActions = customActions;
   // refs, `state`, `refs`, and `updateChatBound`, so their
   // useCallback deps shrink to the props/identities that can
   // actually change: projectDir/chatId and updateChatBound.
+  const refreshCustomActions = useCallback(async () => {
+    if (!projectDir) return;
+    try {
+      const response = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
+      if (response.status === 200 && Array.isArray(response.body && response.body.actions)) {
+        setCustomActions(response.body.actions);
+      }
+    } catch { /* keep the last known action list */ }
+  }, [projectDir]);
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
@@ -1038,6 +1047,7 @@ setImageAttachments, setFileEditorOpen,
   // Actions bound for direct use in the JSX
   send,
 runCustomAction: (action) => runCustomAction(action, state, refs),
+refreshCustomActions,
 updateChat: updateChatBound,
     onPickerPick: onPickerPickBound,
     onPickerTogglePin: (m) => {
