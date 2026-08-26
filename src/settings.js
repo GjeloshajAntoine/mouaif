@@ -224,8 +224,8 @@ const MIGRATIONS = [
         try {
           chats.recomputeProjectTotalCost(p.path);
         } catch (e) {
-          // Non-fatal — a corrupt project file shouldn't block the whole
-          // migration. The field will be set on the next stream/delete.
+// Non-fatal — one inaccessible project should not block startup.
+// Registering/importing it later seeds the totals again.
           console.error('  [migration] cost total failed for ' + p.path + ': ' + e.message);
         }
       }
@@ -269,17 +269,30 @@ const MIGRATIONS = [
     }
   },
 {
-  name: '2026-08-16-add-draft-attachments',
-  description: 'Add draft_attachments column to chat_store for pending composer image drafts',
-  run() {
-    require('./chatdb.js').ensureChatTables();
-    const d = db();
-    const cols = d.prepare("PRAGMA table_info('chat_store')").all();
-    const hasCol = cols.some((c) => c.name === 'draft_attachments');
-    if (!hasCol) {
-      d.exec("ALTER TABLE chat_store ADD COLUMN draft_attachments TEXT");
-    }
-  }
+name: '2026-08-16-add-draft-attachments',
+description: 'Add draft_attachments column to chat_store for pending composer image drafts',
+run() {
+require('./chatdb.js').ensureChatTables();
+const d = db();
+const cols = d.prepare("PRAGMA table_info('chat_store')").all();
+const hasCol = cols.some((c) => c.name === 'draft_attachments');
+if (!hasCol) {
+d.exec("ALTER TABLE chat_store ADD COLUMN draft_attachments TEXT");
+}
+}
+},
+{
+name: '2026-08-26-persist-chat-cost-totals',
+description: 'Persist chat and registered-project cost totals',
+run() {
+const projects = require('./projects.js').listProjects();
+const chats = require('./chats.js');
+for (const project of projects) {
+if (!project || !project.path) continue;
+try { chats.recomputeProjectTotalCost(project.path); }
+catch (e) { console.error('  [migration] cost total failed for ' + project.path + ': ' + e.message); }
+}
+}
 }
 ];
 

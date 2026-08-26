@@ -150,27 +150,31 @@ changed++;
 return changed;
 }
 function chatTotalCost(projectDir, chatId) {
-const agg = getChatDb().chatTotalCostDb(projectDir, chatId);
-return { total: agg.total, known: agg.known, currency: 'USD' };
+const chat = getChat(projectDir, chatId);
+return chat && chat.totalCost
+? { total: chat.totalCost.total, known: chat.totalCost.known, currency: 'USD' }
+: { total: 0, known: false, currency: 'USD' };
 }
 function recomputeProjectTotalCost(projectDir) {
-const totals = getChatDb().projectCostTotals(projectDir);
+const db = getChatDb();
+const totals = db.projectCostTotals(projectDir);
 let total = 0;
-let hasKnown = false;
-for (const chatId of Object.keys(totals)) {
-const t = totals[chatId];
-if (t.known && typeof t.total === 'number' && t.total >= 0) {
-total += t.total;
-hasKnown = true;
+let knownCount = 0;
+for (const chat of listChats(projectDir)) {
+const cost = totals[chat.id] || { total: 0, known: false, knownCount: 0 };
+db.updateChat(projectDir, chat.id, {
+totalCost: {
+total: cost.total,
+known: cost.known,
+currency: 'USD',
+knownCount: cost.knownCount || 0
 }
+});
+total += cost.total;
+knownCount += cost.knownCount || 0;
 }
-const out = { total, known: hasKnown, currency: 'USD' };
-try {
-// Route through setProject so a DB-backed project keeps its settings
-// out of the working tree (no .mouaif.json write) — see docs/features/
-// project-settings-storage.md.
-settings.setProject(projectDir, { totalCost: out });
-} catch { /* non-fatal */ }
+const out = { total, known: knownCount > 0, currency: 'USD', knownCount };
+try { require('./projects.js').setProjectTotalCost(projectDir, out); } catch { /* non-fatal */ }
 return out;
 }
 module.exports = {

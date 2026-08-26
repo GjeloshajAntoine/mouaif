@@ -36,6 +36,8 @@ const CREATE_CHAT_TABLE = `
     agent_id      TEXT,
     agent_files   INTEGER,
     skills        INTEGER,
+    total_cost    REAL NOT NULL DEFAULT 0,
+    cost_known_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (project_dir, id)
   )
 `;
@@ -77,8 +79,15 @@ function ensureTables() {
   const settings = require('./settings.js');
   const d = settings.getDb();
   d.exec(CREATE_CHAT_TABLE);
-  d.exec(CREATE_MESSAGE_TABLE);
-  d.exec(INDEX_SQL);
+d.exec(CREATE_MESSAGE_TABLE);
+const chatColumns = d.prepare("PRAGMA table_info('chat_store')").all();
+if (!chatColumns.some((column) => column.name === 'total_cost')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN total_cost REAL NOT NULL DEFAULT 0');
+}
+if (!chatColumns.some((column) => column.name === 'cost_known_count')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN cost_known_count INTEGER NOT NULL DEFAULT 0');
+}
+d.exec(INDEX_SQL);
 }
 
 // ---- Row <-> object mappers -----------------------------------------------
@@ -99,7 +108,13 @@ function rowToChat(row) {
     maxOutputTokens: row.max_output_tokens || '',
     draft: row.draft || '',
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
-    skills: row.skills === null ? undefined : (row.skills === 1)
+    skills: row.skills === null ? undefined : (row.skills === 1),
+    totalCost: {
+      total: typeof row.total_cost === 'number' ? row.total_cost : 0,
+      known: typeof row.cost_known_count === 'number' && row.cost_known_count > 0,
+      currency: 'USD',
+      knownCount: typeof row.cost_known_count === 'number' ? row.cost_known_count : 0
+    }
   };
   // draftAttachments: null/'' -> undefined (no image draft); otherwise the
 // JSON array of pending image attachments for the composer.
@@ -139,7 +154,11 @@ function chatToRow(projectDir, chat) {
     // It stays in the schema for old DBs but is always written as null.
     agent_id: null,
     agent_files: chat.agentFiles === undefined ? null : (chat.agentFiles ? 1 : 0),
-    skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0)
+    skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
+    total_cost: chat.totalCost && typeof chat.totalCost.total === 'number' ? chat.totalCost.total : 0,
+    cost_known_count: chat.totalCost && chat.totalCost.known
+      ? (Number.isInteger(chat.totalCost.knownCount) ? chat.totalCost.knownCount : 1)
+      : 0
   };
 }
 
@@ -221,10 +240,10 @@ function createChat(projectDir, chat) {
   d.prepare(`
     INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
       trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
-      agent_id, agent_files, skills)
+      agent_id, agent_files, skills, total_cost, cost_known_count)
     VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
       @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
-      @agent_id, @agent_files, @skills)
+      @agent_id, @agent_files, @skills, @total_cost, @cost_known_count)
   `).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
@@ -250,7 +269,8 @@ function updateChat(projectDir, chatId, patch) {
       max_output_tokens = @max_output_tokens,
       draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
       agent_id = @agent_id, agent_files = @agent_files,
-      skills = @skills
+      skills = @skills, total_cost = @total_cost,
+      cost_known_count = @cost_known_count
     WHERE project_dir = @project_dir AND id = @id
   `).run(row);
   return rowToChat(d.prepare(
@@ -261,16 +281,40 @@ function updateChat(projectDir, chatId, patch) {
 function deleteChat(projectDir, chatId) {
   ensureTables();
   const d = require('./settings.js').getDb();
-  const info = d.prepare(
-    'DELETE FROM chat_store WHERE project_dir = ? AND id = ?'
-  ).run(projectDir, chatId);
-  d.prepare(
-    'DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?'
-  ).run(projectDir, chatId);
-  return info.changes > 0;
+  const previous = readChatCostRow(d, projectDir, chatId);
+  const tx = d.transaction(() => {
+    const info = d.prepare(
+      'DELETE FROM chat_store WHERE project_dir = ? AND id = ?'
+    ).run(projectDir, chatId);
+    d.prepare(
+      'DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?'
+    ).run(projectDir, chatId);
+    if (info.changes > 0 && (previous.total || previous.knownCount)) {
+      require('./projects.js').adjustProjectTotalCost(projectDir, -previous.total, -previous.knownCount);
+    }
+    return info.changes > 0;
+  });
+  return tx();
 }
 
 // ---- Message CRUD ---------------------------------------------------------
+
+function knownCostDelta(msg) {
+  if (!msg || msg.role !== 'assistant' || !msg.cost || msg.cost.known !== true) return null;
+  const total = msg.cost.total;
+  if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) return null;
+  return total;
+}
+
+function readChatCostRow(d, projectDir, chatId) {
+  const row = d.prepare(
+    'SELECT total_cost, cost_known_count FROM chat_store WHERE project_dir = ? AND id = ?'
+  ).get(projectDir, chatId);
+  return {
+    total: row && typeof row.total_cost === 'number' ? row.total_cost : 0,
+    knownCount: row && typeof row.cost_known_count === 'number' ? row.cost_known_count : 0
+  };
+}
 
 function listMessages(projectDir, chatId) {
   ensureTables();
@@ -289,20 +333,45 @@ function appendMessage(projectDir, chatId, msg) {
   ).get(projectDir, chatId);
   const seq = (maxSeq ? maxSeq.max_seq : -1) + 1;
   const row = messageToRow(projectDir, chatId, seq, msg);
-  d.prepare(`
-    INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
-      reasoning, usage, cost, streaming_ms, model_id, attachments,
-      tool_call_id, name, args, ok, phase)
-    VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
-      @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-      @tool_call_id, @name, @args, @ok, @phase)
-  `).run(row);
+  const costDelta = knownCostDelta(msg);
+  const tx = d.transaction(() => {
+    d.prepare(`
+      INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
+        reasoning, usage, cost, streaming_ms, model_id, attachments,
+        tool_call_id, name, args, ok, phase)
+      VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
+        @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
+        @tool_call_id, @name, @args, @ok, @phase)
+    `).run(row);
+    if (costDelta !== null) {
+      const updated = d.prepare(`
+        UPDATE chat_store
+        SET total_cost = total_cost + ?, cost_known_count = cost_known_count + 1
+        WHERE project_dir = ? AND id = ?
+      `).run(costDelta, projectDir, chatId);
+      if (updated.changes !== 1) throw new Error('Chat not found while adding message cost');
+      require('./projects.js').adjustProjectTotalCost(projectDir, costDelta, 1);
+    }
+  });
+  tx();
   return rowToMessage(row);
 }
 
 function replaceMessages(projectDir, chatId, list) {
   ensureTables();
   const d = require('./settings.js').getDb();
+  const previous = readChatCostRow(d, projectDir, chatId);
+  let nextTotal = 0;
+  let nextKnownCount = 0;
+  for (const msg of list) {
+    const cost = knownCostDelta(msg);
+    if (cost !== null) {
+      nextTotal += cost;
+      nextKnownCount++;
+    }
+  }
+  const totalDelta = nextTotal - previous.total;
+  const knownCountDelta = nextKnownCount - previous.knownCount;
   const tx = d.transaction(() => {
     d.prepare('DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?').run(projectDir, chatId);
     const insert = d.prepare(`
@@ -316,6 +385,13 @@ function replaceMessages(projectDir, chatId, list) {
     for (let i = 0; i < list.length; i++) {
       insert.run(messageToRow(projectDir, chatId, i, list[i]));
     }
+    d.prepare(`
+      UPDATE chat_store SET total_cost = ?, cost_known_count = ?
+      WHERE project_dir = ? AND id = ?
+    `).run(nextTotal, nextKnownCount, projectDir, chatId);
+    if (totalDelta || knownCountDelta) {
+      require('./projects.js').adjustProjectTotalCost(projectDir, totalDelta, knownCountDelta);
+    }
   });
   tx();
   return list.map((m, i) => rowToMessage(
@@ -326,10 +402,21 @@ function replaceMessages(projectDir, chatId, list) {
 function clearMessages(projectDir, chatId) {
   ensureTables();
   const d = require('./settings.js').getDb();
-  const info = d.prepare(
-    'DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?'
-  ).run(projectDir, chatId);
-  return info.changes;
+  const previous = readChatCostRow(d, projectDir, chatId);
+  const tx = d.transaction(() => {
+    const info = d.prepare(
+      'DELETE FROM message_store WHERE project_dir = ? AND chat_id = ?'
+    ).run(projectDir, chatId);
+    d.prepare(`
+      UPDATE chat_store SET total_cost = 0, cost_known_count = 0
+      WHERE project_dir = ? AND id = ?
+    `).run(projectDir, chatId);
+    if (previous.total || previous.knownCount) {
+      require('./projects.js').adjustProjectTotalCost(projectDir, -previous.total, -previous.knownCount);
+    }
+    return info.changes;
+  });
+  return tx();
 }
 
 function getMessageCount(projectDir, chatId) {
@@ -379,9 +466,12 @@ function projectCostTotals(projectDir, chatIds) {
            SUM(CASE WHEN json_extract(cost, '$.known') = 1
                      AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
                     THEN CAST(json_extract(cost, '$.total') AS REAL) ELSE 0 END) AS total,
-           MAX(CASE WHEN json_extract(cost, '$.known') = 1
-                     AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
-                    THEN 1 ELSE 0 END) AS known
+MAX(CASE WHEN json_extract(cost, '$.known') = 1
+AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+THEN 1 ELSE 0 END) AS known,
+SUM(CASE WHEN json_extract(cost, '$.known') = 1
+AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+THEN 1 ELSE 0 END) AS known_count
     FROM message_store
     WHERE project_dir = ?
       AND role = 'assistant'
@@ -392,7 +482,8 @@ function projectCostTotals(projectDir, chatIds) {
   for (const r of rows) {
     out[r.chat_id] = {
       total: typeof r.total === 'number' ? r.total : 0,
-      known: r.known === 1
+      known: r.known === 1,
+      knownCount: typeof r.known_count === 'number' ? r.known_count : 0
     };
   }
   return out;

@@ -140,22 +140,51 @@ function writeProjects(list) {
   settings.setApp({ projects: list });
 }
 
+function emptyTotalCost() {
+  return { total: 0, known: false, currency: 'USD', knownCount: 0 };
+}
+function normalizeTotalCost(value) {
+  if (!value || typeof value.total !== 'number' || !Number.isFinite(value.total)) return emptyTotalCost();
+  const knownCount = Number.isInteger(value.knownCount) && value.knownCount >= 0
+    ? value.knownCount
+    : (value.known === true ? 1 : 0);
+  return {
+    total: Math.max(0, value.total),
+    known: knownCount > 0,
+    currency: 'USD',
+    knownCount
+  };
+}
 function listProjects() {
+  return readProjects().map((project) => ({
+    ...project,
+    totalCost: normalizeTotalCost(project.totalCost)
+  }));
+}
+function setProjectTotalCost(projectDir, totalCost) {
   const list = readProjects();
-  // Enrich each project with its persisted totalCost from the project file.
-  for (const p of list) {
-    try {
-      const raw = settings.getProject(p.path);
-      if (raw && raw.totalCost && typeof raw.totalCost.total === 'number') {
-        p.totalCost = raw.totalCost;
-      } else {
-        p.totalCost = { total: 0, known: false, currency: 'USD' };
-      }
-    } catch {
-      p.totalCost = { total: 0, known: false, currency: 'USD' };
-    }
-  }
-  return list;
+  const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
+  if (idx < 0) return null;
+  const normalized = normalizeTotalCost(totalCost);
+  list[idx] = { ...list[idx], totalCost: normalized };
+  writeProjects(list);
+  return normalized;
+}
+function adjustProjectTotalCost(projectDir, totalDelta, knownCountDelta) {
+  const list = readProjects();
+  const idx = list.findIndex((project) => path.resolve(project.path) === path.resolve(projectDir));
+  if (idx < 0) return null;
+  const current = normalizeTotalCost(list[idx].totalCost);
+  const knownCount = Math.max(0, current.knownCount + knownCountDelta);
+  const totalCost = {
+    total: knownCount > 0 ? Math.max(0, current.total + totalDelta) : 0,
+    known: knownCount > 0,
+    currency: 'USD',
+    knownCount
+  };
+  list[idx] = { ...list[idx], totalCost };
+  writeProjects(list);
+  return totalCost;
 }
 
 function getProject(pid) {
@@ -178,11 +207,12 @@ function registerProject(absPath) {
   const dupe = existing.find(p => path.resolve(p.path) === safe);
   if (dupe) return dupe;
   const row = {
-    id: id(),
-    path: safe,
-    name: path.basename(safe),
-    createdAt: new Date().toISOString()
-  };
+id: id(),
+path: safe,
+name: path.basename(safe),
+createdAt: new Date().toISOString(),
+totalCost: emptyTotalCost()
+};
   writeProjects([...existing, row]);
   return row;
 }
@@ -222,6 +252,8 @@ module.exports = {
   registerProject,
   removeProject,
   renameProject,
+  setProjectTotalCost,
+  adjustProjectTotalCost,
   // helpers (exported for tests + future inspector)
   isUnderHome,
   ensureSafeRoot,

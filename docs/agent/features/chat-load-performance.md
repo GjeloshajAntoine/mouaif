@@ -6,14 +6,15 @@
 
 ### Cost aggregation in SQL (`src/chatdb.js`, `src/chats.js`)
 
-`GET /api/chats` previously summed each chat's cost by calling `listMessages` per chat — a full transcript read (968 rows, multi-MB for the largest) just to total a handful of assistant `cost` blocks. The DB backend now uses one indexed `GROUP BY` over `message_store`:
+`GET /api/chats` previously aggregated assistant costs from `message_store` whenever the list opened. Costs are now maintained on write:
 
-- `chatdb.projectCostTotals(projectDir, chatIds?)` — one aggregate for selected chats, or every chat when IDs are omitted. `GET /api/chats` passes only the requested page IDs; `recomputeProjectTotalCost` intentionally omits them for a full project total. A partial `(project_dir, chat_id)` index covers assistant rows with cost data.
-- `chatdb.chatTotalCostDb(projectDir, chatId)` — single-chat aggregate (used by `chats.chatTotalCost`).
+- `chat_store.total_cost` and `chat_store.cost_known_count` hold each chat's persisted summary.
+- The registered project row in app settings holds `totalCost`, including an internal `knownCount` used to preserve `known` when costs are removed.
+- `chatdb.appendMessage`, `replaceMessages`, `clearMessages`, and `deleteChat` update both layers by delta.
+- `GET /api/chats` returns `rowToChat(...).totalCost` without querying message costs.
+- `recomputeProjectTotalCost` remains only for migration, registration, and import backfills; normal stream completion does not call it.
 
-The `json_extract` predicates replicate the old JS loop exactly (`cost.known === true && total >= 0`); verified identical totals on a 31-chat project (0/30 mismatches) and on an edge-case matrix (negative totals, non-numeric totals, non-assistant rows, `known:false`). Measured: chat-list enrichment 138 → 17 ms; `recomputeProjectTotalCost` (run after every stream) 166 → 7 ms.
-
-The legacy JSON-file backend keeps its original JS loop (no SQL available there).
+Only assistant messages with `cost.known === true` and a finite non-negative total affect metadata. The original cost object remains persisted on the message for traceability.
 
 ### Transcript cursor (`src/messages.js`, `src/chatdb.js`, `GET /api/chats/:id/revision`)
 The client's "another tab is running this chat" poll and the post-stream reconciliation use a single append-only cursor instead of a fuzzy count/timestamp marker. The endpoint returns `{ nextSeq, running }`, where `nextSeq` is the first persisted transcript row the client may not have merged yet. The `running` flag rides the same response so the poll is a single request per tick.

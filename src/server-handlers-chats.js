@@ -89,50 +89,16 @@ const urlPath = parsed.pathname;
         return aT < bT ? 1 : -1;
       });
       const page = limit > 0 ? list.slice(offset, offset + limit) : list;
-      // Enrich every returned chat with a `totalCost` block so the
-      // mobile chat list can render a cost summary in place of the
-      // old prompt-size label (decision §14). The project-level cost
-      // is read from the persisted `totalCost` field on the project
-      // record (maintained by recomputeProjectTotalCost which is
-      // called after every stream, chat delete, or message delete).
-      //
-      // Aggregate only the requested page. A project may contain far more
-      // transcript rows than these 30 chats, and scanning all of them made
-      // every project card wait unnecessarily while another chat was busy.
-      let costTotals = null;
-      try {
-        const chatdb = require('./chatdb.js');
-        if (chatdb.projectCostTotals) costTotals = chatdb.projectCostTotals(dir, page.map((c) => c.id));
-      } catch { /* fall back to per-chat below */ }
+      // Chat cost totals are persisted on chat metadata when cost-bearing
+      // messages are written. Listing chats never scans message_store.
       for (const c of page) {
-        let totalCost;
-        try {
-          if (costTotals) {
-            const agg = costTotals[c.id];
-            totalCost = agg
-              ? { total: agg.total, known: agg.known, currency: 'USD' }
-              : { total: 0, known: false, currency: 'USD' };
-          } else {
-            totalCost = chats.chatTotalCost(dir, c.id);
-          }
-        } catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
-        c.totalCost = totalCost;
         if (runningChats.has(runningKey(dir, c.id))) c.running = true;
       }
-      // Read persisted project total cost instead of re-summing.
-      let projectTotalCost = { total: 0, known: false, currency: 'USD' };
-      try {
-        const project = settings.getProject(dir);
-        if (project && project.totalCost && typeof project.totalCost.total === 'number') {
-          projectTotalCost = project.totalCost;
-        }
-      } catch { /* fall through to default */ }
       return sendJSON(res, 200, {
         chats: page,
         total: list.length,
         offset,
-        limit: limit || list.length,
-        projectTotalCost
+        limit: limit || list.length
       });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -230,8 +196,6 @@ const urlPath = parsed.pathname;
       catch { /* best-effort cleanup after the chat record is gone */ }
       // Clean up in-memory task state.
       try { require('./tools/task.js').clearChat(id); } catch { /* non-fatal */ }
-      // Refresh the persisted project total cost.
-      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -520,9 +484,7 @@ if (fileToolsEnabled) {
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const removed = messages.clearMessages(dir, id);
-      // Refresh the persisted project total cost after messages are cleared.
-      try { chats.recomputeProjectTotalCost(dir); } catch { /* non-fatal */ }
-      return sendJSON(res, 200, { ok: true, removed });
+return sendJSON(res, 200, { ok: true, removed });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -555,7 +517,8 @@ if (fileToolsEnabled) {
     try {
       const chatdb = require('./chatdb.js');
       const result = chatdb.importFromJson(dir, { skipExisting: !!body.skipExisting });
-      return sendJSON(res, 200, { ok: true, imported: result });
+chats.recomputeProjectTotalCost(dir);
+return sendJSON(res, 200, { ok: true, imported: result });
     } catch (e) {
       return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
     }
@@ -1347,8 +1310,6 @@ promptSize: resolvedProfileId,
   runningChats.delete(runKey);
   runningChatCancels.delete(runKey);
   liveChat.finishLiveChat(runKey);
-  // Refresh the persisted project total cost after a stream completes.
-  try { chats.recomputeProjectTotalCost(projectDir); } catch { /* non-fatal */ }
   res.end();
 }
 

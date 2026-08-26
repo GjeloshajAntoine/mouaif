@@ -106,7 +106,7 @@ async function handleProjects(req, res, parsed) {
     if (body.dbBacked === true) {
       settings.setDbBacked(body.dir, true);
     }
-    // Seed the persisted project total cost.
+    // Seed persisted chat and project totals once for existing histories.
     try { chats.recomputeProjectTotalCost(body.dir); } catch { /* non-fatal */ }
     return sendJSON(res, 200, { project: row, dbBacked: !!body.dbBacked });
   }

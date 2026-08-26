@@ -518,7 +518,6 @@ try {
             cost,
             modelId: result.model && result.model.id ? result.model.id : model.id
           });
-          chats.recomputeProjectTotalCost(projectDir);
         } catch { /* direct dispatch still returns its result if persistence fails */ }
         result.cost = cost;
       }
