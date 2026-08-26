@@ -94,7 +94,6 @@ position: absolute;
 max-width: 1rem;
 overflow: hidden;
 white-space: nowrap;
-text-shadow: 0 1px 1px var(--surface-2);
 }
 .file-toolbar__git-additions {
 top: 0;
