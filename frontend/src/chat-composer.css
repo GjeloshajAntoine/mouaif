@@ -58,29 +58,33 @@
 .file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); }
 .file-toolbar__trigger[aria-expanded="true"]::before { background: var(--surface-3); }
 .file-toolbar__git-stats {
-  position: absolute;
-  inset: 2px;
-  z-index: 2;
-  font-size: 0.5rem;
-  font-weight: 750;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
+position: absolute;
+inset: 3px;
+z-index: 2;
+overflow: hidden;
+border-radius: 50%;
+font-size: 0.46rem;
+font-weight: 750;
+line-height: 1;
+font-variant-numeric: tabular-nums;
+pointer-events: none;
 }
 .file-toolbar__git-additions,
 .file-toolbar__git-deletions {
-  position: absolute;
-  white-space: nowrap;
+position: absolute;
+max-width: 1.35rem;
+overflow: hidden;
+white-space: nowrap;
 }
 .file-toolbar__git-additions {
-  top: 0.25rem;
-  left: 0.3rem;
-  color: var(--success);
+top: 0.3rem;
+left: 0.4rem;
+color: var(--success);
 }
 .file-toolbar__git-deletions {
-  right: 0.3rem;
-  bottom: 0.25rem;
-  color: var(--danger);
+right: 0.4rem;
+bottom: 0.3rem;
+color: var(--danger);
 }
 .file-toolbar__stack {
   position: relative;
