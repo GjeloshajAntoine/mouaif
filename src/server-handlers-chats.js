@@ -32,6 +32,27 @@ const {
   liveChat
 } = require('./server-shared.js');
 
+// resolveNotificationPrefs(saved) — collapse the persisted notification
+// settings into the current three-key shape { status, authorization,
+// quickActions }, all defaulting to true. New stores hold these keys
+// directly; older stores only had five booleans
+// (progress/completion/errors, askUser/toolAuthorization). Prefer the new
+// key when present, otherwise derive it from the legacy pair. Kept in sync
+// with normalizePreferences() in
+// frontend/src/components/SettingsNotifications.jsx.
+function resolveNotificationPrefs(saved) {
+  const prefs = saved || {};
+  return {
+    status: prefs.status !== undefined
+      ? prefs.status === true
+      : prefs.progress !== false && prefs.completion !== false && prefs.errors !== false,
+    authorization: prefs.authorization !== undefined
+      ? prefs.authorization === true
+      : prefs.askUser !== false && prefs.toolAuthorization !== false,
+    quickActions: prefs.quickActions !== false
+  };
+}
+
 async function handleChats(req, res, parsed, sessionToken, lifecycle = {}) {
 const urlPath = parsed.pathname;
 
@@ -918,15 +939,13 @@ function accumulateRoundUsage(roundUsage) {
   let appSettings = {};
   try { appSettings = settings.getApp() || {}; } catch { /* defaults apply */ }
 
-  const savedNotificationPrefs = appSettings.notifications || {};
-  const notificationPrefs = Object.assign({
-    status: savedNotificationPrefs.progress !== false
-      && savedNotificationPrefs.completion !== false
-      && savedNotificationPrefs.errors !== false,
-    authorization: savedNotificationPrefs.askUser !== false
-      && savedNotificationPrefs.toolAuthorization !== false,
-    quickActions: true
-  }, savedNotificationPrefs);
+  // Resolve the two-slot notification preferences (status, authorization)
+  // plus quickActions. Current settings store the two-key shape directly;
+  // older stores only had five booleans (progress/completion/errors and
+  // askUser/toolAuthorization). Prefer the new keys when present, else
+  // derive from the legacy keys. Mirrors normalizePreferences() in
+  // frontend/src/components/SettingsNotifications.jsx.
+  const notificationPrefs = resolveNotificationPrefs(appSettings.notifications);
   const chatUrl = `/#/chat/${chatId}?projectDir=${encodeURIComponent(projectDir)}`;
   // Exactly two notification channels exist per chat: one replaceable status
   // slot rendered with an ASCII bar, and one authorization/attention slot.
