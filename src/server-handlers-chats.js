@@ -96,24 +96,24 @@ const urlPath = parsed.pathname;
       // record (maintained by recomputeProjectTotalCost which is
       // called after every stream, chat delete, or message delete).
       //
-      // DB backend: one GROUP BY over the project's message store
-      // covers every chat on the page (30 chats = 1 query instead of
-      // 30 full-transcript reads).
-      let app;
-      try { app = settings.getApp(); } catch { app = null; }
+      // Aggregate only the requested page. A project may contain far more
+      // transcript rows than these 30 chats, and scanning all of them made
+      // every project card wait unnecessarily while another chat was busy.
       let costTotals = null;
       try {
         const chatdb = require('./chatdb.js');
-        if (chatdb.projectCostTotals) costTotals = chatdb.projectCostTotals(dir);
+        if (chatdb.projectCostTotals) costTotals = chatdb.projectCostTotals(dir, page.map((c) => c.id));
       } catch { /* fall back to per-chat below */ }
       for (const c of page) {
         let totalCost;
         try {
-          if (costTotals && Object.prototype.hasOwnProperty.call(costTotals, c.id)) {
+          if (costTotals) {
             const agg = costTotals[c.id];
-            totalCost = { total: agg.total, known: agg.known, currency: 'USD' };
+            totalCost = agg
+              ? { total: agg.total, known: agg.known, currency: 'USD' }
+              : { total: 0, known: false, currency: 'USD' };
           } else {
-            totalCost = chats.chatTotalCost(dir, c.id, app);
+            totalCost = chats.chatTotalCost(dir, c.id);
           }
         } catch { totalCost = { total: 0, known: false, currency: 'USD' }; }
         c.totalCost = totalCost;

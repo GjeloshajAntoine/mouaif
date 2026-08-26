@@ -67,7 +67,10 @@ const CREATE_MESSAGE_TABLE = `
 
 const INDEX_SQL = `
   CREATE INDEX IF NOT EXISTS idx_message_store_lookup
-    ON message_store (project_dir, chat_id, seq)
+    ON message_store (project_dir, chat_id, seq);
+  CREATE INDEX IF NOT EXISTS idx_message_store_cost
+    ON message_store (project_dir, chat_id)
+    WHERE role = 'assistant' AND cost IS NOT NULL
 `;
 
 function ensureTables() {
@@ -356,33 +359,35 @@ function messageCursorDb(projectDir, chatId) {
 
 // ---- Cost aggregation (SQL, no full-transcript reads) ---------------------
 
-// One aggregate row per chat of a project: the known assistant-turn cost
-// total and whether any known cost exists. Matches the JS loop in
-// chats.chatTotalCost exactly (cost.known === true && total >= 0), but in
-// a single indexed scan instead of one full listMessages per chat.
+// One aggregate row per selected chat (or every project chat when no IDs
+// are supplied): the known assistant-turn cost total and whether any known
+// cost exists. Matches the JS loop in chats.chatTotalCost exactly
+// (cost.known === true && total >= 0), but uses one indexed aggregate instead
+// of one full listMessages call per chat.
 // json_extract is a SQLite JSON1 builtin — present in every Node.js
 // better-sqlite3 build (verified).
-const PROJECT_COST_SQL = `
-  SELECT chat_id,
-         SUM(CASE WHEN role = 'assistant'
-                   AND cost IS NOT NULL
-                   AND json_extract(cost, '$.known') = 1
-                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
-                  THEN CAST(json_extract(cost, '$.total') AS REAL) ELSE 0 END) AS total,
-         MAX(CASE WHEN role = 'assistant'
-                   AND cost IS NOT NULL
-                   AND json_extract(cost, '$.known') = 1
-                   AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
-                  THEN 1 ELSE 0 END) AS known
-  FROM message_store
-  WHERE project_dir = ?
-  GROUP BY chat_id
-`;
-
-function projectCostTotals(projectDir) {
+function projectCostTotals(projectDir, chatIds) {
   ensureTables();
   const d = require('./settings.js').getDb();
-  const rows = d.prepare(PROJECT_COST_SQL).all(projectDir);
+  const ids = Array.isArray(chatIds)
+    ? [...new Set(chatIds.filter((id) => typeof id === 'string' && id))]
+    : null;
+  if (ids && ids.length === 0) return {};
+  const idFilter = ids ? ` AND chat_id IN (${ids.map(() => '?').join(',')})` : '';
+  const rows = d.prepare(`
+    SELECT chat_id,
+           SUM(CASE WHEN json_extract(cost, '$.known') = 1
+                     AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                    THEN CAST(json_extract(cost, '$.total') AS REAL) ELSE 0 END) AS total,
+           MAX(CASE WHEN json_extract(cost, '$.known') = 1
+                     AND CAST(json_extract(cost, '$.total') AS REAL) >= 0
+                    THEN 1 ELSE 0 END) AS known
+    FROM message_store
+    WHERE project_dir = ?
+      AND role = 'assistant'
+      AND cost IS NOT NULL${idFilter}
+    GROUP BY chat_id
+  `).all(projectDir, ...(ids || []));
   const out = {};
   for (const r of rows) {
     out[r.chat_id] = {

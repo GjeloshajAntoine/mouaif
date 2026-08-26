@@ -8,7 +8,7 @@
 
 `GET /api/chats` previously summed each chat's cost by calling `listMessages` per chat — a full transcript read (968 rows, multi-MB for the largest) just to total a handful of assistant `cost` blocks. The DB backend now uses one indexed `GROUP BY` over `message_store`:
 
-- `chatdb.projectCostTotals(projectDir)` — one aggregate for every chat of a project (used by `GET /api/chats` list enrichment and `recomputeProjectTotalCost`).
+- `chatdb.projectCostTotals(projectDir, chatIds?)` — one aggregate for selected chats, or every chat when IDs are omitted. `GET /api/chats` passes only the requested page IDs; `recomputeProjectTotalCost` intentionally omits them for a full project total. A partial `(project_dir, chat_id)` index covers assistant rows with cost data.
 - `chatdb.chatTotalCostDb(projectDir, chatId)` — single-chat aggregate (used by `chats.chatTotalCost`).
 
 The `json_extract` predicates replicate the old JS loop exactly (`cost.known === true && total >= 0`); verified identical totals on a 31-chat project (0/30 mismatches) and on an edge-case matrix (negative totals, non-numeric totals, non-assistant rows, `known:false`). Measured: chat-list enrichment 138 → 17 ms; `recomputeProjectTotalCost` (run after every stream) 166 → 7 ms.
