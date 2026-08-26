@@ -146,16 +146,18 @@ export function FileToolbar(props) {
       'aria-expanded': String(menuOpen),
       title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
     },
-      gitStats ? h('span', { class: 'file-toolbar__git-stats', 'aria-hidden': 'true' },
-        h('span', { class: 'file-toolbar__git-additions' }, '+' + gitStats.additions),
-        h('span', { class: 'file-toolbar__git-deletions' }, '−' + gitStats.deletions)
-      ) : null,
       h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
           h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
         ),
-        h('svg', { viewBox: '0 0 20 16', width: 18, height: 14 },
-          h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
+        h('span', { class: 'file-toolbar__folder' },
+          h('svg', { viewBox: '0 0 20 16', width: 24, height: 18 },
+            h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
+          ),
+          gitStats ? h('span', { class: 'file-toolbar__git-stats' },
+            h('span', { class: 'file-toolbar__git-additions' }, '+' + gitStats.additions),
+            h('span', { class: 'file-toolbar__git-deletions' }, '−' + gitStats.deletions)
+          ) : null
         ),
         h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
           h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu. Its visible circle is reduced to match the composer bar: the green added-line count sits in the upper-left and the red deleted-line count in the lower-right. Both indicators are inset and clipped to the circular button so they cannot extend beyond its edge.
+A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu. Its visible circle is reduced to match the composer bar. The green added-line count sits in the upper-left of the folder glyph and the red deleted-line count in its lower-right, both fully contained by the folder itself.
 - **Files** — opens the CodeMirror-based project file editor popup.
 - **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry), **Staged changes**, **Unstaged changes**, and **Recent commits** (paginated — load more via `GET /api/git/commits`). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.

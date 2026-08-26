@@ -57,14 +57,33 @@
 .file-toolbar__trigger:active::before { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); }
 .file-toolbar__trigger[aria-expanded="true"]::before { background: var(--surface-3); }
+.file-toolbar__stack {
+position: relative;
+z-index: 1;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+gap: 1px;
+line-height: 0;
+}
+.file-toolbar__folder {
+position: relative;
+display: block;
+width: 24px;
+height: 18px;
+}
+.file-toolbar__folder > svg {
+position: absolute;
+inset: 0;
+}
 .file-toolbar__git-stats {
 position: absolute;
-inset: 3px;
+inset: 4px 3px 3px;
 z-index: 2;
 overflow: hidden;
-border-radius: 50%;
-font-size: 0.46rem;
-font-weight: 750;
+font-size: 0.38rem;
+font-weight: 800;
 line-height: 1;
 font-variant-numeric: tabular-nums;
 pointer-events: none;
@@ -72,29 +91,20 @@ pointer-events: none;
 .file-toolbar__git-additions,
 .file-toolbar__git-deletions {
 position: absolute;
-max-width: 1.35rem;
+max-width: 1rem;
 overflow: hidden;
 white-space: nowrap;
+text-shadow: 0 1px 1px var(--surface-2);
 }
 .file-toolbar__git-additions {
-top: 0.3rem;
-left: 0.4rem;
+top: 0;
+left: 0;
 color: var(--success);
 }
 .file-toolbar__git-deletions {
-right: 0.4rem;
-bottom: 0.3rem;
+right: 0;
+bottom: 0;
 color: var(--danger);
-}
-.file-toolbar__stack {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  line-height: 0;
 }
 .file-toolbar__stack svg {
   display: block;
