@@ -81,14 +81,8 @@ const urlPath = parsed.pathname;
     const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
     const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
     try {
-      const list = chats.listChats(dir);
-      list.sort((a, b) => {
-        const aT = a.lastOpenedAt || a.createdAt || '';
-        const bT = b.lastOpenedAt || b.createdAt || '';
-        if (aT === bT) return 0;
-        return aT < bT ? 1 : -1;
-      });
-      const page = limit > 0 ? list.slice(offset, offset + limit) : list;
+      const page = chats.listChats(dir, { offset, limit });
+      const total = limit > 0 ? chats.countChats(dir) : page.length;
       // Chat cost totals are persisted on chat metadata when cost-bearing
       // messages are written. Listing chats never scans message_store.
       for (const c of page) {
@@ -96,9 +90,9 @@ const urlPath = parsed.pathname;
       }
       return sendJSON(res, 200, {
         chats: page,
-        total: list.length,
+        total,
         offset,
-        limit: limit || list.length
+        limit: limit || page.length
       });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });

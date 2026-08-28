@@ -8,11 +8,11 @@ Opening a long, tool-heavy chat should feel instant even when the transcript run
 
 No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the 1-second reconcile poll and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed — and when it did, they transfer only the rows appended after the client's known prefix.
 
-Returning to the Chats tab reads cost totals directly from chat and registered-project metadata. Active or very large transcripts therefore do not delay the visible project chat list.
+Returning to the Chats tab reads only the visible page of chat metadata and its persisted cost totals. Projects with long histories and active or very large transcripts therefore do not delay the visible project chat list.
 
 ## Implementation notes
 
-When a known cost is appended to an assistant message, the same write path increments `chat_store.total_cost` and the registered project's `totalCost`. Clearing, replacing, or deleting transcript data applies the inverse delta. `GET /api/chats` reads the persisted chat value and never aggregates `message_store`; a one-time migration backfills existing histories.
+When a known cost is appended to an assistant message, the same write path increments `chat_store.total_cost` and the registered project's `totalCost`. Clearing, replacing, or deleting transcript data applies the inverse delta. `GET /api/chats` applies `offset` and `limit` in SQLite, uses a separate indexed count for `total`, and never aggregates `message_store`; a one-time migration backfills existing histories.
 
 ## Related
 

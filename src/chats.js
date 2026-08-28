@@ -46,8 +46,11 @@ function getChatDb() {
 return require('./chatdb.js');
 }
 // ---- Public surface -------------------------------------------------------
-function listChats(projectDir) {
-return getChatDb().listChats(projectDir);
+function listChats(projectDir, options) {
+return getChatDb().listChats(projectDir, options);
+}
+function countChats(projectDir) {
+return getChatDb().countChats(projectDir);
 }
 function getChat(projectDir, chatId) {
 if (!chatId || typeof chatId !== 'string') return null;
@@ -180,6 +183,7 @@ return out;
 module.exports = {
 PROJECT_FILE,
 listChats,
+countChats,
 getChat,
 createChat,
 updateChat,

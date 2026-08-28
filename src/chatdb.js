@@ -68,6 +68,8 @@ const CREATE_MESSAGE_TABLE = `
 // ---- Lazy DB init (reuses settings.js connection) -------------------------
 
 const INDEX_SQL = `
+  CREATE INDEX IF NOT EXISTS idx_chat_store_recent
+    ON chat_store (project_dir, COALESCE(last_opened_at, created_at) DESC, id DESC);
   CREATE INDEX IF NOT EXISTS idx_message_store_lookup
     ON message_store (project_dir, chat_id, seq);
   CREATE INDEX IF NOT EXISTS idx_message_store_cost
@@ -214,14 +216,24 @@ function messageToRow(projectDir, chatId, seq, msg) {
 
 // ---- Chat CRUD ------------------------------------------------------------
 
-function listChats(projectDir) {
+function listChats(projectDir, options = {}) {
   ensureTables();
   const d = require('./settings.js').getDb();
-  const rows = d.prepare(
-    `SELECT * FROM chat_store WHERE project_dir = ? ORDER BY
-      CASE WHEN last_opened_at IS NOT NULL THEN last_opened_at ELSE created_at END DESC`
-  ).all(projectDir);
+  const offset = Number.isInteger(options.offset) && options.offset > 0 ? options.offset : 0;
+  const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 0;
+  const order = 'ORDER BY COALESCE(last_opened_at, created_at) DESC, id DESC';
+  const rows = limit > 0
+    ? d.prepare(`SELECT * FROM chat_store WHERE project_dir = ? ${order} LIMIT ? OFFSET ?`)
+      .all(projectDir, limit, offset)
+    : d.prepare(`SELECT * FROM chat_store WHERE project_dir = ? ${order}`).all(projectDir);
   return rows.map(rowToChat);
+}
+
+function countChats(projectDir) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  const row = d.prepare('SELECT COUNT(*) AS total FROM chat_store WHERE project_dir = ?').get(projectDir);
+  return row ? row.total : 0;
 }
 
 function getChat(projectDir, chatId) {
@@ -586,6 +598,7 @@ function importMessagesFromJson(projectDir, chatId, imported) {
 module.exports = {
   // Chat CRUD
   listChats,
+  countChats,
   getChat,
   createChat,
   updateChat,

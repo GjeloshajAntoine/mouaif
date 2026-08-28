@@ -27,6 +27,8 @@ async function main() {
   projects.registerProject(PROJECT);
   const first = chats.createChat(PROJECT, { title: 'first' });
   const second = chats.createChat(PROJECT, { title: 'second' });
+  chats.updateChat(PROJECT, first.id, { lastOpenedAt: '2026-01-01T00:00:00.000Z' });
+  chats.updateChat(PROJECT, second.id, { lastOpenedAt: '2026-01-02T00:00:00.000Z' });
 
   messages.appendMessage(PROJECT, first.id, {
     role: 'assistant', content: 'one', cost: { known: true, total: 1.25 }
@@ -56,19 +58,31 @@ async function main() {
   });
 
   const originalProjectCostTotals = chatdb.projectCostTotals;
+  const originalListChats = chatdb.listChats;
+  let requestedPage = null;
   chatdb.projectCostTotals = () => { throw new Error('list must not aggregate message costs'); };
+  chatdb.listChats = (projectDir, options) => {
+    requestedPage = options;
+    return originalListChats(projectDir, options);
+  };
   const server = createServer(0);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const response = await fetch(
-      'http://127.0.0.1:' + server.address().port + '/api/chats?projectDir=' + encodeURIComponent(PROJECT) + '&limit=30'
+      'http://127.0.0.1:' + server.address().port + '/api/chats?projectDir=' + encodeURIComponent(PROJECT) + '&offset=1&limit=1'
     );
     assert.equal(response.status, 200);
     const body = await response.json();
-    assert.equal(body.chats.length, 2);
-    assert.equal(body.chats.find((chat) => chat.id === first.id).totalCost.total, 1.25);
+    assert.deepEqual(requestedPage, { offset: 1, limit: 1 });
+    assert.equal(body.chats.length, 1);
+    assert.equal(body.total, 2);
+    assert.equal(body.offset, 1);
+    assert.equal(body.limit, 1);
+    assert.equal(body.chats[0].id, first.id);
+    assert.equal(body.chats[0].totalCost.total, 1.25);
   } finally {
     chatdb.projectCostTotals = originalProjectCostTotals;
+    chatdb.listChats = originalListChats;
     await new Promise((resolve) => server.close(resolve));
   }
 

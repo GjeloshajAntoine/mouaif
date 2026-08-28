@@ -11,7 +11,7 @@
 - `chat_store.total_cost` and `chat_store.cost_known_count` hold each chat's persisted summary.
 - The registered project row in app settings holds `totalCost`, including an internal `knownCount` used to preserve `known` when costs are removed.
 - `chatdb.appendMessage`, `replaceMessages`, `clearMessages`, and `deleteChat` update both layers by delta.
-- `GET /api/chats` returns `rowToChat(...).totalCost` without querying message costs.
+- `GET /api/chats` applies `offset` and `limit` in SQLite, reads each returned row's `totalCost`, and runs a separate indexed `COUNT(*)` for the pagination total. It does not materialize or sort the project's full chat history.
 - `recomputeProjectTotalCost` remains only for migration, registration, and import backfills; normal stream completion does not call it.
 
 Only assistant messages with `cost.known === true` and a finite non-negative total affect metadata. The original cost object remains persisted on the message for traceability.
