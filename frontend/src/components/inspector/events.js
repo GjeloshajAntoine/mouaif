@@ -316,7 +316,14 @@ export function createEventHandlers(state) {
   }
 
   function captureScreenshot() {
-    return cdpSend('Page.captureScreenshot', { format: 'jpeg', quality: 55, captureBeyondViewport: true });
+    return cdpSend('Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: 55,
+      // Chrome's PDF viewer is a separately composited extension webview.
+      // Asking it for a beyond-viewport capture can stall indefinitely;
+      // viewport capture includes the rendered PDF surface immediately.
+      captureBeyondViewport: state.captureBeyondViewport !== false
+    });
   }
 
   // setViewportSize — apply a device-metrics override to the inspected

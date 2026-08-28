@@ -14,13 +14,14 @@ import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
 // Short human label for a Chrome DevTools target type. Chrome uses a
-// handful of types: `page` (a normal tab), `iframe`, `service_worker`,
-// `background_page` (extension), and a few rarely-seen ones
-// (`worker`, `shared_worker`, `other`). The chip color follows the
+// handful of types: `page` (a normal tab), `iframe`, `webview`,
+// `service_worker`, `background_page` (extension), and a few rarely-seen
+// ones (`worker`, `shared_worker`, `other`). The chip color follows the
 // type so the list reads at a glance.
 const TYPE_META = {
   page:            { label: 'TAB',    short: 'tab', tone: 'accent'  },
   iframe:          { label: 'FRAME',  short: 'frame', tone: 'accent'  },
+  webview:         { label: 'VIEW',   short: 'view', tone: 'accent'  },
   service_worker:  { label: 'SW',     short: 'sw',  tone: 'warning' },
   background_page: { label: 'BG',     short: 'bg',  tone: 'muted'   },
   worker:          { label: 'WORKER', short: 'wrk', tone: 'warning' },
@@ -30,6 +31,27 @@ const TYPE_META = {
 function targetMeta(t) {
   const type = (t && t.type) || 'other';
   return TYPE_META[type] || TYPE_META.other;
+}
+// Chrome renders a top-level PDF in its built-in extension webview.
+// Page.captureScreenshot on the outer `page` target sees the viewer's
+// toolbar/background but can omit the separately composited PDF pages.
+// /json/list exposes a stable target chain for that case:
+//
+//   page (the PDF URL) -> webview (Chrome PDF viewer) -> iframe (PDF URL)
+//
+// Attach the live Inspector connection to the webview so screenshot and
+// input CDP commands run against the surface that actually owns the PDF
+// content. Keep the outer page as currentTarget so navigation/reload/close
+// actions continue to address the browser tab, not its implementation detail.
+function findPdfViewerTarget(target, allTargets) {
+  if (!target || target.type !== 'page' || !target.id || !Array.isArray(allTargets)) return null;
+  const viewer = allTargets.find((item) => item
+    && item.type === 'webview'
+    && item.parentId === target.id
+    && /^chrome-extension:\/\/mhjfbmdgcfjbbpaeojofohoefgiehjai\//.test(item.url || ''));
+  if (!viewer || !viewer.id) return null;
+  const pdfFrame = allTargets.find((item) => item && item.type === 'iframe' && item.parentId === viewer.id);
+  return pdfFrame ? viewer : null;
 }
 // closeMessage — body text for the in-app confirm sheet. Shows the
 // tab's title so the user is closing the right thing; falls back to
@@ -453,10 +475,11 @@ useEffect(() => {
     rerender();
   }
 
-  function initCdp() {
+  function initCdp(options) {
     conn.current = createCdpConnection();
     const state = {
       consoleEntries, networkEntries, reqMap, consoleVL, networkVL,
+      captureBeyondViewport: !options || options.captureBeyondViewport !== false,
       cdpSend: conn.current.cdpSend,
       onNavigate: onTargetNavigated,
       rerender,
@@ -501,14 +524,16 @@ useEffect(() => {
 
   function connect(target) {
     if (conn.current) disconnect();
-    const c = initCdp();
+    const pdfViewerTarget = findPdfViewerTarget(target, targets);
+    const inspectedTarget = pdfViewerTarget || target;
+    const c = initCdp({ captureBeyondViewport: !pdfViewerTarget });
     const handlers = eventHandlers.current;
     setCurrentTarget(target);
     setPhase('inspect');
     consoleEntries.current = [];
     networkEntries.current = [];
     setStatus('connecting…');
-    const result = c.connect(debuggerUrl, target.id);
+    const result = c.connect(debuggerUrl, inspectedTarget.id);
     if (result.error) {
       setStatus(result.error);
       return;

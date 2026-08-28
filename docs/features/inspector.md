@@ -20,7 +20,7 @@ The **Inspector** tab provides a mobile-first DevTools experience for inspecting
 You can toggle each of the four panels on and off to customize your workspace:
 
 ### 1. Preview panel
-- **Live page preview** — captures full-height snapshots of the active page.
+- **Live page preview** — captures full-height snapshots of the active page. For Chrome's built-in PDF viewer, the Inspector automatically captures the viewer webview target so rendered PDF pages appear with the viewer controls instead of showing only its empty UI shell.
 - **Interactive tapping** — tap anywhere on the screenshot to click elements or interact with the page remotely.
 - **Scroll & navigation** — scroll through tall pages and follow links in real-time.
 - **Viewport size presets** — a dropdown in the Preview panel header applies a CDP device-metrics override to the inspected page: **Auto** (native size), **Phone** (375×667), **Phone+** (414×896), **Tablet** (768×1024), and **Laptop** (1280×800). The page reflows live so media queries and responsive breakpoints respond as if the browser were that size.
