@@ -33,25 +33,19 @@ function targetMeta(t) {
   return TYPE_META[type] || TYPE_META.other;
 }
 // Chrome renders a top-level PDF in its built-in extension webview.
-// Page.captureScreenshot on the outer `page` target sees the viewer's
-// toolbar/background but can omit the separately composited PDF pages.
-// /json/list exposes a stable target chain for that case:
+// Page.captureScreenshot on the outer `page` target includes that separately
+// composited surface only for viewport captures. /json/list exposes a stable
+// target chain that lets us identify this case without relying on a .pdf URL:
 //
 //   page (the PDF URL) -> webview (Chrome PDF viewer) -> iframe (PDF URL)
-//
-// Attach the live Inspector connection to the webview so screenshot and
-// input CDP commands run against the surface that actually owns the PDF
-// content. Keep the outer page as currentTarget so navigation/reload/close
-// actions continue to address the browser tab, not its implementation detail.
-function findPdfViewerTarget(target, allTargets) {
-  if (!target || target.type !== 'page' || !target.id || !Array.isArray(allTargets)) return null;
+function hasPdfViewerTarget(target, allTargets) {
+  if (!target || target.type !== 'page' || !target.id || !Array.isArray(allTargets)) return false;
   const viewer = allTargets.find((item) => item
     && item.type === 'webview'
     && item.parentId === target.id
     && /^chrome-extension:\/\/mhjfbmdgcfjbbpaeojofohoefgiehjai\//.test(item.url || ''));
-  if (!viewer || !viewer.id) return null;
-  const pdfFrame = allTargets.find((item) => item && item.type === 'iframe' && item.parentId === viewer.id);
-  return pdfFrame ? viewer : null;
+  if (!viewer || !viewer.id) return false;
+  return allTargets.some((item) => item && item.type === 'iframe' && item.parentId === viewer.id);
 }
 // closeMessage — body text for the in-app confirm sheet. Shows the
 // tab's title so the user is closing the right thing; falls back to
@@ -524,16 +518,15 @@ useEffect(() => {
 
   function connect(target) {
     if (conn.current) disconnect();
-    const pdfViewerTarget = findPdfViewerTarget(target, targets);
-    const inspectedTarget = pdfViewerTarget || target;
-    const c = initCdp({ captureBeyondViewport: !pdfViewerTarget });
+    const hasPdfViewer = hasPdfViewerTarget(target, targets);
+    const c = initCdp({ captureBeyondViewport: !hasPdfViewer });
     const handlers = eventHandlers.current;
     setCurrentTarget(target);
     setPhase('inspect');
     consoleEntries.current = [];
     networkEntries.current = [];
     setStatus('connecting…');
-    const result = c.connect(debuggerUrl, inspectedTarget.id);
+    const result = c.connect(debuggerUrl, target.id);
     if (result.error) {
       setStatus(result.error);
       return;
