@@ -1,12 +1,5 @@
 /* Auth panel.
-   Imported by style.css. */
-
-.auth__sub { color: var(--accent); }
-.auth__help p { color: var(--fg-soft); font-size: 0.8rem; margin: 6px 0; line-height: 1.45; }
-.auth__help .row--actions .btn { min-width: 0; }
-.auth__help { margin-top: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
-.auth__help code { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.85em; background: var(--surface-3); padding: 1px 6px; border-radius: var(--r-sm); word-break: break-all; color: var(--fg); }
-
+Imported by style.css. */
 /* ---- App access login / setup ----------------------------------- */
 
 .access-auth {

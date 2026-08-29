@@ -192,7 +192,6 @@ padding-top: 0;
   flex-shrink: 0;
   width: 8px;
 }
-.group__row-danger .group__row-label { color: var(--danger); }
 .group__row-body {
   flex: 1;
   min-width: 0;

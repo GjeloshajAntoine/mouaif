@@ -31,9 +31,6 @@ cursor: pointer;
 .mcp__row-err:disabled { cursor: default; opacity: 1; }
 .mcp__row-err-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .mcp__row-err-more { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
-/* Disabled-server notice: the Start button is unavailable and the row
-   explains why instead of leaving a dead control. */
-.mcp__row-off { color: var(--muted); }
 /* In-flight lifecycle feedback (starting… / refreshing…) — same slot
    as the error, but neutral. */
 .mcp__row-busy { color: var(--fg-soft); }
@@ -77,7 +74,6 @@ cursor: pointer;
 .tags__list { position: relative; margin: 0 0 6px; padding: 0; height: min(62dvh, 34rem); min-height: 15rem; overflow-y: auto; overscroll-behavior: contain; }
 .tags__list.is-empty::before { content: attr(data-empty-text); display: block; text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
 .tags__virtual-slot { padding-bottom: 4px; box-sizing: border-box; }
-.tags__empty { text-align: center; color: var(--fg-soft); padding: 18px 10px; font-size: 0.8rem; line-height: 1.45; }
 .tags__row { height: 100%; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; }
 .tags__row.is-tagged { border-color: var(--accent-soft); }
 .tags__row.is-binary { opacity: 0.6; }
