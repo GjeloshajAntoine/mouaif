@@ -912,8 +912,8 @@ applyViewport(viewportId);
                 target: t,
                 key: t && t.id,
                 onConnect: connect,
-                onReload: actionTarget.bind(null, 'reload'),
-                onClose: actionTarget.bind(null, 'close')
+                onReload: (target) => actionTarget(target, 'reload'),
+                onClose: (target) => actionTarget(target, 'close')
               }))
             )
           : h('div', { class: 'inspector__row-targets-empty', role: 'status' },

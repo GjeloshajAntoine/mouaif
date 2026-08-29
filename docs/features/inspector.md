@@ -55,6 +55,7 @@ Close tab is destructive, so the Inspector prompts for confirmation before sendi
 - The sheet shows the tab's title in quotes (or the URL host when the title is empty) so the user can confirm the right target.
 - **Cancel** dismisses the sheet with no network call.
 - **Close tab** sends `POST /api/inspector/close` with `{ targetId }`. On success the Inspector disconnects the live CDP session, returns to the targets list, and refreshes the target list so the closed tab disappears. Failures surface on the status pill instead of re-opening the sheet.
+- Target-row menu actions pass the selected target first and the action name second, matching the shared action handler. This keeps both **Reload** and **Close tab** functional from each row's `…` menu.
 
 The previous design used `window.confirm`, which some embedded web views auto-dismiss and return `false` without rendering a dialog; the close handler then early-returned and the user saw the button as inert (no status pill, no network call). The in-app sheet renders inline so it always renders, always accepts input, and obeys the mobile-first UI rules (≥ 44 × 44 px tap targets, safe-area padding).
 
