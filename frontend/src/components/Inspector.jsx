@@ -250,26 +250,42 @@ function PanelCard(props) {
         h('span', { class: 'inspector__panel-label' }, props.label),
         props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
       ),
-      h('button', {
-        class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
-        type: 'button',
-        'aria-label': toggleAria,
-        'aria-pressed': String(isVisible),
-        title: toggleAria,
-        onClick: () => props.onToggle(props.id)
-      },
-        // Eye-open glyph when the panel is visible, eye-closed
-        // when it's hidden. Drawn as inline SVG so it inherits
-        // the current color and matches the rest of the chrome
-        // iconography.
-        isVisible
-          ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('div', { class: 'inspector__panel-head-actions' },
+        props.onRefresh
+          ? h('button', {
+            class: 'icon-btn inspector__panel-refresh',
+            type: 'button',
+            title: 'Refresh preview',
+            'aria-label': 'Refresh preview',
+            disabled: !props.isVisible,
+            onClick: (e) => { e.stopPropagation(); props.onRefresh(); }
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+              h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+            )
+          )
+          : null,
+        h('button', {
+          class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
+          type: 'button',
+          'aria-label': toggleAria,
+          'aria-pressed': String(isVisible),
+          title: toggleAria,
+          onClick: () => props.onToggle(props.id)
+        },
+          // Eye-open glyph when the panel is visible, eye-closed
+          // when it's hidden. Drawn as inline SVG so it inherits
+          // the current color and matches the rest of the chrome
+          // iconography.
+          isVisible
+            ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
               h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
               h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
             )
-          : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
               h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
             )
+        )
       )
     ),
     h('div', { class: 'inspector__panel-body' },
@@ -416,6 +432,11 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
   const consoleVL = useRef(null);
   const networkVL = useRef(null);
   const reqMap = useRef(new Map());
+  // previewRefreshRef — the Preview panel assigns its live manual-capture
+  // handler to this ref on mount. The "Refresh preview" button in the
+  // panel header reads it so it can push a fresh screenshot on tap,
+  // independent of the slow fallback poll.
+  const previewRefreshRef = useRef(null);
 
 // When a panel becomes hidden the corresponding virtual-list
 // child unmounts and runs its own `vl.destroy()` cleanup, but
@@ -985,6 +1006,7 @@ applyViewport(viewportId);
 capture: handlers && handlers.captureScreenshot,
 clickAt: handlers && handlers.clickAt,
 subscribe: conn.current && conn.current.cdpOn,
+refreshRef: previewRefreshRef,
 onDraftCraft: (image) => image && setDraftCraftImage(image)
 });
     if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
@@ -1101,6 +1123,7 @@ onDraftCraft: (image) => image && setDraftCraftImage(image)
               onToggle: togglePanel,
               sizeId: viewportId,
               onSizeChange: id === 'preview' ? applyViewport : null,
+              onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
               key: id
             }, renderPanelBody(id)))
           )

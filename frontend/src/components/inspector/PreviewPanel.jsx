@@ -12,6 +12,7 @@
 //   - a slow fallback poll (every 3 s) so in-page state changes
 //     (scroll position, hover, click-driven DOM mutations, SPA route
 //     changes that don't fire frameNavigated) still show up.
+//   - a manual "Refresh preview" button in the panel header.
 import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 
@@ -35,6 +36,10 @@ export function PreviewPanel(props) {
     let pendingTimer = null;
     let lastCaptureAt = 0;
     let pendingRevoke = null;
+    // Set when the user presses "Refresh preview" but a capture is
+    // already in flight — the pressed refresh still lands after the
+    // current capture completes instead of being dropped.
+    let manualQueued = false;
 
     function scheduleFallback() {
       if (pendingTimer) clearTimeout(pendingTimer);
@@ -54,79 +59,86 @@ export function PreviewPanel(props) {
       }, wait);
     }
 
-    async function runCapture(reason) {
-      if (stop || inFlight) return;
-      inFlight = true;
-      try {
-      const r = await props.capture();
+    async function runCapture(reason, force) {
+      // A manual refresh presses through an in-flight coalesced capture:
+      // queue it so the pressed capture still lands after the current one
+      // finishes, instead of being dropped.
       if (stop) return;
-      lastCaptureAt = Date.now();
-      // Make sure the fallback is scheduled even if the trigger that
-      // woke us up didn't schedule it itself (e.g. the very first
-      // 'init' capture, or a capture started while another was
-      // already in flight and the new event was coalesced).
-      scheduleFallback();
-      if (!r || !r.data) {
-        // Page.captureScreenshot succeeded but returned no image
-        // (Chrome does this on the very first call right after
-        // Page.enable, and right after a navigation starts). Keep
-        // the current status instead of flipping "live" to
-        // "screenshot failed", and let the fallback poll retry.
+      if (inFlight) {
+        if (force) manualQueued = true;
         return;
       }
-      const bin = atob(r.data);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const blob = new Blob([bytes], { type: 'image/jpeg' });
-      latestImage.current = { dataUrl: 'data:image/jpeg;base64,' + r.data, width: 0, height: 0 };
-      const next = URL.createObjectURL(blob);
-      const img = imgRef.current;
-      const frame = frameRef.current;
-      if (img && frame) {
-        // Keep the user's scroll position when a new screenshot
-        // replaces the old one — otherwise the frame would snap
-        // back to the top on every refresh.
-        const prevTop = frame.scrollTop || 0;
-        const prevLeft = frame.scrollLeft || 0;
-        // Swap src in place. Reusing the same <img> node avoids
-        // the re-mount + decode window that a brand-new <img>
-        // would force (and which was the reason clicks on a
-        // just-refreshed preview used to silently no-op:
-        // naturalWidth was 0 for a frame or two).
-        const prevOnload = img.onload;
-        img.onload = () => {
-          if (frameRef.current) {
-            frameRef.current.scrollTop = prevTop;
-            frameRef.current.scrollLeft = prevLeft;
-          }
-          const cur = imgRef.current;
-          if (cur) {
-            lastDims.current.w = cur.naturalWidth || lastDims.current.w;
-            lastDims.current.h = cur.naturalHeight || lastDims.current.h;
-            if (latestImage.current) {
-              latestImage.current.width = cur.naturalWidth || 0;
-              latestImage.current.height = cur.naturalHeight || 0;
+      inFlight = true;
+      try {
+        const r = await props.capture();
+        if (stop) return;
+        lastCaptureAt = Date.now();
+        // Make sure the fallback is scheduled even if the trigger that
+        // woke us up didn't schedule it itself (e.g. the very first
+        // 'init' capture, or a capture started while another was
+        // already in flight and the new event was coalesced).
+        scheduleFallback();
+        if (!r || !r.data) {
+          // Page.captureScreenshot succeeded but returned no image
+          // (Chrome does this on the very first call right after
+          // Page.enable, and right after a navigation starts). Keep
+          // the current status instead of flipping "live" to
+          // "screenshot failed", and let the fallback poll retry.
+          return;
+        }
+        const bin = atob(r.data);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        latestImage.current = { dataUrl: 'data:image/jpeg;base64,' + r.data, width: 0, height: 0 };
+        const next = URL.createObjectURL(blob);
+        const img = imgRef.current;
+        const frame = frameRef.current;
+        if (img && frame) {
+          // Keep the user's scroll position when a new screenshot
+          // replaces the old one — otherwise the frame would snap
+          // back to the top on every refresh.
+          const prevTop = frame.scrollTop || 0;
+          const prevLeft = frame.scrollLeft || 0;
+          // Swap src in place. Reusing the same <img> node avoids
+          // the re-mount + decode window that a brand-new <img>
+          // would force (and which was the reason clicks on a
+          // just-refreshed preview used to silently no-op:
+          // naturalWidth was 0 for a frame or two).
+          const prevOnload = img.onload;
+          img.onload = () => {
+            if (frameRef.current) {
+              frameRef.current.scrollTop = prevTop;
+              frameRef.current.scrollLeft = prevLeft;
             }
-            cur.onload = prevOnload || null;
-          }
-        };
-        // Defer revoking the previous URL until the new one has
-        // actually decoded — revoking too early used to abort
-        // the in-flight decode and show a blank frame.
-        if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
-        pendingRevoke = next;
-        img.src = next;
-        setImgSrc(next);
-        setNote('live');
-      } else {
-        // No img node yet (first render before commit) — fall
-        // back to setting state so React mounts the element on
-        // the next pass, then we'll swap src on the tick after.
-        if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
-        pendingRevoke = next;
-        setImgSrc(next);
-        setNote('live');
-      }
+            const cur = imgRef.current;
+            if (cur) {
+              lastDims.current.w = cur.naturalWidth || lastDims.current.w;
+              lastDims.current.h = cur.naturalHeight || lastDims.current.h;
+              if (latestImage.current) {
+                latestImage.current.width = cur.naturalWidth || 0;
+                latestImage.current.height = cur.naturalHeight || 0;
+              }
+              cur.onload = prevOnload || null;
+            }
+          };
+          // Defer revoking the previous URL until the new one has
+          // actually decoded — revoking too early used to abort
+          // the in-flight decode and show a blank frame.
+          if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
+          pendingRevoke = next;
+          img.src = next;
+          setImgSrc(next);
+          setNote('live');
+        } else {
+          // No img node yet (first render before commit) — fall
+          // back to setting state so React mounts the element on
+          // the next pass, then we'll swap src on the tick after.
+          if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
+          pendingRevoke = next;
+          setImgSrc(next);
+          setNote('live');
+        }
       } catch (e) {
         const msg = (e && e.message) || String(e);
         // If the socket isn't open yet, stay in 'capturing…' and let the fallback retry
@@ -137,6 +149,13 @@ export function PreviewPanel(props) {
         }
       } finally {
         inFlight = false;
+        // A manual refresh was pressed while a capture was in flight —
+        // run it now rather than dropping the request.
+        if (manualQueued && !stop) {
+          manualQueued = false;
+          runCapture('manual', true);
+          return;
+        }
       }
     }
 
@@ -170,6 +189,18 @@ export function PreviewPanel(props) {
     // panel would wait up to 3 s for the first poll.
     runCapture('init');
     scheduleFallback();
+    // Expose a manual refresh to the parent so the Preview panel
+    // header can offer a "Refresh preview" action. The parent passes
+    // a ref (refreshRef) that it reads when the button is tapped; we
+    // assign the handler here so it always closes over the live
+    // capture loop for this mount.
+    if (props.refreshRef) {
+      props.refreshRef.current = () => {
+        if (stop) return;
+        setNote('capturing…');
+        runCapture('manual', true);
+      };
+    }
 
     return () => {
       stop = true;
