@@ -343,7 +343,9 @@ h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () =
 )))
 : h('p', { class: 'draft-craft__marker-empty' }, 'No marker dots on the image yet.')
 ),
-h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' }),
+h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
+),
+h('div', { class: 'draft-craft__annotator-foot' },
 h('button', { class: 'btn btn--primary', type: 'button', onClick: openPicker, disabled: !ready }, 'Add to chat draft')
 )
 ),

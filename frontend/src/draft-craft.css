@@ -288,7 +288,19 @@ cursor: pointer;
 }
 .draft-craft__marker-empty { margin: 0; color: var(--muted); font-size: 0.74rem; }
 .draft-craft__note { grid-column: 1 / -1; resize: none; }
-.draft-craft__annotator-tools > .btn--primary { grid-column: 1 / -1; }
+/* Pinned footer: the "Add to chat draft" button always stays visible
+below the scrollable tools panel, even when many marker rows are added. */
+.draft-craft__annotator-foot {
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+justify-content: flex-end;
+gap: 0.5rem;
+padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+background: var(--surface);
+border-top: 1px solid var(--border);
+}
+.draft-craft__annotator-foot .btn--primary { min-height: var(--tap); }
 .inspector__draft-craft {
 width: 100%;
 margin-top: 0.4rem;
