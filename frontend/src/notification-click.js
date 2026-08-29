@@ -68,11 +68,26 @@ export function navigateToNotificationTarget(value) {
 }
 
 export function consumePendingNotificationClick() {
-  if (typeof document === 'undefined') return;
-  const check = () => {
-    if (document.visibilityState !== 'visible') return;
-    readPendingClickTarget().then(navigateToNotificationTarget);
-  };
-  check();
-  document.addEventListener('visibilitychange', check);
+if (typeof document === 'undefined') return;
+const check = () => {
+if (document.visibilityState !== 'visible') return;
+// Read-and-clear is idempotent: once consumed the store is empty, so
+// a later fire (visibilitychange, pageshow, focus) is a no-op. The
+// page re-checks on focus so an already-open window that a suspended
+// iOS PWA was woken into still picks up a target that the service
+// worker wrote before posting its (possibly dropped) NAVIGATE message.
+readPendingClickTarget().then(navigateToNotificationTarget);
+};
+check();
+document.addEventListener('visibilitychange', check);
+window.addEventListener('pageshow', check);
+// `focus` fires when a background PWA is brought forward, which is how
+// tapping a notification surfaces a suspended window on iOS without a
+// reliable visibilitychange. Debounce so overlapping events collapse to
+// one read.
+let focusTimer = null;
+window.addEventListener('focus', () => {
+clearTimeout(focusTimer);
+focusTimer = setTimeout(check, 0);
+});
 }

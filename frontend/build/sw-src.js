@@ -338,6 +338,16 @@ async function openNotificationTarget(data) {
     // target URL to the page is the only way to move an existing PWA
     // window there. The page swaps the hash (or reloads when it is
     // already there) and then focuses itself.
+    //
+    // Persist the click target as a fallback BEFORE posting the message.
+    // A suspended iOS PWA can be woken by focus without its JS running to
+    // receive the NAVIGATE postMessage (WebKit drops it), and the app then
+    // reopens at start_url instead of the clicked chat. Writing the same
+    // target the cold-launch path uses lets the woken page consume it on
+    // load / focus / visible and recover the navigation. The page clears
+    // the store once a NAVIGATE is actually handled, so a successful move
+    // never re-triggers.
+    await writeClickTarget(target.href);
     appWindow.postMessage({ type: 'NAVIGATE', url: target.href });
     return appWindow.focus();
   }
