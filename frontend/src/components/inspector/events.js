@@ -323,7 +323,7 @@ export function createEventHandlers(state) {
       // Asking it for a beyond-viewport capture can stall indefinitely;
       // viewport capture includes the rendered PDF surface immediately.
       captureBeyondViewport: state.captureBeyondViewport !== false
-    });
+    }, 8000);
   }
 
   // setViewportSize — apply a device-metrics override to the inspected

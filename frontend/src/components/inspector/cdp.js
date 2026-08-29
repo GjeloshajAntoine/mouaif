@@ -8,15 +8,28 @@ export function createCdpConnection() {
   const pending = new Map();
   const listeners = new Map();
 
-  function cdpSend(method, params) {
+  function cdpSend(method, params, timeoutMs) {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== 1) return Promise.reject(new Error('not connected'));
     const id = cmdId.current++;
     const msg = JSON.stringify({ id, method, params: params || {} });
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      const slot = { resolve, reject, timer: null };
+      if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+        slot.timer = setTimeout(() => {
+          if (!pending.delete(id)) return;
+          const error = new Error(method + ' timed out');
+          error.code = 'ETIMEDOUT';
+          reject(error);
+        }, timeoutMs);
+      }
+      pending.set(id, slot);
       try { ws.send(msg); }
-      catch (e) { pending.delete(id); reject(e); }
+      catch (e) {
+        pending.delete(id);
+        if (slot.timer) clearTimeout(slot.timer);
+        reject(e);
+      }
     });
   }
 
@@ -35,6 +48,7 @@ export function createCdpConnection() {
       const slot = pending.get(msg.id);
       if (slot) {
         pending.delete(msg.id);
+        if (slot.timer) clearTimeout(slot.timer);
         if (msg.error) slot.reject(Object.assign(new Error(msg.error.message || 'CDP error'), { code: msg.error.code }));
         else slot.resolve(msg.result || {});
       }
@@ -53,6 +67,7 @@ export function createCdpConnection() {
       try { ws.close(1000, 'client disconnect'); } catch { /* ignore */ }
     }
     for (const slot of pending.values()) {
+      if (slot.timer) clearTimeout(slot.timer);
       try { slot.reject(new Error('disconnected')); } catch { /* ignore */ }
     }
     pending.clear();

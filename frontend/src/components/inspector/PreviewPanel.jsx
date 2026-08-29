@@ -36,10 +36,13 @@ export function PreviewPanel(props) {
     let pendingTimer = null;
     let lastCaptureAt = 0;
     let pendingRevoke = null;
-    // Set when the user presses "Refresh preview" but a capture is
-    // already in flight — the pressed refresh still lands after the
-    // current capture completes instead of being dropped.
-    let manualQueued = false;
+    // Keep one event-driven capture queued while Chrome is already taking
+    // a screenshot. Reload emits frameNavigated before the new document is
+    // ready, then frameStoppedLoading while that first capture can still be
+    // in flight. Dropping the latter leaves the transient blank document in
+    // the preview until the fallback poll; queueing it makes loaded content
+    // replace that frame immediately. Manual refresh takes precedence.
+    let queuedCapture = null;
 
     function scheduleFallback() {
       if (pendingTimer) clearTimeout(pendingTimer);
@@ -60,12 +63,17 @@ export function PreviewPanel(props) {
     }
 
     async function runCapture(reason, force) {
-      // A manual refresh presses through an in-flight coalesced capture:
-      // queue it so the pressed capture still lands after the current one
-      // finishes, instead of being dropped.
+      // Lifecycle captures and manual refreshes must survive an in-flight
+      // screenshot. In particular, keep the load-complete capture emitted
+      // during reload so the preview cannot remain on the transient blank
+      // frame. Polls are disposable; the next fallback tick covers them.
       if (stop) return;
       if (inFlight) {
-        if (force) manualQueued = true;
+        if (force || reason !== 'poll') {
+          if (force || !queuedCapture || !queuedCapture.force) {
+            queuedCapture = { reason, force: !!force };
+          }
+        }
         return;
       }
       inFlight = true;
@@ -78,12 +86,12 @@ export function PreviewPanel(props) {
         // 'init' capture, or a capture started while another was
         // already in flight and the new event was coalesced).
         scheduleFallback();
-        if (!r || !r.data) {
-          // Page.captureScreenshot succeeded but returned no image
-          // (Chrome does this on the very first call right after
-          // Page.enable, and right after a navigation starts). Keep
-          // the current status instead of flipping "live" to
-          // "screenshot failed", and let the fallback poll retry.
+                if (!r || !r.data) {
+          // Page.captureScreenshot can briefly return no image after
+          // Page.enable or while navigation is replacing the document.
+          // Preserve an existing preview as live; otherwise keep the
+          // initial capturing state while the fallback retries.
+          setNote(imgRef.current && imgRef.current.src ? 'live' : 'capturing…');
           return;
         }
         const bin = atob(r.data);
@@ -149,11 +157,12 @@ export function PreviewPanel(props) {
         }
       } finally {
         inFlight = false;
-        // A manual refresh was pressed while a capture was in flight —
-        // run it now rather than dropping the request.
-        if (manualQueued && !stop) {
-          manualQueued = false;
-          runCapture('manual', true);
+        // Run the newest meaningful trigger after the current screenshot.
+        // This covers reload completion as well as a pressed manual refresh.
+        if (queuedCapture && !stop) {
+          const queued = queuedCapture;
+          queuedCapture = null;
+          runCapture(queued.reason, queued.force);
           return;
         }
       }
@@ -204,6 +213,7 @@ export function PreviewPanel(props) {
 
     return () => {
       stop = true;
+      if (props.refreshRef) props.refreshRef.current = null;
       if (pendingTimer) clearTimeout(pendingTimer);
       for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
       if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
