@@ -212,58 +212,12 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
   line-height: 1;
   padding: 0 2px 0 4px;
 }
+/* Popover menu trigger + body: shared with .project-card__menu* in
+   projects.css. The wrapper rule here stays because the settings list
+   puts the menu in a flex row (sprojects__menu) rather than the
+   relative-positioned project card. */
 .sprojects__menu { display: flex; align-items: center; padding-right: 4px; }
-.sprojects__menu-btn {
-  font: inherit;
-  color: var(--muted);
-  background: transparent;
-  border: 0;
-  padding: 0;
-  min-height: var(--tap);
-  min-width: var(--tap);
-  font-weight: 700;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: 1px;
-  border-radius: var(--r-sm);
-}
-.sprojects__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
-.sprojects__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
-.sprojects__menu-pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  min-width: 180px;
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 35;
-  box-shadow: var(--shadow-md);
-}
-.sprojects__menu-pop[hidden] { display: none !important; }
-.sprojects__menu-pop button {
-  font: inherit;
-  font-size: 0.88rem;
-  color: var(--fg);
-  background: transparent;
-  border: 0;
-  text-align: left;
-  padding: 5px 10px;
-  min-height: var(--tap);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-.sprojects__menu-pop button:hover { background: var(--surface-2); }
-.sprojects__menu-pop button[data-danger="1"] { color: var(--danger); }
+
 /* ---- Settings: browser notifications ---------------------------- */
 
 .settings-notifications { padding-bottom: 16px; }
@@ -869,7 +823,7 @@ textarea#projectEditor {
   align-items: stretch;
   justify-content: stretch;
   padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: fe__fade-in 120ms ease-out;
+  animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 .afp__sheet {
   flex: 1 1 auto;

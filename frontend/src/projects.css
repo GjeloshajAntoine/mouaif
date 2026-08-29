@@ -82,8 +82,14 @@
   border-top: 1px solid var(--border);
 }
 
+/* Shared between .project-card__menu and .sprojects__menu: both render a
+   ⋯ button that opens an absolutely-positioned popover with menu items.
+   The wrapper classes still own layout differences (project-card is
+   relative-positioned; sprojects__menu is a flex item) but the trigger
+   button and the popover share the same chrome. */
 .project-card__menu { position: relative; flex-shrink: 0; }
-.project-card__menu-btn {
+.project-card__menu-btn,
+.sprojects__menu-btn {
   font: inherit;
   color: var(--muted);
   background: transparent;
@@ -101,9 +107,12 @@
   letter-spacing: 1px;
   border-radius: var(--r-sm);
 }
-.project-card__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
-.project-card__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
-.project-card__menu-pop {
+.project-card__menu-btn:hover,
+.sprojects__menu-btn:hover,
+.project-card__menu-btn[aria-expanded="true"],
+.sprojects__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-pop,
+.sprojects__menu-pop {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
@@ -118,8 +127,10 @@
   z-index: 35;
   box-shadow: var(--shadow-md);
 }
-.project-card__menu-pop[hidden] { display: none !important; }
-.project-card__menu-pop button {
+.project-card__menu-pop[hidden],
+.sprojects__menu-pop[hidden] { display: none !important; }
+.project-card__menu-pop button,
+.sprojects__menu-pop button {
   font: inherit;
   font-size: 0.88rem;
   color: var(--fg);
@@ -132,8 +143,10 @@
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
-.project-card__menu-pop button:hover { background: var(--surface-2); }
-.project-card__menu-pop button[data-danger="1"] { color: var(--danger); }
+.project-card__menu-pop button:hover,
+.sprojects__menu-pop button:hover { background: var(--surface-2); }
+.project-card__menu-pop button[data-danger="1"],
+.sprojects__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
 /* Keep each project card compact and make this list the gesture owner.

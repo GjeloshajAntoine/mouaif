@@ -186,10 +186,20 @@ cursor: pointer;
 .pwa-banner--install { color: var(--accent); }
 .pwa-banner--install .pwa-banner__icon { color: var(--accent); }
 .pwa-banner__btn--dismiss { color: var(--muted); border-color: var(--border); }
-
 @keyframes mouaif-banner-in {
-  from { opacity: 0; transform: translateY(-12px); }
-  to   { opacity: 1; transform: translateY(0); }
+from { opacity: 0; transform: translateY(-12px); }
+to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Shared overlay fade-in ------------------------------------- */
+/* Five modal overlays (CLI, Git, MCP error, web preview, file
+   editor, agent file picker) used to ship two byte-identical
+   @keyframes definitions: gm__fade-in in chat-composer.css and
+   fe__fade-in in file-editor.css. Consolidate them here so every
+   overlay animates with the same name. */
+@keyframes mouaif-overlay-fade-in {
+from { opacity: 0; }
+to   { opacity: 1; }
 }
 
 /* ---- Reduce motion ----------------------------------------------- */

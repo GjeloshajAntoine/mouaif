@@ -78,33 +78,43 @@ position: absolute;
 inset: 0;
 }
 .file-toolbar__git-stats {
-position: absolute;
-inset: 4px 3px 3px;
-z-index: 2;
-overflow: hidden;
-font-size: 0.38rem;
-font-weight: 900;
-line-height: 1;
-font-variant-numeric: tabular-nums;
--webkit-text-stroke: 0.015rem currentColor;
-pointer-events: none;
+  position: absolute;
+  inset: 4px 3px 3px;
+  z-index: 2;
+  overflow: hidden;
+  font-size: 0.38rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* Geometry matches the original. The glyphs are drawn thin (weight
+     600 + minimal stroke) so the +N / -N pills read as light digits
+     on top of the folder silhouette while keeping their position
+     and scale identical to the original. */
+  pointer-events: none;
 }
 .file-toolbar__git-additions,
 .file-toolbar__git-deletions {
-position: absolute;
-max-width: 1rem;
-overflow: hidden;
-white-space: nowrap;
+  position: absolute;
+  max-width: 1rem;
+  overflow: hidden;
+  white-space: nowrap;
+  /* No stroke, no shadow — digits are drawn as plain colored glyphs
+     over the folder icon. Geometry, size, and color stay identical
+     to the original layout. */
 }
 .file-toolbar__git-additions {
-top: 0;
-left: 0;
-color: #39e77a;
+  top: 0;
+  left: 0;
+  /* Saturated lime, pushed hard off green so the +N pill reads as
+     a bright positive even at 0.38rem over the muted folder icon. */
+  color: #d6ff3a;
 }
 .file-toolbar__git-deletions {
-right: 0;
-bottom: 0;
-color: #ff6673;
+  right: 0;
+  bottom: 0;
+  /* High-chroma coral-red, brighter and warmer than before so the
+     -N pill pops as a true negative against the dark surface. */
+  color: #ff5a48;
 }
 .file-toolbar__stack svg {
   display: block;
@@ -693,7 +703,7 @@ font: 700 0.65rem var(--font-mono);
   justify-content: stretch;
   /* Fixed overlays do not inherit the app shell's safe-area padding. */
   padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: gm__fade-in 120ms ease-out;
+  animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 .cli__sheet {
   flex: 1 1 auto;
@@ -878,9 +888,8 @@ font: 700 0.65rem var(--font-mono);
   justify-content: stretch;
   /* Keep the modal header below the notch/status bar on mobile. */
   padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: gm__fade-in 120ms ease-out;
+  animation: mouaif-overlay-fade-in 120ms ease-out;
 }
-@keyframes gm__fade-in { from { opacity: 0; } to { opacity: 1; } }
 .gm__sheet {
   flex: 1 1 auto;
   display: flex;
@@ -1352,7 +1361,7 @@ asks the model to recapture the same URL. */
   /* Honor the safe-area inset on mobile so the close button and
      footer don't slide under the OS chrome. */
   padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: gm__fade-in 120ms ease-out;
+  animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 .wp__sheet {
   flex: 1 1 auto;
@@ -1671,7 +1680,7 @@ min-height: 44px;
   align-items: stretch;
   justify-content: stretch;
   padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: gm__fade-in 120ms ease-out;
+  animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 .mcp-err__sheet {
   flex: 1 1 auto;
