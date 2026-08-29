@@ -7,7 +7,7 @@ A single trigger button (folder icon with an up-chevron above and a down-chevron
 - **Preview** — prompts for a web URL and captures a screenshot in the Inspector debug Chrome, publishing it to the web-preview dock and full-screen viewer (the same `webpreview` tool the model uses, run directly by the user without a model round-trip).
 - **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry), **Staged changes**, **Unstaged changes**, and **Recent commits** (paginated — load more via `GET /api/git/commits`). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
-
+- **Actions** — the project's saved custom actions (CLI commands or MCP tool calls, see [custom-actions.md](custom-actions.md)). Each row shows the action's label, its `@id`, and its kind (`MCP` / `CLI`). Tapping one runs it immediately through the same `POST /api/actions/:id/run` path the model-facing command uses, so it still respects the underlying Shell / MCP authorization gate. The list refreshes whenever the menu opens.
 The git actions that previously lived in the dropdown (status / diff / log / add / commit) are gone — they are replaced by the modal, which shows the same information in a browsable, expandable form. The modal is read-only except for the header controls (branch checkout, push, pull) and the stash section (apply / pop / drop).
 
 ## Usage
@@ -20,6 +20,7 @@ Tap the arrow button next to the text box to expand the menu. Its `+N` / `−N` 
 | Preview | Asks for a URL, captures it with the Inspector Chrome, and shows the web-preview viewer |
 | Git | Opens the git modal |
 | Cli | Opens the interactive command prompt session |
+| Actions | Runs the project's custom CLI/MCP actions (label + `@id` + kind per row) |
 
 ### Git modal
 
@@ -45,5 +46,5 @@ Note: the session is a **piped** (non-TTY) child process, so interactive program
 The Preview item opens a small overlay asking for a URL, then runs a capture immediately. The capture goes through `POST /api/tools/webpreview` (the same endpoint the web-preview viewer uses to re-capture), so it respects the project's `webpreview` authorization gate: in **Ask** mode the prompt closes and the standard authorization card appears; approving it retries the capture. The screenshot is published to the web-preview dock (and opens the full-screen viewer) via the same `webpreviewState.js` bridge the model-driven tool uses.
 ## Implementation notes
 - `frontend/src/components/chat/PreviewUrlPrompt.jsx` renders the URL-entry overlay (`wp__prompt-sheet`, reusing the `.wp__overlay` / `.wp__sheet` shell from the web-preview viewer so the header and close controls match).
-- `frontend/src/components/chat/FileToolbar.jsx` gains an `onOpenPreview` prop and a new "Preview" menu item.
-- `frontend/src/components/chat/Chat.jsx` wires `onOpenPreview`, renders the prompt, and `runPreviewFromPrompt()` captures the URL through `requestWebpreview()` (no model round-trip).
+- `frontend/src/components/chat/FileToolbar.jsx` gains an `onOpenPreview` prop plus `customActions` / `onRunCustomAction` / `onRefreshCustomActions` props; when `customActions` is non-empty it renders an **Actions** section (separator + title + one row per action) between the Cli item and the modals. Opening the menu calls `onRefreshCustomActions()` so the list stays fresh. `/api` items use the `M‣` glyph, `cli` items `›_`.
+- `frontend/src/components/chat/Chat.jsx` wires `onOpenPreview`, renders the prompt, and `runPreviewFromPrompt()` captures the URL through `requestWebpreview()` (no model round-trip). It also passes the chat's `customActions`, `runCustomAction`, and `refreshCustomActions` into the toolbar. The former `Actions` section of the Tools popup is removed — `ActionSheet.jsx` is deleted.

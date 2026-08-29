@@ -7,7 +7,7 @@ A floating popover opened from a button in the chat composer toolbar that lets t
 ## Usage
 
 1. Tap the globe icon (🌐) in the composer toolbar, left of the textarea.
-2. The popup appears above the composer showing the same hierarchical tool tree that is also rendered in the chat transcript's Tools card.
+2. The popup appears above the composer showing the same hierarchical tool tree that is also rendered in the chat transcript's Tools card. *Custom actions are no longer listed here* — they moved to the **file toolbar** dropdown menu (see [custom-actions.md](custom-actions.md)).
 3. Each tool group can be expanded/collapsed with the chevron; each tool has a checkbox to toggle it on/off for the current chat.
 4. For built-in tool groups (shell, subagent, ask_user, task, progress updates, file tools), an Off/Ask/Allow segment control is shown inline.
 5. MCP servers appear as their own group; the parent checkbox flips all that server's tools in the per-chat filter at once (the server itself is always on). MCP authorization renders exactly like the chat Tools card and project settings: each server row carries an Off/Ask/Allow segment for that server's override. No separate override-reset button is shown in the compact popup.

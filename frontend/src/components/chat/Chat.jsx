@@ -263,9 +263,6 @@ setPreviewPromptOpen(false);
             skills: s.state.skills,
             toolAuth: s.state.toolAuth,
 mcpAuth: s.state.mcpAuth,
-customActions,
-onRunCustomAction: runCustomAction,
-onRefreshCustomActions: refreshCustomActions,
 onToggleTool: s.state._toggleTool,
             onToggleToolGroup: s.state._toggleToolGroup,
             onToggleAgentFiles: s.state._toggleAgentFiles,
@@ -299,7 +296,14 @@ onDismiss: () => clearWebPreview()
 }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
-h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true), onOpenPreview: () => setPreviewPromptOpen(true) })
+h(FileToolbar, {
+projectDir,
+onOpenFileEditor: () => setFileEditorOpen(true),
+onOpenPreview: () => setPreviewPromptOpen(true),
+customActions,
+onRunCustomAction: runCustomAction,
+onRefreshCustomActions: refreshCustomActions
+})
 ),
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),

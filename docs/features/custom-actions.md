@@ -51,10 +51,8 @@ Choose **MCP**, select a configured server and tool, then edit the prefilled JSO
 ### Run an action
 
 From a chat in that project:
-
-- Open the existing **Tools** popup and tap an action in its **Actions** list. The list refreshes whenever the popup opens, so actions added or edited in project settings appear after returning to the chat without reloading it.
+- Tap the **file-toolbar** button (the stacked arrow/folder icon) left of the textarea and pick an action from the **Actions** section. The list refreshes whenever the menu opens, so actions added or edited in project settings appear after returning to the chat without reloading it.
 - Type `@test` as the complete composer message.
-
 An action uses its saved command or arguments. Ad-hoc arguments after the `@action-id` are not accepted.
 
 ## Implementation notes

@@ -12,7 +12,6 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
-import { CustomActionList } from './ActionSheet.jsx';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
@@ -61,10 +60,7 @@ export function ToolPopup(props) {
     agentFiles,
     skills,
     toolAuth,
-    mcpAuth,
-customActions,
-onRunCustomAction,
-onRefreshCustomActions,
+mcpAuth,
 onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
@@ -216,11 +212,7 @@ files: 'file'
       ref: triggerRef,
       class: 'chat-view__toolbar-btn tool-popup__trigger',
       type: 'button',
-      onClick: () => {
-        const nextOpen = !open;
-        setOpen(nextOpen);
-        if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
-      },
+      onClick: () => setOpen(!open),
       'aria-label': 'Toggle available tools',
       'aria-haspopup': 'true',
       'aria-expanded': String(open),
@@ -251,13 +243,6 @@ files: 'file'
           }, '\u00D7')
         ),
         h('div', { class: 'tool-popup__body' },
-h(CustomActionList, {
-actions: customActions,
-onRun: (action) => {
-setOpen(false);
-if (onRunCustomAction) onRunCustomAction(action);
-}
-}),
 h(ToolTree, {
 groups,
 onToggleGroup: handleToggleGroup,
