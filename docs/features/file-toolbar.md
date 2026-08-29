@@ -4,6 +4,7 @@
 
 A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu. Its visible circle is reduced to match the composer bar. The bright green added-line count sits in the upper-left of the folder glyph and the bright red deleted-line count in its lower-right. Both use a heavier glyph stroke, remain fully contained by the folder, and render without a text shadow for clearer contrast at their compact size.
 - **Files** — opens the CodeMirror-based project file editor popup.
+- **Preview** — prompts for a web URL and captures a screenshot in the Inspector debug Chrome, publishing it to the web-preview dock and full-screen viewer (the same `webpreview` tool the model uses, run directly by the user without a model round-trip).
 - **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry), **Staged changes**, **Unstaged changes**, and **Recent commits** (paginated — load more via `GET /api/git/commits`). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
 
@@ -16,6 +17,7 @@ Tap the arrow button next to the text box to expand the menu. Its `+N` / `−N` 
 | Item | Action |
 |------|--------|
 | Files | Opens the existing in-app CodeMirror editor for the project |
+| Preview | Asks for a URL, captures it with the Inspector Chrome, and shows the web-preview viewer |
 | Git | Opens the git modal |
 | Cli | Opens the interactive command prompt session |
 
@@ -39,3 +41,9 @@ The Cli item opens a full-screen overlay with a live terminal readout. The defau
 Output streams in as the command runs; the prompt line stays at the bottom and re-focuses after each command. The header shows the shell label and the project path. The session closes when you tap the × button, press Escape, or leave the chat.
 
 Note: the session is a **piped** (non-TTY) child process, so interactive programs (REPLs, prompts that read from a terminal) will not work — the same limitation as the model-facing `shell` tool. Non-interactive commands behave like a real Command Prompt.
+### Web preview
+The Preview item opens a small overlay asking for a URL, then runs a capture immediately. The capture goes through `POST /api/tools/webpreview` (the same endpoint the web-preview viewer uses to re-capture), so it respects the project's `webpreview` authorization gate: in **Ask** mode the prompt closes and the standard authorization card appears; approving it retries the capture. The screenshot is published to the web-preview dock (and opens the full-screen viewer) via the same `webpreviewState.js` bridge the model-driven tool uses.
+## Implementation notes
+- `frontend/src/components/chat/PreviewUrlPrompt.jsx` renders the URL-entry overlay (`wp__prompt-sheet`, reusing the `.wp__overlay` / `.wp__sheet` shell from the web-preview viewer so the header and close controls match).
+- `frontend/src/components/chat/FileToolbar.jsx` gains an `onOpenPreview` prop and a new "Preview" menu item.
+- `frontend/src/components/chat/Chat.jsx` wires `onOpenPreview`, renders the prompt, and `runPreviewFromPrompt()` captures the URL through `requestWebpreview()` (no model round-trip).

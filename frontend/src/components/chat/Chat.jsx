@@ -14,6 +14,7 @@ import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
+import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview } from '../../api.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
@@ -52,6 +53,9 @@ function onDraftCraftAdded(result) {
 // leaves the small user-facing preview available.
 const [webPreviewPayload, setWebPreviewPayload] = useState(() => getActivePayload());
 const [webPreviewOpen, setWebPreviewOpen] = useState(false);
+// PreviewUrlPrompt — the "Preview" entry in the FileToolbar asks for a URL
+// and runs a fresh web-preview capture directly (no model round-trip).
+const [previewPromptOpen, setPreviewPromptOpen] = useState(false);
 
   useEffect(() => {
     if (!fileEditorOpen || FileEditor) return;
@@ -79,6 +83,7 @@ useEffect(() => {
 clearWebPreview();
 setWebPreviewPayload(null);
 setWebPreviewOpen(false);
+setPreviewPromptOpen(false);
 }, [projectDir, chatId]);
 
   const atMentionRef = useRef(null);
@@ -294,7 +299,7 @@ onDismiss: () => clearWebPreview()
 }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
-h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true) })
+h(FileToolbar, { projectDir, onOpenFileEditor: () => setFileEditorOpen(true), onOpenPreview: () => setPreviewPromptOpen(true) })
 ),
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
@@ -341,6 +346,12 @@ chatId,
 refs,
 onAuthorizationRequired: () => setWebPreviewOpen(false)
 })
+})
+: null,
+previewPromptOpen
+? h(PreviewUrlPrompt, {
+onSubmit: (url) => runPreviewFromPrompt(url, { projectDir, chatId, refs, onPromptClose: () => setPreviewPromptOpen(false) }),
+onClose: () => setPreviewPromptOpen(false)
 })
 : null
 );
@@ -396,4 +407,55 @@ publishWebPreview(out.result);
 refs.status.current.textContent = 'Preview recapture failed: ' + ((out.result && out.result.error) || out.error || 'capture failed');
 }
 return out;
+}
+// runPreviewFromPrompt — capture a preview for a URL typed into the
+// PreviewUrlPrompt. Uses the same direct /api/tools/webpreview path as
+// recaptureWebPreview (no model round-trip). On success it publishes the
+// screenshot to the dock and opens the full-screen viewer; on failure it
+// surfaces the error on the status line. Closes the prompt either way.
+async function runPreviewFromPrompt(url, ctx) {
+const projectDir = ctx && ctx.projectDir;
+const chatId = ctx && ctx.chatId;
+const refs = ctx && ctx.refs;
+const onPromptClose = ctx && ctx.onPromptClose;
+if (!projectDir || !chatId) return null;
+const callId = 'ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const verbose = refs && refs.status && refs.status.current;
+if (verbose) verbose.textContent = 'Capturing preview…';
+let out = null;
+try {
+out = await requestWebpreview({ projectDir, chatId, url, callId });
+} catch (e) {
+if (e && e.code === 'EAUTH_REQUIRED') {
+// Ask gate: close the prompt, show the authorization card, resume.
+if (onPromptClose) onPromptClose();
+const decision = await authorizationCard({
+callId: e.callId || callId,
+tool: 'webpreview',
+cmd: url,
+projectDir
+}, projectDir, chatId, refs, async () => {
+out = await requestWebpreview({ projectDir, chatId, url, callId });
+});
+// Approval resumes the builder; a denial leaves the prompt closed.
+if (decision !== 'deny') {
+if (out && out.ok && out.result && out.result.thumbnail) publishWebPreview(out.result);
+return out ? 'captured' : 'denied';
+}
+return 'denied';
+}
+const msg = (e && e.message) || String(e);
+if (verbose) verbose.textContent = 'Preview failed: ' + msg;
+return null;
+}
+if (onPromptClose) onPromptClose();
+if (out && out.ok && out.result && out.result.thumbnail) {
+publishWebPreview(out.result);
+if (verbose) verbose.textContent = '';
+return 'captured';
+}
+if (verbose) {
+verbose.textContent = 'Preview failed: ' + ((out && out.result && out.result.error) || (out && out.error) || 'capture failed');
+}
+return null;
 }

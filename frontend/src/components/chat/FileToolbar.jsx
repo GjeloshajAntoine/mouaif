@@ -51,7 +51,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-  const { projectDir, onOpenFileEditor } = props;
+  const { projectDir, onOpenFileEditor, onOpenPreview } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -131,6 +131,10 @@ export function FileToolbar(props) {
     setMenuOpen(false);
     setCliOpen(true);
   }
+  function handlePreview() {
+    setMenuOpen(false);
+    if (onOpenPreview) onOpenPreview();
+  }
 
   const statsLabel = gitStats
     ? gitStats.additions + ' lines added, ' + gitStats.deletions + ' lines deleted'
@@ -168,6 +172,10 @@ export function FileToolbar(props) {
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleFileEditor },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4DD}'),
         h('span', null, 'Files')
+      ),
+      h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handlePreview },
+        h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4F1}'),
+        h('span', null, 'Preview')
       ),
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleGit },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4C1}'),

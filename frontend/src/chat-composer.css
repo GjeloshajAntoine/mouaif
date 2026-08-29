@@ -1505,7 +1505,70 @@ min-height: 44px;
   color: var(--on-accent);
   outline: 0;
 }
-
+/* ---- Web preview URL prompt ---------------------------------------- */
+/* Small overlay asking for a URL to preview. Reuses the web-preview
+sheet shell (.wp__sheet) so the header/close controls match; the body
+is a single form with a URL input, a primary submit, and a hint. On
+desktop the sheet shrinks to a compact card instead of stretching to
+the full web-preview viewport. */
+.wp__prompt-sheet {
+  flex: 0 1 auto;
+  width: 100%;
+  align-self: center;
+  justify-self: center;
+  max-width: 520px;
+  margin: auto 0;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+@media (min-width: 720px) {
+  .wp__prompt-sheet {
+    flex: 0 1 520px;
+    height: auto;
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  }
+}
+.wp__prompt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--surface);
+}
+.wp__prompt-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.wp__prompt-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.wp__prompt-input:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+.wp__prompt-submit {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 1rem;
+}
+.wp__prompt-error {
+  color: var(--danger);
+  font-size: 0.74rem;
+}
+.wp__prompt-hint {
+  color: var(--muted-2);
+  font-size: 0.7rem;
+}
 /* ---- MCP error modal ------------------------------------------------ */
 /* Full-screen overlay + sheet pattern (same as .gm__overlay / .gm__sheet).
    Shows the full typed MCP failure — code, message, tool, and the raw
