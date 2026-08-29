@@ -22,4 +22,4 @@
 - The Pinned section is always shown first (above Recent and the per-provider sections) when it has entries.
 - The Recent section shows up to 5 unpinned models, skipping any that are no longer in the live catalog (stale entries are silently dropped).
 - Pinning and unpinning re-render the entire picker so newly pinned models appear in the Pinned section immediately.
-- Recent models are fetched from the server on every `openModelPicker()` call and cached on `state.recentModels` for the lifetime of the picker.
+- Recent models are fetched from the server on every chat picker open request and cached on `state.recentModels`. `useChatState.js` keeps the declarative sheet closed until that fetch settles, then applies the fresh recent rows and `open: true` atomically. Request counters in `useChatState.js` and `modelPicker.js` prevent superseded, cancelled, or previous-project fetches from reopening the sheet or overwriting newer data.

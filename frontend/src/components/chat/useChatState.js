@@ -79,7 +79,11 @@ const chatSwitcherIdxRef = useRef(-1);
     open: false,
     providers: []
   }));
+  // Every requested close invalidates any in-flight Recent fetch so a late
+  // response cannot reveal a picker the user has already dismissed.
+  const pickerOpenRequest = useRef(0);
   const setPickerOpen = useCallback((open) => {
+    if (!open) pickerOpenRequest.current += 1;
     setPicker((current) => current.open === open ? current : { ...current, open });
   }, []);
   // Pagination state for the chat switcher, shared by the preload
@@ -368,13 +372,33 @@ state.customActions = customActions;
     }));
   }
 
+  // Do not reveal stale Recent rows while their server-backed list refreshes.
+  // The fresh list and open flag land in one render after the request resolves.
+  async function openPickerWithFreshRecent() {
+    const request = ++pickerOpenRequest.current;
+    const projectAtRequest = state.props && state.props.projectDir;
+    const refreshed = await loadRecentFromServer(state);
+    if (!refreshed || request !== pickerOpenRequest.current || !state.props || state.props.projectDir !== projectAtRequest) return;
+    const c = state.chat;
+    setPicker({
+      models: modelsForPicker(state),
+      providers: state.providers.map((p) => p && p.id).filter(Boolean),
+      value: (c && c.providerId && c.modelId)
+        ? { providerId: c.providerId, modelId: c.modelId }
+        : null,
+      pinned: loadPinned(state),
+      recent: loadRecent(state),
+      open: true
+    });
+  }
+
   // Wire the model-picker's onChatChanged hook so the head
   // elements re-render when updateChat fires.
   state._onChatChanged = () => updateModelTriggerLocal();
   // Re-sync the thinking dropdown when live model data arrives —
   // provider-reported descriptors replace the seeded/fallback options.
   state._onLiveModels = () => { syncThinkingSelect(refs, state); syncPickerState(); };
-  state._openModelPicker = () => setPickerOpen(true);
+  state._openModelPicker = () => { openPickerWithFreshRecent(); };
   // The empty-state card in the picker can fire the same refresh
   // the head's ↻ button does, but it lives inside the picker
   // module (which doesn't import the hook), so we expose the
@@ -1055,19 +1079,18 @@ updateChat: updateChatBound,
       togglePin(state, m.provider, m.id);
       syncPickerState();
     },
-    onPickerOpen: async () => {
-      // Seed the max-output-tokens input from the chat record before
-      // the sheet shows. openModelPicker() used to do this imperatively;
-      // the declarative sheet has no imperative open hook, so re-seed
-      // here (the field lives in ModelPickerField's children slot).
+    onPickerOpen: () => {
+      // Seed the max-output-tokens input from the chat record when the
+      // freshly populated sheet opens (the field lives in the children slot).
       if (refs.maxOutputTokens && refs.maxOutputTokens.current) {
         refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
       }
-      await loadRecentFromServer(state);
-      syncPickerState();
     },
     onRefreshAllProviders: () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st)).then(() => syncPickerState()),
-    onPickerOpenChange: (v) => setPickerOpen(v),
+    onPickerOpenChange: (v) => {
+      if (v) openPickerWithFreshRecent();
+      else setPickerOpen(false);
+    },
     onComposerKey: (e) => onComposerKey(e, send),
     onComposerInput: () => {
       setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');

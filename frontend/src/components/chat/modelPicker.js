@@ -43,12 +43,19 @@ export function loadRecent(state) {
 // loadRecentFromServer(state) — fetch recent models from the server DB and cache them on state.
 export async function loadRecentFromServer(state) {
   const dir = state.props && state.props.projectDir;
-  if (!dir) { state.recentModels = []; return; }
+  const request = (state._recentLoadRequest || 0) + 1;
+  state._recentLoadRequest = request;
+  if (!dir) { state.recentModels = []; return true; }
+  let recent;
   try {
-    state.recentModels = await loadRecentModels(dir);
+    recent = await loadRecentModels(dir);
   } catch {
-    state.recentModels = [];
+    recent = [];
   }
+  // Ignore an older response when open requests overlap or the project changes.
+  if (request !== state._recentLoadRequest || !state.props || state.props.projectDir !== dir) return false;
+  state.recentModels = recent;
+  return true;
 }
 
 // touchRecent(state, providerId, modelId) — mark a model as used now.
