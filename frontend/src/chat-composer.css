@@ -1446,27 +1446,32 @@ min-height: 44px;
   height: 14px;
 }
 @media (max-width: 430px) {
-  .wp__head {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .wp__head-text {
-    flex-basis: calc(100% - 52px);
-    min-height: 44px;
-    justify-content: center;
-  }
-  .wp__head-actions {
-    width: 100%;
-  }
-  .wp__action--refresh,
-  .wp__size-select {
-    flex: 1 1 0;
-  }
-  .wp__close {
-    position: absolute;
-    top: calc(var(--safe-top, 0px) + 8px);
-    right: 4px;
-  }
+/* Scoped to the main viewer — the URL prompt sheet only has a close
+button in .wp__head-actions, so wrapping it onto a second row leaves
+an empty band and absolute-positioning the close button jumps it to
+the top-right corner of the sheet. Keep the prompt sheet on a single
+row with the close button inline next to the title. */
+.wp__sheet:not(.wp__prompt-sheet) .wp__head {
+align-items: flex-start;
+flex-wrap: wrap;
+}
+.wp__sheet:not(.wp__prompt-sheet) .wp__head-text {
+flex-basis: calc(100% - 52px);
+min-height: 44px;
+justify-content: center;
+}
+.wp__sheet:not(.wp__prompt-sheet) .wp__head-actions {
+width: 100%;
+}
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh,
+.wp__sheet:not(.wp__prompt-sheet) .wp__size-select {
+flex: 1 1 0;
+}
+.wp__sheet:not(.wp__prompt-sheet) .wp__close {
+position: absolute;
+top: calc(var(--safe-top, 0px) + 8px);
+right: 4px;
+}
 }
 .wp__body {
   flex: 1 1 auto;
