@@ -654,7 +654,16 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
           h('button', {
             type: 'button',
             class: 'btn btn--ghost',
-            onClick: () => setShowProfileCopy((v) => !v),
+            onClick: () => {
+              const next = !showProfileCopy;
+              setShowProfileCopy(next);
+              // Reload the built-in prompt-size profiles each time the
+              // "Copy from default" section is opened. The initial mount
+              // fetch (useEffect on []) can race or fail once and leave
+              // the list empty with no retry; refetching on open makes
+              // the profiles reliably appear.
+              if (next) loadProfiles();
+            },
             'aria-expanded': String(showProfileCopy)
           }, 'Copy from default'),
           h('span', { class: 'hint hint--compact' },
