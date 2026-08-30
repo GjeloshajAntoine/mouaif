@@ -15,7 +15,7 @@ timeoutMs: action.timeoutMs || '',
 argsText: JSON.stringify(action.args || {}, null, 2)
 };
 }
-export function SettingsActionsView({ projectDir = '' }) {
+export function SettingsActionsView({ projectDir = '', from = '' }) {
 const [actions, setActions] = useState([]);
 const [status, setStatus] = useState('loading…');
 useEffect(() => {
@@ -29,7 +29,7 @@ return () => { cancelled = true; };
 }, [projectDir]);
 return h(Fragment, null,
 h('div', { class: 'view-head' },
-h('a', { href: '#/settings/project' + projectQS(projectDir), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+h('a', { href: '#/settings/project' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
 h('h2', { class: 'view-title' }, 'Custom actions')
 ),
 h('section', null,
@@ -50,8 +50,10 @@ h('span', { class: 'status', 'aria-live': 'polite' }, status)
 )
 );
 }
-export function SettingsActionEditView({ id = '', projectDir = '' }) {
+export function SettingsActionEditView({ id = '', projectDir = '', from = '' }) {
 const isNew = !id || id === 'new';
+const fromQS = from ? '&from=' + encodeURIComponent(from) : '';
+const actionsListHref = '#/settings/actions' + projectQS(projectDir) + fromQS;
 const [form, setForm] = useState(emptyAction);
 const [servers, setServers] = useState([]);
 const [tools, setTools] = useState([]);
@@ -106,17 +108,17 @@ method: 'POST', headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ projectDir, originalId: isNew ? '' : id, action })
 });
 if (r.status !== 200) { setStatus((r.body && r.body.error) || ('HTTP ' + r.status)); return; }
-nav('settings/actions' + projectQS(projectDir));
+nav('settings/actions' + projectQS(projectDir) + fromQS);
 }
 async function remove() {
 if (!confirm('Delete custom action "' + id + '"?')) return;
 const r = await fetchJson('/api/actions/' + encodeURIComponent(id) + projectQS(projectDir), { method: 'DELETE' });
-if (r.status === 200) nav('settings/actions' + projectQS(projectDir));
+if (r.status === 200) nav('settings/actions' + projectQS(projectDir) + fromQS);
 else setStatus((r.body && r.body.error) || ('HTTP ' + r.status));
 }
 return h(Fragment, null,
 h('div', { class: 'view-head' },
-h('a', { href: '#/settings/actions' + projectQS(projectDir), class: 'view-back', 'aria-label': 'Back to custom actions' }, '←'),
+h('a', { href: actionsListHref, class: 'view-back', 'aria-label': 'Back to custom actions' }, '←'),
 h('h2', { class: 'view-title' }, isNew ? 'Add action' : (form.label || form.id || 'Edit action'))
 ),
 h('section', null,

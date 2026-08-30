@@ -7,8 +7,9 @@ import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
 
 export function SettingsMcpEditView(props) {
-  const id = props.id || '';
-  const routeProjectDir = props.projectDir || '';
+const id = props.id || '';
+const routeProjectDir = props.projectDir || '';
+const from = typeof props.from === 'string' ? props.from : '';
   const activeDir = (activeProject.value && activeProject.value.dir) || '';
   const projectDir = id ? routeProjectDir : (routeProjectDir || activeDir);
   const [addScope, setAddScope] = useState(
@@ -190,8 +191,8 @@ export function SettingsMcpEditView(props) {
     setIsSaving(false);
     if (r.status !== 200 && r.status !== 201) { setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error'}); return; }
     setStatusMsg({text: 'saved', kind: 'success'});
-    nav('settings/mcp' + projectQS(projectDir));
-  }
+nav('settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''));
+}
 
   async function deleteServer() {
     if (!id) return;
@@ -203,14 +204,14 @@ export function SettingsMcpEditView(props) {
     try { r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + qs, { method: 'DELETE' }); }
     catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); setIsDeleting(false); return; }
     if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'}); setIsDeleting(false); return; }
-    nav('settings/mcp' + projectQS(projectDir));
-  }
+nav('settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''));
+}
 
   useEffect(() => { load(); }, [id]);
 
   const title = id ? 'Edit MCP server' : 'Add MCP server';
-  const backQSPath = id ? routeProjectDir : projectDir;
-  const backHref = '#/settings/mcp' + projectQS(backQSPath);
+const backQSPath = id ? routeProjectDir : projectDir;
+const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + encodeURIComponent(from) : '');
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

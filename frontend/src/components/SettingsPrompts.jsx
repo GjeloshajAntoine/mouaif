@@ -84,7 +84,8 @@ function presetsEqual(a, b) {
 }
 
 export function SettingsPromptsView(props) {
-  const rawProjectDir = resolveProjectDir(props);
+const rawProjectDir = resolveProjectDir(props);
+const from = (props && typeof props.from === 'string') ? props.from : '';
   // If explicitly opened from Settings -> App defaults (via route or props.scope === 'app'),
   // or if there is no projectDir, target scope is app.
   const isAppScopedRoute = (props && props.scope === 'app') || !rawProjectDir;
@@ -541,8 +542,8 @@ export function SettingsPromptsView(props) {
   const showScopeBadge = !!projectDir;
 
   const backHref = projectDir
-    ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir))
-    : '#/settings';
+? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''))
+: '#/settings';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

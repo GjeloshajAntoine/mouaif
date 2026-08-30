@@ -20,6 +20,7 @@ export function SettingsMcpView(props = {}) {
   // project card, so #/settings/mcp is always the app-wide list even
   // when an active project exists.
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+const from = typeof props.from === 'string' ? props.from : '';
   const projectName = projectDir ? projectDir.split(/[/\\]/).filter(Boolean).pop() || projectDir : '';
 
   const [isOpenBusy, setIsOpenBusy] = useState(false);
@@ -110,9 +111,9 @@ function serverRow(s) {
     // links projectDir-less, the project list links with projectDir and
     // the row's scope so an edit returns to the same list.
     const qs = projectDir
-      ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project')
-      : '?scope=app';
-    const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
+? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project') + (from ? '&from=' + encodeURIComponent(from) : '')
+: '?scope=app' + (from ? '&from=' + encodeURIComponent(from) : '');
+const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     const showStop = status === 'ready' || status === 'errored' || status === 'starting';
     // Why is Start unavailable? A server mid-start cannot be started
     // again, and a row already being acted on is handled by the busy
@@ -242,8 +243,10 @@ showServerError(server, error);
 
   useEffect(() => { load(); }, [projectDir]);
 
-  const newHref = '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app');
-  const backHref = projectDir ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir)) : '#/settings';
+const newHref = '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app') + (from ? '&from=' + encodeURIComponent(from) : '');
+const backHref = projectDir
+? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''))
+: '#/settings';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -293,7 +296,7 @@ showServerError(server, error);
           )
         : null,
       h('div', { class: 'page-bar' },
-      h('a', { href: '#/settings/mcp/registry' + projectQS(projectDir), class: 'btn btn--small', type: 'button' }, 'Browse Registry'),
+      h('a', { href: '#/settings/mcp/registry' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''), class: 'btn btn--small', type: 'button' }, 'Browse Registry'),
       h('span', {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
         'aria-live': 'polite'

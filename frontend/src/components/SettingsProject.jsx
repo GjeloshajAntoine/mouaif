@@ -131,10 +131,20 @@ const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim())
 
   const [currentProject, setCurrentProject] = useState({});
   const [loadedDir, setLoadedDir] = useState('');
-  const [loadedChatId] = useState((initialChatId || '').trim());
-
-  function dir() { return loadedDir; }
-  function chatId() { return loadedChatId; }
+const [loadedChatId] = useState((initialChatId || '').trim());
+function dir() { return loadedDir; }
+function chatId() { return loadedChatId; }
+// Query-string fragment for navigating back to a project-scoped route.
+// Preserves the `from` context (where project settings were opened from)
+// so a round-trip through a sub-page keeps the correct back target. Put
+// `from` last so an existing ?projectDir=… (or &chatId=…) base is reused.
+function projectBackQS(targetFrom) {
+const d = dir() || initialDir || '';
+const base = 'projectDir=' + encodeURIComponent(d);
+const ctxFrom = (targetFrom === undefined ? from : targetFrom);
+const withChat = chatId() ? base + '&chatId=' + encodeURIComponent(chatId()) : base;
+return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
+}
 
   async function load(seedDir) {
     const d = (seedDir || '').trim();
@@ -1070,10 +1080,10 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
   }
 
   if (page === 'output') return h(Fragment, null,
-    h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
-      h('h2', { class: 'view-title' }, 'File tool options')
-    ),
+h('div', { class: 'view-head' },
+h('a', { href: '#/settings/project?' + projectBackQS(), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+h('h2', { class: 'view-title' }, 'File tool options')
+),
     h('section', { class: 'settings-project' },
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
@@ -1115,79 +1125,79 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
 )
 )
 );
-if (page === 'preview') return h(Fragment, null,
+  if (page === 'preview') return h(Fragment, null,
 h('div', { class: 'view-head' },
 h('a', {
-href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''),
+href: '#/settings/project?' + projectBackQS(),
 class: 'view-back',
 'aria-label': 'Back to project settings'
 }, '←'),
 h('h2', { class: 'view-title' }, 'Web preview')
 ),
-h('section', { class: 'settings-project' },
-h('div', { class: 'group settings-project__section' },
-h('div', { class: 'group__title settings-project__section-title' },
-sectionIcon('tools'),
-h('span', null, 'Capture'),
-h('details', { class: 'settings-project__info' },
-h('summary', { 'aria-label': 'About web preview capture' }, '?'),
-h('div', { class: 'settings-project__info-body' },
-h('p', null, 'Capture a screenshot of a web URL in the Inspector debug Chrome and open it in the full-screen viewer. The same screenshot the AI can refresh with the ', h('code', null, 'webpreview'), ' tool.'),
-h('p', null, 'This page respects the project’s ', h('code', null, 'webpreview'), ' authorization gate: in Ask mode the capture is hinted to approve it in the chat.')
-)
-)
+  h('section', { class: 'settings-project' },
+  h('div', { class: 'group settings-project__section' },
+  h('div', { class: 'group__title settings-project__section-title' },
+  sectionIcon('tools'),
+  h('span', null, 'Capture'),
+  h('details', { class: 'settings-project__info' },
+  h('summary', { 'aria-label': 'About web preview capture' }, '?'),
+  h('div', { class: 'settings-project__info-body' },
+  h('p', null, 'Capture a screenshot of a web URL in the Inspector debug Chrome and open it in the full-screen viewer. The same screenshot the AI can refresh with the ', h('code', null, 'webpreview'), ' tool.'),
+  h('p', null, 'This page respects the project’s ', h('code', null, 'webpreview'), ' authorization gate: in Ask mode the capture is hinted to approve it in the chat.')
+  )
+  )
+  ),
+  h('ul', { class: 'group__list' },
+  h('li', { class: 'settings-project__item settings-project__item--col' },
+  h('div', { class: 'settings-project__item-row' },
+  h('div', { class: 'settings-project__item-main' },
+  h('label', { class: 'settings-project__item-title', for: 'sp-preview-url' }, 'URL'),
+  h('div', { class: 'settings-project__item-note' }, 'An http(s) web page to capture.'),
+  h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, previewStatusMsg)
+  ),
+  h('button', {
+  class: 'btn btn--primary settings-project__preview-capture',
+  type: 'button',
+  onClick: openPreviewPrompt,
+  'aria-label': 'Capture a web preview'
+  }, 'Capture…')
+  ),
+  previewPayload
+  ? h('div', { class: 'settings-project__preview-shots' },
+  h('button', {
+  class: 'settings-project__preview-thumb',
+  type: 'button',
+  onClick: () => setPreviewViewOpen(true),
+  'aria-label': 'Open full preview of ' + (previewPayload.title || previewPayload.url || 'the captured page')
+  },
+  h('img', { src: previewPayload.thumbnail, alt: 'Preview of ' + (previewPayload.title || previewPayload.url || 'the captured page'), draggable: 'false', decoding: 'async' })
+  )
+  )
+  : null
+  )
+  )
+  )
+  ),
+  previewPromptOpen
+  ? h(PreviewUrlPrompt, {
+  onSubmit: onPreviewSubmit,
+  onClose: () => setPreviewPromptOpen(false)
+  })
+  : null,
+  previewViewOpen && previewPayload
+  ? h(WebpreviewModal, {
+  preview: previewPayload,
+  onClose: () => setPreviewViewOpen(false),
+  onRecapture: onPreviewRecapture
+  })
+  : null
+  )
+  ;
+  if (page === 'technical') return h(Fragment, null,
+h('div', { class: 'view-head' },
+h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : ('#/settings/project?' + projectBackQS()), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
+h('h2', { class: 'view-title' }, 'Technical details')
 ),
-h('ul', { class: 'group__list' },
-h('li', { class: 'settings-project__item settings-project__item--col' },
-h('div', { class: 'settings-project__item-row' },
-h('div', { class: 'settings-project__item-main' },
-h('label', { class: 'settings-project__item-title', for: 'sp-preview-url' }, 'URL'),
-h('div', { class: 'settings-project__item-note' }, 'An http(s) web page to capture.'),
-h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, previewStatusMsg)
-),
-h('button', {
-class: 'btn btn--primary settings-project__preview-capture',
-type: 'button',
-onClick: openPreviewPrompt,
-'aria-label': 'Capture a web preview'
-}, 'Capture…')
-),
-previewPayload
-? h('div', { class: 'settings-project__preview-shots' },
-h('button', {
-class: 'settings-project__preview-thumb',
-type: 'button',
-onClick: () => setPreviewViewOpen(true),
-'aria-label': 'Open full preview of ' + (previewPayload.title || previewPayload.url || 'the captured page')
-},
-h('img', { src: previewPayload.thumbnail, alt: 'Preview of ' + (previewPayload.title || previewPayload.url || 'the captured page'), draggable: 'false', decoding: 'async' })
-)
-)
-: null
-)
-)
-)
-),
-previewPromptOpen
-? h(PreviewUrlPrompt, {
-onSubmit: onPreviewSubmit,
-onClose: () => setPreviewPromptOpen(false)
-})
-: null,
-previewViewOpen && previewPayload
-? h(WebpreviewModal, {
-preview: previewPayload,
-onClose: () => setPreviewViewOpen(false),
-onRecapture: onPreviewRecapture
-})
-: null
-)
-;
-if (page === 'technical') return h(Fragment, null,
-    h('div', { class: 'view-head' },
-      h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
-      h('h2', { class: 'view-title' }, 'Technical details')
-    ),
     h('section', { class: 'settings-project' },
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
@@ -1330,10 +1340,10 @@ class: 'view-back',
           ),
           h('li', null,
             h('a', {
-              class: 'group__row settings-project__link-row',
-              'aria-label': 'Custom prompts',
-              href: '#/settings/prompts?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
+class: 'group__row settings-project__link-row',
+'aria-label': 'Custom prompts',
+href: '#/settings/prompts?' + projectBackQS()
+},
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Custom prompts'),
                 h('span', { class: 'settings-project__link-sub' }, 'Reusable system and role prompts')
@@ -1383,10 +1393,10 @@ class: 'view-back',
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),
         h('a', {
-          class: 'group__row settings-project__link-row settings-project__options-link',
-          'aria-label': 'File tool options',
-          href: '#/settings/project/output?projectDir=' + encodeURIComponent(dir())
-        },
+class: 'group__row settings-project__link-row settings-project__options-link',
+'aria-label': 'File tool options',
+href: '#/settings/project/output?' + projectBackQS()
+},
           h('span', { class: 'group__row-body' },
             h('span', { class: 'group__row-label' }, 'File tool options'),
             h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
@@ -1510,10 +1520,10 @@ class: 'view-back',
         h('ul', { class: 'group__list' },
           h('li', null,
             h('a', {
-              class: 'group__row settings-project__link-row',
-              'aria-label': 'Web preview',
-              href: '#/settings/project/preview?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
+class: 'group__row settings-project__link-row',
+'aria-label': 'Web preview',
+href: '#/settings/project/preview?' + projectBackQS()
+},
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Web preview'),
                 h('span', { class: 'settings-project__link-sub' }, 'Capture and view a web page')
@@ -1523,10 +1533,10 @@ class: 'view-back',
           ),
           h('li', null,
             h('a', {
-              class: 'group__row settings-project__link-row',
-              'aria-label': 'MCP servers',
-              href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
+class: 'group__row settings-project__link-row',
+'aria-label': 'MCP servers',
+href: '#/settings/mcp?' + projectBackQS()
+},
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'MCP servers'),
                 h('span', { class: 'settings-project__link-sub' }, 'Connect external tool servers')
@@ -1537,10 +1547,10 @@ class: 'view-back',
           ),
           h('li', null,
             h('a', {
-              class: 'group__row settings-project__link-row',
-              'aria-label': 'Custom actions',
-              href: '#/settings/actions?projectDir=' + encodeURIComponent(loadedDir || '')
-            },
+class: 'group__row settings-project__link-row',
+'aria-label': 'Custom actions',
+href: '#/settings/actions?' + projectBackQS()
+},
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Custom actions'),
                 h('span', { class: 'settings-project__link-sub' }, 'CLI and MCP shortcuts for the composer')
@@ -1550,9 +1560,9 @@ class: 'view-back',
           ),
           h('li', null,
             h('a', {
-              class: 'group__row settings-project__link-row',
-              href: '#/settings/project/technical?projectDir=' + encodeURIComponent(dir()) + (chatId() ? '&chatId=' + encodeURIComponent(chatId()) : '')
-            },
+class: 'group__row settings-project__link-row',
+href: '#/settings/project/technical?' + projectBackQS()
+},
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Technical details'),
                 h('span', { class: 'settings-project__link-sub' }, 'Raw project file and resolved settings')
@@ -1562,11 +1572,11 @@ class: 'view-back',
           )
         )
       ),
-agentFilePickerOpen && h(AgentFilePicker, {
-projectDir: dir(),
-onPick: onAgentFilePicked,
-onClose: () => setAgentFilePickerOpen(false)
-})
+      agentFilePickerOpen && h(AgentFilePicker, {
+        projectDir: dir(),
+        onPick: onAgentFilePicked,
+        onClose: () => setAgentFilePickerOpen(false)
+      })
     )
   );
 }

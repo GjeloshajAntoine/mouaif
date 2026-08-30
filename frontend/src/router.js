@@ -3,6 +3,16 @@
 // index.html, so deep links would 404 anyway; the hash is enough.
 import { route } from './api.js';
 
+// Normalize the `from` query param shared by the project-scoped settings
+// views. It records where the user entered project settings from (the
+// Projects tab, or Settings → Projects) so the back button can return to
+// that exact place even after a round-trip through a sub-page. Anything
+// else is ignored so the back button falls through to the default target.
+function fromParam(params) {
+  const from = params.get('from') || '';
+  return from === 'projects' || from === 'settings/projects' ? from : '';
+}
+
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '');
   if (!h) return { name: 'chats' };
@@ -20,21 +30,21 @@ function parseHash() {
   if (h === 'settings/project/technical' || h.startsWith('settings/project/technical?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '' };
+    return { name: 'settingsProjectTechnical', projectDir: params.get('projectDir') || '', chatId: params.get('chatId') || '', from: fromParam(params) };
   }
   // settings/project/output — "File tool options" (size / structure / JSON),
   // a sibling of Technical details under Settings → Project.
   if (h === 'settings/project/output' || h.startsWith('settings/project/output?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsProjectOutput', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsProjectOutput', projectDir: params.get('projectDir') || '', from: fromParam(params) };
   }
   // settings/project/preview — "Web preview", a sibling of File tool options
   // and Technical details under Settings → Project.
   if (h === 'settings/project/preview' || h.startsWith('settings/project/preview?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsProjectPreview', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsProjectPreview', projectDir: params.get('projectDir') || '', from: fromParam(params) };
   }
   // Legacy alias: agent editing used to live under settings/project.
   // Redirect to the standalone agents editor so old links keep working.
@@ -44,53 +54,50 @@ function parseHash() {
     const params = new URLSearchParams(qs || '');
     return { name: 'settingsAgentEdit', id: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
   }
-if (h === 'settings/project' || h.startsWith('settings/project?')) {
-const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-const params = new URLSearchParams(qs);
-const from = params.get('from') || '';
-return {
-name: 'settingsProject',
-projectDir: params.get('projectDir') || '',
-chatId: params.get('chatId') || '',
-from: from === 'projects' || from === 'settings/projects' ? from : ''
-};
-}
+  if (h === 'settings/project' || h.startsWith('settings/project?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return {
+      name: 'settingsProject',
+      projectDir: params.get('projectDir') || '',
+      chatId: params.get('chatId') || '',
+      from: fromParam(params)
+    };
+  }
   // settings/agents is project-scoped (same resolution as prompts: the
   // active project is the default, ?projectDir= overrides).
   if (h === 'settings/agents' || h.startsWith('settings/agents?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    const from = params.get('from') || '';
     return {
       name: 'settingsAgents',
       projectDir: params.get('projectDir') || '',
-      from: from === 'projects' || from === 'settings/projects' ? from : ''
+      from: fromParam(params)
     };
   }
   if (h.startsWith('settings/agents/')) {
     const rest = h.slice('settings/agents/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    const from = params.get('from') || '';
     return {
       name: 'settingsAgentEdit', id,
       projectDir: params.get('projectDir') || '',
-      from: from === 'projects' || from === 'settings/projects' ? from : ''
+      from: fromParam(params)
     };
   }
-if (h === 'settings/actions' || h.startsWith('settings/actions?')) {
-const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
-const params = new URLSearchParams(qs);
-return { name: 'settingsActions', projectDir: params.get('projectDir') || '' };
-}
-if (h.startsWith('settings/actions/')) {
-const rest = h.slice('settings/actions/'.length);
-const [id, qs] = rest.split('?');
-const params = new URLSearchParams(qs || '');
-return { name: 'settingsActionEdit', id: decodeURIComponent(id), projectDir: params.get('projectDir') || '' };
-}
-if (h === 'settings/projects') return { name: 'settingsProjects' };
-if (h === 'settings/defaults') return { name: 'settingsDefaults' };
+  if (h === 'settings/actions' || h.startsWith('settings/actions?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsActions', projectDir: params.get('projectDir') || '', from: fromParam(params) };
+  }
+  if (h.startsWith('settings/actions/')) {
+    const rest = h.slice('settings/actions/'.length);
+    const [id, qs] = rest.split('?');
+    const params = new URLSearchParams(qs || '');
+    return { name: 'settingsActionEdit', id: decodeURIComponent(id), projectDir: params.get('projectDir') || '', from: fromParam(params) };
+  }
+  if (h === 'settings/projects') return { name: 'settingsProjects' };
+  if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/notifications') return { name: 'settingsNotifications' };
   // Legacy alias: the GitHub Copilot OAuth-app config used to live on its own
   // screen. It now lives inside the Copilot provider form, so keep old links
@@ -102,20 +109,20 @@ if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/prompts' || h.startsWith('settings/prompts?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '', id: '', scope: params.get('scope') || '' };
+    return { name: 'settingsPrompts', projectDir: params.get('projectDir') || '', id: '', scope: params.get('scope') || '', from: fromParam(params) };
   }
   if (h.startsWith('settings/prompts/')) {
     const rest = h.slice('settings/prompts/'.length);
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsPrompts', id, projectDir: params.get('projectDir') || '', scope: params.get('scope') || '' };
+    return { name: 'settingsPrompts', id, projectDir: params.get('projectDir') || '', scope: params.get('scope') || '', from: fromParam(params) };
   }
   // #/settings/mcp/registry routes to the browse view (before the generic
   // settings/mcp match, which only catches hash === settings/mcp or ?qs).
   if (h === 'settings/mcp/registry' || h.startsWith('settings/mcp/registry?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsMcpRegistry', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsMcpRegistry', projectDir: params.get('projectDir') || '', from: fromParam(params) };
   }
   // settings/mcp lists servers in both scopes (app-wide + per project).
   // The active project is the source of truth for the Project tab; the
@@ -125,7 +132,7 @@ if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   if (h === 'settings/mcp' || h.startsWith('settings/mcp?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
     const params = new URLSearchParams(qs);
-    return { name: 'settingsMcp', projectDir: params.get('projectDir') || '' };
+    return { name: 'settingsMcp', projectDir: params.get('projectDir') || '', from: fromParam(params) };
   }
   // "New" must be checked before the generic /:id match so that
   // #/settings/mcp/new?scope=... does not look up a server with id
@@ -136,7 +143,8 @@ if (h === 'settings/defaults') return { name: 'settingsDefaults' };
     return {
       name: 'settingsMcpEdit', id: '',
       projectDir: params.get('projectDir') || '',
-      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : '')
+      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : ''),
+      from: fromParam(params)
     };
   }
   if (h.startsWith('settings/mcp/')) {
@@ -146,7 +154,8 @@ if (h === 'settings/defaults') return { name: 'settingsDefaults' };
     return {
       name: 'settingsMcpEdit', id,
       projectDir: params.get('projectDir') || '',
-      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : '')
+      scope: params.get('scope') === 'app' ? 'app' : (params.get('scope') === 'project' ? 'project' : ''),
+      from: fromParam(params)
     };
   }
   if (h === 'settings/tags' || h.startsWith('settings/tags?')) {
@@ -168,9 +177,8 @@ if (h === 'settings/defaults') return { name: 'settingsDefaults' };
   }
   return { name: 'chats' };
 }
-
 route.value = parseHash();
 window.addEventListener('hashchange', () => { route.value = parseHash(); });
 export function nav(toHash) {
-window.location.hash = '#/' + toHash;
+  window.location.hash = '#/' + toHash;
 }

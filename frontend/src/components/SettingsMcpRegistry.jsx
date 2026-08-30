@@ -43,7 +43,8 @@ function extractPkgInfo(entry) {
 }
 
 export function SettingsMcpRegistryView(props = {}) {
-  const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+const from = typeof props.from === 'string' ? props.from : '';
   const [servers, setServers] = useState([]);
   const [metadata, setMetadata] = useState({ count: 0, nextCursor: null });
   const [search, setSearch] = useState('');
@@ -131,10 +132,10 @@ export function SettingsMcpRegistryView(props = {}) {
         // Navigate to the edit view for the new server
         const id = r.body && r.body.server && r.body.server.id;
         if (id) {
-          setTimeout(() => {
-            nav('settings/mcp/' + encodeURIComponent(id) + projectQS(projectDir) + '&scope=' + scope);
-          }, 600);
-        }
+setTimeout(() => {
+nav('settings/mcp/' + encodeURIComponent(id) + projectQS(projectDir) + '&scope=' + scope + (from ? '&from=' + encodeURIComponent(from) : ''));
+}, 600);
+}
       } else {
         setStatusObj({ message: 'HTTP ' + r.status + ': ' + (r.body && r.body.error || 'unknown'), type: 'error' });
       }
@@ -146,7 +147,7 @@ export function SettingsMcpRegistryView(props = {}) {
 
   useEffect(() => { loadRegistry({}); }, []);
 
-  const backHref = '#/settings/mcp' + projectQS(projectDir);
+  const backHref = '#/settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : '');
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
