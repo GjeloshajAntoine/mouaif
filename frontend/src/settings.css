@@ -470,6 +470,27 @@ transform: rotate(45deg); }
   border-radius: var(--r-sm);
   margin: 2px 6px 4px;
 }
+/* Web preview page: the captured thumbnail that re-opens the viewer. */
+.settings-project__preview-shots {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+.settings-project__preview-thumb {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+  padding: 0;
+  line-height: 0;
+}
+.settings-project__preview-thumb img {
+  display: block;
+  max-width: min(64vw, 220px);
+  max-height: 220px;
+  object-fit: contain;
+}
+.settings-project__preview-capture { min-height: 40px; }
 
 .seg {
   display: flex;

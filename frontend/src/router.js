@@ -29,6 +29,13 @@ function parseHash() {
     const params = new URLSearchParams(qs);
     return { name: 'settingsProjectOutput', projectDir: params.get('projectDir') || '' };
   }
+  // settings/project/preview — "Web preview", a sibling of File tool options
+  // and Technical details under Settings → Project.
+  if (h === 'settings/project/preview' || h.startsWith('settings/project/preview?')) {
+    const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
+    const params = new URLSearchParams(qs);
+    return { name: 'settingsProjectPreview', projectDir: params.get('projectDir') || '' };
+  }
   // Legacy alias: agent editing used to live under settings/project.
   // Redirect to the standalone agents editor so old links keep working.
   if (h.startsWith('settings/project/agents/')) {

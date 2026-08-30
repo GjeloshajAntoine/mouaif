@@ -9,12 +9,17 @@
 // file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage } from '../api.js';
+import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
+// Web-preview components were previously chat-only. The dedicated
+// "Web preview" page in project settings reuses the same capture
+// endpoint and full-screen viewer so the two surfaces behave identically.
+import { WebpreviewModal } from './chat/WebpreviewModal.jsx';
+import { PreviewUrlPrompt } from './chat/PreviewUrlPrompt.jsx';
 
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
@@ -78,8 +83,19 @@ const [askUserMode, setAskUserMode] = useState('ask');
 const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
 const [restartStatusMsg, setRestartStatusMsg] = useState('');
 const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
-
-  const [toolsCatalog, setToolsCatalog] = useState([]);
+const [toolsCatalog, setToolsCatalog] = useState([]);
+// Web preview page state — the dedicated "Web preview" sub-page captures
+// a URL and shows the result in the same full-screen viewer the chat uses.
+const [previewUrl, setPreviewUrl] = useState('');
+const [previewPromptOpen, setPreviewPromptOpen] = useState(false);
+const [previewPayload, setPreviewPayload] = useState(null);
+const [previewViewOpen, setPreviewViewOpen] = useState(false);
+const [previewStatusMsg, setPreviewStatusMsg] = useState('');
+// The capture endpoint is scoped to a chat (the authorization session and
+// trace are keyed by projectDir + chatId). The preview page picks the most
+// recent chat for the project on first use so it can capture without asking
+// the user to pick a chat.
+const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim());
 
   // MCP authorization
   const [mcpAuth, setMcpAuth] = useState({ mode: 'ask', allowlist: [], servers: {}, tools: {} });
@@ -441,6 +457,70 @@ const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
+// ---- Web preview page handlers ----------------------------------------
+// The webpreview capture endpoint is scoped to a chat (authorization and
+// trace are keyed by projectDir + chatId). Resolve a chatId once so the
+// dedicated page can capture without the user first opening a chat. It
+// prefers the chat the page was opened from, then the most recently
+// opened chat for the project.
+async function resolvePreviewChat(seedId) {
+const d = dir();
+if (!d) return '';
+if (seedId && seedId.trim()) return seedId.trim();
+try {
+const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(d) + '&limit=1');
+if (r.status === 200 && Array.isArray(r.body.chats) && r.body.chats.length) {
+const id = r.body.chats[0].id;
+if (id) setPreviewChatId(id);
+return id || '';
+}
+} catch { /* leave the current seed */ }
+return previewChatId || '';
+}
+// Capture a URL into the preview payload. Goes through the same
+// /api/tools/webpreview endpoint the chat viewer re-captures on, so the
+// project's webpreview authorization gate is honored. In Ask mode the
+// endpoint returns 409 EAUTH_REQUIRED; we surface a hint instead of
+// mounting the chat's authorization card (there is no transcript here).
+async function capturePreview(url, viewport) {
+const d = dir();
+const cid = await resolvePreviewChat(previewChatId);
+if (!d || !cid) { setPreviewStatusMsg('No chat available for this project.'); return null; }
+setPreviewStatusMsg('Capturing preview…');
+try {
+const out = await requestWebpreview({ projectDir: d, chatId: cid, url, viewport: viewport || undefined });
+if (out && out.ok && out.result && out.result.thumbnail) {
+setPreviewPayload(out.result);
+setPreviewViewOpen(true);
+setPreviewStatusMsg('');
+} else if (out) {
+setPreviewStatusMsg((out.result && out.result.error) || out.error || 'capture failed');
+} else {
+setPreviewStatusMsg('capture failed');
+}
+return out;
+} catch (e) {
+if (e && e.code === 'EAUTH_REQUIRED') {
+setPreviewStatusMsg('Web preview is Ask-gated — approve it in the chat to capture.');
+} else {
+setPreviewStatusMsg('Preview failed: ' + ((e && e.message) || String(e)));
+}
+return null;
+}
+}
+function onPreviewSubmit(url) {
+setPreviewUrl(url);
+setPreviewPromptOpen(false);
+return capturePreview(url);
+}
+function onPreviewRecapture(viewport) {
+const url = previewUrl || (previewPayload && previewPayload.url);
+if (!url) return Promise.resolve(null);
+return capturePreview(url, viewport);
+}
+function openPreviewPrompt() {
+setPreviewPromptOpen(true);
+}
 function pickAskUserMode(newMode) {
 
     setAskUserMode(newMode);
@@ -1032,11 +1112,78 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
         h('div', { class: 'group__title' }, 'Example'),
         h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result spanning many directories — the compact file-tool format (each directory grouped once, no repeated path prefix, no JSON). The sample is intentionally large so finite size caps show the truncation marker:'),
         h('pre', { class: 'settings__out' }, exampleFor(outputSize, outputStructure))
-      )
-    )
-  );
-
-  if (page === 'technical') return h(Fragment, null,
+)
+)
+);
+if (page === 'preview') return h(Fragment, null,
+h('div', { class: 'view-head' },
+h('a', {
+href: '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''),
+class: 'view-back',
+'aria-label': 'Back to project settings'
+}, '←'),
+h('h2', { class: 'view-title' }, 'Web preview')
+),
+h('section', { class: 'settings-project' },
+h('div', { class: 'group settings-project__section' },
+h('div', { class: 'group__title settings-project__section-title' },
+sectionIcon('tools'),
+h('span', null, 'Capture'),
+h('details', { class: 'settings-project__info' },
+h('summary', { 'aria-label': 'About web preview capture' }, '?'),
+h('div', { class: 'settings-project__info-body' },
+h('p', null, 'Capture a screenshot of a web URL in the Inspector debug Chrome and open it in the full-screen viewer. The same screenshot the AI can refresh with the ', h('code', null, 'webpreview'), ' tool.'),
+h('p', null, 'This page respects the project’s ', h('code', null, 'webpreview'), ' authorization gate: in Ask mode the capture is hinted to approve it in the chat.')
+)
+)
+),
+h('ul', { class: 'group__list' },
+h('li', { class: 'settings-project__item settings-project__item--col' },
+h('div', { class: 'settings-project__item-row' },
+h('div', { class: 'settings-project__item-main' },
+h('label', { class: 'settings-project__item-title', for: 'sp-preview-url' }, 'URL'),
+h('div', { class: 'settings-project__item-note' }, 'An http(s) web page to capture.'),
+h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, previewStatusMsg)
+),
+h('button', {
+class: 'btn btn--primary settings-project__preview-capture',
+type: 'button',
+onClick: openPreviewPrompt,
+'aria-label': 'Capture a web preview'
+}, 'Capture…')
+),
+previewPayload
+? h('div', { class: 'settings-project__preview-shots' },
+h('button', {
+class: 'settings-project__preview-thumb',
+type: 'button',
+onClick: () => setPreviewViewOpen(true),
+'aria-label': 'Open full preview of ' + (previewPayload.title || previewPayload.url || 'the captured page')
+},
+h('img', { src: previewPayload.thumbnail, alt: 'Preview of ' + (previewPayload.title || previewPayload.url || 'the captured page'), draggable: 'false', decoding: 'async' })
+)
+)
+: null
+)
+)
+)
+),
+previewPromptOpen
+? h(PreviewUrlPrompt, {
+onSubmit: onPreviewSubmit,
+onClose: () => setPreviewPromptOpen(false)
+})
+: null,
+previewViewOpen && previewPayload
+? h(WebpreviewModal, {
+preview: previewPayload,
+onClose: () => setPreviewViewOpen(false),
+onRecapture: onPreviewRecapture
+})
+: null
+)
+;
+if (page === 'technical') return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : '#/settings/project?projectDir=' + encodeURIComponent(dir() || initialDir || ''), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Technical details')
@@ -1364,6 +1511,19 @@ class: 'view-back',
           h('li', null,
             h('a', {
               class: 'group__row settings-project__link-row',
+              'aria-label': 'Web preview',
+              href: '#/settings/project/preview?projectDir=' + encodeURIComponent(loadedDir || '')
+            },
+              h('span', { class: 'group__row-body' },
+                h('span', { class: 'group__row-label' }, 'Web preview'),
+                h('span', { class: 'settings-project__link-sub' }, 'Capture and view a web page')
+              ),
+              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+            )
+          ),
+          h('li', null,
+            h('a', {
+              class: 'group__row settings-project__link-row',
               'aria-label': 'MCP servers',
               href: '#/settings/mcp?projectDir=' + encodeURIComponent(loadedDir || '')
             },
@@ -1402,12 +1562,11 @@ class: 'view-back',
           )
         )
       ),
-
-      agentFilePickerOpen && h(AgentFilePicker, {
-        projectDir: dir(),
-        onPick: onAgentFilePicked,
-        onClose: () => setAgentFilePickerOpen(false)
-      })
+agentFilePickerOpen && h(AgentFilePicker, {
+projectDir: dir(),
+onPick: onAgentFilePicked,
+onClose: () => setAgentFilePickerOpen(false)
+})
     )
   );
 }

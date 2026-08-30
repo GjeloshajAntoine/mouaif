@@ -11,6 +11,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.
 - [Custom actions](features/custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the Tools popup.
+- [Web preview page](features/webpreview-project-page.md) — capture and view a web URL from project settings.
 
 ## Build the documentation
 
