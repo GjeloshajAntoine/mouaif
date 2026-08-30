@@ -59,15 +59,36 @@ export function onComposerInput(refs, projectDir, chatId, updateChat) {
 
 import { isAtMentionActive } from './atMention.js';
 
-// onComposerKey(e, send)
+// onComposerKey(e, send, opts)
 //
-// Enter sends; Shift-Enter inserts a newline. `isComposing` is
+// Enter / Shift-Enter behavior is governed by `enterForNewline`
+// (the app-level Chat defaults toggle, default true). When true,
+// Enter inserts a newline and Ctrl/Cmd+Enter sends. When false,
+// Enter sends and Shift-Enter inserts a newline. `isComposing` is
 // checked so the IME's own Enter (which is also `key: Enter`)
 // doesn't fire send mid-composition. When the @-mention popup is
 // open, Enter is consumed by that popup and does not send.
-export function onComposerKey(e, send) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !isAtMentionActive()) {
-    e.preventDefault();
-    send();
+export function onComposerKey(e, send, opts = {}) {
+  const enterForNewline = opts.enterForNewline !== false;
+  const isEnter = e.key === 'Enter';
+  const cmdEnter = isEnter && (e.ctrlKey || e.metaKey);
+  const shiftEnter = isEnter && e.shiftKey;
+  // Always block Enter from submitting the composer while the IME is
+  // composing or the @-mention popup owns the key.
+  if (isEnter && !e.isComposing && !isAtMentionActive()) {
+    if (cmdEnter) {
+      // Ctrl/Cmd+Enter always sends, in either mode.
+      e.preventDefault();
+      send();
+    } else if (enterForNewline) {
+      // Enter = newline (default). Let the textarea insert it. Shift+Enter
+      // already inserts a newline too, so nothing to do here.
+    } else {
+      // Enter = send; Shift+Enter = newline.
+      if (!shiftEnter) {
+        e.preventDefault();
+        send();
+      }
+    }
   }
 }

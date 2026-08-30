@@ -62,6 +62,10 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
+  // Composer keyboard default: when true, Enter inserts a newline and the
+  // send button / Cmd+Ctrl+Enter sends. When false, Enter sends and
+  // Shift+Enter inserts a newline. App-level; a project may override it.
+  enterForNewline: true,
   // App-level custom prompts. Empty by default.
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`

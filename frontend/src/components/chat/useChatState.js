@@ -15,7 +15,7 @@
 // living on `state`.
 
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
-import { fetchJson, loadModels } from '../../api.js';
+import { fetchJson, loadModels, loadApp } from '../../api.js';
 import { nav } from '../../router.js';
 import {
   refreshActiveProvider, refreshAllProviders, activeProviderId, touchRecent,
@@ -171,6 +171,10 @@ const nextLiveSeq = useRef(0);
   const thinkingLevelRef = useRef('');
   // Track the current per-chat max output tokens (empty = provider default).
   const maxOutputTokensRef = useRef('');
+  // Composer keyboard default (app-level Chat defaults). When true, Enter
+  // inserts a newline; Ctrl/Cmd+Enter sends. Ref-backed so the hot-path
+  // key handler reads the live value without re-rendering.
+  const enterForNewlineRef = useRef(true);
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -297,7 +301,9 @@ const kickPoll = useRef(null);
       get thinkingLevel() { return thinkingLevelRef.current; },
       set thinkingLevel(v) { thinkingLevelRef.current = v; },
       get maxOutputTokens() { return maxOutputTokensRef.current; },
-      set maxOutputTokens(v) { maxOutputTokensRef.current = v; }
+      set maxOutputTokens(v) { maxOutputTokensRef.current = v; },
+      get enterForNewline() { return enterForNewlineRef.current; },
+      set enterForNewline(v) { enterForNewlineRef.current = !!v; }
     };
   }
   const state = stateRef.current;
@@ -583,7 +589,7 @@ state.customActions = customActions;
     async function load() {
       if (!projectDir || !chatId) return;
       try {
-        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents, rActions] = await Promise.all([
+        const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents, rActions, app] = await Promise.all([
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
 loadModels(projectDir),
 fetchJson('/api/ai/models/providers'),
@@ -592,7 +598,8 @@ fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/agents?projectDir=' + encodeURIComponent(projectDir)),
-fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir))
+fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir)),
+loadApp({ force: true }).catch(() => null)
 ]);
         // The tool catalog is the ONE chat-load request that is not fast
         // to resolve: GET /api/tools/list auto-starts every configured MCP
@@ -612,6 +619,11 @@ fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir))
         }
         const c = rChat.body.chat;
         state.chat = c;
+        // Composer keyboard default comes from the app-level Chat defaults
+        // setting (default true = Enter inserts a newline). Falls back to true
+        // when the app settings fetch failed or the key is absent.
+        const appSettings = (app && app.app) || {};
+        state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSettings.enterForNewline : true;
         persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
         messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
         // Seed the seen-set from the freshly loaded transcript so the
@@ -1091,7 +1103,7 @@ updateChat: updateChatBound,
       if (v) openPickerWithFreshRecent();
       else setPickerOpen(false);
     },
-    onComposerKey: (e) => onComposerKey(e, send),
+    onComposerKey: (e) => onComposerKey(e, send, { enterForNewline: state.enterForNewline }),
     onComposerInput: () => {
       setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
       onComposerInput(refs, projectDir, chatId, updateChatBound);
