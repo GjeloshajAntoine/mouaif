@@ -127,9 +127,15 @@ async function run() {
     t('media reject non-image 415', r2d.status === 415, JSON.stringify(r2d));
     t('media reject non-image ENOTIMAGE', r2d.body && r2d.body.code === 'ENOTIMAGE');
 
-    // 5. read escape -> 403
-    const r3 = await request('GET', '/api/file?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent('/etc/passwd'));
-    t('read escape 403', r3.status === 403, JSON.stringify(r3));
+    // 5. read escape — with MOUAIF_ALLOW_ANY_ROOT=1 the home cap is lifted,
+// so an absolute path outside the project root is now a valid read
+// (this is the whole point of the change: browse/edit anywhere under
+// home, anywhere at all when allow-any-root is on). The old 403 only
+// applies when the path escapes the *home* boundary, which this server's
+// env (ALLOW_ANY_ROOT=1) does not enforce.
+const r3 = await request('GET', '/api/file?projectDir=' + encodeURIComponent(root) + '&path=' + encodeURIComponent('/etc/hostname'));
+t('read above project root succeeds with ALLOW_ANY_ROOT', r3.status === 200, JSON.stringify(r3).slice(0, 200));
+t('read above project root has ..-prefixed relPath', r3.body && r3.body.relPath && r3.body.relPath.startsWith('..'));
 
     // 6. write
     const w1 = await request('PUT', '/api/file', { projectDir: root, path: 'hello.txt', content: 'updated!\n' });
@@ -141,9 +147,12 @@ async function run() {
     const w2 = await request('PUT', '/api/file', { projectDir: root, path: 'binary.png', content: 'no' });
     t('write binary 415', w2.status === 415, JSON.stringify(w2));
 
-    // 8. write escape -> 403
-    const w3 = await request('PUT', '/api/file', { projectDir: root, path: '../escape.txt', content: 'nope' });
-    t('write escape 403', w3.status === 403, JSON.stringify(w3));
+// 8. write escape — with ALLOW_ANY_ROOT=1 a path above the project
+// root (but existing in the tree) now succeeds, matching the read
+// behaviour above.
+const w3 = await request('PUT', '/api/file', { projectDir: root, path: '../.mouaif-http-write-' + Math.random().toString(36).slice(2) + '.txt', content: 'nope' });
+t('write above project root succeeds with ALLOW_ANY_ROOT', w3.status === 200, JSON.stringify(w3));
+t('write above project root has ..-prefixed relPath', w3.body && w3.body.relPath && w3.body.relPath.startsWith('..'));
 
     // 9. write outside home — projectDir under /tmp
     //     (MOUAIF_ALLOW_ANY_ROOT=1 in env)

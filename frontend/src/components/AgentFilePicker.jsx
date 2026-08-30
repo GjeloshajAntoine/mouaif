@@ -32,6 +32,7 @@ export function AgentFilePicker(props) {
   const onPick = props.onPick || (() => {});
   const onClose = props.onClose || (() => {});
   const [dir, setDir] = useState(projectDir || '');
+  const [browseTop, setBrowseTop] = useState('');
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -48,6 +49,7 @@ export function AgentFilePicker(props) {
       return;
     }
     setDir(r.body.dir);
+    setBrowseTop(r.body.browseTop || '');
     setEntries(Array.isArray(r.body.entries) ? r.body.entries : []);
     setLoading(false);
   }
@@ -64,10 +66,14 @@ export function AgentFilePicker(props) {
   function goUp() {
     const d = dir || '';
     if (!d) return;
+    const top = browseTop || '';
+    if (top && d === top) return;
     const norm = d.replace(/[\\/]+$/, '');
     const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
-    if (idx <= 0) { loadDir(projectDir); return; }
-    loadDir(norm.slice(0, idx));
+    if (idx <= 0) { loadDir(top); return; }
+    const parent = norm.slice(0, idx);
+    if (top && parent === top) { loadDir(top); return; }
+    loadDir(parent);
   }
 
   function onEntry(e) {
@@ -78,10 +84,12 @@ export function AgentFilePicker(props) {
 
   function parentRel() {
     const d = dir || '';
-    if (!d || d === projectDir) return null;
+    if (!d) return null;
+    const top = browseTop || '';
+    if (top && d === top) return null;
     const norm = d.replace(/[\\/]+$/, '');
     const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
-    return idx > 0 ? norm.slice(0, idx) : projectDir;
+    return idx > 0 ? norm.slice(0, idx) : (top || null);
   }
 
   return h('div', {

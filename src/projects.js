@@ -59,6 +59,28 @@ function ensureSafeRoot(absPath) {
   }
   return path.resolve(absPath);
 }
+// The top-most directory the file editor / picker may browse to. With
+// MOUAIF_ALLOW_ANY_ROOT the whole filesystem is reachable so the boundary
+// is the root path; otherwise it is the user's home. Used by the frontend
+// to clamp the Up button at the natural top so it never asks the server
+// for a directory that would fail the home guard.
+function browseTop(absPath) {
+  if (!absPath || !isAbsolutePath(absPath)) return null;
+  if (ALLOW_ANY_ROOT) {
+    const root = path.parse(path.resolve(absPath)).root;
+    return root;
+  }
+  return os.homedir();
+}
+// True when `absPath` sits at or above the browse boundary (home, or /)
+// for the given home/ALLOW key — i.e. there is no parent to go up to.
+function isBrowseTop(absPath) {
+  const top = browseTop(absPath);
+  if (!top) return true;
+  const resolved = path.resolve(absPath || '');
+  const topResolved = path.resolve(top);
+  return resolved === topResolved;
+}
 
 // ---- Filesystem surface -------------------------------------------------
 
@@ -254,8 +276,10 @@ module.exports = {
   renameProject,
   setProjectTotalCost,
   adjustProjectTotalCost,
-  // helpers (exported for tests + future inspector)
-  isUnderHome,
-  ensureSafeRoot,
-  ALLOW_ANY_ROOT
+// helpers (exported for tests + future inspector)
+isUnderHome,
+ensureSafeRoot,
+browseTop,
+isBrowseTop,
+ALLOW_ANY_ROOT
 };

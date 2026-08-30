@@ -30,6 +30,13 @@ function makeProject() {
   fs.writeFileSync(path.join(root, 'binary.png'), Buffer.from([0, 1, 2, 0xff, 0xfe]));
   fs.mkdirSync(path.join(root, 'node_modules'));
   fs.writeFileSync(path.join(root, 'node_modules', 'skip.js'), 'should not appear', 'utf8');
+  // Dotfiles are real text files the editor is meant to open (see
+  // docs/features/files-modal-text-and-images.md); .git is junk that
+  // must stay hidden.
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules\n', 'utf8');
+  fs.writeFileSync(path.join(root, '.env'), 'FOO=1\n', 'utf8');
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref\n', 'utf8');
   return root;
 }
 
@@ -47,6 +54,10 @@ async function run() {
   t('listDir skips node_modules', !names.includes('node_modules'));
   const png = list.entries.find(e => e.name === 'binary.png');
   t('listDir marks png as binary', png && png.binary === true);
+  t('listDir shows dotfile .gitignore', names.includes('.gitignore'));
+  t('listDir shows dotfile .env', names.includes('.env'));
+  t('listDir skips .git dir', !names.includes('.git'));
+  t('listDir marks dotfile .gitignore as text', list.entries.find(e => e.name === '.gitignore').text === true);
 
   // 2. listDir into a subdir
   const sub = files.listDir(root, path.join(root, 'sub'));
@@ -64,22 +75,26 @@ async function run() {
   catch (e) { binaryErr = e; }
   t('readFile rejects binary with EBINARY', binaryErr && binaryErr.code === 'EBINARY');
 
-  // 5. readFile rejects path outside root
-  let outside = null;
-  try { await files.readFile(root, '/etc/passwd'); }
-  catch (e) { outside = e; }
-  t('readFile refuses outside with EOUTSIDE_PROJECT', outside && outside.code === 'EOUTSIDE_PROJECT');
-
-  // 6. readFile rejects path outside home (when ALLOW_ANY_ROOT is off)
-  let home = null;
-  const allowAny = process.env.MOUAIF_ALLOW_ANY_ROOT === '1';
-  if (!allowAny) {
-    try { await files.readFile('/etc', '/etc/hosts'); }
-    catch (e) { home = e; }
-    t('readFile refuses outside home with EOUTSIDE_HOME', home && (home.code === 'EOUTSIDE_HOME' || home.code === 'EOUTSIDE_PROJECT'));
-  } else {
-    t('readFile refuses outside home with EOUTSIDE_HOME', true, 'skipped (ALLOW_ANY_ROOT is 1)');
-  }
+  // 5. readFile rejects path outside the *home* boundary. When
+// MOUAIF_ALLOW_ANY_ROOT is off this is EOUTSIDE_HOME; with the flag on
+// any absolute path is allowed so the bound is the whole filesystem.
+let outside = null;
+try { await files.readFile(root, '/etc/passwd'); }
+catch (e) { outside = e; }
+t('readFile refuses outside home with EOUTSIDE_HOME', outside && (outside.code === 'EOUTSIDE_HOME' || outside.code === 'EOUTSIDE_PROJECT'));
+// 6. readFile can now go *above* the project root but stay under home.
+// A sibling directory of the project (still under the user home) is a
+// valid browse target once the project-root cap is lifted.
+let sibling = null;
+try {
+const parent = path.dirname(root);
+const sib = path.join(parent, '.mouaif-test-sibling-' + Math.random().toString(36).slice(2));
+fs.mkdirSync(sib);
+fs.writeFileSync(path.join(sib, 'sib.txt'), 'sibling\n', 'utf8');
+sibling = await files.readFile(root, path.join(sib, 'sib.txt'));
+} catch (e) { sibling = { error: e }; }
+t('readFile allows a sibling above the project root', sibling && sibling.content === 'sibling\n');
+t('readFile sibling relPath is ..-prefixed', sibling && sibling.relPath && sibling.relPath.startsWith('..'));
 
   // 7. writeFile happy path
   const w = await files.writeFile(root, path.join(root, 'hello.txt'), 'updated\n');
@@ -103,14 +118,11 @@ async function run() {
   const rel = await files.writeFile(root, 'app.js', 'const y = 2;\n');
   t('writeFile relative relPath', rel.relPath === 'app.js');
 
-  // 11. writeFile refuses escape
-  let esc = null;
-  try { await files.writeFile(root, '../escape.txt', 'nope'); }
-  catch (e) { esc = e; }
-  t('writeFile refuses escape', esc && esc.code === 'EOUTSIDE_PROJECT');
-
-  console.log('\n' + pass + ' passed, ' + fail + ' failed');
-  process.exit(fail ? 1 : 0);
+  // 11. writeFile can now go *above* the project root but stay under home.
+const esc = await files.writeFile(root, '../.mouaif-test-write-' + Math.random().toString(36).slice(2) + '.txt', 'wrote above\n');
+t('writeFile allows writing above the project root', esc && esc.relPath && esc.relPath.startsWith('..'));
+console.log('\n' + pass + ' passed, ' + fail + ' failed');
+process.exit(fail ? 1 : 0);
 }
 
 run().catch(e => { console.error(e); process.exit(1); });

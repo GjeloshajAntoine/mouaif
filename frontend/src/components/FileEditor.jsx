@@ -136,6 +136,7 @@ export function FileEditorView(props) {
   // Enter or the "Go" button.
   const currentDir = useRef(projectDir);
   const [dirDisplay, setDirDisplay] = useState(projectDir || '');
+  const [browseTop, setBrowseTop] = useState('');
   const [entries, setEntries] = useState([]);
   const [listStatus, setListStatus] = useState('');
   const [loading, setLoading] = useState(false);
@@ -176,6 +177,7 @@ export function FileEditorView(props) {
     }
     currentDir.current = r.body.dir;
     setDirDisplay(r.body.dir);
+    setBrowseTop(r.body.browseTop || '');
     setEntries(Array.isArray(r.body.entries) ? r.body.entries : []);
     setListStatus((r.body.entries ? r.body.entries.length : 0) + ' items');
     setLoading(false);
@@ -384,35 +386,45 @@ export function FileEditorView(props) {
   }, [confirmDiscardIfDirty, onClose]);
 
   // ---- navigation handlers -------------------------------------------
-
+  // The editor can now browse above the project root (up to the user's
+  // home, or the whole filesystem with MOUAIF_ALLOW_ANY_ROOT=1), matching
+  // the project-folder picker. `browseTop` holds that boundary from the
+  // server; the Up button and breadcrumb clamp there rather than at the
+  // project root.
   function goUp() {
     const d = currentDir.current || '';
     if (!d) return;
+    // Already at the browse boundary — nothing above to go to.
+    const top = browseTop || '';
+    if (top && d === top) return;
     // Strip trailing separators; find the last separator; pop one
     // segment. Home (`~`) is the empty string in our model.
     const norm = d.replace(/[\\/]+$/, '');
     const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
     if (idx <= 0) {
-      // Going above the project root is not allowed: popups are
-      // scoped to the project. Replace with the project root instead.
-      loadDir(projectDir);
+      loadDir(top);
       return;
     }
-    loadDir(norm.slice(0, idx));
+    const parent = norm.slice(0, idx);
+    if (top && parent === top) {
+      loadDir(top);
+      return;
+    }
+    loadDir(parent);
   }
 
   function onPathKey(ev) {
     if (ev.key === 'Enter') {
       ev.preventDefault();
       const v = (dirDisplay || '').trim();
-      // If empty, treat as "go to project root". Otherwise use as is.
-      loadDir(v || projectDir);
+      // If empty, treat as "go to browse boundary". Otherwise use as is.
+      loadDir(v || browseTop || projectDir);
     }
   }
 
   function onPathGo() {
     const v = (dirDisplay || '').trim();
-    loadDir(v || projectDir);
+    loadDir(v || browseTop || projectDir);
   }
 
   function onEntryClick(entry) {
@@ -454,10 +466,12 @@ export function FileEditorView(props) {
 
   function parentRel() {
     const d = currentDir.current || '';
-    if (!d || d === projectDir) return null;
+    if (!d) return null;
+    const top = browseTop || '';
+    if (top && d === top) return null;
     const norm = d.replace(/[\\/]+$/, '');
     const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
-    return idx > 0 ? norm.slice(0, idx) : projectDir;
+    return idx > 0 ? norm.slice(0, idx) : (top || null);
   }
 
   // ---- render ---------------------------------------------------------
@@ -465,23 +479,25 @@ export function FileEditorView(props) {
   // The breadcrumb above the list shows the project root + every
   // segment of the current dir so the user can jump up several levels
   // in one tap. Each segment is a button (not a link) so we stay
-  // inside the popup instead of navigating the app.
+  // inside the popup instead of navigating the app. The base of the
+  // breadcrumb is the browse boundary (home, or / with ALLOW_ANY_ROOT),
+  // not the project root, so the user can find their way back up.
   function renderBreadcrumb() {
-    const root = projectDir || '';
-    const cur = currentDir.current || root;
-    if (!root || cur === root) {
+    const base = browseTop || projectDir || '';
+    const cur = currentDir.current || base;
+    if (!base || cur === base) {
       return h(Fragment, null,
-        h('span', { class: 'fe__crumb fe__crumb--root' }, root || 'project')
+        h('span', { class: 'fe__crumb fe__crumb--root' }, base || 'project')
       );
     }
-    const rel = cur.startsWith(root) ? cur.slice(root.length).replace(/^[\\/]+/, '') : cur;
+    const rel = cur.startsWith(base) ? cur.slice(base.length).replace(/^[\\/]+/, '') : cur;
     const segs = rel ? rel.split(/[\\/]+/) : [];
     const items = [];
     items.push(h('button', {
       key: 'root', type: 'button', class: 'fe__crumb fe__crumb--root',
-      onClick: () => loadDir(root)
-    }, root.split(/[\\/]+/).pop() || root));
-    let acc = root;
+      onClick: () => loadDir(base)
+    }, base.split(/[\\/]+/).pop() || base));
+    let acc = base;
     segs.forEach((seg, i) => {
       acc = acc + (acc.endsWith('\\') || acc.endsWith('/') ? '' : '/') + seg;
       items.push(h('span', { key: 'sep-' + i, class: 'fe__crumb-sep', 'aria-hidden': 'true' }, '/'));
@@ -542,7 +558,7 @@ h('div', { class: 'fe__head' },
               value: dirDisplay,
               onInput: (ev) => setDirDisplay(ev.currentTarget.value),
               onKeydown: onPathKey,
-              placeholder: 'Folder path under this project',
+              placeholder: 'Folder path (absolute, or under this project)',
               'aria-label': 'Current folder',
               spellcheck: 'false',
               autocomplete: 'off'

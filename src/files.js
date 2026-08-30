@@ -154,15 +154,18 @@ function isProbablyTextSync(abs, maxBytes) {
 
 // ---- Path safety -------------------------------------------------------
 
-// Resolve any incoming path to an absolute path that MUST be inside
-// projectDir. The projectDir itself is also validated via
-// projects.ensureSafeRoot so the same home / MOUAIF_ALLOW_ANY_ROOT
-// rule that protects the rest of the app applies here too.
+// Resolve any incoming path to an absolute path. The projectDir itself
+// is validated via projects.ensureSafeRoot (home / MOUAIF_ALLOW_ANY_ROOT),
+// and — because the file editor can now browse above a project folder —
+// the target path is validated with the same home guard rather than being
+// confined to the project root. So the editor can list/read/write anywhere
+// under the user home (or anywhere at all when MOUAIF_ALLOW_ANY_ROOT=1),
+// mirroring the project-folder picker.
 //
 // `incoming` may be absolute or relative; relative is resolved against
-// projectDir. Throws typed errors (EBADPATH, EOUTSIDE_PROJECT,
-// ENOENT) instead of letting the underlying fs throw something the
-// UI cannot render.
+// projectDir. Throws typed errors (EBADPATH, EOUTSIDE_HOME, ENOENT)
+// instead of letting the underlying fs throw something the UI cannot
+// render.
 function resolveSafe(projectDir, incoming) {
   if (typeof projectDir !== 'string' || !projectDir) {
     throw err('EBADPATH', 'projectDir is required');
@@ -173,11 +176,15 @@ function resolveSafe(projectDir, incoming) {
     throw err('EBADPATH', 'path is required');
   }
   const abs = path.isAbsolute(incoming) ? path.resolve(incoming) : path.resolve(root, incoming);
-  // Must be inside root. `path.relative` returns '' for the same path.
+  // The browse/edit boundary is home / ALLOW_ANY_ROOT, not the project
+  // root. When ALLOW_ANY_ROOT is off this throws EOUTSIDE_HOME for any
+  // target outside the user home; when on, it allows the whole tree.
+  projects.ensureSafeRoot(abs);
+  // `rel` stays project-relative. For in-project paths it is a clean
+  // relative path; when browsing above the project root it becomes a
+  // `..`-prefixed string used to build relPath. Callers that need an
+  // absolute path use `abs`.
   const rel = path.relative(root, abs);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw err('EOUTSIDE_PROJECT', 'Path escapes the project root', { path: incoming });
-  }
   return { root, abs, rel: rel || '.' };
 }
 
@@ -224,7 +231,10 @@ function listDir(projectDir, dir) {
   }
   const entries = [];
   for (const name of names) {
-    if (name.startsWith('.')) continue;
+    // Hidden dotfiles (e.g. .gitignore, .env, .editorconfig) are real
+    // text files the editor is meant to open — see the feature doc. We
+    // still skip the known-junk dot-dirs (.git, .mouaif, .cache, …) via
+    // SKIP_DIRS below, but we no longer blanket-hide every `.` entry.
     if (SKIP_DIRS.has(name)) continue;
     const full = path.join(abs, name);
     let st;
@@ -268,7 +278,7 @@ function listDir(projectDir, dir) {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
-  return { projectDir: root, dir: abs, relDir: rel, entries };
+  return { projectDir: root, dir: abs, relDir: rel, browseTop: projects.browseTop(abs), entries };
 }
 
 // ---- Public: read ------------------------------------------------------
