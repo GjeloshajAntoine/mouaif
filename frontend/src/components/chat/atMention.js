@@ -13,7 +13,6 @@ import { fetchJson } from '../../api.js';
 // ---- Categories ---------------------------------------------------------
 
 const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MODEL: 'model' };
-const CATEGORY_LABELS = { files: 'Files', agents: 'Agents', actions: 'Actions', model: 'Model' };
 const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
 // At rest (empty query), show only this many items per category so the
@@ -265,54 +264,34 @@ function renderPopup() {
   if (selectedIdx < 0) selectedIdx = f.length - 1;
 
   const sections = [];
-  let currentCat = null;
   for (let i = 0; i < f.length; i++) {
-    const item = f[i];
-    if (item.category !== currentCat) {
-      currentCat = item.category;
-      sections.push({ type: 'header', label: CATEGORY_LABELS[currentCat] || currentCat });
-    }
-    sections.push({ type: 'item', index: i, item });
+    sections.push({ type: 'item', index: i, item: f[i] });
   }
 
   popup.innerHTML = '';
   for (const sec of sections) {
-    if (sec.type === 'header') {
-      const h = document.createElement('div');
-      h.className = 'at-mention__header';
-      h.textContent = sec.label;
-      popup.appendChild(h);
-    } else {
-      const row = document.createElement('div');
-      row.className = 'at-mention__item' + (sec.index === selectedIdx ? ' is-selected' : '');
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', sec.index === selectedIdx ? 'true' : 'false');
+    const row = document.createElement('div');
+    row.className = 'at-mention__item' + (sec.index === selectedIdx ? ' is-selected' : '');
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', sec.index === selectedIdx ? 'true' : 'false');
 
-      const icon = document.createElement('span');
-      icon.className = 'at-mention__icon';
-      icon.textContent = ICON_MAP[sec.item.icon] || '📄';
-      row.appendChild(icon);
+    const icon = document.createElement('span');
+    icon.className = 'at-mention__icon';
+    icon.textContent = ICON_MAP[sec.item.icon] || '📄';
+    row.appendChild(icon);
 
-      const textWrap = document.createElement('div');
-      textWrap.className = 'at-mention__text';
+    const textWrap = document.createElement('div');
+    textWrap.className = 'at-mention__text';
 
-      const label = document.createElement('div');
-      label.className = 'at-mention__label';
-      label.textContent = sec.item.label;
-      textWrap.appendChild(label);
+    const label = document.createElement('div');
+    label.className = 'at-mention__label';
+    label.textContent = sec.item.label;
+    textWrap.appendChild(label);
 
-      if (sec.item.subtitle) {
-        const sub = document.createElement('div');
-        sub.className = 'at-mention__subtitle';
-        sub.textContent = sec.item.subtitle;
-        textWrap.appendChild(sub);
-      }
-
-      row.appendChild(textWrap);
-      row.addEventListener('click', () => selectItem(sec.index));
-      row.addEventListener('mousedown', (e) => e.preventDefault());
-      popup.appendChild(row);
-    }
+    row.appendChild(textWrap);
+    row.addEventListener('click', () => selectItem(sec.index));
+    row.addEventListener('mousedown', (e) => e.preventDefault());
+    popup.appendChild(row);
   }
 }
 
