@@ -455,6 +455,23 @@ async function handleInspector(req, res, parsed) {
       return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
     }
   }
+  // POST /api/inspector/back  body: { targetId } -> { ok, wentBack }
+  // Navigates a tab one entry back in its history (Page.navigateToHistoryEntry
+  // on the target's WebSocket). `wentBack: false` means there was no previous
+  // entry — the UI shows that as a no-op, not an error.
+  if (urlPath === '/api/inspector/back' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    try {
+      const result = await inspector.goBackInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
 
   return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
 }

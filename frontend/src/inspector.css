@@ -90,6 +90,20 @@
   background: var(--surface-3);
   color: var(--fg);
 }
+.inspector__nav-back {
+  flex-shrink: 0;
+  min-height: var(--tap-sm);
+  min-width: var(--tap-sm);
+  height: var(--tap-sm);
+  width: var(--tap-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg-soft);
+}
+.inspector__nav-back:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+}
 .inspector__nav-input {
   flex: 1 1 auto;
   min-width: 0;

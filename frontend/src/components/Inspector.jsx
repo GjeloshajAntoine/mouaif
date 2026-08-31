@@ -819,6 +819,30 @@ applyViewport(viewportId);
     setStatus('reloaded');
   }
 
+  // goBackAttachedTarget — navigates the tab being inspected one entry
+  // back in its history (POST /api/inspector/back, CDP
+  // Page.navigateToHistoryEntry on the target). The connection survives
+  // the navigation. `wentBack: false` (no previous entry) is a friendly
+  // no-op, not an error.
+  async function goBackAttachedTarget() {
+    const target = currentTarget;
+    if (!target || !target.id) return;
+    setStatus('going back…');
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/back', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+    } catch (e) {
+      setStatus('network error going back');
+      return;
+    }
+    if (r.status !== 200 || !r.body) {
+      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+      setStatus('back failed: ' + msg);
+      return;
+    }
+    setStatus(r.body.wentBack ? 'went back' : 'no page to go back to');
+  }
+
   // navigateAttachedTarget — navigates the tab being inspected to a new
   // URL (POST /api/inspector/navigate, CDP Page.navigate on the target).
   // The connection survives the navigation; the panels keep streaming.
@@ -1036,6 +1060,20 @@ onDraftCraft: (image) => image && setDraftCraftImage(image)
     ),
     h('section', null,
       h('div', { class: 'inspector__nav' },
+        // Icon-only Back button — navigates the inspected tab one entry
+        // back in its history. Mirrors the reload button's glyph size so
+        // the URL field stays the widest flex child.
+        h('button', {
+          class: 'icon-btn inspector__nav-back',
+          type: 'button',
+          title: 'Go back in this tab\'s history',
+          'aria-label': 'Go back in this tab\'s history',
+          onClick: goBackAttachedTarget
+        },
+          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+            h('path', { d: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z', fill: 'currentColor' })
+          )
+        ),
         // Icon-only Reload button. The text-button Reload (a 44 px
         // button labelled "Reload") was moved into the view-head
         // overflow menu (InspectActionsMenu) so the nav row carries

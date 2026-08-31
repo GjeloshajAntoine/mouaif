@@ -432,7 +432,18 @@ async function reloadInspectorTarget(debuggerUrl, targetId) {
 async function navigateInspectorTarget(debuggerUrl, targetId, url) {
   return sendTargetCommand(debuggerUrl, targetId, 'Page.navigate', { url });
 }
-
+// goBackInspectorTarget — navigates a tab one entry back in its history
+// (Page.getNavigationHistory + Page.navigateToHistoryEntry, target-level).
+// Returns { ok: true, wentBack: <bool> } so the UI can tell "went back"
+// from "nothing to go back to" without treating the latter as an error.
+async function goBackInspectorTarget(debuggerUrl, targetId) {
+  const history = await sendTargetCommand(debuggerUrl, targetId, 'Page.getNavigationHistory', {});
+  const index = history && typeof history.currentIndex === 'number' ? history.currentIndex : -1;
+  const entries = Array.isArray(history && history.entries) ? history.entries : [];
+  if (index <= 0 || !entries[index - 1]) return { ok: true, wentBack: false };
+  await sendTargetCommand(debuggerUrl, targetId, 'Page.navigateToHistoryEntry', { historyEntryId: entries[index - 1].id });
+  return { ok: true, wentBack: true };
+}
 // httpRequestJson — httpGetJson generalized to any method (Chrome's
 // /json/new requires PUT). Same typed-error behavior as httpGetJson.
 function httpRequestJson(targetUrl, opts, timeoutMs) {
@@ -668,6 +679,7 @@ module.exports = {
   sendTargetCommand,
   reloadInspectorTarget,
   navigateInspectorTarget,
+  goBackInspectorTarget,
   // WS proxy
   handleProxy,
   makeNoServerWss,

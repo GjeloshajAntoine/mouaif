@@ -45,6 +45,7 @@ You can toggle each of the four panels on and off to customize your workspace:
 
 Use the top navigation bar to:
 - Enter a new URL to navigate the tab.
+- **Go back** — the back arrow icon navigates the tab one entry back in its history (CDP `Page.navigateToHistoryEntry`). If there's no previous entry the action is a friendly no-op — the status pill reads "no page to go back to" instead of an error.
 - **Reload** the page.
 - **Open new tab** in the attached browser.
 - **Close tab** when done — opens an in-app confirmation sheet (see below).
