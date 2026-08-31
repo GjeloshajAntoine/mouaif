@@ -9,6 +9,7 @@
   "files": [
     "bin/",
     "src/",
+    "frontend/dist",
     "README.md"
   ],
   "scripts": {
