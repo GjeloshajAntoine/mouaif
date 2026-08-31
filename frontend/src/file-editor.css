@@ -81,30 +81,11 @@
   color: var(--fg);
 }
 .fe__path-input:focus { border-color: var(--accent); outline: none; }
-.fe__iconbtn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  min-width: 36px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-soft);
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0;
-  transition: background 80ms ease, color 80ms ease;
-}
-.fe__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
-.fe__iconbtn.is-active { background: var(--accent-soft); color: var(--accent); }
+/* Icon buttons use the shared .icon-btn utility (forms.css); the file
+   editor bumps the glyph size and adds a sticky "active" toggle state. */
+.fe__iconbtn { font-size: 0.8rem; }
+.fe__iconbtn.is-active,
 .fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
-.fe__iconbtn--close { color: var(--fg-soft); }
-.fe__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
 
 .fe__crumbs {
   display: flex;

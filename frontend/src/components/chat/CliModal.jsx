@@ -141,7 +141,7 @@ export function CliModal(props) {
           h('span', { class: 'cli__dir', title: dirLabel }, dirLabel)
         ),
         h('button', {
-          class: 'cli__iconbtn cli__iconbtn--close',
+          class: 'icon-btn icon-btn--close cli__iconbtn',
           type: 'button',
           onClick: onClose,
           'aria-label': 'Close',

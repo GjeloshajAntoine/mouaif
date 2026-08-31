@@ -182,3 +182,32 @@ select.input {
 .status[data-state="error"]   { color: var(--danger);  }
 .status[data-state="success"] { color: var(--success); }
 .status[data-state="busy"]    { color: var(--accent);  }
+
+/* Shared 36px square icon button used by the CLI, Git, file-editor and
+   agent-file-picker overlay headers. These four had byte-identical
+   copies; the base lives here and each surface adds only its unique
+   rules (badge, active state, ...). `.icon-btn--close` is the common
+   destructive-hover variant. Touch target stays ≥36px and everything
+   works on tap (no hover-only affordance). */
+.icon-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  min-width: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  transition: background 80ms ease, color 80ms ease;
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--fg); }
+.icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.icon-btn--close { color: var(--fg-soft); }
+.icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }

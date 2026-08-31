@@ -664,26 +664,7 @@ font: 700 0.65rem var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cli__iconbtn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  min-width: 36px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-soft);
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  transition: background 80ms ease, color 80ms ease;
-}
-.cli__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
-.cli__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
+/* Icon buttons use the shared .icon-btn utility (forms.css). */
 
 .cli__body {
   flex: 1 1 auto;
@@ -860,27 +841,8 @@ font: 700 0.65rem var(--font-mono);
   white-space: nowrap;
 }
 .gm__branch-select:disabled { opacity: 0.5; }
-.gm__iconbtn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  min-width: 36px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-soft);
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  transition: background 80ms ease, color 80ms ease;
-}
-.gm__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
-.gm__iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
-.gm__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
+/* Git modal icon buttons use the shared .icon-btn utility (forms.css);
+   only the ahead/behind count badge is Git-specific. */
 
 /* Badge for ahead/behind counts on push/pull buttons */
 .gm__iconbtn--has-count {

@@ -269,7 +269,7 @@ export function GitModal(props) {
           )
         ),
         h('button', {
-          class: 'gm__iconbtn' + (behind > 0 ? ' gm__iconbtn--has-count' : ''),
+        class: 'icon-btn gm__iconbtn' + (behind > 0 ? ' gm__iconbtn--has-count' : ''),
           type: 'button',
           onClick: () => doGit('pull'),
           disabled: !!busy,
@@ -282,7 +282,7 @@ export function GitModal(props) {
           )
         ),
         h('button', {
-          class: 'gm__iconbtn' + (ahead > 0 ? ' gm__iconbtn--has-count' : ''),
+        class: 'icon-btn gm__iconbtn' + (ahead > 0 ? ' gm__iconbtn--has-count' : ''),
           type: 'button',
           onClick: () => doGit('push'),
           disabled: !!busy,
@@ -295,9 +295,9 @@ export function GitModal(props) {
           )
         ),
         h('button', {
-          class: 'gm__iconbtn',
-          type: 'button',
-          onClick: load,
+        class: 'icon-btn gm__iconbtn',
+        type: 'button',
+        onClick: load,
           disabled: loading || !!busy,
           'aria-label': 'Refresh git status',
           title: 'Refresh'
@@ -307,7 +307,7 @@ export function GitModal(props) {
           )
         ),
         h('button', {
-          class: 'gm__iconbtn gm__iconbtn--close',
+        class: 'icon-btn icon-btn--close gm__iconbtn',
           type: 'button',
           onClick: onClose,
           'aria-label': 'Close',

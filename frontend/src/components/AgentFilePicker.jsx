@@ -104,13 +104,13 @@ export function AgentFilePicker(props) {
         h('div', { class: 'afp__title' }, 'Pick a file'),
         h('div', { class: 'afp__sub' }, 'Tapping a file adds its project-relative path to the list.'),
         h('div', { class: 'afp__path-row' },
-          h('button', { class: 'afp__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
+          h('button', { class: 'icon-btn afp__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
             h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
               h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(-90 12 12)' })
             )
           ),
           h('div', { class: 'afp__path' }, dir || 'project'),
-          h('button', { class: 'afp__iconbtn afp__iconbtn--close', type: 'button', onClick: onClose, 'aria-label': 'Close', title: 'Close' },
+          h('button', { class: 'icon-btn icon-btn--close afp__iconbtn', type: 'button', onClick: onClose, 'aria-label': 'Close', title: 'Close' },
             h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
               h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
             )

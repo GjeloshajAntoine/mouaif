@@ -760,28 +760,9 @@ textarea#projectEditor {
   border-radius: var(--r-sm);
   padding: 5px 8px;
 }
-.afp__iconbtn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  min-width: 36px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-soft);
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0;
-  transition: background 80ms ease, color 80ms ease;
-}
-.afp__iconbtn:hover { background: var(--surface-3); color: var(--fg); }
-.afp__iconbtn--close { color: var(--fg-soft); }
-.afp__iconbtn--close:hover { color: var(--danger); background: var(--danger-soft); }
+/* Icon buttons use the shared .icon-btn utility (forms.css); this
+   picker just bumps the glyph size. */
+.afp__iconbtn { font-size: 0.8rem; }
 
 .afp__body {
   flex: 1 1 auto;
