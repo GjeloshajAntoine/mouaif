@@ -111,6 +111,7 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
 
   const [profiles, setProfiles] = useState([]);
   const [showProfileCopy, setShowProfileCopy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [loadedSnapshot, setLoadedSnapshot] = useState({ title: '', content: '', preset: null, scope: projectDir ? 'project' : 'app' });
 
@@ -124,6 +125,7 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   const [dataLoaded, setDataLoaded] = useState(false);
 
   const dirtyRef = useRef(false);
+  const pickerRef = useRef(null);
   // Tracks whether the user has explicitly chosen a prompt (via the picker,
   // "New", or delete) as opposed to the auto-select done on first load. Once
   // true, the auto-select effect stops trying to move the picker again.
@@ -261,6 +263,21 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   useEffect(() => { loadPrompts(); }, [projectDir]);
   useEffect(() => { loadProjectData(); }, [projectDir]);
   useEffect(() => { loadProfiles(); }, []);
+  useEffect(() => {
+    if (!pickerOpen) return undefined;
+    function onPointerDown(event) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) setPickerOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === 'Escape') setPickerOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [pickerOpen]);
   // The routes render <SettingsPromptsView> with no `key`, so navigating
   // between an app-scoped and a project-scoped prompts page reuses the same
   // component instance and its refs/state persist. Reset the picker whenever
@@ -295,6 +312,7 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   }, [prompts, initialId, selectedId]);
 
   function handleSelectPrompt(nextId) {
+    setPickerOpen(false);
     if (nextId === selectedId) return;
     if (dirtyRef.current) {
       const ok = confirm('Discard unsaved changes to this prompt?');
@@ -533,6 +551,7 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   const dirty = isDirty();
   dirtyRef.current = dirty;
   const currentPrompt = !isNew ? prompts.find((p) => p.id === selectedId) : null;
+  const pickerLabel = isNew ? '+ New prompt' : ((currentPrompt && (currentPrompt.title || currentPrompt.id)) || 'Choose a prompt');
   const copyDisabled = isNew && !content;
 
   // On the App-defaults screen every prompt is app-scoped by definition, so the
@@ -560,25 +579,58 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
 
       // ---- Picker ----------------------------------------------------
       h('div', { class: 'row prompts__picker' },
-        h('label', { class: 'label', for: 'sp-picker' }, 'Prompt'),
-        h('div', { class: 'prompts__picker-row' },
-          h('select', {
-            class: 'input prompts__select',
-            id: 'sp-picker',
-            value: selectedId,
-            onChange: (e) => handleSelectPrompt(e.currentTarget.value)
-          },
-            h('option', { value: NEW_PROMPT_ID }, '+ New prompt'),
-            prompts.length === 0
-              ? h('option', { value: '', disabled: true }, '(no saved prompts yet)')
-              : prompts.map((p) =>
-                  h('option', { key: p.id, value: p.id },
-                    (p.title || p.id) +
-                    (showScopeBadge && p.scope ? ' [' + p.scope + ']' : '') +
-                    (p.preset ? ' • preset' : '')
-                  )
-                )
-          ),
+        h('span', { class: 'label', id: 'sp-picker-label' }, 'Prompt'),
+h('div', { class: 'prompts__picker-row' },
+h('div', { class: 'prompts__picker-control', ref: pickerRef },
+h('button', {
+type: 'button',
+class: 'input prompts__select',
+id: 'sp-picker',
+'aria-labelledby': 'sp-picker-label sp-picker',
+'aria-haspopup': 'listbox',
+'aria-expanded': String(pickerOpen),
+onClick: () => setPickerOpen((open) => !open)
+},
+h('span', { class: 'prompts__select-label' }, pickerLabel),
+h('span', { class: 'prompts__select-caret', 'aria-hidden': 'true' }, '⌄')
+),
+pickerOpen ? h('div', {
+class: 'prompts__picker-menu',
+role: 'listbox',
+'aria-labelledby': 'sp-picker-label'
+},
+h('button', {
+type: 'button',
+class: 'prompts__picker-option' + (isNew ? ' is-selected' : ''),
+role: 'option',
+'aria-selected': String(isNew),
+onClick: () => handleSelectPrompt(NEW_PROMPT_ID)
+},
+h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, isNew ? '✓' : ''),
+h('span', null, '+ New prompt')
+),
+prompts.length === 0
+? h('div', { class: 'prompts__picker-empty' }, 'No saved prompts yet')
+: prompts.map((p) => {
+const selected = p.id === selectedId;
+return h('button', {
+type: 'button',
+key: p.id,
+class: 'prompts__picker-option' + (selected ? ' is-selected' : ''),
+role: 'option',
+'aria-selected': String(selected),
+onClick: () => handleSelectPrompt(p.id)
+},
+h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, selected ? '✓' : ''),
+h('span', { class: 'prompts__picker-option-label' },
+h('span', null, p.title || p.id),
+showScopeBadge && p.scope ? h('span', { class: 'mcp__scope mcp__scope--' + p.scope }, p.scope) : null,
+p.preset ? h('span', { class: 'prompts__picker-preset' }, 'preset') : null
+)
+);
+})
+) : null
+),
           h('button', {
             type: 'button',
             class: 'btn prompts__copy' + (copyStatus === 'Copied' ? ' is-copied' : (copyStatus === 'Copy failed' ? ' is-error' : '')),

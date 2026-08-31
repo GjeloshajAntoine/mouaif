@@ -8,7 +8,32 @@ Imported by style.css. */
 .prompts__picker-row {
   display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px;
 }
-.prompts__select { flex: 1 1 160px; min-width: 0; min-height: var(--tap); }
+.prompts__picker-control {
+position: relative; flex: 1 1 160px; min-width: 0;
+}
+.prompts__select {
+display: flex; align-items: center; justify-content: space-between; gap: 8px;
+width: 100%; min-width: 0; min-height: var(--tap); text-align: left; cursor: pointer;
+}
+.prompts__select-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompts__select-caret { flex: none; color: var(--muted); font-size: 1rem; }
+.prompts__picker-menu {
+position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+max-height: min(18rem, 55dvh); overflow-y: auto; overscroll-behavior: contain;
+border: 1px solid var(--border); border-radius: var(--r-md);
+background: var(--surface-2); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+}
+.prompts__picker-option {
+display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--tap);
+padding: 8px 10px; border: 0; border-bottom: 1px solid var(--border);
+background: transparent; color: var(--fg); text-align: left; cursor: pointer;
+}
+.prompts__picker-option:last-child { border-bottom: 0; }
+.prompts__picker-option:active, .prompts__picker-option.is-selected { background: var(--surface-3); }
+.prompts__picker-check { flex: 0 0 1rem; color: var(--accent); font-weight: 700; }
+.prompts__picker-option-label { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.prompts__picker-preset { color: var(--muted); font-size: 0.68rem; }
+.prompts__picker-empty { padding: 10px; color: var(--muted); font-size: 0.76rem; }
 .prompts__copy {
   min-height: var(--tap); min-width: 76px;
   padding: 0 12px; font-size: 0.78rem;
