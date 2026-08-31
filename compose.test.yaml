@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      MOUAIF_HOME: /data
+      MOUAIF_ALLOW_ANY_ROOT: "1"
+    volumes:
+      - test-data:/data
+      - ./examples/docker-test-project:/workspace/example:ro
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5732/api/settings').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  test:
+    image: node:22-bookworm-slim
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://app:5732
+      PROJECT_DIR: /workspace/example
+    volumes:
+      - ./scripts/docker-smoke-test.js:/test/docker-smoke-test.js:ro
+    command: ["node", "/test/docker-smoke-test.js"]
+
+volumes:
+  test-data:

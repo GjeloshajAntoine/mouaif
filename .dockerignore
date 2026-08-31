@@ -1,0 +1,10 @@
+.git
+.github
+.mouaif
+.mouaif.json
+node_modules
+frontend/dist
+docs-dist
+coverage
+*.log
+*.local
