@@ -14,14 +14,11 @@ export function fmtTime(ts) {
 export function statusLabel(s) {
   if (s === 'pending') return '···';
   if (s === 'failed') return 'FAIL';
-  if (s === 'backfilled') return 'PRE';
   return String(s);
 }
-
 export function statusClass(s) {
   if (s === 'pending') return 'pending';
   if (s === 'failed') return 'failed';
-  if (s === 'backfilled') return 'backfilled';
   const n = Number(s);
   if (!isNaN(n) && n >= 400) return 'error';
   if (!isNaN(n) && n >= 300) return 'redirect';

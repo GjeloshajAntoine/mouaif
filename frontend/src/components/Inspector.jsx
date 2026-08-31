@@ -402,16 +402,6 @@ export function InspectorView() {
   // tone from the text.
   const [statusText, setStatusText] = useState('');
   function setStatus(value) { setStatusText(value == null ? '' : String(value)); }
-  // setStatusRef / countRefs — refs the events.js side hooks into. The
-  // state lives in a ref-shape because the previous upgrade was
-  // mechanical from a DOM ref. Wrapping setStatus this way also lets
-  // render closures (the panelbar badges, the events.js backfill
-  // summary) all share one definition of the pill's text. We populate
-  // them in render (not useEffect) so the very first event the WS
-  // delivers — often before the first effect tick — already finds the
-  // callback attached.
-  const setStatusRef = useRef(setStatus);
-  setStatusRef.current = setStatus;
   const [consoleCount, setConsoleCount] = useState(0);
   const [networkCount, setNetworkCount] = useState(0);
   const consoleCountRef = useRef((n) => setConsoleCount(n | 0));
@@ -521,12 +511,7 @@ useEffect(() => {
       cdpSend: conn.current.cdpSend,
       onNavigate: onTargetNavigated,
       rerender,
-      // setStatusRef — wraps the imperative setStatus so the event layer
-      // can also surface connection-side messages (notably the backfill
-      // summary) on the same status pill. Passed by-ref so the events
-      // module reads .current on every call and bridges to the latest
-      // setter without a stale-closure trap.
-      setStatusRef, consoleCountRef, networkCountRef
+      consoleCountRef, networkCountRef
     };
     eventHandlers.current = createEventHandlers(state);
     return conn.current;
@@ -594,11 +579,6 @@ applyViewport(viewportId);
       c.cdpOn('Network.loadingFailed', handlers.onLoadingFailed);
       c.cdpOn('Page.frameNavigated', handlers.onFrameNavigated);
       c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
-      // Seed the Network panel with the page's pre-existing resources.
-      // Chrome does not replay requests that finished before Network.enable,
-      // so without this an attach to an already-open tab shows an empty
-      // network log. See backfillResources in inspector/events.js.
-      handlers.backfillResources();
     });
     result.ws.addEventListener('close', (ev) => {
       const code = ev && typeof ev.code === 'number' ? ev.code : 0;
@@ -1053,15 +1033,6 @@ onDraftCraft: (image) => image && setDraftCraftImage(image)
         onShowAll: showAllPanels,
         onClose: closeAttachedTarget
       })
-    ),
-    // Single-line target subtitle — type chip + host URL, truncated.
-    // Replaces the old standalone `.inspector__head` row (50 px tall)
-    // so the user keeps the URL visible without burning a whole row
-    // for it. The host URL is ellipsised rather than wrapping so the
-    // row stays a single 32 px line on every viewport.
-    h('div', { class: 'inspector__sub' },
-      h('span', { class: 'inspector__sub-chip inspector__sub-chip--' + (targetMeta(t).tone) }, targetMeta(t).label),
-      h('span', { class: 'inspector__sub-host' }, hostOf(t) || (t && t.url) || '')
     ),
     h('section', null,
       h('div', { class: 'inspector__nav' },

@@ -51,10 +51,8 @@ export function DetailSheet(props) {
               headersBlock('Request headers', item.requestHeaders),
               headersBlock('Response headers', item.responseHeaders),
               h('h3', { class: 'inspector__sheet-h' }, 'Response body'),
-              h('pre', { class: 'inspector__body' }, item.bodyLoading ? 'loading…' : (item.body !== undefined && item.body !== null && item.body !== '' ? item.body : (item.backfilled ? '(pre-attach — body not captured by Chrome)' : '(no body captured)'))),
-              item.backfilled
-                ? h('p', { class: 'inspector__sheet-note' }, 'This request was already loaded when the inspector attached. Chrome does not retain pre-attach request bodies or sizes; the entry is reconstructed from the page resource tree. New requests after attach appear with full detail.')
-                : h('button', { class: 'btn', type: 'button', onClick: props.onLoadBody }, 'Fetch body')
+              h('pre', { class: 'inspector__body' }, item.bodyLoading ? 'loading…' : (item.body !== undefined && item.body !== null && item.body !== '' ? item.body : '(no body captured)')),
+              h('button', { class: 'btn', type: 'button', onClick: props.onLoadBody }, 'Fetch body')
             )
           : h(Fragment, null,
               kv([
