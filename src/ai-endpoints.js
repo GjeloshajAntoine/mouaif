@@ -1131,11 +1131,23 @@ function injectOpenRouterAnthropicCache(messages) {
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i] && out[i].role === 'system') { out[i] = markOpenAIMessageCache(out[i]); break; }
   }
-  // Penultimate message → cache system + tools + history once there is
+  // Penultimate breakpoint → cache system + tools + history once there is
   // any history to replay (caching engages from the second request).
-  if (out.length >= 2) {
-    const idx = out.length - 2;
-    out[idx] = markOpenAIMessageCache(out[idx]);
+  // Walk back from the penultimate message to the deepest one that can
+  // actually carry a breakpoint. In the agentic tool loop the penultimate
+  // message is often an assistant tool-call message with `content: null`
+  // (the OpenAI shape keeps tool calls in `tool_calls`, not in content),
+  // and cache_control is only honored on a content block. Marking that
+  // message is a no-op, which on the native path is harmless (the system
+  // block still clears the minimum) but here would leave ONLY the small
+  // system block marked — usually below Claude's minimum cacheable length,
+  // so every tool round got a 0% cache hit. Skip content-less messages so
+  // a real breakpoint always lands.
+  for (let i = out.length - 2; i >= 0; i--) {
+    const m = out[i];
+    if (!m || m.role === 'system' || m.content == null || m.content === '') continue;
+    out[i] = markOpenAIMessageCache(out[i]);
+    break;
   }
   return out;
 }

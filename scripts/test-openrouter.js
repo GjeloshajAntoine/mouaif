@@ -119,6 +119,52 @@ if (req) {
   check('buildOpenAIRequest direct call skipped (integration covered below)', true);
 }
 
+// ---- Anthropic prompt caching via OpenRouter ---------------------------
+// Claude routed through OpenRouter only caches when the OpenAI-shaped body
+// carries explicit cache_control breakpoints. buildOpenAIRequest injects
+// them for anthropic/* slugs. Exercise the builder through the exported
+// BUILDERS table (openrouter reuses the openai-compatible builder).
+const orBuild = ai.BUILDERS && ai.BUILDERS['openrouter'];
+function hasCacheControl(content) {
+  return Array.isArray(content) && content.some((p) => p && p.cache_control && p.cache_control.type === 'ephemeral');
+}
+if (orBuild) {
+  // Plain multi-turn chat: last system message + penultimate message marked.
+  const chatReq = orBuild(model, [
+    { role: 'system', content: 'stable system prefix' },
+    { role: 'user', content: 'first' },
+    { role: 'assistant', content: 'first answer' },
+    { role: 'user', content: 'second' }
+  ], true, []);
+  const cm = chatReq.body.messages;
+  check('cache: system block marked in a plain chat',
+    hasCacheControl(cm[0].content));
+  check('cache: penultimate message marked in a plain chat',
+    hasCacheControl(cm[cm.length - 2].content));
+  check('cache: final (current-turn) message NOT marked',
+    !hasCacheControl(cm[cm.length - 1].content));
+
+  // Agentic tool loop: the penultimate message is an assistant tool-call
+  // message with content:null (OpenAI keeps calls in tool_calls). The
+  // breakpoint must walk back to a message that can hold it, or Claude
+  // gets a 0% cache hit on every tool round.
+  const toolReq = orBuild(model, [
+    { role: 'system', content: 'stable system prefix' },
+    { role: 'user', content: 'do the thing' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'shell', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: 'tool output' }
+  ], true, [{ type: 'function', function: { name: 'shell', description: 'run', parameters: { type: 'object' } } }]);
+  const tm = toolReq.body.messages;
+  const historyMarked = tm.some((m, i) => i < tm.length - 1 && m.role !== 'system' && hasCacheControl(m.content));
+  check('cache: a history breakpoint lands in the tool loop (content:null skipped)',
+    historyMarked,
+    'no non-system history message carried cache_control');
+  check('cache: the content:null tool-call message is NOT marked',
+    !hasCacheControl(tm[2].content));
+} else {
+  check('BUILDERS.openrouter present', false, 'ai.BUILDERS.openrouter missing');
+}
+
 // ---- Live integration: drive streamChat() with a mocked fetch ---------
 // streamChat() makes a real fetch() to the OpenRouter URL. We replace
 // globalThis.fetch with a stub that returns a single chunk of OpenAI-
