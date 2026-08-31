@@ -796,6 +796,83 @@ gap: 4px;
      tap-to-click mapping in PreviewPanel scales coordinates back via
      naturalWidth/naturalHeight. */
 }
+/* The Preview panel header replaces its text label with an icon-only
+full-screen button. It mirrors the adjacent refresh/eye icon buttons
+(a 32 px tap target) so the header stays one balanced row; tapping it
+opens the viewport-spanning preview overlay below. The button carries
+the "Preview" label context in its accessible name. */
+.inspector__panel-label--fs {
+  flex: 0 0 auto;
+  width: var(--tap-sm);
+  min-width: var(--tap-sm);
+  height: var(--tap-sm);
+  min-height: var(--tap-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-label--fs:hover { background: var(--surface-3); color: var(--fg); }
+/* Full-screen live preview viewport. Portaled to document.body so it sits
+above the app dock (same approach as the Draft Craft / webpreview / Git
+overlays). The screenshot keeps its natural size and scrolls inside the
+frame; tap-to-click still forwards to the page via the same mapping. */
+.inspector__preview-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+.inspector__preview-fs-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.inspector__preview-fs-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+}
+.inspector__preview-fs-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.inspector__preview-fs-frame::-webkit-scrollbar { width: 6px; height: 6px; }
+.inspector__preview-fs-frame::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-sm);
+}
+.inspector__preview-fs-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: none;
+}
 
 /* ---- Inspector: console extras ------------------------------------ */
 /* The console panel now stacks the log scroller above an editable

@@ -13,13 +13,36 @@
 //     (scroll position, hover, click-driven DOM mutations, SPA route
 //     changes that don't fire frameNavigated) still show up.
 //   - a manual "Refresh preview" button in the panel header.
-import { h } from 'preact';
+import { h, Fragment } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
 
 export function PreviewPanel(props) {
   const frameRef = useRef(null);
   const imgRef = useRef(null);
-  const [imgSrc, setImgSrc] = useState('');
+  // Full-screen mode swaps the in-panel frame for a viewport-spanning
+  // overlay (portal to document.body so the app dock can't paint over
+  // it). The same capture loop keeps running because the panel stays
+  // mounted; the overlay just shows a larger copy of the same live
+  // screenshot and keeps tap-to-click working.
+  const fsFrameRef = useRef(null);
+  const fsImgRef = useRef(null);
+  const [fullscreen, setFullscreen] = useState(false);
+// Close the full-screen overlay on Escape (mirrors the webpreview /
+// Git / CLI overlay behaviour). Only listens while it is open so the
+// capture loop and the rest of the Inspector keep normal key handling.
+useEffect(() => {
+if (!fullscreen) return;
+function onKey(e) {
+if (e.key === 'Escape') {
+e.stopPropagation();
+setFullscreen(false);
+}
+}
+document.addEventListener('keydown', onKey, true);
+return () => document.removeEventListener('keydown', onKey, true);
+}, [fullscreen]);
+const [imgSrc, setImgSrc] = useState('');
   const [note, setNote] = useState('capturing…');
   // Cache the last successfully decoded image dimensions. Clicks that
   // land while a new screenshot is still decoding (naturalWidth === 0)
@@ -204,16 +227,26 @@ export function PreviewPanel(props) {
     // assign the handler here so it always closes over the live
     // capture loop for this mount.
     if (props.refreshRef) {
-      props.refreshRef.current = () => {
-        if (stop) return;
-        setNote('capturing…');
-        runCapture('manual', true);
-      };
-    }
-
-    return () => {
-      stop = true;
-      if (props.refreshRef) props.refreshRef.current = null;
+props.refreshRef.current = () => {
+if (stop) return;
+setNote('capturing…');
+runCapture('manual', true);
+};
+}
+// Expose the full-screen toggle to the parent's header button. The
+// button lives in the panel header (PanelCard), which can't reach
+// PreviewPanel's internal state directly, so the parent reads this
+// ref to open the viewport-spanning overlay on tap.
+if (props.fullscreenRef) {
+props.fullscreenRef.current = () => {
+if (stop) return;
+setFullscreen((value) => !value);
+};
+}
+return () => {
+stop = true;
+if (props.refreshRef) props.refreshRef.current = null;
+if (props.fullscreenRef) props.fullscreenRef.current = null;
       if (pendingTimer) clearTimeout(pendingTimer);
       for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
       if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
@@ -228,14 +261,14 @@ export function PreviewPanel(props) {
   // to the image's natural (device-pixel) size. clickAt() then
   // converts those full-page device pixels into viewport CSS pixels
   // and scrolls the target into view if needed — see events.js.
-  function onPreviewClick(ev) {
-    const img = imgRef.current;
-    if (!img || !props.clickAt) return;
-    const rect = img.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const frame = frameRef.current;
-    const sx = frame ? (frame.scrollLeft || 0) : 0;
-    const sy = frame ? (frame.scrollTop || 0) : 0;
+  function onPreviewClick(ev, targetImg, targetFrame) {
+const img = targetImg || imgRef.current;
+if (!img || !props.clickAt) return;
+const rect = img.getBoundingClientRect();
+if (rect.width <= 0 || rect.height <= 0) return;
+const frame = targetFrame || frameRef.current;
+const sx = frame ? (frame.scrollLeft || 0) : 0;
+const sy = frame ? (frame.scrollTop || 0) : 0;
     // Prefer the live image's natural size; if the most recent
     // screenshot is still mid-decode, fall back to the previous
     // frame's dimensions (cached in lastDims) so the tap still
@@ -258,32 +291,70 @@ export function PreviewPanel(props) {
     props.clickAt(x, y);
   }
 
-  return h('div', { class: 'inspector__preview' },
-    h('button', {
-      class: 'btn inspector__draft-craft',
-      type: 'button',
-      disabled: !imgSrc,
-      onClick: () => props.onDraftCraft && props.onDraftCraft(latestImage.current),
-    }, 'Draft Craft'),
-    h('div', {
-      ref: frameRef,
-      class: 'inspector__preview-frame',
-      role: 'group',
-      'aria-label': 'Live page preview, scrollable',
-      onClick: onPreviewClick
-    },
-      // A single <img> node is mounted once and its src is swapped on
-      // every tick (see tick() above). The src is initialised to ''
-      // so the element is in the tree and has a measurable bounding
-      // rect even before the first capture lands.
-      h('img', {
-        ref: imgRef,
-        src: imgSrc,
-        class: 'inspector__preview-img',
-        alt: 'Live page preview',
-        draggable: 'false'
-      })
-    ),
-    h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
-  );
+  return h(Fragment, null,
+h('div', { class: 'inspector__preview' },
+h('button', {
+class: 'btn inspector__draft-craft',
+type: 'button',
+disabled: !imgSrc,
+onClick: () => props.onDraftCraft && props.onDraftCraft(latestImage.current),
+}, 'Draft Craft'),
+h('div', {
+ref: frameRef,
+class: 'inspector__preview-frame',
+role: 'group',
+'aria-label': 'Live page preview, scrollable',
+onClick: (ev) => onPreviewClick(ev)
+},
+// A single <img> node is mounted once and its src is swapped on
+// every tick (see tick() above). The src is initialised to ''
+// so the element is in the tree and has a measurable bounding
+// rect even before the first capture lands.
+h('img', {
+ref: imgRef,
+src: imgSrc,
+class: 'inspector__preview-img',
+alt: 'Live page preview',
+draggable: 'false'
+})
+),
+h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
+),
+fullscreen
+? createPortal(
+h('div', { class: 'inspector__preview-fs', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Live page preview, full screen' },
+h('div', { class: 'inspector__preview-fs-head' },
+h('span', { class: 'inspector__preview-fs-title' }, 'Preview'),
+h('button', {
+class: 'icon-btn inspector__preview-fs-close',
+type: 'button',
+'aria-label': 'Close full-screen preview',
+title: 'Close full-screen preview',
+onClick: () => setFullscreen(false)
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
+)
+)
+),
+h('div', {
+ref: fsFrameRef,
+class: 'inspector__preview-fs-frame',
+role: 'group',
+'aria-label': 'Live page preview, scrollable',
+onClick: (ev) => onPreviewClick(ev, fsImgRef.current, fsFrameRef.current)
+},
+h('img', {
+ref: fsImgRef,
+src: imgSrc,
+class: 'inspector__preview-fs-img',
+alt: 'Live page preview',
+draggable: 'false'
+})
+)
+),
+document.body
+)
+: null
+);
 }

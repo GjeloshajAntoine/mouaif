@@ -239,17 +239,35 @@ function SizeDropdown(props) {
 }
 
 function PanelCard(props) {
-  const isVisible = props.isVisible;
-  const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
-  return h('div', {
-    class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
-    'data-panel': props.id
-  },
-    h('div', { class: 'inspector__panel-head' },
-      h('div', { class: 'inspector__panel-head-left' },
-        h('span', { class: 'inspector__panel-label' }, props.label),
-        props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
-      ),
+const isVisible = props.isVisible;
+const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
+// The Preview panel swaps its text label for an icon-only full-screen
+// button so the header stays one row: tapping it opens the live preview
+// in a viewport-spanning overlay (see PreviewPanel's fullscreen portal).
+// It mirrors the adjacent refresh/eye icon buttons. The button's
+// accessible label carries the "Preview" context since the text is gone.
+const labelNode = props.onFullscreen
+? h('button', {
+class: 'icon-btn inspector__panel-label--fs',
+type: 'button',
+'aria-label': 'Open ' + props.label + ' full screen',
+title: 'Open ' + props.label + ' full screen',
+onClick: (e) => { e.stopPropagation(); props.onFullscreen(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'currentColor' },
+h('path', { d: 'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM6 15v3h3v2H4v-5h2Zm12 0h2v5h-5v-2h3v-3Z' })
+)
+)
+: h('span', { class: 'inspector__panel-label' }, props.label);
+return h('div', {
+class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
+'data-panel': props.id
+},
+h('div', { class: 'inspector__panel-head' },
+h('div', { class: 'inspector__panel-head-left' },
+labelNode,
+props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
+),
       h('div', { class: 'inspector__panel-head-actions' },
         props.onRefresh
           ? h('button', {
@@ -437,6 +455,11 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
   // panel header reads it so it can push a fresh screenshot on tap,
   // independent of the slow fallback poll.
   const previewRefreshRef = useRef(null);
+// previewFullscreenRef — the Preview panel assigns its full-screen toggle
+// handler to this ref on mount. The panel header's full-screen button reads
+// it so the viewport-spanning overlay opens on tap, keeping the full-screen
+// state (and the portal) inside PreviewPanel.
+const previewFullscreenRef = useRef(null);
 
 // When a panel becomes hidden the corresponding virtual-list
 // child unmounts and runs its own `vl.destroy()` cleanup, but
@@ -1007,6 +1030,7 @@ capture: handlers && handlers.captureScreenshot,
 clickAt: handlers && handlers.clickAt,
 subscribe: conn.current && conn.current.cdpOn,
 refreshRef: previewRefreshRef,
+fullscreenRef: previewFullscreenRef,
 onDraftCraft: (image) => image && setDraftCraftImage(image)
 });
     if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
@@ -1121,11 +1145,12 @@ onDraftCraft: (image) => image && setDraftCraftImage(image)
               grow: idx === 0,
               isVisible: visiblePanels.has(id),
               onToggle: togglePanel,
-              sizeId: viewportId,
-              onSizeChange: id === 'preview' ? applyViewport : null,
-              onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
-              key: id
-            }, renderPanelBody(id)))
+sizeId: viewportId,
+onSizeChange: id === 'preview' ? applyViewport : null,
+onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
+onFullscreen: id === 'preview' ? () => previewFullscreenRef.current && previewFullscreenRef.current() : null,
+key: id
+}, renderPanelBody(id)))
           )
     ),
     draftCraftImage ? h(DraftCraftAnnotator, {
