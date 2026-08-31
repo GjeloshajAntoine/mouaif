@@ -470,6 +470,32 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
     setShowProfileCopy(false);
   }
 
+  function startFromProfile(profile) {
+    // Start a fresh (unsaved) prompt pre-filled from a built-in
+    // prompt-size profile. Chosen from the picker dropdown so the
+    // list never looks empty even before the user has saved anything.
+    if (!profile) return;
+    setPickerOpen(false);
+    if (dirtyRef.current) {
+      const ok = confirm('Discard unsaved changes to this prompt?');
+      if (!ok) return;
+    }
+    userPickedRef.current = true;
+    setSelectedId(NEW_PROMPT_ID);
+    const defaultScope = projectDir ? 'project' : 'app';
+    const snap = { title: '', content: '', preset: null, scope: defaultScope };
+    setTitle(profile.label || '');
+    setContent(profile.systemMessage || '');
+    setPreset(null);
+    setPromptScope(defaultScope);
+    // Snapshot stays blank so the pre-filled fields register as dirty and
+    // the Create button is enabled immediately.
+    setLoadedSnapshot(snap);
+    dirtyRef.current = true;
+    setShowProfileCopy(false);
+    setStatusMsg({ text: 'started from ' + (profile.label || profile.id) + ' profile', kind: 'success' });
+  }
+
   function copyProfileIntoContent(profile) {
     if (!profile) return;
     if (content.trim()) {
@@ -589,7 +615,11 @@ id: 'sp-picker',
 'aria-labelledby': 'sp-picker-label sp-picker',
 'aria-haspopup': 'listbox',
 'aria-expanded': String(pickerOpen),
-onClick: () => setPickerOpen((open) => !open)
+onClick: () => setPickerOpen((open) => {
+  const next = !open;
+  if (next && !profiles.length) loadProfiles();
+  return next;
+})
 },
 h('span', { class: 'prompts__select-label' }, pickerLabel),
 h('span', { class: 'prompts__select-caret', 'aria-hidden': 'true' }, 'âŒ„')
@@ -610,7 +640,7 @@ h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, isNew ? 'âœ
 h('span', null, '+ New prompt')
 ),
 prompts.length === 0
-? h('div', { class: 'prompts__picker-empty' }, 'No saved prompts yet')
+? null
 : prompts.map((p) => {
 const selected = p.id === selectedId;
 return h('button', {
@@ -628,7 +658,22 @@ showScopeBadge && p.scope ? h('span', { class: 'mcp__scope mcp__scope--' + p.sco
 p.preset ? h('span', { class: 'prompts__picker-preset' }, 'preset') : null
 )
 );
-})
+}),
+profiles.length ? h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Start from a default') : null,
+profiles.map((p) => h('button', {
+type: 'button',
+key: 'profile:' + p.id,
+class: 'prompts__picker-option prompts__picker-option--profile',
+role: 'option',
+'aria-selected': 'false',
+onClick: () => startFromProfile(p)
+},
+h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, ''),
+h('span', { class: 'prompts__picker-option-label' },
+h('span', null, p.label),
+h('span', { class: 'prompts__picker-preset' }, 'default')
+)
+))
 ) : null
 ),
           h('button', {
