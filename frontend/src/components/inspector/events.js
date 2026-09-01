@@ -308,8 +308,32 @@ export function createEventHandlers(state) {
       .catch((e) => { throw e; });
   }
 
-  async function fetchMetrics() {
-    const out = { netCount: networkEntries.current.length };
+  // insertText — paste a whole string into the currently focused element in
+// the inspected page (CDP Input.insertText). This is the Preview panel's
+// "type into the page" primitive: the user taps a text field (clickAt
+// focuses it), then types in the preview's text bar and we forward the
+// entire string as one insert. Input.insertText handles every character
+// (unicode, emoji, IME composition) without simulating keydown/keyup
+// pairs, which is what makes it full text input rather than a
+// per-keystroke echo. Returns the CDP result or throws on failure.
+async function insertText(text) {
+if (text == null) return null;
+const value = String(text);
+if (!value) return null;
+return cdpSend('Input.insertText', { text: value });
+}
+// pressEnter — send a real Enter key to the focused element so forms
+// submit and textareas get a newline. Uses Input.dispatchKeyEvent
+// (keyDown + char + keyUp) rather than Input.insertText('\n'), which
+// some inputs treat as a literal character instead of a submit. Mirrors
+// the single key send a physical keyboard would fire on "Enter".
+async function pressEnter() {
+const base = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+await cdpSend('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: '\r', unmodifiedText: '\r' });
+await cdpSend('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+async function fetchMetrics() {
+const out = { netCount: networkEntries.current.length };
     try {
       const m = await cdpSend('Performance.getMetrics');
       const list = (m && m.metrics) || [];
@@ -363,10 +387,11 @@ export function createEventHandlers(state) {
   }
 
   return {
-    onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
-    onResponseReceived, onLoadingFinished, onLoadingFailed,
-    onFrameNavigated, onNavigatedWithinDocument,
-    pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
-    loadResponseBody, evaluateExpression, setViewportSize
-  };
+onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
+onResponseReceived, onLoadingFinished, onLoadingFailed,
+onFrameNavigated, onNavigatedWithinDocument,
+pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
+loadResponseBody, evaluateExpression, setViewportSize,
+insertText, pressEnter
+};
 }

@@ -791,6 +791,53 @@ the "Preview" label context in its accessible name. */
   -webkit-tap-highlight-color: transparent;
 }
 .inspector__panel-label--fs:hover { background: var(--surface-3); color: var(--fg); }
+/* "Type into page" bar — a compact text input + Send (and optional Enter)
+row that forwards typed text to the focused element in the inspected page
+via CDP Input.insertText. Sits between the preview frame and the status
+line so it never covers the screenshot; mirrors the .input/.btn sizes the
+rest of the Inspector uses. */
+.inspector__typebar {
+display: flex;
+align-items: center;
+gap: 6px;
+flex: 0 0 auto;
+}
+.inspector__typebar-input {
+flex: 1 1 auto;
+min-width: 0;
+}
+.inspector__typebar-send,
+.inspector__typebar-enter {
+flex: 0 0 auto;
+min-width: 44px;
+min-height: 44px;
+}
+.inspector__typebar--fs {
+width: 100%;
+padding: 8px 10px;
+background: var(--surface-2);
+border-top: 1px solid var(--border);
+}
+.inspector__panel-typebar {
+flex: 0 0 auto;
+width: var(--tap-sm);
+min-width: var(--tap-sm);
+height: var(--tap-sm);
+min-height: var(--tap-sm);
+display: inline-flex;
+align-items: center;
+justify-content: center;
+padding: 0;
+background: transparent;
+color: var(--muted);
+border: 0;
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: background 120ms ease, color 120ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-typebar:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-typebar:disabled { opacity: 0.5; cursor: default; }
 /* Full-screen live preview viewport. Portaled to document.body so it sits
 above the app dock (same approach as the Draft Craft / webpreview / Git
 overlays). The screenshot keeps its natural size and scrolls inside the

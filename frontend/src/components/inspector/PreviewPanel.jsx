@@ -18,8 +18,51 @@ import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
 
 export function PreviewPanel(props) {
-  const frameRef = useRef(null);
-  const imgRef = useRef(null);
+const frameRef = useRef(null);
+const imgRef = useRef(null);
+// Type bar — full text input into the inspected page. The user taps a
+// text field in the live preview (clickAt focuses it), then types in
+// this bar and we forward the string with Input.insertText. A separate
+// Enter button sends a real keypress so forms submit / textareas get a
+// newline. The bar sits between the preview and the status line so it
+// never covers the screenshot. Props flow in from InspectorView's
+// renderPanelBody: onInsert / onEnter, plus a pending flag we toggle
+// while a send is in flight.
+const typeInputRef = useRef(null);
+const [typeValue, setTypeValue] = useState('');
+const [typePending, setTypePending] = useState(false);
+const typePanelRef = useRef(null);
+if (props.typeBarRef) props.typeBarRef.current = {
+open: () => {
+if (typePanelRef.current) typePanelRef.current.scrollIntoView({ block: 'nearest' });
+if (typeInputRef.current) typeInputRef.current.focus();
+}
+};
+async function submitType(value, enter) {
+if (typePending) return;
+const text = (value == null ? typeValue : value);
+if (!text && !enter) return;
+setTypePending(true);
+try {
+if (enter) {
+if (props.onEnter) await props.onEnter();
+} else {
+if (props.onInsert) await props.onInsert(text);
+setTypeValue('');
+}
+// The page's DOM changed; nudge a fresh screenshot so the user sees
+// the typed text / submitted form immediately instead of waiting for
+// the 3 s fallback poll. Guarded so a missing refresh handler (or a
+// manual refresh already in flight) is a silent no-op.
+if (props.refreshRef && props.refreshRef.current) props.refreshRef.current();
+} finally {
+setTypePending(false);
+}
+}
+function onTypeSubmit(event) {
+event.preventDefault();
+submitType(typeValue, false);
+}
   // Full-screen mode swaps the in-panel frame for a viewport-spanning
   // overlay (portal to document.body so the app dock can't paint over
   // it). The same capture loop keeps running because the panel stays
@@ -318,6 +361,42 @@ alt: 'Live page preview',
 draggable: 'false'
 })
 ),
+// "Type into page" bar — forward typed text to the focused element via
+// Input.insertText. Only rendered (and given a stable ref) when the
+// model can actually insert, so a page with no connection doesn't show
+// a dead control. Tapping the preview focuses a field; typing here then
+// fills it. Enter submits forms / adds a newline.
+(props.onInsert || props.onEnter)
+? h('form', { ref: typePanelRef, class: 'inspector__typebar', onSubmit: onTypeSubmit },
+h('input', {
+ref: typeInputRef,
+class: 'input inspector__typebar-input',
+type: 'text',
+placeholder: 'Type into page…',
+value: typeValue,
+disabled: typePending,
+onInput: (event) => setTypeValue(event.currentTarget.value),
+'aria-label': 'Type text into the inspected page'
+}),
+h('button', {
+class: 'btn inspector__typebar-send',
+type: 'submit',
+disabled: typePending || !typeValue,
+'aria-label': 'Send typed text',
+title: 'Send typed text'
+}, 'Send'),
+props.onEnter
+? h('button', {
+class: 'btn inspector__typebar-enter',
+type: 'button',
+disabled: typePending,
+'aria-label': 'Press Enter in the inspected page',
+title: 'Press Enter in the inspected page',
+onClick: () => submitType('', true)
+}, '↵')
+: null
+)
+: h('div', { ref: typePanelRef }),
 h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
 ),
 fullscreen
@@ -337,6 +416,39 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
 )
 )
 ),
+// Same "type into page" bar in full-screen mode, so the user can keep
+// filling forms while the overlay is open. Reuses the same state and
+// submit handler as the in-panel bar.
+(props.onInsert || props.onEnter)
+? h('form', { class: 'inspector__typebar inspector__typebar--fs', onSubmit: onTypeSubmit },
+h('input', {
+class: 'input inspector__typebar-input',
+type: 'text',
+placeholder: 'Type into page…',
+value: typeValue,
+disabled: typePending,
+onInput: (event) => setTypeValue(event.currentTarget.value),
+'aria-label': 'Type text into the inspected page'
+}),
+h('button', {
+class: 'btn inspector__typebar-send',
+type: 'submit',
+disabled: typePending || !typeValue,
+'aria-label': 'Send typed text',
+title: 'Send typed text'
+}, 'Send'),
+props.onEnter
+? h('button', {
+class: 'btn inspector__typebar-enter',
+type: 'button',
+disabled: typePending,
+'aria-label': 'Press Enter in the inspected page',
+title: 'Press Enter in the inspected page',
+onClick: () => submitType('', true)
+}, '↵')
+: null
+)
+: null,
 h('div', {
 ref: fsFrameRef,
 class: 'inspector__preview-fs-frame',

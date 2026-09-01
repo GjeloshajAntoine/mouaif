@@ -279,18 +279,33 @@ props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onS
             onClick: (e) => { e.stopPropagation(); props.onRefresh(); }
           },
             h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-              h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
-            )
-          )
-          : null,
-        h('button', {
-          class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
-          type: 'button',
-          'aria-label': toggleAria,
-          'aria-pressed': String(isVisible),
-          title: toggleAria,
-          onClick: () => props.onToggle(props.id)
-        },
+h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+)
+)
+: null,
+props.onTypeBar
+? h('button', {
+class: 'icon-btn inspector__panel-typebar',
+type: 'button',
+title: 'Type into page',
+'aria-label': 'Type into page',
+disabled: !props.isVisible,
+onClick: (e) => { e.stopPropagation(); props.onTypeBar(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+h('rect', { x: 3, y: 6, width: 18, height: 12, rx: 2 }),
+h('path', { d: 'M6 10h4M6 14h2M12 14h6' })
+)
+)
+: null,
+h('button', {
+class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
+type: 'button',
+'aria-label': toggleAria,
+'aria-pressed': String(isVisible),
+title: toggleAria,
+onClick: () => props.onToggle(props.id)
+},
           // Eye-open glyph when the panel is visible, eye-closed
           // when it's hidden. Drawn as inline SVG so it inherits
           // the current color and matches the rest of the chrome
@@ -450,6 +465,11 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
 // it so the viewport-spanning overlay opens on tap, keeping the full-screen
 // state (and the portal) inside PreviewPanel.
 const previewFullscreenRef = useRef(null);
+// previewTypeBarRef — the Preview panel assigns a small handle ({ open })
+// to this ref on mount so the panel header can toggle the "type into
+// page" bar on demand (focus the input, scroll it into view). Keeps the
+// per-render PreviewPanel identity stable, like refresh/fullscreen.
+const previewTypeBarRef = useRef(null);
 
 // When a panel becomes hidden the corresponding virtual-list
 // child unmounts and runs its own `vl.destroy()` cleanup, but
@@ -1035,6 +1055,9 @@ clickAt: handlers && handlers.clickAt,
 subscribe: conn.current && conn.current.cdpOn,
 refreshRef: previewRefreshRef,
 fullscreenRef: previewFullscreenRef,
+typeBarRef: previewTypeBarRef,
+onInsert: handlers ? handlers.insertText : null,
+onEnter: handlers ? handlers.pressEnter : null,
 onDraftCraft: (image) => image && setDraftCraftImage(image)
 });
     if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
@@ -1158,6 +1181,7 @@ sizeId: viewportId,
 onSizeChange: id === 'preview' ? applyViewport : null,
 onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
 onFullscreen: id === 'preview' ? () => previewFullscreenRef.current && previewFullscreenRef.current() : null,
+onTypeBar: id === 'preview' ? () => previewTypeBarRef.current && previewTypeBarRef.current.open() : null,
 key: id
 }, renderPanelBody(id)))
           )
