@@ -378,25 +378,46 @@ state.customActions = customActions;
     }));
   }
 
-  // Do not reveal stale Recent rows while their server-backed list refreshes.
-  // The fresh list and open flag land in one render after the request resolves.
-  async function openPickerWithFreshRecent() {
-    const request = ++pickerOpenRequest.current;
-    const projectAtRequest = state.props && state.props.projectDir;
-    const refreshed = await loadRecentFromServer(state);
-    if (!refreshed || request !== pickerOpenRequest.current || !state.props || state.props.projectDir !== projectAtRequest) return;
-    const c = state.chat;
-    setPicker({
-      models: modelsForPicker(state),
-      providers: state.providers.map((p) => p && p.id).filter(Boolean),
-      value: (c && c.providerId && c.modelId)
-        ? { providerId: c.providerId, modelId: c.modelId }
-        : null,
-      pinned: loadPinned(state),
-      recent: loadRecent(state),
-      open: true
-    });
-  }
+// Open the picker synchronously so a tap never waits on the network —
+// the recent-model fetch would otherwise hold the popover behind a DB
+// round-trip on the slow path. Surface the sheet with whatever models we
+// already have (project slugs + any live catalog already fetched), then
+// refresh the Recent section in the background and land it in one render
+// once the request resolves. Only reveal a fresh Recent row if this open
+// is still the latest one (the user may have closed / reopened meanwhile).
+function openPickerWithFreshRecent() {
+const request = ++pickerOpenRequest.current;
+const projectAtRequest = state.props && state.props.projectDir;
+const c = state.chat;
+setPicker({
+models: modelsForPicker(state),
+providers: state.providers.map((p) => p && p.id).filter(Boolean),
+value: (c && c.providerId && c.modelId)
+? { providerId: c.providerId, modelId: c.modelId }
+: null,
+pinned: loadPinned(state),
+recent: loadRecent(state),
+open: true
+});
+// Fire-and-forget the server-backed Recent refresh. It lands in a later
+// render only if the picker is still open for the same project.
+loadRecentFromServer(state).then((refreshed) => {
+if (!refreshed || request !== pickerOpenRequest.current || !state.props || state.props.projectDir !== projectAtRequest) return;
+const c2 = state.chat;
+setPicker((current) => {
+if (!current.open) return current;
+return {
+...current,
+models: modelsForPicker(state),
+providers: state.providers.map((p) => p && p.id).filter(Boolean),
+value: (c2 && c2.providerId && c2.modelId)
+? { providerId: c2.providerId, modelId: c2.modelId }
+: current.value,
+recent: loadRecent(state)
+};
+});
+});
+}
 
   // Wire the model-picker's onChatChanged hook so the head
   // elements re-render when updateChat fires.

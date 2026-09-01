@@ -24,6 +24,7 @@ Pressing `Escape` or tapping outside closes the popover.
 - **Bookmarks & Recents** — pinned and recently used models stay easily accessible at the top of the picker.
 - **Unavailable / Custom models** — if a model is currently offline or custom-configured, it renders as a distinct selection so you can see what is currently set and switch when ready.
 - **Fast search** — filters instantly across all connected provider catalogs.
+- **Instantly opens** — tapping the trigger shows the sheet immediately with whatever models are already loaded (project slugs + any live catalog already fetched). The server-backed Recent section refreshes in the background and lands in one re-render once the request resolves, so opening never waits on a network or DB round-trip.
 
 ## Related
 
