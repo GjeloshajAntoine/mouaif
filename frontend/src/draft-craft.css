@@ -302,7 +302,8 @@ border-top: 1px solid var(--border);
 }
 .draft-craft__annotator-foot .btn--primary { min-height: var(--tap); }
 .inspector__draft-craft {
-width: 100%;
+align-self: flex-start;
+min-width: 8rem;
 margin-top: 0.4rem;
 }
 .fe__editor-actions .fe__draft-craft {

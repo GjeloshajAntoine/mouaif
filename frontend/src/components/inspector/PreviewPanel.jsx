@@ -337,7 +337,7 @@ const sy = frame ? (frame.scrollTop || 0) : 0;
   return h(Fragment, null,
 h('div', { class: 'inspector__preview' },
 h('button', {
-class: 'btn inspector__draft-craft',
+class: 'btn btn--primary inspector__draft-craft',
 type: 'button',
 disabled: !imgSrc,
 onClick: () => props.onDraftCraft && props.onDraftCraft(latestImage.current),
