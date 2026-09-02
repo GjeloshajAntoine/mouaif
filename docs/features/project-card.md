@@ -17,6 +17,7 @@ The Project card is the main organizational view in mouaif: each registered proj
   - Total token cost and timestamp.
   - A quick delete (`×`) action.
 - **+ New chat button** — creates a fresh conversation and navigates directly into it.
+- **Custom prompt buttons** — prompts with **Add to project card** enabled appear as icon buttons beside **+ New chat**. Tapping one creates a chat with that prompt attached; its icon also identifies the prompt on the resulting chat row.
 
 ## Behavior
 

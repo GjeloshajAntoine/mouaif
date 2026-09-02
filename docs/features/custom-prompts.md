@@ -11,6 +11,8 @@ The role is fixed to `system`: a custom prompt is always the opening system mess
 
 A prompt can additionally define a **preset** (`preset.tools` + `preset.agentFiles` + `preset.skills`). Presets are chat-default packaging: when a chat references the prompt, those tool, agent-file, and skill settings apply to that chat. They are purely additive and never override the project's authorization gate (see [Presets](#presets) below).
 
+Each prompt also has a safe built-in icon. The optional **Add to project card** setting exposes that icon as a one-tap new-chat action on every project card where the prompt is available.
+
 ## Usage
 
 ### Managing prompts (Settings UI)
@@ -23,6 +25,7 @@ The **Prompt** picker lists every saved prompt (with a `preset` tag for ones tha
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
+- **Icon** — choose Sparkles, Code, Search, Writing, Debug, or Research. Enable **Add to project card** to show the icon beside **+ New chat**. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.
 - **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
 - Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
 
@@ -58,6 +61,8 @@ Each prompt is stored as an object:
 {
   "id": "a1b2c3d4",
   "title": "Code reviewer",
+  "icon": "code",
+  "showOnProjectCard": true,
   "content": "You are an expert code reviewer. Be thorough and constructive.",
   "role": "system",
   "preset": {
@@ -69,6 +74,8 @@ Each prompt is stored as an object:
   "updatedAt": "2026-07-15T12:00:00.000Z"
 }
 ```
+
+The `icon` field is restricted to built-in keys (`sparkles`, `code`, `search`, `pencil`, `bug`, or `book`); unknown values safely fall back to `sparkles`. `showOnProjectCard` defaults to `false` for existing prompts.
 
 The `role` field is preserved on disk for forward-compat and hand-edits, but the editor and the validator only accept `system`. A non-system role in the file is silently coerced to `system` on read.
 

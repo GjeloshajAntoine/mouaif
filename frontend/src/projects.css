@@ -187,6 +187,7 @@ scrollbar-width: thin;
 .project-card__chats li:first-child { border-top: 0; }
 .project-card__chats li:hover  { background: var(--surface-2); }
 .project-card__chats li:active { background: var(--surface-3); }
+.project-card__chat-prompt { display: grid; place-items: center; flex: none; color: var(--accent); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
 .project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
 .project-card__chat-meta[data-trace="1"] { color: var(--warning); }
@@ -231,24 +232,26 @@ scrollbar-width: thin;
   cursor: default;
 }
 .project-card__chats-more:hover { background: transparent; }
-.project-card__new {
-  font: inherit;
-  color: var(--accent);
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--border);
-  padding: 6px 12px;
-  min-height: var(--tap);
-  font-weight: 600;
-  font-size: 0.88rem;
-  cursor: pointer;
-  text-align: center;
-  width: 100%;
-  transition: background 80ms ease;
+.project-card__new-actions {
+display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none;
+border-top: 1px solid var(--border);
 }
-.project-card__new:hover  { background: var(--surface-2); }
-.project-card__new:active { background: var(--surface-3); }
-.project-card__new:disabled { opacity: 0.6; cursor: not-allowed; }
+.project-card__new-actions::-webkit-scrollbar { display: none; }
+.project-card__new, .project-card__prompt-new {
+font: inherit; color: var(--accent); background: transparent; border: 0;
+min-height: var(--tap); cursor: pointer; transition: background 80ms ease;
+}
+.project-card__new {
+padding: 6px 12px; font-weight: 600; font-size: 0.88rem; text-align: center;
+flex: 1 0 auto;
+}
+.project-card__prompt-new {
+display: grid; place-items: center; flex: 0 0 var(--tap); min-width: var(--tap);
+border-left: 1px solid var(--border);
+}
+.project-card__new:hover, .project-card__prompt-new:hover { background: var(--surface-2); }
+.project-card__new:active, .project-card__prompt-new:active { background: var(--surface-3); }
+.project-card__new:disabled, .project-card__prompt-new:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ---- Picker ------------------------------------------------------- */
 

@@ -31,8 +31,8 @@ A project's chats metadata is stored in `<projectDir>/.mouaif.json` (or database
 | DELETE | `/api/projects/registered/:id` | — | `{ ok: true }` (folder on disk is NOT touched) |
 | GET    | `/api/chats?projectDir=<abs>` | — | `{ chats: [..., totalCost: { total, known, currency }] }` |
 | GET    | `/api/chats/:id?projectDir=<abs>` | — | `{ chat }` or 404 |
-| POST   | `/api/chats` | `{ projectDir, title?, trace?, promptSize? }` | `{ chat }` (201) |
-| PATCH  | `/api/chats/:id` | `{ projectDir, title?, trace?, promptSize? }` | `{ chat }` (404 if unknown) |
+| POST   | `/api/chats` | `{ projectDir, title?, trace?, promptSize?, promptId? }` | `{ chat }` (201; 400 for unknown `promptId`) |
+| PATCH  | `/api/chats/:id` | `{ projectDir, title?, trace?, promptSize?, promptId? }` | `{ chat }` (400 for unknown `promptId`; 404 if chat is unknown) |
 | POST   | `/api/chats/:id/touch` | `{ projectDir }` | `{ chat }` (bumps `lastOpenedAt`) |
 | DELETE | `/api/chats/:id?projectDir=<abs>` | — | `{ ok, removed }` (404 if unknown) |
 
@@ -56,6 +56,7 @@ curl -X DELETE 'http://localhost:5732/api/chats/<id>?projectDir=/path/to/project
 
 ## Implementation notes
 
+- **Prompt quick launch** — `frontend/src/components/Projects.jsx` loads the project's merged prompts with its chats. Prompts whose `showOnProjectCard` flag is true render as touch-safe icon buttons beside **+ New chat** and submit their `promptId` during chat creation. Chat rows resolve the same prompt to display its icon.
 - **Contained chat-list scrolling** — `.project-card__chats` uses a `10.0625rem` (161px) `max-height` so about three rows remain visible before the list scrolls. `-webkit-overflow-scrolling: touch`, `overscroll-behavior-y: contain`, and `touch-action: pan-y` make the list own vertical gestures without chaining edge scrolls to the dashboard. A previous `min-height` change was ineffective because it did not cap populated lists.
 - Chats module: [src/chats.js](../../src/chats.js). Public surface: `listChats`, `getChat`, `createChat`, `updateChat`, `deleteChat`, `touchChat`, `chatTotalCost`, plus `PROJECT_FILE`. Each `chat_store` row persists `total_cost` and `cost_known_count`; assistant-message writes update those columns and the registered project's `totalCost` by delta. `GET /api/chats` returns the stored chat summary without reading `message_store`.
 - Server wiring: [src/index.js](../../src/index.js) → `handleChats()`. New routes mounted under `/api/chats` and `/api/chats/:id` (with `/touch` and `/:projectDir` variants). The project-card commit also adds `PATCH /api/projects/registered/:id` to support the rename option.

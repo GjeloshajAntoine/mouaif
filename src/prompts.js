@@ -10,6 +10,8 @@
 //   {
 //     id:        'short-kebab-id',           // unique within the scope
 //     title:     'Concise label',            // shown in the UI picker
+//     icon:      'sparkles',                 // safe built-in icon key
+//     showOnProjectCard: false,               // quick new-chat icon button
 //     content:   'You are a helpful…',       // the prompt text
 //     role:      'system',                   // locked; the field is kept
 //                                            // for forward-compat and for
@@ -55,7 +57,11 @@ function newPromptId() {
 // authored under a different role; normalizeChat silently coerces
 // anything else to 'system' so the field stays valid.
 const VALID_ROLES = new Set(['system']);
-
+const DEFAULT_ICON = 'sparkles';
+const PROMPT_ICONS = new Set(['sparkles', 'code', 'search', 'pencil', 'bug', 'book']);
+function normalizeIcon(icon) {
+return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
+}
 // The native tool *family* names a prompt preset may list. In addition
 // to these, MCP model-facing tool ids (e.g. `mcp__<slug>__<tool>`) are
 // accepted as-is — the same strings the chat's per-chat tool allowlist
@@ -116,9 +122,11 @@ function normalizePrompt(raw) {
   return {
     id: raw.id,
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : raw.id,
-    content: raw.content,
-    role: 'system',
-    preset: normalizePreset(raw.preset),
+icon: normalizeIcon(raw.icon),
+showOnProjectCard: raw.showOnProjectCard === true,
+content: raw.content,
+role: 'system',
+preset: normalizePreset(raw.preset),
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
@@ -215,9 +223,11 @@ function createPrompt(projectDir, opts) {
   const prompt = normalizePrompt({
     id: typeof opts.id === 'string' && opts.id.trim() ? opts.id.trim() : newPromptId(),
     title: typeof opts.title === 'string' && opts.title.trim() ? opts.title.trim() : '',
-    content: opts.content,
-    role: 'system',
-    preset: normalizePreset(opts.preset),
+icon: normalizeIcon(opts.icon),
+showOnProjectCard: opts.showOnProjectCard === true,
+content: opts.content,
+role: 'system',
+preset: normalizePreset(opts.preset),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
@@ -257,9 +267,15 @@ function updatePrompt(projectDir, promptId, patch) {
     current.title = patch.title.trim() || current.id;
   }
   if (patch && typeof patch.content === 'string' && patch.content.trim()) {
-    current.content = patch.content;
-  }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'preset')) {
+current.content = patch.content;
+}
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'icon')) {
+current.icon = normalizeIcon(patch.icon);
+}
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'showOnProjectCard')) {
+current.showOnProjectCard = patch.showOnProjectCard === true;
+}
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'preset')) {
     current.preset = patch.preset == null ? null : normalizePreset(patch.preset);
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'role') && !VALID_ROLES.has(patch.role)) {
@@ -351,10 +367,13 @@ function effectivePresetConfig(chat, preset) {
 
 module.exports = {
   newPromptId,
-  VALID_ROLES,
-  PRESET_TOOL_NAMES,
-  MCP_TOOL_PREFIX,
-  normalizePreset,
+VALID_ROLES,
+DEFAULT_ICON,
+PROMPT_ICONS,
+normalizeIcon,
+PRESET_TOOL_NAMES,
+MCP_TOOL_PREFIX,
+normalizePreset,
   listPrompts,
   getPrompt,
   getPromptPreset,

@@ -5,7 +5,7 @@ import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
-
+import { PromptIcon } from './PromptIcon.jsx';
 const CHAT_PAGE_SIZE = 30;
 
 function fmtChatDate(chat) {
@@ -56,17 +56,21 @@ function ChatList({ project }) {
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-
-  useEffect(() => {
-    let canceled = false;
-    async function init() {
-      setLoading(true);
-      try {
-        const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE);
-        if (canceled) return;
-        if (r.status === 200) {
-          const list = r.body.chats || [];
+const [isCreating, setIsCreating] = useState(false);
+const [prompts, setPrompts] = useState([]);
+useEffect(() => {
+let canceled = false;
+async function init() {
+setLoading(true);
+try {
+const [r, promptRes] = await Promise.all([
+fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE),
+fetchJson('/api/prompts?projectDir=' + encodeURIComponent(project.path)).catch(() => ({ status: 0, body: {} }))
+]);
+if (canceled) return;
+setPrompts(promptRes.status === 200 ? (promptRes.body.prompts || []) : []);
+if (r.status === 200) {
+const list = r.body.chats || [];
           setChats(list);
           setTotal(r.body.total || list.length);
           setOffset(list.length);
@@ -98,10 +102,12 @@ function ChatList({ project }) {
     setLoadingMore(false);
   }
 
-  async function createChat() {
-    setIsCreating(true);
-    try {
-      const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir: project.path }) });
+  async function createChat(promptId = null) {
+setIsCreating(true);
+try {
+const body = { projectDir: project.path };
+if (promptId) body.promptId = promptId;
+const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (r.status !== 201) { alert('create chat failed: HTTP ' + r.status); setIsCreating(false); return; }
       const chat = r.body && r.body.chat;
       if (chat && chat.id) {
@@ -151,15 +157,20 @@ function ChatList({ project }) {
         const dateBits = fmtChatDate(c);
         const dateStr = (dateBits.kind === 'created' ? 'new · ' : '') + dateBits.text;
         const traceStr = c.trace ? ' · trace' : '';
-        const titleStr = (c.title && c.title.trim()) ? c.title : 'New chat';
-
-        return h('li', {
+const titleStr = (c.title && c.title.trim()) ? c.title : 'New chat';
+const chatPrompt = c.promptId ? prompts.find((prompt) => prompt.id === c.promptId) : null;
+return h('li', {
           key: c.id,
           onClick: () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)),
           'aria-label': c.running ? titleStr + ' (running)' : undefined
         },
-          h('span', { class: 'project-card__chat-title' }, titleStr),
-          c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
+chatPrompt ? h('span', {
+class: 'project-card__chat-prompt',
+title: chatPrompt.title,
+'aria-label': 'Prompt: ' + chatPrompt.title
+}, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
+h('span', { class: 'project-card__chat-title' }, titleStr),
+c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
           h('span', {
             class: 'project-card__chat-meta',
             'data-trace': c.trace ? '1' : undefined,
@@ -177,13 +188,24 @@ function ChatList({ project }) {
       loadingMore ? h('li', { class: 'project-card__chats-more' }, 'Loading more…') :
       (!loading && offset < total) ? h('li', { class: 'project-card__chats-more' }, 'Scroll for more…') : null
     ),
-    h('button', {
-      class: 'project-card__new',
-      type: 'button',
-      onClick: createChat,
-      disabled: isCreating
-    }, '+ New chat')
-  );
+h('div', { class: 'project-card__new-actions' },
+h('button', {
+class: 'project-card__new',
+type: 'button',
+onClick: () => createChat(),
+disabled: isCreating
+}, '+ New chat'),
+prompts.filter((prompt) => prompt.showOnProjectCard).map((prompt) => h('button', {
+class: 'project-card__prompt-new',
+type: 'button',
+key: prompt.id,
+onClick: () => createChat(prompt.id),
+disabled: isCreating,
+'aria-label': 'New chat with ' + prompt.title,
+title: 'New chat with ' + prompt.title
+}, h(PromptIcon, { name: prompt.icon, size: 20 })))
+)
+);
 }
 
 export function ProjectsView() {

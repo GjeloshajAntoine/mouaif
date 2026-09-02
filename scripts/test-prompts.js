@@ -62,12 +62,16 @@ function pickFreePort() {
 
 async function run() {
   // 1. Direct module tests
-  const appPrompt = prompts.createPrompt('', { title: 'Global Helper', content: 'You are global.', scope: 'app' });
-  t('create app prompt has scope app', appPrompt.scope === 'app');
-  t('create app prompt has content', appPrompt.content === 'You are global.');
+  const appPrompt = prompts.createPrompt('', { title: 'Global Helper', icon: 'code', showOnProjectCard: true, content: 'You are global.', scope: 'app' });
+t('create app prompt has scope app', appPrompt.scope === 'app');
+t('create app prompt has content', appPrompt.content === 'You are global.');
+t('create app prompt keeps icon', appPrompt.icon === 'code');
+t('create app prompt keeps project-card option', appPrompt.showOnProjectCard === true);
 
-  const projPrompt = prompts.createPrompt(root, { title: 'Project Helper', content: 'You are project.', scope: 'project' });
-  t('create project prompt has scope project', projPrompt.scope === 'project');
+  const projPrompt = prompts.createPrompt(root, { title: 'Project Helper', icon: '<svg>', showOnProjectCard: 'yes', content: 'You are project.', scope: 'project' });
+t('create project prompt has scope project', projPrompt.scope === 'project');
+t('invalid prompt icon falls back safely', projPrompt.icon === 'sparkles');
+t('project-card option only accepts true', projPrompt.showOnProjectCard === false);
 
   const appOnlyList = prompts.listPrompts('', { scope: 'app' });
   t('listPrompts with scope app has 1 prompt', appOnlyList.length === 1 && appOnlyList[0].id === appPrompt.id);
@@ -109,10 +113,18 @@ async function run() {
     t('POST /api/prompts with scope app creates 201', postApp.status === 201 && postApp.body.prompt.scope === 'app', JSON.stringify(postApp));
 
     // PATCH /api/prompts/:id (app scope)
-    const patchApp = await request('PATCH', '/api/prompts/' + encodeURIComponent(appPrompt.id), { title: 'Global Helper v2' });
-    t('PATCH /api/prompts/:id updates app prompt', patchApp.status === 200 && patchApp.body.prompt.title === 'Global Helper v2', JSON.stringify(patchApp));
-
-    // DELETE /api/prompts/:id
+    const patchApp = await request('PATCH', '/api/prompts/' + encodeURIComponent(appPrompt.id), { title: 'Global Helper v2', icon: 'search', showOnProjectCard: false });
+t('PATCH /api/prompts/:id updates app prompt', patchApp.status === 200 && patchApp.body.prompt.title === 'Global Helper v2', JSON.stringify(patchApp));
+t('PATCH /api/prompts/:id updates icon and project-card option', patchApp.body.prompt.icon === 'search' && patchApp.body.prompt.showOnProjectCard === false, JSON.stringify(patchApp));
+const createChat = await request('POST', '/api/chats', { projectDir: root, promptId: projPrompt.id });
+t('POST /api/chats persists promptId', createChat.status === 201 && createChat.body.chat.promptId === projPrompt.id, JSON.stringify(createChat));
+const invalidChat = await request('POST', '/api/chats', { projectDir: root, promptId: 'missing-prompt' });
+t('POST /api/chats rejects unknown promptId', invalidChat.status === 400, JSON.stringify(invalidChat));
+const invalidPromptType = await request('POST', '/api/chats', { projectDir: root, promptId: 123 });
+t('POST /api/chats rejects non-string promptId', invalidPromptType.status === 400, JSON.stringify(invalidPromptType));
+const invalidPatch = await request('PATCH', '/api/chats/' + encodeURIComponent(createChat.body.chat.id), { projectDir: root, promptId: 'missing-prompt' });
+t('PATCH /api/chats rejects unknown promptId', invalidPatch.status === 400, JSON.stringify(invalidPatch));
+// DELETE /api/prompts/:id
     const delApp = await request('DELETE', '/api/prompts/' + encodeURIComponent(appPrompt.id) + '?scope=app');
     t('DELETE /api/prompts/:id?scope=app removes prompt', delApp.status === 200 && delApp.body.ok === true, JSON.stringify(delApp));
 

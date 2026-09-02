@@ -69,6 +69,7 @@ trace: opts && opts.trace === true,
 promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize,
 thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
 maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
+promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.promptId : null,
 tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
 return getChatDb().createChat(projectDir, chat);

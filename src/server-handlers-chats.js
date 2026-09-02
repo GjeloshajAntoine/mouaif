@@ -116,14 +116,19 @@ const urlPath = parsed.pathname;
     }
   }
 
-  // POST /api/chats   body: { projectDir, title?, trace?, promptSize? }
-  if (urlPath === '/api/chats' && method === 'POST') {
-    const body = await readJsonOr400(req, res);
-    if (!body) return;
-    const dir = readProjectDir(body);
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
-    try {
-      const chat = chats.createChat(dir, body || {});
+  // POST /api/chats   body: { projectDir, title?, trace?, promptSize?, promptId? }
+if (urlPath === '/api/chats' && method === 'POST') {
+const body = await readJsonOr400(req, res);
+if (!body) return;
+const dir = readProjectDir(body);
+if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+try {
+if (body.promptId != null && body.promptId !== '') {
+if (typeof body.promptId !== 'string' || !prompts.getPrompt(dir, body.promptId)) {
+return sendJSON(res, 400, { error: 'Unknown promptId' });
+}
+}
+const chat = chats.createChat(dir, body || {});
       return sendJSON(res, 201, { chat });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -145,10 +150,15 @@ const urlPath = parsed.pathname;
     // fields intentionally and don't come through here.
     const safeBody = Object.assign({}, body || {});
     delete safeBody.id;
-    delete safeBody.createdAt;
-    delete safeBody.lastOpenedAt;
-    try {
-      const chat = chats.updateChat(dir, id, safeBody);
+delete safeBody.createdAt;
+delete safeBody.lastOpenedAt;
+try {
+if (safeBody.promptId != null && safeBody.promptId !== '') {
+if (typeof safeBody.promptId !== 'string' || !prompts.getPrompt(dir, safeBody.promptId)) {
+return sendJSON(res, 400, { error: 'Unknown promptId' });
+}
+}
+const chat = chats.updateChat(dir, id, safeBody);
       if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
       return sendJSON(res, 200, { chat });
     } catch (e) {

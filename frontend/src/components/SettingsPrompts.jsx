@@ -20,7 +20,7 @@ import { h, Fragment } from 'preact';
 import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { ToolTree, buildToolGroups } from './ToolTree.jsx';
-
+import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
 // Sentinel id used by the "new prompt" entry in the picker dropdown.
 const NEW_PROMPT_ID = '__new__';
 
@@ -100,8 +100,10 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
 
   // Editable fields.
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [preset, setPreset] = useState(null);
+const [icon, setIcon] = useState('sparkles');
+const [showOnProjectCard, setShowOnProjectCard] = useState(false);
+const [content, setContent] = useState('');
+const [preset, setPreset] = useState(null);
 
   // Status + busy flags.
   const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
@@ -113,7 +115,7 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   const [showProfileCopy, setShowProfileCopy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const [loadedSnapshot, setLoadedSnapshot] = useState({ title: '', content: '', preset: null, scope: projectDir ? 'project' : 'app' });
+  const [loadedSnapshot, setLoadedSnapshot] = useState({ title: '', icon: 'sparkles', showOnProjectCard: false, content: '', preset: null, scope: projectDir ? 'project' : 'app' });
 
   // ToolTree data
   const [toolsCatalog, setToolsCatalog] = useState([]);
@@ -186,10 +188,12 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
   function applyPromptToForm(p) {
     if (!p) {
       const defaultScope = projectDir ? 'project' : 'app';
-      const snap = { title: '', content: '', preset: null, scope: defaultScope };
-      setTitle(snap.title);
-      setContent(snap.content);
-      setPreset(snap.preset);
+      const snap = { title: '', icon: 'sparkles', showOnProjectCard: false, content: '', preset: null, scope: defaultScope };
+setTitle(snap.title);
+setIcon(snap.icon);
+setShowOnProjectCard(snap.showOnProjectCard);
+setContent(snap.content);
+setPreset(snap.preset);
       setPromptScope(defaultScope);
       setLoadedSnapshot(snap);
       dirtyRef.current = false;
@@ -204,18 +208,29 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
         }
       : null;
     const itemScope = p.scope || (projectDir ? 'project' : 'app');
-    const snap = { title: p.title || '', content: p.content || '', preset: nextPreset, scope: itemScope };
-    setTitle(snap.title);
-    setContent(snap.content);
-    setPreset(nextPreset);
+const snap = {
+title: p.title || '',
+icon: p.icon || 'sparkles',
+showOnProjectCard: p.showOnProjectCard === true,
+content: p.content || '',
+preset: nextPreset,
+scope: itemScope
+};
+setTitle(snap.title);
+setIcon(snap.icon);
+setShowOnProjectCard(snap.showOnProjectCard);
+setContent(snap.content);
+setPreset(nextPreset);
     setPromptScope(itemScope);
     setLoadedSnapshot(snap);
     dirtyRef.current = false;
   }
 
   function isDirty() {
-    if (title !== loadedSnapshot.title) return true;
-    if (content !== loadedSnapshot.content) return true;
+if (title !== loadedSnapshot.title) return true;
+if (icon !== loadedSnapshot.icon) return true;
+if (showOnProjectCard !== loadedSnapshot.showOnProjectCard) return true;
+if (content !== loadedSnapshot.content) return true;
     if (promptScope !== loadedSnapshot.scope) return true;
     if (!presetsEqual(preset, loadedSnapshot.preset)) return true;
     return false;
@@ -344,10 +359,12 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
 
     const body = {
       projectDir: targetDir,
-      scope: effectiveScope,
-      title: t,
-      content: c
-    };
+scope: effectiveScope,
+title: t,
+icon,
+showOnProjectCard,
+content: c
+};
 
     if (presetActive()) {
       const p = preset;
@@ -392,12 +409,14 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
       setSelectedId(saved.id);
       applyPromptToForm(saved);
     } else {
-      setLoadedSnapshot({
-        title: t,
-        content: c,
-        preset: preset ? { ...preset, tools: new Set(preset.tools) } : null,
-        scope: effectiveScope
-      });
+setLoadedSnapshot({
+title: t,
+icon,
+showOnProjectCard,
+content: c,
+preset: preset ? { ...preset, tools: new Set(preset.tools) } : null,
+scope: effectiveScope
+});
       dirtyRef.current = false;
     }
     setStatusMsg({ text: 'saved.', kind: 'success' });
@@ -483,10 +502,12 @@ const from = (props && typeof props.from === 'string') ? props.from : '';
     userPickedRef.current = true;
     setSelectedId(NEW_PROMPT_ID);
     const defaultScope = projectDir ? 'project' : 'app';
-    const snap = { title: '', content: '', preset: null, scope: defaultScope };
-    setTitle(profile.label || '');
-    setContent(profile.systemMessage || '');
-    setPreset(null);
+const snap = { title: '', icon: 'sparkles', showOnProjectCard: false, content: '', preset: null, scope: defaultScope };
+setTitle(profile.label || '');
+setIcon('sparkles');
+setShowOnProjectCard(false);
+setContent(profile.systemMessage || '');
+setPreset(null);
     setPromptScope(defaultScope);
     // Snapshot stays blank so the pre-filled fields register as dirty and
     // the Create button is enabled immediately.
@@ -653,6 +674,7 @@ onClick: () => handleSelectPrompt(p.id)
 },
 h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, selected ? '✓' : ''),
 h('span', { class: 'prompts__picker-option-label' },
+h(PromptIcon, { name: p.icon, size: 17, class: 'prompts__picker-icon' }),
 h('span', null, p.title || p.id),
 showScopeBadge && p.scope ? h('span', { class: 'mcp__scope mcp__scope--' + p.scope }, p.scope) : null,
 p.preset ? h('span', { class: 'prompts__picker-preset' }, 'preset') : null
@@ -738,7 +760,45 @@ h('span', { class: 'prompts__picker-preset' }, 'default')
       ),
 
       h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
+h('span', { class: 'label', id: 'spe-icon-label' }, 'Icon'),
+h('div', { class: 'prompts__icons', role: 'radiogroup', 'aria-labelledby': 'spe-icon-label' },
+PROMPT_ICONS.map((item) => h('label', {
+key: item.id,
+class: 'prompts__icon-choice' + (icon === item.id ? ' is-selected' : ''),
+title: item.label
+},
+h('input', {
+type: 'radio',
+name: 'spe-icon',
+value: item.id,
+checked: icon === item.id,
+'aria-label': item.label,
+onChange: () => setIcon(item.id)
+}),
+h(PromptIcon, { name: item.id, size: 21 })
+))
+),
+h('label', { class: 'prompts__quick-launch' },
+h('span', { class: 'switch' },
+h('input', {
+type: 'checkbox',
+role: 'switch',
+checked: showOnProjectCard,
+'aria-checked': String(showOnProjectCard),
+onChange: (e) => setShowOnProjectCard(e.currentTarget.checked)
+}),
+h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+h('span', { class: 'switch__thumb' })
+)
+),
+h('span', null,
+h('span', { class: 'prompts__quick-launch-title' }, 'Add to project card'),
+h('span', { class: 'prompts__quick-launch-desc' }, 'Use this icon as a one-tap button that starts a new chat with this prompt.')
+)
+)
+),
+h('div', { class: 'row' },
+h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
         h('textarea', {
           value: content,
           onInput: (e) => setContent(e.currentTarget.value),

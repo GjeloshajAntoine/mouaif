@@ -40,6 +40,21 @@ color: var(--muted); font-size: 0.66rem; font-weight: 600;
 text-transform: uppercase; letter-spacing: 0.04em;
 }
 .prompts__picker-option--profile .prompts__picker-preset { color: var(--accent); }
+.prompts__picker-icon { flex: none; color: var(--accent); }
+.prompts__icons { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.prompts__icon-choice {
+position: relative; min-width: var(--tap); min-height: var(--tap); padding: 0; display: grid; place-items: center;
+border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+color: var(--fg-soft); cursor: pointer;
+}
+.prompts__icon-choice input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.prompts__icon-choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prompts__icon-choice:active { background: var(--surface-3); }
+.prompts__icon-choice.is-selected { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.prompts__quick-launch { display: flex; align-items: center; gap: 10px; margin-top: 10px; min-height: var(--tap); cursor: pointer; }
+.prompts__quick-launch-title, .prompts__quick-launch-desc { display: block; }
+.prompts__quick-launch-title { color: var(--fg); font-size: 0.84rem; font-weight: 600; }
+.prompts__quick-launch-desc { color: var(--fg-soft); font-size: 0.74rem; line-height: 1.35; }
 .prompts__copy {
   min-height: var(--tap); min-width: 76px;
   padding: 0 12px; font-size: 0.78rem;
