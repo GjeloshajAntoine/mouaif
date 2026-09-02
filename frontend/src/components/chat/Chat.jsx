@@ -24,7 +24,7 @@ export function ChatView(props) {
   const {
     refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading, customActions,
+chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading,
 setFileEditorOpen,
     setImageAttachments,
     setComposerText,
@@ -33,7 +33,7 @@ setFileEditorOpen,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
-onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions
+onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat
 } = s;
 
   const { projectDir, chatId } = props;
@@ -299,10 +299,7 @@ h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
 projectDir,
 onOpenFileEditor: () => setFileEditorOpen(true),
-onOpenPreview: () => setPreviewPromptOpen(true),
-customActions,
-onRunCustomAction: runCustomAction,
-onRefreshCustomActions: refreshCustomActions
+onOpenPreview: () => setPreviewPromptOpen(true)
 })
 ),
       h('div', { class: 'chat-view__composer' },

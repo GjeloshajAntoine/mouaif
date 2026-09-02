@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { send as sendTurn, runShellCommand, runMcpCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 
@@ -330,15 +330,7 @@ state.customActions = customActions;
   // refs, `state`, `refs`, and `updateChatBound`, so their
   // useCallback deps shrink to the props/identities that can
   // actually change: projectDir/chatId and updateChatBound.
-  const refreshCustomActions = useCallback(async () => {
-    if (!projectDir) return;
-    try {
-      const response = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
-      if (response.status === 200 && Array.isArray(response.body && response.body.actions)) {
-        setCustomActions(response.body.actions);
-      }
-    } catch { /* keep the last known action list */ }
-  }, [projectDir]);
+
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
@@ -1096,15 +1088,13 @@ setRunningVisible(false);
 
   return {
     state, refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
+    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
 setImageAttachments, setFileEditorOpen,
   setComposerText,
   // Reactive model-picker props (rendered by ModelPickerField)
   picker,
   // Actions bound for direct use in the JSX
   send,
-runCustomAction: (action) => runCustomAction(action, state, refs),
-refreshCustomActions,
 updateChat: updateChatBound,
     onPickerPick: onPickerPickBound,
     onPickerTogglePin: (m) => {

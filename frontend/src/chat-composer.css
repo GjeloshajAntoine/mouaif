@@ -167,36 +167,6 @@ font-size: 0.9rem;
 line-height: 1;
 text-align: center;
 }
-/* Custom-action section in the file toolbar dropdown */
-.file-toolbar__menu-sep {
-height: 1px;
-margin: 3px 2px;
-background: var(--border);
-}
-.file-toolbar__menu-title {
-padding: 4px 8px 2px;
-font-size: 0.66rem;
-font-weight: 650;
-text-transform: uppercase;
-letter-spacing: 0.04em;
-color: var(--muted);
-}
-.file-toolbar__menu-item-body {
-display: flex;
-flex-direction: column;
-gap: 0.1rem;
-min-width: 0;
-}
-.file-toolbar__menu-item-label {
-overflow: hidden;
-text-overflow: ellipsis;
-white-space: nowrap;
-}
-.file-toolbar__menu-item-meta {
-color: var(--muted);
-font-family: var(--font-mono);
-font-size: 0.62rem;
-}
 /* ---- User web preview dock ---------------------------------------- */
 /*
 The dock is a small, right-aligned phone-proportioned image pinned

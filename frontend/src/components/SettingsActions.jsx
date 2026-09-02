@@ -33,7 +33,7 @@ h('a', { href: '#/settings/project' + projectQS(projectDir) + (from ? '&from=' +
 h('h2', { class: 'view-title' }, 'Custom actions')
 ),
 h('section', null,
-h('p', { class: 'hint hint--compact' }, 'Project shortcuts backed by a CLI command or MCP tool. Run one from the composer action menu or type ', h('code', null, '@action-id'), '.'),
+h('p', { class: 'hint hint--compact' }, 'Project shortcuts backed by a CLI command or MCP tool. Run one by typing ', h('code', null, '@action-id'), ' as the complete composer message.'),
 h('ul', { class: 'prompts__list', 'aria-label': 'Custom actions' },
 actions.length ? actions.map((action) => h('li', { key: action.id, class: 'prompt-row' },
 h('a', { class: 'prompt-row__main', href: '#/settings/actions/' + encodeURIComponent(action.id) + projectQS(projectDir) },
