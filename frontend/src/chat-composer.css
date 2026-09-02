@@ -338,7 +338,6 @@ height: 100%;
 object-fit: cover;
 display: block;
 }
-.chat-view__image-chipreset,
 .chat-view__image-chipremove {
 position: absolute;
 display: flex;
@@ -349,15 +348,6 @@ border-radius: var(--r-pill);
 background: rgba(0,0,0,0.72);
 color: white;
 cursor: pointer;
-}
-.chat-view__image-chipreset {
-bottom: 1px;
-right: 2px;
-width: 18px;
-height: 18px;
-padding: 0;
-}
-.chat-view__image-chipremove {
 top: 1px;
 right: 2px;
 width: 16px;

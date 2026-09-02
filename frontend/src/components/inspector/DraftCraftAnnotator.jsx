@@ -62,7 +62,7 @@ function distance(a, b) {
 return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose, onAnnotated, actionLabel = 'Add to chat draft' }) {
+export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose, onAnnotated, originalDataUrl = null, sourceLabel = 'Inspector image', actionLabel = 'Add to chat draft', onReset }) {
 const canvasRef = useRef(null);
 const stageRef = useRef(null);
 const wrapRef = useRef(null);
@@ -233,6 +233,32 @@ setReady(true);
 };
 source.src = image.dataUrl;
 }
+function resetImage() {
+setNote('');
+setMarkers([]);
+setMarkerStyle('numbers');
+setColor(COLORS[0]);
+setReady(false);
+const canvas = canvasRef.current;
+if (!canvas || !originalDataUrl) return;
+const source = new Image();
+source.onload = () => {
+const ctx = canvas.getContext('2d');
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+const src = source.naturalWidth && source.naturalHeight ? source : null;
+if (src) {
+canvas.width = src.naturalWidth;
+canvas.height = src.naturalHeight;
+ctx.drawImage(src, 0, 0);
+}
+setReady(true);
+};
+source.src = originalDataUrl;
+if (typeof onReset === 'function') {
+onReset();
+onClose();
+}
+}
 function openPicker() {
 const canvas = canvasRef.current;
 if (!canvas || !ready) return;
@@ -246,7 +272,7 @@ const markerNotes = markers.map((marker, index) => {
 const label = markerLabel(index, markerStyle);
 return marker.text.trim() ? label + '. ' + marker.text.trim() : label + '.';
 });
-const context = ['Inspector image', pageTitle || '', pageUrl || '', note.trim(), markerNotes.length ? 'Annotations:\n' + markerNotes.join('\n') : ''].filter(Boolean).join('\n');
+const context = [sourceLabel, pageTitle || '', pageUrl || '', note.trim(), markerNotes.length ? 'Annotations:\n' + markerNotes.join('\n') : ''].filter(Boolean).join('\n');
 const nextPayload = {
 text: context,
 textLabel: markers.length ? markers.length + ' matched annotation' + (markers.length === 1 ? '' : 's') : 'Inspector context',
@@ -355,6 +381,9 @@ h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () =
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ),
 h('div', { class: 'draft-craft__annotator-foot' },
+originalDataUrl
+? h('button', { class: 'btn btn--ghost', type: 'button', onClick: resetImage, disabled: !ready }, 'Reset')
+: null,
 h('button', { class: 'btn btn--primary', type: 'button', onClick: openPicker, disabled: !ready }, actionLabel)
 )
 ),

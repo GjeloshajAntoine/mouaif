@@ -23,9 +23,9 @@ The **Add to chat draft** button is pinned in a footer below the scrollable tool
 1. Attach one or more images to the chat composer (via the **add image** button, paste, or drag).
 2. Tap an attached image chip to open the same Draft Craft annotator over that image.
 3. Draw freehand marks, add numbered/lettered marker dots with text, and optionally add a note, exactly as in the Inspector flow.
-4. Tap **Use annotated image** to replace that attachment in-place. The annotated version is the one that gets sent.
+4. Tap **Use annotated image** to replace that attachment in-place and write the annotation note into the composer. The annotated version is the one that gets sent.
 
-The chip keeps a small **reset** control (while the original is available) so you can revert to the untouched image at any time. A **remove** control still deletes the attachment. The reset marker is client-only: it is never sent to the server or a provider, and it is dropped when the chat draft is persisted.
+The annotator keeps a **Reset** button in its footer (only when the image has already been annotated) so you can revert to the untouched original from inside the popup. A **remove** control on the chip still deletes the attachment. The reset marker is client-only: it is never sent to the server or a provider, and it is dropped when the chat draft is persisted.
 
 ### Selected file code
 

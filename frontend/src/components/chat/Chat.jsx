@@ -52,16 +52,16 @@ setImageAttachments(Array.isArray(chat.draftAttachments) ? chat.draftAttachments
 // Reusable image annotator for the composer: tapping an attached image
 // chip opens the Draft Craft annotator, and the annotated image replaces
 // that attachment in-place. `annotateTarget` is { index, attachment } or
-// null. The original dataUrl is kept on the chip so "Reset" can restore it.
+// null. The original dataUrl is kept on the annotator so "Reset" can
+// restore it from inside the popup.
 const [annotateTarget, setAnnotateTarget] = useState(null);
 function onAnnotated(payload) {
 if (!annotateTarget || !payload || !payload.image) return;
 const next = (Array.isArray(imageAttachments) ? imageAttachments.slice() : []);
 const original = next[annotateTarget.index];
 if (original) {
-// Keep the original dataUrl / name / mimeType so the user can revert to
-// the untouched image. The "Reset" control swaps them back without
-// re-opening the annotator.
+// Keep the original dataUrl / name / mimeType so the annotator can
+// reset back to the untouched image.
 const hasOriginal = typeof original.__originalDataUrl !== 'undefined';
 next[annotateTarget.index] = Object.assign({}, original, {
 dataUrl: payload.image.dataUrl,
@@ -90,25 +90,40 @@ delete clean.__originalMimeType;
 return clean;
 });
 if (updateChat) updateChat({ draftAttachments: persist }).catch(() => {});
+// Put the annotation context text into the composer so the note and
+// marker list are visible before sending.
+const text = (typeof payload.text === 'string' ? payload.text : '').trim();
+if (text) {
+if (refs.promptInput.current) refs.promptInput.current.value = text;
+setComposerText(text);
+if (refs._autoresize) refs._autoresize();
+}
 }
 setAnnotateTarget(null);
 }
-function resetAnnotatedImage(idx) {
+function onAnnotatorReset() {
+if (!annotateTarget) return;
 const prev = Array.isArray(imageAttachments) ? imageAttachments : [];
 const next = prev.slice();
-const item = next[idx];
+const item = next[annotateTarget.index];
 if (item && item.__originalDataUrl) {
-next[idx] = Object.assign({}, item, {
+next[annotateTarget.index] = Object.assign({}, item, {
 dataUrl: item.__originalDataUrl,
 name: item.__originalName !== undefined ? item.__originalName : item.name,
 mimeType: item.__originalMimeType !== undefined ? item.__originalMimeType : item.mimeType
 });
-delete next[idx].__originalDataUrl;
-delete next[idx].__originalName;
-delete next[idx].__originalMimeType;
+delete next[annotateTarget.index].__originalDataUrl;
+delete next[annotateTarget.index].__originalName;
+delete next[annotateTarget.index].__originalMimeType;
 setImageAttachments(next);
 if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
 }
+// Reverting to the original image also drops the annotation note that
+// was written into the composer, so the textbox goes back to its prior
+// draft (the composer draft still holds it on the chat record).
+if (refs.promptInput.current) refs.promptInput.current.value = '';
+setComposerText('');
+if (refs._autoresize) refs._autoresize();
 }
 // The latest webpreview capture lives in a fixed dock above the composer.
 // The full-screen viewer is a separate local toggle so dismissing the viewer
@@ -395,13 +410,6 @@ imageAttachments.map((a, idx) => h('div', { key: idx, class: 'chat-view__image-c
 h('button', { class: 'chat-view__image-chipimg', type: 'button', onClick: () => setAnnotateTarget({ index: idx, attachment: a }), 'aria-label': 'Annotate image ' + (a.name || (idx + 1)), title: 'Annotate image' },
 h('img', { src: a.dataUrl, alt: a.name || 'attached image' })
 ),
-a.__originalDataUrl
-? h('button', { class: 'chat-view__image-chipreset', type: 'button', onClick: () => resetAnnotatedImage(idx), title: 'Reset to original image', 'aria-label': 'Reset image to original' },
-h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
-h('path', { d: 'M12 5V2L7 6l5 4V7c3.3 0 6 2.7 6 6 0 1.5-.6 2.9-1.5 3.9l1.4 1.4A8 8 0 0 0 20 13a8 8 0 0 0-8-8Zm-6 8c0-1.5.6-2.9 1.5-3.9L6.1 7.7A8 8 0 0 0 4 13a8 8 0 0 0 8 8v-3c-3.3 0-6-2.7-6-6Z', fill: 'currentColor' })
-)
-)
-: null,
 h('button', { class: 'chat-view__image-chipremove', type: 'button', onClick: () => onRemoveImage(idx), title: 'Remove image', 'aria-label': 'Remove image ' + (a.name || (idx + 1)) },
 h('span', null, '×')
 )
@@ -436,9 +444,12 @@ onClose: () => setPreviewPromptOpen(false)
 annotateTarget
 ? h(DraftCraftAnnotator, {
 image: annotateTarget.attachment,
-onClose: () => setAnnotateTarget(null),
+originalDataUrl: annotateTarget.attachment && annotateTarget.attachment.__originalDataUrl,
+sourceLabel: 'Attached image',
+actionLabel: 'Use annotated image',
+onReset: onAnnotatorReset,
 onAnnotated,
-actionLabel: 'Use annotated image'
+onClose: () => setAnnotateTarget(null)
 })
 : null
 );
