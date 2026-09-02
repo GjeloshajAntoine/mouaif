@@ -23,9 +23,11 @@ The **Add to chat draft** button is pinned in a footer below the scrollable tool
 1. Attach one or more images to the chat composer (via the **add image** button, paste, or drag).
 2. Tap an attached image chip to open the same Draft Craft annotator over that image.
 3. Draw freehand marks, add numbered/lettered marker dots with text, and optionally add a note, exactly as in the Inspector flow.
-4. Tap **Use annotated image** to replace that attachment in-place and write the annotation note into the composer. The annotated version is the one that gets sent.
+4. Tap **Use annotated image** to replace that attachment in-place and append the annotation note to the composer without replacing existing instructions. The text and annotated image are saved together immediately, and the annotated version is the one that gets sent.
 
-The annotator keeps a **Reset** button in its footer (only when the image has already been annotated) so you can revert to the untouched original from inside the popup. A **remove** control on the chip still deletes the attachment. The reset marker is client-only: it is never sent to the server or a provider, and it is dropped when the chat draft is persisted.
+The annotator keeps a **Reset** button in its footer (only when the image has already been annotated) so you can revert to the untouched original from inside the popup. Reset removes only that image's unchanged generated annotation block; user-written or edited text is preserved. A larger compact **remove** target on the chip still deletes the attachment. Reset metadata stays client-only and public attachment fields are allowlisted before draft storage or provider requests.
+
+Annotated images are exported as PNG and automatically downscaled when necessary to stay within the server's 12 MiB data-URL limit. If an image cannot be exported within that limit, the annotator remains open and shows an error instead of silently sending without the image.
 
 ### Selected file code
 

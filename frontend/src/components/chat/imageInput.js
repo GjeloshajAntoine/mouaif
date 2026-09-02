@@ -4,6 +4,7 @@
 // paste) into the dataUrl payloads the chat composer attaches to
 // the next user turn. The setImageAttachments setter is passed in
 // because the state lives on the main view.
+import { toPublicImageAttachment, toPublicImageAttachments } from './annotation.js';
 
 // fileToImageAttachment(file) -> Promise<{ type, mimeType, dataUrl, name } | null>
 //
@@ -35,10 +36,15 @@ export async function addImagesFromFiles(files, { setImageAttachments, setChatSt
   const list = Array.from(files || []).filter((f) => f && /^image\/(png|jpe?g|webp|gif)$/i.test(f.type || ''));
   if (!list.length) return;
   try {
-    const items = (await Promise.all(list.map(fileToImageAttachment))).filter(Boolean);
+    const readItems = (await Promise.all(list.map(fileToImageAttachment))).filter(Boolean);
+    const items = readItems.map(toPublicImageAttachment).filter(Boolean);
+    if (!items.length) {
+      setChatStatus('image is too large', 'error');
+      return;
+    }
     setImageAttachments((prev) => {
       const next = prev.concat(items).slice(0, 8);
-      if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
+      if (updateChat) updateChat({ draftAttachments: toPublicImageAttachments(next) }).catch(() => {});
       return next;
     });
     setChatStatus(
@@ -76,17 +82,7 @@ export function onImagePickerChange(e, handlers) {
 export function removeImageAttachment(idx, setImageAttachments, updateChat) {
 setImageAttachments((prev) => {
 const next = prev.filter((_, i) => i !== idx);
-// Drop the client-only reset markers before they are persisted so the
-// chat draft never stores a duplicate of the original data.
-const clean = next.map((a) => {
-if (!a) return a;
-const c = Object.assign({}, a);
-delete c.__originalDataUrl;
-delete c.__originalName;
-delete c.__originalMimeType;
-return c;
-});
-if (updateChat) updateChat({ draftAttachments: clean }).catch(() => {});
+if (updateChat) updateChat({ draftAttachments: toPublicImageAttachments(next) }).catch(() => {});
 return next;
 });
 }

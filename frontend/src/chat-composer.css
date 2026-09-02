@@ -342,20 +342,29 @@ display: block;
 .chat-view__image-chipremove {
 position: absolute;
 display: flex;
-align-items: center;
-justify-content: center;
+align-items: flex-start;
+justify-content: flex-end;
 border: 0;
-border-radius: var(--r-pill);
-background: rgba(0,0,0,0.72);
+background: transparent;
 color: white;
 cursor: pointer;
-top: 1px;
-right: 2px;
+top: 0;
+right: 0;
+width: var(--tap-sm);
+height: var(--tap-sm);
+padding: 6px;
+}
+.chat-view__image-chipremove span {
+display: flex;
+align-items: center;
+justify-content: center;
 width: 16px;
 height: 16px;
-padding: 0;
+border-radius: var(--r-pill);
+background: rgba(0,0,0,0.72);
 font-size: 14px;
 line-height: 15px;
+pointer-events: none;
 }
 .chat-view__send {
   width: 32px;

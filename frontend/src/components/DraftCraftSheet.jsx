@@ -1,5 +1,6 @@
 // Draft Craft — pick any project chat and append text and/or an image to its draft.
 import { h } from 'preact';
+import { toPublicImageAttachments } from './chat/annotation.js';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 const LOAD_TIMEOUT_MS = 15000;
@@ -132,7 +133,7 @@ patch.draft = before ? before + '\n\n' + payload.text.trim() : payload.text.trim
 }
 if (hasImage) {
 const attachments = Array.isArray(chat.draftAttachments) ? chat.draftAttachments.slice() : [];
-patch.draftAttachments = attachments.concat([payload.image]).slice(0, 8);
+patch.draftAttachments = toPublicImageAttachments(attachments.concat([payload.image]).slice(0, 8));
 }
 const update = await fetchDraftJson('/api/chats/' + encodeURIComponent(chatId), {
 method: 'PATCH',

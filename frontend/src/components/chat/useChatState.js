@@ -35,6 +35,7 @@ import { syncThinkingSelect } from './thinking.js';
 import { send as sendTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
+import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
 //
@@ -54,7 +55,7 @@ export function useChatState(props) {
   // them) — they only existed to force pointless re-renders of the whole
   // view. They now live purely on the imperative `state` bag below.
   const [imageAttachments, setImageAttachmentsState] = useState([]);
-  const [composerText, setComposerText] = useState('');
+  const [composerText, setComposerTextState] = useState('');
   const [fileEditorOpen, setFileEditorOpen] = useState(false);
   const [runningVisible, setRunningVisible] = useState(false);
   // Bumped after every successful tool/MCP authorization save. ChatView
@@ -105,6 +106,11 @@ const chatSwitcherIdxRef = useRef(-1);
   function setImageAttachments(v) {
     imageAttachmentsRef.current = typeof v === 'function' ? v(imageAttachmentsRef.current) : v;
     setImageAttachmentsState(imageAttachmentsRef.current);
+  }
+  const composerTextRef = useRef('');
+  function setComposerText(value) {
+    composerTextRef.current = typeof value === 'string' ? value : '';
+    setComposerTextState(composerTextRef.current);
   }
 
   // ---- DOM refs ----------------------------------------------
@@ -347,10 +353,14 @@ state.customActions = customActions;
   }, [projectDir]);
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
+    const safePatch = Object.assign({}, patch || {});
+    if (Object.prototype.hasOwnProperty.call(safePatch, 'draftAttachments') && Array.isArray(safePatch.draftAttachments)) {
+      safePatch.draftAttachments = toPublicImageAttachments(safePatch.draftAttachments);
+    }
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir }, patch || {}))
+      body: JSON.stringify(Object.assign({ projectDir }, safePatch))
     });
     if (r.status !== 200) {
       if (status.current) status.current.textContent = 'HTTP ' + r.status;
@@ -1135,9 +1145,11 @@ updateChat: updateChatBound,
     },
     onComposerKey: (e) => onComposerKey(e, send, { enterForNewline: state.enterForNewline }),
     onComposerInput: () => {
-      setComposerText(refs.promptInput.current ? refs.promptInput.current.value : '');
-      onComposerInput(refs, projectDir, chatId, updateChatBound);
-    },
+const nextText = refs.promptInput.current ? refs.promptInput.current.value : '';
+setImageAttachments((current) => rebaseAnnotationStarts(current, composerTextRef.current, nextText));
+setComposerText(nextText);
+onComposerInput(refs, projectDir, chatId, updateChatBound);
+},
     onComposerPaste: (e) => {
       const files = e.clipboardData && e.clipboardData.files;
       if (files && Array.from(files).some((f) => /^image\//i.test(f.type || ''))) {

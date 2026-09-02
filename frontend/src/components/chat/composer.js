@@ -40,15 +40,19 @@ export function queueComposerDraftSave(value, projectDir, chatId, refs, updateCh
   }, 250);
 }
 
-// clearComposerDraft(projectDir, chatId, refs, updateChat)
-//
-// Cancel any pending debounce and persist an empty draft.
-export function clearComposerDraft(projectDir, chatId, refs, updateChat) {
+export function saveComposerDraftNow(value, refs, updateChat, extraPatch = {}) {
   if (refs.draftSaveTimer.current) {
     clearTimeout(refs.draftSaveTimer.current);
     refs.draftSaveTimer.current = null;
   }
-  return updateChat({ draft: '', draftAttachments: null });
+  return updateChat(Object.assign({}, extraPatch, { draft: value || '' }));
+}
+
+// clearComposerDraft(projectDir, chatId, refs, updateChat)
+//
+// Cancel any pending debounce and persist an empty draft.
+export function clearComposerDraft(projectDir, chatId, refs, updateChat) {
+  return saveComposerDraftNow('', refs, updateChat, { draftAttachments: null });
 }
 
 // onComposerInput(refs, projectDir, chatId, updateChat)

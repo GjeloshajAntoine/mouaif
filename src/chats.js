@@ -19,6 +19,7 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const settings = require('./settings.js');
+const messages = require('./messages.js');
 const PROJECT_FILE = '.mouaif.json';
 function ensureDir(dir) {
 fs.mkdirSync(dir, { recursive: true });
@@ -104,7 +105,8 @@ if (patch && Object.prototype.hasOwnProperty.call(patch, 'draft')) {
 dbPatch.draft = typeof patch.draft === 'string' ? patch.draft : '';
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'draftAttachments')) {
-  dbPatch.draftAttachments = Array.isArray(patch.draftAttachments) && patch.draftAttachments.length ? patch.draftAttachments : null;
+const attachments = messages.normalizeAttachments(patch.draftAttachments);
+dbPatch.draftAttachments = attachments.length ? attachments : null;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'tools')) {
 if (patch.tools === null) {

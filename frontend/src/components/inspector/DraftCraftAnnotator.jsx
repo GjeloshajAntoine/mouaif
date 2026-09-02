@@ -3,6 +3,7 @@ import { h } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
+import { canvasToBoundedPngDataUrl } from '../chat/annotation.js';
 
 const COLORS = ['#ff5f57', '#ffd60a', '#32d74b', '#0a84ff'];
 const MIN_ZOOM = 1;
@@ -81,6 +82,7 @@ const [dragMarker, setDragMarker] = useState(null);
 const [pickerOpen, setPickerOpen] = useState(false);
 const [payload, setPayload] = useState(null);
 const [ready, setReady] = useState(false);
+const [exportError, setExportError] = useState('');
 const [zoom, setZoom] = useState(1);
 const [mode, setMode] = useState('draw');
 
@@ -234,40 +236,28 @@ setReady(true);
 source.src = image.dataUrl;
 }
 function resetImage() {
-setNote('');
-setMarkers([]);
-setMarkerStyle('numbers');
-setColor(COLORS[0]);
-setReady(false);
-const canvas = canvasRef.current;
-if (!canvas || !originalDataUrl) return;
-const source = new Image();
-source.onload = () => {
-const ctx = canvas.getContext('2d');
-ctx.clearRect(0, 0, canvas.width, canvas.height);
-const src = source.naturalWidth && source.naturalHeight ? source : null;
-if (src) {
-canvas.width = src.naturalWidth;
-canvas.height = src.naturalHeight;
-ctx.drawImage(src, 0, 0);
-}
-setReady(true);
-};
-source.src = originalDataUrl;
-if (typeof onReset === 'function') {
+if (typeof onReset !== 'function' || !originalDataUrl) return;
 onReset();
 onClose();
-}
 }
 function openPicker() {
 const canvas = canvasRef.current;
 if (!canvas || !ready) return;
+setExportError('');
+let dataUrl;
+try {
 const output = document.createElement('canvas');
 output.width = canvas.width;
 output.height = canvas.height;
 const ctx = output.getContext('2d');
+if (!ctx) throw new Error('Could not export the annotated image.');
 ctx.drawImage(canvas, 0, 0);
 markers.forEach((marker, index) => paintMarker(ctx, marker, markerLabel(index, markerStyle), canvas.width));
+dataUrl = canvasToBoundedPngDataUrl(output);
+} catch (error) {
+setExportError(error && error.message ? error.message : 'Could not export the annotated image.');
+return;
+}
 const markerNotes = markers.map((marker, index) => {
 const label = markerLabel(index, markerStyle);
 return marker.text.trim() ? label + '. ' + marker.text.trim() : label + '.';
@@ -279,7 +269,7 @@ textLabel: markers.length ? markers.length + ' matched annotation' + (markers.le
 image: {
 type: 'image',
 mimeType: 'image/png',
-dataUrl: output.toDataURL('image/png'),
+dataUrl,
 name: 'draft-craft-inspector.png'
 }
 };
@@ -381,6 +371,7 @@ h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () =
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ),
 h('div', { class: 'draft-craft__annotator-foot' },
+exportError ? h('span', { class: 'status', role: 'alert' }, exportError) : null,
 originalDataUrl
 ? h('button', { class: 'btn btn--ghost', type: 'button', onClick: resetImage, disabled: !ready }, 'Reset')
 : null,

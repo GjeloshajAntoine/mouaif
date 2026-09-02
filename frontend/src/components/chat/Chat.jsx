@@ -19,6 +19,16 @@ import { authorizationCard } from './cards.js';
 import { requestWebpreview } from '../../api.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
+import { saveComposerDraftNow } from './composer.js';
+import {
+annotatedAttachment,
+annotationReset,
+annotationTextInsertion,
+originalImageDataUrl,
+removeAnnotationText,
+shiftAnnotationStarts,
+toPublicImageAttachments
+} from './annotation.js';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -55,75 +65,58 @@ setImageAttachments(Array.isArray(chat.draftAttachments) ? chat.draftAttachments
 // null. The original dataUrl is kept on the annotator so "Reset" can
 // restore it from inside the popup.
 const [annotateTarget, setAnnotateTarget] = useState(null);
+function syncComposer(value) {
+if (refs.promptInput.current) refs.promptInput.current.value = value;
+setComposerText(value);
+if (refs._autoresize) refs._autoresize();
+}
 function onAnnotated(payload) {
 if (!annotateTarget || !payload || !payload.image) return;
 const next = (Array.isArray(imageAttachments) ? imageAttachments.slice() : []);
 const original = next[annotateTarget.index];
 if (original) {
-// Keep the original dataUrl / name / mimeType so the annotator can
-// reset back to the untouched image.
-const hasOriginal = typeof original.__originalDataUrl !== 'undefined';
-next[annotateTarget.index] = Object.assign({}, original, {
-dataUrl: payload.image.dataUrl,
-mimeType: payload.image.mimeType || original.mimeType,
-name: payload.image.name || original.name
-});
-if (hasOriginal) {
-// Preserve the first original and drop any nested original (the
-// first annotate only seeds it; later annotates keep the first).
-next[annotateTarget.index].__originalDataUrl = original.__originalDataUrl;
-next[annotateTarget.index].__originalName = original.__originalName;
-next[annotateTarget.index].__originalMimeType = original.__originalMimeType;
-} else {
-next[annotateTarget.index].__originalDataUrl = original.dataUrl;
-next[annotateTarget.index].__originalName = original.name;
-next[annotateTarget.index].__originalMimeType = original.mimeType;
-}
-setImageAttachments(next);
-// Persist a clean copy (drop the client-only reset markers) so the
-// chat draft never stores a duplicate of the original data URL.
-const persist = next.map((a) => {
-const clean = Object.assign({}, a);
-delete clean.__originalDataUrl;
-delete clean.__originalName;
-delete clean.__originalMimeType;
-return clean;
-});
-if (updateChat) updateChat({ draftAttachments: persist }).catch(() => {});
-// Put the annotation context text into the composer so the note and
-// marker list are visible before sending.
-const text = (typeof payload.text === 'string' ? payload.text : '').trim();
-if (text) {
-if (refs.promptInput.current) refs.promptInput.current.value = text;
-setComposerText(text);
-if (refs._autoresize) refs._autoresize();
+const annotationText = (typeof payload.text === 'string' ? payload.text : '').trim();
+const previousAnnotation = annotationReset(original);
+const currentText = refs.promptInput.current ? refs.promptInput.current.value : composerText;
+const withoutPrevious = previousAnnotation
+? removeAnnotationText(currentText, previousAnnotation.annotationText, previousAnnotation.annotationStart)
+: currentText;
+const insertion = annotationTextInsertion(withoutPrevious, annotationText);
+const removedChars = currentText.length - withoutPrevious.length;
+const shifted = previousAnnotation && removedChars
+? shiftAnnotationStarts(next, previousAnnotation.annotationStart, -removedChars, annotateTarget.index)
+: next;
+shifted[annotateTarget.index] = annotatedAttachment(original, payload.image, annotationText, insertion.start);
+const nextText = insertion.value;
+setImageAttachments(shifted);
+syncComposer(nextText);
+if (updateChat) {
+saveComposerDraftNow(nextText, refs, updateChat, {
+draftAttachments: toPublicImageAttachments(shifted)
+}).catch(() => {});
 }
 }
 setAnnotateTarget(null);
 }
 function onAnnotatorReset() {
 if (!annotateTarget) return;
-const prev = Array.isArray(imageAttachments) ? imageAttachments : [];
-const next = prev.slice();
-const item = next[annotateTarget.index];
-if (item && item.__originalDataUrl) {
-next[annotateTarget.index] = Object.assign({}, item, {
-dataUrl: item.__originalDataUrl,
-name: item.__originalName !== undefined ? item.__originalName : item.name,
-mimeType: item.__originalMimeType !== undefined ? item.__originalMimeType : item.mimeType
-});
-delete next[annotateTarget.index].__originalDataUrl;
-delete next[annotateTarget.index].__originalName;
-delete next[annotateTarget.index].__originalMimeType;
-setImageAttachments(next);
-if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
+const next = Array.isArray(imageAttachments) ? imageAttachments.slice() : [];
+const reset = annotationReset(next[annotateTarget.index]);
+if (!reset) return;
+const currentText = refs.promptInput.current ? refs.promptInput.current.value : composerText;
+const nextText = removeAnnotationText(currentText, reset.annotationText, reset.annotationStart);
+const removedChars = currentText.length - nextText.length;
+const shifted = removedChars
+? shiftAnnotationStarts(next, reset.annotationStart, -removedChars, annotateTarget.index)
+: next;
+shifted[annotateTarget.index] = reset.attachment;
+setImageAttachments(shifted);
+syncComposer(nextText);
+if (updateChat) {
+saveComposerDraftNow(nextText, refs, updateChat, {
+draftAttachments: toPublicImageAttachments(shifted)
+}).catch(() => {});
 }
-// Reverting to the original image also drops the annotation note that
-// was written into the composer, so the textbox goes back to its prior
-// draft (the composer draft still holds it on the chat record).
-if (refs.promptInput.current) refs.promptInput.current.value = '';
-setComposerText('');
-if (refs._autoresize) refs._autoresize();
 }
 // The latest webpreview capture lives in a fixed dock above the composer.
 // The full-screen viewer is a separate local toggle so dismissing the viewer
@@ -444,7 +437,7 @@ onClose: () => setPreviewPromptOpen(false)
 annotateTarget
 ? h(DraftCraftAnnotator, {
 image: annotateTarget.attachment,
-originalDataUrl: annotateTarget.attachment && annotateTarget.attachment.__originalDataUrl,
+originalDataUrl: originalImageDataUrl(annotateTarget.attachment),
 sourceLabel: 'Attached image',
 actionLabel: 'Use annotated image',
 onReset: onAnnotatorReset,

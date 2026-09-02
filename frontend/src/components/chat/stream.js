@@ -26,9 +26,10 @@ import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseToolArgs } from './tools.js';
-import { queueComposerDraftSave } from './composer.js';
+import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
+import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
 
 // retryFailedTurn(state, refs, payload)
@@ -483,7 +484,8 @@ const { projectDir, chatId } = state.props;
   const modelId = c.modelId || '';
   const providerId = c.providerId || '';
   const text = (content != null ? content : (refs.promptInput.current.value || '')).trim();
-const atts = attachments || state.imageAttachments;
+const localAtts = attachments || state.imageAttachments;
+const atts = toPublicImageAttachments(localAtts);
 if (!text && !atts.length) {
 if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
 return;
@@ -610,22 +612,10 @@ if (state._updateSetupVisibility) state._updateSetupVisibility();
 
   let resp;
 try {
-// Drop the client-only reset markers so they never travel to the
-// server or a provider.
-const wireAtts = (atts || []).map((a) => {
-if (a && (typeof a.__originalDataUrl !== 'undefined' || typeof a.__originalName !== 'undefined' || typeof a.__originalMimeType !== 'undefined')) {
-const clean = Object.assign({}, a);
-delete clean.__originalDataUrl;
-delete clean.__originalName;
-delete clean.__originalMimeType;
-return clean;
-}
-return a;
-});
 resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: wireAtts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
+body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
 });
 } catch (err) {
 const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
@@ -665,10 +655,11 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       if (refs.promptInput.current) {
         refs.promptInput.current.value = text;
         refs._autoresize();
-        queueComposerDraftSave(text, projectDir, chatId, refs, state._updateChat || (() => Promise.resolve()));
       }
-      setImageAttachments(atts);
-      if (state._updateChat) state._updateChat({ draftAttachments: atts }).catch(() => {});
+      setImageAttachments(localAtts);
+      if (state._updateChat) {
+        saveComposerDraftNow(text, refs, state._updateChat, { draftAttachments: atts }).catch(() => {});
+      }
       setChatStatus(refs, 'a response is already streaming — your message is back in the composer', 'busy');
       state.streaming = false;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
