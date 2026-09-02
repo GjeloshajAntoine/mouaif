@@ -627,6 +627,16 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
   let usage = null;
   let cost = null;
   let streamingMs = null;
+  // Subagent delegated cost accumulated mid-turn. The server emits
+  // a `usage_update` event with the subagent's cost as soon as the
+  // nested run finishes; the parent turn's `done` later carries
+  // the same number inside the final segment's remainder cost, so
+  // we clear this when the final assistant message is persisted to
+  // avoid double-counting. While the turn is still in flight the
+  // live running "Total" pill in the head summary is updated by
+  // folding this delta into the `liveInfo` passed to
+  // updateUsageSummary.
+  let liveSubagentCost = 0;
   // Track the latest round's usage so intermediate segments can
   // carry their own cost estimate. The server sends `usage_input`
   // per round; we pair it with `usage_output` to form a complete
@@ -642,13 +652,34 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
   // produces a strobe effect on a phone. We repaint at most every
   // 120 ms while deltas are flowing, and once on `done`.
   let lastRepaintAt = 0;
+  // composeLiveInfo() -> { modelId, usage, cost, streamingMs, liveRate, liveCost }
+  //
+  // Builds the `info` object passed to renderUsageMeta and
+  // updateUsageSummary. The live running "Total" pill must include
+  // any subagent cost that has been billed since the last segment
+  // was persisted, otherwise it falls behind the true total until
+  // the parent turn's `done` event lands. We add the running
+  // subagent cost to the parent's `cost` here; when the final
+  // `done` arrives the persisted message absorbs both and the
+  // running delta is cleared.
+  function composeLiveInfo() {
+    const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
+    if (liveSubagentCost > 0) {
+      // Carry the subagent delta in a new envelope so
+      // updateUsageSummary can keep the parent's `cost` intact
+      // (it's used for the per-turn meta line) while still
+      // adding the subagent contribution to the running total.
+      info.liveCost = { known: true, total: liveSubagentCost, currency: 'USD' };
+    }
+    return info;
+  }
   function repaintLiveRate() {
     if (!refs.transcript.current) return;
     const live = refs.transcript.current.querySelector('[data-live="1"]');
     if (!live) return;
     const meta = live.querySelector('.chat-msg__meta');
     if (!meta) return;
-    const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
+    const info = composeLiveInfo();
     renderUsageMeta(meta, info, state);
     updateUsageSummary(state, info, refs);
   }
@@ -717,6 +748,12 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
+      // The final `done` event's `cost` already includes the
+      // delegated subagent cost as part of the turn remainder
+      // (turnCost + delegatedCost − persistedSegmentCost). Clear
+      // the running mid-turn delta so the persisted sum is the
+      // single source of truth from this point on.
+      liveSubagentCost = 0;
       // Snap the live tok/s line to the authoritative number now that
       // the upstream reported its real completionTokens (they include
       // thinking tokens, matching the counter's window). Without this
@@ -756,6 +793,24 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
         usage.completionTokens = (usage.completionTokens || 0) + c2;
         roundCompletionTokens += c2;
         repaintLiveRate();
+      }
+    } else if (ev.eventName === 'usage_update') {
+      // Mid-turn subagent cost. The server emits this as soon as a
+      // nested subagent call finishes, so the head "Total" pill
+      // grows in real time instead of jumping on the parent
+      // turn's `done`. The `done` event later folds the same
+      // number into the final segment's remainder and clears the
+      // running delta (handled below) so nothing is double-counted
+      // on reload.
+      const updateCost = data && data.cost;
+      if (updateCost && updateCost.known && typeof updateCost.total === 'number' && updateCost.total > 0) {
+        liveSubagentCost += updateCost.total;
+        // No repaintLiveRate(): the per-turn meta line is for the
+        // parent's own cost, not the running subagent total. The
+        // head summary is the only surface that needs to grow
+        // right now, and updateUsageSummary below is the single
+        // source of truth for it.
+        updateUsageSummary(state, composeLiveInfo(), refs);
       }
     } else if (ev.eventName === 'assistant_turn_end') {
       const segment = assembled;

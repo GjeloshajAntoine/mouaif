@@ -1156,6 +1156,25 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (cost != null) {
       delegatedUsage.costCount++;
       delegatedProviderCost = (delegatedProviderCost || 0) + cost;
+      // Surface the new subagent cost to the SSE stream so the
+      // chat's "Total" pill updates immediately. The wire shape
+      // matches the persisted `cost` block on assistant messages
+      // ({ known, total, input, output, currency }) so the client
+      // can drop it into the live running total with no extra
+      // plumbing. The final `done` event folds the same number
+      // into the parent remainder; the client clears the running
+      // delta at that point so nothing is double-counted.
+      onEvent('usage_update', {
+        cost: {
+          known: true,
+          total: cost,
+          input: 0,
+          output: 0,
+          currency: 'USD'
+        },
+        source: 'subagent',
+        modelId: result.model && result.model.id ? result.model.id : undefined
+      });
     }
   }
 

@@ -101,6 +101,17 @@ export function updateUsageSummary(state, liveInfo, refs) {
       totalCost += liveInfo.cost.total;
       hasKnownCost = true;
     }
+    // Mid-turn subagent cost delta. The server emits a
+    // `usage_update` SSE event with the subagent's cost as soon as
+    // the nested run finishes; the parent turn's `done` later
+    // folds the same number into the final segment's remainder
+    // and clears the running delta. While the turn is in flight
+    // this is the only place the subagent cost is reflected, so
+    // the head "Total" pill stays current.
+    if (liveInfo.liveCost && liveInfo.liveCost.known && typeof liveInfo.liveCost.total === 'number' && liveInfo.liveCost.total > 0) {
+      totalCost += liveInfo.liveCost.total;
+      hasKnownCost = true;
+    }
   }
   el.innerHTML = '';
   // Each value is rendered as a pill (label + number) so the head

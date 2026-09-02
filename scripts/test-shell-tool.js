@@ -250,6 +250,70 @@ async function main() {
   check('subagent completion usage added to final done', subagentDone && subagentDone.data.usage.completionTokens === 35, JSON.stringify(subagentDone && subagentDone.data));
   check('subagent provider cost added to final done', subagentDone && subagentDone.data.providerCost === 0.0033, JSON.stringify(subagentDone && subagentDone.data));
   check('streamChat result includes subagent usage', subagentResult.usage.promptTokens === 230 && subagentResult.usage.completionTokens === 35, JSON.stringify(subagentResult.usage));
+  // Mid-turn: each subagent call must surface its cost on the SSE
+  // stream as soon as the nested run finishes, so the chat's
+  // "Total" pill grows in real time. The parent's `done` event
+  // still carries the aggregated remainder (turnCost + delegated
+  // − persistedSegments) for persistence; the per-call `usage_update`
+  // is only for the live UI.
+  const subagentUsageUpdates = subagentEvents.filter((e) => e.name === 'usage_update' && e.data && e.data.source === 'subagent');
+  check('subagent cost surfaces as usage_update mid-turn', subagentUsageUpdates.length === 1, JSON.stringify(subagentUsageUpdates.map((e) => e.data)));
+  check('subagent usage_update cost matches delegated cost', subagentUsageUpdates[0] && Math.abs(subagentUsageUpdates[0].data.cost.total - 0.0003) < 1e-9, JSON.stringify(subagentUsageUpdates[0] && subagentUsageUpdates[0].data));
+  check('subagent usage_update is known USD', subagentUsageUpdates[0] && subagentUsageUpdates[0].data.cost.known === true && subagentUsageUpdates[0].data.cost.currency === 'USD', JSON.stringify(subagentUsageUpdates[0] && subagentUsageUpdates[0].data));
+  // Order: usage_update must arrive BEFORE the parent's `done` so
+  // the live running total reflects the subagent's cost before the
+  // final segment persists.
+  const usageUpdateIdx = subagentEvents.findIndex((e) => e.name === 'usage_update');
+  const doneIdx = subagentEvents.findIndex((e) => e.name === 'done');
+  check('subagent usage_update fires before parent done', usageUpdateIdx >= 0 && doneIdx > usageUpdateIdx, 'usage_update idx=' + usageUpdateIdx + ', done idx=' + doneIdx);
+
+  // ---- Part 3b: parallel subagent fan-out accumulates live cost ------
+  // When the model emits multiple subagent calls in one turn the
+  // parent dispatcher runs them concurrently; each one must
+  // surface its own cost on the SSE stream so the running total
+  // grows in lockstep with the cards, not in one jump on `done`.
+  let fanRequests = 0;
+  const serverFan = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      fanRequests++;
+      if (fanRequests === 1) {
+        sse(res, [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_sub_a', function: { name: 'subagent', arguments: JSON.stringify({ task: 'a' }) } }, { index: 1, id: 'call_sub_b', function: { name: 'subagent', arguments: JSON.stringify({ task: 'b' }) } }] }, index: 0 }] },
+          { choices: [{ finish_reason: 'tool_calls' }] }
+        ]);
+      } else if (fanRequests >= 2 && fanRequests <= 3) {
+        sse(res, [
+          { choices: [{ delta: { content: 'Nested ' + fanRequests + '.' } }] },
+          { choices: [{ finish_reason: 'stop' }] },
+          { usage: { prompt_tokens: 30, completion_tokens: 5, cost: 0.0004 } }
+        ]);
+      } else {
+        sse(res, [
+          { choices: [{ delta: { content: 'Parent final.' } }] },
+          { choices: [{ finish_reason: 'stop' }] },
+          { usage: { prompt_tokens: 200, completion_tokens: 20, cost: 0.002 } }
+        ]);
+      }
+    });
+  });
+  await new Promise((resolve) => serverFan.listen(0, '127.0.0.1', resolve));
+  const fanEvents = [];
+  const fanResult = await ai.streamChat({
+    model: Object.assign({}, model, { baseUrl: 'http://127.0.0.1:' + serverFan.address().port }),
+    messages: [{ role: 'user', content: 'delegate two' }],
+    projectDir,
+    chatId,
+    onEvent: (name, data) => fanEvents.push({ name, data })
+  });
+  serverFan.close();
+  const fanUsageUpdates = fanEvents.filter((e) => e.name === 'usage_update' && e.data && e.data.source === 'subagent');
+  check('parallel subagent fan-out: one usage_update per nested run', fanUsageUpdates.length === 2, JSON.stringify(fanUsageUpdates.map((e) => e.data && e.data.cost && e.data.cost.total)));
+  const fanTotal = fanUsageUpdates.reduce((sum, e) => sum + (e.data.cost.total || 0), 0);
+  check('parallel subagent fan-out: running cost sum equals 0.0008', Math.abs(fanTotal - 0.0008) < 1e-9, 'got ' + fanTotal);
+  const fanDone = fanEvents.find((e) => e.name === 'done');
+  check('parallel subagent fan-out: final done cost covers parent + delegated', fanDone && Math.abs(fanDone.data.providerCost - 0.0028) < 1e-9, JSON.stringify(fanDone && fanDone.data.providerCost));
 
   // ---- Part 4: retry an empty response after a tool result ------------
   let emptyReplyRequests = 0;

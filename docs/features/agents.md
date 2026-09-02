@@ -69,6 +69,10 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 { "ok": false, "error": { "code": "EUNKNOWN_AGENT", "message": "Unknown agent \"reviewr\"", "available": ["reviewer"] } }
 ```
 
+## Cost and usage
+
+Nested agent runs are billed on the agent's pinned model (or the chat's model, when none is pinned) and added to the parent chat's running total. As soon as the nested run finishes, the streaming layer emits a `usage_update` SSE event so the chat header's "Total" pill grows in real time; the parent's `done` event later folds the same number into the final segment's remainder. Re-opening the chat shows the same total as a sum of the persisted assistant messages' `cost` fields. See [usage-metrics.md](./usage-metrics.md).
+
 ## Related
 
 - [Custom prompts](./custom-prompts.md) — the chat-level persona mechanism.
