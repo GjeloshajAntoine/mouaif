@@ -200,7 +200,7 @@ role: 'menuitem',
 type: 'button',
 onClick: () => handleCustomAction(action)
 },
-h('span', { class: 'file-toolbar__menu-icon' }, action.kind === 'mcp' ? 'M' : '\u203A_'),
+h('span', { class: 'file-toolbar__menu-icon', 'aria-hidden': 'true' }),
 h('span', null, action.label || action.id)
 )
 )
