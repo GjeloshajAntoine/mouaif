@@ -33,7 +33,7 @@ import {
   renderWriteFileToolResult
 } from './toolRender.js';
 import { renderUsageMeta } from './usage.js';
-
+import { isPersistedTurnError, retryPayloadForError } from './retry.js';
 // renderSystemPromptMessage(refs, systemPrompt)
 //
 // Render (or refresh) the system prompt as the FIRST message of the
@@ -342,8 +342,8 @@ export function appendReasoningToLive(delta, refs, state) {
 // markup and must never be injected as HTML.
 //
 // `opts.onRetry` optionally attaches a tap target to the card that
-// re-sends the failed user turn. Live pre-stream failures pass it in;
-// persisted error bubbles (rebuilt from disk) don't.
+// re-sends the failed user turn. `opts.persist: false` renders a row that
+// is already present in state.messages without appending it a second time.
 export function appendErrorCard(message, refs, state, opts) {
 if (!refs.transcript.current) return;
 const empty = refs.transcript.current.querySelector('.chat-view__empty');
@@ -357,7 +357,7 @@ role.className = 'chat-msg__role';
 role.textContent = 'error';
 const ts = document.createElement('span');
 ts.className = 'chat-msg__ts';
-ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+ts.textContent = new Date((opts && opts.ts) || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 head.appendChild(role);
 head.appendChild(ts);
 const body = document.createElement('div');
@@ -376,8 +376,10 @@ retry.addEventListener('click', () => opts.onRetry());
 actions.appendChild(retry);
 row.appendChild(actions);
 }
-refs.transcript.current.appendChild(row);
-if (state) state.messages = state.messages.concat([{ role: 'system', content: message, ts: new Date().toISOString() }]);
+transcriptInsert(refs, row);
+if (state && (!opts || opts.persist !== false)) {
+state.messages = state.messages.concat([{ role: 'system', content: message, ts: new Date().toISOString() }]);
+}
 afterTranscriptAppend(refs, true);
 }
 
@@ -1223,10 +1225,19 @@ function renderMessageRow(state, refs, m) {
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
 } else if (m.role === 'tool' && m.phase === 'result') {
-  appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs, true);
+appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs, true);
+} else if (isPersistedTurnError(m)) {
+const payload = retryPayloadForError(state.messages, m);
+appendErrorCard(m.content, refs, state, {
+persist: false,
+ts: m.ts,
+onRetry: payload && typeof state._retryFailedTurn === 'function'
+? () => state._retryFailedTurn(payload)
+: null
+});
 } else {
-    appendMessageToTranscript(m, false, refs, state);
-  }
+appendMessageToTranscript(m, false, refs, state);
+}
 }
 
 // isRenderableMessage(m) -> bool

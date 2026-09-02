@@ -40,7 +40,7 @@ import { mountOverlayCard } from './overlay.js';
 // recovery first (a mid-stream failure may have handed the turn to the
 // reconnect poller) and clears the streaming latch so `send` is allowed
 // to start.
-function retryFailedTurn(state, refs, payload) {
+export function retryFailedTurn(state, refs, payload) {
   if (state.reconnect && state.reconnect.active) stopStreamRecovery(state);
   state.streaming = false;
   state.watchingRun = false;

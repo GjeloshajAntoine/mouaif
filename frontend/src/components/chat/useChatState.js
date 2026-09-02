@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
@@ -528,6 +528,7 @@ recent: loadRecent(state)
     updateSwitch(activeProfileId(state), refs);
   }, []);
   state._renderTranscript = renderTranscriptBound;
+  state._retryFailedTurn = (payload) => retryFailedTurn(state, refs, payload);
   state._updateSetupVisibility = () => updateSetupVisibility(state, refs);
   state._toggleTool = onToggleTool;
   state._toggleToolGroup = onToggleToolGroup;

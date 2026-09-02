@@ -38,8 +38,9 @@ or an HTTP rejection other than an already-running `409`).
   guard.
 - `frontend/src/components/chat/transcript.js` renders the error card's
   **Retry** button via an optional `onRetry` argument to
-  `appendErrorCard`. Persisted error bubbles reload without a button,
-  which is fine because the user can still resend from the composer.
+  `appendErrorCard`. When a persisted error bubble is restored, the UI
+  rebuilds the retry payload from the preceding user turn, so retry stays
+  available after navigating away from the chat or reloading the app.
 - The setting is persisted as a `chat_store.auto_retry` column
   (`src/chatdb.js`) and read as `chat.autoRetry` in
   `frontend/src/components/chat/useChatState.js`, falling back to the
