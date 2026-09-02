@@ -30,7 +30,7 @@ On Chrome (desktop and Android), the browser may show an "Install" icon in the U
 Once installed:
 
 - Launching the shortcut opens `http://127.0.0.1:5732/` in a standalone window (no URL bar, no navigation chrome).
-- The standing screen icon is the full **mouaif** wordmark on the blue gradient, rendered in the same ink as the in-app logo.
+- The standing screen icon is the lowercase **mouaif** wordmark on the blue gradient, rendered in the same ink as the in-app logo. It is a vector-style stroke mark (round-capped strokes, anti-aliased), not the older blocky pixel font. The 32px favicon, where six letters cannot fit legibly, falls back to the single bold **m** used by the in-app logo.
 - A first launch with the server reachable primes the cache so a later offline launch still renders the shell.
 
 ## Migration from the old `/web/` install

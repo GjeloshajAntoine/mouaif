@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { readdirSync } from 'node:fs';
 import cssnano from 'cssnano';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,14 @@ function mouaifServiceWorkerPlugin() {
       const names = Object.keys(bundle || {})
         .filter((n) => /\.(js|css)$/.test(n))
         .sort();
-      const payload = src + '\n' + names.join('\n');
+      // Include the precached shell PNGs in the hash. They are cached under
+      // stable filenames, so an icon-only change would otherwise leave the
+      // cache version identical and old clients would keep serving the stale
+      // launcher icon from the previous cache.
+      const iconNames = readdirSync(resolve(__dirname, 'public', 'icons'))
+        .filter((n) => /\.png$/.test(n))
+        .sort();
+      const payload = src + '\n' + names.join('\n') + '\n' + iconNames.join('\n');
       const hash = createHash('sha256').update(payload).digest('hex').slice(0, 8);
       const body = src.replace('__CACHE_VERSION__', hash);
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: body });
