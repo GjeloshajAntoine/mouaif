@@ -13,6 +13,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Custom actions](features/custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the Tools popup.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a web URL from project settings.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers with a mounted example project.
+- [Retry and auto-retry](features/retry-and-auto-retry.md) — retry failed turns from their error card, or let the app retry once automatically.
 
 ## Build the documentation
 

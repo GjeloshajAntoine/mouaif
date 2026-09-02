@@ -188,6 +188,20 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+.chat-msg--system.is-error .chat-msg__actions {
+  padding: 0 4px 4px;
+}
+.chat-msg--system.is-error .chat-msg__retry {
+  min-height: 32px;
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: transparent;
+}
+.chat-msg--system.is-error .chat-msg__retry:hover,
+.chat-msg--system.is-error .chat-msg__retry:active {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
 
 /* ---- Per-turn usage meta ----------------------------------------- */
 

@@ -62,10 +62,14 @@ const DEFAULTS = Object.freeze({
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
   promptSize: 'average',
-  // Composer keyboard default: when true, Enter inserts a newline and the
-  // send button / Cmd+Ctrl+Enter sends. When false, Enter sends and
-  // Shift+Enter inserts a newline. App-level; a project may override it.
-  enterForNewline: true,
+// Composer keyboard default: when true, Enter inserts a newline and the
+// send button / Cmd+Ctrl+Enter sends. When false, Enter sends and
+// Shift+Enter inserts a newline. App-level; a project may override it.
+enterForNewline: true,
+// Auto-retry failed turns. When true, the web client transparently
+// re-sends a user message once if the request fails before a stream
+// starts (network error or an HTTP rejection other than 409).
+autoRetry: true,
   // App-level custom prompts. Empty by default.
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`

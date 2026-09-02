@@ -331,7 +331,7 @@ export function appendReasoningToLive(delta, refs, state) {
   }
 }
 
-// appendErrorCard(message, refs, state)
+// appendErrorCard(message, refs, state, opts)
 //
 // Render a failed turn as an inline error bubble (system role with
 // an `is-error` flag for styling). Used for SSE `error` events and
@@ -340,30 +340,45 @@ export function appendReasoningToLive(delta, refs, state) {
 // line, which is easy to miss and gets overwritten by the next
 // status update. textContent only: provider error bodies may carry
 // markup and must never be injected as HTML.
-export function appendErrorCard(message, refs, state) {
-  if (!refs.transcript.current) return;
-  const empty = refs.transcript.current.querySelector('.chat-view__empty');
-  if (empty) empty.remove();
-  const row = document.createElement('div');
-  row.className = 'chat-msg chat-msg--system is-error';
-  const head = document.createElement('div');
-  head.className = 'chat-msg__head';
-  const role = document.createElement('div');
-  role.className = 'chat-msg__role';
-  role.textContent = 'error';
-  const ts = document.createElement('span');
-  ts.className = 'chat-msg__ts';
-  ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  head.appendChild(role);
-  head.appendChild(ts);
-  const body = document.createElement('div');
-  body.className = 'chat-msg__body';
-  body.textContent = message;
-  row.appendChild(head);
-  row.appendChild(body);
-  refs.transcript.current.appendChild(row);
-  if (state) state.messages = state.messages.concat([{ role: 'system', content: message, ts: new Date().toISOString() }]);
-  afterTranscriptAppend(refs, true);
+//
+// `opts.onRetry` optionally attaches a tap target to the card that
+// re-sends the failed user turn. Live pre-stream failures pass it in;
+// persisted error bubbles (rebuilt from disk) don't.
+export function appendErrorCard(message, refs, state, opts) {
+if (!refs.transcript.current) return;
+const empty = refs.transcript.current.querySelector('.chat-view__empty');
+if (empty) empty.remove();
+const row = document.createElement('div');
+row.className = 'chat-msg chat-msg--system is-error';
+const head = document.createElement('div');
+head.className = 'chat-msg__head';
+const role = document.createElement('div');
+role.className = 'chat-msg__role';
+role.textContent = 'error';
+const ts = document.createElement('span');
+ts.className = 'chat-msg__ts';
+ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+head.appendChild(role);
+head.appendChild(ts);
+const body = document.createElement('div');
+body.className = 'chat-msg__body';
+body.textContent = message;
+row.appendChild(head);
+row.appendChild(body);
+if (opts && typeof opts.onRetry === 'function') {
+const actions = document.createElement('div');
+actions.className = 'chat-msg__actions';
+const retry = document.createElement('button');
+retry.className = 'btn btn--small chat-msg__retry';
+retry.type = 'button';
+retry.textContent = 'Retry';
+retry.addEventListener('click', () => opts.onRetry());
+actions.appendChild(retry);
+row.appendChild(actions);
+}
+refs.transcript.current.appendChild(row);
+if (state) state.messages = state.messages.concat([{ role: 'system', content: message, ts: new Date().toISOString() }]);
+afterTranscriptAppend(refs, true);
 }
 
 // TOOL_VERBS — verb-style labels for the built-in tools, shown in

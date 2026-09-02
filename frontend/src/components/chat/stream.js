@@ -31,6 +31,35 @@ import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
 import { mountOverlayCard } from './overlay.js';
 
+// retryFailedTurn(state, refs, payload)
+//
+// Re-send a failed model turn. Taps into `send` with `retry` +
+// `manualRetry` flags so the failed output stays in the transcript and
+// the retry posts a fresh user turn. Stops any in-flight stream
+// recovery first (a mid-stream failure may have handed the turn to the
+// reconnect poller) and clears the streaming latch so `send` is allowed
+// to start.
+function retryFailedTurn(state, refs, payload) {
+  if (state.reconnect && state.reconnect.active) stopStreamRecovery(state);
+  state.streaming = false;
+  state.watchingRun = false;
+  if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+  return send(state, refs, Object.assign({ retry: true, manualRetry: true }, payload || {}));
+}
+
+// maybeAutoRetry(state, refs, payload)
+//
+// One-shot transparent retry for a turn that failed before the stream
+// started (network error or a non-409 HTTP rejection). Honors the
+// per-chat `autoRetry` setting and never fires for a retry itself, so a
+// persistently failing message can't loop forever.
+function maybeAutoRetry(state, refs, payload) {
+  if (!state.autoRetry || (payload && payload.retry)) return false;
+  setChatStatus(refs, 'auto-retrying…', 'busy');
+  send(state, refs, Object.assign({}, payload, { retry: true, manualRetry: false })).catch(() => {});
+  return true;
+}
+
 // markToolUsed(state, refs, toolName)
 //
 // Record that a tool was called in this chat session. Two effects:
@@ -440,8 +469,15 @@ export async function cancelRunningChat(state, refs) {
 //
 // Send a user turn. The model picker is the source of truth (not a
 // <select> value) — the chat record carries { providerId, modelId }.
-export async function send(state, refs, { content, attachments, clearComposerDraft, setImageAttachments }) {
-  const { projectDir, chatId } = state.props;
+//
+// `options.retry` marks a re-run of a failed turn: the user message is
+// posted fresh (not echoed back into the composer) but no duplicate
+// optimistic bubble is appended. `options.manualRetry` is a user tap on
+// the error card's Retry button — it bypasses the one-shot auto-retry
+// guard so the user can retry as many times as they like.
+export async function send(state, refs, options) {
+const { content, attachments, clearComposerDraft, setImageAttachments, retry, manualRetry } = options || {};
+const { projectDir, chatId } = state.props;
   if (!projectDir || !chatId) return;
   const c = state.chat || {};
   const modelId = c.modelId || '';
@@ -537,20 +573,23 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
 
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-  setChatStatus(refs, 'streaming…', 'busy');
-  if (refs.promptInput.current) refs.promptInput.current.value = '';
-  await clearComposerDraft();
-  setImageAttachments([]);
-  if (refs.imageInput.current) refs.imageInput.current.value = '';
-  refs._autoresize();
-
-  const userMsg = { role: 'user', content: text, attachments: atts, ts: new Date().toISOString() };
-  state.messages = state.messages.concat([userMsg]);
-  appendMessageToTranscript(userMsg, false, refs, state);
-  // The first message ends the creation phase: remove the
-  // prompt-size setup control for good (the prompt size is now
-  // fixed).
-  if (state._updateSetupVisibility) state._updateSetupVisibility();
+setChatStatus(refs, 'streaming…', 'busy');
+if (!retry) {
+if (refs.promptInput.current) refs.promptInput.current.value = '';
+if (clearComposerDraft) await clearComposerDraft();
+if (setImageAttachments) setImageAttachments([]);
+if (refs.imageInput.current) refs.imageInput.current.value = '';
+refs._autoresize();
+}
+const userMsg = retry ? null : { role: 'user', content: text, attachments: atts, ts: new Date().toISOString() };
+if (!retry) {
+state.messages = state.messages.concat([userMsg]);
+appendMessageToTranscript(userMsg, false, refs, state);
+// The first message ends the creation phase: remove the
+// prompt-size setup control for good (the prompt size is now
+// fixed).
+if (state._updateSetupVisibility) state._updateSetupVisibility();
+}
 
   // Live per-turn counter. The chat UI runs this on every message AND
   // reasoning delta (thinking tokens count toward the upstream's
@@ -577,11 +616,14 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
       body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
     });
   } catch (err) {
+    const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
+    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
     setChatStatus(refs, 'network error', 'error');
-    appendErrorCard('Network error — could not reach the server. Your message was sent to the transcript but the response never started. Try again.', refs, state);
+    appendErrorCard(failMsg + ' Try again.', refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    maybeAutoRetry(state, refs, payload);
     return;
   }
   if (!resp.ok) {
@@ -590,13 +632,20 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
     let errMsg = 'HTTP ' + resp.status;
     try { const j = JSON.parse(errText); if (j && j.error) errMsg = j.error; } catch { /* not JSON */ }
     if (resp.status === 409) {
-      // Another client (tab/device) is already streaming this chat and
-      // the server rejected BEFORE persisting the user message. Undo the
-      // optimistic append and put the text + attachments back in the
-      // composer so the message is never lost — without this the next
-      // reconcileRunningChat tick rebuilds the transcript from disk and
-      // the bubble silently disappears.
-      state.messages = state.messages.filter((m) => m !== userMsg);
+if (retry) {
+setChatStatus(refs, 'a response is already streaming — retry later', 'busy');
+state.streaming = false;
+if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+return;
+}
+// Another client (tab/device) is already streaming this chat and
+// the server rejected BEFORE persisting the user message. Undo the
+// optimistic append and put the text + attachments back in the
+// composer so the message is never lost — without this the next
+// reconcileRunningChat tick rebuilds the transcript from disk and
+// the bubble silently disappears.
+state.messages = state.messages.filter((m) => m !== userMsg);
       // Rolling back the first message leaves state.messages empty, so
       // this rebuild also restores the creation-time setup card that
       // send() removed above (renderTranscript mounts it on empty).
@@ -615,10 +664,12 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
       return;
     }
     setChatStatus(refs, errMsg, 'error');
-    appendErrorCard(errMsg, refs, state);
+    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+    appendErrorCard(errMsg, refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    maybeAutoRetry(state, refs, payload);
     return;
   }
   const reader = resp.body.getReader();
@@ -883,19 +934,22 @@ if (customAction && !rest) return runCustomAction(customAction, state, refs);
         ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100) + '%'
         : (data.status || 'running');
       setChatStatus(refs, data.title + ' ' + pct, 'busy');
-    } else if (ev.eventName === 'error') {
-      streamFailed = true;
-      // Clear the per-round counters so a subsequent turn does not
-      // inherit stale tokens from the failed exchange.
-      roundPromptTokens = 0;
-      roundCompletionTokens = 0;
-      // Show the failure IN the transcript, not only in the status
-      // pill: the user asked for errors to be visible in the chat,
-      // and a status line is overwritten by the next update while
-      // the bubble stays where the conversation happened.
-      appendErrorCard((data.message || 'Request failed') + (data.detail ? '\n' + String(data.detail).slice(0, 500) : ''), refs, state);
-      setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
-    }
+} else if (ev.eventName === 'error') {
+streamFailed = true;
+// Clear the per-round counters so a subsequent turn does not
+// inherit stale tokens from the failed exchange.
+roundPromptTokens = 0;
+roundCompletionTokens = 0;
+// Show the failure IN the transcript, not only in the status
+// pill: the user asked for errors to be visible in the chat,
+// and a status line is overwritten by the next update while
+// the bubble stays where the conversation happened.
+const failPayload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+appendErrorCard((data.message || 'Request failed') + (data.detail ? '\n' + String(data.detail).slice(0, 500) : ''), refs, state, {
+onRetry: () => retryFailedTurn(state, refs, failPayload)
+});
+setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
+}
   }
   try {
     for (;;) {

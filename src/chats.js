@@ -70,6 +70,8 @@ promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptS
 thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
 maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
 promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.promptId : null,
+skills: opts && typeof opts.skills === 'boolean' ? opts.skills : undefined,
+autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefined,
 tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
 return getChatDb().createChat(projectDir, chat);
@@ -120,6 +122,9 @@ if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
 dbPatch.skills = (patch.skills === null || patch.skills === undefined)
 ? undefined
 : patch.skills === true;
+}
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'autoRetry')) {
+dbPatch.autoRetry = patch.autoRetry === true;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'lastOpenedAt')) {
 dbPatch.lastOpenedAt = patch.lastOpenedAt;

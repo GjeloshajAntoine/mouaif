@@ -171,10 +171,13 @@ const nextLiveSeq = useRef(0);
   const thinkingLevelRef = useRef('');
   // Track the current per-chat max output tokens (empty = provider default).
   const maxOutputTokensRef = useRef('');
-  // Composer keyboard default (app-level Chat defaults). When true, Enter
-  // inserts a newline; Ctrl/Cmd+Enter sends. Ref-backed so the hot-path
-  // key handler reads the live value without re-rendering.
-  const enterForNewlineRef = useRef(true);
+// Composer keyboard default (app-level Chat defaults). When true, Enter
+// inserts a newline; Ctrl/Cmd+Enter sends. Ref-backed so the hot-path
+// key handler reads the live value without re-rendering.
+const enterForNewlineRef = useRef(true);
+// App-level "auto-retry failed sends" default (on by default). Read
+// on the send hot path so failed turns can re-run without a render.
+const autoRetryRef = useRef(true);
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -302,11 +305,13 @@ const kickPoll = useRef(null);
       set thinkingLevel(v) { thinkingLevelRef.current = v; },
       get maxOutputTokens() { return maxOutputTokensRef.current; },
       set maxOutputTokens(v) { maxOutputTokensRef.current = v; },
-      get enterForNewline() { return enterForNewlineRef.current; },
-      set enterForNewline(v) { enterForNewlineRef.current = !!v; }
-    };
-  }
-  const state = stateRef.current;
+get enterForNewline() { return enterForNewlineRef.current; },
+set enterForNewline(v) { enterForNewlineRef.current = !!v; },
+get autoRetry() { return autoRetryRef.current; },
+set autoRetry(v) { autoRetryRef.current = !!v; }
+};
+}
+const state = stateRef.current;
   state.props = { projectDir, chatId };
 state.customActions = customActions;
 
@@ -644,8 +649,11 @@ loadApp({ force: true }).catch(() => null)
         // Composer keyboard default comes from the app-level Chat defaults
         // setting (default true = Enter inserts a newline). Falls back to true
         // when the app settings fetch failed or the key is absent.
-        const appSettings = (app && app.app) || {};
-        state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSettings.enterForNewline : true;
+const appSettings = (app && app.app) || {};
+state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSettings.enterForNewline : true;
+state.autoRetry = typeof c.autoRetry === 'boolean'
+? c.autoRetry
+: (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
         persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
         messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
         // Seed the seen-set from the freshly loaded transcript so the
@@ -968,7 +976,7 @@ setRunningVisible(false);
   }, [projectDir, chatId]);
 
   useEffect(() => { usedTools.current = new Set(); }, [chatId]);
-  // seq is chat-scoped; reset the seen-set with the chat so a stale
+// seq is chat-scoped; reset the seen-set with the chat so a stale
   // seq from a previous chat can never suppress a load.
   useEffect(() => { seenSeqs.current = new Set(); }, [chatId]);
   // Scroll pinning is per-chat. ChatView is reused across chat
@@ -1142,8 +1150,12 @@ updateChat: updateChatBound,
     },
     onRemoveImage: (idx) => removeImageAttachment(idx, setImageAttachments, updateChatBound),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
-    onCancelRunning,
-    onBack: () => { window.location.hash = '#/projects'; },
+onCancelRunning,
+onToggleAutoRetry: () => {
+state.autoRetry = !state.autoRetry;
+updateChatBound({ autoRetry: state.autoRetry });
+},
+onBack: () => { window.location.hash = '#/projects'; },
     // ---- Chat switcher -------------------------------------------
     chatSwitcherOpen,
     setChatSwitcherOpen,

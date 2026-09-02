@@ -161,7 +161,8 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'models',         // user-defined models
   'projects',       // registered project cards
   'promptSize',     // default prompt-size profile
-  'enterForNewline', // composer keyboard default (Enter newline vs send)
+'enterForNewline', // composer keyboard default (Enter newline vs send)
+'autoRetry',      // auto-retry failed turns before the stream starts
   'prompts',        // app-level custom prompts
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table

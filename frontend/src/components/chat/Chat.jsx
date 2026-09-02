@@ -32,7 +32,7 @@ setFileEditorOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, onJumpToBottom, onCancelRunning, onBack,
+    onRemoveImage, onJumpToBottom, onCancelRunning, onBack, onToggleAutoRetry,
 onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions
 } = s;
 
@@ -258,10 +258,12 @@ setPreviewPromptOpen(false);
           h(ToolPopup, {
             tools: s.state.tools,
             mcpServers: s.state.mcpServers,
-            usedTools: s.state.usedTools,
-            agentFiles: s.state.agentFiles,
-            skills: s.state.skills,
-            toolAuth: s.state.toolAuth,
+usedTools: s.state.usedTools,
+agentFiles: s.state.agentFiles,
+skills: s.state.skills,
+autoRetry: s.state.autoRetry,
+onToggleAutoRetry,
+toolAuth: s.state.toolAuth,
 mcpAuth: s.state.mcpAuth,
 onToggleTool: s.state._toggleTool,
             onToggleToolGroup: s.state._toggleToolGroup,

@@ -5,6 +5,7 @@ import { loadApp, saveApp } from '../api.js';
 export function SettingsDefaultsView() {
 const [promptSize, setPromptSize] = useState('average');
 const [enterForNewline, setEnterForNewline] = useState(true);
+const [autoRetry, setAutoRetry] = useState(true);
 const [isSaving, setIsSaving] = useState(false);
 const [status, setStatusObj] = useState({ message: '', type: '' });
 async function load() {
@@ -12,13 +13,14 @@ try {
 const app = await loadApp({ force: true });
 setPromptSize((app.app && app.app.promptSize) || 'average');
 setEnterForNewline(app.app && typeof app.app.enterForNewline === 'boolean' ? app.app.enterForNewline : true);
+setAutoRetry(app.app && typeof app.app.autoRetry === 'boolean' ? app.app.autoRetry : true);
 } catch (e) { setStatusObj({ message: 'load failed: ' + e.message, type: 'error' }); }
 }
 async function save() {
 setIsSaving(true);
 setStatusObj({ message: 'saving…', type: 'busy' });
 try {
-await saveApp({ promptSize, enterForNewline });
+await saveApp({ promptSize, enterForNewline, autoRetry });
 setStatusObj({ message: 'saved.', type: 'success' });
 } catch (e) { setStatusObj({ message: 'save failed: ' + e.message, type: 'error' }); }
 setIsSaving(false);
@@ -57,6 +59,23 @@ h('span', { class: 'switch__thumb' })
 h('label', { class: 'label', for: 'sd-enter-newline' }, 'Enter inserts a newline instead of sending')
 ),
 h('p', { class: 'hint hint--compact' }, 'When on, Enter adds a new line and you send with the send button or Ctrl/Cmd+Enter. Turn it off to send with Enter (Shift+Enter for a new line).'),
+h('div', { class: 'row row--inline' },
+h('label', { class: 'switch' },
+h('input', {
+id: 'sd-auto-retry',
+type: 'checkbox',
+role: 'switch',
+'aria-checked': String(autoRetry),
+checked: autoRetry,
+onChange: (e) => setAutoRetry(e.currentTarget.checked)
+}),
+h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+h('span', { class: 'switch__thumb' })
+)
+),
+h('label', { class: 'label', for: 'sd-auto-retry' }, 'Auto-retry failed sends')
+),
+h('p', { class: 'hint hint--compact' }, 'When a message fails before a response starts (network error or HTTP rejection), automatically resend it once. You can still retry any failed message from its inline error card.'),
 h('p', { class: 'hint hint--compact' }, 'Chats and messages are stored in the app database. To keep a chat history you can commit, turn on tracing for that chat in project settings — it writes a project-local trace file you can add to source control.'),
 h('div', { class: 'row row--actions' },
 h('button', { class: 'btn btn--primary', type: 'button', onClick: save, disabled: isSaving }, 'Save'),

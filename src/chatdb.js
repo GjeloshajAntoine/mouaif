@@ -33,13 +33,14 @@ const CREATE_CHAT_TABLE = `
     draft         TEXT NOT NULL DEFAULT '',
     draft_attachments TEXT,
     tools         TEXT,
-    agent_id      TEXT,
-    agent_files   INTEGER,
-    skills        INTEGER,
-    total_cost    REAL NOT NULL DEFAULT 0,
-    cost_known_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (project_dir, id)
-  )
+agent_id      TEXT,
+agent_files   INTEGER,
+skills        INTEGER,
+auto_retry    INTEGER NOT NULL DEFAULT 1,
+total_cost    REAL NOT NULL DEFAULT 0,
+cost_known_count INTEGER NOT NULL DEFAULT 0,
+PRIMARY KEY (project_dir, id)
+)
 `;
 
 const CREATE_MESSAGE_TABLE = `
@@ -89,6 +90,9 @@ d.exec('ALTER TABLE chat_store ADD COLUMN total_cost REAL NOT NULL DEFAULT 0');
 if (!chatColumns.some((column) => column.name === 'cost_known_count')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN cost_known_count INTEGER NOT NULL DEFAULT 0');
 }
+if (!chatColumns.some((column) => column.name === 'auto_retry')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN auto_retry INTEGER NOT NULL DEFAULT 1');
+}
 d.exec(INDEX_SQL);
 }
 
@@ -110,8 +114,9 @@ function rowToChat(row) {
     maxOutputTokens: row.max_output_tokens || '',
     draft: row.draft || '',
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
-    skills: row.skills === null ? undefined : (row.skills === 1),
-    totalCost: {
+skills: row.skills === null ? undefined : (row.skills === 1),
+autoRetry: row.auto_retry !== 0,
+totalCost: {
       total: typeof row.total_cost === 'number' ? row.total_cost : 0,
       known: typeof row.cost_known_count === 'number' && row.cost_known_count > 0,
       currency: 'USD',
@@ -155,9 +160,10 @@ function chatToRow(projectDir, chat) {
     // agent_id is a legacy column from the removed chat-persona design.
     // It stays in the schema for old DBs but is always written as null.
     agent_id: null,
-    agent_files: chat.agentFiles === undefined ? null : (chat.agentFiles ? 1 : 0),
-    skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
-    total_cost: chat.totalCost && typeof chat.totalCost.total === 'number' ? chat.totalCost.total : 0,
+agent_files: chat.agentFiles === undefined ? null : (chat.agentFiles ? 1 : 0),
+skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
+auto_retry: chat.autoRetry === undefined ? 1 : (chat.autoRetry ? 1 : 0),
+total_cost: chat.totalCost && typeof chat.totalCost.total === 'number' ? chat.totalCost.total : 0,
     cost_known_count: chat.totalCost && chat.totalCost.known
       ? (Number.isInteger(chat.totalCost.knownCount) ? chat.totalCost.knownCount : 1)
       : 0
@@ -250,13 +256,13 @@ function createChat(projectDir, chat) {
   const d = require('./settings.js').getDb();
   const row = chatToRow(projectDir, chat);
   d.prepare(`
-    INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-      trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
-      agent_id, agent_files, skills, total_cost, cost_known_count)
-    VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-      @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
-      @agent_id, @agent_files, @skills, @total_cost, @cost_known_count)
-  `).run(row);
+INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
+trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
+agent_id, agent_files, skills, auto_retry, total_cost, cost_known_count)
+VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
+@trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
+@agent_id, @agent_files, @skills, @auto_retry, @total_cost, @cost_known_count)
+`).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
   ).get(projectDir, chat.id));
@@ -272,19 +278,19 @@ function updateChat(projectDir, chatId, patch) {
 
   const merged = Object.assign({}, rowToChat(existing), patch);
   const row = chatToRow(projectDir, merged);
-  d.prepare(`
-    UPDATE chat_store SET
-      title = @title, last_opened_at = @last_opened_at,
-      trace = @trace, prompt_size = @prompt_size,
-      prompt_id = @prompt_id, provider_id = @provider_id,
-      model_id = @model_id, thinking_level = @thinking_level,
-      max_output_tokens = @max_output_tokens,
-      draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
-      agent_id = @agent_id, agent_files = @agent_files,
-      skills = @skills, total_cost = @total_cost,
-      cost_known_count = @cost_known_count
-    WHERE project_dir = @project_dir AND id = @id
-  `).run(row);
+d.prepare(`
+UPDATE chat_store SET
+title = @title, last_opened_at = @last_opened_at,
+trace = @trace, prompt_size = @prompt_size,
+prompt_id = @prompt_id, provider_id = @provider_id,
+model_id = @model_id, thinking_level = @thinking_level,
+max_output_tokens = @max_output_tokens,
+draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
+agent_id = @agent_id, agent_files = @agent_files,
+skills = @skills, auto_retry = @auto_retry, total_cost = @total_cost,
+cost_known_count = @cost_known_count
+WHERE project_dir = @project_dir AND id = @id
+`).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
   ).get(projectDir, chatId));

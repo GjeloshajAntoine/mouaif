@@ -65,9 +65,10 @@ onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
     onToggleSkills,
-    onSaveToolAuth,
-    onSaveMcpAuth
-  } = props;
+onSaveToolAuth,
+onSaveMcpAuth,
+autoRetry
+} = props;
 
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
@@ -252,10 +253,23 @@ class: 'tool-popup__tree'
 })
 ),
         h('div', { class: 'tool-popup__foot' },
-          h('span', { class: 'tool-popup__foot-note' },
+h('label', { class: 'switch switch--sm' },
+h('input', {
+type: 'checkbox',
+role: 'switch',
+'aria-checked': String(!!autoRetry),
+checked: !!autoRetry,
+onChange: () => onToggleAutoRetry && onToggleAutoRetry()
+}),
+h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+h('span', { class: 'switch__thumb' })
+),
+h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
+),
+h('span', { class: 'tool-popup__foot-note' },
 'Actions run immediately. Tools marked \u25CF have been used in this chat.'
 )
-        )
+)
       )
     )
   );

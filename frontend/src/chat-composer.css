@@ -543,14 +543,34 @@ font: 700 0.65rem var(--font-mono);
 }
 
 .tool-popup__foot {
-  flex: 0 0 auto;
-  padding: 4px 10px;
-  border-top: 1px solid var(--border);
+flex: 0 0 auto;
+padding: 4px 10px;
+border-top: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+gap: 6px;
 }
-
 .tool-popup__foot-note {
-  font-size: 0.6rem;
-  color: var(--muted);
+font-size: 0.6rem;
+color: var(--muted);
+}
+.tool-popup__foot-label {
+font-size: 0.74rem;
+color: var(--fg-soft);
+}
+/* Compact auto-retry switch in the popup footer */
+.tool-popup .switch--sm {
+width: 34px;
+height: 20px;
+}
+.tool-popup .switch--sm .switch__thumb {
+width: 14px;
+height: 14px;
+top: 2px;
+left: 2px;
+}
+.tool-popup .switch--sm input[type="checkbox"]:checked + .switch__track .switch__thumb {
+transform: translateX(14px);
 }
 
 /* Segments inside the popup use a more compact style */
