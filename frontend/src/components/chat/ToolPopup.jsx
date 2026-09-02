@@ -1,6 +1,6 @@
 // mouaif web — Tool popup: floating popover to toggle available tools
 //
-// A small trigger button in the composer toolbar that opens a popup
+// A small trigger button in the chat top bar that opens a popup
 // with the same hierarchical tool tree shown in the transcript's
 // tools card. Changes are persisted immediately via the existing
 // toggleTool / toggleToolGroup / toggleAgentFiles
@@ -60,32 +60,41 @@ export function ToolPopup(props) {
     agentFiles,
     skills,
     toolAuth,
-mcpAuth,
-onToggleTool,
+    mcpAuth,
+    onToggleTool,
     onToggleToolGroup,
     onToggleAgentFiles,
     onToggleSkills,
-onSaveToolAuth,
-onSaveMcpAuth,
-autoRetry
-} = props;
-
+    onSaveToolAuth,
+    onSaveMcpAuth,
+    autoRetry,
+    onToggleAutoRetry
+  } = props;
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
-
   useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
 
-  // Calculate max height inline instead of via dom node mut.
-  const [maxHeight, setMaxHeight] = useState('auto');
+  // Anchor the fixed popover below the complete, wrapping chat header. Using
+  // only the trigger bottom makes the top-bar variant overlap the model row.
+  const [popupStyle, setPopupStyle] = useState({});
   const syncAvailableHeight = useCallback(() => {
     if (!triggerRef.current) return;
-    const triggerBottom = triggerRef.current.getBoundingClientRect().bottom;
-    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    const available = Math.max(80, Math.floor(vh - triggerBottom - 10));
-    setMaxHeight(available + 'px');
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const header = triggerRef.current.closest('.chat-view__head');
+    const headerRect = header && header.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportHeight = viewport ? viewport.height : window.innerHeight;
+    const viewportBottom = (viewport ? viewport.offsetTop : 0) + viewportHeight;
+    const anchorBottom = Math.max(triggerRect.bottom, headerRect ? headerRect.bottom : 0);
+    const available = Math.max(0, Math.floor(viewportBottom - anchorBottom - 10));
+    const maxHeight = Math.min(400, Math.floor(viewportHeight * 0.6), available);
+    setPopupStyle({
+      top: Math.floor(anchorBottom + 4) + 'px',
+      right: Math.max(10, Math.floor(window.innerWidth - triggerRect.right)) + 'px',
+      maxHeight: maxHeight + 'px'
+    });
   }, []);
-
   useVisualViewport(syncAvailableHeight, open);
 
   // Build the groups for the tool tree. Same logic as cards.js.
@@ -232,7 +241,7 @@ files: 'file'
         class: 'tool-popup__popup',
         role: 'dialog',
         'aria-label': 'Tool settings',
-        style: { maxHeight }
+        style: popupStyle
       },
         h('div', { class: 'tool-popup__head' },
           h('span', { class: 'tool-popup__title' }, 'Tools'),

@@ -441,17 +441,16 @@ pointer-events: none;
 }
 
 .tool-popup__popup {
-  position: absolute;
-  /* Open downward from the trigger (the trigger sits in the chat head
-     row near the top of the viewport), matching the model picker and
-     chat switcher popovers in the same head row. */
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
+  /* JS anchors this below the complete chat header so a wrapped model row
+     cannot be covered. These values are safe fallbacks for the first frame. */
+  top: calc(env(safe-area-inset-top) + 4rem);
+  right: 10px;
   left: auto;
   bottom: auto;
   min-width: 280px;
-  max-width: min(380px, 92vw);
-  max-height: min(var(--tool-popup-available-height, 60dvh), 60dvh, 400px);
+  max-width: min(380px, calc(100vw - 20px));
+  max-height: min(60dvh, 400px);
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
@@ -544,19 +543,16 @@ font: 700 0.65rem var(--font-mono);
 .tool-popup__action-label { overflow: hidden; font-size: 0.76rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .tool-popup__action-meta { color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem; }
 
-/* Keep the wrapper layout-neutral. The popup remains a compact, upward-opening
-   popover on mobile too; making this wrapper a fixed viewport layer previously
-   expanded it into a full-screen sheet and made its controls depend on a
-   fragile pointer-events override. */
+/* Keep the wrapper layout-neutral; only the popup itself is viewport-fixed. */
 .tool-popup__layer {
   display: contents;
 }
-
 @media (max-width: 480px) {
   .tool-popup__popup {
-    min-width: min(280px, calc(100vw - 20px));
-    max-width: calc(100vw - 20px);
-    max-height: min(var(--tool-popup-available-height, 60dvh), 60dvh, 400px);
+    width: calc(100vw - 20px);
+    min-width: 0;
+    max-width: none;
+    max-height: min(60dvh, 400px);
     pointer-events: auto;
     touch-action: pan-y;
   }
