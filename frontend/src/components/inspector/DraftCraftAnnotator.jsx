@@ -62,7 +62,7 @@ function distance(a, b) {
 return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose }) {
+export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose, onAnnotated, actionLabel = 'Add to chat draft' }) {
 const canvasRef = useRef(null);
 const stageRef = useRef(null);
 const wrapRef = useRef(null);
@@ -247,7 +247,7 @@ const label = markerLabel(index, markerStyle);
 return marker.text.trim() ? label + '. ' + marker.text.trim() : label + '.';
 });
 const context = ['Inspector image', pageTitle || '', pageUrl || '', note.trim(), markerNotes.length ? 'Annotations:\n' + markerNotes.join('\n') : ''].filter(Boolean).join('\n');
-setPayload({
+const nextPayload = {
 text: context,
 textLabel: markers.length ? markers.length + ' matched annotation' + (markers.length === 1 ? '' : 's') : 'Inspector context',
 image: {
@@ -256,7 +256,16 @@ mimeType: 'image/png',
 dataUrl: output.toDataURL('image/png'),
 name: 'draft-craft-inspector.png'
 }
-});
+};
+// When a composer callback is provided, hand the annotated image back
+// directly (replace-in-place) instead of opening the chat-picker sheet.
+if (onAnnotated) {
+setPayload(nextPayload);
+onAnnotated(nextPayload);
+onClose();
+return;
+}
+setPayload(nextPayload);
 setPickerOpen(true);
 }
 
@@ -265,7 +274,7 @@ h('section', { class: 'draft-craft__annotator', role: 'dialog', 'aria-modal': 't
 h('header', { class: 'draft-craft__annotator-head' },
 h('div', null,
 h('strong', null, 'Draft Craft'),
-h('span', null, 'Draw on the Inspector image')
+h('span', null, onAnnotated ? 'Draw on the attached image' : 'Draw on the Inspector image')
 ),
 h('button', { type: 'button', class: 'draft-craft__close', onClick: onClose, 'aria-label': 'Close image annotator' }, '×')
 ),
@@ -346,7 +355,7 @@ h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () =
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ),
 h('div', { class: 'draft-craft__annotator-foot' },
-h('button', { class: 'btn btn--primary', type: 'button', onClick: openPicker, disabled: !ready }, 'Add to chat draft')
+h('button', { class: 'btn btn--primary', type: 'button', onClick: openPicker, disabled: !ready }, actionLabel)
 )
 ),
 dragMarker ? h('span', { class: 'draft-craft__drag-marker', style: { left: dragMarker.clientX + 'px', top: dragMarker.clientY + 'px', background: dragMarker.color, color: markerTextColor(dragMarker.color) }, 'aria-hidden': 'true' }, dragMarker.label) : null,

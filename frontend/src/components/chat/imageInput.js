@@ -74,9 +74,19 @@ export function onImagePickerChange(e, handlers) {
 
 // removeImageAttachment(idx, setImageAttachments, updateChat)
 export function removeImageAttachment(idx, setImageAttachments, updateChat) {
-  setImageAttachments((prev) => {
-    const next = prev.filter((_, i) => i !== idx);
-    if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
-    return next;
-  });
+setImageAttachments((prev) => {
+const next = prev.filter((_, i) => i !== idx);
+// Drop the client-only reset markers before they are persisted so the
+// chat draft never stores a duplicate of the original data.
+const clean = next.map((a) => {
+if (!a) return a;
+const c = Object.assign({}, a);
+delete c.__originalDataUrl;
+delete c.__originalName;
+delete c.__originalMimeType;
+return c;
+});
+if (updateChat) updateChat({ draftAttachments: clean }).catch(() => {});
+return next;
+});
 }

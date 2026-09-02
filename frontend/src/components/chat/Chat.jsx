@@ -18,6 +18,7 @@ import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview } from '../../api.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
+import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
 
 export function ChatView(props) {
   const s = useChatState(props);
@@ -33,21 +34,82 @@ setFileEditorOpen,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
     onRemoveImage, onJumpToBottom, onCancelRunning, onBack, onToggleAutoRetry,
-onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions
+onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions, updateChat
 } = s;
 
   const { projectDir, chatId } = props;
 const [FileEditor, setFileEditor] = useState(null);
 function onDraftCraftAdded(result) {
-    if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
-    const chat = result.chat;
-    if (refs.promptInput.current) {
-      refs.promptInput.current.value = chat.draft || '';
-      setComposerText(chat.draft || '');
-      if (refs._autoresize) refs._autoresize();
-    }
-    setImageAttachments(Array.isArray(chat.draftAttachments) ? chat.draftAttachments : []);
-  }
+if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
+const chat = result.chat;
+if (refs.promptInput.current) {
+refs.promptInput.current.value = chat.draft || '';
+setComposerText(chat.draft || '');
+if (refs._autoresize) refs._autoresize();
+}
+setImageAttachments(Array.isArray(chat.draftAttachments) ? chat.draftAttachments : []);
+}
+// Reusable image annotator for the composer: tapping an attached image
+// chip opens the Draft Craft annotator, and the annotated image replaces
+// that attachment in-place. `annotateTarget` is { index, attachment } or
+// null. The original dataUrl is kept on the chip so "Reset" can restore it.
+const [annotateTarget, setAnnotateTarget] = useState(null);
+function onAnnotated(payload) {
+if (!annotateTarget || !payload || !payload.image) return;
+const next = (Array.isArray(imageAttachments) ? imageAttachments.slice() : []);
+const original = next[annotateTarget.index];
+if (original) {
+// Keep the original dataUrl / name / mimeType so the user can revert to
+// the untouched image. The "Reset" control swaps them back without
+// re-opening the annotator.
+const hasOriginal = typeof original.__originalDataUrl !== 'undefined';
+next[annotateTarget.index] = Object.assign({}, original, {
+dataUrl: payload.image.dataUrl,
+mimeType: payload.image.mimeType || original.mimeType,
+name: payload.image.name || original.name
+});
+if (hasOriginal) {
+// Preserve the first original and drop any nested original (the
+// first annotate only seeds it; later annotates keep the first).
+next[annotateTarget.index].__originalDataUrl = original.__originalDataUrl;
+next[annotateTarget.index].__originalName = original.__originalName;
+next[annotateTarget.index].__originalMimeType = original.__originalMimeType;
+} else {
+next[annotateTarget.index].__originalDataUrl = original.dataUrl;
+next[annotateTarget.index].__originalName = original.name;
+next[annotateTarget.index].__originalMimeType = original.mimeType;
+}
+setImageAttachments(next);
+// Persist a clean copy (drop the client-only reset markers) so the
+// chat draft never stores a duplicate of the original data URL.
+const persist = next.map((a) => {
+const clean = Object.assign({}, a);
+delete clean.__originalDataUrl;
+delete clean.__originalName;
+delete clean.__originalMimeType;
+return clean;
+});
+if (updateChat) updateChat({ draftAttachments: persist }).catch(() => {});
+}
+setAnnotateTarget(null);
+}
+function resetAnnotatedImage(idx) {
+const prev = Array.isArray(imageAttachments) ? imageAttachments : [];
+const next = prev.slice();
+const item = next[idx];
+if (item && item.__originalDataUrl) {
+next[idx] = Object.assign({}, item, {
+dataUrl: item.__originalDataUrl,
+name: item.__originalName !== undefined ? item.__originalName : item.name,
+mimeType: item.__originalMimeType !== undefined ? item.__originalMimeType : item.mimeType
+});
+delete next[idx].__originalDataUrl;
+delete next[idx].__originalName;
+delete next[idx].__originalMimeType;
+setImageAttachments(next);
+if (updateChat) updateChat({ draftAttachments: next }).catch(() => {});
+}
+}
 // The latest webpreview capture lives in a fixed dock above the composer.
 // The full-screen viewer is a separate local toggle so dismissing the viewer
 // leaves the small user-facing preview available.
@@ -328,15 +390,26 @@ onRefreshCustomActions: refreshCustomActions
                 h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
               )
             ),
-        imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
-          imageAttachments.map((a, idx) => h('button', { key: idx, class: 'chat-view__image-chip', type: 'button', onClick: () => onRemoveImage(idx), title: 'Remove image' },
-            h('img', { src: a.dataUrl, alt: a.name || 'attached image' }),
-            h('span', null, '×')
-          ))
-        ) : null
-      )
-    ),
-    h('div', { class: 'chat-view__status-row' },
+imageAttachments.length ? h('div', { class: 'chat-view__image-preview' },
+imageAttachments.map((a, idx) => h('div', { key: idx, class: 'chat-view__image-chip' },
+h('button', { class: 'chat-view__image-chipimg', type: 'button', onClick: () => setAnnotateTarget({ index: idx, attachment: a }), 'aria-label': 'Annotate image ' + (a.name || (idx + 1)), title: 'Annotate image' },
+h('img', { src: a.dataUrl, alt: a.name || 'attached image' })
+),
+a.__originalDataUrl
+? h('button', { class: 'chat-view__image-chipreset', type: 'button', onClick: () => resetAnnotatedImage(idx), title: 'Reset to original image', 'aria-label': 'Reset image to original' },
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+h('path', { d: 'M12 5V2L7 6l5 4V7c3.3 0 6 2.7 6 6 0 1.5-.6 2.9-1.5 3.9l1.4 1.4A8 8 0 0 0 20 13a8 8 0 0 0-8-8Zm-6 8c0-1.5.6-2.9 1.5-3.9L6.1 7.7A8 8 0 0 0 4 13a8 8 0 0 0 8 8v-3c-3.3 0-6-2.7-6-6Z', fill: 'currentColor' })
+)
+)
+: null,
+h('button', { class: 'chat-view__image-chipremove', type: 'button', onClick: () => onRemoveImage(idx), title: 'Remove image', 'aria-label': 'Remove image ' + (a.name || (idx + 1)) },
+h('span', null, '×')
+)
+))
+) : null
+)
+),
+h('div', { class: 'chat-view__status-row' },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
 fileEditorOpen && FileEditor
@@ -358,6 +431,14 @@ previewPromptOpen
 ? h(PreviewUrlPrompt, {
 onSubmit: (url) => runPreviewFromPrompt(url, { projectDir, chatId, refs, onPromptClose: () => setPreviewPromptOpen(false) }),
 onClose: () => setPreviewPromptOpen(false)
+})
+: null,
+annotateTarget
+? h(DraftCraftAnnotator, {
+image: annotateTarget.attachment,
+onClose: () => setAnnotateTarget(null),
+onAnnotated,
+actionLabel: 'Use annotated image'
 })
 : null
 );

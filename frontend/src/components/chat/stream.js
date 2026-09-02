@@ -483,11 +483,11 @@ const { projectDir, chatId } = state.props;
   const modelId = c.modelId || '';
   const providerId = c.providerId || '';
   const text = (content != null ? content : (refs.promptInput.current.value || '')).trim();
-  const atts = attachments || state.imageAttachments;
-  if (!text && !atts.length) {
-    if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
-    return;
-  }
+const atts = attachments || state.imageAttachments;
+if (!text && !atts.length) {
+if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
+return;
+}
   // A turn is already streaming from THIS client. Bail out before the
   // composer is cleared so the typed text is never lost. (The server
   // would 409 anyway; this also covers the Enter-key path, which
@@ -609,15 +609,27 @@ if (state._updateSetupVisibility) state._updateSetupVisibility();
   })();
 
   let resp;
-  try {
-    resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
-    });
-  } catch (err) {
-    const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
-    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+try {
+// Drop the client-only reset markers so they never travel to the
+// server or a provider.
+const wireAtts = (atts || []).map((a) => {
+if (a && (typeof a.__originalDataUrl !== 'undefined' || typeof a.__originalName !== 'undefined' || typeof a.__originalMimeType !== 'undefined')) {
+const clean = Object.assign({}, a);
+delete clean.__originalDataUrl;
+delete clean.__originalName;
+delete clean.__originalMimeType;
+return clean;
+}
+return a;
+});
+resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: wireAtts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
+});
+} catch (err) {
+const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
+const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
     setChatStatus(refs, 'network error', 'error');
     appendErrorCard(failMsg + ' Try again.', refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
