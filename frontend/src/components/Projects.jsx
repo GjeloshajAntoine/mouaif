@@ -254,11 +254,13 @@ export function ProjectsView() {
           const costStr = costBits.known ? formatCost(costBits.total) : '--';
           return h('li', { key: p.id, class: 'project-card' },
             h('div', { class: 'project-card__head' },
-              h('div', { class: 'project-card__name' }, p.name || p.path),
+              h('div', { class: 'project-card__identity' },
+                h('div', { class: 'project-card__name' }, p.name || p.path),
+                h('div', { class: 'project-card__path' }, p.path)
+              ),
               h('span', { class: 'project-card__cost' }, costStr),
               h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject })
             ),
-            h('div', { class: 'project-card__path' }, p.path),
             h(ChatList, { project: p })
           );
       })

@@ -50,22 +50,28 @@
   display: flex;
   flex-direction: column;
 }
-.project-card__head { display: flex; align-items: center; gap: 6px; }
-.project-card__name {
-  font-weight: 600;
-  font-size: 0.94rem;
+.project-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  padding-left: 12px;
+}
+.project-card__identity {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  cursor: pointer;
+}
+.project-card__name {
+  font-weight: 600;
+  font-size: 0.94rem;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
-  padding: 6px 12px;
-  min-height: var(--tap);
-  display: flex;
-  align-items: center;
+  line-height: 1.2;
 }
-.project-card__name:hover { color: var(--accent); }
+.project-card__identity:hover .project-card__name { color: var(--accent); }
 .project-card__cost {
   color: var(--muted);
   font-size: 0.75rem;
@@ -76,10 +82,10 @@
   color: var(--muted);
   font-size: 0.7rem;
   font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-  word-break: break-all;
-  padding: 4px 12px 6px;
-  line-height: 1.35;
-  border-top: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 /* Shared between .project-card__menu and .sprojects__menu: both render a
