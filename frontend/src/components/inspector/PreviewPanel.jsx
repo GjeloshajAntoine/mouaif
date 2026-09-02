@@ -286,10 +286,19 @@ if (stop) return;
 setFullscreen((value) => !value);
 };
 }
+// Keep Draft Craft in the existing panel toolbar instead of placing a
+// control over the screenshot. The parent invokes this handle when the
+// toolbar icon is tapped, while the latest capture stays owned here.
+if (props.draftCraftRef) {
+props.draftCraftRef.current = () => {
+if (!stop && latestImage.current && props.onDraftCraft) props.onDraftCraft(latestImage.current);
+};
+}
 return () => {
 stop = true;
 if (props.refreshRef) props.refreshRef.current = null;
 if (props.fullscreenRef) props.fullscreenRef.current = null;
+if (props.draftCraftRef) props.draftCraftRef.current = null;
       if (pendingTimer) clearTimeout(pendingTimer);
       for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
       if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
@@ -336,12 +345,6 @@ const sy = frame ? (frame.scrollTop || 0) : 0;
 
   return h(Fragment, null,
 h('div', { class: 'inspector__preview' },
-h('button', {
-class: 'btn btn--primary inspector__draft-craft',
-type: 'button',
-disabled: !imgSrc,
-onClick: () => props.onDraftCraft && props.onDraftCraft(latestImage.current),
-}, 'Draft Craft'),
 h('div', {
 ref: frameRef,
 class: 'inspector__preview-frame',

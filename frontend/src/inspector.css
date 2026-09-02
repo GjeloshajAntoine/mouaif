@@ -728,7 +728,6 @@ gap: 4px;
 /* ---- Inspector: page preview -------------------------------------- */
 
 .inspector__preview {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;

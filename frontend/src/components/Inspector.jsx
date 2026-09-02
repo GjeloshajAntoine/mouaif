@@ -269,6 +269,22 @@ labelNode,
 props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
 ),
       h('div', { class: 'inspector__panel-head-actions' },
+        props.onDraftCraft
+          ? h('button', {
+            class: 'icon-btn inspector__panel-draft-craft',
+            type: 'button',
+            title: 'Draft Craft',
+            'aria-label': 'Open Draft Craft for this preview',
+            disabled: !props.isVisible,
+            onClick: (e) => { e.stopPropagation(); props.onDraftCraft(); }
+          },
+            h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+              h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }),
+              h('path', { d: 'm8 15 2.5-3 2 2 3.5-4 2 3' }),
+              h('path', { d: 'm16.5 3 .5-1 .5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5Z' })
+            )
+          )
+          : null,
         props.onRefresh
           ? h('button', {
             class: 'icon-btn inspector__panel-refresh',
@@ -470,6 +486,9 @@ const previewFullscreenRef = useRef(null);
 // page" bar on demand (focus the input, scroll it into view). Keeps the
 // per-render PreviewPanel identity stable, like refresh/fullscreen.
 const previewTypeBarRef = useRef(null);
+// Draft Craft is exposed through the Preview panel's existing toolbar so
+// it never covers the screenshot or consumes a separate content row.
+const previewDraftCraftRef = useRef(null);
 
 // When a panel becomes hidden the corresponding virtual-list
 // child unmounts and runs its own `vl.destroy()` cleanup, but
@@ -1056,6 +1075,7 @@ subscribe: conn.current && conn.current.cdpOn,
 refreshRef: previewRefreshRef,
 fullscreenRef: previewFullscreenRef,
 typeBarRef: previewTypeBarRef,
+draftCraftRef: previewDraftCraftRef,
 onInsert: handlers ? handlers.insertText : null,
 onEnter: handlers ? handlers.pressEnter : null,
 onDraftCraft: (image) => image && setDraftCraftImage(image)
@@ -1182,6 +1202,7 @@ onSizeChange: id === 'preview' ? applyViewport : null,
 onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
 onFullscreen: id === 'preview' ? () => previewFullscreenRef.current && previewFullscreenRef.current() : null,
 onTypeBar: id === 'preview' ? () => previewTypeBarRef.current && previewTypeBarRef.current.open() : null,
+onDraftCraft: id === 'preview' ? () => previewDraftCraftRef.current && previewDraftCraftRef.current() : null,
 key: id
 }, renderPanelBody(id)))
           )
