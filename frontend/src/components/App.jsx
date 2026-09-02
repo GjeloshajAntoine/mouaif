@@ -110,17 +110,20 @@ function BottomNav() {
 // The brand mark inside the header logo — the same round-capped "m"
 // stroke used by the PWA icon generator (frontend/build/generate-icons.js)
 // for small tiles, so the in-app logo and the launcher icon stay in sync.
+// Geometric angled "M" mark — a clean, angular brand glyph that stays
+// legible at the 16px header size. Distinct from the lowercase "m" the
+// PWA launcher uses, so the in-app header reads as its own mark.
 const BrandMark = h('svg', {
-viewBox: '-0.02 0 1.06 1.06',
+viewBox: '-0.05 0.04 1.16 1.04',
 width: 11,
 height: 11,
 fill: 'none',
 stroke: 'currentColor',
-'stroke-width': '0.20',
+'stroke-width': '0.17',
 'stroke-linecap': 'round',
 'stroke-linejoin': 'round',
 'aria-hidden': 'true'
-}, h('path', { d: 'M0.12 1 L0.12 0.30 L0.18 0.02 L0.38 0.02 L0.5 0.16 L0.5 0.42 L0.52 0.16 L0.64 0.02 L0.86 0.02 L0.92 0.30 L0.92 1' }));
+}, h('path', { d: 'M0.16 0.98 L0.16 0.14 L0.50 0.62 L0.84 0.14 L0.84 0.98' }));
 
 function Header() {
   return h('header', { class: 'app__header' },
