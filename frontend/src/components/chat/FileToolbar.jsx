@@ -174,10 +174,22 @@ const statsLabel = gitStats
       )
     ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
-      h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleFileEditor },
-        h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4DD}'),
-        h('span', null, 'Files')
-      ),
+customActions && customActions.length ? [
+...customActions.map((action) =>
+h('button', {
+key: action.id,
+class: 'file-toolbar__menu-item file-toolbar__menu-item--action',
+role: 'menuitem',
+type: 'button',
+onClick: () => handleCustomAction(action)
+}, action.label || action.id)
+),
+h('div', { class: 'file-toolbar__menu-sep', role: 'separator' })
+] : null,
+h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleFileEditor },
+h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4DD}'),
+h('span', null, 'Files')
+),
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handlePreview },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4F1}'),
         h('span', null, 'Preview')
@@ -189,22 +201,7 @@ const statsLabel = gitStats
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleCli },
 h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F5A5}'),
 h('span', null, 'Cli')
-),
-customActions && customActions.length ? [
-h('div', { class: 'file-toolbar__menu-sep', role: 'separator' }),
-...customActions.map((action) =>
-h('button', {
-key: action.id,
-class: 'file-toolbar__menu-item',
-role: 'menuitem',
-type: 'button',
-onClick: () => handleCustomAction(action)
-},
-h('span', { class: 'file-toolbar__menu-icon', 'aria-hidden': 'true' }),
-h('span', null, action.label || action.id)
 )
-)
-] : null
 ),
 gitOpen && GitModal ? h(GitModal, { projectDir, onClose: handleGitClose }) : null,
     cliOpen && CliModal ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
