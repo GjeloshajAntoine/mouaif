@@ -11,7 +11,7 @@ The role is fixed to `system`: a custom prompt is always the opening system mess
 
 A prompt can additionally define a **preset** (`preset.tools` + `preset.agentFiles` + `preset.skills`). Presets are chat-default packaging: when a chat references the prompt, those tool, agent-file, and skill settings apply to that chat. They are purely additive and never override the project's authorization gate (see [Presets](#presets) below).
 
-Each prompt also has a safe built-in icon. The optional **Add to project card** setting exposes that icon as a one-tap new-chat action on every project card where the prompt is available.
+Each prompt also has a safe built-in icon (a set of hand-drawn, stroke-based SVG glyphs). The optional **Add to project card** setting exposes that icon as a one-tap new-chat action on every project card where the prompt is available.
 
 ## Usage
 
