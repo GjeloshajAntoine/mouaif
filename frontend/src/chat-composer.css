@@ -320,8 +320,7 @@ height: 44px;
 flex: 0 0 auto;
 padding: 0;
 border: 1px solid var(--border);
-border-radius: var(--r-md);
-overflow: hidden;
+border-radius: var(--r-pill);
 background: var(--surface);
 }
 .chat-view__image-chipimg {
@@ -329,8 +328,10 @@ width: 100%;
 height: 100%;
 padding: 0;
 border: 0;
+border-radius: var(--r-pill);
 background: transparent;
 cursor: pointer;
+overflow: hidden;
 }
 .chat-view__image-chipimg img {
 width: 100%;
