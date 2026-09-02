@@ -111,7 +111,7 @@ function BottomNav() {
 // stroke used by the PWA icon generator (frontend/build/generate-icons.js)
 // for small tiles, so the in-app logo and the launcher icon stay in sync.
 const BrandMark = h('svg', {
-viewBox: '0.06 -0.10 1.20 1.20',
+viewBox: '-0.02 0 1.16 1.06',
 width: 11,
 height: 11,
 fill: 'none',
@@ -120,7 +120,7 @@ stroke: 'currentColor',
 'stroke-linecap': 'round',
 'stroke-linejoin': 'round',
 'aria-hidden': 'true'
-}, h('path', { d: 'M0.16 1 L0.16 0.18 L0.22 0 L0.44 0 L0.56 0.1 L0.56 0.5 L0.62 0 L1.04 0 L1.16 0.1 L1.16 1' }));
+}, h('path', { d: 'M0.18 1 L0.18 0.34 L0.2 0.06 L0.38 0.06 L0.5 0.16 L0.5 0.5 L0.52 0.16 L0.64 0.06 L0.82 0.06 L0.9 0.34 L0.9 1' }));
 
 function Header() {
   return h('header', { class: 'app__header' },
