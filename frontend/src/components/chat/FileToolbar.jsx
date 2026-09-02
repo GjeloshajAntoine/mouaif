@@ -51,7 +51,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-const { projectDir, onOpenFileEditor, onOpenPreview } = props;
+const { projectDir, onOpenFileEditor, onOpenPreview, customActions, onRunCustomAction, onRefreshCustomActions } = props;
 const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -108,8 +108,10 @@ const [menuOpen, setMenuOpen] = useState(false);
   useClickOutside(menuRef, () => setMenuOpen(false), menuOpen);
 
   function handleTrigger() {
-setMenuOpen(!menuOpen);
+const nextOpen = !menuOpen;
+setMenuOpen(nextOpen);
 refreshGitStats();
+if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
 }
 
   function handleFileEditor() {
@@ -135,8 +137,11 @@ refreshGitStats();
 setMenuOpen(false);
 if (onOpenPreview) onOpenPreview();
 }
-
-  const statsLabel = gitStats
+function handleCustomAction(action) {
+setMenuOpen(false);
+if (onRunCustomAction) onRunCustomAction(action);
+}
+const statsLabel = gitStats
     ? gitStats.additions + ' lines added, ' + gitStats.deletions + ' lines deleted'
     : '';
 
@@ -184,7 +189,22 @@ if (onOpenPreview) onOpenPreview();
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleCli },
 h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F5A5}'),
 h('span', null, 'Cli')
+),
+customActions && customActions.length ? [
+h('div', { class: 'file-toolbar__menu-sep', role: 'separator' }),
+...customActions.map((action) =>
+h('button', {
+key: action.id,
+class: 'file-toolbar__menu-item',
+role: 'menuitem',
+type: 'button',
+onClick: () => handleCustomAction(action)
+},
+h('span', { class: 'file-toolbar__menu-icon' }, action.kind === 'mcp' ? 'M' : '\u203A_'),
+h('span', null, action.label || action.id)
 )
+)
+] : null
 ),
 gitOpen && GitModal ? h(GitModal, { projectDir, onClose: handleGitClose }) : null,
     cliOpen && CliModal ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null

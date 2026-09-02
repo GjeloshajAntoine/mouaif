@@ -167,6 +167,11 @@ font-size: 0.9rem;
 line-height: 1;
 text-align: center;
 }
+.file-toolbar__menu-sep {
+height: 1px;
+margin: 3px 2px;
+background: var(--border);
+}
 /* ---- User web preview dock ---------------------------------------- */
 /*
 The dock is a small, right-aligned phone-proportioned image pinned
