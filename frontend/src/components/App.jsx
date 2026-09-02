@@ -120,7 +120,7 @@ stroke: 'currentColor',
 'stroke-linecap': 'round',
 'stroke-linejoin': 'round',
 'aria-hidden': 'true'
-}, h('path', { d: 'M0.16 1 L0.16 0.32 L0.2 0.0 L0.38 0.0 L0.5 0.13 L0.5 0.44 L0.52 0.13 L0.64 0.0 L0.82 0.0 L0.86 0.32 L0.86 1' }));
+}, h('path', { d: 'M0.12 1 L0.12 0.30 L0.18 0.02 L0.38 0.02 L0.5 0.16 L0.5 0.42 L0.52 0.16 L0.64 0.02 L0.86 0.02 L0.92 0.30 L0.92 1' }));
 
 function Header() {
   return h('header', { class: 'app__header' },
