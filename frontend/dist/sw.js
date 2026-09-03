@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'cc894e6a';
+const CACHE_VERSION = 'e0fe17c2';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -359,18 +359,26 @@ async function openNotificationTarget(data) {
   // freshly launched page consume it and navigate to the chat (see
   // frontend/src/sw-registration.js — consumePendingNotificationClick).
   await writeClickTarget(target.href);
-  try {
-    const opened = await clients.openWindow(target.href);
-    // openWindow succeeded (desktop / non-iOS): the click landed in the
-    // new window directly, so the stored target must not redirect a
-    // later manual launch. iOS PWA throws here instead, leaving the
-    // target for the freshly launched page to consume.
-    await clearClickTarget();
-    return opened;
-  } catch {
-    // Fall through; the launched page consumes the IndexedDB click target.
-    return undefined;
-  }
+try {
+const opened = await clients.openWindow(target.href);
+// openWindow succeeded (desktop / non-iOS). Only clear the stored
+// target when the new window actually loaded the clicked chat URL —
+// compare the hash, since the window's URL always carries its current
+// hash and that is the only thing we need to match. iOS can resolve
+// openWindow() WITHOUT navigating to the clicked URL (it may reopen
+// start_url / instead), so clearing here on a non-match would discard
+// the only navigation hint and drop the user on the chats list. A
+// non-matching window keeps the target; the freshly loaded page's
+// consumePendingNotificationClick() then recovers it. Keeping it on
+// desktop when the URLs do match is impossible, so this is safe.
+const openedUrl = (opened && typeof opened.url === 'string')
+? new URL(opened.url, self.location.origin) : null;
+if (openedUrl && openedUrl.hash === target.hash) await clearClickTarget();
+return opened;
+} catch {
+// Fall through; the launched page consumes the IndexedDB click target.
+return undefined;
+}
 }
 
 // ---- IndexedDB click-target handoff --------------------------------
