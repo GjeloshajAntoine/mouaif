@@ -477,7 +477,7 @@ overflow: hidden;
 display: flex;
 align-items: center;
 gap: 6px;
-padding: 6px;
+padding: 4px;
 border-bottom: 1px solid var(--border);
 background: var(--surface-2);
 flex: 0 0 auto;
