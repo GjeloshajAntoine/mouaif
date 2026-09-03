@@ -75,6 +75,12 @@ Browser clients use an HttpOnly session cookie. Non-browser REST clients can use
 curl --user 'alice:a-long-password' http://127.0.0.1:5732/api/settings
 ```
 
+### Initial access check
+
+On startup, the page stays visually blank while it requests `/api/access/status`. The app UI is mounted only after the server confirms that access authentication is disabled or that the browser has a valid session. Login and setup screens still appear when authentication is required.
+
+This removes the access-check splash without bypassing protection: APIs, SSE, and app data remain guarded by server-side authorization.
+
 ## Related
 
 - [Settings UI](./settings-ui.md) — managing settings and access in the mobile web interface.

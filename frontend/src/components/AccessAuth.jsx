@@ -207,7 +207,9 @@ export function AccessGate({ children }) {
     if (result.status === 200) setStatus(result.body);
   }
   useEffect(() => { load(); }, []);
-  if (!status) return h(AuthFrame, { title: 'mouaif', sub: 'Checking access…' });
+  // Keep the page visually empty while the server verifies the session.
+  // Protected UI is mounted only after access status has been confirmed.
+  if (!status) return null;
   if (!status.enabled) return children;
   if (setup || !status.configured) return h(SetupView, { initialCode, status, onAuthenticated: () => { window.location.hash = '#/projects'; load(); }, onCancel: () => setSetup(false) });
   if (!status.authenticated) return h(LoginView, { status, onAuthenticated: load, onSetup: () => setSetup(true) });
