@@ -19,7 +19,7 @@ function t(name, cond, msg) {
 }
 
 async function run() {
-  const { stripAnsi } = await import('../frontend/src/components/chat/utils.js');
+  const { stripAnsi, CliScreen } = await import('../frontend/src/components/chat/utils.js');
 
   // 1. Plain text passes through untouched.
   t('plain text unchanged', stripAnsi('hello\nworld') === 'hello\nworld', stripAnsi('hello\nworld'));
@@ -66,6 +66,55 @@ async function run() {
   t('htop rows on separate lines', cleaned.indexOf('PID') < cleaned.indexOf('3697815') && cleaned.indexOf('3697815') < cleaned.indexOf('35903'), JSON.stringify(lines));
   t('htop screen has no escape codes', !/\x1b/.test(cleaned), JSON.stringify(cleaned));
   t('htop content survives', /Tasks:/.test(cleaned) && /3697815/.test(cleaned), JSON.stringify(cleaned));
+
+  // --- CliScreen — stateful streaming decoder -------------------------------
+  // The CLI modal receives output as a stream of SSE frames. A full-screen
+  // TUI's escape codes can be split across frame boundaries, and each redraw
+  // must replace its frame in place. These drive the stateful CliScreen used
+  // by CliModal (the stateless stripAnsi above cannot handle split sequences).
+
+  // 11. A sequence split across two frames must consume as one (no `[5;3H` leak).
+  const sc1 = new CliScreen();
+  sc1.write('A\x1b[');   // frame 1 ends mid-CSI
+  sc1.write('5;3H B');   // frame 2 completes it
+  const splitOut = sc1.render();
+  t('split escape consumed', !/5;3H|\[5/.test(splitOut), JSON.stringify(splitOut));
+  t('split escape no ESC leak', !/\x1b/.test(splitOut), JSON.stringify(splitOut));
+
+  // 12. A full-screen redraw (home + rewrite) replaces, not appends.
+  const sc2 = new CliScreen();
+  sc2.write('\x1b[?1049h\x1b[2J\x1b[H');  // enter alt screen, clear, home
+  sc2.write('AAA\r\nBBB\r\nCCC');
+  sc2.write('\x1b[H');
+  sc2.write('AAA\r\nBBB\r\nDDD');
+  sc2.write('\x1b[H');
+  sc2.write('XXX\r\nYYY\r\nZZZ');
+  const redrawOut = sc2.render();
+  t('redraw replaces in place', redrawOut === 'XXX\nYYY\nZZZ', JSON.stringify(redrawOut));
+  t('redraw no old rows', (redrawOut.match(/AAA|BBB|DDD/g) || []).length === 0, JSON.stringify(redrawOut));
+
+  // 13. Ordinary scrollback output still grows (not clamped to one frame).
+  const sc3 = new CliScreen();
+  sc3.write('line1\r\nline2\nline3');
+  sc3.write('\nline4');
+  const growOut = sc3.render();
+  t('scrollback grows', /line1/.test(growOut) && /line2/.test(growOut) && /line3/.test(growOut) && /line4/.test(growOut), JSON.stringify(growOut));
+
+  // 14. Cursor positioning in a fresh frame is honoured with no leak.
+  const sc4 = new CliScreen();
+  sc4.write('row:');
+  sc4.write('\x1b[2;5Hdone');
+  const posOut = sc4.render();
+  t('cursor position honoured', /done/.test(posOut) && !/\x1b/.test(posOut), JSON.stringify(posOut));
+
+  // 15. `isFullScreen` tracks alternate-screen enter/leave so the modal can
+  //     preserve the scroll position for a TUI redraw instead of pinning.
+  const sc5 = new CliScreen();
+  t('not full-screen by default', sc5.isFullScreen === false);
+  sc5.write('\x1b[?1049h');           // enter alt screen (htop)
+  t('full-screen after alt enter', sc5.isFullScreen === true);
+  sc5.write('\x1b[?1049l');           // leave alt screen
+  t('not full-screen after alt leave', sc5.isFullScreen === false);
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

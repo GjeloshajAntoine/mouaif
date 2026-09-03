@@ -15,7 +15,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
-import { stripAnsi } from './utils.js';
+import { CliScreen } from './utils.js';
 
 export function CliModal(props) {
   const { projectDir, onClose } = props;
@@ -32,26 +32,93 @@ export function CliModal(props) {
   const evtSourceRef = useRef(null);
   const [outBuffer, setOutBuffer] = useState('');   // accumulated output
 
+const screenRef = useRef(null);
+if (!screenRef.current) screenRef.current = new CliScreen();
+// Whether the user is "pinned" to the bottom. True while output streams
+// normally (the last frame fills the view, so new rows scroll into view).
+// Once the user drags up to read history, stop auto-scrolling so the view
+// isn't yanked down on every refresh (the "scroll but refreshes" symptom).
+const pinnedRef = useRef(true);
   const appendOut = useCallback((text, stream) => {
+    if (!screenRef.current) screenRef.current = new CliScreen();
     if (stream === 'exit') {
-      setOutBuffer((prev) => prev + '\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
+      // Record the exit status as a trailing scrollback line below the current
+      // frame (a TUI leaves its last frame in the grid, so it stays readable).
+      screenRef.current.write('\r\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
+      setOutBuffer(screenRef.current.render());
       return;
     }
-    // The session is a piped (non-TTY) child, so TUI output (htop, top,
-    // less) arrives as raw ANSI control codes. Strip them here so the
-    // terminal reads as plain text instead of `\x1b[39;49m` garbage.
-    const t = stripAnsi(String(text || ''));
-    if (!t.trim() && !/\n/.test(t)) return;
-    setOutBuffer((prev) => prev + t);
+    // The session is a piped (non-TTY) child, so full-screen programs (htop,
+    // top, less) emit escape codes that arrive split across SSE frames. Feed
+    // them to the stateful CliScreen, which buffers in-flight sequences and
+    // rebuilds a text grid — so a TUI redraw replaces its frame in place
+    // instead of appending raw `[39;49m` / `[8;1H` garbage each refresh.
+    screenRef.current.write(String(text || ''));
+    setOutBuffer(screenRef.current.render());
   }, []);
 
-  // Auto-scroll the terminal on buffer change.
-  useEffect(() => {
-    if (!outRef.current) return;
-    outRef.current.textContent = outBuffer;
-    const el = outRef.current;
-    el.scrollTop = el.scrollHeight;
-  }, [outBuffer]);
+  // Render `outBuffer` into the <pre> and decide whether to auto-scroll.
+//
+// Two distinct cases:
+//   * Full-screen TUI (htop / top / less) — the frame redraws *in place* at a
+//     fixed height, so force-pinning to `scrollHeight` on every refresh would
+//     yank the view down to the help row (the "scrolls down each time it
+//     refreshes" symptom). Preserve the current scroll position instead.
+//   * Normal scrollback — output grows downward. Pin to the bottom only while
+//     the user is near the bottom; once they drag up to read history, stop
+//     following so new rows don't yank the view around.
+useEffect(() => {
+const el = outRef.current;
+if (!el) return;
+const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+const full = screenRef.current ? screenRef.current.isFullScreen : false;
+if (full) {
+// In-place TUI redraw: keep whatever position the user is at. Setting
+// textContent resets scrollTop, so capture and restore it.
+const prevTop = el.scrollTop;
+const prevHeight = el.scrollHeight;
+el.textContent = outBuffer;
+// If the user is pinned to the bottom, keep them pinned to the new
+// bottom (the frame may have grown/shrunk a line); otherwise stay put.
+if (pinnedRef.current || wasNearBottom) {
+el.scrollTop = el.scrollHeight;
+} else {
+el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
+}
+} else if (pinnedRef.current || wasNearBottom) {
+el.textContent = outBuffer;
+el.scrollTop = el.scrollHeight;
+} else {
+const prevTop = el.scrollTop;
+el.textContent = outBuffer;
+el.scrollTop = prevTop;
+}
+}, [outBuffer]);
+// Track whether the user has scrolled away from the bottom. Wire this via a
+// callback ref so it attaches as soon as the <pre> mounts (the modal renders
+// the terminal only after the session loads, so a mount-time effect sees a
+// null node). While pinned, new output keeps the view glued to the latest
+// row; when the user drags up we stop following so they can read history.
+const attachOutRef = useCallback((node) => {
+if (outRef.current && outRef.current._onScroll) {
+outRef.current.removeEventListener('scroll', outRef.current._onScroll);
+}
+outRef.current = node;
+if (node) {
+const onScroll = () => {
+pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+};
+node._onScroll = onScroll;
+node.addEventListener('scroll', onScroll, { passive: true });
+}
+}, []);
+useEffect(() => {
+return () => {
+if (outRef.current && outRef.current._onScroll) {
+outRef.current.removeEventListener('scroll', outRef.current._onScroll);
+}
+};
+}, []);
 
   // ---- session start ------------------------------------------------
   useEffect(() => {
@@ -165,7 +232,7 @@ export function CliModal(props) {
                 h('button', { class: 'btn', type: 'button', onClick: onClose }, 'Close')
               )
             : h('div', { class: 'cli__terminal' },
-                h('pre', { ref: outRef, class: 'cli__out', 'aria-label': 'Command output', tabindex: '-1' }),
+                h('pre', { ref: attachOutRef, class: 'cli__out', 'aria-label': 'Command output', tabindex: '-1' }),
                 h('div', { class: 'cli__prompt-row' },
                   h('span', { class: 'cli__prompt-mark', 'aria-hidden': 'true' }, '❯'),
                   h('input', {
