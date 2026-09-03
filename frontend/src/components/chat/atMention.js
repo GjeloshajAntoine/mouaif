@@ -33,6 +33,15 @@ let selectedIdx = 0;
 let visible = false;
 let scanCache = null;
 let projectCacheKey = '';
+// Category filter bar. null = mixed "All" view; otherwise one of the
+// CATEGORY values. Only applies while the user hasn't typed a query.
+let activeFilter = null;
+const FILTER_ORDER = [
+  { key: CATEGORY.FILES, label: 'Files' },
+  { key: CATEGORY.AGENTS, label: 'Agents' },
+  { key: CATEGORY.ACTIONS, label: 'Actions' },
+  { key: CATEGORY.MODEL, label: 'Model' },
+];
 
 // After selecting a tool from the popup, we keep an "arg bar" visible
 // below the textarea showing remaining optional parameters the user can
@@ -227,38 +236,85 @@ params: null
 // ---- Filtering + rendering ----------------------------------------------
 
 function filterItems(searchQuery) {
-  const matches = searchQuery
-    ? items.filter(item => item.searchText.indexOf(searchQuery) >= 0)
-    : items;
-  // With an active query there is no per-category cap — the user is
-  // searching. Files still get the large global cap.
-  if (searchQuery) {
-    let fileCount = 0;
-    return matches.filter(item => {
-      if (item.category !== CATEGORY.FILES) return true;
-      if (fileCount >= MAX_FILE_RESULTS) return false;
-      fileCount++;
-      return true;
-    });
-  }
-  // At rest, cap each category so the popup surfaces every section.
-  const counts = {};
-  return matches.filter(item => {
-    const n = counts[item.category] || 0;
-    counts[item.category] = n + 1;
-    return n < REST_PER_CATEGORY;
-  });
+// During a search (query typed) the category filter is ignored so the
+// user sees every matching result across all categories.
+let matches = searchQuery
+? items
+: (activeFilter ? items.filter(item => item.category === activeFilter) : items);
+if (searchQuery) {
+matches = matches.filter(item => item.searchText.indexOf(searchQuery) >= 0);
+}
+// With an active query there is no per-category cap — the user is
+// searching. Files still get the large global cap.
+if (searchQuery) {
+let fileCount = 0;
+return matches.filter(item => {
+if (item.category !== CATEGORY.FILES) return true;
+if (fileCount >= MAX_FILE_RESULTS) return false;
+fileCount++;
+return true;
+});
+}
+if (activeFilter) {
+// Single-category view: show everything in that category.
+return matches;
+}
+// Mixed "All" view: cap each category so the popup surfaces every
+// section without one pushing the others out of view.
+const counts = {};
+return matches.filter(item => {
+const n = counts[item.category] || 0;
+counts[item.category] = n + 1;
+return n < REST_PER_CATEGORY;
+});
+}
+
+// ---- Category filter bar ------------------------------------------------
+// Renders a row of tappable type chips at the top of the popup (at rest,
+// no query). Tapping a chip filters the list to a single category; tapping
+// the active chip again returns to the mixed "All" view.
+function renderFilterBar(root) {
+// Never show the bar while the user is typing a search query.
+if (query) return;
+const bar = document.createElement('div');
+bar.className = 'at-mention__filter';
+for (const { key, label } of FILTER_ORDER) {
+const chip = document.createElement('button');
+chip.type = 'button';
+chip.className = 'at-mention__filter-chip' + (activeFilter === key ? ' is-active' : '');
+chip.textContent = label;
+chip.addEventListener('click', (e) => {
+e.preventDefault();
+e.stopPropagation();
+// Toggle: tapping the active chip resets to the mixed view.
+activeFilter = activeFilter === key ? null : key;
+selectedIdx = 0;
+filtered = filterItems(query);
+renderPopup();
+});
+chip.addEventListener('mousedown', (e) => e.preventDefault());
+bar.appendChild(chip);
+}
+root.appendChild(bar);
 }
 
 function renderPopup() {
   if (!popup) return;
   const f = filtered;
 
+  popup.hidden = false;
+  // If the filter bar is shown (at rest, no query) but there are no items
+  // in the active category, keep the popup open with just the filter bar so
+  // the user can switch back to another type instead of losing the popup.
   if (!visible || !f.length) {
+    if (visible && !query) {
+      popup.innerHTML = '';
+      renderFilterBar(popup);
+      return;
+    }
     popup.hidden = true;
     return;
   }
-  popup.hidden = false;
 
   if (selectedIdx >= f.length) selectedIdx = 0;
   if (selectedIdx < 0) selectedIdx = f.length - 1;
@@ -269,6 +325,10 @@ function renderPopup() {
   }
 
   popup.innerHTML = '';
+  // Category filter bar — shown at rest (no query typed) so the user can
+  // tap a type to filter the list to just that category. Hidden while
+  // searching, since a query already narrows the results.
+  renderFilterBar(popup);
   for (const sec of sections) {
     const row = document.createElement('div');
     row.className = 'at-mention__item' + (sec.index === selectedIdx ? ' is-selected' : '');
@@ -413,11 +473,12 @@ function clearArgBar() {
 }
 
 function hide() {
-  visible = false;
-  filtered = [];
-  range = null;
-  if (popup) popup.hidden = true;
-  // Don't clear the arg bar on hide — user may tap outside and come back
+visible = false;
+filtered = [];
+range = null;
+activeFilter = null;
+if (popup) popup.hidden = true;
+// Don't clear the arg bar on hide — user may tap outside and come back
 }
 
 // ---- Input detection ---------------------------------------------------
@@ -452,12 +513,13 @@ function onInput() {
   }
 
   range = { start, end: pos };
-  query = q;
-  selectedIdx = 0;
-  filtered = filterItems(q);
-
-  visible = true;
-  renderPopup();
+query = q;
+selectedIdx = 0;
+// Starting a fresh @-mention (no query): reset to the mixed "All" view.
+if (!q) activeFilter = null;
+filtered = filterItems(q);
+visible = true;
+renderPopup();
 }
 
 function onKeydown(e) {
@@ -508,13 +570,13 @@ export function mountAtMention(ta, popupEl, preactState, argBarEl) {
   argBar = argBarEl || null;
   if (argBar) argBar.hidden = true;
   visible = false;
-  items = [];
-  filtered = [];
-  query = '';
-  range = null;
-  selectedIdx = 0;
-
-  const projectDir = preactState.props && preactState.props.projectDir;
+items = [];
+filtered = [];
+query = '';
+range = null;
+selectedIdx = 0;
+activeFilter = null;
+const projectDir = preactState.props && preactState.props.projectDir;
   if (projectDir) {
     buildItems(projectDir).then(newItems => { items = newItems; }).catch(() => {});
   }

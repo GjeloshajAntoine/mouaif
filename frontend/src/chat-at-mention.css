@@ -18,6 +18,41 @@
   overscroll-behavior: contain;
 }
 .at-mention[hidden] { display: none; }
+/* ---- Category filter bar (type chips) ----------------------------- */
+.at-mention__filter {
+display: flex;
+gap: 4px;
+padding: 6px 8px;
+border-bottom: 1px solid var(--border);
+position: sticky;
+top: 0;
+z-index: 1;
+background: var(--surface);
+overflow-x: auto;
+-webkit-overflow-scrolling: touch;
+scrollbar-width: none;
+}
+.at-mention__filter::-webkit-scrollbar { display: none; }
+.at-mention__filter-chip {
+flex: 0 0 auto;
+font-size: 0.68rem;
+font-weight: 600;
+padding: 4px 10px;
+border-radius: var(--r-sm);
+border: 1px solid var(--border);
+background: var(--surface);
+color: var(--muted);
+cursor: pointer;
+min-height: 28px;
+-webkit-tap-highlight-color: transparent;
+transition: background 60ms ease, color 60ms ease, border-color 60ms ease;
+}
+.at-mention__filter-chip.is-active {
+background: var(--accent-soft);
+border-color: var(--accent);
+color: var(--accent);
+}
+.at-mention__filter-chip:active { background: var(--accent-soft); }
 
 /* ---- Arg bar (tool parameter suggestion chips) ------------------ */
 
