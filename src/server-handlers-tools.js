@@ -91,7 +91,10 @@ function ensureCliSession(projectDir) {
     id: 'cli_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     projectDir,
     child,
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    // Record the platform so command writes use the correct line
+    // terminator: CRLF for cmd.exe on Windows, LF for sh/bash on POSIX.
+    windows: !!meta.windows
   };
   hookCliExit();
   cliSessions.set(key, session);
@@ -353,7 +356,8 @@ try {
     const session = cliSessions.get(String(projectDir));
     if (!session) return sendJSON(res, 404, { error: 'cli session not found — reopen the command prompt', code: 'ENOSESSION' });
     try {
-      session.child.stdin.write(cmd + '\r\n');
+      const newline = session.windows ? '\r\n' : '\n';
+      session.child.stdin.write(cmd + newline);
       return sendJSON(res, 200, { ok: true });
     } catch (e) {
       return sendJSON(res, 500, { ok: false, error: e.message });
