@@ -6,12 +6,12 @@
 // rendered at its natural pixel size, so panning through the frame
 // scrolls the actual page content.
 //
-// Capture triggers (no fixed timer, no busy polling):
-//   - Page.frameNavigated   — the frame navigated to a new document.
-//   - Page.frameStoppedLoading — a frame's load settled.
-//   - a slow fallback poll (every 3 s) so in-page state changes
-//     (scroll position, hover, click-driven DOM mutations, SPA route
-//     changes that don't fire frameNavigated) still show up.
+// Capture triggers:
+//   - Page.screencastFrame — Chrome's event-driven visual-change stream;
+//     frames are acknowledged after each full-page capture, naturally
+//     limiting the stream to 4 fps without busy polling.
+//   - Page.frameNavigated / Page.frameStoppedLoading — document lifecycle.
+//   - a slow 3 s safety fallback when Chrome emits no screencast frame.
 //   - a manual "Refresh preview" button in the panel header.
 import { h, Fragment } from 'preact';
 import { createPortal } from 'preact/compat';
@@ -99,9 +99,13 @@ const [imgSrc, setImgSrc] = useState('');
     if (!props.capture) return;
     let stop = false;
     let inFlight = false;
-    let pendingTimer = null;
-    let lastCaptureAt = 0;
-    let pendingRevoke = null;
+let pendingTimer = null;
+let streamTimer = null;
+let lastCaptureAt = 0;
+let captureSerial = 0;
+let pendingFrameAck = null;
+let pendingAckAfter = 0;
+let pendingRevoke = null;
     // Keep one event-driven capture queued while Chrome is already taking
     // a screenshot. Reload emits frameNavigated before the new document is
     // ready, then frameStoppedLoading while that first capture can still be
@@ -135,18 +139,19 @@ const [imgSrc, setImgSrc] = useState('');
       // frame. Polls are disposable; the next fallback tick covers them.
       if (stop) return;
       if (inFlight) {
-        if (force || reason !== 'poll') {
-          if (force || !queuedCapture || !queuedCapture.force) {
+if (force || reason !== 'poll') {
+if (force || !queuedCapture || !queuedCapture.force) {
             queuedCapture = { reason, force: !!force };
           }
         }
         return;
       }
-      inFlight = true;
-      try {
-        const r = await props.capture();
-        if (stop) return;
-        lastCaptureAt = Date.now();
+inFlight = true;
+lastCaptureAt = Date.now();
+const serial = ++captureSerial;
+try {
+const r = await props.capture();
+if (stop) return;
         // Make sure the fallback is scheduled even if the trigger that
         // woke us up didn't schedule it itself (e.g. the very first
         // 'init' capture, or a capture started while another was
@@ -221,9 +226,19 @@ const [imgSrc, setImgSrc] = useState('');
         } else {
           setNote('screenshot failed: ' + msg);
         }
-      } finally {
-        inFlight = false;
-        // Run the newest meaningful trigger after the current screenshot.
+} finally {
+inFlight = false;
+if (pendingFrameAck != null && props.ackFrame && serial >= pendingAckAfter) {
+const sessionId = pendingFrameAck;
+pendingFrameAck = null;
+pendingAckAfter = 0;
+if (streamTimer) {
+clearTimeout(streamTimer);
+streamTimer = null;
+}
+props.ackFrame(sessionId).catch(() => { /* stream stopped */ });
+}
+// Run the newest meaningful trigger after the current screenshot.
         // This covers reload completion as well as a pressed manual refresh.
         if (queuedCapture && !stop) {
           const queued = queuedCapture;
@@ -234,19 +249,14 @@ const [imgSrc, setImgSrc] = useState('');
       }
     }
 
-    // Subscribe to CDP navigation events. Each event triggers an
-    // immediate capture, superseding the slow fallback for this tick.
-    // The 'subscribe' prop is cdpOn() from the CDP connection — same
-    // shape as the existing console/network subscriptions in
-    // Inspector.jsx. We only subscribe while the Preview sub-tab is
-    // active (the parent unmounts us when the user switches away).
+    // Subscribe to lifecycle events and Chrome's visual-change stream.
+    // Frames are acknowledged after a full-page screenshot, and captures are
+// coalesced to at most 4 fps. This keeps animation, typing, hover, and
+    // DOM mutations live while retaining the scrollable full-page image.
     const subs = [];
     if (props.subscribe) {
       subs.push(props.subscribe('Page.frameNavigated', () => {
         if (stop) return;
-        // frameNavigated fires for the very first load too. We
-        // already kicked off the first capture in runCapture('init')
-        // below, so coalesce if a capture is already in flight.
         runCapture('navigate');
         scheduleFallback();
       }));
@@ -255,13 +265,23 @@ const [imgSrc, setImgSrc] = useState('');
         runCapture('load');
         scheduleFallback();
       }));
-    }
-
-    // Kick off the first capture. This covers the common case where
-    // the user opens the Preview tab on an already-loaded page (no
-    // frameNavigated will fire for it because the page was loaded
-    // before Page.enable was sent). Without this initial call the
-    // panel would wait up to 3 s for the first poll.
+      subs.push(props.subscribe('Page.screencastFrame', (frame) => {
+if (stop || !frame || frame.sessionId == null || !props.ackFrame) return;
+// Hold the acknowledgement until the corresponding full-page capture
+// finishes. Chrome then sends the next changed frame, providing natural
+// backpressure instead of encoding a high-FPS stream we would discard.
+pendingFrameAck = frame.sessionId;
+pendingAckAfter = captureSerial + 1;
+if (streamTimer) return;
+const wait = Math.max(0, 250 - (Date.now() - lastCaptureAt));
+streamTimer = setTimeout(() => {
+streamTimer = null;
+if (!stop) runCapture('stream');
+}, wait);
+}));
+}
+// Capture immediately for an already-loaded page, then retain a slow
+    // safety retry for targets that do not support screencasting.
     runCapture('init');
     scheduleFallback();
     // Expose a manual refresh to the parent so the Preview panel
@@ -299,11 +319,12 @@ stop = true;
 if (props.refreshRef) props.refreshRef.current = null;
 if (props.fullscreenRef) props.fullscreenRef.current = null;
 if (props.draftCraftRef) props.draftCraftRef.current = null;
-      if (pendingTimer) clearTimeout(pendingTimer);
-      for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
-      if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
-    };
-  }, [props.capture, props.subscribe]);
+if (pendingTimer) clearTimeout(pendingTimer);
+if (streamTimer) clearTimeout(streamTimer);
+for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
+if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
+};
+}, [props.capture, props.subscribe, props.ackFrame]);
 
   // Clicking/tapping the preview pokes the page at that point. The
   // frame is a scroll container (the image is a full-page capture,

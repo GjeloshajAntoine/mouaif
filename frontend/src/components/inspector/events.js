@@ -237,6 +237,26 @@ export function createEventHandlers(state) {
     }, 8000);
   }
 
+  // A small screencast acts as an event-driven repaint signal. Its frame
+  // data is not rendered: PreviewPanel retains full-page screenshots and
+  // uses each event to schedule a throttled refresh. Chrome requires every
+  // frame to be acknowledged or it eventually pauses the stream.
+  function startPreviewStream() {
+    return cdpSend('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 20,
+      maxWidth: 320,
+      maxHeight: 320,
+      everyNthFrame: 1
+    });
+  }
+  function stopPreviewStream() {
+    return cdpSend('Page.stopScreencast');
+  }
+  function ackPreviewFrame(sessionId) {
+    return cdpSend('Page.screencastFrameAck', { sessionId });
+  }
+
   // setViewportSize — apply a device-metrics override to the inspected
   // page so the user can preview it at a chosen size (phone, tablet,
   // desktop) without resizing the real browser window. Pass `null` to
@@ -391,6 +411,7 @@ onConsoleEvent, onExceptionEvent, onRequestWillBeSent,
 onResponseReceived, onLoadingFinished, onLoadingFailed,
 onFrameNavigated, onNavigatedWithinDocument,
 pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
+startPreviewStream, stopPreviewStream, ackPreviewFrame,
 loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter
 };

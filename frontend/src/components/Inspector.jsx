@@ -442,6 +442,7 @@ export function InspectorView() {
   const [debuggerUrl, setDebuggerUrl] = useState('');
   const [targets, setTargets] = useState([]);
   const [currentTarget, setCurrentTarget] = useState(null);
+  const [cdpReady, setCdpReady] = useState(false);
   // visiblePanels: a Set of panel IDs currently rendered. Hydrated from
   // localStorage on mount; updated by the per-panel toggle. The single
   // 'panel' state from the previous design is gone — the new UI does
@@ -503,12 +504,21 @@ useEffect(() => {
     consoleVL.current = null;
   }
 }, [visiblePanels]);
-useEffect(() => {
-  if (!visiblePanels.has('network') && networkVL.current) {
-    try { networkVL.current.setData([]); } catch { /* destroyed */ }
-    networkVL.current = null;
-  }
-}, [visiblePanels]);
+  useEffect(() => {
+    if (!visiblePanels.has('network') && networkVL.current) {
+      try { networkVL.current.setData([]); } catch { /* destroyed */ }
+      networkVL.current = null;
+    }
+  }, [visiblePanels]);
+  // Run the CDP screencast only while a connected Preview is visible. Effect
+  // cleanup sends stop immediately; CDP command ordering makes rapid hide/show
+  // transitions resolve as start → stop → start without stale async ownership.
+  useEffect(() => {
+    const handlers = eventHandlers.current;
+    if (!cdpReady || !visiblePanels.has('preview') || !handlers) return;
+    handlers.startPreviewStream().catch(() => { /* screenshot fallback remains active */ });
+    return () => handlers.stopPreviewStream().catch(() => { /* disconnected */ });
+  }, [cdpReady, visiblePanels]);
 
   function rerender() { setTick(t => t + 1); }
 
@@ -560,6 +570,7 @@ useEffect(() => {
     if (conn.current) conn.current.disconnect();
     conn.current = null;
     eventHandlers.current = null;
+    setCdpReady(false);
     reqMap.current.clear();
     setCurrentTarget(null);
     consoleEntries.current = [];
@@ -599,11 +610,13 @@ useEffect(() => {
       setStatus(result.error);
       return;
     }
-    result.ws.addEventListener('open', () => {
+        result.ws.addEventListener('open', () => {
       setStatus('connected to ' + (target.title || target.url || target.id));
       c.cdpSend('Runtime.enable').catch((err) => { setStatus('Runtime.enable failed: ' + err.message); });
       c.cdpSend('Network.enable').catch((err) => { setStatus('Network.enable failed: ' + err.message); });
-      c.cdpSend('Page.enable').catch(() => { /* preview unavailable */ });
+      c.cdpSend('Page.enable')
+        .then(() => setCdpReady(true))
+        .catch(() => { /* preview unavailable */ });
 // Restore the user's last preview size (device-metrics override).
 // Runs right after Page.enable so the override is applied before the
 // first screenshot capture. 'auto' clears any previous override.
@@ -620,8 +633,9 @@ applyViewport(viewportId);
       c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
     });
     result.ws.addEventListener('close', (ev) => {
+      setCdpReady(false);
       const code = ev && typeof ev.code === 'number' ? ev.code : 0;
-        setStatus('disconnected (code ' + code + ')');
+      setStatus('disconnected (code ' + code + ')');
       
     });
     result.ws.addEventListener('error', () => {
@@ -1072,6 +1086,7 @@ applyViewport(viewportId);
 capture: handlers && handlers.captureScreenshot,
 clickAt: handlers && handlers.clickAt,
 subscribe: conn.current && conn.current.cdpOn,
+ackFrame: handlers && handlers.ackPreviewFrame,
 refreshRef: previewRefreshRef,
 fullscreenRef: previewFullscreenRef,
 typeBarRef: previewTypeBarRef,
