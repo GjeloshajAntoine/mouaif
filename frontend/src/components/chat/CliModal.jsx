@@ -15,6 +15,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { stripAnsi } from './utils.js';
 
 export function CliModal(props) {
   const { projectDir, onClose } = props;
@@ -36,8 +37,11 @@ export function CliModal(props) {
       setOutBuffer((prev) => prev + '\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
       return;
     }
-    const t = String(text || '');
-    if (!t) return;
+    // The session is a piped (non-TTY) child, so TUI output (htop, top,
+    // less) arrives as raw ANSI control codes. Strip them here so the
+    // terminal reads as plain text instead of `\x1b[39;49m` garbage.
+    const t = stripAnsi(String(text || ''));
+    if (!t.trim() && !/\n/.test(t)) return;
     setOutBuffer((prev) => prev + t);
   }, []);
 
