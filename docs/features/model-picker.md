@@ -25,7 +25,7 @@ Pressing `Escape` or tapping outside closes the popover.
 - **Unavailable / Custom models** — if a model is currently offline or custom-configured, it renders as a distinct selection so you can see what is currently set and switch when ready.
 - **Fast search** — filters instantly across all connected provider catalogs.
 - **Instantly opens** — tapping the trigger shows the sheet immediately with whatever models are already loaded (project slugs + any live catalog already fetched). The server-backed Recent section refreshes in the background and lands in one re-render once the request resolves, so opening never waits on a network or DB round-trip.
-
+- **Contextual empty-state action** — the button in the empty card matches the cause. A search that matched nothing offers **Clear search** (drops the query and returns focus to the search box so the user can keep typing); it does not trigger a network refetch, which in the mobile sheet would blur the focused search, close the keyboard, reposition the sheet, and leave an unclickable layout. A provider with no models in the catalog offers **Refresh models**.
 ## Related
 
 - [Model bookmarks](./model-bookmarks.md) — pinned and recent models.

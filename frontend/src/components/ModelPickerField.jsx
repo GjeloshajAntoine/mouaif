@@ -311,14 +311,27 @@ export function ModelPickerField(props) {
     if (onChange) onChange(null);
   }
   async function doRefresh() {
-    if (!refresh) return;
-    setRefreshing(true);
-    try {
-      await refresh();
-    } finally {
-      setRefreshing(false);
-    }
-  }
+if (!refresh) return;
+setRefreshing(true);
+try {
+await refresh();
+} finally {
+setRefreshing(false);
+}
+}
+// doClearSearch — the empty state after a search that matched nothing.
+// Drop the query (and any provider filter) so the full catalog returns,
+// then restore focus to the search box so the user can keep typing.
+// This is the search-specific counterpart to doRefresh: a "No matches"
+// card reflects a query problem, not a missing catalog, so it must not
+// trigger a network refetch (which on a focused-search sheet also blurs
+// the input, closes the mobile keyboard, and repositions the sheet into
+// a jumpy, hard-to-tap layout).
+function doClearSearch() {
+setQ('');
+setProviderFilter('all');
+requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
+}
 
   const trigId = sel ? sel.modelId : (allowClear ? clearLabel : placeholder);
   const trigProvider = sel ? sel.providerId : (noProviders ? 'add a provider in Settings → Providers' : '');
@@ -423,17 +436,21 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         showingFullList && pinned ? renderBookmarkSection('Pinned', list.filter((m) => pinned.has(keyOf(m)))) : null,
         showingFullList && recent ? renderRecentSection(recent, list, pinned) : null,
         !groups.length ? h('div', { class: 'mp__empty' },
-          h('p', { class: 'mp__empty-title' }, q ? 'No matches' : (list.length ? 'No models for this provider' : 'No models yet')),
-          h('p', { class: 'mp__empty-text' }, q
-            ? 'No model matches "' + q + '". Try a shorter query or clear the search.'
-            : refreshEmpty),
-          refresh ? h('button', {
-            type: 'button',
-            class: 'mp__empty-action',
-            disabled: refreshing,
-            onClick: doRefresh
-          }, refreshing ? 'Refreshing…' : refreshEmpty) : null
-        ) : groups.map((g) =>
+h('p', { class: 'mp__empty-title' }, q ? 'No matches' : (list.length ? 'No models for this provider' : 'No models yet')),
+h('p', { class: 'mp__empty-text' }, q
+? 'No model matches "' + q + '". Try a shorter query or clear the search.'
+: refreshEmpty),
+q ? h('button', {
+type: 'button',
+class: 'mp__empty-action',
+onClick: doClearSearch
+}, 'Clear search') : (refresh ? h('button', {
+type: 'button',
+class: 'mp__empty-action',
+disabled: refreshing,
+onClick: doRefresh
+}, refreshing ? 'Refreshing…' : refreshEmpty) : null)
+) : groups.map((g) =>
           h('section', { class: 'mp__section', key: g.provider || 'other' },
             h('div', { class: 'mp__section-head' },
               h('span', { class: 'mp__section-title' }, g.provider || 'Other'),
