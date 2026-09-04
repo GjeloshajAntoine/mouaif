@@ -26,18 +26,33 @@ export function normalizeToolName(name) {
 // The caller (stream.js send()) decides how to handle null — for MCP
 // tools it means "no structured args" and the tool is sent to the model;
 // for shell it falls back to `{ cmd: text }`.
+export function parseAtInvocation(text) {
+const match = String(text || '').match(/^@([^\s:]+)(?::([^\s=]+)=)?\s*([\s\S]*)$/);
+if (!match) return null;
+return {
+toolName: match[1],
+rest: ((match[2] ? match[2] + '=' : '') + match[3]).trim()
+};
+}
+export function findCustomActionInvocation(text, actions) {
+const invocation = parseAtInvocation(String(text || '').trim());
+if (!invocation || invocation.rest || !Array.isArray(actions)) return null;
+return actions.find((action) => action && action.id &&
+action.id.toLowerCase() === invocation.toolName.toLowerCase()) || null;
+}
 export function parseToolArgs(text) {
-  const s = (text || '').trim();
+const s = (text || '').trim();
   if (!s) return null;
 
   // 1. Raw JSON
   try { return JSON.parse(s); } catch { /* not JSON */ }
 
-  // 2. key=value pairs (no regex – O(n) char walker, no backtracking).
-  //
-  // Accepts: key=val key="quoted val" key='quoted val'  (escape: \")
-  // Rejects input with any non-kv=value token (e.g. plain words).
-  // Capped at 2048 chars to avoid pathological inputs.
+// 2. key=value pairs (no regex – O(n) char walker, no backtracking).
+//
+// Accepts: key=val key="quoted val" key='quoted val' key=`quoted val`
+// (escape: \"), including the backticks inserted by the @-mention picker.
+// Rejects input with any non-kv=value token (e.g. plain words).
+// Capped at 2048 chars to avoid pathological inputs.
   const len = Math.min(s.length, 2048);
   const isNameChar = (ch) => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
     || (ch >= '0' && ch <= '9') || ch === '_' || ch === '.' || ch === '-';
@@ -65,8 +80,8 @@ export function parseToolArgs(text) {
     if (i >= len) return null; // key without value
 
     let value;
-    if (s[i] === '"' || s[i] === "'") {
-      const quote = s[i];
+if (s[i] === '"' || s[i] === "'" || s[i] === '`') {
+const quote = s[i];
       i++; // skip opening quote
       const valStart = i;
       while (i < len && s[i] !== quote) {

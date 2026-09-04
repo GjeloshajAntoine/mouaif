@@ -195,6 +195,11 @@ params: { properties: props, required }
 try {
 const cr = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
 if (cr.status === 200 && Array.isArray(cr.body && cr.body.actions)) {
+// Keep direct dispatch on the same fresh list the popup is rendering.
+// Without this, a newly created action can appear here but fall through
+// to a normal model turn because send() still has the chat-load snapshot.
+if (uiState && typeof uiState._setCustomActions === 'function') uiState._setCustomActions(cr.body.actions);
+else if (uiState) uiState.customActions = cr.body.actions;
 for (const action of cr.body.actions) {
 if (!action || !action.id) continue;
 const actionLabel = action.label || action.id;

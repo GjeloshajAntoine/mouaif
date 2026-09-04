@@ -25,7 +25,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
-import { normalizeToolName, parseToolArgs } from './tools.js';
+import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
@@ -304,9 +304,13 @@ response = decision === 'deny' ? { status: 403, body: { ok: false, error: 'user 
 response = { status: 500, body: { ok: false, error: String(error) } };
 }
 const body = response && response.body || {};
-appendToolResultCard({ id: callId, name: toolName, ok: response.status === 200 && body.ok !== false, result: body.result || body }, refs);
+const result = body.result || body;
+const resultText = result && Array.isArray(result.content)
+? result.content.map((item) => item && item.type === 'text' ? item.text : '').filter(Boolean).join('\n')
+: '';
+appendToolResultCard({ id: callId, name: toolName, ok: response.status === 200 && body.ok !== false, result }, refs);
 if (response.status === 200 && body.ok !== false) setChatStatus(refs, (action.label || action.id) + ' done', 'success');
-else setChatStatus(refs, (action.label || action.id) + ' failed: ' + (body.error || body.code || 'unknown'), 'error');
+else setChatStatus(refs, (action.label || action.id) + ' failed: ' + (body.error || result.error || resultText || body.code || 'unknown'), 'error');
 if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
 async function fetchRunState(projectDir, chatId) {
@@ -509,16 +513,14 @@ return;
   // and file references fall through to the normal model send — the popup
   // inserts @path for file refs too, and we don't want to silently drop
   // those when the user hits Enter.
-  const atMatch = text.match(/^@(\S+)\s*(.*)$/);
-  if (atMatch) {
-    const toolName = atMatch[1];
-const rest = atMatch[2].trim();
+  const atMatch = parseAtInvocation(text);
+if (atMatch) {
+const toolName = atMatch.toolName;
+const rest = atMatch.rest;
 // @<custom-action> — direct project shortcut. Custom actions do not
 // accept ad-hoc arguments; their command or MCP args are saved in settings.
-const customAction = Array.isArray(state.customActions)
-? state.customActions.find((action) => action && action.id.toLowerCase() === toolName.toLowerCase())
-: null;
-if (customAction && !rest) return runCustomAction(customAction, state, refs);
+const customAction = findCustomActionInvocation(text, state.customActions);
+if (customAction) return runCustomAction(customAction, state, refs);
 // @<agent> <task> — direct project-agent dispatch. Checked before
     // the tool catalog: agent names live in .mouaif.json, not the tool
     // list. Only a leading @ with a non-empty task dispatches.

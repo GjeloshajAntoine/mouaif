@@ -318,8 +318,14 @@ set autoRetry(v) { autoRetryRef.current = !!v; }
 };
 }
 const state = stateRef.current;
-  state.props = { projectDir, chatId };
+state.props = { projectDir, chatId };
 state.customActions = customActions;
+state._setCustomActions = (actions) => {
+const next = Array.isArray(actions) ? actions : [];
+if (JSON.stringify(state.customActions || []) === JSON.stringify(next)) return;
+state.customActions = next;
+setCustomActions(next);
+};
 
   const chatSwitcherTrigger = useRef(null);
   const chatSwitcherPop = useRef(null);
@@ -346,10 +352,11 @@ state.customActions = customActions;
     if (!projectDir) return;
     try {
       const response = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
-      if (response.status === 200 && Array.isArray(response.body && response.body.actions)) {
-        setCustomActions(response.body.actions);
-      }
-    } catch { /* keep the last known action list */ }
+if (response.status === 200 && Array.isArray(response.body && response.body.actions)) {
+state.customActions = response.body.actions;
+setCustomActions(response.body.actions);
+}
+} catch { /* keep the last known action list */ }
   }, [projectDir]);
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
@@ -1144,7 +1151,10 @@ updateChat: updateChatBound,
       if (v) openPickerWithFreshRecent();
       else setPickerOpen(false);
     },
-    onComposerKey: (e) => onComposerKey(e, send, { enterForNewline: state.enterForNewline }),
+    onComposerKey: (e) => onComposerKey(e, send, {
+enterForNewline: state.enterForNewline,
+customActions: state.customActions
+}),
     onComposerInput: () => {
 const nextText = refs.promptInput.current ? refs.promptInput.current.value : '';
 setImageAttachments((current) => rebaseAnnotationStarts(current, composerTextRef.current, nextText));

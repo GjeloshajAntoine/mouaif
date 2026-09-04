@@ -17,10 +17,10 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
 - **Matching files always appear first**, ahead of matching agents, actions, tools, MCP tools, and the model. Relevance order is preserved within the file and non-file groups.
 - **At rest** (empty query), a **category filter bar** sits at the top of the popup with chippable types: **Files**, **Agents**, **Actions**, **Tools**, **MCP**, **Model**. Tap a chip to show **only** that category (with its full list rather than the 4-item cap); tap the active chip again to return to the mixed "All" view. When a type has no items (e.g. no model configured), the bar stays visible so you can switch back instead of losing the popup. The filter applies only while the popup is open; it resets to "All" each time a fresh `@` is typed.
 - In the mixed "All" view, each category shows at most **4 items** so Files don't crowd out Agents, Actions, Tools, MCP, and Model. Start typing to drop the per-category cap and search the full list across every category (the filter bar hides while searching).
-- Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside.
+- Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside. For a complete custom action, press Enter again to run it; this works even when the composer normally uses Enter for a newline.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
-- **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent.
-- The popup refreshes periodically (every 5 s) to pick up newly scanned files or changed tags.
+- **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent. This generated colon/backtick syntax dispatches directly for MCP tools.
+- The popup refreshes periodically (every 5 s) to pick up newly scanned files, changed tags, or changed custom actions. Its refreshed custom-action list is also used for direct dispatch, so an action shown in the popup runs without reopening the chat.
 
 ## Direct agent invocation
 
@@ -40,6 +40,7 @@ When the composer text starts with `@` followed by a directly-invocable tool nam
 |--------|---------|--------|
 | **JSON** | `@mcp__fs__list { "path": "/etc" }` | `{ path: "/etc" }` |
 | **key=value** | `@mcp__fs__read path=/etc recursive=true` | `{ path: "/etc", recursive: true }` |
+| **Picker syntax** | `@mcp__fs__read:path=\`/etc/my file\`` | `{ path: "/etc/my file" }` |
 | **Positional** | `@shell ls -la` | `{ cmd: "ls -la" }` (shell only) |
 
 Rules:

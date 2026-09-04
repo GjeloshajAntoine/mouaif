@@ -62,13 +62,15 @@ export function onComposerInput(refs, projectDir, chatId, updateChat) {
 }
 
 import { isAtMentionActive } from './atMention.js';
+import { findCustomActionInvocation } from './tools.js';
 
 // onComposerKey(e, send, opts)
 //
 // Enter / Shift-Enter behavior is governed by `enterForNewline`
 // (the app-level Chat defaults toggle, default true). When true,
-// Enter inserts a newline and Ctrl/Cmd+Enter sends. When false,
-// Enter sends and Shift-Enter inserts a newline. `isComposing` is
+// Enter inserts a newline and Ctrl/Cmd+Enter sends, except a complete
+// custom @action sends directly. When false, Enter sends and Shift-Enter
+// inserts a newline. `isComposing` is
 // checked so the IME's own Enter (which is also `key: Enter`)
 // doesn't fire send mid-composition. When the @-mention popup is
 // open, Enter is consumed by that popup and does not send.
@@ -77,11 +79,16 @@ export function onComposerKey(e, send, opts = {}) {
   const isEnter = e.key === 'Enter';
   const cmdEnter = isEnter && (e.ctrlKey || e.metaKey);
   const shiftEnter = isEnter && e.shiftKey;
-  // Always block Enter from submitting the composer while the IME is
-  // composing or the @-mention popup owns the key.
-  if (isEnter && !e.isComposing && !isAtMentionActive()) {
-    if (cmdEnter) {
-      // Ctrl/Cmd+Enter always sends, in either mode.
+const directAction = isEnter && !shiftEnter && findCustomActionInvocation(
+e.currentTarget && e.currentTarget.value,
+opts.customActions
+);
+// Always block Enter from submitting the composer while the IME is
+// composing or the @-mention popup owns the key.
+if (isEnter && !e.isComposing && !isAtMentionActive()) {
+if (cmdEnter || directAction) {
+      // Ctrl/Cmd+Enter always sends. A complete @action does too, so the
+// autocomplete's Enter selection can be followed by Enter to run it.
       e.preventDefault();
       send();
     } else if (enterForNewline) {
