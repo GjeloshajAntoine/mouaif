@@ -225,6 +225,7 @@ try {
           name: s.name,
           kind: 'mcp',
           source: s.serverSlug || '',
+          serverId: s.serverId || '',
           description: s.description || '',
           parameters: s.parameters || null
         });

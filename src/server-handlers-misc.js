@@ -248,10 +248,9 @@ async function handleMcp(req, res, parsed) {
   }
 
   // POST /api/mcp/call  body: { projectDir, serverId, toolName, args }
-  // Generic dispatch endpoint used by the AI client and by tests. The
-  // AI client itself does not round-trip through HTTP; it calls
-  // mcp.callTool() in-process. This endpoint is here for parity and
-  // for a future UI action like "test this tool".
+  // Generic direct-dispatch endpoint used by the chat composer and tests.
+  // The AI client itself does not round-trip through HTTP; it calls
+  // mcp.callTool() in-process.
   if (urlPath === '/api/mcp/call' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;

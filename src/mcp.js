@@ -1379,6 +1379,7 @@ function listComposedToolSpecs(projectDir) {
           name: composedToolName(entry.slug, tool.name),
           description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
           parameters: shrinkMcpSchema(tool.inputSchema) || { type: 'object', properties: {} },
+          serverId: entry.id,
           serverSlug: entry.slug,
           toolName: tool.name
         });
@@ -1399,6 +1400,7 @@ function listComposedToolSpecs(projectDir) {
           name: composedToolName(entry.slug, tool.name),
           description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
           parameters: tool.inputSchema || { type: 'object', properties: {} },
+          serverId: entry.id,
           serverSlug: entry.slug,
           toolName: tool.name
         });

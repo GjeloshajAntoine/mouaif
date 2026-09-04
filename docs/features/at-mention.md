@@ -46,7 +46,7 @@ When the composer text starts with `@` followed by a directly-invocable tool nam
 Rules:
 
 - `@shell <cmd>` dispatches the native shell tool with `{ cmd: "<cmd>" }`.
-- `@mcp__<server>__<tool> <args>` dispatches the MCP tool with parsed args.
+- `@mcp__<server>__<tool> <args>` dispatches the MCP tool with parsed args. The direct call uses the catalog's stable MCP server ID plus the current chat/call IDs, so the normal per-tool authorization gate still applies without a model round-trip.
 - **Native file tools** (`read_file`, `list_files`, search_files`, etc.) are never dispatched directly — the `@` text is sent to the model, which can use the tool naturally.
 - If `@` is in the middle of the text (not at the start), it is always sent to the model as a normal message — only the leading `@` triggers direct invocation.
 - An `@` tool name with no parseable arguments also falls through to normal model send (the model can pick up the file reference).

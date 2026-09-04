@@ -122,6 +122,7 @@ async function main() {
   const specs = mcp.listComposedToolSpecs(projectDir);
   check('listComposedToolSpecs has 2 entries', specs.length === 2, 'got: ' + specs.length);
   check('listComposedToolSpecs uses mcp__ prefix', specs.every(s => s.name.startsWith('mcp__')));
+  check('listComposedToolSpecs carries server ID for direct calls', specs.every(s => s.serverId === server.id));
   check('listComposedToolSpecs carries serverSlug', specs.every(s => s.serverSlug === 'test_server'));
   const echoSpec = specs.find(s => s.toolName === 'echo');
   check('listComposedToolSpecs carries description', echoSpec && typeof echoSpec.description === 'string' && echoSpec.description.length > 0);

@@ -25,7 +25,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
-import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
+import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
@@ -234,15 +234,13 @@ export async function runAgentCommand(agentName, task, state, refs) {
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
 }
 
-// runMcpCommand(serverSlug, toolName, label, state, refs)
-//
-// runMcpCommand(serverSlug, toolName, label, state, refs, args)
+// runMcpCommand(serverId, toolName, label, state, refs, args)
 //
 // Direct MCP tool invocation from the @-mention popup.
 // Calls POST /api/mcp/call and renders a tool_call + tool_result card.
-export async function runMcpCommand(serverSlug, toolName, label, state, refs, args) {
+export async function runMcpCommand(serverId, toolName, label, state, refs, args) {
   const { projectDir, chatId } = state.props;
-  if (!projectDir) return;
+  if (!projectDir || !chatId || !serverId) return;
   const callArgs = args || {};
   const callId = 'mcp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   refs.promptInput.current.value = '';
@@ -250,23 +248,33 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
   appendToolCallCard({ id: callId, name: label || toolName, args: callArgs }, refs);
   setChatStatus(refs, 'calling MCP ' + (label || toolName) + '…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
-  let r;
-  try {
-    r = await fetchJson('/api/mcp/call', {
+  async function requestMcp() {
+    return fetchJson('/api/mcp/call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, serverId: serverSlug, toolName, args: callArgs })
+      body: JSON.stringify(buildDirectMcpCall({ projectDir, chatId, callId, serverId, toolName, args: callArgs }))
     });
+  }
+  let r;
+  try {
+    r = await requestMcp();
+    if (r.status === 409 && r.body && r.body.code === 'EAUTH_REQUIRED') {
+      let resumed = null;
+      const decision = await authorizationCard(r.body, projectDir, chatId, refs, async () => { resumed = await requestMcp(); }, state);
+      r = decision === 'deny'
+        ? { status: 403, body: { ok: false, code: 'EDENIED', error: 'user denied' } }
+        : resumed;
+    }
   } catch (err) {
     appendToolResultCard({ id: null, name: label || toolName, args: callArgs, ok: false, result: { error: String(err) } }, refs);
     setChatStatus(refs, 'MCP error', 'error');
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     return;
   }
-  const body = r.body || {};
-  appendToolResultCard({ id: callId, name: label || toolName, ok: !!body.ok, result: body }, refs);
-  if (r.status === 403) setChatStatus(refs, 'MCP tool is disabled', 'error');
-  else if (r.status !== 200) setChatStatus(refs, 'MCP failed: ' + (body.error || body.code || 'HTTP ' + r.status), 'error');
+  const body = (r && r.body) || {};
+  appendToolResultCard({ id: callId, name: label || toolName, ok: r && r.status === 200 && body.ok !== false, result: body }, refs);
+  if (r && r.status === 403) setChatStatus(refs, 'MCP tool is disabled', 'error');
+  else if (!r || r.status !== 200) setChatStatus(refs, 'MCP failed: ' + (body.error || body.code || 'HTTP ' + (r && r.status)), 'error');
   else setChatStatus(refs, 'MCP ' + (label || toolName) + ' done', 'success');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
 }
@@ -571,14 +579,14 @@ if (customAction) return runCustomAction(customAction, state, refs);
     const toolSpec = (t.catalog || []).find(x => x && x.name === toolName);
     if (toolSpec) {
       if (String(toolName).startsWith('mcp__')) {
-        // MCP tool — parse server slug + tool name
+        // MCP tool — the catalog carries the stable server ID required by
+        // the direct endpoint; the composed name still supplies the tool name.
         const parts = String(toolName).split('__');
-        if (parts.length >= 3) {
-          const serverSlug = parts[1];
+        if (parts.length >= 3 && toolSpec.serverId) {
           const mcpTool = parts.slice(2).join('__');
           const args = rest ? parseToolArgs(rest) : null;
           if (args) {
-            return runMcpCommand(serverSlug, mcpTool, toolName, state, refs, args);
+            return runMcpCommand(toolSpec.serverId, mcpTool, toolName, state, refs, args);
           }
         }
       } else if (toolName === 'shell') {
