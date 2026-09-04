@@ -152,6 +152,7 @@ export function ModelPickerField(props) {
   const searchRef = useRef(null);
   const listRef = useRef(null);
   const triggerRef = useRef(null);
+  const backdropPressRef = useRef(false);
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
   const isSheet = variant === 'sheet' || variant === 'chat';
@@ -162,13 +163,15 @@ export function ModelPickerField(props) {
     : null;
 
   const closeAndRestoreFocus = useCallback(() => {
+    // Release native modal inertness before returning focus to the trigger.
+    if (isSheet && popRef.current && popRef.current.open) popRef.current.close();
     setEffectiveOpen(false);
     if (triggerRef.current) triggerRef.current.focus({ preventScroll: true });
-  }, [setEffectiveOpen]);
+  }, [setEffectiveOpen, isSheet]);
 
   // Outside taps must not steal focus from the control being tapped.
   useEffect(() => {
-    if (!effectiveOpen) return;
+    if (!effectiveOpen || isSheet) return;
     const onDocClick = (ev) => {
       if (rootRef.current && !rootRef.current.contains(ev.target)) setEffectiveOpen(false);
     };
@@ -183,7 +186,7 @@ export function ModelPickerField(props) {
       document.removeEventListener('touchstart', onDocClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [effectiveOpen, setEffectiveOpen, closeAndRestoreFocus]);
+  }, [effectiveOpen, isSheet, setEffectiveOpen, closeAndRestoreFocus]);
 
   // Loading models never controls focus or remounts the search input.
   useEffect(() => {
@@ -204,11 +207,22 @@ export function ModelPickerField(props) {
     if (!pop) return;
     const vv = window.visualViewport;
     let frame = 0;
+    // Capture once: background auto-scroll must not move the open dialog
+    // later just because focus changes. Viewport changes only clamp it.
+    const anchor = triggerRef.current && triggerRef.current.getBoundingClientRect();
     const sync = () => {
       const height = vv && vv.height ? vv.height : window.innerHeight;
       const top = vv ? Math.max(0, vv.offsetTop) : 0;
       pop.style.setProperty('--model-picker-viewport-height', height + 'px');
       pop.style.setProperty('--model-picker-viewport-top', top + 'px');
+      // Desktop remains anchored near the trigger, but the native top layer
+      // cannot inherit its coordinates from a positioned/scrolled ancestor.
+      if (anchor) {
+        const bottom = Math.min(Math.max(top, anchor.bottom + 4), top + height - Math.min(280, height));
+        pop.style.setProperty('--model-picker-anchor-top', bottom + 'px');
+        pop.style.setProperty('--model-picker-anchor-left', anchor.left + 'px');
+        pop.style.setProperty('--model-picker-available-height', Math.max(0, top + height - bottom) + 'px');
+      }
     };
     const scheduleSync = () => {
       cancelAnimationFrame(frame);
@@ -223,7 +237,11 @@ export function ModelPickerField(props) {
     pop.addEventListener('focusin', scheduleSync);
     pop.addEventListener('focusout', scheduleSync);
     sync();
+    // showModal promotes the sheet out of every clipping/transform/scroll
+    // ancestor and makes background controls inert, including incoming cards.
+    if (!pop.open) pop.showModal();
     return () => {
+      if (pop.open) pop.close();
       cancelAnimationFrame(frame);
       if (vv) {
         vv.removeEventListener('resize', sync);
@@ -235,6 +253,9 @@ export function ModelPickerField(props) {
       pop.removeEventListener('focusout', scheduleSync);
       pop.style.removeProperty('--model-picker-viewport-height');
       pop.style.removeProperty('--model-picker-viewport-top');
+      pop.style.removeProperty('--model-picker-anchor-top');
+      pop.style.removeProperty('--model-picker-anchor-left');
+      pop.style.removeProperty('--model-picker-available-height');
     };
   }, [effectiveOpen, isSheet]);
 
@@ -287,7 +308,8 @@ export function ModelPickerField(props) {
     setRefreshing(true);
     setRefreshError('');
     try {
-      await refresh();
+      const result = await refresh();
+      if (result && result.error) setRefreshError(result.error);
     } catch {
       setRefreshError('Could not refresh models. Try again.');
     } finally {
@@ -332,12 +354,32 @@ export function ModelPickerField(props) {
     ),
     h('span', { class: 'mp__caret', 'aria-hidden': 'true' }, '▾')
     ),
-    effectiveOpen ? h('div', {
+    effectiveOpen ? h(isSheet ? 'dialog' : 'div', {
       class: 'mp__pop',
       role: 'dialog',
       'aria-modal': isSheet ? 'true' : undefined,
       'aria-label': ariaLabel,
-      ref: popRef
+      ref: popRef,
+      onCancel: isSheet ? (ev) => { ev.preventDefault(); closeAndRestoreFocus(); } : undefined,
+      onKeyDown: isSheet ? (ev) => {
+        // Search inputs can consume Escape before the native cancel event.
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeAndRestoreFocus(); }
+      } : undefined,
+      // Dismiss only gestures that start AND end outside the content.
+      // A text-selection drag from search onto the backdrop is not a tap.
+      onPointerDown: isSheet ? (ev) => {
+        const r = ev.currentTarget.getBoundingClientRect();
+        backdropPressRef.current = ev.target === ev.currentTarget
+          && (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom);
+      } : undefined,
+      onPointerCancel: isSheet ? () => { backdropPressRef.current = false; } : undefined,
+      onClick: isSheet ? (ev) => {
+        const startedOutside = backdropPressRef.current;
+        backdropPressRef.current = false;
+        if (!startedOutside || ev.target !== ev.currentTarget) return;
+        const r = ev.currentTarget.getBoundingClientRect();
+        if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) closeAndRestoreFocus();
+      } : undefined
     },
       h('div', { class: 'mp__head' },
         h('input', {

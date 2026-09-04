@@ -734,27 +734,24 @@ export async function refreshActiveProvider(state, refs) {
   if (res.ok && typeof state._onLiveModels === 'function') state._onLiveModels(provider);
 }
 
-// refreshAllProviders(state, refs, setChatStatus)
-//
-// Pull the live catalog for every configured provider in parallel
-// and surface a one-line summary on the head. Used by the picker's
-// ↻ button.
-export async function refreshAllProviders(state, refs, setChatStatus) {
+// Refresh belongs to the picker, not the composer: changing the bottom
+// chat status resizes/re-pins the transcript behind an open sheet.
+// Return feedback for the caller to display inside the picker instead.
+export async function refreshAllProviders(state, refs) {
   // The refresh button is rendered by ModelPickerField (not an imperative
   // DOM node), so there is no refs.modelPickerRefresh to disable here; the
   // component disables it itself via its `refreshing` state.
-  setChatStatus('refreshing models…', 'busy');
   invalidateModelsCache();
   const providers = state.providers.map((p) => p && p.id).filter(Boolean);
   if (!providers.length) {
-    setChatStatus('add a provider in Settings → Providers', 'error');
-    return;
+    return { error: 'Add a provider in Settings → Providers.' };
   }
   const results = await Promise.all(
     providers.map((p) => fetchLiveForProvider(p, state, true)
       .catch((err) => ({ provider: p, ok: false, body: { error: String(err), code: 'ELIVE' }, status: 0 })))
   );
   let total = 0, failed = 0, primary = null;
+  let error = '';
   for (const r of results) {
     if (r.ok) total += r.count;
     else failed++;
@@ -773,9 +770,10 @@ export async function refreshAllProviders(state, refs, setChatStatus) {
     else if (code === 'EUPSTREAM')   pill = (primary.provider + ' returned ' + (primary.status || '?'));
     else if (code === 'ENO_LIST')    pill = (primary.provider + ' has no model list endpoint');
     else                              pill = 'model list failed (' + (primary.status || '?') + ')';
-    setChatStatus(pill + (msg && msg !== pill ? ' — ' + msg : ''), 'error');
-  } else {
-    setChatStatus('models: ' + total + (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
+    error = pill + (msg && msg !== pill ? ' — ' + msg : '');
+  } else if (failed) {
+    error = failed + ' provider model list(s) could not be refreshed. Try again.';
   }
   if (typeof state._onLiveModels === 'function') state._onLiveModels('all');
+  return { count: total, error };
 }

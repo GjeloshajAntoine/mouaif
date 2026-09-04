@@ -26,12 +26,14 @@ Pressing `Escape` or tapping outside closes the popover.
 - **Fast search** — filters instantly across all connected provider catalogs.
 - **Instantly opens** — tapping the trigger shows the sheet immediately with whatever models are already loaded (project slugs + any live catalog already fetched). The server-backed Recent section refreshes in the background and lands in one re-render once the request resolves, so opening never waits on a network or DB round-trip.
 - **Empty-state actions** — **Refresh models** remains the primary action when no models match a search or a provider has no models (where catalog refresh is supported). A non-empty search also offers a separate **Clear search** action: it clears only the text, keeps the selected provider, returns focus to search, and makes no network request. Whitespace-only text is not treated as a search.
-- **Refresh without losing your place** — both the header and empty-state refresh actions fetch fresh catalogs, even with no search matches. Refresh keeps the sheet open, retains the query and provider filter, and does not clear the existing catalog while loading. Pointer activation keeps an already-focused search input focused; completion does not steal focus or reopen a dismissed keyboard. Duplicate refreshes are blocked while loading; a rejected refresh shows a retryable inline error.
+- **Refresh without losing your place** — both the header and empty-state refresh actions fetch fresh catalogs, even with no search matches. Refresh keeps the sheet open, retains the query and provider filter, and does not clear the existing catalog while loading. Pointer activation keeps an already-focused search input focused; completion does not steal focus or reopen a dismissed keyboard. Duplicate refreshes are blocked while loading; provider failures and rejected requests show a retryable inline error. Refresh feedback stays inside the picker: it never changes the bottom composer status, which would resize and re-pin the transcript behind the sheet.
 - **Native mobile gestures** — swipe the model list vertically or the provider chips horizontally. Slight finger movement on short-list rows no longer cancels selection. Keyboard opening, dismissal, and rotation resize the sheet to the visible viewport.
 
 ## Implementation notes
 
-`frontend/src/components/ModelPickerField.jsx` updates the sheet's visual-viewport height and top offset before paint and on resize/scroll events. The sheet bottom remains at `visualViewport.offsetTop + visualViewport.height`; keyboard height is not subtracted a second time. Focus uses `preventScroll`, and Clear search focuses synchronously rather than in a later animation frame.
+Sheet variants in `frontend/src/components/ModelPickerField.jsx` use a native `dialog` opened with `showModal()`. The browser top layer keeps the picker out of clipping, transformed, and scrolling app ancestors and makes background controls inert while it is open. Close, Escape, and backdrop taps release the modal and restore trigger focus. Desktop positioning uses the trigger's viewport rectangle; phone landscape retains the viewport sheet layout.
+
+The component updates the sheet's visual-viewport height and top offset before paint and on resize/scroll events. The sheet bottom remains at `visualViewport.offsetTop + visualViewport.height`; keyboard height is not subtracted a second time. Focus uses `preventScroll`, and Clear search focuses synchronously rather than in a later animation frame.
 
 `frontend/src/chat-view.css` uses native scrolling and overscroll containment rather than cancelling `touchmove`. Mobile search and model-option inputs use a 1rem font to avoid small-input focus zoom. Viewport listeners and scheduled focus synchronization are cleaned up when the sheet closes.
 
@@ -41,9 +43,12 @@ With debug Chrome available at `http://127.0.0.1:9222` (or `CDP_URL`), run:
 
 ```bash
 node scripts/test-model-picker.cjs
+node scripts/test-model-picker-chat.cjs
 ```
 
-The browser test bundles the real component into a temporary blank tab with mock models and refresh requests. It checks touch scrolling/taps, focus, filters, errors, and simulated visual-viewport changes without modifying app data. Real iOS Safari/PWA keyboard animation still needs a device check.
+The component test checks touch gestures, focus, filters, errors, landscape, backdrop dismissal, and simulated visual-viewport changes. The ChatView integration test mounts the real app and full stylesheet with mocked requests: refresh success/failure must leave composer status, transcript geometry, and scroll offsets unchanged, including under transformed/clipped ancestors. Neither test modifies app data. Real iOS Safari/PWA keyboard animation still needs a device check.
+
+The production refresh helper in `frontend/src/components/chat/modelPicker.js` returns `{ count, error }` to the picker through `useChatState.js`; it does not write chat status. Successful provider catalogs still update through the existing live-model callback, and failures retain their previous catalog.
 
 ## Related
 

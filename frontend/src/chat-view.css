@@ -713,7 +713,12 @@ margin: 0;
 padding: 0.5rem;
 font-size: 0.8rem;
 color: var(--warning);
-flex: 0 0 auto;
+flex: 0 1 auto;
+min-height: 0;
+max-height: min(4rem, calc(var(--model-picker-viewport-height, 100dvh) * 0.2));
+overflow: auto;
+overflow-wrap: anywhere;
+overscroll-behavior: contain;
 }
 .mp__empty-title { margin: 0 0 4px; font-weight: 600; color: var(--fg); }
 .mp__empty-text { margin: 0 0 10px; }
@@ -818,15 +823,24 @@ padding-block: 0;
 }
 
 .mp--sheet > .mp__pop {
+position: fixed;
 z-index: 46;
-top: calc(100% + 4px);
-left: 0;
-right: 0;
-width: auto;
-max-height: min(60vh, calc(100dvh - 48px - var(--safe-top, 0px)));
-min-height: 280px;
+margin: 0;
+padding: 0;
+color: var(--fg);
+font: inherit;
+top: var(--model-picker-anchor-top, 0px);
+left: clamp(0px, var(--model-picker-anchor-left, 0px), max(0px, calc(100% - 30rem)));
+right: auto;
+bottom: auto;
+width: min(30rem, 100%);
+max-width: 100%;
+max-height: min(60dvh, var(--model-picker-available-height, 100dvh));
+min-height: min(280px, var(--model-picker-available-height, 100dvh));
 }
-@media (max-width: 480px) {
+.mp--sheet > .mp__pop:not([open]) { display: none; }
+.mp__pop::backdrop { background: rgba(0, 0, 0, 0.2); }
+@media (max-width: 480px), (pointer: coarse) and (max-height: 480px) {
 .mp--sheet > .mp__pop {
 position: fixed;
 top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));

@@ -453,7 +453,7 @@ recent: loadRecent(state)
   // the head's ↻ button does, but it lives inside the picker
   // module (which doesn't import the hook), so we expose the
   // bound callback here.
-  state._onRefreshAllProviders = () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st));
+  state._onRefreshAllProviders = () => refreshAllProviders(state, refs);
   // Re-render the tools card when a tool is marked as used (called
   // from the SSE stream handler). This swaps the DOM subtree in
   // place so the "used" badge appears without a full transcript
@@ -1151,7 +1151,7 @@ updateChat: updateChatBound,
         refs.maxOutputTokens.current.value = (state.chat && state.chat.maxOutputTokens) || state.maxOutputTokens || '';
       }
     },
-    onRefreshAllProviders: () => refreshAllProviders(state, refs, (txt, st) => setChatStatus(refs, txt, st)).then(() => syncPickerState()),
+    onRefreshAllProviders: () => refreshAllProviders(state, refs),
     onPickerOpenChange: (v) => {
       if (v) openPickerWithFreshRecent();
       else setPickerOpen(false);
