@@ -1,8 +1,8 @@
 // mouaif web — @-mention autocomplete for the composer
 //
 // Detects when the user types @ in the textarea and shows a popup
-// overlay with matching items: project files, agents, actions, MCP
-// tools, and the active model.
+// overlay with matching items: project files, agents, project actions,
+// native tools, MCP tools, and the active model.
 //
 // The popup appears above the textarea and stays visible until the
 // user dismisses it with Escape, taps outside, or completes a
@@ -12,11 +12,11 @@ import { fetchJson } from '../../api.js';
 
 // ---- Categories ---------------------------------------------------------
 
-const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MCP: 'mcp', MODEL: 'model' };
-const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', mcp: '🔌', model: '🤖' };
+const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', TOOLS: 'tools', MCP: 'mcp', MODEL: 'model' };
+const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', tool: '🛠️', mcp: '🔌', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
 // At rest (empty query), show only this many items per category so the
-// Files section doesn't push Agents/Actions/MCP/Model out of view. Typing a
+// Files section doesn't push Agents/Actions/Tools/MCP/Model out of view. Typing a
 // query drops the per-category cap entirely.
 const REST_PER_CATEGORY = 4;
 
@@ -40,6 +40,7 @@ const FILTER_ORDER = [
   { key: CATEGORY.FILES, label: 'Files' },
   { key: CATEGORY.AGENTS, label: 'Agents' },
   { key: CATEGORY.ACTIONS, label: 'Actions' },
+  { key: CATEGORY.TOOLS, label: 'Tools' },
   { key: CATEGORY.MCP, label: 'MCP' },
   { key: CATEGORY.MODEL, label: 'Model' },
 ];
@@ -149,26 +150,29 @@ async function buildItems(projectDir) {
     });
   }
 
-// 3. Direct MCP tools from the catalog. Native model tools are omitted:
-// they are not project actions and most cannot be invoked directly with @.
-const mcpToolNames = new Set();
+// 3. Tools from the catalog. Native model tools and MCP tools are separate
+// categories so neither is confused with a saved project action.
+const toolNames = new Set();
 const tools = uiState && uiState.tools;
 if (tools && Array.isArray(tools.catalog)) {
 for (const t of tools.catalog) {
-if (!t || t.kind !== 'mcp' || !t.name || mcpToolNames.has(t.name)) continue;
-mcpToolNames.add(t.name);
+if (!t || !t.name || toolNames.has(t.name)) continue;
+toolNames.add(t.name);
 // Extract parameters schema if present
 const params = t.parameters || (t.inputSchema) || null;
 const props = (params && params.properties) || {};
 const required = (params && Array.isArray(params.required)) ? params.required : [];
+const isMcp = t.kind === 'mcp';
 out.push({
-id: 'mcp:' + t.name,
+id: (isMcp ? 'mcp:' : 'tool:') + t.name,
 label: t.name,
-subtitle: (t.source ? t.source + ' · ' : '') + (t.description || 'MCP tool'),
-category: CATEGORY.MCP,
-icon: 'mcp',
+subtitle: isMcp
+? ((t.source ? t.source + ' · ' : '') + (t.description || 'MCP tool'))
+: (t.description || 'Native tool'),
+category: isMcp ? CATEGORY.MCP : CATEGORY.TOOLS,
+icon: isMcp ? 'mcp' : 'tool',
 insert: t.name,
-searchText: (t.name + ' ' + (t.source || '') + ' ' + (t.description || '') + ' mcp').toLowerCase(),
+searchText: (t.name + ' ' + (t.source || '') + ' ' + (t.description || '') + (isMcp ? ' mcp' : ' native tool')).toLowerCase(),
 params: { properties: props, required }
 });
 }
@@ -229,9 +233,9 @@ params: null
   }
 
   out.sort((a, b) => {
-    const catOrder = { files: 0, agents: 1, actions: 2, mcp: 3, model: 4 };
-    const ca = catOrder[a.category] ?? 5;
-    const cb = catOrder[b.category] ?? 5;
+const catOrder = { files: 0, agents: 1, actions: 2, tools: 3, mcp: 4, model: 5 };
+const ca = catOrder[a.category] ?? 6;
+const cb = catOrder[b.category] ?? 6;
     if (ca !== cb) return ca - cb;
     return a.label.localeCompare(b.label);
   });
@@ -378,7 +382,7 @@ function selectItem(idx) {
 
   // Tools with parameters get the colon + first required arg inserted
   // and an arg bar shown below the textarea for remaining params.
-  if (item.category === CATEGORY.MCP && item.params && Object.keys(item.params.properties).length > 0) {
+  if ((item.category === CATEGORY.TOOLS || item.category === CATEGORY.MCP) && item.params && Object.keys(item.params.properties).length > 0) {
     const props = item.params.properties;
     const required = item.params.required;
     // Pick the first required param, or the first param if none required
