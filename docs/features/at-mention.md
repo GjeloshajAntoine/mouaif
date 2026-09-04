@@ -2,18 +2,19 @@
 
 ## Overview
 
-The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **tools/actions**, and the **current model**. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
+The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **agents**, **actions**, **MCP tools**, and the **current model**. Native and custom actions are visually separated from MCP server tools so their execution source is clear. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
 
 ## Usage
 
 - Type `@` anywhere in the chat composer. A popup appears above the composer showing:
 - **Files** — tagged project files first (with their tags listed in the search text), then scanned project text files (up to ~200). Each result shows the file name as its primary label and the project-relative folder underneath; root files show **Project root**. Selecting a file inserts `@<relPath>`.
 - **Agents** — the project's subagent personas (from Settings → Project → Agents), with their pinned model in the subtitle when set.
-- **Actions** — the project's available tools (shell, read_file, list_files, write_file, etc.).
+- **Actions** — native tools and project custom actions, including shell, file tools, and saved CLI/MCP shortcuts.
+- **MCP** — tools exposed directly by running MCP servers. Each row uses a plug icon and shows its server and description.
 - **Model** — the currently selected model ID.
 - Narrow the list by typing any part of a file name or folder path (case-insensitive search against label, full relative path, and tags). The 200-file display cap is applied after matching, so files and folders later in large project scans remain searchable.
-- **At rest** (empty query), a **category filter bar** sits at the top of the popup with chippable types: **Files**, **Agents**, **Actions**, **Model**. Tap a chip to show **only** that category (with its full list rather than the 4-item cap); tap the active chip again to return to the mixed "All" view. When a type has no items (e.g. no model configured), the bar stays visible so you can switch back instead of losing the popup. The filter applies only while the popup is open; it resets to "All" each time a fresh `@` is typed.
-- In the mixed "All" view, each category shows at most **4 items** so Files don't crowd out Agents, Actions, and Model. Start typing to drop the per-category cap and search the full list across every category (the filter bar hides while searching).
+- **At rest** (empty query), a **category filter bar** sits at the top of the popup with chippable types: **Files**, **Agents**, **Actions**, **MCP**, **Model**. Tap a chip to show **only** that category (with its full list rather than the 4-item cap); tap the active chip again to return to the mixed "All" view. When a type has no items (e.g. no model configured), the bar stays visible so you can switch back instead of losing the popup. The filter applies only while the popup is open; it resets to "All" each time a fresh `@` is typed.
+- In the mixed "All" view, each category shows at most **4 items** so Files don't crowd out Agents, Actions, MCP, and Model. Start typing to drop the per-category cap and search the full list across every category (the filter bar hides while searching).
 - Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
 - **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent.
@@ -57,7 +58,8 @@ The popup is a mixed list, filtered either by the category bar at the top or by 
 |-----------|---------------------------------------------------------|
 | Files     | Tagged files from `.mouaif.json` (via `GET /api/projects/:id/tags`), then scanned files from `POST /api/projects/:id/tags/scan` |
 | Agents    | Project agents (`GET /api/agents?projectDir=…`)         |
-| Actions   | Tool catalog from the project settings (`state.tools.catalog`) |
+| Actions   | Native entries from the tool catalog plus project custom actions (`GET /api/actions?projectDir=…`) |
+| MCP       | `kind: "mcp"` entries from the project tool catalog, grouped separately from Actions |
 | Model     | Current chat model (`state.chat.modelId`)              |
 
 ## Related

@@ -1,8 +1,8 @@
 // mouaif web — @-mention autocomplete for the composer
 //
 // Detects when the user types @ in the textarea and shows a popup
-// overlay with matching items: project files, tools/actions, and
-// the active model.
+// overlay with matching items: project files, agents, actions, MCP
+// tools, and the active model.
 //
 // The popup appears above the textarea and stays visible until the
 // user dismisses it with Escape, taps outside, or completes a
@@ -12,11 +12,11 @@ import { fetchJson } from '../../api.js';
 
 // ---- Categories ---------------------------------------------------------
 
-const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MODEL: 'model' };
-const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', model: '🤖' };
+const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', MCP: 'mcp', MODEL: 'model' };
+const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', mcp: '🔌', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
 // At rest (empty query), show only this many items per category so the
-// Files section doesn't push Agents/Actions/Model out of view. Typing a
+// Files section doesn't push Agents/Actions/MCP/Model out of view. Typing a
 // query drops the per-category cap entirely.
 const REST_PER_CATEGORY = 4;
 
@@ -40,6 +40,7 @@ const FILTER_ORDER = [
   { key: CATEGORY.FILES, label: 'Files' },
   { key: CATEGORY.AGENTS, label: 'Agents' },
   { key: CATEGORY.ACTIONS, label: 'Actions' },
+  { key: CATEGORY.MCP, label: 'MCP' },
   { key: CATEGORY.MODEL, label: 'Model' },
 ];
 
@@ -148,7 +149,8 @@ async function buildItems(projectDir) {
     });
   }
 
-  // 3. Actions (tools from catalog) — include parameters for arg suggestions
+  // 3. Native actions and MCP tools from the catalog. Keep MCP separate in
+  // the picker so a remote server tool is not mistaken for a built-in action.
   const toolNames = new Set();
   const tools = uiState && uiState.tools;
   if (tools && Array.isArray(tools.catalog)) {
@@ -159,13 +161,15 @@ async function buildItems(projectDir) {
       const params = t.parameters || (t.inputSchema) || null;
       const props = (params && params.properties) || {};
       const required = (params && Array.isArray(params.required)) ? params.required : [];
+      const isMcp = t.kind === 'mcp';
       out.push({
-        id: 'action:' + t.name,
+        id: (isMcp ? 'mcp:' : 'action:') + t.name,
         label: t.name,
-        subtitle: t.description || 'tool',
-        category: CATEGORY.ACTIONS, icon: 'action',
+        subtitle: isMcp ? ((t.source ? t.source + ' · ' : '') + (t.description || 'MCP tool')) : (t.description || 'action'),
+        category: isMcp ? CATEGORY.MCP : CATEGORY.ACTIONS,
+        icon: isMcp ? 'mcp' : 'action',
         insert: t.name,
-        searchText: (t.name + ' ' + (t.description || '')).toLowerCase(),
+        searchText: (t.name + ' ' + (t.source || '') + ' ' + (t.description || '') + (isMcp ? ' mcp' : ' action')).toLowerCase(),
         params: { properties: props, required }
       });
     }
@@ -224,9 +228,9 @@ params: null
   }
 
   out.sort((a, b) => {
-    const catOrder = { files: 0, agents: 1, model: 2, actions: 3 };
-    const ca = catOrder[a.category] ?? 3;
-    const cb = catOrder[b.category] ?? 3;
+    const catOrder = { files: 0, agents: 1, actions: 2, mcp: 3, model: 4 };
+    const ca = catOrder[a.category] ?? 5;
+    const cb = catOrder[b.category] ?? 5;
     if (ca !== cb) return ca - cb;
     return a.label.localeCompare(b.label);
   });
@@ -347,6 +351,12 @@ function renderPopup() {
     label.className = 'at-mention__label';
     label.textContent = sec.item.label;
     textWrap.appendChild(label);
+    if (sec.item.subtitle) {
+      const subtitle = document.createElement('div');
+      subtitle.className = 'at-mention__subtitle';
+      subtitle.textContent = sec.item.subtitle;
+      textWrap.appendChild(subtitle);
+    }
 
     row.appendChild(textWrap);
     row.addEventListener('click', () => selectItem(sec.index));
@@ -367,7 +377,7 @@ function selectItem(idx) {
 
   // Tools with parameters get the colon + first required arg inserted
   // and an arg bar shown below the textarea for remaining params.
-  if (item.category === CATEGORY.ACTIONS && item.params && Object.keys(item.params.properties).length > 0) {
+  if ((item.category === CATEGORY.ACTIONS || item.category === CATEGORY.MCP) && item.params && Object.keys(item.params.properties).length > 0) {
     const props = item.params.properties;
     const required = item.params.required;
     // Pick the first required param, or the first param if none required
