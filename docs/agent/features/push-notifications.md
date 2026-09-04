@@ -14,6 +14,7 @@
 | `frontend/build/sw-src.js` | Service worker push/notificationclick/notificationclose event handlers |
 | `frontend/src/components/push.js` | Frontend push manager: permission request, subscription, visibility tracking |
 | `frontend/src/components/SettingsNotifications.jsx` | Dedicated enable/disable, test, and event-preference screen |
+| `frontend/src/settings.css` | Mobile layout, wrapped notification descriptions, and configuration-value styling |
 | `frontend/src/main.jsx` | Starts push state sync and page-side PWA services |
 | `frontend/src/sw-registration.js` | Registers the service worker and applies user-approved updates |
 | `frontend/src/push-page-bridge.js` | Answers fresh visibility queries and handles open-window navigation messages |

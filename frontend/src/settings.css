@@ -171,15 +171,38 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
 .sprojects__menu { display: flex; align-items: center; padding-right: 4px; }
 
 /* ---- Settings: browser notifications ---------------------------- */
-
 .settings-notifications { padding-bottom: 16px; }
-.settings-notifications__event { cursor: pointer; }
+.settings-notifications .group__list > .group__row + .group__row {
+border-top: 1px solid var(--border);
+}
+.settings-notifications .group__row-body .group__row-detail {
+max-width: none;
+width: 100%;
+overflow: visible;
+text-overflow: clip;
+white-space: normal;
+text-align: left;
+line-height: 1.35;
+}
+.settings-notifications__event {
+cursor: pointer;
+padding-block: 8px;
+}
 .settings-notifications__event .group__row-body { min-width: 0; }
 .settings-notifications__event .checkbox { flex: 0 0 auto; }
-.settings-notifications__actions { display: flex; padding: 10px; }
+.settings-notifications__actions {
+display: flex;
+margin: 10px 10px 0;
+}
 .settings-notifications__actions .btn { width: 100%; min-height: var(--tap); }
+.settings-notifications > .status { margin: 6px 10px 0; }
 .settings-notifications > .hint { margin-inline: 10px; }
-.settings-notifications__value { overflow-wrap: anywhere; }
+.settings-notifications__value {
+overflow-wrap: anywhere;
+font-family: var(--font-mono);
+font-size: 0.78rem;
+}
+
 
 /* ---- Settings: provider list + edit form ------------------------ */
 
