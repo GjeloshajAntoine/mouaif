@@ -9,6 +9,7 @@
 // selection with Enter/Tab.
 
 import { fetchJson } from '../../api.js';
+import { parseDirectRestartInvocation } from './tools.js';
 
 // ---- Categories ---------------------------------------------------------
 
@@ -565,6 +566,28 @@ renderPopup();
 
 function onKeydown(e) {
   if (!visible) return;
+  // Exact direct commands do not depend on the suggestion cache. Handle them
+  // before the empty-list guard so a slow catalog refresh cannot turn an
+  // explicit restart/action into a newline or model turn.
+  if (e.key === 'Enter') {
+    const restartInvocation = parseDirectRestartInvocation(textarea && textarea.value);
+    if (restartInvocation && uiState && typeof uiState._runRestartCommand === 'function') {
+      e.preventDefault();
+      hide();
+      uiState._runRestartCommand(restartInvocation.reason);
+      return;
+    }
+    const exactAction = findExactCustomAction(
+      textarea && textarea.value,
+      uiState && uiState.customActions
+    );
+    if (exactAction && uiState && typeof uiState._runCustomAction === 'function') {
+      e.preventDefault();
+      hide();
+      uiState._runCustomAction(exactAction);
+      return;
+    }
+  }
   const f = filtered;
   if (!f.length) return;
 
@@ -579,24 +602,9 @@ function onKeydown(e) {
     renderPopup();
     scrollSelectedIntoView();
   } else if (e.key === 'Enter' || e.key === 'Tab') {
-// An exact saved-action id is already a complete invocation. Let the
-// composer's Enter handler dispatch it instead of replacing it with the
-// first ranked suggestion (which can be a similarly named file).
-if (e.key === 'Enter') {
-const exactAction = findExactCustomAction(
-textarea && textarea.value,
-uiState && uiState.customActions
-);
-if (exactAction && uiState && typeof uiState._runCustomAction === 'function') {
-e.preventDefault();
-hide();
-uiState._runCustomAction(exactAction);
-return;
-}
-}
-e.preventDefault();
-selectItem(selectedIdx);
-} else if (e.key === 'Escape') {
+    e.preventDefault();
+    selectItem(selectedIdx);
+  } else if (e.key === 'Escape') {
     e.preventDefault();
     hide();
     if (textarea) textarea.focus();

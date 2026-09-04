@@ -1,5 +1,5 @@
 // Regression tests for direct @ invocation parsing.
-import { findCustomActionInvocation, parseAtInvocation, parseToolArgs } from '../frontend/src/components/chat/tools.js';
+import { findCustomActionInvocation, parseAtInvocation, parseDirectRestartInvocation, parseToolArgs } from '../frontend/src/components/chat/tools.js';
 
 let pass = 0;
 let fail = 0;
@@ -40,6 +40,12 @@ parseToolArgs('{"path":"/tmp","recursive":true}'));
 
 test('non-invocation text is rejected', parseAtInvocation('check @test') === null,
 parseAtInvocation('check @test'));
+const restart = parseDirectRestartInvocation('@restart_app apply the latest fix');
+test('explicit restart command parses without a model round-trip',
+restart && restart.reason === 'apply the latest fix', restart);
+test('restart mention in normal prose is not direct-dispatched',
+parseDirectRestartInvocation('please use @restart_app') === null,
+parseDirectRestartInvocation('please use @restart_app'));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
@@ -467,6 +467,10 @@ recent: loadRecent(state)
   };
 
   state._runCustomAction = (action) => runCustomAction(action, state, refs);
+state._runRestartCommand = (reason) => runRestartCommand(reason, state, refs, {
+clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
+setImageAttachments
+});
 const send = useCallback(async () => {
 try {
 await sendTurn(state, refs, {

@@ -25,7 +25,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
-import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, parseToolArgs } from './tools.js';
+import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
@@ -276,6 +276,37 @@ export async function runMcpCommand(serverSlug, toolName, label, state, refs, ar
 // Execute a project-defined CLI or MCP shortcut without a model round-trip.
 // The server resolves the saved definition and applies the underlying tool's
 // authorization gate, so the browser never gets to substitute a command.
+export async function runRestartCommand(reason, state, refs, options = {}) {
+const { projectDir, chatId } = state.props;
+if (!projectDir || !chatId) return;
+const callId = 'restart_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const restartReason = String(reason || '').trim() || 'User requested restart from chat';
+if (refs.promptInput.current) refs.promptInput.current.value = '';
+if (typeof options.clearComposerDraft === 'function') await options.clearComposerDraft();
+if (typeof options.setImageAttachments === 'function') options.setImageAttachments([]);
+refs._autoresize();
+appendToolCallCard({ id: callId, name: 'restart_app', args: { reason: restartReason } }, refs);
+setChatStatus(refs, 'restarting app…', 'busy');
+if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
+let response;
+try {
+response = await fetchJson('/api/restart', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ reason: restartReason, delayMs: 1000 })
+});
+} catch (error) {
+response = { status: 500, body: { ok: false, error: String(error) } };
+}
+const body = response.body || {};
+appendToolResultCard({ id: callId, name: 'restart_app', ok: response.status === 200 && body.ok !== false, result: body }, refs);
+if (response.status === 200 && body.ok !== false) {
+setChatStatus(refs, 'restart requested', 'success');
+} else {
+setChatStatus(refs, 'restart failed: ' + (body.error || body.code || 'HTTP ' + response.status), 'error');
+if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+}
+}
 export async function runCustomAction(action, state, refs) {
 if (!action || !action.id) return;
 const { projectDir, chatId } = state.props;
@@ -502,12 +533,21 @@ return;
     setChatStatus(refs, 'wait for the current response to finish', 'busy');
     return;
   }
-  // /shell <cmd> — direct tool invocation, no model.
-  if (text.startsWith('/shell ')) {
-    const cmd = text.slice('/shell '.length).trim();
-    if (cmd) return runShellCommand(cmd, state, refs);
-  }
-  // @<toolname> <args?> — direct tool invocation via @-mention syntax.
+// /shell <cmd> — direct tool invocation, no model.
+if (text.startsWith('/shell ')) {
+const cmd = text.slice('/shell '.length).trim();
+if (cmd) return runShellCommand(cmd, state, refs);
+}
+// An exact @restart_app composer command is an explicit user request, not
+// an autonomous model tool call. Dispatch it directly so Ask mode does not
+// ask the user to approve the restart they just requested. Model-initiated
+// restart_app calls still pass through the shared authorization gate.
+const restartInvocation = parseDirectRestartInvocation(text);
+if (restartInvocation) return runRestartCommand(restartInvocation.reason, state, refs, {
+clearComposerDraft,
+setImageAttachments
+});
+// @<toolname> <args?> — direct tool invocation via @-mention syntax.
   // Only fires when the text starts with @ and names a directly-invocable
   // tool (shell or mcp__...). Native tools (read_file, write_file, etc.)
   // and file references fall through to the normal model send — the popup

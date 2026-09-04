@@ -62,7 +62,7 @@ export function onComposerInput(refs, projectDir, chatId, updateChat) {
 }
 
 import { isAtMentionActive } from './atMention.js';
-import { findCustomActionInvocation } from './tools.js';
+import { findCustomActionInvocation, parseDirectRestartInvocation } from './tools.js';
 
 // onComposerKey(e, send, opts)
 //
@@ -83,12 +83,15 @@ const directAction = isEnter && !shiftEnter && findCustomActionInvocation(
 e.currentTarget && e.currentTarget.value,
 opts.customActions
 );
+const directRestart = isEnter && !shiftEnter && parseDirectRestartInvocation(
+e.currentTarget && e.currentTarget.value
+);
 // Always block Enter from submitting the composer while the IME is
 // composing or the @-mention popup owns the key.
 if (isEnter && !e.isComposing && !isAtMentionActive()) {
-if (cmdEnter || directAction) {
-      // Ctrl/Cmd+Enter always sends. A complete @action does too, so the
-// autocomplete's Enter selection can be followed by Enter to run it.
+if (cmdEnter || directAction || directRestart) {
+// Ctrl/Cmd+Enter always sends. Complete @action and @restart_app commands
+// do too, even when the popup has no matching suggestion.
       e.preventDefault();
       send();
     } else if (enterForNewline) {

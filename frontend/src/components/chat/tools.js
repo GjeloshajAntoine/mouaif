@@ -40,6 +40,11 @@ if (!invocation || invocation.rest || !Array.isArray(actions)) return null;
 return actions.find((action) => action && action.id &&
 action.id.toLowerCase() === invocation.toolName.toLowerCase()) || null;
 }
+export function parseDirectRestartInvocation(text) {
+const match = String(text || '').trim().match(/^@restart_app(?:\s+([\s\S]*))?$/i);
+if (!match) return null;
+return { reason: String(match[1] || '').trim() };
+}
 export function parseToolArgs(text) {
 const s = (text || '').trim();
   if (!s) return null;
