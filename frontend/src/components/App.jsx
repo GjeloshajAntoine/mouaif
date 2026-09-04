@@ -6,26 +6,39 @@ import { route, activeProject, setActiveProject } from '../api.js';
 import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
 import { SettingsHomeView } from './SettingsHome.jsx';
-import { SettingsProvidersView, SettingsProviderEditView } from './SettingsProviders.jsx';
-import { SettingsProjectView } from './SettingsProject.jsx';
-import { SettingsDefaultsView } from './SettingsDefaults.jsx';
-import { SettingsNotificationsView } from './SettingsNotifications.jsx';
-import { SettingsAboutView } from './SettingsAbout.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
-import { SettingsPromptsView } from './SettingsPrompts.jsx';
-import { SettingsAgentsView, SettingsAgentEditView } from './SettingsAgents.jsx';
-import { SettingsActionsView, SettingsActionEditView } from './SettingsActions.jsx';
-import { SettingsMcpView } from './SettingsMcp.jsx';
-import { SettingsMcpEditView } from './SettingsMcpEdit.jsx';
-import { SettingsMcpRegistryView } from './SettingsMcpRegistry.jsx';
-import { SettingsTagsView } from './SettingsTags.jsx';
-import { SettingsPricingView } from './SettingsPricing.jsx';
-import { SettingsProjectsView } from './SettingsProjects.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
-
+// Lazy-load every heavyweight, rarely-opened settings sub-page so its
+// code is excluded from the entry bundle that every chat session loads.
+// The chat / projects path only ever reaches the settings tab and the
+// cheap `SettingsHomeView` index, so none of these sub-pages need to be
+// in the initial JS. This drops the entry index-*.js by most of the
+// ~250 kB of settings UI (the rest of the reduction is bundles that were
+// already lazy: Inspector, FileEditor, and the CodeMirror chunk).
+// `lazyNamed` wraps dynamic import() in Preact's <Suspense>-compatible
+// lazy() and maps the module's named export to the default slot that
+// Preact expects.
+const lazyNamed = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
 const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ default: module.InspectorView })));
+const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
+const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
+const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
+const SettingsDefaultsView = lazyNamed(() => import('./SettingsDefaults.jsx'), 'SettingsDefaultsView');
+const SettingsNotificationsView = lazyNamed(() => import('./SettingsNotifications.jsx'), 'SettingsNotificationsView');
+const SettingsAboutView = lazyNamed(() => import('./SettingsAbout.jsx'), 'SettingsAboutView');
+const SettingsPromptsView = lazyNamed(() => import('./SettingsPrompts.jsx'), 'SettingsPromptsView');
+const SettingsAgentsView = lazyNamed(() => import('./SettingsAgents.jsx'), 'SettingsAgentsView');
+const SettingsAgentEditView = lazyNamed(() => import('./SettingsAgents.jsx'), 'SettingsAgentEditView');
+const SettingsActionsView = lazyNamed(() => import('./SettingsActions.jsx'), 'SettingsActionsView');
+const SettingsActionEditView = lazyNamed(() => import('./SettingsActions.jsx'), 'SettingsActionEditView');
+const SettingsMcpView = lazyNamed(() => import('./SettingsMcp.jsx'), 'SettingsMcpView');
+const SettingsMcpEditView = lazyNamed(() => import('./SettingsMcpEdit.jsx'), 'SettingsMcpEditView');
+const SettingsMcpRegistryView = lazyNamed(() => import('./SettingsMcpRegistry.jsx'), 'SettingsMcpRegistryView');
+const SettingsTagsView = lazyNamed(() => import('./SettingsTags.jsx'), 'SettingsTagsView');
+const SettingsPricingView = lazyNamed(() => import('./SettingsPricing.jsx'), 'SettingsPricingView');
+const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), 'SettingsProjectsView');
 const ROUTES = {
 chats: [ProjectsView],
 picker: [ProjectPickerView, ({ dir }) => ({ dir })],
@@ -57,10 +70,20 @@ settingsAbout: [SettingsAboutView]
 const FULL_PAGE_ROUTES = new Set([
 'chat', 'picker', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
 ]);
+// Set of route names whose view component is a Preact lazy() component.
+// Only these need a <Suspense> boundary; the eager views resolve
+// synchronously so the fallback never paints for them.
+const LAZY_ROUTE_NAMES = new Set([
+'inspector',
+'settingsProviders', 'settingsProviderNew', 'settingsProviderEdit',
+'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview',
+'settingsDefaults', 'settingsNotifications', 'settingsAbout',
+'settingsPrompts', 'settingsAgents', 'settingsAgentEdit',
+'settingsActions', 'settingsActionEdit',
+'settingsMcp', 'settingsMcpEdit', 'settingsMcpRegistry',
+'settingsTags', 'settingsPricing', 'settingsProjects'
+]);
 function renderRoute(view) {
-if (view.name === 'inspector') return h(Suspense, {
-fallback: h('p', { class: 'muted', role: 'status' }, 'Loading Inspector…')
-}, h(InspectorView));
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
 // Key the view on its identity parameters so navigating to the same route
 // with a different projectDir / id / scope remounts it (fresh state + refs).
@@ -72,7 +95,11 @@ const viewKey = view.name + '|' +
 (view.scope || '') + '|' +
 (view.page || '') + '|' +
 (view.chatId || '');
-return h(View, { key: viewKey, ...(getProps ? getProps(view) : null) });
+const node = h(View, { key: viewKey, ...(getProps ? getProps(view) : null) });
+if (!LAZY_ROUTE_NAMES.has(view.name)) return node;
+return h(Suspense, {
+fallback: h('p', { class: 'muted', role: 'status' }, 'Loading…')
+}, node);
 }
 // ---- Tab icons ---------------------------------------------------------
 const TabIcon = {
