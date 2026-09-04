@@ -705,12 +705,17 @@ export async function onPickerPick(state, refs, providerId, modelId, updateChat)
   await updateChat({ providerId, modelId });
 }
 
-// fetchLiveForProvider(provider, state) — single /api/ai/models/live
-// call. On success it writes the catalog into liveByProviderRef and
-// re-renders the picker. On failure it returns the typed error
-// body so the caller can surface a useful status pill.
-export async function fetchLiveForProvider(provider, state) {
-  const res = await fetchLiveModels(provider);
+// fetchLiveForProvider(provider, state, force) — single
+// /api/ai/models/live call. On success it writes the catalog into
+// liveByProviderRef and re-renders the picker. On failure it returns
+// the typed error body so the caller can surface a useful status
+// pill. `force` (default false) appends `&_bust=1` so the server
+// bypasses its 1h in-memory cache and re-hits the upstream; the
+// picker's ↻ button and empty-state "Refresh models" action pass
+// true, while the background on-open prefetch leaves it false so
+// opening a chat stays cache-friendly and fast.
+export async function fetchLiveForProvider(provider, state, force = false) {
+  const res = await fetchLiveModels(provider, { force });
   if (res && res.error) return { provider, ok: false, body: res.error, status: res.status || 0 };
   const live = Array.isArray(res && res.models) ? res.models : [];
   state.liveByProvider = Object.assign({}, state.liveByProvider, { [provider]: live });
@@ -746,7 +751,7 @@ export async function refreshAllProviders(state, refs, setChatStatus) {
     return;
   }
   const results = await Promise.all(
-    providers.map((p) => fetchLiveForProvider(p, state)
+    providers.map((p) => fetchLiveForProvider(p, state, true)
       .catch((err) => ({ provider: p, ok: false, body: { error: String(err), code: 'ELIVE' }, status: 0 })))
   );
   let total = 0, failed = 0, primary = null;

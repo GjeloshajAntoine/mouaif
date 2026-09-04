@@ -15,7 +15,7 @@ The same model picker is also used in subagent authorization cards and agent per
 3. Type in the search input to filter models by name or slug.
 4. Tap a provider chip (`All`, `Anthropic`, `OpenRouter`, `OpenAI`, etc.) to scope the list to a specific provider.
 5. Tap any row to select the model for the current conversation.
-6. Tap the ↻ refresh button to fetch live model catalogs directly from connected providers.
+6. Tap the ↻ refresh button to fetch live model catalogs directly from connected providers. This bypasses the server's 1-hour cache (via a `_bust` cache-buster) so it re-hits the upstream rather than returning the previously fetched list.
 
 Pressing `Escape` or tapping outside closes the popover.
 
