@@ -17,7 +17,7 @@
 // imperative chat picker module. Bookmark state (pinned/recent) is
 // owned by the caller and passed in, so the field stays a pure view.
 import { h } from 'preact';
-import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 
 // modelsForField(list) — normalize a flat model list into
 // { id, provider, label, ghost } rows, dropping falsy entries and
@@ -137,13 +137,15 @@ export function ModelPickerField(props) {
   // model). When a controlled `open` prop is present it wins.
   const isControlled = typeof controlledOpen === 'boolean';
   const effectiveOpen = isControlled ? controlledOpen : open;
-  function setEffectiveOpen(v) {
+  const setEffectiveOpen = useCallback((v) => {
     if (isControlled) { if (onOpenChange) onOpenChange(v); }
     else setOpen(v);
-  }
+  }, [isControlled, onOpenChange]);
   const [q, setQ] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
+  const refreshingRef = useRef(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const rootRef = useRef(null);
   const popRef = useRef(null);
@@ -159,19 +161,19 @@ export function ModelPickerField(props) {
     ? { providerId: value.providerId || '', modelId: value.modelId || '' }
     : null;
 
-  // Close on outside click and Escape. Returning focus to the trigger
-  // keeps the sheet modal usable with a hardware keyboard as well as touch.
+  const closeAndRestoreFocus = useCallback(() => {
+    setEffectiveOpen(false);
+    if (triggerRef.current) triggerRef.current.focus({ preventScroll: true });
+  }, [setEffectiveOpen]);
+
+  // Outside taps must not steal focus from the control being tapped.
   useEffect(() => {
     if (!effectiveOpen) return;
-    const close = () => {
-      setEffectiveOpen(false);
-      requestAnimationFrame(() => triggerRef.current && triggerRef.current.focus());
-    };
     const onDocClick = (ev) => {
-      if (rootRef.current && !rootRef.current.contains(ev.target)) close();
+      if (rootRef.current && !rootRef.current.contains(ev.target)) setEffectiveOpen(false);
     };
     const onKey = (ev) => {
-      if (ev.key === 'Escape') close();
+      if (ev.key === 'Escape') closeAndRestoreFocus();
     };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('touchstart', onDocClick);
@@ -181,92 +183,64 @@ export function ModelPickerField(props) {
       document.removeEventListener('touchstart', onDocClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [effectiveOpen]);
+  }, [effectiveOpen, setEffectiveOpen, closeAndRestoreFocus]);
 
-  // Call the open hook after the first paint, then focus search. Keeping
-  // these in that order lets callers populate a live catalog without the
-  // component reading stale models during the opening event.
+  // Loading models never controls focus or remounts the search input.
   useEffect(() => {
     if (!effectiveOpen) {
       setOptionsOpen(false);
       return;
     }
     if (onOpenRef.current) onOpenRef.current();
-    requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
   }, [effectiveOpen]);
 
-  // iOS keyboard + background-scroll handling for the fixed sheet
-  // variant. Mirrors the imperative syncKeyboardInset /
-  // bindPickerScrollLock the chat head used to run.
-  useEffect(() => {
+  // Size before focusing: a keyboard may already be open in the composer.
+  // Keep the fixed sheet inside the visual viewport throughout keyboard
+  // resize/pan events. Native scrollers + CSS overscroll containment handle
+  // gestures; cancelling touchmove here used to swallow tap-sized row drags.
+  useLayoutEffect(() => {
     if (!effectiveOpen || !isSheet) return;
     const pop = popRef.current;
     if (!pop) return;
     const vv = window.visualViewport;
+    let frame = 0;
     const sync = () => {
-      if (!vv || !vv.height) {
-        pop.style.removeProperty('--model-picker-viewport-height');
-        pop.style.removeProperty('--model-picker-viewport-top');
-        pop.style.removeProperty('--model-picker-keyboard-inset');
-        return;
-      }
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      pop.style.setProperty('--model-picker-viewport-height', vv.height.toFixed(0) + 'px');
-      pop.style.setProperty('--model-picker-viewport-top', Math.max(0, vv.offsetTop).toFixed(0) + 'px');
-      pop.style.setProperty('--model-picker-keyboard-inset', inset.toFixed(0) + 'px');
+      const height = vv && vv.height ? vv.height : window.innerHeight;
+      const top = vv ? Math.max(0, vv.offsetTop) : 0;
+      pop.style.setProperty('--model-picker-viewport-height', height + 'px');
+      pop.style.setProperty('--model-picker-viewport-top', top + 'px');
     };
-    const onFocusIn = (ev) => {
-      if (ev.target && searchRef.current && ev.target === searchRef.current) sync();
-    };
-    const onFocusOut = (ev) => {
-      if (ev.target && searchRef.current && ev.target === searchRef.current) setTimeout(sync, 0);
+    const scheduleSync = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(sync);
     };
     if (vv) {
       vv.addEventListener('resize', sync);
       vv.addEventListener('scroll', sync);
     }
+    window.addEventListener('resize', sync);
     window.addEventListener('orientationchange', sync);
-    pop.addEventListener('focusin', onFocusIn);
-    pop.addEventListener('focusout', onFocusOut);
+    pop.addEventListener('focusin', scheduleSync);
+    pop.addEventListener('focusout', scheduleSync);
     sync();
-
-    // Scroll lock: keep the background transcript from scrolling while
-    // the sheet's list is being dragged (and vice-versa).
-    let startY = 0;
-    const onTouchStart = (ev) => {
-      if (ev.touches && ev.touches.length === 1) startY = ev.touches[0].clientY;
-    };
-    const onTouchMove = (ev) => {
-      if (!ev.touches || ev.touches.length !== 1) return;
-      const t = ev.target;
-      if (t && typeof t.closest === 'function' && t.closest('input, textarea, select, button')) return;
-      const scroller = listRef.current && listRef.current.contains(t) ? listRef.current : null;
-      if (!scroller) { ev.preventDefault(); return; }
-      const dy = ev.touches[0].clientY - startY;
-      const atTop = scroller.scrollTop <= 0;
-      const atBottom = Math.ceil(scroller.scrollTop + scroller.clientHeight) >= scroller.scrollHeight;
-      if (scroller.scrollHeight <= scroller.clientHeight || (atTop && dy > 0) || (atBottom && dy < 0)) {
-        ev.preventDefault();
-      }
-    };
-    pop.addEventListener('touchstart', onTouchStart, { passive: true });
-    pop.addEventListener('touchmove', onTouchMove, { passive: false });
-
     return () => {
+      cancelAnimationFrame(frame);
       if (vv) {
         vv.removeEventListener('resize', sync);
         vv.removeEventListener('scroll', sync);
       }
+      window.removeEventListener('resize', sync);
       window.removeEventListener('orientationchange', sync);
-      pop.removeEventListener('focusin', onFocusIn);
-      pop.removeEventListener('focusout', onFocusOut);
-      pop.removeEventListener('touchstart', onTouchStart);
-      pop.removeEventListener('touchmove', onTouchMove);
+      pop.removeEventListener('focusin', scheduleSync);
+      pop.removeEventListener('focusout', scheduleSync);
       pop.style.removeProperty('--model-picker-viewport-height');
       pop.style.removeProperty('--model-picker-viewport-top');
-      pop.style.removeProperty('--model-picker-keyboard-inset');
     };
   }, [effectiveOpen, isSheet]);
+
+  useLayoutEffect(() => {
+    if (effectiveOpen && searchRef.current) searchRef.current.focus({ preventScroll: true });
+  }, [effectiveOpen]);
 
   const providers = useMemo(() => {
     const set = [];
@@ -296,12 +270,9 @@ export function ModelPickerField(props) {
 
   const groups = useMemo(() => groupByProvider(filtered), [filtered]);
   const selectedKey = sel ? (sel.providerId + '\u0000' + sel.modelId) : null;
-  const showingFullList = providerFilter === 'all' && !q.trim().toLowerCase();
+  const hasQuery = !!q.trim();
+  const showingFullList = providerFilter === 'all' && !hasQuery;
 
-  function closeAndRestoreFocus() {
-    setEffectiveOpen(false);
-    requestAnimationFrame(() => triggerRef.current && triggerRef.current.focus());
-  }
   function pick(m) {
     closeAndRestoreFocus();
     if (onChange) onChange({ providerId: m.provider, modelId: m.id });
@@ -311,27 +282,30 @@ export function ModelPickerField(props) {
     if (onChange) onChange(null);
   }
   async function doRefresh() {
-if (!refresh) return;
-setRefreshing(true);
-try {
-await refresh();
-} finally {
-setRefreshing(false);
-}
-}
-// doClearSearch — the empty state after a search that matched nothing.
-// Drop the query (and any provider filter) so the full catalog returns,
-// then restore focus to the search box so the user can keep typing.
-// This is the search-specific counterpart to doRefresh: a "No matches"
-// card reflects a query problem, not a missing catalog, so it must not
-// trigger a network refetch (which on a focused-search sheet also blurs
-// the input, closes the mobile keyboard, and repositions the sheet into
-// a jumpy, hard-to-tap layout).
-function doClearSearch() {
-setQ('');
-setProviderFilter('all');
-requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
-}
+    if (!refresh || refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshError('');
+    try {
+      await refresh();
+    } catch {
+      setRefreshError('Could not refresh models. Try again.');
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }
+  // Keep pointer activation from blurring search before click runs. Keyboard
+  // users can still Tab to the actions; only an already-focused search is kept.
+  function keepSearchFocus(ev) {
+    if (ev.button === 0 && document.activeElement === searchRef.current) ev.preventDefault();
+  }
+  function doClearSearch() {
+    setQ('');
+    if (listRef.current) listRef.current.scrollTop = 0;
+    // Stay in the activating gesture (important for iOS keyboard focus).
+    if (searchRef.current) searchRef.current.focus({ preventScroll: true });
+  }
 
   const trigId = sel ? sel.modelId : (allowClear ? clearLabel : placeholder);
   const trigProvider = sel ? sel.providerId : (noProviders ? 'add a provider in Settings → Providers' : '');
@@ -393,6 +367,7 @@ requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
           'aria-label': 'Refresh model lists',
           title: 'Refresh model lists',
           disabled: refreshing,
+          onPointerDown: keepSearchFocus,
           onClick: doRefresh
         },
         h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
@@ -424,7 +399,8 @@ requestAnimationFrame(() => searchRef.current && searchRef.current.focus());
           )
         )
       ) : null,
-      h('div', { class: 'mp__list', ref: listRef },
+      refreshError ? h('p', { class: 'mp__refresh-error', role: 'alert' }, refreshError) : null,
+      h('div', { class: 'mp__list', ref: listRef, 'aria-busy': refreshing ? 'true' : undefined },
         allowClear ? h('div', {
           class: 'mp__clear' + (!sel ? ' is-active' : ''),
           role: 'button',
@@ -436,21 +412,23 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         showingFullList && pinned ? renderBookmarkSection('Pinned', list.filter((m) => pinned.has(keyOf(m)))) : null,
         showingFullList && recent ? renderRecentSection(recent, list, pinned) : null,
         !groups.length ? h('div', { class: 'mp__empty' },
-h('p', { class: 'mp__empty-title' }, q ? 'No matches' : (list.length ? 'No models for this provider' : 'No models yet')),
-h('p', { class: 'mp__empty-text' }, q
-? 'No model matches "' + q + '". Try a shorter query or clear the search.'
-: refreshEmpty),
-q ? h('button', {
-type: 'button',
-class: 'mp__empty-action',
-onClick: doClearSearch
-}, 'Clear search') : (refresh ? h('button', {
-type: 'button',
-class: 'mp__empty-action',
-disabled: refreshing,
-onClick: doRefresh
-}, refreshing ? 'Refreshing…' : refreshEmpty) : null)
-) : groups.map((g) =>
+          h('p', { class: 'mp__empty-title' }, hasQuery ? 'No matches' : (list.length ? 'No models for this provider' : 'No models yet')),
+          h('p', { class: 'mp__empty-text' }, hasQuery
+            ? 'No model matches "' + q + '". Try a shorter query or clear the search.'
+            : refreshEmpty),
+          hasQuery ? h('button', {
+            type: 'button',
+            class: 'mp__empty-action',
+            onPointerDown: keepSearchFocus,
+            onClick: doClearSearch
+          }, 'Clear search') : (refresh ? h('button', {
+            type: 'button',
+            class: 'mp__empty-action',
+            disabled: refreshing,
+            onPointerDown: keepSearchFocus,
+            onClick: doRefresh
+          }, refreshing ? 'Refreshing…' : refreshEmpty) : null)
+        ) : groups.map((g) =>
           h('section', { class: 'mp__section', key: g.provider || 'other' },
             h('div', { class: 'mp__section-head' },
               h('span', { class: 'mp__section-title' }, g.provider || 'Other'),

@@ -541,6 +541,8 @@ border-bottom: 1px solid var(--border);
 background: var(--surface-2);
 flex: 0 0 auto;
 overflow-x: auto;
+overscroll-behavior: contain;
+touch-action: pan-x;
 scrollbar-width: none;
 }
 .mp__chips::-webkit-scrollbar { display: none; }
@@ -589,6 +591,7 @@ min-height: 0;
 overflow-y: auto;
 -webkit-overflow-scrolling: touch;
 overscroll-behavior: contain;
+touch-action: pan-y;
 padding: 4px 0;
 scrollbar-width: thin;
 }
@@ -705,6 +708,13 @@ background: var(--surface);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
 }
+.mp__refresh-error {
+margin: 0;
+padding: 0.5rem;
+font-size: 0.8rem;
+color: var(--warning);
+flex: 0 0 auto;
+}
 .mp__empty-title { margin: 0 0 4px; font-weight: 600; color: var(--fg); }
 .mp__empty-text { margin: 0 0 10px; }
 .mp__empty-action {
@@ -816,11 +826,16 @@ bottom: auto;
 width: 100%;
 max-height: none;
 min-height: 0;
-height: calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px));
+height: max(0px, calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px)));
+padding-bottom: var(--safe-bottom, 0px);
 overflow: hidden;
-touch-action: none;
+touch-action: manipulation;
 overscroll-behavior: none;
 border-radius: var(--r-lg) var(--r-lg) 0 0;
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
 }
+/* Avoid iOS focus zoom without disabling input or changing page scale. */
+.mp__search,
+.mp__pop .chat-view__picker-maxout-input { font-size: 1rem; }
+.mp__chip { min-height: var(--tap); }
 }

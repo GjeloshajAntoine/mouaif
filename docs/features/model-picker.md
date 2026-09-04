@@ -25,7 +25,26 @@ Pressing `Escape` or tapping outside closes the popover.
 - **Unavailable / Custom models** — if a model is currently offline or custom-configured, it renders as a distinct selection so you can see what is currently set and switch when ready.
 - **Fast search** — filters instantly across all connected provider catalogs.
 - **Instantly opens** — tapping the trigger shows the sheet immediately with whatever models are already loaded (project slugs + any live catalog already fetched). The server-backed Recent section refreshes in the background and lands in one re-render once the request resolves, so opening never waits on a network or DB round-trip.
-- **Contextual empty-state action** — the button in the empty card matches the cause. A search that matched nothing offers **Clear search** (drops the query and returns focus to the search box so the user can keep typing); it does not trigger a network refetch, which in the mobile sheet would blur the focused search, close the keyboard, reposition the sheet, and leave an unclickable layout. A provider with no models in the catalog offers **Refresh models**.
+- **Contextual empty-state action** — a search that matched nothing offers **Clear search**. It clears only the text, keeps the selected provider, returns focus to search, and makes no network request. Whitespace-only text is not treated as a search. A provider with no models offers **Refresh models**.
+- **Refresh without losing your place** — the header refresh action remains available even with no search matches. Refresh keeps the sheet open, retains the query and provider filter, and does not clear the existing catalog while loading. Pointer activation keeps an already-focused search input focused; completion does not steal focus or reopen a dismissed keyboard. Duplicate refreshes are blocked while loading; a rejected refresh shows a retryable inline error.
+- **Native mobile gestures** — swipe the model list vertically or the provider chips horizontally. Slight finger movement on short-list rows no longer cancels selection. Keyboard opening, dismissal, and rotation resize the sheet to the visible viewport.
+
+## Implementation notes
+
+`frontend/src/components/ModelPickerField.jsx` updates the sheet's visual-viewport height and top offset before paint and on resize/scroll events. The sheet bottom remains at `visualViewport.offsetTop + visualViewport.height`; keyboard height is not subtracted a second time. Focus uses `preventScroll`, and Clear search focuses synchronously rather than in a later animation frame.
+
+`frontend/src/chat-view.css` uses native scrolling and overscroll containment rather than cancelling `touchmove`. Mobile search and model-option inputs use a 1rem font to avoid small-input focus zoom. Viewport listeners and scheduled focus synchronization are cleaned up when the sheet closes.
+
+### Regression checks
+
+With debug Chrome available at `http://127.0.0.1:9222` (or `CDP_URL`), run:
+
+```bash
+node scripts/test-model-picker.cjs
+```
+
+The browser test bundles the real component into a temporary blank tab with mock models and refresh requests. It checks touch scrolling/taps, focus, filters, errors, and simulated visual-viewport changes without modifying app data. Real iOS Safari/PWA keyboard animation still needs a device check.
+
 ## Related
 
 - [Model bookmarks](./model-bookmarks.md) — pinned and recent models.
