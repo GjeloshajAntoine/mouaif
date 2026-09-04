@@ -149,31 +149,30 @@ async function buildItems(projectDir) {
     });
   }
 
-  // 3. Native actions and MCP tools from the catalog. Keep MCP separate in
-  // the picker so a remote server tool is not mistaken for a built-in action.
-  const toolNames = new Set();
-  const tools = uiState && uiState.tools;
-  if (tools && Array.isArray(tools.catalog)) {
-    for (const t of tools.catalog) {
-      if (!t || !t.name || toolNames.has(t.name)) continue;
-      toolNames.add(t.name);
-      // Extract parameters schema if present
-      const params = t.parameters || (t.inputSchema) || null;
-      const props = (params && params.properties) || {};
-      const required = (params && Array.isArray(params.required)) ? params.required : [];
-      const isMcp = t.kind === 'mcp';
-      out.push({
-        id: (isMcp ? 'mcp:' : 'action:') + t.name,
-        label: t.name,
-        subtitle: isMcp ? ((t.source ? t.source + ' · ' : '') + (t.description || 'MCP tool')) : (t.description || 'action'),
-        category: isMcp ? CATEGORY.MCP : CATEGORY.ACTIONS,
-        icon: isMcp ? 'mcp' : 'action',
-        insert: t.name,
-        searchText: (t.name + ' ' + (t.source || '') + ' ' + (t.description || '') + (isMcp ? ' mcp' : ' action')).toLowerCase(),
-        params: { properties: props, required }
-      });
-    }
-  }
+// 3. Direct MCP tools from the catalog. Native model tools are omitted:
+// they are not project actions and most cannot be invoked directly with @.
+const mcpToolNames = new Set();
+const tools = uiState && uiState.tools;
+if (tools && Array.isArray(tools.catalog)) {
+for (const t of tools.catalog) {
+if (!t || t.kind !== 'mcp' || !t.name || mcpToolNames.has(t.name)) continue;
+mcpToolNames.add(t.name);
+// Extract parameters schema if present
+const params = t.parameters || (t.inputSchema) || null;
+const props = (params && params.properties) || {};
+const required = (params && Array.isArray(params.required)) ? params.required : [];
+out.push({
+id: 'mcp:' + t.name,
+label: t.name,
+subtitle: (t.source ? t.source + ' · ' : '') + (t.description || 'MCP tool'),
+category: CATEGORY.MCP,
+icon: 'mcp',
+insert: t.name,
+searchText: (t.name + ' ' + (t.source || '') + ' ' + (t.description || '') + ' mcp').toLowerCase(),
+params: { properties: props, required }
+});
+}
+}
 
   // 3b. Project custom actions — named CLI/MCP shortcuts. These are
 // directly invocable even when they take no user-supplied arguments.
@@ -181,14 +180,16 @@ try {
 const cr = await fetchJson('/api/actions?projectDir=' + encodeURIComponent(projectDir));
 if (cr.status === 200 && Array.isArray(cr.body && cr.body.actions)) {
 for (const action of cr.body.actions) {
-if (!action || !action.id || toolNames.has(action.id)) continue;
+if (!action || !action.id) continue;
+const actionLabel = action.label || action.id;
+const actionSubtitle = action.description || (actionLabel !== action.id ? '@' + action.id : 'Project action');
 out.push({
 id: 'custom-action:' + action.id,
-label: action.id,
-subtitle: (action.kind === 'mcp' ? 'MCP · ' : 'CLI · ') + (action.label || action.id),
+label: actionLabel,
+subtitle: actionSubtitle,
 category: CATEGORY.ACTIONS, icon: 'action',
 insert: action.id,
-searchText: (action.id + ' ' + (action.label || '') + ' ' + (action.description || '')).toLowerCase(),
+searchText: (action.id + ' ' + actionLabel + ' ' + (action.description || '')).toLowerCase(),
 params: null
 });
 }
@@ -377,7 +378,7 @@ function selectItem(idx) {
 
   // Tools with parameters get the colon + first required arg inserted
   // and an arg bar shown below the textarea for remaining params.
-  if ((item.category === CATEGORY.ACTIONS || item.category === CATEGORY.MCP) && item.params && Object.keys(item.params.properties).length > 0) {
+  if (item.category === CATEGORY.MCP && item.params && Object.keys(item.params.properties).length > 0) {
     const props = item.params.properties;
     const required = item.params.required;
     // Pick the first required param, or the first param if none required

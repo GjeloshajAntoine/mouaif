@@ -2,14 +2,14 @@
 
 ## Overview
 
-The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **agents**, **actions**, **MCP tools**, and the **current model**. Native and custom actions are visually separated from MCP server tools so their execution source is clear. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
+The chat composer supports `@` autocomplete: typing `@` followed by text shows a popup listing **files**, **agents**, **project actions**, **MCP tools**, and the **current model**. Project actions and MCP server tools are separate, and internal model tools are not shown as actions. The user can select an item with the keyboard (Arrow keys + Enter/Tab) or a tap, and the selection is inserted as `@<item>` into the composer text.
 
 ## Usage
 
 - Type `@` anywhere in the chat composer. A popup appears above the composer showing:
 - **Files** — tagged project files first (with their tags listed in the search text), then scanned project text files (up to ~200). Each result shows the file name as its primary label and the project-relative folder underneath; root files show **Project root**. Selecting a file inserts `@<relPath>`.
 - **Agents** — the project's subagent personas (from Settings → Project → Agents), with their pinned model in the subtitle when set.
-- **Actions** — native tools and project custom actions, including shell, file tools, and saved CLI/MCP shortcuts.
+- **Actions** — only the project's saved custom actions from Settings → Project → Custom actions. Rows show the user-facing label and description, not whether the saved implementation uses CLI or MCP.
 - **MCP** — tools exposed directly by running MCP servers. Each row uses a plug icon and shows its server and description.
 - **Model** — the currently selected model ID.
 - Narrow the list by typing any part of a file name or folder path (case-insensitive search against label, full relative path, and tags). The 200-file display cap is applied after matching, so files and folders later in large project scans remain searchable.
@@ -58,7 +58,7 @@ The popup is a mixed list, filtered either by the category bar at the top or by 
 |-----------|---------------------------------------------------------|
 | Files     | Tagged files from `.mouaif.json` (via `GET /api/projects/:id/tags`), then scanned files from `POST /api/projects/:id/tags/scan` |
 | Agents    | Project agents (`GET /api/agents?projectDir=…`)         |
-| Actions   | Native entries from the tool catalog plus project custom actions (`GET /api/actions?projectDir=…`) |
+| Actions   | Project custom actions from `GET /api/actions?projectDir=…`; native model tools are excluded |
 | MCP       | `kind: "mcp"` entries from the project tool catalog, grouped separately from Actions |
 | Model     | Current chat model (`state.chat.modelId`)              |
 
