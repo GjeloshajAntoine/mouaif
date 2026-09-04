@@ -41,6 +41,7 @@ const SettingsPricingView = lazyNamed(() => import('./SettingsPricing.jsx'), 'Se
 const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), 'SettingsProjectsView');
 const ROUTES = {
 chats: [ProjectsView],
+inspector: [InspectorView],
 picker: [ProjectPickerView, ({ dir }) => ({ dir })],
 chat: [ChatView, ({ chatId, projectDir }) => ({ chatId, projectDir })],
 settings: [SettingsHomeView],

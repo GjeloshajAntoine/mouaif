@@ -18,11 +18,14 @@
    11. chat-composer.css — composer, file toolbar, tool popup, send button
    12. chat-at-mention.css — @-mention popup, arg bar
    13. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
-   14. inspector.css   — inspector setup, targets, tabs, panels
-   15. file-editor.css — file editor overlay
-   16. draft-craft.css — draft handoff picker and image annotator
-   17. tool-tree.css   — tool tree component
-   18. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
+   14. draft-craft.css — draft handoff picker and image annotator
+   15. tool-tree.css   — tool tree component
+   16. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
+
+   NOTE: inspector.css and file-editor.css are intentionally NOT imported
+   here. They are lazy-loaded through their components (Inspector.jsx and
+   FileEditor.jsx), which are dynamic imports — so those styles only
+   download when the Inspector tab or file editor is opened.
 */
 
 @import './base.css';
@@ -38,8 +41,6 @@
 @import './chat-composer.css';
 @import './chat-at-mention.css';
 @import './tool-cards.css';
-@import './inspector.css';
-@import './file-editor.css';
 @import './draft-craft.css';
 @import './tool-tree.css';
 @import './features.css';

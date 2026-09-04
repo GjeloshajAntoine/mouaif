@@ -22,6 +22,10 @@
 //
 // On phones the two panes stack vertically (list on top, editor
 // below); see the CSS.
+// This component is lazy-loaded on demand (see Chat.jsx), so its CSS is
+// imported here rather than via the global style.css chain — it only
+// downloads when the file editor is opened.
+import '../file-editor.css';
 
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preact/hooks';

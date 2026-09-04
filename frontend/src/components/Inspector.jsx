@@ -6,6 +6,10 @@
 //   3. Inspect — live console, network, preview, and overview tabs
 //
 // Sub-modules live in the inspector/ directory.
+// This view is lazy-loaded (see App.jsx), so its CSS is imported here
+// rather than via the global style.css chain — it only downloads when
+// the Inspector tab is opened.
+import '../inspector.css';
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
