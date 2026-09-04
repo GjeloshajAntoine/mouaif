@@ -197,9 +197,9 @@ export function SettingsNotificationsView() {
       h('div', { class: 'group' },
 h('div', { class: 'group__title' }, 'Notification types'),
 h('div', { class: 'group__list' },
-eventRow('status', 'ASCII chat status', 'One replaceable progress, completion, or error status per chat.'),
-eventRow('authorization', 'Authorization', 'Questions and tool approvals that need your response.'),
-eventRow('quickActions', 'Authorization actions', 'Answer, allow once, or deny on supported browsers.')
+eventRow('status', 'ASCII chat status', 'Progress, completion, and errors.'),
+eventRow('authorization', 'Authorization', 'Questions and tool approvals.'),
+eventRow('quickActions', 'Authorization actions', 'Answer, allow once, or deny.')
 )
 ),
       h('p', { class: 'hint hint--compact' },

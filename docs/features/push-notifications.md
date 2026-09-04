@@ -15,7 +15,7 @@ Browser notifications let mouaif follow a running chat when the tab is in the ba
 3. Accept the browser's permission prompt.
 4. Optionally tap **Send test notification**.
 
-The same screen exposes only two notification types: **ASCII chat status** and **Authorization**. Authorization quick actions can be toggled separately. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
+The same screen exposes only two notification types: **ASCII chat status** and **Authorization**. Authorization quick actions can be toggled separately. Each preference uses a short summary so the rows remain compact on a phone. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
 
 The **Server configuration** group shows the origin used by the notification service, the generated-key status, and the VAPID contact. Opening this screen repairs a missing VAPID pair automatically; there are no keys to copy into the browser. Configuration values and notification-type descriptions wrap on narrow screens so their full contents remain readable.
 
