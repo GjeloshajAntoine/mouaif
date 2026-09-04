@@ -466,9 +466,10 @@ recent: loadRecent(state)
     }
   };
 
-  const send = useCallback(async () => {
-    try {
-      await sendTurn(state, refs, {
+  state._runCustomAction = (action) => runCustomAction(action, state, refs);
+const send = useCallback(async () => {
+try {
+await sendTurn(state, refs, {
         clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
         setImageAttachments
       });

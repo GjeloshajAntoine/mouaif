@@ -391,9 +391,16 @@ function renderPopup() {
 
 // ---- Selection ---------------------------------------------------------
 
+export function findExactCustomAction(text, actions) {
+const match = String(text || '').trim().match(/^@([^\s:]+)$/);
+if (!match || !Array.isArray(actions)) return null;
+const actionId = match[1].toLowerCase();
+return actions.find((action) => action && action.id &&
+String(action.id).toLowerCase() === actionId) || null;
+}
 function selectItem(idx) {
-  const item = filtered[idx];
-  if (!item || !textarea || !range) return;
+const item = filtered[idx];
+if (!item || !textarea || !range) return;
 
   const ta = textarea;
   const before = ta.value.slice(0, range.start);
@@ -572,9 +579,24 @@ function onKeydown(e) {
     renderPopup();
     scrollSelectedIntoView();
   } else if (e.key === 'Enter' || e.key === 'Tab') {
-    e.preventDefault();
-    selectItem(selectedIdx);
-  } else if (e.key === 'Escape') {
+// An exact saved-action id is already a complete invocation. Let the
+// composer's Enter handler dispatch it instead of replacing it with the
+// first ranked suggestion (which can be a similarly named file).
+if (e.key === 'Enter') {
+const exactAction = findExactCustomAction(
+textarea && textarea.value,
+uiState && uiState.customActions
+);
+if (exactAction && uiState && typeof uiState._runCustomAction === 'function') {
+e.preventDefault();
+hide();
+uiState._runCustomAction(exactAction);
+return;
+}
+}
+e.preventDefault();
+selectItem(selectedIdx);
+} else if (e.key === 'Escape') {
     e.preventDefault();
     hide();
     if (textarea) textarea.focus();

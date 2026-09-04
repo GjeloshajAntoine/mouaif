@@ -16,9 +16,9 @@ function t(name, condition, actual) {
 }
 
 async function run() {
-  const { prioritizeAtMentionFiles } = await import(
-    '../frontend/src/components/chat/atMention.js'
-  );
+  const { findExactCustomAction, prioritizeAtMentionFiles } = await import(
+'../frontend/src/components/chat/atMention.js'
+);
 
   const rankedMatches = [
     { id: 'tool:read_file', category: 'tools' },
@@ -39,13 +39,20 @@ async function run() {
       'model:current'
     ].join(','), ids);
   t('relative ranking stays stable within both groups',
-    result[0] === rankedMatches[1] &&
-    result[1] === rankedMatches[3] &&
-    result[2] === rankedMatches[0] &&
-    result[3] === rankedMatches[2] &&
-    result[4] === rankedMatches[4], ids);
-
-  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+result[0] === rankedMatches[1] &&
+result[1] === rankedMatches[3] &&
+result[2] === rankedMatches[0] &&
+result[3] === rankedMatches[2] &&
+result[4] === rankedMatches[4], ids);
+const action = { id: 'test', label: 'Run tests' };
+const actions = [action];
+t('exact action id bypasses a higher-ranked file suggestion',
+findExactCustomAction('@test', actions) === action,
+findExactCustomAction('@test', actions));
+t('partial action ids still select from autocomplete',
+findExactCustomAction('@tes', actions) === null,
+findExactCustomAction('@tes', actions));
+console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }
 
