@@ -87,6 +87,18 @@ function filePathParts(relPath) {
   };
 }
 
+// Keep the ranking within each result type, but files always occupy the
+// first positions. This is applied after matching/capping so a highly
+// relevant tool, action, agent, or model cannot jump ahead of a file.
+export function prioritizeAtMentionFiles(candidateItems) {
+  const fileItems = [];
+  const otherItems = [];
+  for (const item of candidateItems) {
+    (item.category === CATEGORY.FILES ? fileItems : otherItems).push(item);
+  }
+  return fileItems.concat(otherItems);
+}
+
 async function buildItems(projectDir) {
   if (!projectDir) return [];
   const out = [];
@@ -255,27 +267,29 @@ matches = matches.filter(item => item.searchText.indexOf(searchQuery) >= 0);
 }
 // With an active query there is no per-category cap — the user is
 // searching. Files still get the large global cap.
-if (searchQuery) {
-let fileCount = 0;
-return matches.filter(item => {
-if (item.category !== CATEGORY.FILES) return true;
-if (fileCount >= MAX_FILE_RESULTS) return false;
-fileCount++;
-return true;
-});
-}
-if (activeFilter) {
-// Single-category view: show everything in that category.
-return matches;
-}
-// Mixed "All" view: cap each category so the popup surfaces every
-// section without one pushing the others out of view.
-const counts = {};
-return matches.filter(item => {
-const n = counts[item.category] || 0;
-counts[item.category] = n + 1;
-return n < REST_PER_CATEGORY;
-});
+  if (searchQuery) {
+    let fileCount = 0;
+    const cappedMatches = matches.filter(item => {
+      if (item.category !== CATEGORY.FILES) return true;
+      if (fileCount >= MAX_FILE_RESULTS) return false;
+      fileCount++;
+      return true;
+    });
+    return prioritizeAtMentionFiles(cappedMatches);
+  }
+  if (activeFilter) {
+    // Single-category view: show everything in that category.
+    return prioritizeAtMentionFiles(matches);
+  }
+  // Mixed "All" view: cap each category so the popup surfaces every
+  // section without one pushing the others out of view.
+  const counts = {};
+  const cappedMatches = matches.filter(item => {
+    const n = counts[item.category] || 0;
+    counts[item.category] = n + 1;
+    return n < REST_PER_CATEGORY;
+  });
+  return prioritizeAtMentionFiles(cappedMatches);
 }
 
 // ---- Category filter bar ------------------------------------------------
