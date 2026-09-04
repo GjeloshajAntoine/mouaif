@@ -89,16 +89,16 @@ window.pickerTest = { h, render, ModelPickerField };`,
     await wait();
     await evaluate(`query('missing'); window.originalSearch = document.querySelector('.mp__search'); originalSearch.focus({ preventScroll: true });`);
     await wait();
-    await check('no matches offers Clear search', `document.querySelector('.mp__empty-action').textContent === 'Clear search'`);
-    await tap('.mp__refresh');
-    await check('refresh keeps focused input, query, and provider', `calls === 1 && document.activeElement === originalSearch && originalSearch.value === 'missing' && document.querySelector('.mp__chip.is-active .mp__chip-label').textContent === 'one'`);
-    await check('refresh is busy and guards duplicate requests', `document.querySelector('.mp__refresh').disabled && document.querySelector('.mp__list').getAttribute('aria-busy') === 'true' && (document.querySelector('.mp__refresh').click(), calls === 1)`);
+    await check('no matches offers Refresh models first and separate Clear search', `Array.from(document.querySelectorAll('.mp__empty-action'), el => el.textContent).join('|') === 'Refresh models|Clear search'`);
+    await tap('.mp__empty-action');
+    await check('no-match refresh keeps focused input, query, and provider', `calls === 1 && document.activeElement === originalSearch && originalSearch.value === 'missing' && document.querySelector('.mp__chip.is-active .mp__chip-label').textContent === 'one'`);
+    await check('both refresh actions are busy and guard duplicate requests', `document.querySelector('.mp__refresh').disabled && document.querySelector('.mp__empty-action').disabled && document.querySelector('.mp__empty-action').textContent === 'Refreshing…' && !document.querySelector('.mp__empty-action--clear').disabled && document.querySelector('.mp__list').getAttribute('aria-busy') === 'true' && (document.querySelector('.mp__refresh').click(), document.querySelector('.mp__empty-action').click(), calls === 1)`);
     await evaluate(`models = models.concat({ id: 'missing-new', provider: 'one' }); draw(); settle();`);
     await wait();
     await check('catalog update preserves search node and displays new match', `document.querySelector('.mp__search') === originalSearch && document.activeElement === originalSearch && document.querySelector('.mp__row-id').textContent === 'missing-new' && !document.querySelector('.mp__refresh').disabled`);
     await evaluate(`query('unknown')`);
     await wait();
-    await tap('.mp__empty-action');
+    await tap('.mp__empty-action--clear');
     await check('clear only resets text, preserves provider and focus, makes no request', `calls === 1 && originalSearch.value === '' && document.activeElement === originalSearch && document.querySelector('.mp__chip.is-active .mp__chip-label').textContent === 'one' && document.querySelectorAll('.mp__row').length === 2`);
     await tap('.mp__refresh');
     await evaluate(`failRefresh(new Error('offline'));`);
@@ -124,6 +124,12 @@ window.pickerTest = { h, render, ModelPickerField };`,
     await evaluate(`Object.defineProperty(window, 'visualViewport', { configurable: true, value: vv }); void 0;`);
     await tap('.mp__trigger');
     await check('sheet fits the keyboard viewport before focus', `(() => { const r = document.querySelector('.mp__pop').getBoundingClientRect(); return Math.abs(r.bottom - 440) < 1 && r.top >= 30; })()`);
+    await evaluate(`query('still-missing');`);
+    await wait();
+    await tap('.mp__empty-action');
+    await evaluate('settle()');
+    await wait();
+    await check('no-match refresh with keyboard viewport preserves filters and geometry', `calls === 5 && document.activeElement.matches('.mp__search') && document.activeElement.value === 'still-missing' && document.querySelector('.mp__chip.is-active .mp__chip-label').textContent === 'empty' && document.querySelector('.mp__empty-title').textContent === 'No matches' && document.querySelector('.mp__empty-action').textContent === 'Refresh models' && Math.abs(document.querySelector('.mp__pop').getBoundingClientRect().bottom - 440) < 1`);
     await evaluate(`vv.height = 844; vv.offsetTop = 0; vv.dispatchEvent(new Event('resize'));`);
     await check('keyboard dismissal resizes sheet back to visible bottom', `Math.abs(document.querySelector('.mp__pop').getBoundingClientRect().bottom - 844) < 1`);
     await evaluate(`vv.offsetTop = 12; vv.dispatchEvent(new Event('scroll'));`);
@@ -149,11 +155,17 @@ window.pickerTest = { h, render, ModelPickerField };`,
     await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await wait();
     await check('native touch swipe scrolls model list, not page', `document.querySelector('.mp__list').scrollTop > 0 && window.scrollY === 0 && picks.length === 1`);
+    await evaluate(`query('no-matches');`);
+    await wait();
     for (const width of [360, 430, 1280]) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: width < 480 });
       await wait();
       await check('picker fits at width ' + width, `(() => { const r = document.querySelector('.mp__pop').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && r.height > 0 && r.bottom <= innerHeight + 1; })()`);
+      await check('empty-state actions are visible touch targets at width ' + width, `Array.from(document.querySelectorAll('.mp__empty-action')).every(el => { const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return r.width >= 44 && r.height >= 44 && r.left >= 0 && r.right <= innerWidth && el.contains(hit); })`);
     }
+    await evaluate(`draw({ refresh: undefined });`);
+    await wait();
+    await check('picker without refresh support still allows clearing search', `!document.querySelector('.mp__refresh') && document.querySelectorAll('.mp__empty-action').length === 1 && document.querySelector('.mp__empty-action').textContent === 'Clear search'`);
     await evaluate(`document.querySelector('.mp__close').click()`);
     await wait();
     await check('close restores trigger focus without page scrolling', `document.activeElement.matches('.mp__trigger') && focusCalls.every(o => o?.preventScroll) && window.scrollY === 0`);

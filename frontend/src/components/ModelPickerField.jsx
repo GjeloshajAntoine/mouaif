@@ -416,18 +416,21 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
           h('p', { class: 'mp__empty-text' }, hasQuery
             ? 'No model matches "' + q + '". Try a shorter query or clear the search.'
             : refreshEmpty),
-          hasQuery ? h('button', {
-            type: 'button',
-            class: 'mp__empty-action',
-            onPointerDown: keepSearchFocus,
-            onClick: doClearSearch
-          }, 'Clear search') : (refresh ? h('button', {
-            type: 'button',
-            class: 'mp__empty-action',
-            disabled: refreshing,
-            onPointerDown: keepSearchFocus,
-            onClick: doRefresh
-          }, refreshing ? 'Refreshing…' : refreshEmpty) : null)
+          h('div', { class: 'mp__empty-actions' },
+            refresh ? h('button', {
+              type: 'button',
+              class: 'mp__empty-action',
+              disabled: refreshing,
+              onPointerDown: keepSearchFocus,
+              onClick: doRefresh
+            }, refreshing ? 'Refreshing…' : refreshEmpty) : null,
+            hasQuery ? h('button', {
+              type: 'button',
+              class: 'mp__empty-action mp__empty-action--clear',
+              onPointerDown: keepSearchFocus,
+              onClick: doClearSearch
+            }, 'Clear search') : null
+          )
         ) : groups.map((g) =>
           h('section', { class: 'mp__section', key: g.provider || 'other' },
             h('div', { class: 'mp__section-head' },
