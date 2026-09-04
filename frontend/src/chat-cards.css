@@ -193,7 +193,7 @@
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--fg-soft);
-  font-family: var(--mono, monospace);
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

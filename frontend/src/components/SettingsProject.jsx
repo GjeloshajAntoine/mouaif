@@ -1276,7 +1276,7 @@ h('h2', { class: 'view-title' }, 'Technical details')
         h('div', { class: 'settings-project__item-actions' },
           h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, exportTraceStatusMsg),
           h('button', { class: 'btn', type: 'button', onClick: exportTrace, disabled: !canExportTrace }, 'Export trace'),
-          h('button', { class: 'btn btn--danger btn--sm', type: 'button', onClick: deleteChat }, 'Delete chat')
+          h('button', { class: 'btn btn--danger btn--small', type: 'button', onClick: deleteChat }, 'Delete chat')
         )
       )
     )

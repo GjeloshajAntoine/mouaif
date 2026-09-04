@@ -216,6 +216,8 @@ body {
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon-btn--danger { color: var(--danger); }
 .icon-btn--danger:hover { background: var(--danger-soft); }
+.icon-btn--close { color: var(--fg-soft); }
+.icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
 .shimmer {
   background: linear-gradient(90deg, var(--surface) 0%, var(--surface-3) 50%, var(--surface) 100%);
   background-size: 200% 100%;
