@@ -34,6 +34,7 @@ import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
+import { costSnapshot } from './costSummary.js';
 
 // retryFailedTurn(state, refs, payload)
 //
@@ -471,6 +472,7 @@ async function fullRebuildFromServer(state, refs, nextSeq) {
   const body = await fetchMessagesFromSeq(projectDir, chatId, 0);
   if (!body) return null;
   state.messages = body.messages;
+  state.costSnapshot = costSnapshot(body);
   state.seenSeqs = new Set(body.messages.filter((m) => typeof m.seq === 'number').map((m) => m.seq));
   state.transcriptNextSeq = typeof body.nextSeq === 'number' ? body.nextSeq : nextSeq;
   if (state._renderTranscript) state._renderTranscript();
@@ -496,7 +498,13 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   const body = await fetchMessagesFromSeq(projectDir, chatId, localNextSeq);
   if (!body) return null;
   if (typeof body.nextSeq === 'number' && body.nextSeq < localNextSeq) return fullRebuildFromServer(state, refs, body.nextSeq);
-  return applyTailSync(state, refs, typeof body.nextSeq === 'number' ? body.nextSeq : serverNextSeq, body.messages);
+  const result = applyTailSync(state, refs, typeof body.nextSeq === 'number' ? body.nextSeq : serverNextSeq, body.messages);
+  // Rebase only after optimistic segments have been replaced by server
+  // rows. Metadata saves and older-page loads must not advance this cursor.
+  const snapshot = costSnapshot(body);
+  if (snapshot) state.costSnapshot = snapshot;
+  updateUsageSummary(state, null, refs);
+  return result;
 }
 
 // startStreamRecovery / stopStreamRecovery

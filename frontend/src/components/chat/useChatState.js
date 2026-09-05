@@ -37,6 +37,7 @@ import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
+import { costSnapshot } from './costSummary.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
 //
@@ -685,6 +686,7 @@ state.autoRetry = typeof c.autoRetry === 'boolean'
 : (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
 // Seed the backward-pagination cursor from the windowed first page.
 // Only the newest PAGE is in memory; older pages load on scroll-up.
 msgPager.current = createPager();

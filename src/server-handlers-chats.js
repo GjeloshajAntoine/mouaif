@@ -230,7 +230,11 @@ const id = decodeURIComponent(getMsgsMatch[1]);
 const dir = qs(q, 'projectDir');
 if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 try {
-if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+const chat = chats.getChat(dir, id);
+if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id });
+// Snapshot the aggregate alongside this response's cursor. All storage
+// reads below are synchronous, so appends cannot interleave the snapshot.
+const totalCost = chat.totalCost;
 const rawFrom = typeof q.fromSeq === 'string' ? q.fromSeq : q.since;
 const fromSeq = typeof rawFrom === 'string' ? parseInt(rawFrom, 10) : NaN;
 const rawLimit = typeof q.limit === 'string' ? parseInt(q.limit, 10) : 0;
@@ -251,6 +255,7 @@ const nextBeforeSeq = hasMore && window.length ? window[0].seq : null;
 return sendJSON(res, 200, {
 messages: window,
 total,
+totalCost,
 hasMore,
 beforeSeq: nextBeforeSeq,
 nextSeq: total,
@@ -260,9 +265,9 @@ base: total
 const all = messages.listMessages(dir, id);
 if (isFinite(fromSeq) && fromSeq >= 0) {
 const tail = fromSeq <= all.length ? all.slice(fromSeq) : [];
-return sendJSON(res, 200, { messages: tail, nextSeq: all.length, base: all.length });
+return sendJSON(res, 200, { messages: tail, nextSeq: all.length, base: all.length, totalCost });
 }
-return sendJSON(res, 200, { messages: all, nextSeq: all.length, base: all.length });
+return sendJSON(res, 200, { messages: all, nextSeq: all.length, base: all.length, totalCost });
 } catch (e) {
 const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
 return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });

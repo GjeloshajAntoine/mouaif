@@ -9,6 +9,7 @@
 
 import { fetchJson } from '../../api.js';
 import { formatCost, formatTokPerSecond, formatTokens } from '../../usage.js';
+import { summarizeChatUsage } from './costSummary.js';
 
 // setChatStatus(refs, text, state)
 //
@@ -84,35 +85,9 @@ export async function refreshProviderCredit(state, refs) {
 export function updateUsageSummary(state, liveInfo, refs) {
   const el = refs.usageSummary.current;
   if (!el) return;
-  const assistant = (state.messages || []).filter((m) => m && m.role === 'assistant');
-  let latestContext = null;
-  let totalCost = 0;
-  let hasKnownCost = false;
-  for (const m of assistant) {
-    if (m.usage && typeof m.usage.promptTokens === 'number') latestContext = m.usage.promptTokens;
-    if (m.cost && m.cost.known && typeof m.cost.total === 'number') {
-      totalCost += m.cost.total;
-      hasKnownCost = true;
-    }
-  }
-  if (liveInfo) {
-    if (liveInfo.usage && typeof liveInfo.usage.promptTokens === 'number') latestContext = liveInfo.usage.promptTokens;
-    if (liveInfo.cost && liveInfo.cost.known && typeof liveInfo.cost.total === 'number') {
-      totalCost += liveInfo.cost.total;
-      hasKnownCost = true;
-    }
-    // Mid-turn subagent cost delta. The server emits a
-    // `usage_update` SSE event with the subagent's cost as soon as
-    // the nested run finishes; the parent turn's `done` later
-    // folds the same number into the final segment's remainder
-    // and clears the running delta. While the turn is in flight
-    // this is the only place the subagent cost is reflected, so
-    // the head "Total" pill stays current.
-    if (liveInfo.liveCost && liveInfo.liveCost.known && typeof liveInfo.liveCost.total === 'number' && liveInfo.liveCost.total > 0) {
-      totalCost += liveInfo.liveCost.total;
-      hasKnownCost = true;
-    }
-  }
+  const { latestContext, totalCost, hasKnownCost } = summarizeChatUsage(
+    state.messages, state.costSnapshot, liveInfo
+  );
   el.innerHTML = '';
   // Each value is rendered as a pill (label + number) so the head
   // reads as a row of status chips. The label is a separate span

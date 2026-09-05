@@ -73,6 +73,12 @@ The app-level table is editable through the existing Settings UI so a user can l
 - **Anthropic prompt-cache tokens are priced at the discounted tiers.** When the `usage` block carries `cacheReadTokens` / `cacheCreationTokens` (Anthropic only), `computeCost` charges the cached reads at the model's `cacheReadFactor` (default 10%) of the input rate, the cache writes at `cacheWriteFactor` (default 125%), and the remaining uncached prompt tokens at the full input rate — all multiplied by the model's own `inputPer1K`. The factors live on the pricing record so a model (or app-level override) can differ from the standard tiers. The `input` bucket stays the uncached portion so a `usage` block with no cache fields prices identically to before the feature. See [prompt-caching.md](./prompt-caching.md).
 - **Pricing is informational.** A wrong `pricing` entry causes a wrong number on the cost line; it does not affect what the upstream charges. The Settings UI surfaces a "verify with your provider's pricing page" hint on the pricing fields.
 
+## Implementation notes
+
+The header Total uses an authoritative cost snapshot paired with the exclusive `nextSeq` cursor from `GET /api/chats/:id/messages`. Window, tail, and full-list responses include an additive `totalCost` field (`{ total, known, currency, knownCount }`) covering all persisted messages, not just the returned page.
+
+The client adds only newer rows and optimistic/live costs not covered by that snapshot. Tail reconciliation replaces optimistic segments before advancing the cost baseline, including when no extra DOM rows are appended. Loading older history and saving metadata never advance the baseline, preventing double counting during an active turn. Older servers without this field retain the loaded-message sum fallback.
+
 ## Related
 
 - [docs/features/ai-client.md](./ai-client.md) — `usage` events on `done`.
