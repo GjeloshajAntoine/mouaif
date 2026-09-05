@@ -15,16 +15,6 @@ export function isNearBottom(el) {
 if (!el) return true;
 return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 }
-// isNearTop(el) -> bool
-//
-// True when the user has scrolled to (or almost to) the top of the
-// transcript. Used by the backward-pagination loader: a scroll-up
-// that reaches the top is the signal to fetch the older page. 48px
-// threshold mirrors isNearBottom.
-export function isNearTop(el) {
-if (!el) return true;
-return el.scrollTop < 48;
-}
 
 // scrollTranscriptToBottom(refs)
 //
