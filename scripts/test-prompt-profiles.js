@@ -28,9 +28,9 @@ function check(name, cond, detail) {
   else { failed++; console.log('FAIL  ' + name + (detail ? '  ' + detail : '')); }
 }
 
-function get(urlPath) {
+function get(port, urlPath) {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: 5732, path: urlPath }, (res) => {
+    http.get({ host: '127.0.0.1', port, path: urlPath }, (res) => {
       let buf = '';
       res.on('data', (c) => { buf += c; });
       res.on('end', () => {
@@ -71,6 +71,39 @@ async function main() {
   check('average < extensive',   sizes['average'] < sizes['extensive'],
     'average=' + sizes['average'] + ' extensive=' + sizes['extensive']);
 
+  // Larger profiles extend the same rules instead of replacing them.
+  const core = pp.profileSystemMessage('very-small');
+  const average = pp.profileSystemMessage('average');
+  const extensive = pp.profileSystemMessage('extensive');
+  check('very-small stays compact', core.length < 1800, 'chars=' + core.length);
+  check('average extends the complete compact core', average.startsWith(core + '\n\n'));
+  check('extensive extends the complete average workflow', extensive.startsWith(average + '\n\n'));
+  const sharedRules = [
+    ['mobile-friendly answers', /short Markdown.*language-tagged code fences.*project-relative paths/],
+    ['instruction priority', /project and custom instructions.*higher-priority instructions/],
+    ['safe autonomy', /reversible decisions.*Ask when ambiguity affects scope, safety, or correctness/],
+    ['explicit authorization for risky actions', /Ask before destructive actions.*unless explicitly authorized/],
+    ['preserves user work', /Preserve unrelated user work/],
+    ['enabled tools and schema discovery', /only enabled tools.*authorization gates.*discover_tool/],
+    ['inspect-edit-verify loop', /Inspect before editing.*run relevant checks.*fix introduced failures/],
+    ['non-interactive shell', /Shell has no stdin.*non-interactive commands.*never a REPL/],
+    ['conditional progress on every task', /If report_progress is enabled.*start of every task.*status: "running"/],
+    ['honest progress completion', /status: "completed" and current equal to total.*status: "failed" if blocked/],
+    ['evidence and privacy', /Never invent project facts or test results.*checks run.*limitations.*Do not expose secrets/]
+  ];
+  for (const profile of pp.listProfiles()) {
+    for (const [rule, pattern] of sharedRules) {
+      check(profile.id + ' includes ' + rule, pattern.test(profile.systemMessage));
+    }
+  }
+  for (const id of ['average', 'extensive']) {
+    const message = pp.profileSystemMessage(id);
+    check(id + ' explains exact edits', message.includes('exact, unique oldText/newText'));
+    check(id + ' distinguishes implementation from review', message.includes('answer without changing files unless asked'));
+    check(id + ' reports unrun checks', message.includes('State clearly when checks could not run'));
+    check(id + ' supports progress-disabled projects', message.includes('If the tool is unavailable'));
+  }
+  check('extensive includes concrete workflow examples', extensive.includes('Workflow examples:') && extensive.includes('Bug fix:') && extensive.includes('Blocked check:'));
   // 4) isValidProfile.
   check('isValidProfile("average")',     pp.isValidProfile('average') === true);
   check('isValidProfile("very-small")',  pp.isValidProfile('very-small') === true);
@@ -201,40 +234,20 @@ async function main() {
     Array.isArray(pp.reduceToolSpecs([], 'average')) && pp.reduceToolSpecs([], 'average').length === 0,
     'did not return empty array');
 
-  // 15) /api/prompt-profiles endpoint.
-  //     Spin up the server, hit the endpoint, tear it down.
-  const { startServer } = (() => {
-    // Require the server module lazily so the test's own process
-    // doesn't bind port 5732 in CI; we just need a callback that
-    // accepts a port.
-    return { startServer: null };
-  })();
-
-  // Easier path: start the real `node bin/mouaif.js serve` in a
-  // child process bound to 5732, hit the endpoint, kill the child.
-  const { spawn } = require('child_process');
-  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'mouaif.js'), 'serve'], {
-    cwd: path.join(__dirname, '..'),
-    env: Object.assign({}, process.env, { MOUAIF_HOME: TMP }),
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', (c) => { stdout += c; });
-  child.stderr.on('data', (c) => { stderr += c; });
-
-  // Wait for the server to be ready (poll /api/prompt-profiles).
-  let ready = false;
-  for (let i = 0; i < 50; i++) {
-    await new Promise(r => setTimeout(r, 100));
-    try {
-      const r = await get('/api/prompt-profiles');
-      if (r.status === 200) { ready = true; break; }
-    } catch { /* not up yet */ }
-  }
-  check('server started on 5732', ready, 'stdout: ' + stdout + ' stderr: ' + stderr);
-
-  if (ready) {
-    const r = await get('/api/prompt-profiles');
+  // 15) Exercise the real HTTP server on an ephemeral loopback port.
+  // Never launch the CLI or connect to the host app's running server.
+  const { createServer, destroyOpenSockets, DEFAULT_PORT } = require('../src/index.js');
+  check('serve default port remains 5732', DEFAULT_PORT === 5732);
+  const server = createServer(0);
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+    const root = await get(port, '/');
+    check('GET / serves the app shell', root.status === 200 && typeof root.body === 'string' && /<html/i.test(root.body));
+    const r = await get(port, '/api/prompt-profiles');
     check('GET /api/prompt-profiles 200', r.status === 200, 'got: ' + r.status);
     check('GET /api/prompt-profiles has default', r.body && r.body.default === 'average');
     check('GET /api/prompt-profiles has 3 entries',
@@ -251,12 +264,12 @@ async function main() {
       r.body && r.body.profiles.every(p =>
         typeof p.systemMessage === 'string' && p.systemMessage.length > 0 &&
         p.systemMessage === pp.PROFILES[p.id].systemMessage));
+  } finally {
+    await new Promise(resolve => {
+      server.close(resolve);
+      destroyOpenSockets();
+    });
   }
-
-  // Teardown.
-  try { child.kill('SIGTERM'); } catch { /* ignore */ }
-  await new Promise(r => setTimeout(r, 200));
-  try { child.kill('SIGKILL'); } catch { /* ignore */ }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   // Cleanup
