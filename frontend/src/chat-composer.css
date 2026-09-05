@@ -1503,7 +1503,12 @@ align-items: flex-start;
 flex-wrap: wrap;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-text {
-flex-basis: calc(100% - 52px);
+/* Reserve the close-button band without letting the title grow past it.
+The base rule is flex: 1 1 auto, so flex-basis alone is defeated by
+flex-grow — the title block expands to the full row and the text runs
+under the absolutely-positioned close ✕. Pin flex-grow to 0 so the
+calc(100% - 52px) basis is actually honored. */
+flex: 0 0 calc(100% - 52px);
 min-height: 44px;
 justify-content: center;
 }
