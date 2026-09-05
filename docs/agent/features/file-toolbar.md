@@ -10,7 +10,7 @@
 
 `GET /api/git/commit-files?projectDir=<abs>&hash=<full-or-short>` returns the full changed-file list for one commit: `{ ok, files }` where each file is `{ path, status, statusText, diff }` (each per-file diff preview is capped at 120 lines; the file list itself has no cap). This is called by the modal the first time a commit row is expanded, so file lists are fetched on demand instead of for every commit in the list.
 
-`POST /api/git` accepts `{ projectDir, action, args?, message? }`. Actions: `status`, `diff`, `log`, `add`, `commit`, `branch`, `checkout`, `stash`, `stash-apply`, `stash-pop`, `stash-drop`, `push`, `pull`.
+`POST /api/git` accepts `{ projectDir, action, args?, files?, message? }`. Actions: `status`, `diff`, `log`, `add`, `unstage`, `commit`, `branch`, `checkout`, `stash`, `stash-apply`, `stash-pop`, `stash-drop`, `push`, `pull`. `add` and `unstage` accept either a space-split string `args` or an array `files`; the array form passes each path to git as its own argv element, so file names containing spaces are safe. `unstage` maps to `git reset -q HEAD -- <path>` (compatible with repos that have no commits yet). `commit` requires `message`.
 
 ### `GET /api/tools/cli/session?projectDir=<abs>`
 

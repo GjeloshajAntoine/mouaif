@@ -13,22 +13,26 @@ const { sendJSON, readJsonOr400, xyToText } = require('./server-shared.js');
 //   POST /api/git  body: { projectDir, action, args? }
 //     -> { ok, stdout, stderr, exitCode }
 //
-// Supported actions: status, diff, log, add, commit, branch, checkout, stash,
-// stash-apply, stash-pop, stash-drop, push, pull
+// Supported actions: status, diff, log, add, unstage, commit, branch, checkout,
+// stash, stash-apply, stash-pop, stash-drop, push, pull
 // These are read-safe or explicit-save commands. `commit` and `add` require
 // an extra `message` field. `push` and `pull` talk to the configured remote.
 async function handleGit(req, res, parsed) {
   const body = await readJsonOr400(req, res);
   if (!body) return;
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
-  const action = body && typeof body.action === 'string' ? body.action : '';
-  const args = body && typeof body.args === 'string' ? body.args : '';
-  const message = body && typeof body.message === 'string' ? body.message : '';
-
-  if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
-  if (!action) return sendJSON(res, 400, { error: 'action is required' });
-
-  const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'commit', 'branch', 'checkout', 'stash', 'stash-apply', 'stash-pop', 'stash-drop', 'push', 'pull']);
+const action = body && typeof body.action === 'string' ? body.action : '';
+const args = body && typeof body.args === 'string' ? body.args : '';
+const message = body && typeof body.message === 'string' ? body.message : '';
+// `files` is an array of paths to operate on (used by stage/unstage). It is
+// an alternative to the string `args` form: when present, each path is passed
+// to git as a single argv element, so file names containing spaces survive
+// intact. No shell is involved either way — paths never go through a string
+// split, so spaces, quotes, and leading dashes are safe.
+const files = Array.isArray(body && body.files) ? body.files.filter((p) => typeof p === 'string' && p.length > 0) : [];
+if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+if (!action) return sendJSON(res, 400, { error: 'action is required' });
+const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'unstage', 'commit', 'branch', 'checkout', 'stash', 'stash-apply', 'stash-pop', 'stash-drop', 'push', 'pull']);
   if (!SAFE_ACTIONS.has(action)) {
     return sendJSON(res, 400, { error: 'unsupported action: ' + action, supported: [...SAFE_ACTIONS] });
   }
@@ -49,10 +53,22 @@ async function handleGit(req, res, parsed) {
       argv = ['log', '--oneline', '-20'].concat(splitArgs(args));
       break;
     case 'add':
-      if (!args) return sendJSON(res, 400, { error: 'args (file paths) required for add' });
-      argv = ['add'].concat(splitArgs(args));
-      break;
-    case 'commit':
+if (files.length === 0) {
+if (!args) return sendJSON(res, 400, { error: 'files (array of paths) required for add' });
+argv = ['add'].concat(splitArgs(args));
+} else {
+argv = ['add', '--'].concat(files);
+}
+break;
+case 'unstage':
+if (files.length === 0) {
+if (!args) return sendJSON(res, 400, { error: 'files (array of paths) required for unstage' });
+argv = ['reset', '-q', 'HEAD', '--'].concat(splitArgs(args));
+} else {
+argv = ['reset', '-q', 'HEAD', '--'].concat(files);
+}
+break;
+case 'commit':
       if (!message) return sendJSON(res, 400, { error: 'message required for commit' });
       argv = ['commit', '-m', message];
       break;
