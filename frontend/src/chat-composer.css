@@ -458,6 +458,10 @@ pointer-events: none;
   z-index: 40;
   display: flex;
   flex-direction: column;
+  /* Clip the body's scrollbar and the footer to the popup's rounded box so
+  they cannot paint past the max-height boundary (which made the footer
+  overlap transcript content below the popup). */
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
