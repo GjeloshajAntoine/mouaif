@@ -229,7 +229,7 @@ export function createEventHandlers(state) {
   function captureScreenshot() {
     return cdpSend('Page.captureScreenshot', {
       format: 'jpeg',
-      quality: 55,
+      quality: 90,
       // Chrome's PDF viewer is a separately composited extension webview.
       // Asking it for a beyond-viewport capture can stall indefinitely;
       // viewport capture includes the rendered PDF surface immediately.

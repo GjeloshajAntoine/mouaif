@@ -9,7 +9,7 @@
 // Capture triggers:
 //   - Page.screencastFrame — Chrome's event-driven visual-change stream;
 //     frames are acknowledged after each full-page capture, naturally
-//     limiting the stream to 4 fps without busy polling.
+//     limiting the stream to ~10 fps without busy polling.
 //   - Page.frameNavigated / Page.frameStoppedLoading — document lifecycle.
 //   - a slow 3 s safety fallback when Chrome emits no screencast frame.
 //   - a manual "Refresh preview" button in the panel header.
@@ -251,7 +251,7 @@ props.ackFrame(sessionId).catch(() => { /* stream stopped */ });
 
     // Subscribe to lifecycle events and Chrome's visual-change stream.
     // Frames are acknowledged after a full-page screenshot, and captures are
-// coalesced to at most 4 fps. This keeps animation, typing, hover, and
+// coalesced to at most ~10 fps. This keeps animation, typing, hover, and
     // DOM mutations live while retaining the scrollable full-page image.
     const subs = [];
     if (props.subscribe) {
@@ -273,7 +273,7 @@ if (stop || !frame || frame.sessionId == null || !props.ackFrame) return;
 pendingFrameAck = frame.sessionId;
 pendingAckAfter = captureSerial + 1;
 if (streamTimer) return;
-const wait = Math.max(0, 250 - (Date.now() - lastCaptureAt));
+const wait = Math.max(0, 100 - (Date.now() - lastCaptureAt));
 streamTimer = setTimeout(() => {
 streamTimer = null;
 if (!stop) runCapture('stream');
