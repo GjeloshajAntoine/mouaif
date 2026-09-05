@@ -335,12 +335,39 @@ function readChatCostRow(d, projectDir, chatId) {
 }
 
 function listMessages(projectDir, chatId) {
-  ensureTables();
-  const d = require('./settings.js').getDb();
-  const rows = d.prepare(
-    'SELECT * FROM message_store WHERE project_dir = ? AND chat_id = ? ORDER BY seq ASC'
-  ).all(projectDir, chatId);
-  return rows.map(rowToMessage);
+ensureTables();
+const d = require('./settings.js').getDb();
+const rows = d.prepare(
+'SELECT * FROM message_store WHERE project_dir = ? AND chat_id = ? ORDER BY seq ASC'
+).all(projectDir, chatId);
+return rows.map(rowToMessage);
+}
+// listMessagesWindow(projectDir, chatId, opts) -> Array<Message>
+//
+// Windowed backward fetch for chat pagination. Returns the `limit`
+// messages at or just BELOW `beforeSeq` in chronological order. Used
+// by the transcript's scroll-up loader so opening a long chat only
+// transfers the newest page; older pages are fetched on demand as the
+// user scrolls up. The `seq` is the stable, monotonic per-chat row id —
+// the same identity the tail sync uses — so the window and the
+// append-only tail never disagree.
+//
+// opts = { limit, beforeSeq }  (limit defaults to 100; beforeSeq is the
+// exclusive upper bound, defaulting to "everything")
+function listMessagesWindow(projectDir, chatId, opts) {
+ensureTables();
+const d = require('./settings.js').getDb();
+const limitRaw = Number.isInteger(opts && opts.limit) && (opts.limit > 0) ? opts.limit : 100;
+const beforeSeq = Number.isInteger(opts && opts.beforeSeq) && opts.beforeSeq >= 0 ? opts.beforeSeq : Infinity;
+// Fetch `limit` rows strictly below beforeSeq, ordered newest-last in
+// SQL then reversed so the returned array runs oldest -> newest within
+// the window. Without a beforeSeq (the first page) we want the newest
+// rows overall: ORDER BY seq DESC LIMIT n.
+const rows = d.prepare(
+'SELECT * FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?'
+).all(projectDir, chatId, beforeSeq, limitRaw);
+rows.reverse();
+return rows.map(rowToMessage);
 }
 
 function appendMessage(projectDir, chatId, msg) {
@@ -610,12 +637,13 @@ module.exports = {
   updateChat,
   deleteChat,
   // Message CRUD
-  listMessages,
-  appendMessage,
-  replaceMessages,
-  clearMessages,
-  getMessageCount,
-  messageCursorDb,
+listMessages,
+listMessagesWindow,
+appendMessage,
+replaceMessages,
+clearMessages,
+getMessageCount,
+messageCursorDb,
   // Cost aggregation
   projectCostTotals,
   chatTotalCostDb,

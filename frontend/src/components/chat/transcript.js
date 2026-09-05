@@ -1528,14 +1528,64 @@ export function renderTranscript(state, refs) {
 
 
 
+// findTranscriptContentStart(el) -> Element | null
+//
+// Locate the first non-header node in the transcript, i.e. the first
+// chat/tool row the header cards (system prompt, tools, agent files,
+// skills, setup, empty state) sit above. Older paginated rows must be
+// inserted BEFORE this node so they land between the header cards and
+// the currently-loaded messages.
+function findTranscriptContentStart(el) {
+if (!el) return null;
+for (let i = 0; i < el.children.length; i++) {
+const child = el.children[i];
+if (child.classList && child.classList.contains('chat-view__setup')) continue;
+if (child.classList && child.classList.contains('chat-view__empty')) continue;
+if (child.dataset && (child.dataset.sysPrompt || child.dataset.toolsCard || child.dataset.agentFilesCard || child.dataset.skillsCard)) continue;
+return child;
+}
+return null;
+}
+// prependOlderTranscript(state, refs, messages) -> boolean
+//
+// Insert a page of older messages ABOVE the currently-loaded rows, in
+// chronological order, preserving the user's reading position. Used by
+// the scroll-up pagination loader. `messages` runs oldest -> newest
+// (as the server window returns it). Returns true when any row was
+// inserted.
+export function prependOlderTranscript(state, refs, messages) {
+const el = refs.transcript.current;
+if (!el || !Array.isArray(messages) || !messages.length) return false;
+const contentStart = findTranscriptContentStart(el);
+if (!contentStart) return false;
+const prevScrollHeight = el.scrollHeight;
+const prevScrollTop = el.scrollTop;
+// Insert before the fixed content-start anchor so the rows land in the
+// order they arrive (oldest first). Suppress per-row scroll pinning so
+// the loading pass owns the scroll position and no jump-button flutter
+// fires while the page fills in above the viewport.
+refs._insertAnchor = contentStart;
+refs._suspendScrollPin = true;
+const beforeCount = el.childElementCount;
+for (const m of messages) renderMessageRow(state, refs, m);
+refs._suspendScrollPin = false;
+refs._insertAnchor = null;
+if (el.childElementCount === beforeCount) return false;
+// Preserve the viewport anchor: the inserted content raised the total
+// height above the viewport, so bump scrollTop by exactly the delta to
+// keep the rows the user was reading in place.
+el.scrollTop = prevScrollTop + (el.scrollHeight - prevScrollHeight);
+updateUsageSummary(state, null, refs);
+return true;
+}
 // buildSetupCardForMount(refs, state)
 //
 // Build the prompt-size selector and wire its onChange to the meta
 // module's setPromptSize.
 function buildSetupCardForMount(refs, state) {
-  const sel = buildSetupCard();
-  sel._onChange = (v) => setPromptSize(v, state, refs);
-  return sel;
+const sel = buildSetupCard();
+sel._onChange = (v) => setPromptSize(v, state, refs);
+return sel;
 }
 
 // buildEmptyState()

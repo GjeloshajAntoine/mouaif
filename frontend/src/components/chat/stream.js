@@ -9,17 +9,19 @@
 import { fetchJson, parseSSEFrame } from '../../api.js';
 import { createCounter } from '../../usage.js';
 import {
-  appendDeltaToLive,
-  appendReasoningToLive,
-  appendMessageToTranscript,
-  appendErrorCard,
-  appendToolCallCard,
-  appendToolResultCard,
-  finalizeLiveMessage,
-  handleShellOutputEvent,
-  handleSubagentStreamEvent,
-  syncTranscriptAppend,
-  updateProgressCard
+appendDeltaToLive,
+appendReasoningToLive,
+appendMessageToTranscript,
+appendErrorCard,
+appendToolCallCard,
+appendToolResultCard,
+finalizeLiveMessage,
+handleShellOutputEvent,
+handleSubagentStreamEvent,
+syncTranscriptAppend,
+updateProgressCard,
+prependOlderTranscript,
+cancelTranscriptRender
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -31,6 +33,7 @@ import { subscribeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
+import { PAGE_SIZE_DEFAULT } from './pagination.js';
 
 // retryFailedTurn(state, refs, payload)
 //
@@ -359,9 +362,108 @@ async function fetchRunState(projectDir, chatId) {
 }
 
 async function fetchMessagesFromSeq(projectDir, chatId, fromSeq) {
-  const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&fromSeq=' + fromSeq);
-  if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return null;
-  return r.body;
+const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&fromSeq=' + fromSeq);
+if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return null;
+return r.body;
+}
+// fetchMessagesWindow(projectDir, chatId, opts) -> { messages, total, hasMore, beforeSeq }
+//
+// Fetch one backward page of the transcript. `opts.beforeSeq` is the
+// exclusive upper seq bound for OLDER rows (pass nothing for the newest
+// page); the server returns up to `opts.limit` rows strictly below it.
+// `hasMore` tells the caller whether an even older page exists. This is
+// the load path for the scroll-up pagination loader — opening a long chat
+// fetches just the tail, and older history is pulled on demand.
+async function fetchMessagesWindow(projectDir, chatId, opts) {
+const limit = Math.max(1, Math.min(200, (opts && opts.limit) || 100));
+let url = '/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&limit=' + limit;
+if (opts && typeof opts.beforeSeq === 'number' && isFinite(opts.beforeSeq) && opts.beforeSeq >= 0) {
+url += '&beforeSeq=' + opts.beforeSeq;
+}
+const r = await fetchJson(url);
+if (r.status !== 200 || !r.body || !Array.isArray(r.body.messages)) return null;
+return {
+messages: r.body.messages,
+total: typeof r.body.total === 'number' ? r.body.total : r.body.messages.length,
+hasMore: !!r.body.hasMore,
+beforeSeq: (typeof r.body.beforeSeq === 'number' && isFinite(r.body.beforeSeq)) ? r.body.beforeSeq : null
+};
+}
+// loadOlderMessages(state, refs, pager) -> Promise<boolean>
+//
+// Fetch the next older page and prepend it to the transcript, updating
+// the pagination cursor. Returns true when a page was fetched (or when
+// nothing is left), false when the request failed or was a no-op. The
+// caller (the scroll-up listener) awaits this so a single in-flight page
+// flag can stay across the fetch. The prepend preserves scroll position.
+export async function loadOlderMessages(state, refs, pager) {
+if (!pager || !state || !refs) return false;
+if (pager.loading) return false;
+if (!pager.hasMore) return false;
+if (pager.beforeSeq === null) return false;
+pager.loading = true;
+const { projectDir, chatId } = state.props;
+try {
+const body = await fetchMessagesWindow(projectDir, chatId, {
+limit: PAGE_SIZE_DEFAULT,
+beforeSeq: pager.beforeSeq
+});
+if (!body || !Array.isArray(body.messages) || !body.messages.length) {
+// No rows returned: we've reached the top. Signal "no more".
+pager.hasMore = false;
+pager.beforeSeq = null;
+return true;
+}
+// Prepending could run while a chunked render or reconcile is in play;
+// guard against overlap by cancelling superseded transcript renders so
+// the inserted rows aren't wiped or duplicated. The reset also clears
+// the scroll-pin suppress flag that a stale pass might have left.
+if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
+// Dedup on seq: a row the server already gave us (e.g. a window edge
+// from a reconcile that landed between loads) must be skipped so the
+// same message never draws twice.
+const seen = state.seenSeqs;
+const fresh = body.messages.filter((m) => {
+if (typeof m.seq !== 'number') return true;
+if (seen.has(m.seq)) return false;
+seen.add(m.seq);
+return true;
+});
+const inserted = prependOlderTranscript(state, refs, fresh);
+// Keep `state.messages` in sync with the paginated DOM so a later
+// rebuild (reconcile, recovery, full render) does not wipe the older
+// pages the user already loaded. Prepend the fresh rows to the front
+// of the list (they are the oldest known so far) and seed their seqs
+// into the seen-set. A rebuild re-renders the full array including
+// these rows in order.
+if (fresh.length) {
+const have = Array.isArray(state.messages) ? state.messages : [];
+const haveSeqs = new Set();
+for (const m of have) if (typeof m.seq === 'number') haveSeqs.add(m.seq);
+const reallyFresh = fresh.filter((m) => typeof m.seq !== 'number' || !haveSeqs.has(m.seq));
+if (reallyFresh.length) state.messages = reallyFresh.concat(have);
+}
+// Advance the cursor from the server's authoritative next old bound,
+// NOT from the (possibly deduped) count, so pages never skip a seq.
+if (typeof body.beforeSeq === 'number' && body.beforeSeq >= 0) {
+pager.beforeSeq = body.beforeSeq;
+} else if (body.messages.length && typeof body.messages[0].seq === 'number') {
+pager.beforeSeq = body.messages[0].seq;
+} else {
+pager.beforeSeq = null;
+}
+pager.hasMore = !!body.hasMore;
+pager.offset += body.messages.length;
+pager.firstSeq = fresh.length ? fresh[0].seq : pager.firstSeq;
+if (!body.hasMore || !inserted) pager.hasMore = false;
+return inserted;
+} catch {
+// Leave hasMore true so a later scroll can retry; clearing it would
+// permanently hide history that a transient failure interrupted.
+return false;
+} finally {
+pager.loading = false;
+}
 }
 
 async function fullRebuildFromServer(state, refs, nextSeq) {

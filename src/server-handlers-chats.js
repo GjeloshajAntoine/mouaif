@@ -207,32 +207,67 @@ const chat = chats.updateChat(dir, id, safeBody);
   }
 
   // ---- Per-chat messages -------------------------------------------
-  // GET /api/chats/:id/messages?projectDir=[&fromSeq=<seq>] -> { messages, nextSeq }
-  //
-  // `fromSeq` is the next persisted row the caller has not merged. The
-  // stream/recovery hot path is append-only: fetch rows with seq >= fromSeq
-  // and avoid a full transcript transfer unless the server cursor is behind
-  // the local cursor. `since` remains accepted as a compatibility alias.
-  const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
-  if (getMsgsMatch && method === 'GET') {
-    const id = decodeURIComponent(getMsgsMatch[1]);
-    const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-    try {
-      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
-      const all = messages.listMessages(dir, id);
-      const rawFrom = typeof q.fromSeq === 'string' ? q.fromSeq : q.since;
-      const fromSeq = typeof rawFrom === 'string' ? parseInt(rawFrom, 10) : NaN;
-      if (isFinite(fromSeq) && fromSeq >= 0) {
-        const tail = fromSeq <= all.length ? all.slice(fromSeq) : [];
-        return sendJSON(res, 200, { messages: tail, nextSeq: all.length, base: all.length });
-      }
-      return sendJSON(res, 200, { messages: all, nextSeq: all.length, base: all.length });
-    } catch (e) {
-      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
-      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
-    }
-  }
+// GET /api/chats/:id/messages?projectDir=[&fromSeq=<seq>]      -> { messages, nextSeq, base }
+// GET /api/chats/:id/messages?projectDir=[&limit=<n>[&beforeSeq=<seq>]] -> { messages, total, hasMore, nextSeq, base, beforeSeq }
+//
+// Two modes share one URL:
+//
+//   - Tail mode (the stream/recovery hot path): `fromSeq` is the next
+//     persisted row the caller has not merged. Append-only — fetch rows
+//     with seq >= fromSeq and avoid a full transcript transfer unless the
+//     server cursor is behind the local cursor. `since` is a compatibility
+//     alias.
+//
+//   - Window mode (chat backward pagination): `limit` returns only the
+//     newest `limit` rows (the first page), and `beforeSeq` returns the
+//     `limit` rows strictly below that seq (the previous page). This lets
+//     a long transcript open fast with just the tail; older pages load on
+//     demand as the user scrolls up. `total` and `hasMore` let the client
+//     know when every older row has been reached.
+const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
+if (getMsgsMatch && method === 'GET') {
+const id = decodeURIComponent(getMsgsMatch[1]);
+const dir = qs(q, 'projectDir');
+if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+try {
+if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+const rawFrom = typeof q.fromSeq === 'string' ? q.fromSeq : q.since;
+const fromSeq = typeof rawFrom === 'string' ? parseInt(rawFrom, 10) : NaN;
+const rawLimit = typeof q.limit === 'string' ? parseInt(q.limit, 10) : 0;
+// Window mode is selected by an explicit `limit` (used by the chat
+// pagination loader). It takes precedence over fromSeq so the two
+// paths never conflict.
+if (rawLimit > 0) {
+const limit = Math.min(rawLimit, 200);
+const beforeSeqRaw = typeof q.beforeSeq === 'string' ? parseInt(q.beforeSeq, 10) : NaN;
+const beforeSeq = (isFinite(beforeSeqRaw) && beforeSeqRaw >= 0) ? beforeSeqRaw : Infinity;
+const window = messages.listMessagesWindow(dir, id, { limit, beforeSeq });
+const total = messages.getMessageCount(dir, id);
+// hasMore: a full page AND the oldest returned row is not the first
+// message. Because seq is contiguous from 0, an oldest seq of 0 means
+// we already reached the very top.
+const hasMore = window.length >= limit && window.length > 0 && window[0].seq > 0;
+const nextBeforeSeq = hasMore && window.length ? window[0].seq : null;
+return sendJSON(res, 200, {
+messages: window,
+total,
+hasMore,
+beforeSeq: nextBeforeSeq,
+nextSeq: total,
+base: total
+});
+}
+const all = messages.listMessages(dir, id);
+if (isFinite(fromSeq) && fromSeq >= 0) {
+const tail = fromSeq <= all.length ? all.slice(fromSeq) : [];
+return sendJSON(res, 200, { messages: tail, nextSeq: all.length, base: all.length });
+}
+return sendJSON(res, 200, { messages: all, nextSeq: all.length, base: all.length });
+} catch (e) {
+const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
+return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+}
+}
 
   // GET /api/chats/:id/revision?projectDir= -> { nextSeq, running }
   // Lightweight run state for the reconcile/recovery poll. `nextSeq` is

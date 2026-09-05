@@ -32,10 +32,11 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
+import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
 
 // useChatState(props) -> { state, refs, actions, ui }
 //
@@ -150,16 +151,20 @@ const nextLiveSeq = useRef(0);
   // (from the load response or a successful PATCH). Lets send() skip
   // the redundant per-turn PATCH when the record is already current.
   const persistedModelPair = useRef('');
-  const messages = useRef([]);
-  const models = useRef([]);
-  const liveByProvider = useRef({});
-  const prompts = useRef([]);
-  const pickerFilter = useRef({ q: '', provider: 'all' });
-  const systemPrompt = useRef(null);
-  const tools = useRef({ catalog: [], filter: null });
-  const agentFiles = useRef({ files: [], enabled: true, explicit: false });
-  const skills = useRef({ items: [], enabled: true, projectLocked: false });
-  const mcpServers = useRef([]);
+const messages = useRef([]);
+const models = useRef([]);
+const liveByProvider = useRef({});
+const prompts = useRef([]);
+const pickerFilter = useRef({ q: '', provider: 'all' });
+const systemPrompt = useRef(null);
+const tools = useRef({ catalog: [], filter: null });
+const agentFiles = useRef({ files: [], enabled: true, explicit: false });
+const skills = useRef({ items: [], enabled: true, projectLocked: false });
+const mcpServers = useRef([]);
+// Backward-pagination cursor for the transcript scroll-up loader. A
+// single object per chat (reset on chat change): only the newest page
+// of a long transcript loads on open; older pages fetch on demand.
+const msgPager = useRef(null);
   // Project agents (subagent delegation personas). Feeds the @-mention
   // popup's Agents section and the leading @agent <task> direct dispatch.
   const agents = useRef([]);
@@ -643,7 +648,7 @@ await sendTurn(state, refs, {
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
 loadModels(projectDir),
 fetchJson('/api/ai/models/providers'),
-fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir)),
+fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/messages?projectDir=' + encodeURIComponent(projectDir) + '&limit=100'),
 fetchJson('/api/prompts?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/system-prompt?projectDir=' + encodeURIComponent(projectDir)),
 fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
@@ -677,16 +682,24 @@ state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSe
 state.autoRetry = typeof c.autoRetry === 'boolean'
 ? c.autoRetry
 : (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
-        persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
-        messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
-        // Seed the seen-set from the freshly loaded transcript so the
-        // first reconcile / recovery tick never re-adds a row that the
-        // initial load already has.
-        { const set = new Set(); for (const m of messages.current) { if (typeof m.seq === 'number') set.add(m.seq); } seenSeqs.current = set; }
-        // Seed the append cursor so the first 1 s tick is a no-op.
+persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
+messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+// Seed the backward-pagination cursor from the windowed first page.
+// Only the newest PAGE is in memory; older pages load on scroll-up.
+msgPager.current = createPager();
+recordInitialPage(msgPager.current, rMsgs.status === 200
+? { messages: messages.current, total: rMsgs.body.total, hasMore: rMsgs.body.hasMore, beforeSeq: rMsgs.body.beforeSeq }
+: { messages: [], total: 0, hasMore: false });
+// Seed the seen-set from the freshly loaded transcript so the
+// first reconcile / recovery tick never re-adds a row that the
+// initial load already has.
+{ const set = new Set(); for (const m of messages.current) { if (typeof m.seq === 'number') set.add(m.seq); } seenSeqs.current = set; }
+// Seed the append cursor so the first 1 s tick is a no-op. The
+// windowed first page still carries nextSeq (the authoritative total),
+// so tail syncs continue to work unchanged.
 transcriptNextSeq.current = rMsgs.status === 200 && rMsgs.body && typeof rMsgs.body.nextSeq === 'number'
-  ? rMsgs.body.nextSeq
-  : (seenSeqs.current.size ? Math.max(...seenSeqs.current) + 1 : 0);
+? rMsgs.body.nextSeq
+: (seenSeqs.current.size ? Math.max(...seenSeqs.current) + 1 : 0);
 nextLiveSeq.current = 0;
 models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
         state.providers = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
@@ -914,19 +927,25 @@ setRunningVisible(false);
     // scroll event that would otherwise be indistinguishable from the
     // user dragging. We only ever set pinned=false from a *user* scroll,
     // so ignore the synthetic one we just caused.
-    let ignoreNextScroll = false;
-    function onScroll() {
-      if (ignoreNextScroll) { ignoreNextScroll = false; return; }
-      const near = isNearBottom(el);
-      if (near && !pinnedToBottom.current) {
-        pinnedToBottom.current = true;
-        pendingCount.current = 0;
-        updateJumpButton(refs);
-      } else if (!near && pinnedToBottom.current) {
-        pinnedToBottom.current = false;
-        updateJumpButton(refs);
-      }
-    }
+let ignoreNextScroll = false;
+function onScroll() {
+if (ignoreNextScroll) { ignoreNextScroll = false; return; }
+const near = isNearBottom(el);
+if (near && !pinnedToBottom.current) {
+pinnedToBottom.current = true;
+pendingCount.current = 0;
+updateJumpButton(refs);
+} else if (!near && pinnedToBottom.current) {
+pinnedToBottom.current = false;
+updateJumpButton(refs);
+}
+// Backward pagination: reaching the top of a long transcript is the
+// signal to load the next older page. Defer to the loader so it can
+// latch its own in-flight flag; the loader preserves scroll position.
+if (msgPager.current && shouldLoadOlder(msgPager.current, el.scrollTop)) {
+loadOlderMessages(state, refs, msgPager.current).catch(() => {});
+}
+}
     el.addEventListener('scroll', onScroll, { passive: true });
 
     // Keep a pinned transcript glued to the bottom when its content
@@ -1014,8 +1033,8 @@ setRunningVisible(false);
     updateJumpButton(refs);
   }, [chatId, projectDir]);
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
-  useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
-  useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
+useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
+useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state);
     // Drop the per-chat live subscription so a backgrounded/closed tab

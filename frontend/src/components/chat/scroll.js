@@ -12,8 +12,18 @@
 // "Near" is a 48px threshold — enough to absorb sub-pixel rounding
 // without flapping when the user nudges the scroll position.
 export function isNearBottom(el) {
-  if (!el) return true;
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+if (!el) return true;
+return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+}
+// isNearTop(el) -> bool
+//
+// True when the user has scrolled to (or almost to) the top of the
+// transcript. Used by the backward-pagination loader: a scroll-up
+// that reaches the top is the signal to fetch the older page. 48px
+// threshold mirrors isNearBottom.
+export function isNearTop(el) {
+if (!el) return true;
+return el.scrollTop < 48;
 }
 
 // scrollTranscriptToBottom(refs)
@@ -56,7 +66,17 @@ export function pinTranscriptAfterSettle(refs) {
 
   let stableFrames = 0;
   const STABLE_FRAMES_TO_STOP = 2;
-  const MAX_FRAMES = 12;
+  // Long transcript renders reflow well past a short fixed budget: image
+  // decode, async markdown, tool-card expansion, and the reasoning
+  // <details> collapse all grow the tail a frame or many frames later.
+  // A hard frame cap that expires before the layout stabilises strands
+  // the view 100s of px above the newest row (the "scroll not following /
+  // not at the bottom on open" bug). Keep re-pinning while content is
+  // still growing, and stop only after a couple of consecutive stable
+  // frames. The stable-frame requirement (not a frame count) bounds it:
+  // static content settles in ~2 frames; content that keeps growing
+  // keeps following. A user scroll-up still cancels it at any frame.
+  const MAX_FRAMES = 240; // generous ceiling; stable frames stop far sooner
 
   function step(frame) {
     if (token !== _settleToken) return; // superseded by a newer pin

@@ -1,12 +1,10 @@
 # mouaif documentation
-
 Use these guides to install mouaif, connect accounts, secure access, and learn what the app can do.
-
 ## User guide
-
 - [Getting started](features/getting-started.md) — install, run, update, and complete first setup.
 - [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
+- [Chat backward pagination](features/chat-backward-pagination.md) — long chats load only the newest page; older history loads on scroll-up.
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.

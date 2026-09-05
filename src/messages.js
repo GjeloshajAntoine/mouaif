@@ -88,6 +88,12 @@ return require('./chatdb.js');
 function listMessages(projectDir, chatId) {
 return getChatDb().listMessages(projectDir, chatId);
 }
+function listMessagesWindow(projectDir, chatId, opts) {
+return getChatDb().listMessagesWindow(projectDir, chatId, opts);
+}
+function getMessageCount(projectDir, chatId) {
+return getChatDb().getMessageCount(projectDir, chatId);
+}
 function getMessage(projectDir, chatId, index) {
 if (typeof index !== 'number' || index < 0) return null;
 return listMessages(projectDir, chatId)[index] || null;
@@ -207,7 +213,9 @@ normalizeMessage,
 assertChatId,
 messagesFilePath,
 listMessages,
+listMessagesWindow,
 getMessage,
+getMessageCount,
 messageCursor,
 appendMessage,
 replaceMessages,
