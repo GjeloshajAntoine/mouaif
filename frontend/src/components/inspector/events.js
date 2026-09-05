@@ -228,8 +228,9 @@ export function createEventHandlers(state) {
 
   function captureScreenshot() {
     return cdpSend('Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 90,
+      // Lossless PNG preserves small text, colored edges, and fine UI detail.
+      // Keep the discarded screencast signal cheap; only this image is shown.
+      format: 'png',
       // Chrome's PDF viewer is a separately composited extension webview.
       // Asking it for a beyond-viewport capture can stall indefinitely;
       // viewport capture includes the rendered PDF surface immediately.
