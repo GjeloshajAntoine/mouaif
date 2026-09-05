@@ -15,6 +15,7 @@ import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
+import { agentEditorPath } from './settings/agentNavigation.js';
 // Web-preview components were previously chat-only. The dedicated
 // "Web preview" page in project settings reuses the same capture
 // endpoint and full-screen viewer so the two surfaces behave identically.
@@ -116,9 +117,6 @@ const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim())
 
   // Agents
   const [agentPresets, setAgentPresets] = useState([]);
-  const [agentCreating, setAgentCreating] = useState(false);
-  const [agentCreateStatus, setAgentCreateStatus] = useState('');
-  const [newAgentNameVal, setNewAgentNameVal] = useState('');
 
   // Advanced (raw JSON + resolved)
   const [editorText, setEditorText] = useState('{}');
@@ -988,39 +986,6 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
 
-  function openAgentCreator() {
-    setAgentCreateStatus('');
-    setAgentCreating(true);
-    setNewAgentNameVal('');
-    setTimeout(() => { document.getElementById('sp-new-agent-name')?.focus(); }, 0);
-  }
-
-  async function addAgentPreset() {
-    const name = newAgentNameVal.trim();
-    if (!name) { setAgentCreateStatus('Name is required'); return; }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
-      setAgentCreateStatus('Letters, digits, . _ - only; must start with a letter or digit');
-      return;
-    }
-    setAgentCreateStatus('creating…');
-    const r = await fetchJson('/api/agents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), name, content: '' })
-    });
-    if (r.status !== 201) {
-      setAgentCreateStatus(r.body && r.body.error ? r.body.error : ('Create failed: HTTP ' + r.status));
-      return;
-    }
-    const created = r.body.agent && r.body.agent.name;
-    setAgentCreating(false);
-    setAgentCreateStatus('');
-    setAgentPresets((prev) => prev.concat(r.body.agent));
-    if (created) {
-      nav('settings/agents/' + encodeURIComponent(created) + '?projectDir=' + encodeURIComponent(dir()) + (from ? '&from=' + encodeURIComponent(from) : ''));
-    }
-  }
-
   // What the model receives for a representative file-tool result under the
   // selected { size, structure } pair. This mirrors src/toolFeedback.js for
   // ASCII text: structure first, then the byte cap, then 75/25 head-tail
@@ -1481,7 +1446,7 @@ href: '#/settings/project/output?' + projectBackQS()
             agentPresets.map(a => h('li', { key: a.name },
               h('a', {
                 class: 'group__row settings-project__agent-link',
-                href: '#/settings/agents/' + encodeURIComponent(a.name) + '?projectDir=' + encodeURIComponent(dir()) + (from ? '&from=' + encodeURIComponent(from) : ''),
+                href: '#/' + agentEditorPath(a.name, { projectDir: dir(), from, chatId: chatId(), returnTo: 'project' }),
                 'aria-label': 'Configure ' + a.name
               },
                 h('span', { class: 'group__row-label' }, a.name),
@@ -1489,26 +1454,10 @@ href: '#/settings/project/output?' + projectBackQS()
               )
             ))
           ),
-          !agentCreating
-            ? h('button', { type: 'button', class: 'btn btn--primary settings-project__add-agent', onClick: openAgentCreator }, '+ Add agent')
-            : h('div', { class: 'settings-project__agent-create' },
-                h('label', { class: 'row settings-project__agent-field' },
-                  h('span', { class: 'label' }, 'Name'),
-                  h('input', {
-                    id: 'sp-new-agent-name',
-                    class: 'input',
-                    placeholder: 'reviewer',
-                    value: newAgentNameVal,
-                    onInput: (e) => setNewAgentNameVal(e.target.value),
-                    onKeyDown: (e) => { if (e.key === 'Enter') addAgentPreset(); if (e.key === 'Escape') setAgentCreating(false); }
-                  })
-                ),
-                h('div', { class: 'row row--actions' },
-                  h('button', { type: 'button', class: 'btn', onClick: () => setAgentCreating(false) }, 'Cancel'),
-                  h('button', { type: 'button', class: 'btn btn--primary', onClick: addAgentPreset }, 'Create'),
-                  h('span', { class: 'status', 'aria-live': 'polite' }, agentCreateStatus)
-                )
-              )
+          h('a', {
+            class: 'btn btn--primary settings-project__add-agent',
+            href: '#/settings/agents/new?' + projectBackQS() + '&returnTo=project'
+          }, '+ Add agent')
         )
       ),
 

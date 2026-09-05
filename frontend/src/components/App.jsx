@@ -55,8 +55,8 @@ settingsProjectPreview: [SettingsProjectView, ({ projectDir, from }) => ({ proje
 settingsDefaults: [SettingsDefaultsView],
 settingsNotifications: [SettingsNotificationsView],
 settingsPrompts: [SettingsPromptsView, ({ projectDir, id = '', scope = '', from }) => ({ projectDir, initialId: id, scope, from })],
-settingsAgents: [SettingsAgentsView, ({ projectDir, from }) => ({ projectDir, from })],
-settingsAgentEdit: [SettingsAgentEditView, ({ id, projectDir, from }) => ({ id, projectDir, from })],
+settingsAgents: [SettingsAgentsView, ({ projectDir, from, chatId }) => ({ projectDir, from, chatId })],
+settingsAgentEdit: [SettingsAgentEditView, ({ id, projectDir, from, chatId, returnTo, isNew }) => ({ id, projectDir, from, chatId, returnTo, isNew })],
 settingsActions: [SettingsActionsView, ({ projectDir, from }) => ({ projectDir, from })],
 settingsActionEdit: [SettingsActionEditView, ({ id, projectDir, from }) => ({ id, projectDir, from })],
 settingsMcp: [SettingsMcpView, ({ projectDir, from }) => ({ projectDir, from })],
@@ -95,7 +95,7 @@ const viewKey = view.name + '|' +
 (view.id || '') + '|' +
 (view.scope || '') + '|' +
 (view.page || '') + '|' +
-(view.chatId || '');
+(view.chatId || '') + '|' + (view.isNew ? 'new' : '');
 const node = h(View, { key: viewKey, ...(getProps ? getProps(view) : null) });
 if (!LAZY_ROUTE_NAMES.has(view.name)) return node;
 return h(Suspense, {

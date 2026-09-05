@@ -22,11 +22,11 @@ Provider and prompt size are **never** configurable on an agent — the model pi
 
 ### Manage agents
 
-Open **Settings → Project → Agents** (in the *Project add-ons* group, alongside MCP servers and Custom prompts). The project settings list shows each agent as a compact, single-line name without model or tool descriptions. The dedicated list view (`#/settings/agents`) shows one row per agent with its tool count and model pin; tapping a row opens the edit view (`#/settings/agents/<name>`). All edits on the edit view auto-save. Both the list and the edit view thread the project-settings `from` origin (`?from=projects|settings/projects`) through every link, so Back from an agent returns to the project-settings page that opened it and onward to the originating project list instead of falling to Settings home.
+Open **Settings → Project → Agents**. The project settings list shows each agent as a compact, single-line name; tapping one opens its editor. **Back** and successful deletion return directly to project settings, preserving the originating chat or project list. The dedicated list (`#/settings/agents`) remains available: editors opened there return to that list instead.
 
-- **+ Add agent** opens `#/settings/agents/new`, asks for a name and instructions, creates the agent, and redirects to its edit view.
-- **Name** is editable inline with auto-save and validation; renaming redirects the edit view to the new URL.
-- **Instructions** is a multiline field; it saves on a short debounce.
+- **+ Add agent** uses the same page from either entry point. Set the name, instructions, model, thinking, and tools before tapping **Create**. Nothing is saved until creation succeeds; errors leave the form intact. Creation replaces the add page in browser history with the editor.
+- **Name** is editable inline with auto-save and validation; renaming updates the URL without remounting the form, losing focus, or adding history entries. An agent named `new` is supported.
+- **Instructions** is a multiline field; it saves on a short debounce. Rapid edits across fields are merged and saves run in order, including changes made during a rename. **Back** waits for pending saves; a failed save keeps the editor open with **Retry save**.
 - **Model** uses the same project + live-catalog union, two-line trigger, provider chips, grouped rows, search, and phone viewport sheet as the chat top bar. "Inherit chat model" clears both the saved model and provider.
 - **Tools** is a grouped tree of native tools and configured MCP servers. Each MCP group shows its status and discovered tool names/descriptions (using cached discovery data while stopped). Selecting an MCP server stores its server slug, so current and future tools from that server are available to the agent. All groups checked = inherit everything; unchecking builds an explicit allowlist.
 - **Thinking** is a dropdown of the presets for the agent's pinned model (from the model's provider-reported `thinking` descriptor) plus "Inherit chat thinking". The first row keeps the chat's level; picking a preset stores `thinkingLevel` on the agent so delegated runs use it even when the chat later changes.
@@ -72,6 +72,18 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 ## Cost and usage
 
 Nested agent runs are billed on the agent's pinned model (or the chat's model, when none is pinned) and added to the parent chat's running total. As soon as the nested run finishes, the streaming layer emits a `usage_update` SSE event so the chat header's "Total" pill grows in real time; the parent's `done` event later folds the same number into the final segment's remainder. Re-opening the chat shows the same total as a sum of the persisted assistant messages' `cost` fields. See [usage-metrics.md](./usage-metrics.md).
+
+## Implementation notes
+
+Agent routes carry `projectDir`, optional `chatId`, and `from=projects|settings/projects`. Editors opened directly from project settings also carry `returnTo=project`; other editors return to the dedicated agent list. `#/settings/agents/new` creates an agent, while `#/settings/agents/new?edit=1` edits an existing agent named `new`. Legacy `settings/project/agents/<name>` links keep their project-settings return target.
+
+The editor uses phone-sized touch targets for Back and tool selection. It loads agent data independently of model catalogs, so an unavailable provider does not block the form. The auto-save queue merges pending patches, serializes requests, and uses the latest persisted name after a rename. In-app unmounts flush pending edits without redirecting the newly opened page; failed saves require a retry. Closing the browser during an unfinished request cannot guarantee persistence—wait for **saved** or use **Back**.
+
+Run the focused regression suite with:
+
+```bash
+node scripts/test-agent-page-flow.mjs
+```
 
 ## Related
 

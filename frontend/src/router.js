@@ -52,7 +52,12 @@ function parseHash() {
     const rest = h.slice('settings/project/agents/'.length);
     const [name, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
-    return { name: 'settingsAgentEdit', id: decodeURIComponent(name), projectDir: params.get('projectDir') || '' };
+    return {
+      name: 'settingsAgentEdit', id: decodeURIComponent(name),
+      projectDir: params.get('projectDir') || '', from: fromParam(params),
+      chatId: params.get('chatId') || '', returnTo: 'project',
+      isNew: name === 'new' && params.get('edit') !== '1'
+    };
   }
   if (h === 'settings/project' || h.startsWith('settings/project?')) {
     const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
@@ -72,6 +77,7 @@ function parseHash() {
     return {
       name: 'settingsAgents',
       projectDir: params.get('projectDir') || '',
+      chatId: params.get('chatId') || '',
       from: fromParam(params)
     };
   }
@@ -80,9 +86,12 @@ function parseHash() {
     const [id, qs] = rest.split('?');
     const params = new URLSearchParams(qs || '');
     return {
-      name: 'settingsAgentEdit', id,
+      name: 'settingsAgentEdit', id: decodeURIComponent(id),
       projectDir: params.get('projectDir') || '',
-      from: fromParam(params)
+      from: fromParam(params),
+      chatId: params.get('chatId') || '',
+      returnTo: params.get('returnTo') === 'project' ? 'project' : '',
+      isNew: id === 'new' && params.get('edit') !== '1'
     };
   }
   if (h === 'settings/actions' || h.startsWith('settings/actions?')) {

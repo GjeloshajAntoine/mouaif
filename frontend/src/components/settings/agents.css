@@ -1,0 +1,26 @@
+/* Agent forms keep touch targets usable without changing compact chat trees. */
+.view-head:has(+ .agent-editor) .view-back {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+.agent-editor__fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.agent-editor .tool-tree__row { min-height: 2.75rem; }
+.agent-editor .tool-tree__chev,
+.agent-editor .tool-tree__chew {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+.agent-editor .checkbox {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0.75rem solid transparent;
+  background-clip: padding-box;
+}
+.agent-editor .checkbox:checked,
+.agent-editor .checkbox:indeterminate,
+.agent-editor .checkbox:hover { border-color: transparent; }

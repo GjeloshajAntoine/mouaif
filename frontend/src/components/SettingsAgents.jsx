@@ -9,24 +9,19 @@
 // the edit view keeps the auto-save behavior agents always had — field
 // edits PATCH on a short debounce, no Save button.
 import { h, Fragment } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
+import { createAgentAutosave } from './settings/agentAutosave.js';
+import { agentQuery, agentEditorPath, agentBackPath } from './settings/agentNavigation.js';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
+import './settings/agents.css';
 
 function resolveProjectDir(view) {
   if (view && view.projectDir) return view.projectDir;
   return (activeProject.value && activeProject.value.dir) || '';
-}
-// Where the user came from before the project-settings page, so Back on
-// the project page survives a trip into Agents and back. Mirrors the
-// `from` routing used by SettingsProjectView.
-function projectQS(projectDir, from) {
-  let s = 'projectDir=' + encodeURIComponent(projectDir || '');
-  if (from) s += '&from=' + encodeURIComponent(from);
-  return s;
 }
 
 // The tool allowlist choices shown on an agent's editor. Native tools
@@ -100,7 +95,7 @@ export { toggleToolInList, toggleGroupInList };
 
 export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
-  const from = (props && props.from) || '';
+  const context = { ...props, projectDir };
   const [agents, setAgents] = useState([]);
   const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
 
@@ -139,7 +134,7 @@ export function SettingsAgentsView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to project' }, '←'),
+      h('a', { href: '#/settings/project?' + agentQuery(context), class: 'view-back', 'aria-label': 'Back to project' }, '←'),
       h('h2', { class: 'view-title' }, 'Agents')
     ),
     h('section', null,
@@ -155,7 +150,7 @@ export function SettingsAgentsView(props) {
           const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
           if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
           return h('li', { key: a.name, class: 'prompt-row' },
-            h('a', { class: 'prompt-row__main', href: '#/settings/agents/' + encodeURIComponent(a.name) + '?' + projectQS(projectDir, from) },
+            h('a', { class: 'prompt-row__main', href: '#/' + agentEditorPath(a.name, context) },
               h('div', { class: 'prompt-row__title' }, a.name),
               h('div', { class: 'prompt-row__meta' }, bits.join(' · ')),
               h('div', { class: 'prompt-row__chev' }, '›')
@@ -165,7 +160,7 @@ export function SettingsAgentsView(props) {
       ),
       h('div', { class: 'row row--actions' },
         h('a', {
-          href: '#/settings/agents/new?' + projectQS(projectDir, from),
+          href: '#/settings/agents/new?' + agentQuery(context),
           class: 'btn btn--primary'
         }, '+ Add agent'),
         h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
@@ -175,11 +170,16 @@ export function SettingsAgentsView(props) {
 }
 
 export function SettingsAgentEditView(props) {
-  // 'new' = create flow (POST then redirect to the real edit URL).
-  const agentName = (props && props.id && props.id !== 'new') ? props.id : '';
-  const isNew = !!(props && props.id === 'new');
+  // `edit=1` disambiguates an existing agent literally named "new".
+  const isNew = props.isNew ?? (props.id === 'new');
+  const agentName = isNew ? '' : (props.id || '');
   const projectDir = resolveProjectDir(props);
-  const from = (props && props.from) || '';
+  const context = { ...props, projectDir };
+  const backPath = agentBackPath(context);
+  const backLabel = props.returnTo === 'project' ? 'Back to project settings' : 'Back to agents';
+  const mounted = useRef(false);
+  const leaving = useRef(false);
+  const mutationBusy = useRef(false);
   const [projectModels, setProjectModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
@@ -190,86 +190,109 @@ export function SettingsAgentEditView(props) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
-  async function load() {
-    if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
-    try {
-      const [mr, pr, sr] = await Promise.all([
-        fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
-        fetchJson('/api/ai/models/providers'),
-        fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
-      ]);
-      const saved = mr.status === 200 && Array.isArray(mr.body.models) ? mr.body.models : [];
-      const providers = pr.status === 200 && Array.isArray(pr.body.providers)
-        ? pr.body.providers.map((p) => p && p.id).filter(Boolean)
-        : [];
-      const live = await Promise.all(providers.map((provider) =>
-        fetchLiveModels(provider)
-          .then((result) => ({ provider, models: result.models || [] }))
-          .catch(() => ({ provider, models: [] }))
-      ));
-      const union = new Map();
-      for (const m of saved) {
-        if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
+    // Catalog requests must not block the name/instructions form.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAgent() {
+      setAgent(null);
+      if (!projectDir) return;
+      if (isNew) { setAgent({ name: '', content: '' }); return; }
+      setStatusMsg({ text: 'loading…', kind: 'busy' });
+      try {
+        const r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir));
+        if (cancelled) return;
+        if (r.status !== 200) throw new Error('HTTP ' + r.status);
+        setAgent(r.body.agent);
+        setStatusMsg({ text: '', kind: '' });
+      } catch (error) {
+        if (!cancelled) setStatusMsg({ text: error.message || 'network error', kind: 'error' });
       }
-      for (const group of live) {
-        for (const m of group.models) {
-          if (!m || !m.id) continue;
-          const key = group.provider + '\u0000' + m.id;
-          if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
-        }
-      }
-      setProjectModels(Array.from(union.values()));
-      setModelProviders(providers);
-      if (sr.status === 200 && Array.isArray(sr.body.servers)) setMcpServers(sr.body.servers);
-    } catch { /* pickers stay empty */ }
-    if (isNew) {
-      setAgent({ name: '', content: '', modelId: undefined, tools: undefined });
-      return;
     }
-    setStatusMsg({ text: 'loading…', kind: 'busy' });
-    let r;
-    try { r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir)); }
-    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
-    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
-    setAgent(r.body.agent);
-    setStatusMsg({ text: '', kind: '' });
-  }
+    loadAgent();
+    return () => { cancelled = true; };
+  }, [projectDir, agentName, isNew]);
 
-  useEffect(() => { load(); }, [projectDir, agentName]);
-  const [saveTimer, setSaveTimer] = useState(null);
-  useEffect(() => () => { if (saveTimer) clearTimeout(saveTimer); }, [saveTimer]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCatalogs() {
+      if (!projectDir) return;
+      try {
+        const [mr, pr, sr] = await Promise.all([
+          fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
+          fetchJson('/api/ai/models/providers'),
+          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
+        ]);
+        const saved = mr.status === 200 && Array.isArray(mr.body.models) ? mr.body.models : [];
+        const providers = pr.status === 200 && Array.isArray(pr.body.providers)
+          ? pr.body.providers.map((p) => p && p.id).filter(Boolean)
+          : [];
+        if (cancelled) return;
+        setProjectModels(saved);
+        setModelProviders(providers);
+        if (sr.status === 200 && Array.isArray(sr.body.servers)) setMcpServers(sr.body.servers);
+        const live = await Promise.all(providers.map((provider) =>
+          fetchLiveModels(provider)
+            .then((result) => ({ provider, models: result.models || [] }))
+            .catch(() => ({ provider, models: [] }))
+        ));
+        const union = new Map();
+        for (const m of saved) {
+          if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);
+        }
+        for (const group of live) {
+          for (const m of group.models) {
+            if (!m || !m.id) continue;
+            const key = group.provider + '\u0000' + m.id;
+            if (!union.has(key)) union.set(key, Object.assign({}, m, { provider: group.provider }));
+          }
+        }
+        if (!cancelled) setProjectModels(Array.from(union.values()));
+      } catch { /* the form remains usable without catalog data */ }
+    }
+    loadCatalogs();
+    return () => { cancelled = true; };
+  }, [projectDir]);
 
-  // Debounced auto-save for the instructions textarea.
-  function saveSoon(patch) {
-    if (saveTimer) clearTimeout(saveTimer);
-    setStatusMsg({ text: '…', kind: 'busy' });
-    setSaveTimer(setTimeout(() => saveNow(patch), 350));
-  }
-
-  async function saveNow(patch) {
-    if (!projectDir || !agentName) return;
-    setStatusMsg({ text: 'saving…', kind: 'busy' });
-    let r;
-    try {
-      r = await fetchJson('/api/agents/' + encodeURIComponent(agentName), {
+  const [autosave] = useState(() => createAgentAutosave({
+    name: agentName,
+    save: async (name, patch) => {
+      const r = await fetchJson('/api/agents/' + encodeURIComponent(name), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ projectDir }, patch))
+        body: JSON.stringify({ projectDir, ...patch })
       });
-    } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
-    if (r.status !== 200) {
-      setStatusMsg({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error' });
-      return;
+      if (r.status !== 200) throw new Error((r.body && r.body.error) || ('HTTP ' + r.status));
+      return r.body.agent;
+    },
+    onStatus: (status) => { if (mounted.current) setStatusMsg(status); },
+    onSaved: (saved) => {
+      if (!mounted.current) return;
+      setAgent(saved);
+      // Replace the URL without remounting the form or adding rename entries
+      // to browser history. Future queued saves use the server's current name.
+      if (!leaving.current) {
+        window.history.replaceState(null, '', '#/' + agentEditorPath(saved.name, context));
+      }
     }
-    if (r.body.agent) setAgent(r.body.agent);
-    // If the name changed, update agentName and navigate to the new URL
-    if (r.body.agent && r.body.agent.name && r.body.agent.name !== agentName) {
-      const newName = r.body.agent.name;
-      // The component will re-render with new props via navigation
-      nav('settings/agents/' + encodeURIComponent(newName) + '?' + projectQS(projectDir, from));
-      return;
-    }
-    setStatusMsg({ text: 'saved', kind: 'success' });
+  }));
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      // A route change must not cancel the last keystrokes. Don't retry errors
+      // silently on unmount; the visible Back action waits and offers Retry.
+      if (!isNew && !autosave.failed) autosave.flush();
+    };
+  }, [autosave, isNew]);
+  function saveSoon(patch) { if (!isNew) autosave.enqueue(patch); }
+  function saveNow(patch) { if (!isNew) autosave.enqueue(patch, true); }
+  async function onBack(event) {
+    if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (mutationBusy.current) return;
+    leaving.current = true;
+    if (!isNew && !await autosave.flush()) { leaving.current = false; return; }
+    if (mounted.current) nav(backPath);
   }
 
   function onNameInput(value) {
@@ -311,6 +334,7 @@ export function SettingsAgentEditView(props) {
   }
 
   async function create() {
+    if (mutationBusy.current) return;
     if (!projectDir) { setStatusMsg({ text: 'no project selected', kind: 'error' }); return; }
     const name = (agent && agent.name || '').trim();
     if (!name) { setStatusMsg({ text: 'name is required', kind: 'error' }); return; }
@@ -318,6 +342,7 @@ export function SettingsAgentEditView(props) {
       setStatusMsg({ text: 'letters, digits, . _ - only; must start with a letter or digit', kind: 'error' });
       return;
     }
+    mutationBusy.current = true;
     setIsCreating(true);
     setStatusMsg({ text: 'creating…', kind: 'busy' });
     let r;
@@ -325,30 +350,32 @@ export function SettingsAgentEditView(props) {
       r = await fetchJson('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectDir, name,
-          content: (agent && agent.content) || ''
-        })
+        body: JSON.stringify({ projectDir, ...agent, name, content: agent.content || '' })
       });
-    } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsCreating(false); return; }
-    setIsCreating(false);
+    } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
+    finally { mutationBusy.current = false; setIsCreating(false); }
+    if (!mounted.current) return;
     if (r.status !== 201) {
       setStatusMsg({ text: (r.body && r.body.error) || ('HTTP ' + r.status), kind: 'error' });
       return;
     }
-    nav('settings/agents/' + encodeURIComponent(r.body.agent.name) + '?' + projectQS(projectDir, from));
+    // Replace the creation page so browser Back doesn't reopen a blank form.
+    window.location.replace('#/' + agentEditorPath(r.body.agent.name, context));
   }
 
   async function deleteAgent() {
-    if (!agentName) return;
-    if (!confirm('Delete agent "' + agentName + '"?')) return;
+    if (!agentName || mutationBusy.current) return;
+    if (!confirm('Delete agent "' + autosave.name + '"?')) return;
+    mutationBusy.current = true;
     setIsDeleting(true);
-    setStatusMsg({ text: 'deleting…', kind: 'busy' });
-    let r;
-    try { r = await fetchJson('/api/agents/' + encodeURIComponent(agentName) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' }); }
-    catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); setIsDeleting(false); return; }
-    if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); setIsDeleting(false); return; }
-    nav('settings/agents?' + projectQS(projectDir, from));
+    try {
+      if (!await autosave.flush()) return;
+      setStatusMsg({ text: 'deleting…', kind: 'busy' });
+      const r = await fetchJson('/api/agents/' + encodeURIComponent(autosave.name) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
+      if (r.status !== 200) throw new Error('HTTP ' + r.status);
+      if (mounted.current) nav(backPath);
+    } catch (error) { setStatusMsg({ text: error.message || 'network error', kind: 'error' }); }
+    finally { mutationBusy.current = false; setIsDeleting(false); }
   }
 
   if (!projectDir) {
@@ -369,7 +396,7 @@ export function SettingsAgentEditView(props) {
   if (!agent) {
     return h(Fragment, null,
       h('div', { class: 'view-head' },
-        h('a', { href: '#/settings/agents?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
+        h('a', { href: '#/' + backPath, onClick: onBack, class: 'view-back', 'aria-label': backLabel }, '←'),
         h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
       ),
       h('section', null, h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text || 'loading…'))
@@ -390,76 +417,79 @@ export function SettingsAgentEditView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/agents?' + projectQS(projectDir, from), class: 'view-back', 'aria-label': 'Back to agents' }, '←'),
+      h('a', { href: '#/' + backPath, onClick: onBack, class: 'view-back', 'aria-label': backLabel }, '←'),
       h('h2', { class: 'view-title' }, isNew ? 'Add agent' : agent.name)
     ),
-    h('section', null,
+    h('section', { class: 'agent-editor' },
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sae-name' }, 'Name'),
-        h('input', {
-          class: 'input', id: 'sae-name', type: 'text',
-          value: agent.name || '', placeholder: 'reviewer',
-          onInput: e => onNameInput(e.target.value)
-        }),
-        h('p', { class: 'hint hint--compact' }, 'Letters, digits, . _ - only; must start with a letter or digit.')
-      ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sae-content' }, 'Instructions'),
-        h('textarea', {
-          class: 'input prompts__textarea', id: 'sae-content', rows: 6,
-          value: agent.content || '',
-          onInput: isNew ? (e => onContentInput(e.target.value)) : (e => onContentInput(e.target.value)),
-          placeholder: 'You are an assistant who…'
-        }),
-        !isNew && h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
-      ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'sae-model' }, 'Model'),
-        h(ModelPickerField, {
-          models: projectModels,
-          value: agent.modelId
-            ? {
-              providerId: agent.providerId || (projectModels.find(m => m.id === agent.modelId) || {}).provider || '',
-              modelId: agent.modelId
-            }
-            : null,
-          variant: 'sheet',
-          extraProviders: modelProviders,
-          allowClear: true,
-          clearLabel: 'Inherit chat model',
-          placeholder: 'Pick a model',
-          disabled: isNew,
-        ariaLabel: 'Model for this agent',
-        onChange: onModelChange
-      })
-    ),
-    h('div', { class: 'row' },
-      h('label', { class: 'label', for: 'sae-thinking' }, 'Thinking'),
-      h(ThinkingSelectField, {
-        value: agent.thinkingLevel || '',
-        descriptor: (projectModels.find(m => m.id === agent.modelId && (!agent.providerId || m.provider === agent.providerId)) || {}).thinking,
-        inheritLabel: 'Inherit chat thinking',
-        disabled: isNew,
-        ariaLabel: 'Thinking level for this agent',
-        onChange: onThinkingLevelChange
-      }),
-      h('p', { class: 'hint hint--compact' }, 'How much reasoning this agent does before answering. "Inherit chat thinking" follows the chat\'s current model.')
-    ),
-    h('div', { class: 'row', hidden: isNew },
-        h('span', { class: 'label' }, 'Tools'),
-        h(ToolTree, {
-          groups: agentToolGroups,
-          collapsedByDefault: true,
-          onToggleGroup: onToolGroupToggle,
-          onToggleTool: (groupId, toolId, checked) => onToolToggle(toolId, checked)
-        }),
-        h('p', { class: 'hint hint--compact' }, 'All checked = the agent inherits the chat\'s full tool surface. Uncheck to build an explicit allowlist.')
-      ),
-      h('div', { class: 'row row--actions' },
-        isNew && h('button', { class: 'btn btn--primary', type: 'button', onClick: create, disabled: isCreating }, 'Create'),
-        !isNew && h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteAgent, disabled: isDeleting }, 'Delete'),
-        h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
+      h('fieldset', { class: 'agent-editor__fields', disabled: isCreating || isDeleting },
+        h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'sae-name' }, 'Name'),
+          h('input', {
+            class: 'input', id: 'sae-name', type: 'text',
+            value: agent.name || '', placeholder: 'reviewer', maxLength: 64, autoCapitalize: 'none', spellcheck: false,
+            onInput: e => onNameInput(e.target.value)
+          }),
+          h('p', { class: 'hint hint--compact' }, 'Letters, digits, . _ - only; must start with a letter or digit.')
+        ),
+        h('div', { class: 'row' },
+          h('label', { class: 'label', for: 'sae-content' }, 'Instructions'),
+          h('textarea', {
+            class: 'input prompts__textarea', id: 'sae-content', rows: 6,
+            value: agent.content || '',
+            onInput: e => onContentInput(e.target.value),
+            placeholder: 'You are an assistant who…'
+          }),
+          !isNew && h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
+        ),
+        h('div', { class: 'row' },
+          h('span', { class: 'label' }, 'Model'),
+          h(ModelPickerField, {
+            models: projectModels,
+            value: agent.modelId
+              ? {
+                providerId: agent.providerId || (projectModels.find(m => m.id === agent.modelId) || {}).provider || '',
+                modelId: agent.modelId
+              }
+              : null,
+            variant: 'sheet',
+            extraProviders: modelProviders,
+            allowClear: true,
+            clearLabel: 'Inherit chat model',
+            placeholder: 'Pick a model',
+            disabled: isCreating || isDeleting,
+            ariaLabel: 'Model for this agent',
+            onChange: onModelChange
+          })
+        ),
+        h('div', { class: 'row' },
+          h('span', { class: 'label' }, 'Thinking'),
+          h(ThinkingSelectField, {
+            value: agent.thinkingLevel || '',
+            descriptor: (projectModels.find(m => m.id === agent.modelId && (!agent.providerId || m.provider === agent.providerId)) || {}).thinking,
+            inheritLabel: 'Inherit chat thinking',
+            disabled: isCreating || isDeleting,
+            ariaLabel: 'Thinking level for this agent',
+            onChange: onThinkingLevelChange
+          }),
+          h('p', { class: 'hint hint--compact' }, 'How much reasoning this agent does before answering. "Inherit chat thinking" follows the chat\'s current model.')
+        ),
+        h('div', { class: 'row' },
+          h('span', { class: 'label' }, 'Tools'),
+          h(ToolTree, {
+            groups: agentToolGroups,
+            collapsedByDefault: true,
+            onToggleGroup: onToolGroupToggle,
+            onToggleTool: (groupId, toolId, checked) => onToolToggle(toolId, checked)
+          }),
+          h('p', { class: 'hint hint--compact' }, 'All checked = the agent inherits the chat\'s full tool surface. Uncheck to build an explicit allowlist.')
+        ),
+        h('div', { class: 'row row--actions' },
+          isNew && h('button', { class: 'btn btn--primary', type: 'button', onClick: create, disabled: isCreating }, 'Create'),
+          !isNew && h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteAgent, disabled: isDeleting }, 'Delete'),
+          !isNew && statusMsg.kind === 'error' && h('button', { class: 'btn', type: 'button', onClick: () => autosave.flush() }, 'Retry save'),
+          h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
+        )
       )
     )
   );
