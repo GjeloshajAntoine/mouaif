@@ -40,6 +40,16 @@ The transcript observes DOM mutations and geometry changes for both its viewport
 
 The chat listens for `visibilitychange`, `pageshow`, and window `focus`. Resume signals are coalesced into one incremental revision sync, covering ordinary tabs, page-cache restores, and standalone mobile PWA foregrounding without reloading the full page.
 
+### Regression checks
+
+Run the focused reliability/performance checks with:
+
+```bash
+npm run test:chat-view
+```
+
+This suite covers send preparation failures, cursor-aligned total costs, batched transcript scrolling, and draft-only saves. It also runs as part of `npm test`.
+
 ## Related
 
 - [Model picker](./model-picker.md) — browsing and switching AI models.
