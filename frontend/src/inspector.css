@@ -841,34 +841,163 @@ transition: background 120ms ease, color 120ms ease;
 /* Full-screen live preview viewport. Portaled to document.body so it sits
 above the app dock (same approach as the Draft Craft / webpreview / Git
 overlays). The screenshot keeps its natural size and scrolls inside the
-frame; tap-to-click still forwards to the page via the same mapping. */
+frame; tap-to-click still forwards to the page via the same mapping.
+The header mirrors the .wp__head pattern from the web preview modal so
+both viewers read the same way at a glance: page title + host on the
+left, Refresh / Size / Close on the right, with the Refresh button
+tucking the label under the icon on narrow phones. */
 .inspector__preview-fs {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: mouaif-overlay-fade-in 120ms ease-out;
+position: fixed;
+inset: 0;
+z-index: 90;
+background: var(--bg);
+display: flex;
+flex-direction: column;
+padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+animation: mouaif-overlay-fade-in 120ms ease-out;
 }
 .inspector__preview-fs-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 44px;
-  padding: 6px 10px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+position: relative;
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 5px 10px;
+background: var(--surface-2);
+border-bottom: 1px solid var(--border);
+min-height: 44px;
+}
+.inspector__preview-fs-text {
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 2px;
+overflow: hidden;
 }
 .inspector__preview-fs-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-soft);
+font-size: 0.84rem;
+font-weight: 600;
+color: var(--fg);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__preview-fs-host {
+font-size: 0.66rem;
+color: var(--muted-2);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__preview-fs-actions {
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 4px;
+}
+.inspector__preview-fs-refresh {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+min-width: 44px;
+min-height: 44px;
+padding: 4px 10px;
+font: inherit;
+font-size: 0.74rem;
+font-weight: 600;
+color: var(--accent);
+background: transparent;
+border: 1px solid var(--accent);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.inspector__preview-fs-refresh:hover,
+.inspector__preview-fs-refresh:focus-visible {
+background: var(--accent);
+color: var(--on-accent);
+border-color: var(--accent);
+outline: 0;
+}
+.inspector__preview-fs-refresh:disabled {
+opacity: 0.6;
+cursor: default;
+}
+.inspector__preview-fs-size {
+flex: 0 1 7.5rem;
+min-width: 0;
+min-height: 44px;
+padding: 0 0.5rem;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+.inspector__preview-fs-size:focus-visible {
+border-color: var(--accent);
+outline: 0;
+}
+.inspector__preview-fs-close {
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
+border: 0;
+background: transparent;
+color: var(--fg-soft);
+border-radius: 50%;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease;
+}
+.inspector__preview-fs-close:hover,
+.inspector__preview-fs-close:focus-visible {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
+@media (max-width: 430px) {
+/* Mirror the .wp__head mobile wrap: the title block grows to a
+flex-basis of `calc(100% - 52px)` so the actions row keeps an
+inline band without the title running under the close button.
+The Refresh label collapses to icon-only and the Size select
+widens to fill the remaining space; on very narrow viewports
+this stays comfortably within the 44 px tap minimum. */
+.inspector__preview-fs-head {
+align-items: flex-start;
+flex-wrap: wrap;
+}
+.inspector__preview-fs-text {
+flex: 0 0 calc(100% - 52px);
+min-height: 44px;
+justify-content: center;
+}
+.inspector__preview-fs-actions {
+width: 100%;
+}
+.inspector__preview-fs-refresh {
+min-width: 44px;
+padding: 4px;
+}
+.inspector__preview-fs-refresh span {
+display: none;
+}
+.inspector__preview-fs-size {
+flex: 1 1 0;
+}
+.inspector__preview-fs-close {
+position: absolute;
+top: calc(var(--safe-top, 0px) + 8px);
+right: 4px;
+}
 }
 .inspector__preview-fs-frame {
   flex: 1 1 auto;

@@ -1086,7 +1086,7 @@ applyViewport(viewportId);
   // scroller — their body height is bounded by CSS so a busy page
   // doesn't force-grow the panel past the available viewport.
   const renderPanelBody = (id) => {
-    if (id === 'preview') return h(PreviewPanel, {
+if (id === 'preview') return h(PreviewPanel, {
 capture: handlers && handlers.captureScreenshot,
 clickAt: handlers && handlers.clickAt,
 subscribe: conn.current && conn.current.cdpOn,
@@ -1097,7 +1097,16 @@ typeBarRef: previewTypeBarRef,
 draftCraftRef: previewDraftCraftRef,
 onInsert: handlers ? handlers.insertText : null,
 onEnter: handlers ? handlers.pressEnter : null,
-onDraftCraft: (image) => image && setDraftCraftImage(image)
+onDraftCraft: (image) => image && setDraftCraftImage(image),
+// Full-screen header reads the live URL + document.title so it
+// can echo the page identity in the same way the webpreview
+// modal does. `evaluate` wraps Runtime.evaluate; `sizePresets`
+// is the same list the in-panel Size dropdown uses.
+evaluate: (expression) => conn.current ? conn.current.cdpSend('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }) : Promise.reject(new Error('not connected')),
+sizePresets: VIEWPORT_PRESETS,
+sizeId: viewportId,
+sizeDisabled: !cdpReady,
+onSizeChange: applyViewport
 });
     if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
     if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });

@@ -86,14 +86,54 @@ document.addEventListener('keydown', onKey, true);
 return () => document.removeEventListener('keydown', onKey, true);
 }, [fullscreen]);
 const [imgSrc, setImgSrc] = useState('');
-  const [note, setNote] = useState('capturing…');
-  // Cache the last successfully decoded image dimensions. Clicks that
-  // land while a new screenshot is still decoding (naturalWidth === 0)
-  // fall back to these so the tap-to-page mapping is still accurate —
-  // the page's intrinsic size is essentially constant between captures,
-  // so the previous frame's natural size is a safe approximation.
-  const lastDims = useRef({ w: 0, h: 0 });
-  const latestImage = useRef(null);
+const [note, setNote] = useState('capturing…');
+// Live page identity shown in the full-screen header. Both are kept
+// in refs as well as state so capture-loop callbacks can write them
+// without re-rendering on every CDP event, while the header itself
+// reads the state values. `liveUrl` comes straight from the
+// Page.frameNavigated / Page.navigatedWithinDocument events the
+// panel already subscribes to; `liveTitle` is fetched on demand via
+// Runtime.evaluate because CDP doesn't ship document.title as part
+// of the navigation payload.
+const [liveUrl, setLiveUrl] = useState('');
+const [liveTitle, setLiveTitle] = useState('');
+const liveUrlRef = useRef('');
+// evaluateRef — wraps the parent's Runtime.evaluate arrow so the
+// capture-loop effect (which subscribes to Page.frameNavigated)
+// can read it without taking the prop as a dependency. The prop
+// arrow is recreated on every Inspector render, so adding it to
+// the deps list would tear down and rebuild the capture loop on
+// every render. Reading through a ref keeps the subscription
+// stable for the panel's lifetime.
+const evaluateRef = useRef(null);
+evaluateRef.current = props.evaluate || null;
+// `refreshBusy` short-circuits the full-screen Refresh button so a
+// second tap while the screenshot is in flight can't double-call
+// capture. Mirrors the recapturing flag in WebpreviewModal but
+// times out on its own since PreviewPanel doesn't await the
+// capture promise (the in-panel loop is owned by the panel itself).
+const [refreshBusy, setRefreshBusy] = useState(false);
+async function refreshPageTitle(url) {
+// Skip the round-trip if the URL hasn't actually changed — a
+// same-document hash navigation re-fires the event but keeps the
+// same title. Also skip when no `evaluate` is wired in (e.g. tests
+// or first-paint before CDP is ready).
+const evaluate = evaluateRef.current;
+if (!evaluate || url === undefined) return;
+try {
+const r = await evaluate('document.title || ""');
+if (!r) return;
+const value = (r && r.result && typeof r.result.value === 'string') ? r.result.value : '';
+if (value) setLiveTitle(value);
+} catch { /* CDP not ready yet — keep prior title */ }
+}
+// Cache the last successfully decoded image dimensions. Clicks that
+// land while a new screenshot is still decoding (naturalWidth === 0)
+// fall back to these so the tap-to-page mapping is still accurate —
+// the page's intrinsic size is essentially constant between captures,
+// so the previous frame's natural size is a safe approximation.
+const lastDims = useRef({ w: 0, h: 0 });
+const latestImage = useRef(null);
 
   useEffect(() => {
     if (!props.capture) return;
@@ -255,16 +295,35 @@ props.ackFrame(sessionId).catch(() => { /* stream stopped */ });
     // DOM mutations live while retaining the scrollable full-page image.
     const subs = [];
     if (props.subscribe) {
-      subs.push(props.subscribe('Page.frameNavigated', () => {
-        if (stop) return;
-        runCapture('navigate');
-        scheduleFallback();
-      }));
-      subs.push(props.subscribe('Page.frameStoppedLoading', () => {
-        if (stop) return;
-        runCapture('load');
-        scheduleFallback();
-      }));
+subs.push(props.subscribe('Page.frameNavigated', (params) => {
+if (stop) return;
+const frame = params && params.frame;
+const url = (frame && !frame.parentId && typeof frame.url === 'string') ? frame.url : '';
+if (url && url !== liveUrlRef.current) {
+liveUrlRef.current = url;
+setLiveUrl(url);
+// Update the header title for cross-document navigations. Hash-only
+// changes keep the same document.title, so this is a no-op there.
+refreshPageTitle(url);
+}
+runCapture('navigate');
+scheduleFallback();
+}));
+subs.push(props.subscribe('Page.frameStoppedLoading', () => {
+if (stop) return;
+runCapture('load');
+scheduleFallback();
+}));
+subs.push(props.subscribe('Page.navigatedWithinDocument', (params) => {
+if (stop) return;
+const url = (params && typeof params.url === 'string') ? params.url : '';
+if (url && url !== liveUrlRef.current) {
+liveUrlRef.current = url;
+setLiveUrl(url);
+}
+runCapture('load');
+scheduleFallback();
+}));
       subs.push(props.subscribe('Page.screencastFrame', (frame) => {
 if (stop || !frame || frame.sessionId == null || !props.ackFrame) return;
 // Hold the acknowledgement until the corresponding full-page capture
@@ -281,9 +340,15 @@ if (!stop) runCapture('stream');
 }));
 }
 // Capture immediately for an already-loaded page, then retain a slow
-    // safety retry for targets that do not support screencasting.
-    runCapture('init');
-    scheduleFallback();
+// safety retry for targets that do not support screencasting.
+runCapture('init');
+scheduleFallback();
+// Read the current document.title right away so the full-screen
+// header isn't empty until the first user-driven navigation. We
+// deliberately don't reset `liveTitle` to '' here so a fast
+// screencast capture that races the title fetch still has a
+// meaningful label to show.
+refreshPageTitle(liveUrlRef.current);
     // Expose a manual refresh to the parent so the Preview panel
     // header can offer a "Refresh preview" action. The parent passes
     // a ref (refreshRef) that it reads when the button is tapped; we
@@ -425,9 +490,62 @@ h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
 ),
 fullscreen
 ? createPortal(
-h('div', { class: 'inspector__preview-fs', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Live page preview, full screen' },
+h('div', { class: 'inspector__preview-fs', role: 'dialog', 'aria-modal': 'true', 'aria-label': liveTitle || liveUrl || 'Live page preview, full screen' },
 h('div', { class: 'inspector__preview-fs-head' },
-h('span', { class: 'inspector__preview-fs-title' }, 'Preview'),
+// Live page identity on the left: title (one line, ellipsis)
+// with a small host subtitle underneath, mirroring the web
+// preview modal's `.wp__head` pattern so the two surfaces read
+// the same way at a glance.
+h('div', { class: 'inspector__preview-fs-text' },
+h('div', { class: 'inspector__preview-fs-title', title: liveTitle || liveUrl || 'Preview' },
+liveTitle || liveUrl || 'Preview'
+),
+h('div', { class: 'inspector__preview-fs-host' }, hostFromUrl(liveUrl))
+),
+h('div', { class: 'inspector__preview-fs-actions' },
+// Refresh — re-captures the screenshot at the current size.
+// Reuses the same icon as the in-panel Refresh button so the
+// user recognizes the gesture. The label stays visible on
+// phones (>430 px) and collapses to icon-only below that.
+h('button', {
+class: 'btn inspector__preview-fs-refresh',
+type: 'button',
+disabled: refreshBusy,
+onClick: () => {
+if (refreshBusy) return;
+setRefreshBusy(true);
+if (props.refreshRef && props.refreshRef.current) props.refreshRef.current();
+setTimeout(() => setRefreshBusy(false), 350);
+},
+'aria-label': 'Refresh preview',
+title: 'Refresh preview'
+},
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+h('path', { d: 'M4 12a8 8 0 0 1 13.66-5.66L20 4 M20 4v5h-5 M20 12a8 8 0 0 1-13.66 5.66L4 20 M4 20v-5h5', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+),
+h('span', null, 'Refresh')
+),
+// Size — native select keeps the controls compact and uses the
+// phone's touch picker. The same preset list the in-panel
+// dropdown uses is supplied through `sizePresets` / `sizeId` /
+// `onSizeChange` so changing the size here is identical to
+// changing it in the panel header.
+(Array.isArray(props.sizePresets) && props.sizePresets.length > 0)
+? h('select', {
+class: 'inspector__preview-fs-size',
+value: props.sizeId || 'auto',
+disabled: !!props.sizeDisabled,
+'aria-label': 'Capture size',
+title: 'Capture size',
+onChange: (event) => props.onSizeChange && props.onSizeChange(event.currentTarget.value)
+},
+props.sizePresets.map((preset) => h('option', { key: preset.id, value: preset.id },
+preset.width
+? (preset.label + ' · ' + preset.width + '×' + preset.height)
+: preset.label
+))
+)
+: null,
 h('button', {
 class: 'icon-btn inspector__preview-fs-close',
 type: 'button',
@@ -437,6 +555,7 @@ onClick: () => setFullscreen(false)
 },
 h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
+)
 )
 )
 ),
@@ -493,4 +612,13 @@ document.body
 )
 : null
 );
+}
+// hostFromUrl — extract `host[:port]` so the full-screen header can
+// echo the inspected page's hostname underneath its title. Returns
+// an empty string for non-http(s) targets (chrome:// pages, the
+// empty about:blank frame, etc.) so the subtitle row stays blank
+// instead of printing "host: chrome://".
+function hostFromUrl(url) {
+if (!url || !/^https?:\/\//i.test(url)) return '';
+try { return new URL(url).host; } catch { return ''; }
 }
