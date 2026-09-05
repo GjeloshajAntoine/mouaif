@@ -34,6 +34,8 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Implementation notes
 
+Composer autosaves remain debounced. Draft-only PATCH responses update only saved text/attachment metadata: they do not rebuild the model picker, repaint the header, or fetch provider credit. A late draft acknowledgement cannot replace an in-progress model selection with an older server snapshot. Mixed metadata updates and explicit model changes retain their normal refresh behavior.
+
 The transcript observes DOM mutations and geometry changes for both its viewport and direct message rows. Geometry changes re-pin only when the reader is already at the bottom; scrolling up disables automatic movement so reading history is not interrupted.
 
 The chat listens for `visibilitychange`, `pageshow`, and window `focus`. Resume signals are coalesced into one incremental revision sync, covering ordinary tabs, page-cache restores, and standalone mobile PWA foregrounding without reloading the full page.

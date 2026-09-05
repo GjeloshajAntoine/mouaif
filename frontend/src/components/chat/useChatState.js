@@ -382,6 +382,17 @@ setCustomActions(response.body.actions);
       if (status.current) status.current.textContent = 'HTTP ' + r.status;
       return false;
     }
+    const patchKeys = Object.keys(safePatch);
+    const draftOnly = patchKeys.length > 0 && patchKeys.every((key) => key === 'draft' || key === 'draftAttachments');
+    if (draftOnly) {
+      // Draft acknowledgements are not a fresh metadata snapshot. In
+      // particular, a slow autosave must not replace an optimistic model
+      // choice or rebuild the picker / fetch provider credit while typing.
+      const draftFields = {};
+      for (const key of patchKeys) draftFields[key] = r.body.chat[key];
+      state.chat = Object.assign({}, state.chat, draftFields);
+      return true;
+    }
     state.chat = r.body.chat;
     state._persistedModelPair = (r.body.chat.providerId || '') + '|' + (r.body.chat.modelId || '');
     updateMetaLine(refs, state);
