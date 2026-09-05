@@ -25,7 +25,7 @@ import {
   renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills } from './cards.js';
-import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend } from './scroll.js';
+import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -336,7 +336,9 @@ setCustomActions(next);
   const chatSwitcherTrigger = useRef(null);
   const chatSwitcherPop = useRef(null);
 
-  const refs = {
+  // Imperative render/pin flags must share one bag across Preact renders.
+  const refsRef = useRef(null);
+  if (!refsRef.current) refsRef.current = {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
     thinkingLevel, thinkingLevelCustom, maxOutputTokens,
@@ -346,6 +348,7 @@ setCustomActions(next);
     chatSwitcherTrigger, chatSwitcherPop,
     _autoresize: () => autoresize({ promptInput })
   };
+  const refs = refsRef.current;
 
   // ---- Bound action creators --------------------------------
   // Most actions need to be stable (so the same identity is
@@ -925,14 +928,10 @@ setRunningVisible(false);
   useEffect(() => {
     const el = transcript.current;
     if (!el) return undefined;
-    // Distinguish user scrolls from programmatic pin scrolls: a
-    // programmatic `scrollTop = scrollHeight` in the rAF re-pin fires a
-    // scroll event that would otherwise be indistinguishable from the
-    // user dragging. We only ever set pinned=false from a *user* scroll,
-    // so ignore the synthetic one we just caused.
-let ignoreNextScroll = false;
+    // Ignore only a scroll that actually landed at our programmed target;
+    // a user scrolling elsewhere before its event must still unpin.
 function onScroll() {
-if (ignoreNextScroll) { ignoreNextScroll = false; return; }
+if (isTranscriptPinScroll(refs, el.scrollTop)) return;
 const near = isNearBottom(el);
 if (near && !pinnedToBottom.current) {
 pinnedToBottom.current = true;
@@ -968,41 +967,31 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
     // container's own border box only reports viewport-size changes.
     // Re-pin only while pinned and not during a chunked render/backfill
     // (which manages the scroll itself).
-    let repinScheduled = false;
-    function repinIfPinned() {
-      if (repinScheduled) return;
-      repinScheduled = true;
-      requestAnimationFrame(() => {
-        repinScheduled = false;
-        if (!pinnedToBottom.current) return;
-        if (refs._suspendScrollPin || refs._insertAnchor) return;
-        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) return; // already at bottom
-        ignoreNextScroll = true;
-        el.scrollTop = el.scrollHeight;
-      });
-    }
+    function repinIfPinned() { pinTranscriptAfterSettle(refs); }
     let ro = null;
-    let observedRows = new Set();
-    function observeTranscriptGeometry() {
-      if (!ro) return;
-      const nextRows = new Set(el.children);
-      for (const row of observedRows) {
-        if (!nextRows.has(row)) ro.unobserve(row);
-      }
-      for (const row of nextRows) {
-        if (!observedRows.has(row)) ro.observe(row);
-      }
-      observedRows = nextRows;
+    const observedRows = new Set();
+    function observeRow(row) {
+      if (!ro || row.nodeType !== 1 || row.parentNode !== el || observedRows.has(row)) return;
+      observedRows.add(row);
+      ro.observe(row);
     }
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(repinIfPinned);
       ro.observe(el);
-      observeTranscriptGeometry();
+      for (const row of el.children) observeRow(row);
     }
     let mo = null;
     if (typeof MutationObserver !== 'undefined') {
-      mo = new MutationObserver(() => {
-        observeTranscriptGeometry();
+      mo = new MutationObserver((records) => {
+        // Text deltas and nested tool changes affect pinning, not the set
+        // of observed rows. Only inspect direct-child additions/removals.
+        for (const record of records) {
+          if (record.type !== 'childList' || record.target !== el) continue;
+          for (const row of record.removedNodes) {
+            if (row.parentNode !== el && observedRows.delete(row) && ro) ro.unobserve(row);
+          }
+          for (const row of record.addedNodes) observeRow(row);
+        }
         repinIfPinned();
       });
       mo.observe(el, { childList: true, subtree: true, characterData: true });
@@ -1017,6 +1006,7 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
       if (mo) mo.disconnect();
       if (ro) ro.disconnect();
       observedRows.clear();
+      cancelTranscriptPin(refs);
     };
   }, [projectDir, chatId]);
 

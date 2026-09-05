@@ -24,12 +24,6 @@ return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 export function scrollTranscriptToBottom(refs) {
   const el = refs.transcript.current;
   if (!el) return;
-  el.scrollTop = el.scrollHeight;
-  requestAnimationFrame(() => {
-    if (refs.pinnedToBottom.current && refs.transcript.current === el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  });
   refs.pinnedToBottom.current = true;
   refs.pendingCount.current = 0;
   updateJumpButton(refs);
@@ -48,42 +42,60 @@ export function scrollTranscriptToBottom(refs) {
 // while the content keeps growing and stop once the layout is stable.
 // Only runs while still pinned (a user scroll-up cancels it) and
 // while no chunked render is in flight (that path owns the scroll).
-let _settleToken = 0;
+// Key by the stable transcript ref, not the refs bag (rebuilt by Preact).
+const pendingPins = new WeakMap();
+const programmedTops = new WeakMap();
+export function isTranscriptPinScroll(refs, top) {
+  const expected = programmedTops.get(refs.transcript);
+  programmedTops.delete(refs.transcript);
+  return expected != null && Math.abs(expected - top) < 1;
+}
+
+export function cancelTranscriptPin(refs) {
+  programmedTops.delete(refs.transcript);
+  const pending = pendingPins.get(refs.transcript);
+  if (!pending) return;
+  cancelAnimationFrame(pending.frame);
+  pendingPins.delete(refs.transcript);
+}
+
 export function pinTranscriptAfterSettle(refs) {
-  const token = ++_settleToken;
   const el = refs.transcript.current;
-  if (!el) return;
-
-  let stableFrames = 0;
-  const STABLE_FRAMES_TO_STOP = 2;
-  // Long transcript renders reflow well past a short fixed budget: image
-  // decode, async markdown, tool-card expansion, and the reasoning
-  // <details> collapse all grow the tail a frame or many frames later.
-  // A hard frame cap that expires before the layout stabilises strands
-  // the view 100s of px above the newest row (the "scroll not following /
-  // not at the bottom on open" bug). Keep re-pinning while content is
-  // still growing, and stop only after a couple of consecutive stable
-  // frames. The stable-frame requirement (not a frame count) bounds it:
-  // static content settles in ~2 frames; content that keeps growing
-  // keeps following. A user scroll-up still cancels it at any frame.
-  const MAX_FRAMES = 240; // generous ceiling; stable frames stop far sooner
-
-  function step(frame) {
-    if (token !== _settleToken) return; // superseded by a newer pin
-    if (!refs.pinnedToBottom.current) return; // user scrolled up
-    if (refs._suspendScrollPin || refs._insertAnchor) return; // chunked pass owns scroll
-    if (refs.transcript.current !== el) return; // detached / re-created
-    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (gap < 1) {
-      stableFrames += 1;
-      if (stableFrames >= STABLE_FRAMES_TO_STOP) return;
-    } else {
-      stableFrames = 0;
-      el.scrollTop = el.scrollHeight;
-    }
-    if (frame < MAX_FRAMES) requestAnimationFrame(() => step(frame + 1));
+  if (!el || !refs.pinnedToBottom.current || refs._suspendScrollPin || refs._insertAnchor) return;
+  const existing = pendingPins.get(refs.transcript);
+  if (existing && existing.el === el) {
+    existing.stableFrames = 0;
+    return;
   }
-  requestAnimationFrame(() => step(0));
+  cancelTranscriptPin(refs);
+  const pending = { el, frame: null, stableFrames: 0, frames: 0 };
+  pendingPins.set(refs.transcript, pending);
+  function step() {
+    if (pendingPins.get(refs.transcript) !== pending) return;
+    if (!refs.pinnedToBottom.current || refs.transcript.current !== el || refs._suspendScrollPin || refs._insertAnchor) {
+      pendingPins.delete(refs.transcript);
+      return;
+    }
+    // All layout reads happen once per frame, after the token burst. Share
+    // this scheduler with mutation/resize observers rather than repinning
+    // independently for every source of content growth.
+    const height = el.scrollHeight;
+    const top = el.scrollTop;
+    const viewport = el.clientHeight;
+    if (height - top - viewport < 1) pending.stableFrames++;
+    else {
+      pending.stableFrames = 0;
+      const bottom = Math.max(0, height - viewport);
+      programmedTops.set(refs.transcript, bottom);
+      el.scrollTop = bottom;
+    }
+    if (pending.stableFrames >= 2 || ++pending.frames >= 240) {
+      pendingPins.delete(refs.transcript);
+      return;
+    }
+    pending.frame = requestAnimationFrame(step);
+  }
+  pending.frame = requestAnimationFrame(step);
 }
 
 // scrollToolBodyToBottom(descendant)
@@ -129,8 +141,10 @@ export function afterTranscriptAppend(refs, countNew) {
   // scrollTop = scrollHeight on each step would yank the scrollbar
   // down dozens of times. The chunked pass re-pins once at the end.
   if (refs._suspendScrollPin) return;
-  if (refs.pinnedToBottom.current || isNearBottom(el)) {
-    scrollTranscriptToBottom(refs);
+  // The scroll listener owns the pin state. Reading geometry here would
+  // force layout for every token, and could repin someone reading history.
+  if (refs.pinnedToBottom.current) {
+    pinTranscriptAfterSettle(refs);
   } else if (countNew) {
     refs.pendingCount.current += 1;
     updateJumpButton(refs);
