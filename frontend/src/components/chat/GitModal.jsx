@@ -6,8 +6,9 @@
 //
 // Header: branch dropdown + Pull button (with behind count) + Push button
 //         (with ahead count) + refresh + close.
-// Body:   Staged changes · Unstaged changes · Recent commits (paginated)
-//         · Stash (with Stash up / Apply / Pop / Drop).
+// Body:   Stash (Stash up / Apply / Pop / Drop) · Staged changes (with
+//         commit bar + per-file Unstage) · Unstaged changes (with per-file
+//         Stage + Stage all) · Recent commits (paginated).
 
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
@@ -15,15 +16,38 @@ import { fetchJson } from '../../api.js';
 
 // Run a git action via POST /api/git. Returns { ok, stdout, stderr }.
 async function runGit(projectDir, action, args, message) {
-  const r = await fetchJson('/api/git', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir, action, args: args || '', message: message || '' })
-  });
-  if (r.status !== 200) {
-    return { ok: false, stderr: (r.body && r.body.error) || 'HTTP ' + r.status };
-  }
-  return r.body || { ok: false, stderr: 'no response' };
+const r = await fetchJson('/api/git', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectDir, action, args: args || '', message: message || '' })
+});
+if (r.status !== 200) {
+return { ok: false, stderr: (r.body && r.body.error) || 'HTTP ' + r.status };
+}
+return r.body || { ok: false, stderr: 'no response' };
+}
+// Run a git action against an array of file paths (stage / unstage). The
+// `files` array reaches git as separate argv elements, so a file name with
+// spaces or special characters is never re-split on the server. Returns the
+// same { ok, stdout, stderr } shape as runGit.
+async function runGitFiles(projectDir, action, files) {
+const r = await fetchJson('/api/git', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectDir, action, files })
+});
+if (r.status !== 200) {
+return { ok: false, stderr: (r.body && r.body.error) || 'HTTP ' + r.status };
+}
+return r.body || { ok: false, stderr: 'no response' };
+}
+// A rename/copy path is reported by git as "old -> new". To stage or unstage
+// the rename we must operate on the source path only: `git add -- old`
+// records the rename, while adding the target name as well would confuse git
+// into staging the target's (possibly new) content too. `git reset HEAD --
+// old` likewise restores the rename to an unstaged delete+untracked pair.
+function pathForGit(p) {
+return String(p || '').split(' -> ')[0];
 }
 
 // Diff line rendering: colour +/-/@@ header lines.
@@ -44,24 +68,37 @@ function DiffView({ diff }) {
   );
 }
 
-// A single changed-file row.
-function FileRow({ file, defaultOpen }) {
-  const [open, setOpen] = useState(!!defaultOpen);
-  const hasDiff = !!(file.diff && file.diff.trim());
-  return h('div', { class: 'gm__file' },
-    h('button', {
-      class: 'gm__file-head' + (open ? ' is-open' : ''),
-      type: 'button',
-      onClick: () => setOpen(!open),
-      'aria-expanded': String(open),
-      'aria-label': (hasDiff ? 'Toggle diff for ' : '') + file.path
-    },
-      h('span', { class: 'gm__file-status gm__file-status--' + file.status }, file.statusText || file.status),
-      h('span', { class: 'gm__file-path', title: file.path }, file.path),
-      hasDiff ? h('span', { class: 'gm__file-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8') : null
-    ),
-    open && hasDiff ? h(DiffView, { diff: file.diff }) : null
-  );
+// A single changed-file row. In staged/unstaged sections the row shows a
+// Stage / Unstage action button (wired through the parent's onFileAction),
+// so the modal is a working-tree client, not just a viewer.
+function FileRow({ file, defaultOpen, action, onAction, busy }) {
+const [open, setOpen] = useState(!!defaultOpen);
+const hasDiff = !!(file.diff && file.diff.trim());
+const actionLabel = action === 'unstage' ? 'Unstage' : 'Stage';
+return h('div', { class: 'gm__file' },
+h('div', { class: 'gm__file-head' },
+h('button', {
+class: 'gm__file-toggle',
+type: 'button',
+onClick: () => setOpen(!open),
+'aria-expanded': String(open),
+'aria-label': (hasDiff ? 'Toggle diff for ' : '') + file.path
+},
+h('span', { class: 'gm__file-status gm__file-status--' + file.status }, file.statusText || file.status),
+h('span', { class: 'gm__file-path', title: file.path }, file.path),
+hasDiff ? h('span', { class: 'gm__file-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8') : null
+),
+onAction ? h('button', {
+class: 'gm__file-action' + (action === 'unstage' ? ' gm__file-action--unstage' : ''),
+type: 'button',
+disabled: busy,
+onClick: () => onAction(file),
+'aria-label': actionLabel + ' ' + file.path,
+title: actionLabel + ' ' + file.path
+}, actionLabel) : null
+),
+open && hasDiff ? h(DiffView, { diff: file.diff }) : null
+);
 }
 
 // A single commit row. The changed-file list is fetched lazily from
@@ -159,8 +196,9 @@ export function GitModal(props) {
   const [commitTotal, setCommitTotal] = useState(0);
   const [loadingCommits, setLoadingCommits] = useState(false);
   const [commitSectionOpen, setCommitSectionOpen] = useState(false);
-  const [stashSectionOpen, setStashSectionOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+const [stashSectionOpen, setStashSectionOpen] = useState(false);
+const [isLoading, setIsLoading] = useState(false);
+const [commitMessage, setCommitMessage] = useState('');
 
   const load = useCallback(async () => {
     if (!projectDir) { setLoading(false); setError('No project selected'); return; }
@@ -219,10 +257,59 @@ export function GitModal(props) {
     setBusy('');
   }
 
-  function checkoutBranch(name) {
-    if (busy || name === (data && data.branch)) return;
-    doGit('checkout', name);
-  }
+  // Stage / unstage one file. Operates on the source path of a rename so the
+// operation lands on the rename itself (see pathForGit), then reloads.
+async function doGitFiles(action, file) {
+if (busy) return;
+setBusy(action);
+setNotice('');
+const res = await runGitFiles(projectDir, action, [pathForGit(file.path)]);
+if (!res.ok) {
+setNotice((res.stderr || 'git ' + action + ' failed').trim() || 'git ' + action + ' failed');
+} else {
+setNotice('');
+await load();
+}
+setBusy('');
+}
+// Stage everything (all unstaged files) in one tap.
+async function stageAll() {
+if (busy) return;
+setBusy('add');
+setNotice('');
+const paths = unstaged.map((f) => pathForGit(f.path));
+if (!paths.length) { setBusy(''); return; }
+const res = await runGitFiles(projectDir, 'add', paths);
+if (!res.ok) {
+setNotice((res.stderr || 'git add failed').trim() || 'git add failed');
+} else {
+setNotice('');
+await load();
+}
+setBusy('');
+}
+// Commit the staged files with the message in the composer. Requires a
+// message; clears it on success.
+async function commit() {
+if (busy) return;
+const msg = commitMessage.trim();
+if (!msg) { setNotice('Enter a commit message'); return; }
+setBusy('commit');
+setNotice('');
+const res = await runGit(projectDir, 'commit', '', msg);
+if (!res.ok) {
+setNotice((res.stderr || 'git commit failed').trim() || 'git commit failed');
+} else {
+setCommitMessage('');
+setNotice('Committed\u2026');
+await load();
+}
+setBusy('');
+}
+function checkoutBranch(name) {
+if (busy || name === (data && data.branch)) return;
+doGit('checkout', name);
+}
 
   async function loadMoreCommits() {
     if (loadingCommits) return;
@@ -367,19 +454,55 @@ export function GitModal(props) {
                   )
                 ),
                 h(Section, {
-                  id: 'staged',
-                  title: 'Staged changes',
-                  files: staged,
-                  defaultOpen: staged.length > 0,
-                  emptyText: 'Nothing staged'
-                }),
-                h(Section, {
-                  id: 'unstaged',
-                  title: 'Unstaged changes',
-                  files: unstaged,
-                  defaultOpen: unstaged.length > 0,
-                  emptyText: 'Working tree clean'
-                }),
+id: 'staged',
+title: 'Staged changes',
+files: staged,
+defaultOpen: staged.length > 0,
+emptyText: 'Nothing staged',
+action: 'unstage',
+onAction: (f) => doGitFiles('unstage', f),
+busy: !!busy,
+header: h('div', { class: 'gm__commit-bar' },
+h('input', {
+class: 'input gm__commit-input',
+type: 'text',
+value: commitMessage,
+onInput: (e) => setCommitMessage(e.currentTarget.value),
+placeholder: 'Commit message',
+'aria-label': 'Commit message',
+disabled: !!busy,
+onKeyDown: (e) => {
+if (e.key === 'Enter') { e.preventDefault(); commit(); }
+}
+}),
+h('button', {
+class: 'gm__commit-btn',
+type: 'button',
+disabled: !!busy || staged.length === 0,
+onClick: commit,
+'aria-label': 'Commit staged changes',
+title: 'Commit staged changes'
+}, busy === 'commit' ? 'Committing\u2026' : 'Commit')
+)
+}),
+h(Section, {
+id: 'unstaged',
+title: 'Unstaged changes',
+files: unstaged,
+defaultOpen: unstaged.length > 0,
+emptyText: 'Working tree clean',
+action: 'add',
+onAction: (f) => doGitFiles('add', f),
+busy: !!busy
+}),
+staged.length > 0 && unstaged.length > 0 ? h('button', {
+class: 'gm__stage-all',
+type: 'button',
+disabled: !!busy,
+onClick: stageAll,
+'aria-label': 'Stage all unstaged changes',
+title: 'Stage all unstaged changes'
+}, 'Stage all (' + unstaged.length + ')') : null,
                 h('div', { class: 'gm__section' },
                   h('button', {
                     class: 'gm__section-head',
@@ -414,29 +537,35 @@ export function GitModal(props) {
   );
 }
 
-// One collapsible section.
-function Section({ id, title, files, defaultOpen, emptyText, renderFile }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const count = files ? files.length : 0;
-  const renderRow = renderFile || ((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }));
-  return h('div', { class: 'gm__section' },
-    h('button', {
-      class: 'gm__section-head' + (open ? ' is-open' : ''),
-      type: 'button',
-      onClick: () => setOpen(!open),
-      'aria-expanded': String(open),
-      'aria-controls': 'gm-section-' + id
-    },
-      h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
-      h('span', { class: 'gm__section-title' }, title),
-      h('span', { class: 'gm__section-count' }, count || '')
-    ),
-    open && h('div', { id: 'gm-section-' + id, class: 'gm__section-body' },
-      count === 0
-        ? h('div', { class: 'gm__empty' }, emptyText || 'Nothing here')
-        : files.map((f, i) => renderRow(f, i))
-    )
-  );
+// One collapsible section. For the staged section, `header` renders a commit
+// bar (commit-message input + Commit button) below the section head; for the
+// staged/unstaged sections, `action`/`onAction` add a per-file Stage/Unstage
+// button to each row.
+function Section({ id, title, files, defaultOpen, emptyText, renderFile, action, onAction, busy, header }) {
+const [open, setOpen] = useState(defaultOpen);
+const count = files ? files.length : 0;
+const renderRow = renderFile || ((f, i) => h(FileRow, {
+key: f.path + '-' + i, file: f, action, onAction, busy
+}));
+return h('div', { class: 'gm__section' },
+h('button', {
+class: 'gm__section-head' + (open ? ' is-open' : ''),
+type: 'button',
+onClick: () => setOpen(!open),
+'aria-expanded': String(open),
+'aria-controls': 'gm-section-' + id
+},
+h('span', { class: 'gm__section-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
+h('span', { class: 'gm__section-title' }, title),
+h('span', { class: 'gm__section-count' }, count || '')
+),
+open && h('div', { id: 'gm-section-' + id, class: 'gm__section-body' },
+header || null,
+count === 0
+? h('div', { class: 'gm__empty' }, emptyText || 'Nothing here')
+: files.map((f, i) => renderRow(f, i))
+)
+);
 }
 
 // Stash row: one stash with Apply / Pop / Drop actions.

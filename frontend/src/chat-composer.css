@@ -1007,38 +1007,54 @@ transform: translateX(14px);
 
 /* File rows */
 .gm__file {
-  border-top: 1px solid var(--border);
+border-top: 1px solid var(--border);
 }
 .gm__file-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 6px 12px 6px 16px;
-  background: transparent;
-  border: 0;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.75rem;
-  text-align: left;
-  cursor: pointer;
-  transition: background 80ms ease;
-  -webkit-tap-highlight-color: transparent;
+display: flex;
+align-items: center;
+gap: 0;
+min-height: 40px;
+background: transparent;
+border: 0;
+color: var(--fg);
+font: inherit;
+font-size: 0.75rem;
+text-align: left;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: transparent;
 }
 .gm__file-head:hover { background: var(--surface-2); }
+.gm__file-toggle {
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+align-items: center;
+gap: 8px;
+min-height: 40px;
+padding: 6px 8px 6px 16px;
+background: transparent;
+border: 0;
+color: var(--fg);
+font: inherit;
+font-size: 0.75rem;
+text-align: left;
+cursor: pointer;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.gm__file-toggle:hover { background: transparent; }
 .gm__file-status {
-  flex: 0 0 auto;
-  min-width: 64px;
-  text-align: center;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  border-radius: var(--r-sm);
-  padding: 2px 6px;
-  color: var(--fg-soft);
-  background: var(--surface-3);
+flex: 0 0 auto;
+min-width: 64px;
+text-align: center;
+font-size: 0.6rem;
+font-weight: 600;
+letter-spacing: 0.03em;
+text-transform: uppercase;
+border-radius: var(--r-sm);
+padding: 2px 6px;
+color: var(--fg-soft);
+background: var(--surface-3);
 }
 .gm__file-status--M { color: var(--warning); background: var(--warning-soft); }
 .gm__file-status--A { color: var(--success); background: var(--success-soft); }
@@ -1046,20 +1062,102 @@ transform: translateX(14px);
 .gm__file-status--R, .gm__file-status--C { color: var(--accent); background: var(--accent-soft); }
 .gm__file-status--U { color: var(--danger); background: var(--danger-soft); }
 .gm__file-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
-  color: var(--fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+flex: 1 1 auto;
+min-width: 0;
+font-family: var(--font-mono, monospace);
+font-size: 0.72rem;
+color: var(--fg);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
 }
 .gm__file-caret {
-  flex: 0 0 auto;
-  font-size: 0.7rem;
-  color: var(--muted);
+flex: 0 0 auto;
+font-size: 0.7rem;
+color: var(--muted);
 }
+/* Per-file Stage / Unstage action button */
+.gm__file-action {
+flex: 0 0 auto;
+min-height: 32px;
+margin: 0 8px 0 4px;
+padding: 4px 10px;
+border: 1px solid var(--border-strong);
+background: var(--surface);
+color: var(--fg);
+border-radius: var(--r-sm);
+font: inherit;
+font-size: 0.66rem;
+font-weight: 600;
+cursor: pointer;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.gm__file-action:hover { background: var(--surface-3); }
+.gm__file-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.gm__file-action--unstage:hover,
+.gm__file-action--unstage:disabled { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+/* Commit bar (message input + Commit button) in the staged section */
+.gm__commit-bar {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 8px 12px;
+border-bottom: 1px solid var(--border);
+}
+.gm__commit-input {
+flex: 1 1 auto;
+min-width: 0;
+height: 34px;
+padding: 4px 10px;
+font: inherit;
+font-size: 0.78rem;
+color: var(--fg);
+background: var(--surface-3);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+outline: none;
+transition: border-color 80ms ease;
+}
+.gm__commit-input::placeholder { color: var(--muted); }
+.gm__commit-input:focus { border-color: var(--accent); }
+.gm__commit-input:disabled { opacity: 0.6; }
+.gm__commit-btn {
+flex: 0 0 auto;
+min-height: 34px;
+padding: 4px 12px;
+border: 1px solid var(--accent);
+background: var(--accent);
+color: var(--accent-contrast, #fff);
+border-radius: var(--r-sm);
+font: inherit;
+font-size: 0.72rem;
+font-weight: 700;
+cursor: pointer;
+transition: background 80ms ease, opacity 80ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.gm__commit-btn:hover { background: var(--accent-hi); }
+.gm__commit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Stage-all button between the staged and unstaged sections */
+.gm__stage-all {
+width: 100%;
+min-height: 40px;
+padding: 8px 12px 8px 24px;
+border: 0;
+border-top: 1px solid var(--border);
+background: var(--surface-2);
+color: var(--accent);
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+text-align: left;
+cursor: pointer;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.gm__stage-all:hover { background: var(--surface-3); }
+.gm__stage-all:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Diff */
 .gm__diff {
