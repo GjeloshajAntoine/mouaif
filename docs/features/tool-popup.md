@@ -14,4 +14,4 @@ A floating popover opened from the chat view top bar lets the user inspect and c
 9. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
 
 ## Implementation notes
-The popup is viewport-fixed but anchored from the globe trigger and the full `.chat-view__head` bounds. Its height is capped by the remaining visual viewport, `60dvh`, and `400px`; the tool tree body scrolls while the header, close control, and auto-retry footer remain reachable.
+The popup is viewport-fixed but anchored from the globe trigger and the full `.chat-view__head` bounds. Its height is capped by the remaining visual viewport, `60dvh`, and `400px`; the tool tree body scrolls while the header, close control, and auto-retry footer remain reachable. It renders on the browser's **top layer** as a non-modal `popover` (`showPopover()`), so it never dims the page or blocks the rest of the chat — it simply floats above the transcript.

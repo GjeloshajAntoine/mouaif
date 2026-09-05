@@ -440,14 +440,22 @@ pointer-events: none;
   height: 16px;
 }
 
+/* The popup itself is a `popover` (popover="manual") rendered on the browser's
+top layer via showPopover(), so it stays above the chat scroller's
+GPU-composited tiles — the same paint-order problem a plain `position: fixed`
+div cannot solve (those tiles ignore z-index and DOM order). Unlike a native
+<dialog> opened with showModal(), a popover is NON-modal: it does not dim the
+page with a ::backdrop and does not make the background inert, so the rest of
+the chat stays visible and interactive while the popup is open. */
 .tool-popup__popup {
   position: fixed;
   /* JS anchors this below the complete chat header so a wrapped model row
-     cannot be covered. These values are safe fallbacks for the first frame. */
+  cannot be covered. These values are safe fallbacks for the first frame. */
   top: calc(env(safe-area-inset-top) + 4rem);
   right: 10px;
   left: auto;
   bottom: auto;
+  margin: 0;
   min-width: 280px;
   max-width: min(380px, calc(100vw - 20px));
   max-height: min(60dvh, 400px);
@@ -463,6 +471,7 @@ pointer-events: none;
   overlap transcript content below the popup). */
   overflow: hidden;
   overscroll-behavior: contain;
+  color: var(--fg);
 }
 
 .tool-popup__head {
@@ -546,27 +555,6 @@ font: 700 0.65rem var(--font-mono);
 .tool-popup__action-body { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .tool-popup__action-label { overflow: hidden; font-size: 0.76rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .tool-popup__action-meta { color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem; }
-
-/* The layer is a native <dialog> opened via showModal(), so it renders on
-   the browser's top layer — above the chat scroller's GPU-composited tiles.
-   A plain `position: fixed` div could not out-paint those tiles (they ignore
-   z-index and DOM order), which is why the model-picker sheet is also a
-   <dialog>. Make the dialog a transparent full-viewport sheet; the popup is
-   pinned inside via the JS-set top/right/maxHeight. */
-.tool-popup__layer {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  width: 100dvw;
-  height: 100dvh;
-  max-width: 100dvw;
-  max-height: 100dvh;
-  overflow: visible;
-}
-.tool-popup__layer::backdrop {
-  background: rgba(0, 0, 0, 0.2);
-}
 @media (max-width: 480px) {
   .tool-popup__popup {
     width: calc(100vw - 20px);

@@ -73,22 +73,23 @@ export function ToolPopup(props) {
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
-  const popupDialogRef = useRef(null);
   useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
 
-  // Render the sheet on the native top layer so composited scroll tiles in
-  // the transcript can never paint above it. A plain `position: fixed` div is
-  // subject to Chromium's compositing paint order — the chat scroller is
-  // GPU-composited into tiles that ignore z-index and DOM position, which is
-  // exactly what the model-picker sheet avoids by being a native <dialog>
-  // opened with showModal(). See ModelPickerField.jsx.
+  // Render the popup on the browser's top layer via the Popover API so the
+  // transcript's GPU-composited scroll tiles can never paint above it. A plain
+  // `position: fixed` div is subject to Chromium's compositing paint order —
+  // the chat scroller is GPU-composited into tiles that ignore z-index and DOM
+  // position. A `popover` is both on the top layer AND non-modal, so it stays
+  // above composited tiles without dimming the page or making the background
+  // inert the way a native <dialog> (showModal) would. See ModelPickerField.jsx
+  // for the <dialog> variant used where a modal is genuinely required.
   useLayoutEffect(() => {
-    const dlg = popupDialogRef.current;
-    if (!dlg) return;
+    const popup = popupRef.current;
+    if (!popup) return;
     if (open) {
-      if (!dlg.open) dlg.showModal();
-    } else if (dlg.open) {
-      dlg.close();
+      if (!popup.matches(':popover-open')) popup.showPopover();
+    } else if (popup.matches(':popover-open')) {
+      popup.hidePopover();
     }
   }, [open]);
 
@@ -249,57 +250,50 @@ files: 'file'
         h('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z' })
       )
     ),
-    open && h('dialog', {
-      ref: popupDialogRef,
-      class: 'tool-popup__layer',
-      'aria-label': 'Tool settings',
-      // Native <dialog> brings Escape free; route it through close like the model picker.
-      onCancel: (ev) => { ev.preventDefault(); setOpen(false); }
-    },
-    h('div', {
+    open && h('div', {
       ref: popupRef,
       class: 'tool-popup__popup',
+      popover: 'manual',
       role: 'dialog',
       'aria-modal': 'true',
       'aria-label': 'Tool settings',
       style: popupStyle
     },
-        h('div', { class: 'tool-popup__head' },
-          h('span', { class: 'tool-popup__title' }, 'Tools'),
-          h('button', {
-            class: 'tool-popup__close',
-            type: 'button',
-            onClick: () => setOpen(false),
-            'aria-label': 'Close'
-          }, '\u00D7')
+      h('div', { class: 'tool-popup__head' },
+        h('span', { class: 'tool-popup__title' }, 'Tools'),
+        h('button', {
+          class: 'tool-popup__close',
+          type: 'button',
+          onClick: () => setOpen(false),
+          'aria-label': 'Close'
+        }, '\u00D7')
+      ),
+      h('div', { class: 'tool-popup__body' },
+        h(ToolTree, {
+          groups,
+          onToggleGroup: handleToggleGroup,
+          onToggleTool: handleToggleTool,
+          collapsedByDefault: true,
+          class: 'tool-popup__tree'
+        })
+      ),
+      h('div', { class: 'tool-popup__foot' },
+        h('label', { class: 'switch switch--sm' },
+          h('input', {
+            type: 'checkbox',
+            role: 'switch',
+            'aria-checked': String(!!autoRetry),
+            checked: !!autoRetry,
+            onChange: () => onToggleAutoRetry && onToggleAutoRetry()
+          }),
+          h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+            h('span', { class: 'switch__thumb' })
+          ),
+          h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
         ),
-        h('div', { class: 'tool-popup__body' },
-h(ToolTree, {
-groups,
-onToggleGroup: handleToggleGroup,
-onToggleTool: handleToggleTool,
-collapsedByDefault: true,
-class: 'tool-popup__tree'
-})
-),
-        h('div', { class: 'tool-popup__foot' },
-h('label', { class: 'switch switch--sm' },
-h('input', {
-type: 'checkbox',
-role: 'switch',
-'aria-checked': String(!!autoRetry),
-checked: !!autoRetry,
-onChange: () => onToggleAutoRetry && onToggleAutoRetry()
-}),
-h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-h('span', { class: 'switch__thumb' })
-),
-h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
-),
-h('span', { class: 'tool-popup__foot-note' },
-'Actions run immediately. Tools marked \u25CF have been used in this chat.'
-)
-)
+        h('span', { class: 'tool-popup__foot-note' },
+          'Actions run immediately. Tools marked \u25CF have been used in this chat.'
+        )
       )
     )
   );
