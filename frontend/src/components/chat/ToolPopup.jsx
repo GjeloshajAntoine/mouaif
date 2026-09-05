@@ -9,7 +9,7 @@
 // objects.
 
 import { h } from 'preact';
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
@@ -74,24 +74,6 @@ export function ToolPopup(props) {
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
   useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
-
-  // Render the popup on the browser's top layer via the Popover API so the
-  // transcript's GPU-composited scroll tiles can never paint above it. A plain
-  // `position: fixed` div is subject to Chromium's compositing paint order —
-  // the chat scroller is GPU-composited into tiles that ignore z-index and DOM
-  // position. A `popover` is both on the top layer AND non-modal, so it stays
-  // above composited tiles without dimming the page or making the background
-  // inert the way a native <dialog> (showModal) would. See ModelPickerField.jsx
-  // for the <dialog> variant used where a modal is genuinely required.
-  useLayoutEffect(() => {
-    const popup = popupRef.current;
-    if (!popup) return;
-    if (open) {
-      if (!popup.matches(':popover-open')) popup.showPopover();
-    } else if (popup.matches(':popover-open')) {
-      popup.hidePopover();
-    }
-  }, [open]);
 
   // Anchor the fixed popover below the complete, wrapping chat header. Using
   // only the trigger bottom makes the top-bar variant overlap the model row.
@@ -252,48 +234,51 @@ files: 'file'
     ),
     open && h('div', {
       ref: popupRef,
-      class: 'tool-popup__popup',
-      popover: 'manual',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': 'Tool settings',
-      style: popupStyle
+      class: 'tool-popup__layer',
+      'aria-label': 'Tool settings'
     },
-      h('div', { class: 'tool-popup__head' },
-        h('span', { class: 'tool-popup__title' }, 'Tools'),
-        h('button', {
-          class: 'tool-popup__close',
-          type: 'button',
-          onClick: () => setOpen(false),
-          'aria-label': 'Close'
-        }, '\u00D7')
-      ),
-      h('div', { class: 'tool-popup__body' },
-        h(ToolTree, {
-          groups,
-          onToggleGroup: handleToggleGroup,
-          onToggleTool: handleToggleTool,
-          collapsedByDefault: true,
-          class: 'tool-popup__tree'
-        })
-      ),
-      h('div', { class: 'tool-popup__foot' },
-        h('label', { class: 'switch switch--sm' },
-          h('input', {
-            type: 'checkbox',
-            role: 'switch',
-            'aria-checked': String(!!autoRetry),
-            checked: !!autoRetry,
-            onChange: () => onToggleAutoRetry && onToggleAutoRetry()
-          }),
-          h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-            h('span', { class: 'switch__thumb' })
-          ),
-          h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
+      h('div', {
+        class: 'tool-popup__popup',
+        role: 'dialog',
+        'aria-label': 'Tool settings',
+        style: popupStyle
+      },
+        h('div', { class: 'tool-popup__head' },
+          h('span', { class: 'tool-popup__title' }, 'Tools'),
+          h('button', {
+            class: 'tool-popup__close',
+            type: 'button',
+            onClick: () => setOpen(false),
+            'aria-label': 'Close'
+          }, '\u00D7')
         ),
-        h('span', { class: 'tool-popup__foot-note' },
-          'Actions run immediately. Tools marked \u25CF have been used in this chat.'
-        )
+        h('div', { class: 'tool-popup__body' },
+h(ToolTree, {
+groups,
+onToggleGroup: handleToggleGroup,
+onToggleTool: handleToggleTool,
+collapsedByDefault: true,
+class: 'tool-popup__tree'
+})
+),
+        h('div', { class: 'tool-popup__foot' },
+h('label', { class: 'switch switch--sm' },
+h('input', {
+type: 'checkbox',
+role: 'switch',
+'aria-checked': String(!!autoRetry),
+checked: !!autoRetry,
+onChange: () => onToggleAutoRetry && onToggleAutoRetry()
+}),
+h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+h('span', { class: 'switch__thumb' })
+),
+h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
+),
+h('span', { class: 'tool-popup__foot-note' },
+'Actions run immediately. Tools marked \u25CF have been used in this chat.'
+)
+)
       )
     )
   );
