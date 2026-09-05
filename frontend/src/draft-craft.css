@@ -152,7 +152,12 @@ background-position: 0 0, 0 0.625rem, 0.625rem -0.625rem, -0.625rem 0;
 .draft-craft__canvas-stage {
 position: relative;
 flex: 0 0 auto;
-min-width: 100%;
+/* margin: auto centers the stage in both axes when it fits inside the
+frame (a zoomed-out full-page screenshot sits in the middle of the
+canvas wrap), and collapses to 0 as soon as it overflows so a zoomed-in
+image is pinned top-left and every part stays reachable by scrolling. */
+margin: auto;
+min-width: 0;
 line-height: 0;
 }
 .draft-craft__canvas {
@@ -200,14 +205,61 @@ pointer-events: none;
 .draft-craft__annotator-tools {
 flex: 0 1 auto;
 max-height: 52dvh;
+/* When collapsed the tools strip shrinks to just its toggle bar; the
+flex-basis tidies up so the canvas gets the freed vertical space. */
+overflow: hidden;
+overscroll-behavior: contain;
+display: flex;
+flex-direction: column;
+background: var(--surface);
+border-top: 1px solid var(--border);
+}
+/* Collapsible tools header: a single one-tap strip that toggles the whole
+tools panel. Keeps the 44 px tap target and lets the user collapse the
+panel to a slim bar so the screenshot gets the full canvas height. */
+.draft-craft__tools-toggle {
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 0.5rem;
+padding: 0.5rem 0.75rem;
+border: 0;
+background: transparent;
+color: var(--fg);
+font: inherit;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.draft-craft__tools-toggle:active { background: var(--surface-2); }
+.draft-craft__tools-toggle-label {
+font-size: 0.8rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--fg-soft);
+}
+.draft-craft__tools-toggle-hint {
+flex: 1 1 auto;
+min-width: 0;
+font-size: 0.74rem;
+color: var(--muted);
+}
+.draft-craft__tools-toggle-chevron {
+flex: 0 0 auto;
+font-size: 1rem;
+color: var(--muted);
+line-height: 1;
+}
+/* Scrollable body inside the tools panel. */
+.draft-craft__tools-body {
+flex: 1 1 auto;
+min-height: 0;
 overflow-y: auto;
 overscroll-behavior: contain;
 display: grid;
 grid-template-columns: 1fr auto;
 gap: 0.5rem;
-padding: 0.65rem 0.75rem;
-background: var(--surface);
-border-top: 1px solid var(--border);
+padding: 0.1rem 0.75rem 0.65rem;
 }
 .draft-craft__zoom {
 grid-column: 1 / -1;

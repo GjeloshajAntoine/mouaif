@@ -7,16 +7,17 @@ Draft Craft adds material to any existing chat draft without sending it immediat
 ## Usage
 
 ### Annotated Inspector image
-
 1. Open **Inspector** and connect to a browser tab.
 2. In the **Preview** toolbar, tap the blue image-and-sparkle **Draft Craft** icon. It sits beside the other preview actions and never covers the screenshot.
-3. Pinch with two fingers to zoom from 100% to 400%, or use the **−** and **+** controls. Switch between **Pan** and **Draw** to make freehand marks.
+3. Pinch with two fingers to zoom, or use the **−** and **+** controls. Switch between **Pan** and **Draw** to make freehand marks.
 4. In **Marker dots**, choose sequential numbers or letters, then drag the next dot from the marker bar onto the image. Add text in the matching row below. Existing dots can be dragged to a new image position or removed.
 5. Optionally add a general image note, then tap **Add to chat draft** and choose a project and chat.
 
+The image opens **fit-to-view**: the whole full-page screenshot is scaled to fit the canvas instead of showing only its top-left corner, so a tall page is fully visible from the start. A **Fit** button (and a **−** control) never zooms out past that fit level, so the whole image always stays in frame. When the image is smaller than the canvas it is centered in both axes; as you zoom in past the frame it pins to the top-left and becomes scrollable, so every part stays reachable by panning.
+
 The pinch midpoint stays under your fingers while zooming. In **Pan** mode, drag the image to move around the zoomed screenshot. Marker labels increase automatically up to 26 dots. The exported image contains each dot, while the text draft includes the corresponding numbered or lettered annotation list along with the page title, URL, and general note.
 
-The **Add to chat draft** button is pinned in a footer below the scrollable tools panel, so it stays visible even after many marker rows push the marker list beyond the panel's scroll area.
+The **Tools** strip is collapsible: tap **Tools** to fold the zoom / color / marker controls down to a slim bar so the screenshot gets the full canvas height. Collapsing or resizing the window re-fits the image to the newly available space when you have not zoomed in past the fit level. The **Add to chat draft** button is pinned in a footer below the scrollable tools panel, so it stays visible even after many marker rows push the marker list beyond the panel's scroll area.
 
 ### Annotated composer image
 

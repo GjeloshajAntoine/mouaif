@@ -6,11 +6,27 @@ import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
 import { canvasToBoundedPngDataUrl } from '../chat/annotation.js';
 
 const COLORS = ['#ff5f57', '#ffd60a', '#32d74b', '#0a84ff'];
-const MIN_ZOOM = 1;
+const MIN_ZOOM = 0.1; // hard safety floor; the real minimum is the fit-to-view level below
 const MAX_ZOOM = 4;
 const MAX_MARKERS = 26;
-function clampZoom(value) {
-return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+function clampZoom(value, min = MIN_ZOOM) {
+return Math.min(MAX_ZOOM, Math.max(min, value));
+}
+// The largest zoom that still shows the whole image inside the canvas frame.
+// At zoom z the image renders at width = frameWidth * z and height = width *
+// (naturalHeight / naturalWidth), so the height-limited fit is
+// frameHeight / (frameWidth * h/w). We never zoom out past 1 — width already
+// fills the frame there — so a short/wide page fits at 1. The fit gives the
+// "show whole screenshot" default instead of the top-left corner only.
+function fitZoomFor(wrap, canvas) {
+if (!wrap || !canvas) return MIN_ZOOM;
+const wrapW = wrap.clientWidth || wrap.offsetWidth;
+const wrapH = wrap.clientHeight || wrap.offsetHeight;
+const natW = canvas.width || canvas.naturalWidth || 1;
+const natH = canvas.height || canvas.naturalHeight || 1;
+if (wrapW <= 0 || wrapH <= 0 || natW <= 0 || natH <= 0) return MIN_ZOOM;
+const displayHeightAtOne = wrapW * (natH / natW);
+return Math.max(MIN_ZOOM, Math.min(1, wrapH / displayHeightAtOne));
 }
 function clamp(value) {
 return Math.min(1, Math.max(0, value));
@@ -74,6 +90,7 @@ const pinchRef = useRef(null);
 const panRef = useRef(null);
 const markerDragRef = useRef(null);
 const zoomRef = useRef(1);
+const lastFitZoomRef = useRef(null);
 const [color, setColor] = useState(COLORS[0]);
 const [note, setNote] = useState('');
 const [markers, setMarkers] = useState([]);
@@ -85,6 +102,7 @@ const [ready, setReady] = useState(false);
 const [exportError, setExportError] = useState('');
 const [zoom, setZoom] = useState(1);
 const [mode, setMode] = useState('draw');
+const [toolsOpen, setToolsOpen] = useState(true);
 
 useEffect(() => {
 if (!image || !image.dataUrl || !canvasRef.current) return;
@@ -98,15 +116,48 @@ canvas.height = source.naturalHeight || 1;
 const ctx = canvas.getContext('2d');
 ctx.drawImage(source, 0, 0);
 setReady(true);
+// Start at the fit-to-view zoom so the whole screenshot is visible
+// (instead of a tall full-page capture overflowing the frame's top-left
+// corner), then let the user zoom in to annotate. Runs on the next paint
+// so the wrap has a measurable size.
+requestAnimationFrame(fit);
 };
 source.src = image.dataUrl;
 return () => { cancelled = true; };
 }, [image]);
+// Re-fit when the available canvas size changes (collapsing the tools panel,
+// rotating the device, or a window resized). Only re-fit when the user has not
+// deliberately zoomed in past the fit level — otherwise collapsing the tools
+// panel would yank a magnified image back to full-page. Toggling the tools
+// panel changes the wrap's height (it is flex:1), so this keeps the whole
+// screenshot visible as the free space grows.
+useEffect(() => {
+const wrap = wrapRef.current;
+const canvas = canvasRef.current;
+if (!wrap || !canvas || !ready) return;
+const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+const tryFit = () => {
+if (!wrapRef.current || !canvasRef.current) return;
+const fitLevel = fitZoomFor(wrapRef.current, canvasRef.current);
+// If the user is still at (or below) the previous fit, re-fit to the
+// new size so the whole image stays visible. Otherwise leave it alone.
+const current = zoomRef.current;
+const prevFit = lastFitZoomRef.current;
+const shouldRefit = current <= (prevFit != null ? prevFit : fitLevel) + 0.005;
+if (shouldRefit) fit(false);
+};
+tryFit();
+requestAnimationFrame(tryFit);
+}) : null;
+if (ro) ro.observe(wrap);
+return () => { if (ro) ro.disconnect(); };
+}, [ready]);
 
 function applyZoom(value, focus) {
 const wrap = wrapRef.current;
-const before = canvasRef.current && canvasRef.current.getBoundingClientRect();
-const next = clampZoom(value);
+const canvas = canvasRef.current;
+const before = canvas && canvas.getBoundingClientRect();
+const next = clampZoom(value, fitZoomFor(wrap, canvas));
 zoomRef.current = next;
 setZoom(next);
 if (!wrap || !before || !focus || before.width <= 0 || before.height <= 0) return;
@@ -122,6 +173,19 @@ const after = canvas.getBoundingClientRect();
 wrap.scrollLeft = Math.max(0, imageX * after.width - viewportX);
 wrap.scrollTop = Math.max(0, imageY * after.height - viewportY);
 });
+}
+function fit(resetScroll = true) {
+const wrap = wrapRef.current;
+const canvas = canvasRef.current;
+if (!wrap || !canvas) return;
+const next = clampZoom(fitZoomFor(wrap, canvas), MIN_ZOOM);
+zoomRef.current = next;
+setZoom(next);
+lastFitZoomRef.current = next;
+if (resetScroll) {
+wrap.scrollLeft = 0;
+wrap.scrollTop = 0;
+}
 }
 function start(event) {
 if (!ready || !canvasRef.current) return;
@@ -320,10 +384,23 @@ onPointerCancel: endMarkerDrag,
 )
 ),
 h('div', { class: 'draft-craft__annotator-tools' },
+h('button', {
+type: 'button',
+class: 'draft-craft__tools-toggle',
+'aria-expanded': String(toolsOpen),
+'aria-controls': 'draftCraftToolsBody',
+onClick: () => setToolsOpen((value) => !value)
+},
+h('span', { class: 'draft-craft__tools-toggle-label' }, 'Tools'),
+h('span', { class: 'draft-craft__tools-toggle-hint' }, 'Annotate & zoom'),
+h('span', { class: 'draft-craft__tools-toggle-chevron', 'aria-hidden': 'true' }, toolsOpen ? '⌄' : '⌃')
+),
+toolsOpen ? h('div', { id: 'draftCraftToolsBody', class: 'draft-craft__tools-body' },
 h('div', { class: 'draft-craft__zoom', role: 'group', 'aria-label': 'Image zoom' },
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current - 0.25), disabled: zoom <= MIN_ZOOM, 'aria-label': 'Zoom out' }, '−'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current - 0.25), disabled: zoom <= fitZoomFor(wrapRef.current, canvasRef.current), 'aria-label': 'Zoom out' }, '−'),
 h('span', { 'aria-live': 'polite' }, Math.round(zoom * 100) + '%'),
 h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current + 0.25), disabled: zoom >= MAX_ZOOM, 'aria-label': 'Zoom in' }, '+'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => fit(), disabled: Math.abs(zoom - fitZoomFor(wrapRef.current, canvasRef.current)) < 0.005, 'aria-label': 'Show whole image', title: 'Fit image to view' }, 'Fit'),
 h('button', { class: 'btn btn--small' + (mode === 'pan' ? ' is-active' : ''), type: 'button', onClick: () => setMode((value) => value === 'pan' ? 'draw' : 'pan'), 'aria-pressed': String(mode === 'pan') }, mode === 'pan' ? 'Draw' : 'Pan')
 ),
 h('div', { class: 'draft-craft__colors', role: 'group', 'aria-label': 'Annotation color' },
@@ -369,7 +446,7 @@ h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () =
 : h('p', { class: 'draft-craft__marker-empty' }, 'No marker dots on the image yet.')
 ),
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
-),
+) : null),
 h('div', { class: 'draft-craft__annotator-foot' },
 exportError ? h('span', { class: 'status', role: 'alert' }, exportError) : null,
 originalDataUrl
