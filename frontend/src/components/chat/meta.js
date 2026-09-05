@@ -46,7 +46,7 @@ export async function updateChat(patch, state, refs) {
   });
   if (r.status !== 200) {
     if (refs.status.current) refs.status.current.textContent = 'HTTP ' + r.status;
-    return;
+    return false;
   }
   state.chat = r.body.chat;
   updateMetaLine(refs, state);
@@ -54,6 +54,7 @@ export async function updateChat(patch, state, refs) {
   // they need the modelPicker module — we just notify via a
   // callback hook so the main view can re-render them.
   if (state._onChatChanged) state._onChatChanged();
+  return true;
 }
 
 // refreshSystemPrompt(state, refs)

@@ -721,16 +721,31 @@ if (customAction) return runCustomAction(customAction, state, refs);
   // on load and after every successful PATCH) — the picker persists
   // on selection, so the common case is a no-op and a PATCH here
   // would be a wasted round-trip on every send.
-  if (state._persistedModelPair !== providerId + '|' + modelId) {
-    await updateChat({ providerId, modelId }, state, refs);
-  }
-
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-setChatStatus(refs, 'streaming…', 'busy');
+  setChatStatus(refs, 'preparing message…', 'busy');
+  try {
+    if (state._persistedModelPair !== providerId + '|' + modelId) {
+      if (await updateChat({ providerId, modelId }, state, refs) === false) {
+        throw new Error('model settings could not be saved');
+      }
+    }
+    // Keep the exact draft (including whitespace and attachments) in the
+    // composer until persistence succeeds. Preparation failures must not
+    // leave a cleared composer or a streaming latch with no request behind it.
+    if (!retry && clearComposerDraft && await clearComposerDraft() === false) {
+      throw new Error('draft could not be saved');
+    }
+  } catch {
+    state.streaming = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+    if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+    setChatStatus(refs, 'Could not prepare message — your draft is unchanged. Try sending again.', 'error');
+    return;
+  }
+  setChatStatus(refs, 'streaming…', 'busy');
 if (!retry) {
 if (refs.promptInput.current) refs.promptInput.current.value = '';
-if (clearComposerDraft) await clearComposerDraft();
 if (setImageAttachments) setImageAttachments([]);
 if (refs.imageInput.current) refs.imageInput.current.value = '';
 refs._autoresize();

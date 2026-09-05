@@ -376,13 +376,14 @@ setCustomActions(response.body.actions);
     });
     if (r.status !== 200) {
       if (status.current) status.current.textContent = 'HTTP ' + r.status;
-      return;
+      return false;
     }
     state.chat = r.body.chat;
     state._persistedModelPair = (r.body.chat.providerId || '') + '|' + (r.body.chat.modelId || '');
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
     syncPickerState();
+    return true;
   }, [projectDir, chatId]);
 
   function updateModelTriggerLocal() {
