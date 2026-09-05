@@ -458,6 +458,10 @@ pointer-events: none;
   z-index: 40;
   display: flex;
   flex-direction: column;
+  /* Clip the body's scrollbar and the footer to the popup's rounded box so
+  they cannot paint past the max-height boundary (which made the footer
+  overlap transcript content below the popup). */
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
@@ -543,9 +547,25 @@ font: 700 0.65rem var(--font-mono);
 .tool-popup__action-label { overflow: hidden; font-size: 0.76rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .tool-popup__action-meta { color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem; }
 
-/* Keep the wrapper layout-neutral; only the popup itself is viewport-fixed. */
+/* The layer is a native <dialog> opened via showModal(), so it renders on
+   the browser's top layer — above the chat scroller's GPU-composited tiles.
+   A plain `position: fixed` div could not out-paint those tiles (they ignore
+   z-index and DOM order), which is why the model-picker sheet is also a
+   <dialog>. Make the dialog a transparent full-viewport sheet; the popup is
+   pinned inside via the JS-set top/right/maxHeight. */
 .tool-popup__layer {
-  display: contents;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  width: 100dvw;
+  height: 100dvh;
+  max-width: 100dvw;
+  max-height: 100dvh;
+  overflow: visible;
+}
+.tool-popup__layer::backdrop {
+  background: rgba(0, 0, 0, 0.2);
 }
 @media (max-width: 480px) {
   .tool-popup__popup {
