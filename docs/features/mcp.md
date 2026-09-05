@@ -33,7 +33,8 @@ Each list row carries its lifecycle controls (**Start** / **Restart**, **Stop**,
    - **Arguments** — stdio only; tap **Add argument** for each argv entry (e.g. `path/to/server.js`, `--port`, and `8080` in three fields). Spaces, empty strings, quotes, and backslashes are preserved exactly. Do not wrap paths in shell quotes. **Remove** deletes that argument; a blank field deliberately sends an empty argument.
    - **Environment** — stdio only; one `KEY=value` per line. Denylisted keys (`LD_PRELOAD`, `NODE_OPTIONS`, ...) are stripped from the parent env first, then your overrides are applied on top.
    - **HTTP URL** — HTTP only; the Streamable HTTP endpoint (for example `https://example.com/mcp`).
-   - **HTTP headers** — HTTP only; one `Name: value` or `Name=value` per line. Values are write-only in the API and UI so bearer tokens are not echoed back.
+   - **Authentication** — HTTP only; manual headers or [OAuth sign-in with PKCE](./mcp-oauth.md). OAuth supports automatic registration or a pre-registered public client ID; credentials stay in the OS keychain. Save, reopen the server, then sign in.
+   - **HTTP headers** — HTTP only; one `Name: value` or `Name=value` per line. Values are write-only in the API and UI so bearer tokens are not echoed back. With OAuth enabled, a manual `Authorization` header is ignored.
    - **Working directory** — stdio only; optional, relative to the project. Resolved against the project root; anything outside the project is rejected with `EOUTSIDE_PROJECT`. For an app-wide server started without a project context, a relative cwd resolves against the `mouaif` process cwd.
 3. Tap **Save**, then **Start** on the row to spawn the child and discover tools.
 

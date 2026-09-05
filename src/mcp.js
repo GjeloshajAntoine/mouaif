@@ -51,6 +51,7 @@ const crypto = require('crypto');
 const { URL, pathToFileURL } = require('url');
 const { err } = require('./util.js');
 const settings = require('./settings.js');
+const mcpOAuth = require('./oauth-mcp.js');
 
 // ---- SDK lazy load ------------------------------------------------------
 
@@ -344,6 +345,14 @@ function normalizeServerEntry(raw, usedSlugs) {
   // Only persist the transport field for HTTP — stdio is the implicit
   // default. The read path defaults to 'stdio' when the field is absent.
   if (transport === 'http') out.transport = 'http';
+  if (transport === 'http' && raw.oauth && raw.oauth.enabled === true) {
+    mcpOAuth.safeUrl(out.url);
+    out.oauth = {
+      enabled: true,
+      clientId: typeof raw.oauth.clientId === 'string' ? raw.oauth.clientId.trim() : '',
+      scope: typeof raw.oauth.scope === 'string' ? raw.oauth.scope.trim() : ''
+    };
+  }
   return out;
 }
 
@@ -784,6 +793,21 @@ function findServerAnyScope(projectDir, serverId) {
   return findInScope(projectDir, APP_SCOPE, serverId);
 }
 
+// Raw, scope-aware identity for OAuth only; never returned through REST.
+function getOAuthContext(projectDir, serverId) {
+  const found = findServerAnyScope(projectDir, serverId);
+  return found ? { entry: found.normalized[found.idx], scope: found.scope, projectDir: projectDir || '' } : null;
+}
+
+async function stopOAuthSessions(context) {
+  for (const [key, session] of [..._sessions]) {
+    if (session.oauthKey !== mcpOAuth.identity(context)) continue;
+    const split = key.lastIndexOf('::');
+    untrackSession(key.slice(0, split), key.slice(split + 2));
+    await session.shutdown();
+  }
+}
+
 function updateServer(projectDir, serverId, patch) {
   if (!serverId) return null;
   const found = findServerAnyScope(projectDir, serverId);
@@ -821,6 +845,11 @@ function updateServer(projectDir, serverId, patch) {
   }
   const renormalized = normalizeServerEntry(merged, new Set(normalized.filter((_, i) => i !== idx).map(o => o.slug)));
   if (!renormalized) return null;
+  const oldContext = { entry: normalized[idx], scope, projectDir };
+  if (normalized[idx].oauth?.enabled && mcpOAuth.identity(oldContext) !== mcpOAuth.identity({ entry: renormalized, scope, projectDir })) {
+    mcpOAuth.clear(oldContext);
+    stopOAuthSessions(oldContext).catch(() => {});
+  }
   normalized[idx] = renormalized;
   writeConfigForScope(projectDir, scope, normalized);
   return decorate(Object.assign({}, renormalized, { scope }), projectDir, renormalized);
@@ -831,6 +860,11 @@ function removeServer(projectDir, serverId) {
   stopServer(projectDir, serverId).catch(() => {});
   const found = findServerAnyScope(projectDir, serverId);
   if (!found) return false;
+  const context = { entry: found.normalized[found.idx], scope: found.scope, projectDir };
+  if (context.entry.oauth?.enabled) {
+    mcpOAuth.clear(context);
+    stopOAuthSessions(context).catch(() => {});
+  }
   const scopeList = found.list;
   const before = scopeList.length;
   const next = scopeList.filter(s => s && s.id !== serverId);
@@ -874,9 +908,24 @@ async function startServer(projectDir, serverId) {
     if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') {
       throw err('EBADINPUT', 'HTTP MCP URL must start with http:// or https://', { serverId });
     }
-    transport = new StreamableHTTPClientTransport(endpoint, {
-      requestInit: { headers: entry.headers || {} }
-    });
+    const oauthContext = { entry, scope: found.scope, projectDir };
+    const oauthEnabled = entry.oauth?.enabled === true;
+    // Explicit OAuth owns Authorization; don't let a stale manual header
+    // override SDK bearer tokens or leak it into discovery/token requests.
+    const headers = Object.fromEntries(Object.entries(entry.headers || {}).filter(([key]) => !oauthEnabled || key.toLowerCase() !== 'authorization'));
+    transport = new StreamableHTTPClientTransport(endpoint, oauthEnabled ? {
+      authProvider: mcpOAuth.provider(oauthContext),
+      fetch: (input, init = {}) => {
+        // SDK discovery and token requests share this fetch implementation.
+        // Custom MCP headers must never follow them to an authorization server.
+        const target = String(input instanceof Request ? input.url : input);
+        const scopedHeaders = new Headers(init.headers);
+        if (target === endpoint.href) {
+          for (const [key, value] of Object.entries(headers)) scopedHeaders.set(key, value);
+        }
+        return mcpOAuth.oauthFetch(input, { ...init, headers: scopedHeaders });
+      }
+    } : { requestInit: { headers } });
   } else {
     // Canonicalize an existing project root before comparing cwd values.
     // Projects opened through a symlink otherwise compare their real cwd
@@ -950,6 +999,7 @@ async function startServer(projectDir, serverId) {
 
   const session = {
     entry,
+    oauthKey: entry.oauth?.enabled ? mcpOAuth.identity({ entry, scope: found.scope, projectDir }) : null,
     client,
     transport,
     status: 'starting',
@@ -967,9 +1017,10 @@ async function startServer(projectDir, serverId) {
     await client.connect(transport, { timeout: 30000 });
   } catch (e) {
     session.status = 'errored';
-    session.error = { code: 'EMCP_START', message: (e && e.message) || String(e) };
+    session.error = { code: 'EMCP_START', message: entry.oauth?.enabled ? 'MCP OAuth connection failed. Sign in again in Settings.' : ((e && e.message) || String(e)) };
     try { await session.shutdown(); } catch { /* ignore */ }
     untrackSession(projectDir, serverId);
+    if (entry.oauth?.enabled) throw err('EMCP_AUTH', 'MCP connection failed. Check the endpoint and sign in again in Settings.', { serverId });
     throw err('EMCP_START', 'Failed to start MCP server: ' + (e && e.message || e), { serverId });
   }
 
@@ -988,10 +1039,10 @@ async function startServer(projectDir, serverId) {
     }
   } catch (e) {
     session.status = 'errored';
-    session.error = { code: 'EMCP_RPC', message: 'tools/list failed: ' + (e && e.message || e) };
+    session.error = { code: 'EMCP_RPC', message: entry.oauth?.enabled ? 'MCP tool discovery failed. Check sign-in in Settings.' : 'tools/list failed: ' + (e && e.message || e) };
     try { await session.shutdown(); } catch { /* ignore */ }
     untrackSession(projectDir, serverId);
-    throw err('EMCP_RPC', 'MCP server failed to list tools: ' + (e && e.message || e), { serverId });
+    throw err('EMCP_RPC', entry.oauth?.enabled ? session.error.message : 'MCP server failed to list tools: ' + (e && e.message || e), { serverId });
   }
 
   // Normalize tool descriptors: name (required), description, inputSchema.
@@ -1083,7 +1134,7 @@ async function listDiscoveredTools(projectDir, serverId) {
       if (!cursor) break;
     }
   } catch (e) {
-    throw err('EMCP_RPC', 'tools/list failed: ' + (e && e.message || e), { serverId });
+    throw err('EMCP_RPC', session.oauthKey ? 'MCP tool discovery failed. Check sign-in in Settings.' : 'tools/list failed: ' + (e && e.message || e), { serverId });
   }
   session.tools = normalizeToolCache(discovered);
   // Keep the persisted cache in sync when the user taps Refresh.
@@ -1218,7 +1269,7 @@ async function callTool(projectDir, serverSlug, toolName, args) {
   try {
     result = await session.client.callTool({ name: toolName, arguments: callArgs }, undefined, { timeout: 60000 });
   } catch (e) {
-    throw err('EMCP_RPC', 'tools/call failed: ' + (e && e.message || e), { serverSlug, toolName });
+    throw err('EMCP_RPC', session.oauthKey ? 'MCP tool call failed. Check server availability and sign-in in Settings.' : 'tools/call failed: ' + (e && e.message || e), { serverSlug, toolName });
   }
   if (!result || typeof result !== 'object') {
     return { ok: false, content: [{ type: 'text', text: 'MCP server returned no result' }], isError: true };
@@ -1443,6 +1494,8 @@ module.exports = {
   updateServer,
   removeServer,
   resolveMerged,
+  getOAuthContext,
+  stopOAuthSessions,
   // lifecycle
   startServer,
   stopServer,

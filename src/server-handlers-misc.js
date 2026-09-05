@@ -45,6 +45,8 @@ function mcpErrorStatus(err) {
     case 'EMCP_START':         return 502;
     case 'EMCP_RPC':           return 502;
     case 'EMCP_NOSESSION':     return 409;
+    case 'EMCP_AUTH':          return 409;
+    case 'EKEYRING':           return 503;
     case 'EMCP_TIMEOUT':       return 504;
     case 'EMCP_TRANSPORT':     return 502;
     case 'EMODULE':            return 500;

@@ -6,6 +6,7 @@ import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
 import { McpArguments } from './settings/McpArguments.jsx';
+import { McpOAuth } from './settings/McpOAuth.jsx';
 
 export function SettingsMcpEditView(props) {
 const id = props.id || '';
@@ -31,6 +32,7 @@ const from = typeof props.from === 'string' ? props.from : '';
   const [isDeleting, setIsDeleting] = useState(false);
   const [statusMsg, setStatusMsg] = useState({text: '', kind: ''});
   const [transport, setTransport] = useState('stdio');
+  const [oauth, setOauth] = useState({ enabled: false, clientId: '', scope: '' });
 
   const [currentServer, setCurrentServer] = useState(null);
   const [toolAuths, setToolAuths] = useState({});
@@ -56,6 +58,7 @@ const from = typeof props.from === 'string' ? props.from : '';
       setTransport(current.transport === 'http' ? 'http' : 'stdio');
       setCommand(current.command || '');
       setUrl(current.url || '');
+      setOauth({ enabled: !!current.oauth?.enabled, clientId: current.oauth?.clientId || '', scope: current.oauth?.scope || '' });
       setArgs(current.args || []);
       setEnv('');
       const envKeys = Object.keys(current.env || {}).filter(k => current.env[k] && current.env[k].configured);
@@ -164,6 +167,7 @@ const from = typeof props.from === 'string' ? props.from : '';
       name: (name || '').trim(),
       command: transport === 'stdio' ? (command || '').trim() : '',
       url: transport === 'http' ? (url || '').trim() : '',
+      oauth: transport === 'http' && oauth.enabled ? { enabled: true, clientId: oauth.clientId.trim(), scope: oauth.scope.trim() } : null,
       args: transport === 'stdio' ? args : [],
       cwd: transport === 'stdio' ? (cwd || '').trim() : ''
     };
@@ -276,6 +280,7 @@ const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + e
         h('label', { class: 'label', for: 'mcp-url' }, 'HTTP URL'),
         h('input', { class: 'input', id: 'mcp-url', type: 'url', placeholder: 'https://example.com/mcp', value: url, onInput: (e) => setUrl(e.target.value) })
       ),
+      h(McpOAuth, { id, projectDir, saved: currentServer, value: { ...oauth, url }, onChange: setOauth }),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'mcp-headers' }, 'HTTP headers (one Name: value per line)'),
         h('textarea', { class: 'input', id: 'mcp-headers', rows: 4, spellcheck: false, placeholder: headersPlaceholder, 'aria-describedby': 'mcp-headers-hint', value: headers, onInput: (e) => setHeaders(e.target.value) }),

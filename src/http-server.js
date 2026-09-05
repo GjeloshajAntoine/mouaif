@@ -76,6 +76,7 @@ const { handleTools } = require('./server-handlers-tools.js');
 const { handleActions } = require('./server-handlers-actions.js');
 const { handlePrompts, handleFeatures, handleAgents } = require('./server-handlers-prompts.js');
 const { handleMcp, handleRestart, handleInspector, handleToolAuthorization } = require('./server-handlers-misc.js');
+const { handleMcpOAuth, handleMcpOAuthCallback } = require('./server-handlers-mcp-oauth.js');
 const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
 
 // ---- Route table --------------------------------------------------------
@@ -224,6 +225,10 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
     return handleFeatures(req, res, parsed);
   }
 
+  // MCP's callback is public like the provider callback; one-shot state +
+  // PKCE binds it to a sign-in begun through an authenticated API request.
+  if (urlPath === '/oauth/mcp/callback') return handleMcpOAuthCallback(req, res, parsed);
+
   // OAuth loopback callback (provider redirects here after login)
   if (urlPath === '/oauth/callback' && method === 'GET') {
     return handleOAuthCallback(req, res, parsed);
@@ -288,6 +293,7 @@ function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', l
   // MCP (Model Context Protocol) — per-project server registry +
   // lifecycle + tool dispatch. Routes are mounted in handleMcp below.
   if (urlPath === '/api/mcp' || urlPath.startsWith('/api/mcp/')) {
+    if (/^\/api\/mcp\/servers\/[^/]+\/oauth(?:\/start)?$/.test(urlPath)) return handleMcpOAuth(req, res, parsed, serverConfig);
     return handleMcp(req, res, parsed);
   }
 
