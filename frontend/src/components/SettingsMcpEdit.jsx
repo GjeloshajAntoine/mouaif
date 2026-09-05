@@ -5,6 +5,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
+import { McpArguments } from './settings/McpArguments.jsx';
 
 export function SettingsMcpEditView(props) {
 const id = props.id || '';
@@ -20,7 +21,7 @@ const from = typeof props.from === 'string' ? props.from : '';
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
   const [url, setUrl] = useState('');
-  const [args, setArgs] = useState('');
+  const [args, setArgs] = useState([]);
   const [env, setEnv] = useState('');
   const [headers, setHeaders] = useState('');
   const [cwd, setCwd] = useState('');
@@ -55,7 +56,7 @@ const from = typeof props.from === 'string' ? props.from : '';
       setTransport(current.transport === 'http' ? 'http' : 'stdio');
       setCommand(current.command || '');
       setUrl(current.url || '');
-      setArgs((current.args || []).join(' '));
+      setArgs(current.args || []);
       setEnv('');
       const envKeys = Object.keys(current.env || {}).filter(k => current.env[k] && current.env[k].configured);
       setConfiguredEnvKeys(envKeys);
@@ -127,11 +128,6 @@ const from = typeof props.from === 'string' ? props.from : '';
     });
   }
 
-  function parseArgs(text) {
-    if (!text || !text.trim()) return [];
-    return text.trim().split(/\s+/).filter(Boolean);
-  }
-
   function parseEnv(text) {
     if (!text || !text.trim()) return {};
     const out = {};
@@ -168,7 +164,7 @@ const from = typeof props.from === 'string' ? props.from : '';
       name: (name || '').trim(),
       command: transport === 'stdio' ? (command || '').trim() : '',
       url: transport === 'http' ? (url || '').trim() : '',
-      args: transport === 'stdio' ? parseArgs(args) : [],
+      args: transport === 'stdio' ? args : [],
       cwd: transport === 'stdio' ? (cwd || '').trim() : ''
     };
     const envText = env || '';
@@ -259,10 +255,7 @@ const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + e
         h('label', { class: 'label', for: 'mcp-command' }, 'Command'),
         h('input', { class: 'input', id: 'mcp-command', type: 'text', placeholder: 'node', value: command, onInput: (e) => setCommand(e.target.value) })
       ),
-      h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'mcp-args' }, 'Arguments (whitespace-separated)'),
-        h('input', { class: 'input', id: 'mcp-args', type: 'text', placeholder: 'path/to/server.js', value: args, onInput: (e) => setArgs(e.target.value) })
-      ),
+      h(McpArguments, { value: args, onChange: setArgs }),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'mcp-env' }, 'Environment (one KEY=value per line)'),
         h('textarea', { class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: envPlaceholder, 'aria-describedby': 'mcp-env-hint', value: env, onInput: (e) => setEnv(e.target.value) }),
