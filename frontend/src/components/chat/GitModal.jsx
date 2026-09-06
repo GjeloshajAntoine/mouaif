@@ -11,8 +11,9 @@
 //         Stage + Stage all) · Recent commits (paginated).
 
 import { h, Fragment } from 'preact';
-import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 // Run a git action via POST /api/git. Returns { ok, stdout, stderr }.
 async function runGit(projectDir, action, args, message) {
@@ -104,71 +105,121 @@ open && hasDiff ? h(DiffView, { diff: file.diff }) : null
 // A single commit row. The changed-file list is fetched lazily from
 // GET /api/git/commit-files the first time the row is expanded, so
 // commits in the list only pay for `git show` when the user opens them.
-function CommitRow({ projectDir, commit }) {
-  const [open, setOpen] = useState(false);
-  const [files, setFiles] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loadedHash, setLoadedHash] = useState('');
-
-  const loadFiles = useCallback(async () => {
-    if (loading || loadedHash === commit.hash) return;
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams();
-      params.set('projectDir', projectDir);
-      params.set('hash', commit.hash);
-      const r = await fetchJson('/api/git/commit-files?' + params.toString());
-      if (r.status === 200 && r.body && r.body.ok) {
-        setFiles(r.body.files || []);
-        setLoadedHash(commit.hash);
-      } else {
-        setError((r.body && r.body.error) || 'HTTP ' + r.status);
-      }
-    } catch (err) {
-      setError(String(err));
-    }
-    setLoading(false);
-  }, [projectDir, commit.hash, loading, loadedHash]);
-
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && loadedHash !== commit.hash) loadFiles();
-  }
-
-  return h('div', { class: 'gm__commit' },
-    h('button', {
-      class: 'gm__commit-head' + (open ? ' is-open' : ''),
-      type: 'button',
-      onClick: toggle,
-      'aria-expanded': String(open),
-      'aria-label': 'Toggle commit ' + commit.short
-    },
-      h('span', { class: 'gm__commit-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
-      h('span', { class: 'gm__commit-hash' }, commit.short),
-      h('span', { class: 'gm__commit-subject', title: commit.subject }, commit.subject),
-      h('span', { class: 'gm__commit-meta' },
-        commit.author ? h('span', { class: 'gm__commit-author' }, commit.author) : null,
-        commit.date ? h('span', { class: 'gm__commit-date' }, formatDate(commit.date)) : null
-      )
-    ),
-    open && h('div', { class: 'gm__commit-body' },
-      loading
-        ? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
-        : error
-          ? h('div', { class: 'gm__error' },
-              h('p', null, error),
-              h('button', { class: 'btn', type: 'button', onClick: loadFiles }, 'Retry')
-            )
-          : files === null
-            ? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
-            : files.length === 0
-              ? h('div', { class: 'gm__empty' }, 'No file changes in this commit')
-              : files.map((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }))
-    )
-  );
+function CommitRow({ projectDir, commit, busy, onAction }) {
+const [open, setOpen] = useState(false);
+const [files, setFiles] = useState(null);
+const [error, setError] = useState('');
+const [loading, setLoading] = useState(false);
+const [loadedHash, setLoadedHash] = useState('');
+const loadFiles = useCallback(async () => {
+if (loading || loadedHash === commit.hash) return;
+setLoading(true);
+setError('');
+try {
+const params = new URLSearchParams();
+params.set('projectDir', projectDir);
+params.set('hash', commit.hash);
+const r = await fetchJson('/api/git/commit-files?' + params.toString());
+if (r.status === 200 && r.body && r.body.ok) {
+setFiles(r.body.files || []);
+setLoadedHash(commit.hash);
+} else {
+setError((r.body && r.body.error) || 'HTTP ' + r.status);
+}
+} catch (err) {
+setError(String(err));
+}
+setLoading(false);
+}, [projectDir, commit.hash, loading, loadedHash]);
+function toggle() {
+const next = !open;
+setOpen(next);
+if (next && loadedHash !== commit.hash) loadFiles();
+}
+return h('div', { class: 'gm__commit' },
+h('div', { class: 'gm__commit-row' },
+h('button', {
+class: 'gm__commit-head' + (open ? ' is-open' : ''),
+type: 'button',
+onClick: toggle,
+'aria-expanded': String(open),
+'aria-label': 'Toggle commit ' + commit.short
+},
+h('span', { class: 'gm__commit-caret', 'aria-hidden': 'true' }, open ? '\u25BE' : '\u25B8'),
+h('span', { class: 'gm__commit-hash' }, commit.short),
+h('span', { class: 'gm__commit-subject', title: commit.subject }, commit.subject),
+h('span', { class: 'gm__commit-meta' },
+commit.author ? h('span', { class: 'gm__commit-author' }, commit.author) : null,
+commit.date ? h('span', { class: 'gm__commit-date' }, formatDate(commit.date)) : null
+)
+),
+h(CommitMenu, { commit, busy, onAction })
+),
+open && h('div', { class: 'gm__commit-body' },
+loading
+? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
+: error
+? h('div', { class: 'gm__error' },
+h('p', null, error),
+h('button', { class: 'btn', type: 'button', onClick: loadFiles }, 'Retry')
+)
+: files === null
+? h('div', { class: 'gm__empty' }, 'Loading files\u2026')
+: files.length === 0
+? h('div', { class: 'gm__empty' }, 'No file changes in this commit')
+: files.map((f, i) => h(FileRow, { key: f.path + '-' + i, file: f }))
+)
+);
+}
+// Copy a value to the clipboard, falling back to execCommand for embedded
+// web views that block navigator.clipboard. Returns true on success.
+async function copyText(text) {
+try {
+await navigator.clipboard.writeText(text || '');
+return true;
+} catch (_) {
+try {
+const ta = document.createElement('textarea');
+ta.value = text || '';
+ta.style.position = 'fixed';
+ta.style.opacity = '0';
+document.body.appendChild(ta);
+ta.select();
+const ok = document.execCommand('copy');
+document.body.removeChild(ta);
+return ok;
+} catch (_) {
+return false;
+}
+}
+}
+// The per-commit options menu (⋯): copy the hash or subject, or run a git
+// operation against the commit (checkout -> detached HEAD, cherry-pick,
+// revert, which the parent confirms before dispatching).
+function CommitMenu({ commit, busy, onAction }) {
+const [open, setOpen] = useState(false);
+const menuRef = useRef(null);
+useClickOutside(menuRef, () => setOpen(false), open);
+return h('div', { ref: menuRef, class: 'gm__commit-menu' },
+h('button', {
+class: 'gm__commit-menu-btn',
+type: 'button',
+'aria-haspopup': 'true',
+'aria-expanded': String(open),
+'aria-label': 'Commit options for ' + commit.short,
+title: 'Commit options',
+disabled: !!busy,
+onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+}, '⋯'),
+h('div', { class: 'gm__commit-menu-pop', hidden: !open, role: 'menu', onClick: (e) => e.stopPropagation() },
+h('button', { type: 'button', onClick: () => { setOpen(false); onAction(commit, 'copy-hash'); } }, 'Copy hash'),
+h('button', { type: 'button', onClick: () => { setOpen(false); onAction(commit, 'copy-message'); } }, 'Copy message'),
+h('div', { class: 'gm__commit-menu-sep', role: 'separator' }),
+h('button', { type: 'button', disabled: !!busy, onClick: () => { setOpen(false); onAction(commit, 'checkout'); } }, 'Checkout'),
+h('button', { type: 'button', disabled: !!busy, onClick: () => { setOpen(false); onAction(commit, 'cherry-pick'); } }, 'Cherry-pick'),
+h('button', { type: 'button', disabled: !!busy, onClick: () => { setOpen(false); onAction(commit, 'revert'); } }, 'Revert')
+)
+);
 }
 
 function formatDate(iso) {
@@ -199,8 +250,8 @@ export function GitModal(props) {
 const [stashSectionOpen, setStashSectionOpen] = useState(false);
 const [isLoading, setIsLoading] = useState(false);
 const [commitMessage, setCommitMessage] = useState('');
-
-  const load = useCallback(async () => {
+const [pendingCommitAction, setPendingCommitAction] = useState(null);
+const load = useCallback(async () => {
     if (!projectDir) { setLoading(false); setError('No project selected'); return; }
     if (isLoading) return;
     setIsLoading(true);
@@ -236,7 +287,13 @@ const [commitMessage, setCommitMessage] = useState('');
     function onKey(e) {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        if (onClose) onClose();
+        // If a commit-action confirm sheet is up, Escape dismisses it first
+        // (not the whole modal), mirroring how the sheet is top-most.
+        setPendingCommitAction((p) => {
+          if (p) return null;
+          if (onClose) onClose();
+          return p;
+        });
       }
     }
     document.addEventListener('keydown', onKey, true);
@@ -310,8 +367,50 @@ function checkoutBranch(name) {
 if (busy || name === (data && data.branch)) return;
 doGit('checkout', name);
 }
-
-  async function loadMoreCommits() {
+// Handle an action chosen from a commit's options menu.
+//
+// Copy actions are read-only and run immediately. The git-mutating actions
+// (checkout -> detached HEAD, cherry-pick, revert) create a new commit or
+// move the current HEAD, so they need explicit confirmation before dispatch;
+// they set `pendingCommitAction` and the modal shows an in-app confirm sheet.
+async function onCommitAction(commit, action) {
+if (busy) return;
+if (action === 'copy-hash') {
+const ok = await copyText(commit.hash);
+setNotice(ok ? 'Copied hash ' + commit.short : 'Copy failed');
+return;
+}
+if (action === 'copy-message') {
+const ok = await copyText(commit.subject);
+setNotice(ok ? 'Copied message' : 'Copy failed');
+return;
+}
+if (action === 'checkout') {
+setPendingCommitAction({ commit, action: 'checkout' });
+return;
+}
+if (action === 'cherry-pick') {
+setPendingCommitAction({ commit, action: 'cherry-pick' });
+return;
+}
+if (action === 'revert') {
+setPendingCommitAction({ commit, action: 'revert' });
+return;
+}
+}
+function runPendingCommitAction() {
+const pending = pendingCommitAction;
+setPendingCommitAction(null);
+if (!pending) return;
+if (pending.action === 'checkout') {
+doGit('checkout', pending.commit.hash);
+} else if (pending.action === 'cherry-pick') {
+doGit('cherry-pick', pending.commit.hash);
+} else if (pending.action === 'revert') {
+doGit('revert', pending.commit.hash);
+}
+}
+async function loadMoreCommits() {
     if (loadingCommits) return;
     setLoadingCommits(true);
     try {
@@ -519,7 +618,7 @@ title: 'Stage all unstaged changes'
                     allCommits.length === 0
                       ? h('div', { class: 'gm__empty' }, 'No commits yet')
                       : h(Fragment, null,
-                          allCommits.map((c, ci) => h(CommitRow, { key: c.hash || ci, projectDir, commit: c })),
+                          allCommits.map((c, ci) => h(CommitRow, { key: c.hash || ci, projectDir, commit: c, busy: !!busy, onAction: onCommitAction })),
                           hasMoreCommits
                             ? h('button', {
                                 class: 'gm__load-more',
@@ -533,8 +632,60 @@ title: 'Stage all unstaged changes'
                 )
               )
       )
-    )
+    ),
+    pendingCommitAction ? h(GitConfirm, {
+      commit: pendingCommitAction.commit,
+      action: pendingCommitAction.action,
+      busy: !!busy,
+      onCancel: () => setPendingCommitAction(null),
+      onConfirm: runPendingCommitAction
+    }) : null
   );
+}
+
+// In-app confirmation for a commit's destructive/new-commit actions (checkout
+// moves HEAD to a detached commit; cherry-pick and revert create new commits).
+// A bottom sheet reusing the gm__overlay/sheet primitive so it layers above
+// the Git modal, honors the safe-area inset, and keeps both buttons ≥44px.
+// Rendered with its own classes rather than the Inspector's ConfirmSheet
+// because inspector.css is lazy-loaded and may not be present in the chat view.
+function GitConfirm({ commit, action, busy, onCancel, onConfirm }) {
+let title = 'Confirm git action';
+let message = '';
+if (action === 'checkout') {
+title = 'Checkout commit?';
+message = 'Check out ' + commit.short + ' as a detached HEAD. Any current changes must be committed or stashed first.';
+} else if (action === 'cherry-pick') {
+title = 'Cherry-pick commit?';
+message = 'Apply ' + commit.short + (' "' + commit.subject + '"') + ' onto the current branch as a new commit.';
+} else if (action === 'revert') {
+title = 'Revert commit?';
+message = 'Create a new commit that undoes ' + commit.short + (' "' + commit.subject + '"') + '.';
+}
+const confirmLabel = action === 'checkout' ? 'Checkout' : (action === 'cherry-pick' ? 'Cherry-pick' : 'Revert');
+return h('div', { class: 'gm__overlay gm__confirm', role: 'presentation', onClick: busy ? undefined : onCancel },
+h('div', { class: 'gm__sheet gm__confirm-sheet', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title, onClick: (e) => e.stopPropagation() },
+h('div', { class: 'gm__confirm-body' },
+h('strong', { class: 'gm__confirm-title' }, title),
+h('p', { class: 'gm__confirm-msg' }, message),
+h('div', { class: 'gm__confirm-actions' },
+h('button', {
+class: 'btn gm__confirm-cancel',
+type: 'button',
+disabled: busy,
+onClick: onCancel
+}, 'Cancel'),
+h('button', {
+class: 'btn gm__confirm-go',
+type: 'button',
+'data-danger': '1',
+disabled: busy,
+onClick: onConfirm
+}, busy ? 'Working\u2026' : confirmLabel)
+)
+)
+)
+);
 }
 
 // One collapsible section. For the staged section, `header` renders a commit

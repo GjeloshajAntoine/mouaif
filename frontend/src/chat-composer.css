@@ -1182,24 +1182,29 @@ transition: background 80ms ease;
 
 /* Commits */
 .gm__commit {
-  border-bottom: 1px solid var(--border);
+border-bottom: 1px solid var(--border);
+}
+.gm__commit-row {
+display: flex;
+align-items: stretch;
 }
 .gm__commit-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px 12px 8px 24px;
-  background: transparent;
-  border: 0;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.75rem;
-  text-align: left;
-  cursor: pointer;
-  transition: background 80ms ease;
-  -webkit-tap-highlight-color: transparent;
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+align-items: center;
+gap: 8px;
+min-height: 44px;
+padding: 8px 8px 8px 24px;
+background: transparent;
+border: 0;
+color: var(--fg);
+font: inherit;
+font-size: 0.75rem;
+text-align: left;
+cursor: pointer;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: transparent;
 }
 .gm__commit-head:hover { background: var(--surface-2); }
 .gm__commit-head.is-open { color: var(--accent); }
@@ -1233,10 +1238,109 @@ transition: background 80ms ease;
   text-align: right;
 }
 .gm__commit-body {
-  padding: 0 0 4px;
-  background: var(--surface);
+padding: 0 0 4px;
+background: var(--surface);
 }
-
+/* Per-commit options menu (⋯). The trigger sits at the row's right edge
+as a 44px tap target; the popover is anchored to its right. */
+.gm__commit-menu {
+position: relative;
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+}
+.gm__commit-menu-btn {
+font: inherit;
+color: var(--muted);
+background: transparent;
+border: 0;
+min-height: var(--tap);
+min-width: var(--tap);
+display: inline-flex;
+align-items: center;
+justify-content: center;
+font-size: 1.1rem;
+font-weight: 700;
+line-height: 1;
+letter-spacing: 1px;
+cursor: pointer;
+border-radius: var(--r-sm);
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease;
+}
+.gm__commit-menu-btn:hover,
+.gm__commit-menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.gm__commit-menu-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.gm__commit-menu-pop {
+position: absolute;
+right: 4px;
+top: calc(100% + 2px);
+min-width: 180px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+padding: 4px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+z-index: 35;
+box-shadow: var(--shadow-md);
+}
+.gm__commit-menu-pop[hidden] { display: none !important; }
+.gm__commit-menu-pop button {
+font: inherit;
+font-size: 0.88rem;
+color: var(--fg);
+background: transparent;
+border: 0;
+text-align: left;
+padding: 5px 10px;
+min-height: var(--tap);
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: background 120ms ease, color 120ms ease;
+}
+.gm__commit-menu-pop button:hover { background: var(--surface-2); }
+.gm__commit-menu-pop button:disabled { opacity: 0.45; cursor: not-allowed; }
+.gm__commit-menu-sep {
+height: 1px;
+margin: 2px;
+background: var(--border);
+}
+/* In-app confirm sheet layered above the Git modal for a commit's
+checkout / cherry-pick / revert actions. Reuses the .gm__overlay /
+.gm__sheet primitive so it matches the modal and honors safe-area. */
+.gm__confirm { z-index: 70; }
+.gm__confirm-sheet { align-items: center; }
+.gm__confirm-body {
+margin: auto 0;
+padding: 24px 20px;
+max-width: 420px;
+width: 100%;
+display: flex;
+flex-direction: column;
+gap: 12px;
+}
+.gm__confirm-title {
+font-size: 1rem;
+font-weight: 600;
+}
+.gm__confirm-msg {
+margin: 0;
+font-size: 0.85rem;
+color: var(--muted);
+line-height: 1.4;
+}
+.gm__confirm-actions {
+display: flex;
+gap: 10px;
+}
+.gm__confirm-cancel,
+.gm__confirm-go {
+flex: 1 1 0;
+min-height: var(--tap);
+}
+.gm__confirm-go[data-danger="1"] { color: var(--danger); }
 /* Empty / error states */
 .gm__empty {
   padding: 14px 16px;

@@ -14,9 +14,11 @@ const { sendJSON, readJsonOr400, xyToText } = require('./server-shared.js');
 //     -> { ok, stdout, stderr, exitCode }
 //
 // Supported actions: status, diff, log, add, unstage, commit, branch, checkout,
-// stash, stash-apply, stash-pop, stash-drop, push, pull
+// stash, stash-apply, stash-pop, stash-drop, push, pull, cherry-pick, revert
 // These are read-safe or explicit-save commands. `commit` and `add` require
 // an extra `message` field. `push` and `pull` talk to the configured remote.
+// `cherry-pick` and `revert` operate on a commit hash in `args` and create new
+// commits (the frontend confirms before calling them).
 async function handleGit(req, res, parsed) {
   const body = await readJsonOr400(req, res);
   if (!body) return;
@@ -32,7 +34,11 @@ const message = body && typeof body.message === 'string' ? body.message : '';
 const files = Array.isArray(body && body.files) ? body.files.filter((p) => typeof p === 'string' && p.length > 0) : [];
 if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
 if (!action) return sendJSON(res, 400, { error: 'action is required' });
-const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'unstage', 'commit', 'branch', 'checkout', 'stash', 'stash-apply', 'stash-pop', 'stash-drop', 'push', 'pull']);
+// These are read-safe or explicit-save commands. `cherry-pick` and `revert`
+// are explicit-save operations that create new commits (and can conflict);
+// the frontend confirms before it calls them. `revert` passes `--no-edit` so
+// it never blocks on the commit-message editor in the non-TTY child.
+const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'unstage', 'commit', 'branch', 'checkout', 'stash', 'stash-apply', 'stash-pop', 'stash-drop', 'push', 'pull', 'cherry-pick', 'revert']);
   if (!SAFE_ACTIONS.has(action)) {
     return sendJSON(res, 400, { error: 'unsupported action: ' + action, supported: [...SAFE_ACTIONS] });
   }
@@ -92,13 +98,21 @@ case 'commit':
       argv = ['stash', 'drop'].concat(splitArgs(args));
       break;
     case 'push':
-      argv = ['push'].concat(splitArgs(args));
-      break;
-    case 'pull':
-      argv = ['pull'].concat(splitArgs(args));
-      break;
-    default:
-      return sendJSON(res, 400, { error: 'unsupported action' });
+argv = ['push'].concat(splitArgs(args));
+break;
+case 'pull':
+argv = ['pull'].concat(splitArgs(args));
+break;
+case 'cherry-pick':
+if (!args) return sendJSON(res, 400, { error: 'args (commit hash) required for cherry-pick' });
+argv = ['cherry-pick'].concat(splitArgs(args));
+break;
+case 'revert':
+if (!args) return sendJSON(res, 400, { error: 'args (commit hash) required for revert' });
+argv = ['revert', '--no-edit'].concat(splitArgs(args));
+break;
+default:
+return sendJSON(res, 400, { error: 'unsupported action' });
   }
 
   const child = spawn('git', ['-C', projectDir].concat(argv), {
