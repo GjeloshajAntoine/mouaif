@@ -47,6 +47,9 @@
     "servers": {
       "chrome_debug": {
         "mode": "allow"
+      },
+      "git": {
+        "mode": "off"
       }
     }
   }
