@@ -35,7 +35,17 @@ function markerLabel(index, style) {
 return style === 'letters' ? String.fromCharCode(65 + index) : String(index + 1);
 }
 function markerTextColor(color) {
-return color === '#ffd60a' ? '#111111' : '#ffffff';
+// Pick black or white text from the marker's background by relative
+// luminance so labels stay legible for the global palette, instead of
+// a hardcoded check that only knew about the yellow preset.
+const hex = /^#([0-9a-f]{6})$/i.exec(String(color || '').trim());
+if (!hex) return '#ffffff';
+const value = parseInt(hex[1], 16);
+const r = (value >> 16) & 255;
+const g = (value >> 8) & 255;
+const b = value & 255;
+const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+return luminance > 0.6 ? '#111111' : '#ffffff';
 }
 function pointFor(event, canvas) {
 const rect = canvas.getBoundingClientRect();
@@ -89,6 +99,8 @@ const pointersRef = useRef(new Map());
 const pinchRef = useRef(null);
 const panRef = useRef(null);
 const markerDragRef = useRef(null);
+const markerListRef = useRef(null);
+const prevMarkerCountRef = useRef(0);
 const zoomRef = useRef(1);
 const lastFitZoomRef = useRef(null);
 const [color, setColor] = useState(COLORS[0]);
@@ -251,6 +263,7 @@ event.stopPropagation();
 const marker = markerId === null ? null : markers.find((item) => item.id === markerId);
 markerDragRef.current = { markerId, pointerId: event.pointerId };
 setDragMarker({
+id: markerId,
 label: markerLabel(markerId === null ? markers.length : markers.indexOf(marker), markerStyle),
 color: marker ? marker.color : color,
 clientX: event.clientX,
@@ -268,7 +281,9 @@ const drag = markerDragRef.current;
 if (!drag || drag.pointerId !== event.pointerId) return;
 event.preventDefault();
 event.stopPropagation();
-const point = markerPoint(event, stageRef.current);
+// Clamp to the image edges so a sloppy drag that spills off the stage
+// still lands the dot on the image instead of silently dropping it.
+const point = markerPoint(event, stageRef.current, true);
 if (point) {
 setMarkers((current) => {
 if (drag.markerId !== null) return current.map((item) => item.id === drag.markerId ? { ...item, ...point } : item);
@@ -285,6 +300,20 @@ setMarkers((current) => current.map((marker) => marker.id === id ? { ...marker, 
 function removeMarker(id) {
 setMarkers((current) => current.filter((marker) => marker.id !== id));
 }
+// When a new marker dot is added, scroll the capped marker list to the end so
+// the user sees the just-created dot row without the list expanding the tools
+// panel (and shrinking the canvas). Runs only when a dot is created, not when
+// one is moved or removed.
+useEffect(() => {
+const list = markerListRef.current;
+const prev = prevMarkerCountRef.current;
+prevMarkerCountRef.current = markers.length;
+if (list && markers.length > prev) {
+requestAnimationFrame(() => {
+if (markerListRef.current) markerListRef.current.scrollTop = markerListRef.current.scrollHeight;
+});
+}
+}, [markers.length]);
 function clearMarks() {
 setReady(false);
 setMarkers([]);
@@ -373,7 +402,7 @@ onPointerLeave: end,
 markers.map((marker, index) => h('button', {
 key: marker.id,
 type: 'button',
-class: 'draft-craft__image-marker',
+class: 'draft-craft__image-marker' + (dragMarker && dragMarker.id === marker.id ? ' is-dragging' : ''),
 style: { left: (marker.x * 100) + '%', top: (marker.y * 100) + '%', background: marker.color, color: markerTextColor(marker.color) },
 onPointerDown: (event) => startMarkerDrag(event, marker.id),
 onPointerMove: moveMarkerDrag,
@@ -438,12 +467,12 @@ onPointerCancel: endMarkerDrag,
 }, markers.length >= MAX_MARKERS ? '✓' : markerLabel(markers.length, markerStyle))
 ),
 markers.length
-? h('ol', { class: 'draft-craft__marker-list' }, markers.map((marker, index) => h('li', { key: marker.id },
+? h('ol', { ref: markerListRef, class: 'draft-craft__marker-list' }, markers.map((marker, index) => h('li', { key: marker.id },
 h('span', { class: 'draft-craft__marker-label', style: { background: marker.color, color: markerTextColor(marker.color) } }, markerLabel(index, markerStyle)),
 h('input', { class: 'input', value: marker.text, onInput: (event) => updateMarkerText(marker.id, event.currentTarget.value), placeholder: 'Text for ' + markerLabel(index, markerStyle), 'aria-label': 'Text for annotation ' + markerLabel(index, markerStyle) }),
 h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(marker.id), 'aria-label': 'Remove annotation ' + markerLabel(index, markerStyle) }, '×')
 )))
-: h('p', { class: 'draft-craft__marker-empty' }, 'No marker dots on the image yet.')
+: h('div', { class: 'draft-craft__marker-list draft-craft__marker-empty' }, 'No marker dots on the image yet.')
 ),
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ) : null),
