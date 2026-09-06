@@ -22,7 +22,7 @@ A successful run ends with `Docker smoke test passed.` and exits with status zer
 
 ## Implementation notes
 
-`Dockerfile` uses a build stage to install dependencies and compile the Preact frontend. Its runtime stage runs as the unprivileged `node` user, stores app data in `/data`, and exposes mouaif on port `5732`.
+`Dockerfile` uses a build stage to install dependencies and compile the Preact frontend. Its runtime stage runs as the unprivileged `node` user, stores app data in `/data`, and exposes mouaif on port `5732`. The runtime stage also ships **Google Chrome** (the `stable` channel, installed at `/opt/google/chrome/chrome`) so an agent session inside the container can drive and inspect the UI through the `chrome-debug` MCP server and the Inspector tab. Chrome runs headless as `node`; it needs `--no-sandbox` in a container, enabled via `PUPPETEER_DANGEROUS_NO_SANDBOX=true`, and `MOUAIF_CHROME_URL=http://127.0.0.1:9222` points mouaif's Inspector/`webpreview` bridge at that same CDP endpoint.
 
 `compose.test.yaml` starts two services:
 
