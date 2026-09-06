@@ -319,37 +319,71 @@ touch-action: none;
 cursor: grab;
 }
 .draft-craft__marker-source:disabled { opacity: 0.5; cursor: not-allowed; }
-.draft-craft__marker-list {
-display: grid;
-gap: 0.4rem;
-margin: 0;
-padding: 0;
-list-style: none;
-/* Capped scroll region: each added dot row scrolls here instead of growing
-the tools bar. Without this, adding dots expands the bar (flex: 0 1 auto)
-and shrinks the canvas preview — the exact behaviour the inspector should
-avoid. max-height (not a rigid height) lets a couple of dots take only the
-room they need, so the canvas stays large until the list actually overflows
-and only then becomes a scroll region. */
-max-height: 8.25rem;
+/* Compact marker chip strip: each marked dot is a short chip that wraps across
+a couple of lines instead of growing a full 44px row per marker. This keeps
+the tools panel short so the canvas preview stays large no matter how many
+dots the user adds. */
+.draft-craft__marker-chips {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 0.35rem;
+max-height: 5.5rem;
 overflow-y: auto;
 overscroll-behavior: contain;
 scrollbar-width: thin;
 }
-.draft-craft__marker-list li {
+.draft-craft__marker-chip {
+display: inline-flex;
+align-items: center;
+gap: 0.3rem;
+min-height: var(--tap);
+max-width: 100%;
+padding: 0 0.55rem;
+border: 0.15rem solid transparent;
+border-radius: var(--r-pill);
+color: #fff;
+font: 700 0.74rem/1 system-ui, sans-serif;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.draft-craft__marker-chip.is-active {
+outline: 0.15rem solid var(--fg);
+outline-offset: 0.1rem;
+}
+.draft-craft__marker-chip-text {
+font-weight: 500;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+max-width: 9rem;
+}
+/* The empty hint is a single short line, not a tall block, so it does not
+add fixed vertical space under the marker bar. */
+.draft-craft__marker-list {
+display: flex;
+align-items: center;
+justify-content: center;
+margin: 0;
+padding: 0;
+list-style: none;
+color: var(--muted);
+font-size: 0.74rem;
+}
+.draft-craft__marker-empty {
+min-height: 2rem;
+padding: 0 0.2rem;
+}
+/* Single active-marker text row: edits whichever chip is selected, so the
+panel only ever grows by one row regardless of how many dots are placed. */
+.draft-craft__marker-edit {
 display: grid;
 grid-template-columns: 2rem minmax(0, 1fr) var(--tap);
 align-items: center;
 gap: 0.4rem;
 }
+.draft-craft__marker-edit .input { min-width: 0; min-height: var(--tap); }
 .draft-craft__marker-label { width: 2rem; height: 2rem; }
-.draft-craft__marker-list .input { min-width: 0; min-height: var(--tap); }
-/* The empty hint is a single short line, not a tall block, so it does not
-add fixed vertical space under the marker bar. */
-.draft-craft__marker-empty {
-min-height: 2rem;
-padding: 0 0.2rem;
-}
 .draft-craft__marker-remove {
 width: var(--tap);
 height: var(--tap);
@@ -360,13 +394,6 @@ color: var(--muted);
 font: inherit;
 font-size: 1.25rem;
 cursor: pointer;
-}
-.draft-craft__marker-empty {
-display: flex;
-align-items: center;
-justify-content: center;
-color: var(--muted);
-font-size: 0.74rem;
 }
 .draft-craft__note { grid-column: 1 / -1; resize: none; }
 /* Pinned footer: the "Add to chat draft" button always stays visible

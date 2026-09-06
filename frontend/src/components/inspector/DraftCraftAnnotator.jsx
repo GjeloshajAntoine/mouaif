@@ -99,14 +99,13 @@ const pointersRef = useRef(new Map());
 const pinchRef = useRef(null);
 const panRef = useRef(null);
 const markerDragRef = useRef(null);
-const markerListRef = useRef(null);
-const prevMarkerCountRef = useRef(0);
 const zoomRef = useRef(1);
 const lastFitZoomRef = useRef(null);
 const [color, setColor] = useState(COLORS[0]);
 const [note, setNote] = useState('');
 const [markers, setMarkers] = useState([]);
 const [markerStyle, setMarkerStyle] = useState('numbers');
+const [activeMarker, setActiveMarker] = useState(null);
 const [dragMarker, setDragMarker] = useState(null);
 const [pickerOpen, setPickerOpen] = useState(false);
 const [payload, setPayload] = useState(null);
@@ -288,7 +287,11 @@ if (point) {
 setMarkers((current) => {
 if (drag.markerId !== null) return current.map((item) => item.id === drag.markerId ? { ...item, ...point } : item);
 if (current.length >= MAX_MARKERS) return current;
-return current.concat([{ id: Date.now() + Math.random(), ...point, color, text: '' }]);
+const next = [...current, { id: Date.now() + Math.random(), ...point, color, text: '' }];
+// Select the just-created dot so its text row appears without the list
+// needing to grow a row per marker.
+setActiveMarker(next[next.length - 1].id);
+return next;
 });
 }
 markerDragRef.current = null;
@@ -298,25 +301,16 @@ function updateMarkerText(id, text) {
 setMarkers((current) => current.map((marker) => marker.id === id ? { ...marker, text } : marker));
 }
 function removeMarker(id) {
-setMarkers((current) => current.filter((marker) => marker.id !== id));
-}
-// When a new marker dot is added, scroll the capped marker list to the end so
-// the user sees the just-created dot row without the list expanding the tools
-// panel (and shrinking the canvas). Runs only when a dot is created, not when
-// one is moved or removed.
-useEffect(() => {
-const list = markerListRef.current;
-const prev = prevMarkerCountRef.current;
-prevMarkerCountRef.current = markers.length;
-if (list && markers.length > prev) {
-requestAnimationFrame(() => {
-if (markerListRef.current) markerListRef.current.scrollTop = markerListRef.current.scrollHeight;
+setMarkers((current) => {
+const next = current.filter((marker) => marker.id !== id);
+setActiveMarker((active) => active === id ? null : active);
+return next;
 });
 }
-}, [markers.length]);
 function clearMarks() {
 setReady(false);
 setMarkers([]);
+setActiveMarker(null);
 const canvas = canvasRef.current;
 if (!canvas) return;
 const source = new Image();
@@ -467,12 +461,25 @@ onPointerCancel: endMarkerDrag,
 }, markers.length >= MAX_MARKERS ? '✓' : markerLabel(markers.length, markerStyle))
 ),
 markers.length
-? h('ol', { ref: markerListRef, class: 'draft-craft__marker-list' }, markers.map((marker, index) => h('li', { key: marker.id },
-h('span', { class: 'draft-craft__marker-label', style: { background: marker.color, color: markerTextColor(marker.color) } }, markerLabel(index, markerStyle)),
-h('input', { class: 'input', value: marker.text, onInput: (event) => updateMarkerText(marker.id, event.currentTarget.value), placeholder: 'Text for ' + markerLabel(index, markerStyle), 'aria-label': 'Text for annotation ' + markerLabel(index, markerStyle) }),
-h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(marker.id), 'aria-label': 'Remove annotation ' + markerLabel(index, markerStyle) }, '×')
-)))
-: h('div', { class: 'draft-craft__marker-list draft-craft__marker-empty' }, 'No marker dots on the image yet.')
+? h('span', { class: 'draft-craft__marker-chips', 'aria-label': 'Marked image annotations' }, markers.map((marker, index) => {
+const label = markerLabel(index, markerStyle);
+const isActive = marker.id === activeMarker;
+return h('button', {
+key: marker.id,
+type: 'button',
+class: 'draft-craft__marker-chip' + (isActive ? ' is-active' : ''),
+style: { background: marker.color, color: markerTextColor(marker.color) },
+onClick: () => setActiveMarker(marker.id),
+'aria-pressed': String(isActive),
+'aria-label': label + (marker.text.trim() ? ': ' + marker.text.trim() : ' (no text)') + (isActive ? ', selected' : '')
+}, label, marker.text.trim() ? h('span', { class: 'draft-craft__marker-chip-text' }, marker.text.trim()) : null);
+}))
+: h('div', { class: 'draft-craft__marker-list draft-craft__marker-empty' }, 'No marker dots on the image yet.'),
+activeMarker != null ? h('div', { class: 'draft-craft__marker-edit' },
+h('span', { class: 'draft-craft__marker-label', style: { background: markers.find((item) => item.id === activeMarker)?.color || color, color: markerTextColor(markers.find((item) => item.id === activeMarker)?.color || color) } }, markerLabel(markers.findIndex((item) => item.id === activeMarker), markerStyle)),
+h('input', { class: 'input', value: markers.find((item) => item.id === activeMarker)?.text || '', onInput: (event) => updateMarkerText(activeMarker, event.currentTarget.value), placeholder: 'Text for ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle), 'aria-label': 'Text for annotation ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle) }),
+h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(activeMarker), 'aria-label': 'Remove annotation ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle) }, '×')
+) : null,
 ),
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ) : null),
