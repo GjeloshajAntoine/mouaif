@@ -152,39 +152,52 @@ const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Ty
       loading ? h('li', { class: 'project-card__chats-empty' }, 'loading chats…') :
       (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' }, 'No chats yet. Tap "+ New chat" below to start one.') :
       chats.map(c => {
-        const costBits = c.totalCost || { total: 0, known: false, currency: 'USD' };
-        const costStr = costBits.known ? formatCost(costBits.total) : '--';
-        const dateBits = fmtChatDate(c);
-        const dateStr = (dateBits.kind === 'created' ? 'new · ' : '') + dateBits.text;
-        const traceStr = c.trace ? ' · trace' : '';
+const costBits = c.totalCost || { total: 0, known: false, currency: 'USD' };
+const costStr = costBits.known ? formatCost(costBits.total) : '--';
+const dateBits = fmtChatDate(c);
+const dateStr = (dateBits.kind === 'created' ? 'new · ' : '') + dateBits.text;
+const traceStr = c.trace ? ' · trace' : '';
 const titleStr = (c.title && c.title.trim()) ? c.title : 'New chat';
+// A chat with no persisted messages but a non-empty composer draft is a
+// "draft-only" chat. The project card surfaces the start of the draft and
+// a yellow (warning) indicator — the inverse of the blue "running" accent.
+const msgCount = typeof c.messageCount === 'number' ? c.messageCount : 0;
+const draftOnly = !c.running && msgCount === 0 && typeof c.draft === 'string' && c.draft.trim().length > 0;
+const draftSnippet = draftOnly
+? c.draft.replace(/\s+/g, ' ').trim().slice(0, 120)
+: '';
 const chatPrompt = c.promptId ? prompts.find((prompt) => prompt.id === c.promptId) : null;
 return h('li', {
-          key: c.id,
-          onClick: () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)),
-          'aria-label': c.running ? titleStr + ' (running)' : undefined
-        },
+key: c.id,
+onClick: () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)),
+'aria-label': c.running ? titleStr + ' (running)' : draftOnly ? draftSnippet + ' (draft)' : undefined
+},
 chatPrompt ? h('span', {
 class: 'project-card__chat-prompt',
 title: chatPrompt.title,
 'aria-label': 'Prompt: ' + chatPrompt.title
 }, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
-h('span', { class: 'project-card__chat-title' }, titleStr),
-c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
-          h('span', {
-            class: 'project-card__chat-meta',
-            'data-trace': c.trace ? '1' : undefined,
-            'data-running': c.running ? '1' : undefined,
-            'data-cost-known': costBits.known ? '1' : '0'
-          }, costStr + ' · ' + dateStr + traceStr),
-          h('button', {
-            class: 'project-card__chat-delete',
-            type: 'button',
-            'aria-label': 'Delete chat ' + titleStr,
-            onClick: (e) => { e.stopPropagation(); deleteChat(c); }
-          }, '×')
-        );
-      }),
+draftOnly
+? h('span', { class: 'project-card__chat-title project-card__chat-title--draft' }, draftSnippet)
+: h('span', { class: 'project-card__chat-title' }, titleStr),
+draftOnly
+? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
+: c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
+h('span', {
+class: 'project-card__chat-meta',
+'data-trace': c.trace ? '1' : undefined,
+'data-running': c.running ? '1' : undefined,
+'data-draft': draftOnly ? '1' : undefined,
+'data-cost-known': costBits.known ? '1' : '0'
+}, costStr + ' · ' + dateStr + traceStr),
+h('button', {
+class: 'project-card__chat-delete',
+type: 'button',
+'aria-label': 'Delete chat ' + titleStr,
+onClick: (e) => { e.stopPropagation(); deleteChat(c); }
+}, '×')
+);
+}),
       loadingMore ? h('li', { class: 'project-card__chats-more' }, 'Loading more…') :
       (!loading && offset < total) ? h('li', { class: 'project-card__chats-more' }, 'Scroll for more…') : null
     ),

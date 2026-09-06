@@ -465,12 +465,34 @@ function clearMessages(projectDir, chatId) {
 }
 
 function getMessageCount(projectDir, chatId) {
-  ensureTables();
-  const d = require('./settings.js').getDb();
-  const row = d.prepare(
-    'SELECT COUNT(*) AS count FROM message_store WHERE project_dir = ? AND chat_id = ?'
-  ).get(projectDir, chatId);
-  return row ? row.count : 0;
+ensureTables();
+const d = require('./settings.js').getDb();
+const row = d.prepare(
+'SELECT COUNT(*) AS count FROM message_store WHERE project_dir = ? AND chat_id = ?'
+).get(projectDir, chatId);
+return row ? row.count : 0;
+}
+// projectMessageCounts(projectDir, chatIds) -> { [chatId]: count }
+//
+// Bulk row count for a set of chats in one indexed GROUP BY (the chat list
+// renders 30–100 rows at a time, so a per-chat COUNT would be too many
+// queries). The count is what the project card uses to flag "draft-only"
+// chats — those with zero persisted messages. Rides the
+// (project_dir, chat_id, seq) index, so it never scans a transcript.
+function projectMessageCounts(projectDir, chatIds) {
+ensureTables();
+const d = require('./settings.js').getDb();
+const ids = Array.isArray(chatIds)
+? [...new Set(chatIds.filter((id) => typeof id === 'string' && id))]
+: null;
+if (ids && ids.length === 0) return {};
+const idFilter = ids ? ' AND chat_id IN (' + ids.map(() => '?').join(',') + ')' : '';
+const rows = d.prepare(
+'SELECT chat_id, COUNT(*) AS count FROM message_store WHERE project_dir = ?' + idFilter + ' GROUP BY chat_id'
+).all(projectDir, ...(ids || []));
+const out = {};
+for (const r of rows) out[r.chat_id] = r.count;
+return out;
 }
 
 // messageCursorDb(projectDir, chatId) -> { nextSeq }
@@ -643,10 +665,11 @@ appendMessage,
 replaceMessages,
 clearMessages,
 getMessageCount,
+projectMessageCounts,
 messageCursorDb,
-  // Cost aggregation
-  projectCostTotals,
-  chatTotalCostDb,
+// Cost aggregation
+projectCostTotals,
+chatTotalCostDb,
   // Legacy import
   importFromJson,
   // Exported so settings migrations can create the tables before their ALTERs.

@@ -82,12 +82,17 @@ const urlPath = parsed.pathname;
     const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
     try {
       const page = chats.listChats(dir, { offset, limit });
-      const total = limit > 0 ? chats.countChats(dir) : page.length;
-      // Chat cost totals are persisted on chat metadata when cost-bearing
-      // messages are written. Listing chats never scans message_store.
-      for (const c of page) {
-        if (runningChats.has(runningKey(dir, c.id))) c.running = true;
-      }
+const total = limit > 0 ? chats.countChats(dir) : page.length;
+// Chat cost totals are persisted on chat metadata when cost-bearing
+// messages are written. Listing chats never scans message_store.
+// `messageCount` is a per-page bulk COUNT (one indexed GROUP BY), so the
+// project card can flag a draft-only chat — persisted messages === 0 —
+// without any N+1 query and without sending transcript text down.
+const pageCounts = messages.projectMessageCounts(dir, page.map((c) => c.id));
+for (const c of page) {
+if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+c.messageCount = pageCounts[c.id] || 0;
+}
       return sendJSON(res, 200, {
         chats: page,
         total,

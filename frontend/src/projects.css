@@ -189,16 +189,33 @@ scrollbar-width: thin;
 .project-card__chats li:active { background: var(--surface-3); }
 .project-card__chat-prompt { display: grid; place-items: center; flex: none; color: var(--accent); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+/* Draft-only chat: the row shows the start of the composer draft instead of
+the title, tinted yellow (--warning) to signal "unfinished, not yet sent".
+The title becomes a single line; multi-line drafts collapse to a snippet. */
+.project-card__chat-title--draft {
+color: var(--warning);
+font-style: italic;
+}
 .project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
 .project-card__chat-meta[data-trace="1"] { color: var(--warning); }
 .project-card__chat-meta[data-running="1"] { color: var(--accent); }
+.project-card__chat-meta[data-draft="1"] { color: var(--warning); }
 .project-card__chat-running {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-  animation: project-card-running-pulse 1.2s ease-in-out infinite;
+width: 7px;
+height: 7px;
+border-radius: 50%;
+background: var(--accent);
+flex-shrink: 0;
+animation: project-card-running-pulse 1.2s ease-in-out infinite;
+}
+/* Draft-only indicator: a small yellow rounded rectangle (inverse of the
+blue running dot) so a row's state reads at a glance in the list. */
+.project-card__chat-draft {
+width: 8px;
+height: 16px;
+border-radius: 2px;
+background: var(--warning);
+flex-shrink: 0;
 }
 @keyframes project-card-running-pulse {
   0%, 100% { opacity: 1; }

@@ -94,6 +94,9 @@ return getChatDb().listMessagesWindow(projectDir, chatId, opts);
 function getMessageCount(projectDir, chatId) {
 return getChatDb().getMessageCount(projectDir, chatId);
 }
+function projectMessageCounts(projectDir, chatIds) {
+return getChatDb().projectMessageCounts(projectDir, chatIds);
+}
 function getMessage(projectDir, chatId, index) {
 if (typeof index !== 'number' || index < 0) return null;
 return listMessages(projectDir, chatId)[index] || null;
@@ -216,6 +219,7 @@ listMessages,
 listMessagesWindow,
 getMessage,
 getMessageCount,
+projectMessageCounts,
 messageCursor,
 appendMessage,
 replaceMessages,
