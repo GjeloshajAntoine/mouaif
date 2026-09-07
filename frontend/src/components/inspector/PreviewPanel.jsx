@@ -391,22 +391,27 @@ if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
 };
 }, [props.capture, props.subscribe, props.ackFrame]);
 
-  // Clicking/tapping the preview pokes the page at that point. The
-  // frame is a scroll container (the image is a full-page capture,
-  // wider and/or taller than the frame), so the tap coordinates
-  // inside the image must first be shifted by the frame's scroll
-  // offsets to become image coordinates, then scaled from CSS pixels
-  // to the image's natural (device-pixel) size. clickAt() then
-  // converts those full-page device pixels into viewport CSS pixels
-  // and scrolls the target into view if needed — see events.js.
-  function onPreviewClick(ev, targetImg, targetFrame) {
-const img = targetImg || imgRef.current;
-if (!img || !props.clickAt) return;
-const rect = img.getBoundingClientRect();
-if (rect.width <= 0 || rect.height <= 0) return;
-const frame = targetFrame || frameRef.current;
-const sx = frame ? (frame.scrollLeft || 0) : 0;
-const sy = frame ? (frame.scrollTop || 0) : 0;
+// Clicking/tapping the preview pokes the page at that point. The
+// frame is a scroll container (the image is a full-page capture,
+// wider and/or taller than the frame) and the image renders at the
+// frame's width, so the tapped point's position within the image is
+// derived from the image's own bounding rect, then scaled from CSS
+// pixels to the image's natural (device-pixel) size. clickAt() then
+// converts those full-page device pixels into viewport CSS pixels
+// and scrolls the target into view if needed — see events.js.
+//
+// The frame's scroll offset must NOT be added here. getBoundingClientRect()
+// returns viewport-relative coordinates that already account for the
+// scroll container (a scrolled-down image has a negative rect.top), so
+// adding frame.scrollTop back in double-counts it and shifts every
+// pan-then-tap click two scroll-positions down — worse the farther the
+// user scrolls. Omitting it maps the visible pixel to the right spot
+// whether or not the frame has been panned.
+  function onPreviewClick(ev, targetImg) {
+    const img = targetImg || imgRef.current;
+    if (!img || !props.clickAt) return;
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     // Prefer the live image's natural size; if the most recent
     // screenshot is still mid-decode, fall back to the previous
     // frame's dimensions (cached in lastDims) so the tap still
@@ -424,8 +429,8 @@ const sy = frame ? (frame.scrollTop || 0) : 0;
       natW = rect.width;
       natH = rect.height;
     }
-    const x = Math.round((ev.clientX - rect.left + sx) * (natW / rect.width));
-    const y = Math.round((ev.clientY - rect.top + sy) * (natH / rect.height));
+    const x = Math.round((ev.clientX - rect.left) * (natW / rect.width));
+    const y = Math.round((ev.clientY - rect.top) * (natH / rect.height));
     props.clickAt(x, y);
   }
 
@@ -597,7 +602,7 @@ ref: fsFrameRef,
 class: 'inspector__preview-fs-frame',
 role: 'group',
 'aria-label': 'Live page preview, scrollable',
-onClick: (ev) => onPreviewClick(ev, fsImgRef.current, fsFrameRef.current)
+onClick: (ev) => onPreviewClick(ev, fsImgRef.current)
 },
 h('img', {
 ref: fsImgRef,
