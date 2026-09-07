@@ -36,6 +36,16 @@ async function main() {
     assert.equal(signal.params.maxHeight, 320);
     await handlers.ackPreviewFrame(42);
     assert.equal(calls.at(-1).params.sessionId, 42);
+    // setViewportSize must forward the preset's deviceScaleFactor (not default
+    // it to 1) so the phone presets capture at 2x and stay sharp on a real
+    // retina phone instead of being upscaled and blurry.
+    await handlers.setViewportSize({ width: 375, height: 667, mobile: true, deviceScaleFactor: 2 });
+    const vm2 = calls.at(-1);
+    assert.equal(vm2.method, 'Emulation.setDeviceMetricsOverride');
+    assert.equal(vm2.params.deviceScaleFactor, 2, 'phone preset forwards retina deviceScaleFactor');
+    assert.equal(vm2.params.mobile, true);
+    await handlers.setViewportSize(null);
+    assert.equal(calls.at(-1).method, 'Emulation.clearDeviceMetricsOverride');
   }
   console.log('PASS lossless captures, PDF viewport fallback, timeout, and cheap screencast signal');
 

@@ -104,8 +104,12 @@ const PANEL_STATE_KEY = 'mouaif:inspector:panels';
 // sites don't unexpectedly switch their media queries.
 const VIEWPORT_PRESETS = [
 { id: 'auto',   label: 'Auto', width: null, height: null },
-{ id: 'phone',  label: 'Phone', width: 375, height: 667, mobile: true },
-{ id: 'phone+', label: 'Phone+', width: 414, height: 896, mobile: true },
+// Phone presets emulate a retina device (deviceScaleFactor 2). Without this
+// the capture is rendered at 1x and then upscaled across the same CSS pixels,
+// so text looks blurry on a real phone. A 2x capture is downscaled for the
+// fit-width preview (sharp) and shown 1:1 in natural-size mode (also sharp).
+{ id: 'phone',  label: 'Phone', width: 375, height: 667, mobile: true, deviceScaleFactor: 2 },
+{ id: 'phone+', label: 'Phone+', width: 414, height: 896, mobile: true, deviceScaleFactor: 2 },
 { id: 'tablet', label: 'Tablet', width: 768, height: 1024 },
 { id: 'laptop', label: 'Laptop', width: 1280, height: 800 }
 ];
@@ -530,6 +534,7 @@ useEffect(() => {
   const eventHandlers = useRef(null);
 
   function onTargetNavigated(newUrl, newTitle) {
+    applyViewport(viewportId);
     if (!newUrl) return;
     setCurrentTarget((prev) => {
       if (!prev) return prev;

@@ -313,11 +313,16 @@ min-width: 0;
 }
 .inspector__panel-body .inspector__preview {
   flex: 0 0 auto;
-  height: 40dvh;
+  height: 54dvh;
   min-height: 220px;
 }
+/* The preview frame is the only tall child of the preview column; the type
+   bar and footer sit below it. Making the frame flex-fill the panel body
+   stops the screenshot from being squeezed into a short strip by those two
+   bars, which is what made the mobile preview cramped. */
 .inspector__panel-body .inspector__preview-frame {
-  height: 100%;
+  flex: 1 1 auto;
+  height: auto;
   min-height: 0;
 }
 .inspector__panel-body .inspector__metrics {
