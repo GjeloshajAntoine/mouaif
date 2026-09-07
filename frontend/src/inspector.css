@@ -752,20 +752,67 @@ gap: 4px;
 }
 .inspector__preview-frame::-webkit-scrollbar { width: 6px; height: 6px; }
 .inspector__preview-frame::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--r-sm);
+background: var(--border-strong);
+border-radius: var(--r-sm);
 }
+/* Preview footer — a single row holding the live status label on the left
+and the fit/natural-size (zoom) toggle on the right. Keeps the preview's
+dynamic state out of the screenshot while staying tappable. */
+.inspector__preview-foot {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 8px;
+}
+.inspector__zoom {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+flex: 0 0 auto;
+min-height: 44px;
+min-width: 44px;
+padding: 4px 10px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: transparent;
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.inspector__zoom:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__zoom.is-on {
+color: var(--accent);
+border-color: var(--accent);
+background: var(--surface-2);
+}
+.inspector__zoom svg { display: block; }
 .inspector__preview-img {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-width: none;
-  /* The image must fill the frame width (not render at device pixels —
-     on high-DPR captures the raw shot is 2–3× wider than the frame and
-     the user would see only a blank corner). Height flows from the
-     aspect ratio; the frame scrolls vertically for tall pages and the
-     tap-to-click mapping in PreviewPanel scales coordinates back via
-     naturalWidth/naturalHeight. */
+display: block;
+width: 100%;
+height: auto;
+max-width: none;
+/* The image must fill the frame width (not render at device pixels —
+on high-DPR captures the raw shot is 2–3× wider than the frame and
+the user would see only a blank corner). Height flows from the
+aspect ratio; the frame scrolls vertically for tall pages and the
+tap-to-click mapping in PreviewPanel scales coordinates back via
+naturalWidth/naturalHeight. */
+}
+/* Natural-size mode: render the capture at its intrinsic (device-pixel →
+CSS px 1:1) size so a wide page shows readable text and pans horizontally.
+The frame stops fitting width and becomes a pannable viewport instead of
+squashing a 1280px page down to a ~30% thumbnail. width:auto keeps the
+image at its natural CSS size; height:auto preserves aspect ratio and lets
+the frame scroll both axes. */
+.inspector__preview-img--size,
+.inspector__preview-fs-img.inspector__preview-img--size {
+width: auto;
+height: auto;
+max-width: none;
 }
 /* The Preview panel header replaces its text label with an icon-only
 full-screen button. It mirrors the adjacent refresh/eye icon buttons
@@ -941,6 +988,34 @@ border-radius: var(--r-sm);
 .inspector__preview-fs-size:focus-visible {
 border-color: var(--accent);
 outline: 0;
+}
+.inspector__preview-fs-zoom {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+flex: 0 0 auto;
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
+border: 1px solid var(--border);
+background: transparent;
+color: var(--fg-soft);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.inspector__preview-fs-zoom:hover,
+.inspector__preview-fs-zoom:focus-visible {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
+.inspector__preview-fs-zoom.is-on {
+color: var(--accent);
+border-color: var(--accent);
+background: var(--surface-2);
 }
 .inspector__preview-fs-close {
 width: 44px;

@@ -87,6 +87,31 @@ return () => document.removeEventListener('keydown', onKey, true);
 }, [fullscreen]);
 const [imgSrc, setImgSrc] = useState('');
 const [note, setNote] = useState('capturing…');
+// Zoom mode for the preview. 'fit' scales the screenshot to the frame's
+// width (so a tall page scrolls vertically); 'size' renders the full-res
+// capture at its natural device->CSS scale (so a wide page shows readable
+// text and pans horizontally). Wide viewport presets (e.g. Laptop 1280px)
+// are otherwise squashed to ~30% of the frame and become unreadable.
+// Persisted so the preference survives reconnects, like the size preset.
+const ZOOM_STATE_KEY = 'mouaif:inspector:previewZoom';
+const zoomInitial = (() => {
+  if (typeof localStorage === 'undefined') return 'fit';
+  try { return localStorage.getItem(ZOOM_STATE_KEY) === 'size' ? 'size' : 'fit'; } catch { return 'fit'; }
+})();
+const [zoom, setZoom] = useState(zoomInitial);
+// Gate for one-time auto-fit on the first decode: only switch to natural size
+// for a page that would otherwise be unreadable (very wide relative to the
+// frame) and only before the user explicitly toggles. A manual toggle clears
+// the gate so the user's choice is never overridden.
+const autoZoomRef = useRef(false);
+function toggleZoom() {
+autoZoomRef.current = true;
+setZoom((v) => {
+const next = v === 'fit' ? 'size' : 'fit';
+try { localStorage.setItem(ZOOM_STATE_KEY, next); } catch { /* ignore */ }
+return next;
+});
+}
 // Live page identity shown in the full-screen header. Both are kept
 // in refs as well as state so capture-loop callbacks can write them
 // without re-rendering on every CDP event, while the header itself
@@ -224,23 +249,35 @@ if (stop) return;
           // would force (and which was the reason clicks on a
           // just-refreshed preview used to silently no-op:
           // naturalWidth was 0 for a frame or two).
-          const prevOnload = img.onload;
-          img.onload = () => {
-            if (frameRef.current) {
-              frameRef.current.scrollTop = prevTop;
-              frameRef.current.scrollLeft = prevLeft;
-            }
-            const cur = imgRef.current;
-            if (cur) {
-              lastDims.current.w = cur.naturalWidth || lastDims.current.w;
-              lastDims.current.h = cur.naturalHeight || lastDims.current.h;
-              if (latestImage.current) {
-                latestImage.current.width = cur.naturalWidth || 0;
-                latestImage.current.height = cur.naturalHeight || 0;
-              }
-              cur.onload = prevOnload || null;
-            }
-          };
+const prevOnload = img.onload;
+img.onload = () => {
+if (frameRef.current) {
+frameRef.current.scrollTop = prevTop;
+frameRef.current.scrollLeft = prevLeft;
+}
+const cur = imgRef.current;
+if (cur) {
+lastDims.current.w = cur.naturalWidth || lastDims.current.w;
+lastDims.current.h = cur.naturalHeight || lastDims.current.h;
+if (latestImage.current) {
+latestImage.current.width = cur.naturalWidth || 0;
+latestImage.current.height = cur.naturalHeight || 0;
+}
+// Smart default: on the first decode, if a wide page would be shrunk
+// below ~60% of the frame width in fit mode (text unreadable), switch to
+// natural size automatically. Only applies before the user toggles; the
+// manual toggle clears the gate so the user's choice always wins.
+if (!autoZoomRef.current && cur.naturalWidth && frameRef.current) {
+const frameW = frameRef.current.clientWidth || frameRef.current.offsetWidth;
+if (frameW && previewZoomForWidth(cur.naturalWidth, frameW) === 'size') {
+setZoom('size');
+try { localStorage.setItem(ZOOM_STATE_KEY, 'size'); } catch { /* ignore */ }
+}
+autoZoomRef.current = true;
+}
+cur.onload = prevOnload || null;
+}
+};
           // Defer revoking the previous URL until the new one has
           // actually decoded — revoking too early used to abort
           // the in-flight decode and show a blank frame.
@@ -450,7 +487,7 @@ onClick: (ev) => onPreviewClick(ev)
 h('img', {
 ref: imgRef,
 src: imgSrc,
-class: 'inspector__preview-img',
+class: 'inspector__preview-img' + (zoom === 'size' ? ' inspector__preview-img--size' : ''),
 alt: 'Live page preview',
 draggable: 'false'
 })
@@ -491,7 +528,22 @@ onClick: () => submitType('', true)
 : null
 )
 : h('div', { ref: typePanelRef }),
-h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note)
+h('div', { class: 'inspector__preview-foot' },
+h('div', { class: 'status inspector__status', 'aria-live': 'polite' }, note),
+h('button', {
+class: 'inspector__zoom' + (zoom === 'size' ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(zoom === 'size'),
+'aria-label': zoom === 'size' ? 'Show preview fit to width' : 'Show preview at natural size and pan',
+title: zoom === 'size' ? 'Fit width' : 'Natural size (pan)',
+onClick: toggleZoom
+},
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+h('path', { d: 'M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z', fill: 'currentColor' })
+),
+h('span', null, zoom === 'size' ? 'Fit' : '100%')
+)
+)
 ),
 fullscreen
 ? createPortal(
@@ -508,6 +560,21 @@ liveTitle || liveUrl || 'Preview'
 h('div', { class: 'inspector__preview-fs-host' }, hostFromUrl(liveUrl))
 ),
 h('div', { class: 'inspector__preview-fs-actions' },
+// Fit / natural-size (zoom) — the same toggle as the in-panel footer,
+// so a wide page can be read at 100% and panned instead of squashed.
+// Icon-only in the tight header, matching the refresh control.
+h('button', {
+class: 'inspector__preview-fs-zoom' + (zoom === 'size' ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(zoom === 'size'),
+'aria-label': zoom === 'size' ? 'Show preview fit to width' : 'Show preview at natural size and pan',
+title: zoom === 'size' ? 'Fit width' : 'Natural size (pan)',
+onClick: toggleZoom
+},
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+h('path', { d: 'M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z', fill: 'currentColor' })
+)
+),
 // Refresh — re-captures the screenshot at the current size.
 // Reuses the same icon as the in-panel Refresh button so the
 // user recognizes the gesture. The label stays visible on
@@ -607,7 +674,7 @@ onClick: (ev) => onPreviewClick(ev, fsImgRef.current)
 h('img', {
 ref: fsImgRef,
 src: imgSrc,
-class: 'inspector__preview-fs-img',
+class: 'inspector__preview-fs-img' + (zoom === 'size' ? ' inspector__preview-img--size' : ''),
 alt: 'Live page preview',
 draggable: 'false'
 })
@@ -626,4 +693,13 @@ document.body
 function hostFromUrl(url) {
 if (!url || !/^https?:\/\//i.test(url)) return '';
 try { return new URL(url).host; } catch { return ''; }
+}
+// previewZoomForWidth — decide the preview zoom mode for a capture of the
+// given pixel width shown in a frame of `frameWidth` CSS px. In fit mode the
+// frame shows `frameWidth / naturalWidth` of the page's width; if that drops
+// below ~60%, text becomes too small to read and we switch to natural size so
+// the page pans instead of being squashed. Returns 'size' (natural) or 'fit'.
+function previewZoomForWidth(naturalWidth, frameWidth) {
+if (!naturalWidth || !frameWidth) return 'fit';
+return (frameWidth / naturalWidth) < 0.6 ? 'size' : 'fit';
 }
