@@ -269,7 +269,8 @@ latestImage.current.height = cur.naturalHeight || 0;
 // manual toggle clears the gate so the user's choice always wins.
 if (!autoZoomRef.current && cur.naturalWidth && frameRef.current) {
 const frameW = frameRef.current.clientWidth || frameRef.current.offsetWidth;
-if (frameW && previewZoomForWidth(cur.naturalWidth, frameW) === 'size') {
+const dpr = currentDeviceScaleFactor(props.sizePresets, props.sizeId);
+if (frameW && previewZoomForWidth(cur.naturalWidth, frameW, dpr) === 'size') {
 setZoom('size');
 try { localStorage.setItem(ZOOM_STATE_KEY, 'size'); } catch { /* ignore */ }
 }
@@ -694,12 +695,30 @@ function hostFromUrl(url) {
 if (!url || !/^https?:\/\//i.test(url)) return '';
 try { return new URL(url).host; } catch { return ''; }
 }
+// currentDeviceScaleFactor — the page's effective device pixel ratio for the
+// selected viewport preset. The retina Phone/Phone+ presets capture at
+// deviceScaleFactor 2, so their screenshot is 2x the page's CSS width. The
+// "Auto"/Tablet/Laptop presets use dpr 1. Falls back to 1 for presets that
+// don't declare a factor (so a non-retina capture is unchanged).
+function currentDeviceScaleFactor(sizePresets, sizeId) {
+const preset = Array.isArray(sizePresets) ? sizePresets.find((p) => p.id === sizeId) : null;
+return (preset && preset.deviceScaleFactor) || 1;
+}
 // previewZoomForWidth — decide the preview zoom mode for a capture of the
 // given pixel width shown in a frame of `frameWidth` CSS px. In fit mode the
-// frame shows `frameWidth / naturalWidth` of the page's width; if that drops
+// frame shows `frameWidth / pageCSSWidth` of the page's width; if that drops
 // below ~60%, text becomes too small to read and we switch to natural size so
 // the page pans instead of being squashed. Returns 'size' (natural) or 'fit'.
-function previewZoomForWidth(naturalWidth, frameWidth) {
+//
+// `naturalWidth` is the image's intrinsic width. For a retina capture (the
+// Phone presets at deviceScaleFactor 2) that's the page's *device* pixel
+// width, not its CSS design width. Fit mode scales the page's CSS width
+// against the frame, so we must compare frameWidth to naturalWidth / dpr —
+// otherwise a narrow phone page (375 CSS px) is misread as ~47% of the frame
+// and auto-zoomed to natural size even though it fits at ~94%.
+function previewZoomForWidth(naturalWidth, frameWidth, deviceScaleFactor) {
 if (!naturalWidth || !frameWidth) return 'fit';
-return (frameWidth / naturalWidth) < 0.6 ? 'size' : 'fit';
+const pageWidth = naturalWidth / (deviceScaleFactor || 1);
+if (!pageWidth) return 'fit';
+return (frameWidth / pageWidth) < 0.6 ? 'size' : 'fit';
 }

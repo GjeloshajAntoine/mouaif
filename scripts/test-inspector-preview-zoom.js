@@ -109,7 +109,8 @@ async function main() {
 
   // Scenario 3: auto-fit decision (pure helper). A wide page (1280px) in a
   // 366px frame has a fit-scale ~0.29 (< 0.6) -> natural size, so text is
-  // readable instead of squashed to a thumbnail.
+  // readable instead of squashed to a thumbnail. The default is now dpr 1,
+  // which keeps these single-source dpr=1 assertions intact.
   assert.equal(h1.previewZoomForWidth(1280, 366), 'size',
     'a wide page selects natural size (fit-scale < 0.6)');
   assert.equal(h1.previewZoomForWidth(375, 366), 'fit',
@@ -118,6 +119,20 @@ async function main() {
     'a tablet page selects natural size in a phone frame');
   assert.equal(h1.previewZoomForWidth(366, 366), 'fit',
     'a page that fits the frame stays in fit mode');
+
+  // Scenario 4 (regression): the retina Phone preset captures at
+  // deviceScaleFactor 2, so the image's naturalWidth is 2x the page's CSS
+  // width. Auto-fit must compare the frame against the page's CSS width
+  // (naturalWidth / dpr), NOT against the device-pixel width. A narrow phone
+  // page (375 CSS px -> 750 device px) fits the frame at ~94%, so it must stay
+  // in fit mode — the old code read 351/750 (~47%) and wrongly forced natural
+  // size (pan), which is the opposite of the intended fit-to-width default.
+  assert.equal(h1.previewZoomForWidth(750, 351, 2), 'fit',
+    'a retina phone page stays fit (fit-scale ~0.94 of CSS width)');
+  assert.equal(h1.previewZoomForWidth(750, 366, 2), 'fit',
+    'a retina phone page from a wider frame also stays fit');
+  assert.equal(h1.previewZoomForWidth(2560, 351, 2), 'size',
+    'a truly wide retina page still selects natural size');
 
   console.log('PASS preview fit/natural-size toggle, persistence, bootstrap, and auto-fit');
 }
