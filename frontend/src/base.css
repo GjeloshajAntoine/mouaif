@@ -224,19 +224,21 @@ body {
    full-width text button would crowd the row. The button keeps the 44 px
    tap height; the label sits below the icon at a small size. */
 .icon-btn.icon-btn--labeled {
+  flex: 0 0 auto;
   width: auto;
-  min-width: var(--tap);
+  min-width: 0;
   height: auto;
   min-height: var(--tap);
   flex-direction: column;
-  gap: 1px;
-  padding: 4px 6px;
+  justify-content: center;
+  gap: 0;
+  padding: 3px 4px;
 }
-.icon-btn.icon-btn--labeled svg { display: block; }
+.icon-btn.icon-btn--labeled svg { display: block; width: 16px; height: 16px; }
 .icon-btn__label {
-  font-size: 0.62rem;
+  font-size: 0.54rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
