@@ -12,7 +12,7 @@ Open the **Inspector** tab, connect to a page, and turn on the **Styles** panel 
 ## Behavior
 - Edits land on the **element's inline style** only. This is the same origin the desktop Styles pane calls `element.style`; it is safest because it wins the cascade on the element and is fully reversible (tap **Remove**). Changing stylesheet rules (matched rules) needs `CSS.setStyleTexts` plus stylesheet source parsing and is out of scope for this pass.
 - The property **must be non-empty** to apply or remove; the editor shows an inline error otherwise.
-- Every row is a ≥ 44 px tap target (`--tap`). Editing opens a bottom sheet with large inputs and prominent **Apply / Remove / Cancel** buttons — no hover-only or tiny inline-text affordances.
+- Every row is a ≥ 44 px tap target (`--tap`). Editing opens a bottom sheet with large inputs and prominent **Apply / Remove / Cancel** buttons — no hover-only or tiny inline-text affordances. The panel-header icon buttons (clear ✕, refresh, pick-mode crosshair), the quick-add chips, and the panel's eye/refresh/full-screen/type controls all use the full 44 px `--tap` size so every control is a tappable target on a phone.
 - **Computed** values are read-only, monospace, and ellipsize. This is not a guard against invalid values — the browser normalizes what it accepts (CSSOM ignores anything the engine rejects).
 - Pick mode turns the preview tap from "click the page" into "select an element". It is controlled by the Styles panel and reflected on the preview.
 ## Requirements

@@ -58,7 +58,7 @@
   padding: 8px 10px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  min-height: 36px;
+  min-height: var(--tap);
 }
 .inspector__actions-pop button:hover,
 .inspector__row-menu-pop button:hover { background: var(--surface-2); }
@@ -78,10 +78,10 @@
 }
 .inspector__nav-reload {
   flex-shrink: 0;
-  min-height: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  width: var(--tap-sm);
+  min-height: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  width: var(--tap);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--fg-soft);
@@ -92,10 +92,10 @@
 }
 .inspector__nav-back {
   flex-shrink: 0;
-  min-height: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  width: var(--tap-sm);
+  min-height: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  width: var(--tap);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--fg-soft);
@@ -114,8 +114,8 @@
 }
 .inspector__nav-go {
   flex-shrink: 0;
-  min-height: var(--tap-sm);
-  min-width: 56px;
+  min-height: var(--tap);
+  min-width: 64px;
   padding: 0 14px;
   font-size: 0.84rem;
   font-weight: 600;
@@ -133,15 +133,16 @@ and actions menus, sized for a 360 px phone. */
   align-items: center;
   gap: 4px;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--fg-soft);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
   cursor: pointer;
-  min-height: 28px;
-  padding: 0 8px;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 12px;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -182,7 +183,7 @@ and actions menus, sized for a 360 px phone. */
   padding: 7px 10px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  min-height: 36px;
+  min-height: var(--tap);
 }
 .inspector__size-opt:hover { background: var(--surface-2); }
 .inspector__size-opt.is-on {
@@ -236,7 +237,7 @@ min-width: 0;
 .inspector__panel-head-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 .inspector__panel-refresh {
@@ -244,10 +245,10 @@ min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  min-height: var(--tap-sm);
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
   background: transparent;
   color: var(--muted);
   border: 0;
@@ -263,10 +264,10 @@ min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  min-height: var(--tap-sm);
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
   background: transparent;
   color: var(--muted);
   border: 0;
@@ -821,15 +822,15 @@ max-width: none;
 }
 /* The Preview panel header replaces its text label with an icon-only
 full-screen button. It mirrors the adjacent refresh/eye icon buttons
-(a 32 px tap target) so the header stays one balanced row; tapping it
-opens the viewport-spanning preview overlay below. The button carries
-the "Preview" label context in its accessible name. */
+(full-size 44 px tap targets) so the header stays one balanced row;
+tapping it opens the viewport-spanning preview overlay below. The
+button carries the "Preview" label context in its accessible name. */
 .inspector__panel-label--fs {
   flex: 0 0 auto;
-  width: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  min-height: var(--tap-sm);
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -871,22 +872,22 @@ background: var(--surface-2);
 border-top: 1px solid var(--border);
 }
 .inspector__panel-typebar {
-flex: 0 0 auto;
-width: var(--tap-sm);
-min-width: var(--tap-sm);
-height: var(--tap-sm);
-min-height: var(--tap-sm);
-display: inline-flex;
-align-items: center;
-justify-content: center;
-padding: 0;
-background: transparent;
-color: var(--muted);
-border: 0;
-border-radius: var(--r-sm);
-cursor: pointer;
-transition: background 120ms ease, color 120ms ease;
--webkit-tap-highlight-color: transparent;
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .inspector__panel-typebar:hover { background: var(--surface-3); color: var(--fg); }
 .inspector__panel-typebar:disabled { opacity: 0.5; cursor: default; }
@@ -1698,27 +1699,40 @@ align-items: center;
 gap: 8px;
 }
 .inspector__styles-clear {
-flex-shrink: 0;
+  flex-shrink: 0;
+}
+/* Selected-element header icon buttons (clear ✕, refresh, and pick
+mode) get full-size 44 px touch targets rather than the 32 px
+glyph-only accessory size. The header pick button carries the
+empty-state `.inspector__styles-pick` class too, so scope this to the
+`.icon-btn` variant — the empty-state pill keeps its own sizing. */
+.icon-btn.inspector__styles-clear,
+.icon-btn.inspector__styles-refresh,
+.icon-btn.inspector__styles-pick {
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
 }
 .inspector__styles-elem {
-flex: 1 1 auto;
-min-width: 0;
-display: flex;
-flex-direction: column;
-gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .inspector__styles-tag {
-font-family: var(--font-mono);
-font-size: 0.82rem;
-font-weight: 700;
-color: var(--fg);
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .inspector__styles-size {
-font-size: 0.68rem;
-color: var(--muted-2);
+  font-size: 0.68rem;
+  color: var(--muted-2);
 font-family: var(--font-mono);
 }
 .inspector__styles-tools {
@@ -1813,17 +1827,17 @@ text-transform: uppercase;
 letter-spacing: 0.04em;
 }
 .inspector__styles-chip {
-font: inherit;
-font-size: 0.78rem;
-color: var(--fg-soft);
-background: var(--surface-2);
-border: 1px solid var(--border-strong);
-border-radius: 999px;
-min-height: 36px;
-padding: 0 12px;
-cursor: pointer;
-transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
--webkit-tap-highlight-color: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  min-height: var(--tap);
+  padding: 0 14px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .inspector__styles-chip:hover { background: var(--surface-3); color: var(--fg); }
 .inspector__styles-chip:active { transform: scale(0.98); }
