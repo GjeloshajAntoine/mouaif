@@ -7,11 +7,11 @@ When a `subagent` tool call needs approval (the tool authorization gate is in `a
 ## Usage
 
 The picker appears only on `subagent` approval cards. It lists the same union the main chat [model picker](./model-picker.md) shows:
-
 - project-defined models (`settings.models`)
 - the per-provider live catalog (`GET /api/ai/models/live`)
-
 deduplicated by `(provider, modelId)`, sorted by provider then id. The first row is a **"(chat default)"** entry that keeps the run on the chat's current model (or the agent's model pin, when the called agent has one). The trigger shows `(chat default) <modelId>` until the user picks an override. Below it, a **thinking** dropdown offers the picked model's presets plus an "Inherit chat thinking" first row (the same `ThinkingSelectField` the Agents editor uses).
+
+The card's picker also shows the **Pinned** and **Recent** bookmark sections exactly like the chat top bar, using the same source of truth: pins live in localStorage (per project), and the recent list is the server-backed `model_recent` SQLite cache, refreshed when the sheet opens. Picking a model on the card records it as recently used; pinning/unpinning works right on the card.
 
 Pick a model (and optionally a thinking level), then choose any non-deny action. The decision payload carries
 
@@ -34,8 +34,13 @@ Model resolution for the delegated run, most specific first:
 
 Thinking level follows the same precedence: the card's pick wins, then the agent's `thinkingLevel`, then the chat's inherited level.
 
+### Regression check
+With debug Chrome available at `http://127.0.0.1:9222` (or `CDP_URL`), run:
+```bash
+node scripts/test-auth-model-picker.cjs
+```
+The test mounts the real `AuthModelPicker` on an isolated about:blank tab with an in-memory localStorage shim, seeds a pinned model and a server-backed recent entry, opens the sheet, and asserts both bookmark sections render. It does not modify app data.
 ## Related
-
 - [Tool authorization](./tool-authorization.md) — the gate the card belongs to.
 - [Agents](./agents.md) — named subagent personas and their model pins.
 - [Model picker](./model-picker.md) — the main picker whose data feeds this one.

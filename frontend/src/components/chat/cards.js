@@ -532,7 +532,7 @@ export function removePendingAuthorizationCards(refs) {
   }
 }
 
-// buildAuthModelPicker(state, request) -> HTMLElement | null
+// buildAuthModelPicker(state, request, projectDir) -> HTMLElement | null
 //
 // The authorization card's per-run model picker. Only shown for
 // `subagent` calls: while approving the delegated run the user can
@@ -541,9 +541,10 @@ export function removePendingAuthorizationCards(refs) {
 // the main chat model picker shows: project-defined models plus the
 // per-provider live catalog, deduped by (provider, id). The chat's
 // current model is preselected. The control is the same trigger +
-// modal the chat top bar uses (see ModelPickerField).
+// modal the chat top bar uses (see ModelPickerField), including its
+// Pinned and Recent bookmark sections.
 // Returns null when there is nothing to pick from.
-function buildAuthModelPicker(state, request) {
+function buildAuthModelPicker(state, request, projectDir) {
   if (!state || request.tool !== 'subagent') return null;
   const out = new Map();
   for (const m of (state.models || [])) {
@@ -574,16 +575,17 @@ host.className = 'tool-card__auth-model';
   // The picker holds its own selection; expose it for the decision
   // payload. Picking a model sets the override; tapping the
   // "inherit" row clears it back to the chat default / agent pin.
-  const mpHost = document.createElement('div');
-  mpHost.className = 'tool-card__auth-model-field';
-  render(h(AuthModelPicker, {
-    models: list,
-    initialValue: selected,
-    onChange: (next) => { selected = next; }
-  }), mpHost);
-  host.appendChild(mpHost);
-  host._selected = () => selected;
-  return host;
+const mpHost = document.createElement('div');
+mpHost.className = 'tool-card__auth-model-field';
+render(h(AuthModelPicker, {
+models: list,
+initialValue: selected,
+projectDir,
+onChange: (next) => { selected = next; }
+}), mpHost);
+host.appendChild(mpHost);
+host._selected = () => selected;
+return host;
 }
 
 export function authorizationCard(request, projectDir, chatId, refs, resume, state) {
@@ -612,7 +614,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     // Per-run model picker for subagent calls. When the user picks a
     // model here, the decision payload carries it so the delegated run
     // executes on that model (this call only; see buildAuthModelPicker).
-    const modelPicker = buildAuthModelPicker(state, request);
+    const modelPicker = buildAuthModelPicker(state, request, projectDir);
     const actions = document.createElement('div');
     actions.className = 'tool-card__actions';
     const buttons = [];
