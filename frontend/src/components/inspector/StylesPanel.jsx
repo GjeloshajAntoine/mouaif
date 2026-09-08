@@ -413,7 +413,13 @@ key: (model.rev || 0) + ':' + row.prop
 h('button', {
 class: 'inspector__styles-row-main',
 type: 'button',
-'aria-label': 'Edit ' + row.prop,
+// Accessible name must contain the visible text (WCAG 2.5.3 Label in
+// Name): the row visibly shows `{prop} {value}`, so echo both in the
+// label alongside the edit action — a bare "Edit color" would fail the
+// label-content-name-mismatch check and be confusing for screen-reader
+// users who see "color #00ff00" on screen.
+'aria-label': (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
+title: 'Edit ' + row.prop,
 onClick: () => setEdit({ prop: row.prop, value: row.value })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
