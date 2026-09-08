@@ -22,7 +22,7 @@ import {
   loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
 } from './modelPicker.js';
 import {
-  renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
+renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll } from './scroll.js';
@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
@@ -826,6 +826,16 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         // once after loading so ToolPopup receives those populated values.
         setToolDataStamp((value) => value + 1);
         renderTranscriptBound();
+        // Eager backward pagination: after the first (newest) page paints,
+        // keep fetching older pages in the background until the WHOLE
+        // transcript is in memory, so the user can scroll to any point without
+        // waiting for a page load. The newest page renders immediately; the
+        // drainer progressively prepends the rest above it and preserves the
+        // reading position. It skips itself while a turn is running (the tail
+        // is being written server-side) and on any chat/project change.
+        if (msgPager.current && msgPager.current.hasMore && msgPager.current.beforeSeq !== null) {
+            loadAllOlderMessages(state, refs, msgPager.current).catch(() => {});
+        }
         // Fetch the tool catalog in the background. The transcript just
         // painted with the fast data; the MCP cold-start inside
         // /api/tools/list may take seconds, so don't let it hold up

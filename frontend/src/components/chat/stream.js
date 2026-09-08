@@ -21,7 +21,8 @@ handleSubagentStreamEvent,
 syncTranscriptAppend,
 updateProgressCard,
 prependOlderTranscript,
-cancelTranscriptRender
+cancelTranscriptRender,
+whenTranscriptSettled
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -390,19 +391,19 @@ hasMore: !!r.body.hasMore,
 beforeSeq: (typeof r.body.beforeSeq === 'number' && isFinite(r.body.beforeSeq)) ? r.body.beforeSeq : null
 };
 }
-// loadOlderMessages(state, refs, pager) -> Promise<boolean>
+// fetchAndPrependOlderPage(state, refs, pager) -> Promise<boolean>
 //
-// Fetch the next older page and prepend it to the transcript, updating
-// the pagination cursor. Returns true when a page was fetched (or when
-// nothing is left), false when the request failed or was a no-op. The
-// caller (the scroll-up listener) awaits this so a single in-flight page
-// flag can stay across the fetch. The prepend preserves scroll position.
-export async function loadOlderMessages(state, refs, pager) {
+// Fetch ONE older page and prepend it to the transcript, updating the
+// pagination cursor. Latch-free — the caller owns the in-flight latch
+// (either the scroll loader's single-page latch or the eager drainer's
+// session latch), so a drain loop can reuse this core without its own
+// call being swallowed by `loading === true`. Returns true when a page
+// was fetched (or when nothing is left), false when the request failed
+// or was a no-op. The prepend preserves scroll position.
+async function fetchAndPrependOlderPage(state, refs, pager) {
 if (!pager || !state || !refs) return false;
-if (pager.loading) return false;
 if (!pager.hasMore) return false;
 if (pager.beforeSeq === null) return false;
-pager.loading = true;
 const { projectDir, chatId } = state.props;
 try {
 const body = await fetchMessagesWindow(projectDir, chatId, {
@@ -462,11 +463,92 @@ return inserted;
 // Leave hasMore true so a later scroll can retry; clearing it would
 // permanently hide history that a transient failure interrupted.
 return false;
+}
+}
+// loadOlderMessages(state, refs, pager) -> Promise<boolean>
+//
+// Fetch the next older page and prepend it to the transcript, updating
+// the pagination cursor. Returns true when a page was fetched (or when
+// nothing is left), false when the request failed or was a no-op. The
+// caller (the scroll-up listener) awaits this so a single in-flight page
+// flag can stay across the fetch. The prepend preserves scroll position.
+export async function loadOlderMessages(state, refs, pager) {
+if (!pager || !state || !refs) return false;
+if (pager.loading) return false;
+pager.loading = true;
+try {
+return await fetchAndPrependOlderPage(state, refs, pager);
 } finally {
 pager.loading = false;
 }
 }
-
+// loadAllOlderMessages(state, refs, pager) -> Promise<void>
+//
+// Drained-loop eager loader: keep fetching older pages in the
+// background until the ENTIRE transcript is in memory, not just the
+// newest window. Each page still renders incrementally above the
+// anchor and preserves the reading position, so the transcript stays
+// fully scrollable with no per-page load delay. The loop is
+// deliberately staggered between pages so it yields to the event loop
+// and never blocks paint — and it locks the pager flag the whole run
+// so the scroll-up path and this drainer can never double-fetch.
+//
+// This replaces the "open the chat, then wait for a scroll to the top
+// to pull each older page" behaviour with "open the chat, then let it
+// catch up in the background". The newest page still paints
+// immediately; the rest arrives shortly after. Loads stop early under
+// any of: an active stream turn (the tail is being written right now,
+// so loading older pages is pointless churn), a transient fetch error
+// (retried on the next scroll), or a chat/project change (an
+// aborted run must not write into a detached transcript).
+export async function loadAllOlderMessages(state, refs, pager) {
+if (!pager || !state || !refs) return;
+// A live turn owns the tail; do not race it for older rows. The
+// pager's "next older page" is still valid once the turn settles.
+if (state.streaming || state.watchingRun) return;
+// Latch the whole drain so the scroll-up loader stays no-op until
+// we finish (or bail). loadOlderMessages would otherwise also see
+// `loading` true and return early, which is what we want.
+if (pager.loading) return;
+pager.loading = true;
+// Capture the chat the drain belongs to. `state`/`refs` are reused
+// across chat navigation (ChatView is not remounted), so after an
+// await the props may now point at a DIFFERENT chat; writing an old
+// chat's older pages into the new chat's transcript (or fetching the
+// new chat with the old cursor) would corrupt the view. Bail as soon
+// as the identity drifts.
+const { projectDir, chatId } = state.props;
+try {
+// Give the first paint a chance to land before we start inserting
+// rows above it. The initial window is already painted synchronously
+// by the time this runs (see the eager call site), so this just
+// breathes before the first prepend.
+await whenTranscriptSettled(refs);
+if (!pager.hasMore || pager.beforeSeq === null) return;
+for (;;) {
+// Chat change / live turn / unmounted transcript — stop, so we
+// neither churn a live run nor fetch the next chat's rows with
+// this chat's cursor.
+if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
+if (state.streaming || state.watchingRun) return;
+if (typeof refs.transcript === 'undefined' || (refs.transcript && !refs.transcript.current)) return;
+const before = pager.beforeSeq;
+const ok = await fetchAndPrependOlderPage(state, refs, pager);
+if (!ok) return; // error or top reached — the pager is authoritative
+if (pager.beforeSeq === before) {
+// No cursor advance (server returned the same bound); guard
+// against an infinite loop even though hasMore should be false.
+return;
+}
+// Yield between pages so the browser can paint the just-inserted
+// rows before more are prepended.
+await new Promise((resolve) => setTimeout(resolve, 0));
+if (!pager.hasMore) return;
+}
+} finally {
+pager.loading = false;
+}
+}
 async function fullRebuildFromServer(state, refs, nextSeq) {
   const { projectDir, chatId } = state.props;
   const body = await fetchMessagesFromSeq(projectDir, chatId, 0);
