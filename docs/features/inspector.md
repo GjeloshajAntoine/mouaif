@@ -56,6 +56,8 @@ Use the top navigation bar to:
 
 Every chrome control is a full-size, touch-first target. The back/reload/Go buttons in the nav row, the panel-head refresh / full-screen / type / eye toggles, the preview-size dropdown, the panel chips, and the Styles panel's header icon buttons (clear, refresh, pick mode) and quick-add chips all use the ≥ 44 × 44 px `--tap` size, so nothing in the inspector relies on a hover-only or sub-44 px tap. The dropdown, popover, and target-row menus also use 44 px rows.
 
+The inspector header icon buttons are **labelled, not glyph-only**. The panel-head controls (full screen, Draft Craft, refresh, type into page, hide/show) and the Styles panel header (clear, refresh, pick/stop) each carry a small label under their glyph via the shared `.icon-btn--labeled` variant — the same icon-over-label pattern as the panel chips. On narrow screens the heading rows wrap (`flex-wrap`) so a label never clips; every button keeps its `aria-label` + `title` for assistive tech. Only the nav-row back/reload glyphs stay icon-only, since their meanings are conventional and space is at a premium next to the URL field.
+
 ### Closing a tab
 
 Close tab is destructive, so the Inspector prompts for confirmation before sending the request to Chrome. Both entry points (the per-row `…` menu in the targets list and the header overflow menu of an attached tab) open the same in-app sheet:

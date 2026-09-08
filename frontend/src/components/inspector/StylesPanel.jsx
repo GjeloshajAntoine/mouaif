@@ -366,39 +366,48 @@ const computedRows = (model.computed || []);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 h('div', { class: 'inspector__styles-head' },
 h('button', {
-class: 'icon-btn inspector__styles-clear',
+class: 'icon-btn icon-btn--labeled inspector__styles-clear',
 type: 'button',
 'aria-label': 'Clear selection',
 title: 'Clear selection',
 onClick: clearPick
-}, h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
-)),
+),
+h('span', { class: 'icon-btn__label' }, 'Clear')
+),
 h('div', { class: 'inspector__styles-elem' },
 h('span', { class: 'inspector__styles-tag' }, label),
 h('span', { class: 'inspector__styles-size' }, boxSummary(model.box))
 ),
 h('div', { class: 'inspector__styles-tools' },
 h('button', {
-class: 'icon-btn inspector__styles-refresh',
+class: 'icon-btn icon-btn--labeled inspector__styles-refresh',
 type: 'button',
 'aria-label': 'Refresh styles',
 title: 'Refresh styles',
 disabled: loading,
 onClick: refreshStyles
-}, h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
-)),
+),
+h('span', { class: 'icon-btn__label' }, 'Refresh')
+),
 h('button', {
-class: 'icon-btn inspector__styles-pick' + (props.pickMode ? ' is-on' : ''),
+class: 'icon-btn icon-btn--labeled inspector__styles-pick' + (props.pickMode ? ' is-on' : ''),
 type: 'button',
 'aria-pressed': String(!!props.pickMode),
 'aria-label': props.pickMode ? 'Stop picking — tap the preview to select' : 'Pick an element from the preview',
 title: props.pickMode ? 'Stop picking — tap the preview to select' : 'Pick an element from the preview',
 onClick: togglePickMode
-}, h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M5 3l14 7-6.5 1.5L10 19 5 3Z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' })
-))
+),
+h('span', { class: 'icon-btn__label' }, props.pickMode ? 'Stop' : 'Pick')
+)
 )
 ),
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,

@@ -218,6 +218,32 @@ body {
 .icon-btn--danger:hover { background: var(--danger-soft); }
 .icon-btn--close { color: var(--fg-soft); }
 .icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
+/* .icon-btn--labeled — an icon button that also shows a small text label
+   under its glyph, the iOS DevTools segmented-control / panel-chip pattern.
+   Used where a glyph alone is ambiguous (inspector header controls) but a
+   full-width text button would crowd the row. The button keeps the 44 px
+   tap height; the label sits below the icon at a small size. */
+.icon-btn.icon-btn--labeled {
+  width: auto;
+  min-width: var(--tap);
+  height: auto;
+  min-height: var(--tap);
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+}
+.icon-btn.icon-btn--labeled svg { display: block; }
+.icon-btn__label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  color: inherit;
+}
 .shimmer {
   background: linear-gradient(90deg, var(--surface) 0%, var(--surface-3) 50%, var(--surface) 100%);
   background-size: 200% 100%;

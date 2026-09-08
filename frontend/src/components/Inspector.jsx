@@ -257,7 +257,7 @@ const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + prop
 // accessible label carries the "Preview" context since the text is gone.
 const labelNode = props.onFullscreen
 ? h('button', {
-class: 'icon-btn inspector__panel-label--fs',
+class: 'icon-btn icon-btn--labeled inspector__panel-label--fs',
 type: 'button',
 'aria-label': 'Open ' + props.label + ' full screen',
 title: 'Open ' + props.label + ' full screen',
@@ -265,7 +265,8 @@ onClick: (e) => { e.stopPropagation(); props.onFullscreen(); }
 },
 h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'currentColor' },
 h('path', { d: 'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM6 15v3h3v2H4v-5h2Zm12 0h2v5h-5v-2h3v-3Z' })
-)
+),
+h('span', { class: 'icon-btn__label' }, 'Full screen')
 )
 : h('span', { class: 'inspector__panel-label' }, props.label);
 return h('div', {
@@ -279,38 +280,40 @@ props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onS
 ),
       h('div', { class: 'inspector__panel-head-actions' },
         props.onDraftCraft
-          ? h('button', {
-            class: 'icon-btn inspector__panel-draft-craft',
-            type: 'button',
-            title: 'Draft Craft',
-            'aria-label': 'Open Draft Craft for this preview',
-            disabled: !props.isVisible,
-            onClick: (e) => { e.stopPropagation(); props.onDraftCraft(); }
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-              h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }),
-              h('path', { d: 'm8 15 2.5-3 2 2 3.5-4 2 3' }),
-              h('path', { d: 'm16.5 3 .5-1 .5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5Z' })
-            )
-          )
-          : null,
-        props.onRefresh
-          ? h('button', {
-            class: 'icon-btn inspector__panel-refresh',
-            type: 'button',
-            title: 'Refresh preview',
-            'aria-label': 'Refresh preview',
-            disabled: !props.isVisible,
-            onClick: (e) => { e.stopPropagation(); props.onRefresh(); }
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+? h('button', {
+class: 'icon-btn icon-btn--labeled inspector__panel-draft-craft',
+type: 'button',
+title: 'Draft Craft',
+'aria-label': 'Open Draft Craft for this preview',
+disabled: !props.isVisible,
+onClick: (e) => { e.stopPropagation(); props.onDraftCraft(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }),
+h('path', { d: 'm8 15 2.5-3 2 2 3.5-4 2 3' }),
+h('path', { d: 'm16.5 3 .5-1 .5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5Z' })
+),
+h('span', { class: 'icon-btn__label' }, 'Draft Craft')
 )
+: null,
+        props.onRefresh
+? h('button', {
+class: 'icon-btn icon-btn--labeled inspector__panel-refresh',
+type: 'button',
+title: 'Refresh preview',
+'aria-label': 'Refresh preview',
+disabled: !props.isVisible,
+onClick: (e) => { e.stopPropagation(); props.onRefresh(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+),
+h('span', { class: 'icon-btn__label' }, 'Refresh')
 )
 : null,
 props.onTypeBar
 ? h('button', {
-class: 'icon-btn inspector__panel-typebar',
+class: 'icon-btn icon-btn--labeled inspector__panel-typebar',
 type: 'button',
 title: 'Type into page',
 'aria-label': 'Type into page',
@@ -320,33 +323,35 @@ onClick: (e) => { e.stopPropagation(); props.onTypeBar(); }
 h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
 h('rect', { x: 3, y: 6, width: 18, height: 12, rx: 2 }),
 h('path', { d: 'M6 10h4M6 14h2M12 14h6' })
-)
+),
+h('span', { class: 'icon-btn__label' }, 'Type into page')
 )
 : null,
 h('button', {
-class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
+class: 'icon-btn icon-btn--labeled inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
 type: 'button',
 'aria-label': toggleAria,
 'aria-pressed': String(isVisible),
 title: toggleAria,
 onClick: () => props.onToggle(props.id)
 },
-          // Eye-open glyph when the panel is visible, eye-closed
-          // when it's hidden. Drawn as inline SVG so it inherits
-          // the current color and matches the rest of the chrome
-          // iconography.
-          isVisible
-            ? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-              h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
-              h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
-            )
-            : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-              h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
-            )
-        )
-      )
-    ),
-    h('div', { class: 'inspector__panel-body' },
+// Eye-open glyph when the panel is visible, eye-closed
+// when it's hidden. Drawn as inline SVG so it inherits
+// the current color and matches the rest of the chrome
+// iconography.
+isVisible
+? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
+h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
+)
+: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
+),
+h('span', { class: 'icon-btn__label' }, isVisible ? 'Hide' : 'Show')
+)
+)
+),
+h('div', { class: 'inspector__panel-body' },
       isVisible ? props.children : null
     )
   );

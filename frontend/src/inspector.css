@@ -216,16 +216,17 @@ display: flex;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 4px 8px;
   padding: 4px 6px 4px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+  flex-wrap: wrap;
 }
 .inspector__panel-head-left {
-display: flex;
-align-items: center;
-gap: 8px;
-min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .inspector__panel-label {
   font-size: 0.72rem;
@@ -239,6 +240,7 @@ min-width: 0;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 .inspector__panel-refresh {
   flex: 0 0 auto;
@@ -1692,11 +1694,13 @@ padding: 0 12px;
 font-size: 0.82rem;
 }
 /* Selected-element header: clear (X) on the left, the element label +
-box size in the middle, refresh + pick tools on the right. */
+box size in the middle, refresh + pick tools on the right. Wraps on
+narrow screens so a full-width "Pick" label never clips. */
 .inspector__styles-head {
-display: flex;
-align-items: center;
-gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .inspector__styles-clear {
   flex-shrink: 0;
@@ -1705,10 +1709,12 @@ gap: 8px;
 mode) get full-size 44 px touch targets rather than the 32 px
 glyph-only accessory size. The header pick button carries the
 empty-state `.inspector__styles-pick` class too, so scope this to the
-`.icon-btn` variant — the empty-state pill keeps its own sizing. */
-.icon-btn.inspector__styles-clear,
-.icon-btn.inspector__styles-refresh,
-.icon-btn.inspector__styles-pick {
+`.icon-btn` variant — the empty-state pill keeps its own sizing. When
+the button also has the `.icon-btn--labeled` variant the label expands
+it, so the fixed `--tap` sizing only applies to the glyph-only form. */
+.icon-btn.inspector__styles-clear:not(.icon-btn--labeled),
+.icon-btn.inspector__styles-refresh:not(.icon-btn--labeled),
+.icon-btn.inspector__styles-pick:not(.icon-btn--labeled) {
   width: var(--tap);
   min-width: var(--tap);
   height: var(--tap);
@@ -1733,13 +1739,13 @@ empty-state `.inspector__styles-pick` class too, so scope this to the
 .inspector__styles-size {
   font-size: 0.68rem;
   color: var(--muted-2);
-font-family: var(--font-mono);
+  font-family: var(--font-mono);
 }
 .inspector__styles-tools {
-display: flex;
-align-items: center;
-gap: 4px;
-flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .inspector__styles-pick[aria-pressed="true"] {
 color: var(--accent);
