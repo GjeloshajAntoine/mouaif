@@ -410,16 +410,11 @@ border-top: 1px solid var(--border);
 }
 .draft-craft__annotator-foot .btn--primary { min-height: var(--tap); }
 .inspector__panel-draft-craft {
-  color: var(--accent);
-}
-/* The form above sizes the glyph-only button to --tap; once it gains
-the `.icon-btn--labeled` variant the label expands it (see base.css),
-so keep the fixed tap sizing only for the unlabeled form. */
-.inspector__panel-draft-craft:not(.icon-btn--labeled) {
-  width: var(--tap);
-  min-width: var(--tap);
-  height: var(--tap);
-  min-height: var(--tap);
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+min-height: var(--tap);
+color: var(--accent);
 }
 .fe__editor-actions .fe__draft-craft {
 display: inline-flex;

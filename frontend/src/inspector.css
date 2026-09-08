@@ -131,9 +131,9 @@ and actions menus, sized for a 360 px phone. */
 .inspector__size-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--fg-soft);
   background: transparent;
@@ -142,9 +142,7 @@ and actions menus, sized for a 360 px phone. */
   cursor: pointer;
   min-height: var(--tap);
   min-width: var(--tap);
-  max-width: 64px;
-  padding: 0 8px;
-  overflow: hidden;
+  padding: 0 12px;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -154,13 +152,7 @@ and actions menus, sized for a 360 px phone. */
   color: var(--fg);
   border-color: var(--border-strong);
 }
-.inspector__size-btn svg { display: block; flex: 0 0 auto; }
-.inspector__size-btn-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.inspector__size-btn svg { display: block; }
 .inspector__size-pop {
   position: absolute;
   top: calc(100% + 4px);
@@ -224,16 +216,16 @@ display: flex;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2px 4px;
+  gap: 4px;
   padding: 4px 6px 4px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
 .inspector__panel-head-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+display: flex;
+align-items: center;
+gap: 8px;
+min-width: 0;
 }
 .inspector__panel-label {
   font-size: 0.72rem;
@@ -245,7 +237,7 @@ display: flex;
 .inspector__panel-head-actions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 .inspector__panel-refresh {
