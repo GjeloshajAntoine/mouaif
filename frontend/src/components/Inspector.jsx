@@ -13,7 +13,7 @@ import '../inspector.css';
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
-import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
+import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
@@ -83,11 +83,12 @@ function hostOf(t) {
 // `loadPanelState()` hydrates the visibility set from localStorage
 // (the key lives in `PANEL_STATE_KEY`) so the user's choice
 // persists across sessions and across inspected targets. The first
-// visit (no saved state) shows all four panels — the new
+// visit (no saved state) shows every panel — the new
 // design's default is to surface every signal, and the user narrows
 // it down on demand.
 const PANELS = [
   { id: 'preview',  label: 'Preview' },
+  { id: 'styles',   label: 'Styles' },
   { id: 'console',  label: 'Console' },
   { id: 'network',  label: 'Network' },
   { id: 'overview', label: 'Info'    }
@@ -417,6 +418,9 @@ const PANEL_ICONS = {
   preview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
     h('path', { d: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm2 10h10v-2H7v2Zm0-4h10V9H7v2Zm0-4h6V5H7v2Z', fill: 'currentColor' })
   ),
+  styles: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M4 4h16v3H4V4Zm0 5h14v2H4V9Zm0 4h12v3H4v-3Zm0 5h10v2H4v-2Z', fill: 'currentColor' })
+  ),
   console: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
     h('path', { d: 'M3 4h18v3H3V4Zm0 5h12v2H3V9Zm0 4h18v2H3v-2Zm0 4h12v3H3v-3Z', fill: 'currentColor' })
   ),
@@ -498,6 +502,15 @@ const previewTypeBarRef = useRef(null);
 // Draft Craft is exposed through the Preview panel's existing toolbar so
 // it never covers the screenshot or consumes a separate content row.
 const previewDraftCraftRef = useRef(null);
+// stylesPickRef — the Styles panel assigns its pick-from-point handler to
+// this ref on mount. When "pick mode" is on, the PreviewPanel tap routes
+// its tap coordinates here instead of clickAt (see onPreviewTap in the
+// inspect render), so a tap selects an element for style editing rather
+// than poking the page.
+const stylesPickRef = useRef(null);
+// stylesActive — whether "pick mode" is on. Used to decide onPreviewTap's
+// routing and to toggle the pick-mode hint on the Preview panel header.
+const [stylesActive, setStylesActive] = useState(false);
 
 // When a panel becomes hidden the corresponding virtual-list
 // child unmounts and runs its own `vl.destroy()` cleanup, but
@@ -620,27 +633,32 @@ useEffect(() => {
       return;
     }
         result.ws.addEventListener('open', () => {
-      setStatus('connected to ' + (target.title || target.url || target.id));
-      c.cdpSend('Runtime.enable').catch((err) => { setStatus('Runtime.enable failed: ' + err.message); });
-      c.cdpSend('Network.enable').catch((err) => { setStatus('Network.enable failed: ' + err.message); });
-      c.cdpSend('Page.enable')
-        .then(() => setCdpReady(true))
-        .catch(() => { /* preview unavailable */ });
-// Restore the user's last preview size (device-metrics override).
-// Runs right after Page.enable so the override is applied before the
-// first screenshot capture. 'auto' clears any previous override.
-applyViewport(viewportId);
-      c.cdpSend('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] }).catch(() => { /* emulation unavailable */ });
-      c.cdpSend('Performance.enable').catch(() => { /* metrics unavailable */ });
-      c.cdpOn('Runtime.consoleAPICalled', handlers.onConsoleEvent);
-      c.cdpOn('Runtime.exceptionThrown', handlers.onExceptionEvent);
-      c.cdpOn('Network.requestWillBeSent', handlers.onRequestWillBeSent);
-      c.cdpOn('Network.responseReceived', handlers.onResponseReceived);
-      c.cdpOn('Network.loadingFinished', handlers.onLoadingFinished);
-      c.cdpOn('Network.loadingFailed', handlers.onLoadingFailed);
-      c.cdpOn('Page.frameNavigated', handlers.onFrameNavigated);
-      c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
-    });
+        setStatus('connected to ' + (target.title || target.url || target.id));
+        c.cdpSend('Runtime.enable').catch((err) => { setStatus('Runtime.enable failed: ' + err.message); });
+        c.cdpSend('Network.enable').catch((err) => { setStatus('Network.enable failed: ' + err.message); });
+        // DOM.enable + CSS.enable power the Styles panel (DOM.getNodeForLocation,
+        // CSS.getComputedStyleForNode, CSS.getBoxModel etc.). Both are non-fatal:
+        // the Styles panel degrades to "no element" if either is unavailable.
+        c.cdpSend('DOM.enable').catch(() => { /* styles panel unavailable */ });
+        c.cdpSend('CSS.enable').catch(() => { /* computed styles unavailable */ });
+        c.cdpSend('Page.enable')
+          .then(() => setCdpReady(true))
+          .catch(() => { /* preview unavailable */ });
+        // Restore the user's last preview size (device-metrics override).
+        // Runs right after Page.enable so the override is applied before the
+        // first screenshot capture. 'auto' clears any previous override.
+        applyViewport(viewportId);
+        c.cdpSend('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] }).catch(() => { /* emulation unavailable */ });
+        c.cdpSend('Performance.enable').catch(() => { /* metrics unavailable */ });
+        c.cdpOn('Runtime.consoleAPICalled', handlers.onConsoleEvent);
+        c.cdpOn('Runtime.exceptionThrown', handlers.onExceptionEvent);
+        c.cdpOn('Network.requestWillBeSent', handlers.onRequestWillBeSent);
+        c.cdpOn('Network.responseReceived', handlers.onResponseReceived);
+        c.cdpOn('Network.loadingFinished', handlers.onLoadingFinished);
+        c.cdpOn('Network.loadingFailed', handlers.onLoadingFailed);
+        c.cdpOn('Page.frameNavigated', handlers.onFrameNavigated);
+        c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
+      });
     result.ws.addEventListener('close', (ev) => {
       setCdpReady(false);
       const code = ev && typeof ev.code === 'number' ? ev.code : 0;
@@ -1091,32 +1109,52 @@ applyViewport(viewportId);
   // scroller — their body height is bounded by CSS so a busy page
   // doesn't force-grow the panel past the available viewport.
   const renderPanelBody = (id) => {
-if (id === 'preview') return h(PreviewPanel, {
-capture: handlers && handlers.captureScreenshot,
-clickAt: handlers && handlers.clickAt,
-subscribe: conn.current && conn.current.cdpOn,
-ackFrame: handlers && handlers.ackPreviewFrame,
-refreshRef: previewRefreshRef,
-fullscreenRef: previewFullscreenRef,
-typeBarRef: previewTypeBarRef,
-draftCraftRef: previewDraftCraftRef,
-onInsert: handlers ? handlers.insertText : null,
-onEnter: handlers ? handlers.pressEnter : null,
-onDraftCraft: (image) => image && setDraftCraftImage(image),
-// Full-screen header reads the live URL + document.title so it
-// can echo the page identity in the same way the webpreview
-// modal does. `evaluate` wraps Runtime.evaluate; `sizePresets`
-// is the same list the in-panel Size dropdown uses.
-evaluate: (expression) => conn.current ? conn.current.cdpSend('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }) : Promise.reject(new Error('not connected')),
-sizePresets: VIEWPORT_PRESETS,
-sizeId: viewportId,
-sizeDisabled: !cdpReady,
-onSizeChange: applyViewport
-});
-    if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
-    if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
-    return h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) });
-  };
+  if (id === 'preview') return h(PreviewPanel, {
+    capture: handlers && handlers.captureScreenshot,
+    clickAt: (x, y) => {
+      // When "pick mode" is on, a tap on the preview selects an element
+      // for the Styles panel instead of poking the page. We pass the
+      // tap coordinates straight through to the StylesPanel's handler.
+      if (stylesActive && stylesPickRef.current) {
+        stylesPickRef.current(x, y);
+        return;
+      }
+      if (handlers) handlers.clickAt(x, y).catch(() => {});
+    },
+    subscribe: conn.current && conn.current.cdpOn,
+    ackFrame: handlers && handlers.ackPreviewFrame,
+    refreshRef: previewRefreshRef,
+    fullscreenRef: previewFullscreenRef,
+    typeBarRef: previewTypeBarRef,
+    draftCraftRef: previewDraftCraftRef,
+    onInsert: handlers ? handlers.insertText : null,
+    onEnter: handlers ? handlers.pressEnter : null,
+    onDraftCraft: (image) => image && setDraftCraftImage(image),
+    // Full-screen header reads the live URL + document.title so it
+    // can echo the page identity in the same way the webpreview
+    // modal does. `evaluate` wraps Runtime.evaluate; `sizePresets`
+    // is the same list the in-panel Size dropdown uses.
+    evaluate: (expression) => conn.current ? conn.current.cdpSend('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }) : Promise.reject(new Error('not connected')),
+    sizePresets: VIEWPORT_PRESETS,
+    sizeId: viewportId,
+    sizeDisabled: !cdpReady,
+    onSizeChange: applyViewport
+  });
+  if (id === 'styles') return h(StylesPanel, {
+    pickNodeAt: handlers ? handlers.pickNodeAt : null,
+    selectBySelector: handlers ? handlers.selectBySelector : null,
+    refreshNodeModel: handlers ? handlers.refreshNodeModel : null,
+    hideNodeHighlight: handlers ? handlers.hideNodeHighlight : null,
+    setInlineStyleProperty: handlers ? handlers.setInlineStyleProperty : null,
+    removeInlineStyleProperty: handlers ? handlers.removeInlineStyleProperty : null,
+    pickHandlerRef: stylesPickRef,
+    pickMode: stylesActive,
+    onPickModeChange: setStylesActive
+  });
+  if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
+  if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
+  return h(OverviewPanel, { metrics: () => handlers ? handlers.fetchMetrics() : Promise.resolve({}) });
+};
   // InspectActionsMenu — overflow menu attached to the right side of
   // the view-head. Holds the less-frequent chrome actions (Reload,
   // Open in new tab, Close tab) so the most common action — typing a

@@ -4,6 +4,7 @@ export { JsConsole } from './JsConsole.jsx';
 export { NetworkPanel } from './NetworkPanel.jsx';
 export { PreviewPanel } from './PreviewPanel.jsx';
 export { OverviewPanel } from './OverviewPanel.jsx';
+export { StylesPanel } from './StylesPanel.jsx';
 export { DetailSheet } from './DetailSheet.jsx';
 export { ConfirmSheet } from './ConfirmSheet.jsx';
 export { createCdpConnection } from './cdp.js';

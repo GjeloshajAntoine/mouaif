@@ -279,16 +279,17 @@ export function createEventHandlers(state) {
       screenHeight: preset.height
     });
   }
-  // clickAt — forward a tap on the live preview to the page. The x/y here
-  // are device-pixel coordinates within the full-page screenshot
-  // (captureBeyondViewport), computed by PreviewPanel from the image's
-  // naturalWidth/naturalHeight. Input.dispatchMouseEvent expects CSS
-  // pixels relative to the viewport, so we (1) divide by the page's
-  // devicePixelRatio to get page CSS coordinates, then (2) offset by the
-  // page's current scroll position to get viewport coordinates. Anything
-  // tapped outside the current viewport (e.g. below the fold) is first
-  // scrolled into view so the click actually lands on the target element.
-  async function clickAt(x, y) {
+  // viewportCoords — convert a tap point in the full-page screenshot
+  // (device-pixel coordinates, computed by PreviewPanel from the image's
+  // naturalWidth/naturalHeight) into a viewport CSS coordinate pair that CDP
+  // commands such as Input.dispatchMouseEvent and DOM.getNodeForLocation
+  // expect. We (1) divide by the page's devicePixelRatio to get page CSS
+  // coordinates, then (2) offset by the page's current scroll position to get
+  // viewport coordinates. Anything tapped outside the current viewport (e.g.
+  // below the fold) is first scrolled into view so the command lands on the
+  // point the user actually tapped. Shared by clickAt (tap-to-click) and
+  // pickNodeAt (tap-to-select for the Styles panel).
+  async function viewportCoords(x, y) {
     let scrollX = 0, scrollY = 0, dpr = 1;
     try {
       const r = await cdpSend('Runtime.evaluate', {
@@ -312,7 +313,7 @@ export function createEventHandlers(state) {
     let targetScrollY = scrollY;
 
     // If the tapped point is outside the live viewport, scroll it into
-    // view (roughly centered) so the dispatched click hits the element.
+    // view (roughly centered) so the dispatched command hits the element.
     if (vh > 0 && (vy < 0 || vy > vh)) {
       targetScrollY = Math.max(0, Math.round(pageY - vh / 2));
     }
@@ -322,11 +323,136 @@ export function createEventHandlers(state) {
         vy = Math.round(pageY - targetScrollY);
       } catch { /* fall through with the original vy */ }
     }
-
-    return cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x: vx, y: vy, button: 'left', clickCount: 1 })
-      .then(() => cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x: vx, y: vy, button: 'left', clickCount: 1 }))
+    return { x: vx, y: vy };
+  }
+  // clickAt — forward a tap on the live preview to the page. The x/y here
+  // are device-pixel coordinates within the full-page screenshot
+  // (captureBeyondViewport), computed by PreviewPanel from the image's
+  // naturalWidth/naturalHeight. See viewportCoords for the mapping.
+  async function clickAt(x, y) {
+    const p = await viewportCoords(x, y);
+    return cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', clickCount: 1 })
+      .then(() => cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', clickCount: 1 }))
       .then(() => true)
       .catch((e) => { throw e; });
+  }
+  // pickNodeAt — tap-to-select for the Styles panel. Given a screenshot
+  // device-pixel point, converts it to viewport coordinates (viewportCoords),
+  // asks the DOM domain which node sits at that location, then assembles a
+  // full "node model" (label, inline styles, computed styles, box model,
+  // objectId for live editing) for the StylesPanel to render. Returns null
+  // when nothing selectable is under the point.
+  async function pickNodeAt(x, y) {
+    const p = await viewportCoords(x, y);
+    const r = await cdpSend('DOM.getNodeForLocation', { x: p.x, y: p.y, includeUserAgentShadowDOM: true }, 8000);
+    const nodeId = r && r.nodeId;
+    if (!nodeId) return null;
+    return buildNodeModel(nodeId);
+  }
+  // buildNodeModel — resolve everything the Styles panel needs for a nodeId:
+  // the DOM node (for its tag/id/class), a RemoteObject objectId (for live
+  // inline-style edits via Runtime.callFunctionOn), the inline declared
+  // styles, the computed styles, and the box-model dimensions. Also highlights
+  // the node in the live page (Overlay.highlightNode) so the user sees which
+  // element they picked. All CDP round-trips are guarded so a missing domain
+  // (e.g. CSS not enabled) degrades to a partial model instead of failing.
+  async function buildNodeModel(nodeId) {
+    const model = { nodeId, node: null, objectId: null, inlineProps: [], computed: [], box: null };
+    try {
+      const d = await cdpSend('DOM.describeNode', { nodeId });
+      model.node = (d && d.node) || null;
+    } catch { /* DOM node unavailable */ }
+    try {
+      const o = await cdpSend('DOM.resolveNode', { nodeId });
+      model.objectId = (o && o.object && o.object.objectId) || null;
+    } catch { /* object resolve failed */ }
+    if (model.objectId) {
+      try {
+        const s = await cdpSend('Runtime.callFunctionOn', {
+          objectId: model.objectId,
+          functionDeclaration: 'function(){ var a=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); a.push([p, this.style.getPropertyValue(p)]); } return a; }',
+          returnByValue: true
+        });
+        const arr = s && s.result && s.result.value;
+        if (Array.isArray(arr)) model.inlineProps = arr.map((x) => ({ prop: x[0], value: String(x[1] || '') }));
+      } catch { /* inline style unavailable */ }
+    }
+    try {
+      const c = await cdpSend('CSS.getComputedStyleForNode', { nodeId });
+      model.computed = ((c && c.computedStyle) || []).map((x) => ({ prop: x.name, value: x.value || '' }));
+    } catch { /* computed unavailable */ }
+    try {
+      const b = await cdpSend('DOM.getBoxModel', { nodeId });
+      if (b && b.model) model.box = { width: b.model.width, height: b.model.height };
+    } catch { /* box model unavailable */ }
+    try {
+      await cdpSend('Overlay.highlightNode', {
+        nodeId,
+        highlightConfig: {
+          showInfo: true,
+          showStyles: false,
+          contentColor: { r: 110, g: 168, b: 254, a: 0.3 },
+          paddingColor: { r: 110, g: 168, b: 254, a: 0.15 },
+          borderColor: { r: 110, g: 168, b: 254, a: 0.6 }
+        }
+      });
+    } catch { /* highlight unavailable */ }
+    return model;
+  }
+  // hideNodeHighlight — clear the Overlay box-model highlight on the page.
+  async function hideNodeHighlight() {
+    try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
+  }
+  // refreshNodeModel — re-fetch a node's style model after an edit, keeping
+  // the same nodeId (so the selected element is preserved). Used by the
+  // Styles panel's "refresh" action so computed values reflect an applied
+  // inline change without re-picking the element.
+  async function refreshNodeModel(nodeId) {
+    if (!nodeId) return null;
+    return buildNodeModel(nodeId);
+  }
+  // selectBySelector — pick an element by a CSS selector text instead of a
+  // tap. A mobile-first alternative to tap-to-select that works even when the
+  // preview is hidden: type `#hero .card` and the first matching element is
+  // resolved and described. Uses DOM.getDocument + DOM.querySelector.
+  async function selectBySelector(selector) {
+    const sel = String(selector || '').trim();
+    if (!sel) return null;
+    const d = await cdpSend('DOM.getDocument', {}, 8000);
+    const rootId = d && d.root && d.root.nodeId;
+    if (!rootId) return null;
+    const q = await cdpSend('DOM.querySelector', { nodeId: rootId, selector: sel });
+    const nodeId = q && q.nodeId;
+    if (!nodeId) return null;
+    return buildNodeModel(nodeId);
+  }
+  // setInlineStyleProperty — write one CSS property onto the element's own
+  // inline style via Runtime.callFunctionOn. This is the live-edit primitive
+  // for the Styles panel: it always lands on the element regardless of whether
+  // it already had an inline style or inherited the property from a class.
+  async function setInlineStyleProperty(objectId, prop, value) {
+    if (!objectId) throw new Error('element not resolved');
+    const r = await cdpSend('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration: 'function(p, v){ try { this.style.setProperty(p, v); return { ok:true }; } catch (e) { return { ok:false, error:String(e) }; } }',
+      arguments: [{ value: String(prop) }, { value: String(value) }],
+      returnByValue: true
+    });
+    const out = r && r.result && r.result.value;
+    if (out && !out.ok) throw new Error(out.error || 'setProperty failed');
+    return true;
+  }
+  // removeInlineStyleProperty — drop one CSS property from the element's
+  // inline style (returns the element to whatever a class/stylesheet gives it).
+  async function removeInlineStyleProperty(objectId, prop) {
+    if (!objectId) throw new Error('element not resolved');
+    await cdpSend('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration: 'function(p){ this.style.removeProperty(p); return { ok:true }; }',
+      arguments: [{ value: String(prop) }],
+      returnByValue: true
+    });
+    return true;
   }
 
   // insertText — paste a whole string into the currently focused element in
@@ -414,6 +540,8 @@ onFrameNavigated, onNavigatedWithinDocument,
 pushConsole, pushNetwork, captureScreenshot, clickAt, fetchMetrics,
 startPreviewStream, stopPreviewStream, ackPreviewFrame,
 loadResponseBody, evaluateExpression, setViewportSize,
-insertText, pressEnter
+insertText, pressEnter,
+pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
+refreshNodeModel, selectBySelector
 };
 }
