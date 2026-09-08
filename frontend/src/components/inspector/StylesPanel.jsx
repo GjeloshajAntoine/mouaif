@@ -305,9 +305,9 @@ setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) =>
 }
 
 function refreshStyles() {
-const nodeId = modelRef.current && modelRef.current.nodeId;
-if (!nodeId) return;
-loadModel(() => props.refreshNodeModel(nodeId));
+const objectId = modelRef.current && modelRef.current.objectId;
+if (!objectId) return;
+loadModel(() => props.refreshNodeModel(objectId));
 }
 
 function clearPick() {

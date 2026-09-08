@@ -336,96 +336,108 @@ export function createEventHandlers(state) {
       .then(() => true)
       .catch((e) => { throw e; });
   }
-  // pickNodeAt — tap-to-select for the Styles panel. Given a screenshot
-  // device-pixel point, converts it to viewport coordinates (viewportCoords),
-  // asks the DOM domain which node sits at that location, then assembles a
-  // full "node model" (label, inline styles, computed styles, box model,
-  // objectId for live editing) for the StylesPanel to render. Returns null
-  // when nothing selectable is under the point.
-  async function pickNodeAt(x, y) {
-    const p = await viewportCoords(x, y);
-    const r = await cdpSend('DOM.getNodeForLocation', { x: p.x, y: p.y, includeUserAgentShadowDOM: true }, 8000);
-    const nodeId = r && r.nodeId;
-    if (!nodeId) return null;
-    return buildNodeModel(nodeId);
-  }
-  // buildNodeModel — resolve everything the Styles panel needs for a nodeId:
-  // the DOM node (for its tag/id/class), a RemoteObject objectId (for live
-  // inline-style edits via Runtime.callFunctionOn), the inline declared
-  // styles, the computed styles, and the box-model dimensions. Also highlights
-  // the node in the live page (Overlay.highlightNode) so the user sees which
-  // element they picked. All CDP round-trips are guarded so a missing domain
-  // (e.g. CSS not enabled) degrades to a partial model instead of failing.
-  async function buildNodeModel(nodeId) {
-    const model = { nodeId, node: null, objectId: null, inlineProps: [], computed: [], box: null };
-    try {
-      const d = await cdpSend('DOM.describeNode', { nodeId });
-      model.node = (d && d.node) || null;
-    } catch { /* DOM node unavailable */ }
-    try {
-      const o = await cdpSend('DOM.resolveNode', { nodeId });
-      model.objectId = (o && o.object && o.object.objectId) || null;
-    } catch { /* object resolve failed */ }
-    if (model.objectId) {
-      try {
-        const s = await cdpSend('Runtime.callFunctionOn', {
-          objectId: model.objectId,
-          functionDeclaration: 'function(){ var a=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); a.push([p, this.style.getPropertyValue(p)]); } return a; }',
-          returnByValue: true
-        });
-        const arr = s && s.result && s.result.value;
-        if (Array.isArray(arr)) model.inlineProps = arr.map((x) => ({ prop: x[0], value: String(x[1] || '') }));
-      } catch { /* inline style unavailable */ }
-    }
-    try {
-      const c = await cdpSend('CSS.getComputedStyleForNode', { nodeId });
-      model.computed = ((c && c.computedStyle) || []).map((x) => ({ prop: x.name, value: x.value || '' }));
-    } catch { /* computed unavailable */ }
-    try {
-      const b = await cdpSend('DOM.getBoxModel', { nodeId });
-      if (b && b.model) model.box = { width: b.model.width, height: b.model.height };
-    } catch { /* box model unavailable */ }
-    try {
-      await cdpSend('Overlay.highlightNode', {
-        nodeId,
-        highlightConfig: {
-          showInfo: true,
-          showStyles: false,
-          contentColor: { r: 110, g: 168, b: 254, a: 0.3 },
-          paddingColor: { r: 110, g: 168, b: 254, a: 0.15 },
-          borderColor: { r: 110, g: 168, b: 254, a: 0.6 }
-        }
-      });
-    } catch { /* highlight unavailable */ }
-    return model;
-  }
-  // hideNodeHighlight — clear the Overlay box-model highlight on the page.
-  async function hideNodeHighlight() {
-    try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
-  }
-  // refreshNodeModel — re-fetch a node's style model after an edit, keeping
-  // the same nodeId (so the selected element is preserved). Used by the
-  // Styles panel's "refresh" action so computed values reflect an applied
-  // inline change without re-picking the element.
-  async function refreshNodeModel(nodeId) {
-    if (!nodeId) return null;
-    return buildNodeModel(nodeId);
-  }
-  // selectBySelector — pick an element by a CSS selector text instead of a
-  // tap. A mobile-first alternative to tap-to-select that works even when the
-  // preview is hidden: type `#hero .card` and the first matching element is
-  // resolved and described. Uses DOM.getDocument + DOM.querySelector.
-  async function selectBySelector(selector) {
-    const sel = String(selector || '').trim();
-    if (!sel) return null;
-    const d = await cdpSend('DOM.getDocument', {}, 8000);
-    const rootId = d && d.root && d.root.nodeId;
-    if (!rootId) return null;
-    const q = await cdpSend('DOM.querySelector', { nodeId: rootId, selector: sel });
-    const nodeId = q && q.nodeId;
-    if (!nodeId) return null;
-    return buildNodeModel(nodeId);
-  }
+// pickNodeAt — tap-to-select for the Styles panel. Given a screenshot
+// device-pixel point, converts it to viewport coordinates (viewportCoords),
+// then hit-tests the live page with document.elementFromPoint and assembles
+// a full "node model" (label, inline styles, computed styles, box model,
+// objectId for live editing) for the StylesPanel to render. Returns null
+// when nothing selectable is under the point.
+//
+// We build the model entirely through Runtime (elementFromPoint +
+// callFunctionOn) rather than the DOM domain. DOM.getNodeForLocation often
+// returns only a backendNodeId (not a nodeId) and DOM.requestNode can map an
+// objectId to nodeId 0 on some targets, so the DOM-domain hit-test route is
+// unreliable across Chrome versions. elementFromPoint + callFunctionOn works
+// with a RemoteObject objectId directly and needs no nodeId at all.
+async function pickNodeAt(x, y) {
+const p = await viewportCoords(x, y);
+const ev = await cdpSend('Runtime.evaluate', {
+expression: '(function(){ var e = document.elementFromPoint(' + Math.round(p.x) + ',' + Math.round(p.y) + '); return e; })()',
+objectGroup: 'mouaif-pick',
+returnByValue: false
+}, 8000);
+const objectId = ev && ev.result && ev.result.objectId;
+if (!objectId) return null;
+return buildNodeModel(objectId);
+}
+// buildNodeModel — resolve everything the Styles panel needs from a
+// RemoteObject objectId: the DOM node identity (tag/id/class), the inline
+// declared styles, the computed styles, and the box-model dimensions. Also
+// highlights the node in the live page (Overlay.highlightNode) so the user
+// sees which element they picked. Everything except the highlight is read
+// with a single Runtime.callFunctionOn (which needs no nodeId), so the panel
+// degrades gracefully when the DOM domain is unavailable.
+async function buildNodeModel(objectId) {
+if (!objectId) return null;
+const model = { objectId, node: null, inlineProps: [], computed: [], box: null };
+try {
+const s = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height }; }',
+returnByValue: true
+});
+const v = s && s.result && s.result.value;
+if (v) {
+model.node = { nodeName: v.tag, attributes: [{ name: 'id', value: v.id || '' }, { name: 'class', value: v.className || '' }] };
+model.inlineProps = (v.inline || []).map((x) => ({ prop: x[0], value: String(x[1] || '') }));
+// Computed styles come back in whatever order the browser iterates
+// CSSStyleDeclaration; sort alphabetically so the long read-only list is
+// scannable (mirrors the desktop DevTools Styles pane).
+model.computed = (v.computed || []).map((x) => ({ prop: x[0], value: String(x[1] || '') }))
+  .sort((a, b) => (a.prop < b.prop ? -1 : a.prop > b.prop ? 1 : 0));
+model.box = { width: v.width, height: v.height };
+}
+} catch { /* element model unavailable */ }
+// Best-effort highlight. Overlay.highlightNode needs a nodeId; try to
+// resolve one from the objectId, but if that's unavailable (nodeId 0) just
+// skip the highlight rather than failing the pick.
+try {
+const req = await cdpSend('DOM.requestNode', { objectId }, 8000);
+const nodeId = req && req.nodeId;
+if (nodeId) {
+await cdpSend('Overlay.highlightNode', {
+nodeId,
+highlightConfig: {
+showInfo: true,
+showStyles: false,
+contentColor: { r: 110, g: 168, b: 254, a: 0.3 },
+paddingColor: { r: 110, g: 168, b: 254, a: 0.15 },
+borderColor: { r: 110, g: 168, b: 254, a: 0.6 }
+}
+});
+}
+} catch { /* highlight unavailable */ }
+return model;
+}
+// hideNodeHighlight — clear the Overlay box-model highlight on the page.
+async function hideNodeHighlight() {
+try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
+}
+// refreshNodeModel — re-fetch a node's style model after an edit, keeping
+// the same objectId (so the selected element is preserved). Used by the
+// Styles panel's "refresh" action so computed values reflect an applied
+// inline change without re-picking the element.
+async function refreshNodeModel(objectId) {
+if (!objectId) return null;
+return buildNodeModel(objectId);
+}
+// selectBySelector — pick an element by a CSS selector text instead of a
+// tap. A mobile-first alternative to tap-to-select that works even when the
+// preview is hidden: type `#hero .card` and the first matching element is
+// resolved and described. Uses document.querySelector via Runtime, then the
+// same objectId-based model builder as tap-to-select.
+async function selectBySelector(selector) {
+const sel = String(selector || '').trim();
+if (!sel) return null;
+const ev = await cdpSend('Runtime.evaluate', {
+expression: '(function(){ var e = document.querySelector(' + JSON.stringify(sel) + '); return e; })()',
+objectGroup: 'mouaif-pick',
+returnByValue: false
+}, 8000);
+const objectId = ev && ev.result && ev.result.objectId;
+if (!objectId) return null;
+return buildNodeModel(objectId);
+}
   // setInlineStyleProperty — write one CSS property onto the element's own
   // inline style via Runtime.callFunctionOn. This is the live-edit primitive
   // for the Styles panel: it always lands on the element regardless of whether
