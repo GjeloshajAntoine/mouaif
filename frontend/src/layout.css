@@ -199,18 +199,21 @@ padding-top: 0;
   flex-direction: column;
   gap: 1px;
 }
-/* ---- Motion: view enter + bubble enter + live cursor -------------- */
-
-/* The .app__main > section is the root of every top-level view. A
-   short fade + lift on mount gives a sense of place; the stagger
-   on .chat-msg children makes a streaming reply feel conversational
-   rather than dumpy. All animations are transform/opacity-only to
-   stay on the compositor thread. Flush routes opt out (see the
-   .app__main--flush rule below) so a transformed ancestor never
-   becomes the containing block for the chat view's fixed
-   model-picker sheet. */
+/* ---- Motion: bubble enter + live cursor --------------------------
+The top-level view section (the direct child of .app__main) is
+deliberately NOT animated. The three tab views (Chats, Inspector,
+Settings) are the only non-flush sections, and switching tabs
+unmounts the old section and mounts a new one in a single render.
+Replaying a fade on that freshly mounted section made the whole
+content area blink to the background and back on every tab change
+— with a persistent tab bar the switch should be instant. The
+chat-message bubble and live-cursor animations below are the only
+transitions that run. Drill-in (flush) sections already opt out of
+any animation (see the .app__main--flush rule below) so a
+transformed ancestor never becomes the containing block for the
+chat view's fixed model-picker sheet. */
 .app__main > section {
-  animation: mouaif-view-in var(--dur) var(--ease-out) both;
+  animation: none;
 }
 .app__main--flush > section {
   animation: none;
@@ -258,11 +261,6 @@ padding-top: 0;
   overscroll-behavior: contain;
   touch-action: pan-y;
   animation: none;
-}
-
-@keyframes mouaif-view-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0);   }
 }
 
 @keyframes mouaif-bubble-in {
