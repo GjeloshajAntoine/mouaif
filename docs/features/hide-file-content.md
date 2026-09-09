@@ -9,11 +9,11 @@ Per-project settings page that marks specific line ranges of a source file as hi
 Open **Settings → This project → More settings → Hide file content**, or navigate directly to `#/settings/project/hide`.
 
 1. Tap **+ Add file**, or tap a saved file row to edit it.
-2. The dedicated editor shows the original file with line numbers. Tap a line to hide it; tap it again to show it. Selected lines have a highlight and check mark.
-3. For larger selections, expand **Enter line ranges manually** and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save.
-4. Tap **Save**. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.
-
-The preview renders up to 100 lines per page, with Previous / Next and **Go to line** for longer files. It uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, manual ranges remain available.
+2. The file opens in the real CodeMirror text editor (dark theme, line numbers, syntax highlighting) with the original content. It is **read-only** — the text cannot be edited, only marked.
+3. **Tap a line number in the toggle gutter** (the column left of the text) to hide that line; tap it again to show it. Hidden lines get a highlighted background and a ✓ in the gutter, matching the existing editor styling. The gutter has a 44px-minimum tap target per line.
+4. For larger selections, expand **Enter line ranges manually** and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save.
+5. Tap **Save**. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.
+The preview uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, manual ranges remain available.
 
 **Back** retains an unsaved selection in memory for a return visit to the same file and project. **Cancel** asks before discarding changes. Drafts contain only paths and line numbers, not file content; they do not survive a reload, which warns while an editor has unsaved changes. To stop hiding a file, remove its ranges and save; removing all saved ranges requires confirmation.
 
@@ -61,6 +61,8 @@ And a `search_files` call for text that only appears on a hidden line returns no
 - [src/tools/files.js](../../src/tools/files.js) — `runReadFile` redacts the body via `redactText`; `runSearchFiles` skips hidden lines via `lineIsHidden`.
 - REST surface: `GET /api/settings/hide-file-content?projectDir=<abs>` returns the normalized rules; `PUT /api/settings/hide-file-content` with `{ projectDir, rules }` stores them. Both live in [src/server-handlers-settings.js](../../src/server-handlers-settings.js).
 - Frontend route `#/settings/project/hide?projectDir=<dir>` renders the lazily loaded [SettingsHiddenContent.jsx](../../frontend/src/components/SettingsHiddenContent.jsx). Adding `&file=<project-relative-path>` opens [HiddenContentEditor.jsx](../../frontend/src/components/settings/HiddenContentEditor.jsx); caller context is preserved. The picker reuses [AgentFilePicker.jsx](../../frontend/src/components/AgentFilePicker.jsx) with contextual labels.
+- The editor reuses the same CodeMirror runtime the `FileEditor` modal uses (`@codemirror/state` + `@codemirror/view`, `oneDark`), loaded as its own lazy chunk. It mounts a read-only `EditorView` and adds a custom **toggle gutter** via `gutter()`: a `GutterMarker` per line renders ✓ when hidden / + when not, `lineMarkerChange` rebuilds when rules change, and `domEventHandlers.click` toggles the line through `toggleLine`. A `StateEffect`+`StateField` carries the rule list into the editor so the gutter and the full-line highlight stay in sync with React state without re-creating the view. The gutter gives each line a 44px-minimum tap target; the editor is scrolled by CodeMirror, so no manual paging is needed.
+- Manual range editing remains and is the fallback when the preview fails. Editor and manual edits share one `ranges` state, so a form value change immediately updates the gutter and highlight.
 - The preview uses the existing owner-facing `GET /api/file?projectDir=<dir>&path=<path>` endpoint. It is read-only: the editor never calls `PUT /api/file` or sends file content to the model. Redaction saves still use the existing settings endpoint.
 - Mobile-first: one column, a separate editor instead of a nested settings card, wrapped source lines, 44px-minimum controls, and a sticky safe-area-aware Save / Cancel footer. Selection is indicated by both color and a check mark, with pressed-state semantics and accessible source descriptions.
 - The parent Project settings page derives its hidden-file count from the already-loaded project settings, independently of the dedicated editor’s state.

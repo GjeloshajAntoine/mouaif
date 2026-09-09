@@ -31,20 +31,26 @@
 .hidden-content__fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .hidden-content .btn, .hidden-content .input, .hidden-content summary { min-height: 2.75rem; min-width: 2.75rem; }
 .hidden-content .input { font-size: 1rem; box-sizing: border-box; }
-.hidden-content__viewer {
-  max-height: 48dvh; min-height: 8rem; overflow: auto; overscroll-behavior: contain;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+.hidden-content__editor {
+max-height: 48dvh; min-height: 8rem; overflow: hidden;
+border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
 }
-.hidden-content__line {
-  display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) 1.25rem; align-items: start; gap: 0.5rem;
-  min-height: 2.75rem; width: 100%; padding: 0.65rem 0.5rem;
-  color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--border);
-  text-align: left; cursor: pointer; line-height: 1.45;
+/* CodeMirror inside the hidden-line editor: dark theme, wraps, and a
+  tap target the size of a line in the toggle gutter. */
+.hidden-content__editor .cm-editor { height: 100%; }
+.hidden-content__editor .cm-scroller { font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; }
+.hidden-content__editor .cm-content { padding: 8px 0; }
+.hidden-content__editor .cm-gutters { background: #282c34; border-right: 1px solid #21252b; color: var(--muted); }
+.hidden-content__editor .hc__toggle { cursor: pointer; }
+/* Each toggle gutter element is sized by CodeMirror to its block height, so
+   it stays aligned with the matching content line. Do not force a height on
+   the element — the whole column is the tap target. */
+.hidden-content__editor .hc__toggle-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 100%;
+  text-align: center; color: var(--accent); font-weight: 700;
 }
-.hidden-content__line code { font-size: 0.8rem; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
-.hidden-content__line-number { color: var(--muted); font: 0.8rem/1.45 var(--font-mono); text-align: right; }
-.hidden-content__line[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0.2rem 0 var(--accent); }
-.hidden-content__line-mark { color: var(--accent); font-weight: 700; text-align: center; }
+.hidden-content__editor .hc__line-hidden { background: var(--accent-soft); }
 .hidden-content button:focus-visible, .hidden-content summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hidden-content button:disabled { opacity: 0.5; cursor: default; }
 .hidden-content__pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
