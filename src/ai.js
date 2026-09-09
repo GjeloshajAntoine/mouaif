@@ -10,7 +10,6 @@
 //                          adapters (listModels), request builders
 //                          (BUILDERS), event parsers (PARSERS), and the
 //                          shared helpers they use.
-//   src/ai-models.js     — model-list parsing + curated model catalogs.
 //   src/ai-stream.js     — the multi-turn streaming loop (streamChat,
 //                          runSingleToolCall, runUpstreamTurn).
 //   src/ai-chat.js       — non-streaming convenience wrapper (chat).
