@@ -208,7 +208,7 @@ async function runReadFile(opts) {
   const a = Math.max(1, startLine);
   const b = Math.min(totalLines, endLine);
   const slice = lines.slice(a - 1, b).join('\n');
-  const sliceOut = hideFileContent.redactText(projectDir, rel, slice);
+  const sliceOut = hideFileContent.redactText(projectDir, rel, slice, a);
   return {
     relPath: rel,
     startLine: a,

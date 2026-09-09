@@ -97,15 +97,16 @@ return rule.ranges.some((r) => line >= r.start && line <= r.end);
 // identical to the on-disk file. Returns { text, redacted, hiddenLines }.
 // `redacted` is true when at least one line was replaced; `hiddenLines`
 // is the count of lines hidden. A rule that no longer matches the file
-// (path changed, ranges empty) leaves the text untouched.
-function redactText(projectDir, relPath, text) {
+// (path changed, ranges empty) leaves the text untouched. `startLine` is
+// the original 1-indexed line of the first line in a read_file slice.
+function redactText(projectDir, relPath, text, startLine = 1) {
 const rule = ruleForPath(projectDir, relPath);
 if (!rule || typeof text !== 'string') {
 return { text, redacted: false, hiddenLines: 0, rule };
 }
 let hiddenLines = 0;
 const lines = text.split('\n').map((line, idx) => {
-if (isLineHidden(rule, idx + 1)) {
+if (isLineHidden(rule, idx + startLine)) {
 hiddenLines++;
 return REDACT_MARKER;
 }

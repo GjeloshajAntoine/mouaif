@@ -38,7 +38,7 @@ And a `search_files` call for text that only appears on a hidden line returns no
   ```
 - Each range is 1-indexed and inclusive (`start` and `end` may be equal for a single line). A malformed range (start below 1, or end below start) is dropped on save; an entry with no valid ranges is dropped.
 - Only `read_file` and `search_files` are redacted. `list_files` returns paths (no content), and `write_file` / `edit_file` modify the on-disk file rather than expose it, so they are unchanged.
-- The redaction applies to whole-file reads **and** to `startLine` / `endLine` slices, so a hidden range cannot be recovered by requesting a sub-window.
+- The redaction applies to whole-file reads **and** to `startLine` / `endLine` slices. Slices retain their original line offset when checking rules, so a hidden range cannot be recovered by requesting a sub-window. In-process regression coverage: `node scripts/test-hide-file-slices.js`.
 - The replacement keeps the newline structure intact, so line numbers and the total line count are identical to the real file.
 - The on-disk file is untouched; removing a rule restores full visibility immediately.
 
