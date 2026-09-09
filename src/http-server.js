@@ -3,7 +3,7 @@
 // HTTP server core — routes + handlers.
 //
 // The original single-file src/index.js was split so no file in the
-// repo stays above ~1 000 lines. This module owns the request routing
+// repo stays above ~2 000 lines. This module owns the request routing
 // and the server bootstrap (createServer); the handlers live in focused
 // sub-modules:
 //

@@ -10,6 +10,6 @@
 //
 // The original single-file src/index.js was split into focused
 // sub-modules (see src/http-server.js header comment) so no file in
-// the repo stays above ~1 000 lines.
+// the repo stays above ~2 000 lines.
 
 module.exports = require('./http-server.js');

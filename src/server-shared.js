@@ -8,7 +8,7 @@
 // those handlers all reach for (sendJSON, cookie/origin authorization,
 // settings redaction, model resolution). This module owns that shared
 // surface so the per-domain handler modules stay focused and no file in
-// the repo stays above ~1 000 lines.
+// the repo stays above ~2 000 lines.
 //
 // It deliberately does NOT require any handler module (no circular
 // deps); it only requires the domain modules (settings, ai, auth, ...)

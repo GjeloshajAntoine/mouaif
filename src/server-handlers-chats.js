@@ -2,7 +2,7 @@
 
 // Chat + message REST handlers, including the SSE streaming loop
 // (handleChatStream). Extracted from the original single-file
-// http-server.js so no file stays above ~1 000 lines. Shared state
+// http-server.js so no file stays above ~2 000 lines. Shared state
 // (runningChats, runningChatCancels) and helpers live in
 // src/server-shared.js.
 

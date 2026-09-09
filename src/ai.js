@@ -4,7 +4,7 @@
 //
 // This module is the public entry point for the AI client. The actual
 // implementation lives in focused sub-modules so the largest file in the
-// repo stays under ~1 000 lines each:
+// repo stays under ~2 000 lines each:
 //
 //   src/ai-endpoints.js  — provider endpoints (ENDPOINTS), model-list
 //                          adapters (listModels), request builders

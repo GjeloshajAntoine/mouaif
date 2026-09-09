@@ -1,7 +1,7 @@
 'use strict';
 
 // Settings REST handlers. Extracted from the original single-file
-// http-server.js so no file stays above ~1 000 lines. See
+// http-server.js so no file stays above ~2 000 lines. See
 // src/server-shared.js for the shared helpers (sendJSON, readJsonBody,
 // settingsForClient, sanitizeClientEntries, ...).
 
