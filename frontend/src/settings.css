@@ -644,6 +644,10 @@ textarea#projectEditor {
   min-height: 34px;
   min-width: 96px;
 }
+/* Single-line rows (hide-file-content path) want the pick button vertically
+  centered with the input, not bottom-aligned against a multi-line field. */
+.settings-project__afn-row--center { align-items: center; }
+.settings-project__afn-row--center .settings-project__afn-pick { align-self: center; }
 
 .afp__overlay {
   position: fixed;
@@ -769,45 +773,54 @@ overflow-wrap: anywhere; word-break: break-word;
 flex: 0 0 auto;
 display: flex; align-items: center; gap: 8px;
 }
-/* Flush full-width add action under the list, matching the Agent
-  section's add button. The list group is inset .settings-project
-  (10px margins), so this keeps the same 10px side gutters and no
-  extra inner padding — the .row/.row--actions variant doubled the
-  inset. */
+/* Compact add action below the list. The app's settings pages never use a
+  full-width primary banner; "+ Add agent" (Agent section) and other list
+  actions are auto-width left-aligned buttons inside the 10px section
+  gutters. Keep the tap target ≥44px but let the button size to its label. */
 .settings-project__hide-addrow {
 margin: 8px 10px 0;
-display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
 }
-.settings-project__hide-addrow .btn--primary { width: 100%; min-width: 0; }
+.settings-project__hide-addrow .btn--primary {
+align-self: flex-start;
+min-width: 0;
+}
 .settings-project__hide-addrow .status {
 font-size: 0.72rem; line-height: 1.3; text-align: left;
 }
 
-/* Line-range editor rows (From / To / Remove). */
+/* Line-range editor rows (From / To / Remove). Each range is a card row:
+  two labeled fields side by side plus a remove button. Labels sit above
+  their inputs (not tiny inline text) so the fields are unambiguous on a
+  phone, and the remove button is a right-aligned 44px tap target. */
 .settings-project__hide-range {
-display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+display: flex; align-items: flex-end; gap: 8px;
 }
 .settings-project__hide-range-field {
-display: flex; align-items: center; gap: 6px; flex: 1 1 110px; min-width: 0;
+display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+flex: 1 1 110px; min-width: 0;
 }
-.settings-project__hide-range-label { color: var(--muted); font-size: 0.7rem; }
+.settings-project__hide-range-label {
+color: var(--muted); font-size: 0.7rem; font-weight: 500;
+letter-spacing: 0.02em; text-transform: uppercase;
+}
 .settings-project__hide-input {
-width: 100%; min-width: 0; max-width: none; min-height: 36px;
-padding: 5px 8px; font-size: 0.82rem; -moz-appearance: textfield;
+width: 100%; min-width: 0; max-width: none; min-height: 40px;
+padding: 6px 10px; font-size: 0.82rem; -moz-appearance: textfield;
 }
 .settings-project__hide-input::-webkit-outer-spin-button,
 .settings-project__hide-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .settings-project__hide-remove {
-flex: 0 0 auto; min-width: 44px; min-height: 44px;
+flex: 0 0 auto; width: 44px; height: 44px;
 display: inline-flex; align-items: center; justify-content: center;
 color: var(--danger); background: transparent; border: 0; cursor: pointer;
-padding: 0 6px;
+padding: 0;
 }
 .settings-project__hide-remove svg { width: 18px; height: 18px; }
 .settings-project__hide-add {
 align-self: flex-start;
-margin: 4px 0 0;
-padding: 0 10px;
-min-height: var(--tap-sm);
-font-size: 0.76rem;
+margin: 6px 0 0;
+padding: 0 12px;
+min-height: var(--tap);
+font-size: 0.8rem;
 }

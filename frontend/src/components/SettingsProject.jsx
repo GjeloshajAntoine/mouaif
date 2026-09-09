@@ -1399,7 +1399,7 @@ h('div', { class: 'settings-project__item-main' },
 h('label', { class: 'settings-project__item-title', for: 'sp-hide-path' }, 'File'),
 h('div', { class: 'settings-project__item-note' }, 'Project-relative path of the file to redact.')
 ),
-h('div', { class: 'settings-project__afn-row' },
+h('div', { class: 'settings-project__afn-row settings-project__afn-row--center' },
 h('input', {
 class: 'input settings-project__mono settings-project__hide-path',
 id: 'sp-hide-path',
