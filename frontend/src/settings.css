@@ -769,7 +769,19 @@ overflow-wrap: anywhere; word-break: break-word;
 flex: 0 0 auto;
 display: flex; align-items: center; gap: 8px;
 }
-.settings-project__hide-addrow { margin-top: 10px; }
+/* Flush full-width add action under the list, matching the Agent
+  section's add button. The list group is inset .settings-project
+  (10px margins), so this keeps the same 10px side gutters and no
+  extra inner padding — the .row/.row--actions variant doubled the
+  inset. */
+.settings-project__hide-addrow {
+margin: 8px 10px 0;
+display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+}
+.settings-project__hide-addrow .btn--primary { width: 100%; min-width: 0; }
+.settings-project__hide-addrow .status {
+font-size: 0.72rem; line-height: 1.3; text-align: left;
+}
 
 /* Line-range editor rows (From / To / Remove). */
 .settings-project__hide-range {
@@ -792,4 +804,10 @@ color: var(--danger); background: transparent; border: 0; cursor: pointer;
 padding: 0 6px;
 }
 .settings-project__hide-remove svg { width: 18px; height: 18px; }
-.settings-project__hide-add { margin: 4px 0 0; }
+.settings-project__hide-add {
+align-self: flex-start;
+margin: 4px 0 0;
+padding: 0 10px;
+min-height: var(--tap-sm);
+font-size: 0.76rem;
+}

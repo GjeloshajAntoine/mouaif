@@ -1378,13 +1378,13 @@ onClick: () => onHideRemoveRule(rule.path)
 )
 )
 ),
-h('div', { class: 'row row--actions settings-project__hide-addrow' },
+h('div', { class: 'settings-project__hide-addrow' },
 h('button', {
 class: 'btn btn--primary',
 type: 'button',
 onClick: () => setHidePickOpen(true)
 }, '+ Add file'),
-h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg)
+hideEditing ? null : h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg)
 )
 ),
 hideEditing
@@ -1423,18 +1423,15 @@ h('div', { class: 'settings-project__item-note' }, '1-indexed, inclusive. A rang
 h('div', { class: 'settings-project__hide-ranges' },
 hideEditing.ranges.map((range, index) => hideRangeRow(range, index))
 ),
-h('div', { class: 'row row--actions' },
 h('button', {
-class: 'btn btn--ghost btn--small',
+class: 'btn btn--ghost settings-project__hide-add',
 type: 'button',
 onClick: onHideAddRange
 }, '+ Add range')
-)
 ),
 h('div', { class: 'settings-project__item-actions' },
-h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, hideStatusMsg),
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
-h('button', { class: 'btn btn--primary btn--small', type: 'button', onClick: onHideSaveEditing }, 'Save')
+h('button', { class: 'btn', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
+h('button', { class: 'btn btn--primary', type: 'button', onClick: onHideSaveEditing }, 'Save')
 )
 )
 )
