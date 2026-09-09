@@ -53,6 +53,10 @@ border: 1px solid var(--border); border-radius: var(--r-md); background: var(--s
 .hidden-content__editor .hc__line-hidden { background: var(--accent-soft); }
 .hidden-content__editor .hc__char-hidden { background: var(--accent-soft); border-bottom: 2px dotted var(--accent); }
 .hidden-content__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-top: 0.5rem; }
+/* The sticky footer (z-index 2) would otherwise paint over this toolbar and
+  intercept taps on "Hide selected text". Lift the toolbar above it so the
+  button stays reachable. */
+.hidden-content__toolbar { position: relative; z-index: 3; }
 .hidden-content__toolbar > .hidden-content__muted { flex: 1 1 auto; min-width: 0; }
 .hidden-content button:focus-visible, .hidden-content summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hidden-content button:disabled { opacity: 0.5; cursor: default; }

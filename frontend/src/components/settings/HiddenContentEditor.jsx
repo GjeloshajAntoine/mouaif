@@ -185,11 +185,13 @@ toggleGutter,
 lineDecorations,
 charDecorations,
 syntaxHighlighting(oneDarkHighlightStyle),
-// `EditorState.readOnly.of(true)` blocks drag-selection in CodeMirror 6, not
-// just typing. We want users to be able to select text (so they can then tap
-// "Hide selected text") without being able to mutate the document, so use the
-// editable facet instead.
-EditorView.editable.of(false),
+// Keep the DOM selectable (so text can be selected and then hidden) while
+// still preventing edits. `readOnly` leaves `contenteditable` on the content
+// DOM, so mouse AND mobile/touch selection keep working; it only blocks the
+// user-input edit pipeline, not programmatic dispatch (which is all the
+// gutter toggle and char spans need). `EditorView.editable.of(false)` would
+// set `contenteditable="false"`, which breaks touch text selection on mobile.
+EditorState.readOnly.of(true),
 EditorView.lineWrapping,
 ...(langExtForPath(filePath) ? [langExtForPath(filePath)] : []),
 oneDark
@@ -223,6 +225,11 @@ const mounted = useRef(true);
 const heading = useRef(null);
 const editorHost = useRef(null);
 const engineRef = useRef(null);
+// The "Hide selected text" button captures the editor span on pointerdown
+// (before it steals focus and collapses the selection), so the click handler
+// still has the text that was highlighted. Without this, real taps collapse
+// the selection to a cursor and the click sees an empty span — nothing saves.
+const hideSpanRef = useRef(null);
 const dirty = JSON.stringify(ranges) !== JSON.stringify(initialRanges) || JSON.stringify(chars) !== JSON.stringify(initialChars);
 let normalized = [], validation = '';
 try { normalized = normalizeRanges(ranges); } catch (e) { validation = e.message; }
@@ -297,9 +304,12 @@ const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` :
   // "Hide selected text" action; a non-empty selection adds (or removes, on
   // a second tap) a char span, updating the inline highlight and the footer.
   function onHideSelection() {
-    if (!sel.hasSelection || !sel.span) return;
-    setError('');
-    setChars(toggleChar(chars, sel.span));
+  // Prefer the span captured on pointerdown, which still reflects what the user
+  // highlighted even though the button click collapsed the editor selection.
+  const span = hideSpanRef.current || sel.span;
+  if (!span) return;
+  setError('');
+  setChars(toggleChar(chars, span));
   }
 
   function onRangeField(index, field, value) {
@@ -358,11 +368,12 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
               h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
               h('div', { class: 'hidden-content__toolbar' },
                 h('button', {
-                  class: 'btn', type: 'button',
-                  disabled: saving || !sel.hasSelection,
-                  onClick: onHideSelection,
-                  'aria-label': 'Hide selected text',
-                  'aria-describedby': 'hidden-content-editor-help'
+                class: 'btn', type: 'button',
+                disabled: saving || !sel.hasSelection,
+                onPointerDown: (e) => { hideSpanRef.current = sel.hasSelection ? sel.span : null; },
+                onClick: onHideSelection,
+                'aria-label': 'Hide selected text',
+                'aria-describedby': 'hidden-content-editor-help'
                 }, 'Hide selected text'),
                 h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it, or drag to select text and tap Hide selected text. The file is read-only.')
               )
