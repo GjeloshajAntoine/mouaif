@@ -44,7 +44,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 | `list_files` | List text files under the project. | — | `pattern` (glob; a bare directory like `src` is treated as `src/**`, and matching is case-insensitive) |
 | `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file; `.`, `./`, `src`, `src/`, `src/file.js` are accepted, and a misspelled or not-yet-created directory still searches its nearest existing ancestor) |
 | `write_file` | Create or overwrite a text file. | `path`, `content` | — |
-| `edit_file` | Replace one unique block in an existing file. Line-ending differences are ignored, and formatter-only differences such as indentation, blank lines, line wrapping, and spaces around punctuation are tolerated. Changed code still fails, ambiguous matches return `EMULTI_MATCH`, and failed matches return `ENO_MATCH` with a line-numbered closest candidate. | `path` (or `file`), `oldText`, `newText` | — |
+| `edit_file` | Replace one unique block in an existing file. Line-ending differences are ignored, and formatter-only differences such as indentation, blank lines, line wrapping, and spaces around punctuation are tolerated. A block that matches on trimmed lines is also **re-indented to the file's indentation depth** so the replacement lands where a native edit would. A JSON-escaped block is unescaped and retried once before the match is declared missing. Changed code still fails, ambiguous matches return `EMULTI_MATCH`, and failed matches return `ENO_MATCH` with a line-numbered closest candidate. | `path` (or `file`), `oldText`, `newText` | — |
 
 Every tool:
 

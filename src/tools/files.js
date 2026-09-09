@@ -556,6 +556,102 @@ function convertLineEndings(text, eol) {
   return eol ? text.replace(/\r\n|\r|\n/g, eol) : text;
 }
 
+// ---- Indentation helpers (ported from crush's edit_whitespace.go) -------
+//
+// `edit_file` matches a block even when the caller's indentation differs from
+// the file (leading whitespace is formatter-inert), but the replacement must
+// land at the file's indentation depth, not the caller's. These helpers detect
+// the file's indent unit and re-offset the replacement lines so the edit reads
+// as if written by a native tool rather than spliced in at a random depth.
+
+// Detect the indentation unit used by the given lines: "\t" for tab-indented
+// files, or a string of N spaces for space-indented files. Returns "" when
+// indentation cannot be determined (no indented non-empty lines).
+function detectIndentUnit(lines) {
+  let minSpaces = 0;
+  let hasTabs = false;
+  for (const line of lines) {
+    const trimmed = String(line).replace(/^[ \t]+/, '');
+    if (!trimmed) continue;
+    const leading = String(line).slice(0, String(line).length - trimmed.length);
+    if (!leading) continue;
+    if (leading.indexOf('\t') !== -1) { hasTabs = true; break; }
+    const n = leading.length;
+    if (n > 0 && (minSpaces === 0 || n < minSpaces)) minSpaces = n;
+  }
+  if (hasTabs) return '\t';
+  if (minSpaces > 0) return ' '.repeat(minSpaces);
+  return '';
+}
+
+// Count how many `unit` deep the leading whitespace of `leading` represents.
+// Returns a whole number so the caller can safely use it in `repeat()`.
+function measureIndentDepth(leading, unit) {
+  if (!unit) return 0;
+  if (unit === '\t') return leading.split('\t').length - 1;
+  return Math.floor((leading.split(' ').length - 1) / unit.length);
+}
+
+// Depth of the first non-empty line in `lines`, in units of `unit`.
+function firstIndentDepth(lines, unit) {
+  for (const line of lines) {
+    const trimmed = String(line).replace(/^[ \t]+/, '');
+    if (!trimmed) continue;
+    const leading = String(line).slice(0, String(line).length - trimmed.length);
+    return measureIndentDepth(leading, unit);
+  }
+  return 0;
+}
+
+// Re-indent `newStr` to match the file `unit`, offsetting by the difference in
+// nesting depth between the actual matched text (`actualStr`) and the caller's
+// `oldStr`. Mirrors crush's `adaptIndentation`, but only when a unit could be
+// inferred and the two strings are not already depth-consistent.
+function adaptIndentation(actualStr, oldStr, newStr, fileUnit) {
+  if (!fileUnit) return newStr;
+  const actualLines = String(actualStr).split('\n');
+  const oldLines = String(oldStr).split('\n');
+  const newLines = String(newStr).split('\n');
+
+  const sourceUnit = detectIndentUnit(oldLines) || detectIndentUnit(newLines) || fileUnit;
+  const actualBase = firstIndentDepth(actualLines, fileUnit);
+  const oldBase = firstIndentDepth(oldLines, sourceUnit);
+  const depthOffset = actualBase - oldBase;
+  if (sourceUnit === fileUnit && depthOffset === 0) return newStr;
+
+  const out = [];
+  for (const line of newLines) {
+    const trimmed = String(line).replace(/^[ \t]+/, '');
+    if (!trimmed) { out.push(line); continue; }
+    const leading = String(line).slice(0, String(line).length - trimmed.length);
+    const depth = Math.max(measureIndentDepth(leading, sourceUnit) + depthOffset, 0);
+    out.push(fileUnit.repeat(depth) + trimmed);
+  }
+  return out.join('\n');
+}
+
+// Undo JSON-style escaping ("\n", "\t", "\"", "\\", "\r", etc.) in a string a
+// model authored as a literal. This rescues `edit_file` calls where the model
+// emitted its block with doubled escape sequences, so the bytes on disk match
+// the literal text the model intended. Only applied when it actually differs,
+// and only as a fallback after the direct match fails.
+function unescapeEditString(str) {
+  return String(str).replace(/\\(n|t|r|'|"|`|\\|\/|\$)/g, (m, c) => {
+    switch (c) {
+      case 'n': return '\n';
+      case 't': return '\t';
+      case 'r': return '\r';
+      case "'": return "'";
+      case '"': return '"';
+      case '`': return '`';
+      case '\\': return '\\';
+      case '/': return '/';
+      case '$': return '$';
+      default: return m;
+    }
+  });
+}
+
 function previewEditDiff(rel, before, after) {
   const oldLines = String(before || '').replace(/\r\n|\r/g, '\n').split('\n');
   const newLines = String(after || '').replace(/\r\n|\r/g, '\n').split('\n');
@@ -655,22 +751,7 @@ async function runWriteFile(opts) {
 // deliberately separate from write_file: coding models commonly interpret
 // "edit" as a patch operation and send only the changed line. Treating that
 // payload as a full-file body silently destroys the rest of the file.
-async function runEditFile(opts) {
-  const { projectDir, args, settings } = opts;
-  const root = resolveSandbox(projectDir);
-  const requestedPath = args && (args.path || args.file);
-  const rel = toRelPath(root, requestedPath);
-  const abs = toAbsInside(root, rel);
-  const oldText = args && (typeof args.oldText === 'string' ? args.oldText : args.old_string);
-  const newText = args && (typeof args.newText === 'string' ? args.newText : args.new_string);
-  if (typeof oldText !== 'string' || !oldText) {
-    throw err('EBADINPUT', 'oldText is required and must be a non-empty exact block; use write_file for full-file replacement');
-  }
-  if (typeof newText !== 'string') throw err('EBADINPUT', 'newText is required');
-
-  const st = await fsp.stat(abs);
-  if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
-  const original = await fsp.readFile(abs, 'utf8');
+function matchEditSpan(original, needleText, rel) {
   const source = normalizedTextWithOffsets(original);
   // Normalized comparison form: line endings are equalized and runs of
   // spaces/tabs inside a line are collapsed, so a block that differs from
@@ -698,7 +779,7 @@ async function runEditFile(opts) {
     off.push(text.length);
     return { norm, off };
   }
-  const needle = softNormalizeWithOffsets(oldText);
+  const needle = softNormalizeWithOffsets(needleText);
   const target = softNormalizeWithOffsets(source.normalized);
 
   // Strategy 1: Direct soft match on collapsed horizontal whitespace.
@@ -752,7 +833,7 @@ async function runEditFile(opts) {
       }
       return { norm, starts, ends };
     }
-    const layoutNeedle = layoutNormalizeWithOffsets(oldText);
+    const layoutNeedle = layoutNormalizeWithOffsets(needleText);
     const layoutTarget = layoutNormalizeWithOffsets(source.normalized);
     if (layoutNeedle.norm) {
       const layoutFirst = layoutTarget.norm.indexOf(layoutNeedle.norm);
@@ -769,66 +850,124 @@ async function runEditFile(opts) {
     // lines in oldText and line-by-line whitespace variations).
     if (normStart < 0 || normEnd < 0) {
       const needleLines = needle.norm.split('\n');
-    let nStart = 0;
-    let nEnd = needleLines.length;
-    while (nStart < nEnd && !needleLines[nStart].trim()) nStart++;
-    while (nEnd > nStart && !needleLines[nEnd - 1].trim()) nEnd--;
+      let nStart = 0;
+      let nEnd = needleLines.length;
+      while (nStart < nEnd && !needleLines[nStart].trim()) nStart++;
+      while (nEnd > nStart && !needleLines[nEnd - 1].trim()) nEnd--;
 
-    let matchedLineIdx = -1;
-    let isMulti = false;
-    if (nEnd > nStart) {
-      const targetLines = target.norm.split('\n');
-      const targetLineOffsets = [0];
-      for (let i = 0; i < target.norm.length; i++) {
-        if (target.norm[i] === '\n') targetLineOffsets.push(i + 1);
-      }
-      const needleLineCount = nEnd - nStart;
-      const matches = [];
-      for (let i = 0; i <= targetLines.length - needleLineCount; i++) {
-        let match = true;
-        for (let j = 0; j < needleLineCount; j++) {
-          if (targetLines[i + j].trim() !== needleLines[nStart + j].trim()) {
-            match = false;
-            break;
-          }
+      let matchedLineIdx = -1;
+      let isMulti = false;
+      if (nEnd > nStart) {
+        const targetLines = target.norm.split('\n');
+        const targetLineOffsets = [0];
+        for (let i = 0; i < target.norm.length; i++) {
+          if (target.norm[i] === '\n') targetLineOffsets.push(i + 1);
         }
-        if (match) matches.push(i);
+        const needleLineCount = nEnd - nStart;
+        const matches = [];
+        for (let i = 0; i <= targetLines.length - needleLineCount; i++) {
+          let match = true;
+          for (let j = 0; j < needleLineCount; j++) {
+            if (targetLines[i + j].trim() !== needleLines[nStart + j].trim()) {
+              match = false;
+              break;
+            }
+          }
+          if (match) matches.push(i);
+        }
+        if (matches.length === 1) {
+          matchedLineIdx = matches[0];
+          const lineStartNorm = targetLineOffsets[matchedLineIdx];
+          const endLineIdx = matchedLineIdx + needleLineCount - 1;
+          const lineEndNorm = (endLineIdx + 1 < targetLineOffsets.length)
+            ? targetLineOffsets[endLineIdx + 1] - 1
+            : target.norm.length;
+          normStart = target.off[lineStartNorm];
+          normEnd = target.off[lineEndNorm];
+        } else if (matches.length > 1) {
+          isMulti = true;
+        }
       }
-      if (matches.length === 1) {
-        matchedLineIdx = matches[0];
-        const lineStartNorm = targetLineOffsets[matchedLineIdx];
-        const endLineIdx = matchedLineIdx + needleLineCount - 1;
-        const lineEndNorm = (endLineIdx + 1 < targetLineOffsets.length)
-          ? targetLineOffsets[endLineIdx + 1] - 1
-          : target.norm.length;
-        normStart = target.off[lineStartNorm];
-        normEnd = target.off[lineEndNorm];
-      } else if (matches.length > 1) {
-        isMulti = true;
-      }
-    }
 
-    if (isMulti) {
-      throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
-    }
-
-    if (normStart < 0 || normEnd < 0) {
-      // Find closest matching snippet to give the model actionable feedback.
-      const hint = findClosestContext(original, oldText);
-      let msg = 'oldText was not found in ' + rel + '; read the file and retry with an exact block';
-      if (hint && hint.excerpt) {
-        msg += '\n\nClosest match found around lines ' + hint.startLine + '-' + hint.endLine + ':\n' + hint.excerpt;
+      if (isMulti) {
+        throw err('EMULTI_MATCH', 'oldText occurs more than once in ' + rel + '; include more surrounding context');
       }
-      throw err('ENO_MATCH', msg);
+
+      if (normStart < 0 || normEnd < 0) {
+        // Find closest matching snippet to give the model actionable feedback.
+        const hint = findClosestContext(original, needleText);
+        let msg = 'oldText was not found in ' + rel + '; read the file and retry with an exact block';
+        if (hint && hint.excerpt) {
+          msg += '\n\nClosest match found around lines ' + hint.startLine + '-' + hint.endLine + ':\n' + hint.excerpt;
+        }
+        throw err('ENO_MATCH', msg);
+      }
     }
   }
+  return { normStart, normEnd };
+}
+
+async function runEditFile(opts) {
+  const { projectDir, args, settings } = opts;
+  const root = resolveSandbox(projectDir);
+  const requestedPath = args && (args.path || args.file);
+  const rel = toRelPath(root, requestedPath);
+  const abs = toAbsInside(root, rel);
+  const oldText = args && (typeof args.oldText === 'string' ? args.oldText : args.old_string);
+  const newText = args && (typeof args.newText === 'string' ? args.newText : args.new_string);
+  if (typeof oldText !== 'string' || !oldText) {
+    throw err('EBADINPUT', 'oldText is required and must be a non-empty exact block; use write_file for full-file replacement');
+  }
+  if (typeof newText !== 'string') throw err('EBADINPUT', 'newText is required');
+
+  const st = await fsp.stat(abs);
+  if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
+  const original = await fsp.readFile(abs, 'utf8');
+  const source = normalizedTextWithOffsets(original);
+
+  // Try the caller's oldText verbatim. If it fails with ENO_MATCH and the
+  // block was authored with escape sequences (so it matches nothing on disk),
+  // retry the whole match against its unescaped form so a JSON-escaped block
+  // can still land. When that rescues the match we also unescape the
+  // replacement, because a model that escapes the block escapes both sides.
+  let matched;
+  let matchedOld = oldText;
+  let escapedFallback = false;
+  try {
+    matched = matchEditSpan(original, oldText, rel);
+  } catch (e) {
+    if (e && e.code === 'ENO_MATCH') {
+      const unescaped = unescapeEditString(oldText);
+      if (unescaped !== oldText) {
+        matched = matchEditSpan(original, unescaped, rel);
+        matchedOld = unescaped;
+        escapedFallback = true;
+      } else {
+        throw e;
+      }
+    } else {
+      throw e;
+    }
   }
 
   // Map the normalized source positions back to original byte offsets.
-  const originalStart = source.offsets[normStart];
-  const originalEnd = source.offsets[normEnd];
+  const originalStart = source.offsets[matched.normStart];
+  const originalEnd = source.offsets[matched.normEnd];
   const replaced = original.slice(originalStart, originalEnd);
-  const replacement = convertLineEndings(newText, detectLineEnding(original));
+
+  // Re-indent the replacement so it lands at the file's indentation depth,
+  // not the caller's — but only when the matched span sits on its own line
+  // boundaries. A mid-line (substring) match keeps its leading whitespace as
+  // part of the surrounding slice, so re-indenting there would double-indent.
+  let newTextToApply = escapedFallback ? unescapeEditString(newText) : newText;
+  const alignedStart = originalStart === 0 || original[originalStart - 1] === '\n';
+  const alignedEnd = originalEnd >= original.length
+    || original[originalEnd] === '\n' || original[originalEnd] === '\r';
+  if (alignedStart && alignedEnd) {
+    const fileUnit = detectIndentUnit(original.split('\n'));
+    newTextToApply = adaptIndentation(replaced, matchedOld, newTextToApply, fileUnit);
+  }
+  const replacement = convertLineEndings(newTextToApply, detectLineEnding(original));
   const content = original.slice(0, originalStart) + replacement + original.slice(originalEnd);
   const cap = (settings && settings.fileWriteMaxBytes) || DEFAULT_WRITE_MAX_BYTES;
   const bytes = Buffer.byteLength(content, 'utf8');
@@ -850,7 +989,6 @@ async function runEditFile(opts) {
     diff: previewEditDiff(rel, replaced, replacement)
   };
 }
-
 function formatWriteFileResult(r) {
   let out = '# Wrote: ' + r.relPath;
   if (r.chars != null) out += '\n# Chars: ' + r.chars + (r.lines != null ? ' · ' + r.lines + ' lines' : '');

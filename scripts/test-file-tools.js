@@ -317,6 +317,45 @@ function writeFile(p, content) {
     args: { path: 'duplicate-eol.txt', oldText: 'same\nblock', newText: 'x' }
   });
   assert(e7.ok === false && e7.result.error.code === 'EMULTI_MATCH', 'edit_file detects duplicates across line-ending styles');
+  // Re-indentation: a line-aligned block (whole function on its own lines,
+  // top level) matched with different leading whitespace lands at the file's
+  // indentation depth, not the caller's. Matching still runs on trimmed lines.
+  const indentFile = path.join(root, 'indent.js');
+  writeFile(indentFile, 'function alpha() {\n  const one = 1;\n  const two = 2;\n  return one + two;\n}\n');
+  const eIndent = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: {
+      path: 'indent.js',
+      oldText: 'function alpha() {\nconst one = 1;\nconst two = 2;\nreturn one + two;\n}',
+      newText: 'function alpha() {\n  return 42;\n}'
+    }
+  });
+  const indentAfter = fs.readFileSync(indentFile, 'utf8');
+  assert(eIndent.ok === true, 'edit_file re-indents a line-aligned replacement');
+  assert(indentAfter.includes('  return 42;'), 'edit_file re-indents interior body to the file depth');
+  assert(indentAfter.endsWith('}\n'), 'edit_file keeps the re-indented closing brace at the matched top-level depth');
+
+  // Escape-normalized matching: a model that JSON-escapes its block (oldText
+  // and newText both carry literal \\n) still lands the edit.
+  const escFile = path.join(root, 'esc.js');
+  writeFile(escFile, 'alpha\nbeta\ngamma\n');
+  const eEsc = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'esc.js', oldText: 'alpha\\nbeta', newText: 'one\\ntwo' }
+  });
+  assert(eEsc.ok === true, 'edit_file applies an escape-normalized block');
+  assert(fs.readFileSync(escFile, 'utf8') === 'one\ntwo\ngamma\n', 'edit_file unescapes both the matched span and the replacement');
+
+  // No regression: a genuine content mismatch (not whitespace/escaping) still
+  // fails with ENO_MATCH rather than auto-applying a near-miss.
+  const strictFile = path.join(root, 'strict.js');
+  writeFile(strictFile, 'const total = one + two;\n');
+  const eStrict = await files.runFileTool('edit_file', {
+    projectDir: root,
+    args: { path: 'strict.js', oldText: 'const total = one - two;', newText: 'const total = 0;' }
+  });
+  assert(eStrict.ok === false && eStrict.result.error.code === 'ENO_MATCH', 'edit_file still rejects genuinely changed code');
+
 
   // Outside project.
   const w3 = await files.runFileTool('write_file', { projectDir: root, args: { path: '../escape.js', content: 'x' } });
