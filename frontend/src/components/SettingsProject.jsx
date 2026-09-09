@@ -129,6 +129,8 @@ const [skillsOn, setSkillsOn] = useState(true);
   const [storageStatusMsg, setStorageStatusMsg] = useState('');
 
   const [currentProject, setCurrentProject] = useState({});
+  // The editor owns its rules now; the parent summary uses the loaded project.
+  const hiddenFileCount = Array.isArray(currentProject.hideFileContent) ? currentProject.hideFileContent.length : 0;
   const [loadedDir, setLoadedDir] = useState('');
 const [loadedChatId] = useState((initialChatId || '').trim());
 function dir() { return loadedDir; }
@@ -1520,7 +1522,7 @@ h('span', { class: 'group__row-body' },
 h('span', { class: 'group__row-label' }, 'Hide file content'),
 h('span', { class: 'settings-project__link-sub' }, 'Redact code from the agent file tools')
 ),
-h('span', { class: 'group__row-detail' }, hideRules.length ? hideRules.length + ' file' + (hideRules.length === 1 ? '' : 's') : ''),
+h('span', { class: 'group__row-detail' }, hiddenFileCount ? hiddenFileCount + ' file' + (hiddenFileCount === 1 ? '' : 's') : ''),
 h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
 )
 ),

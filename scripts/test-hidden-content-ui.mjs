@@ -7,6 +7,7 @@ const bundle = await build({
 import { h, render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { SettingsHiddenContentView } from './frontend/src/components/SettingsHiddenContent.jsx';
+import { SettingsProjectView } from './frontend/src/components/SettingsProject.jsx';
 import './frontend/src/style.css';
 const file = 'src/a-long-folder-name/a-long-file-name-for-mobile-testing.txt';
 window.fixture = { file, fail: false, previewFail: false, loadFail: false, delay: 0, writes: [], rules: [] };
@@ -26,6 +27,20 @@ window.fetch = async (input, options = {}) => {
     else body = { content: Array.from({length: 250}, (_, i) => 'Example line ' + (i + 1) + (i === 1 ? ' with_a_very_long_unbroken_value_'.repeat(8) : '')).join('\\n') };
   } else if (url.pathname === '/api/files') {
     body = { dir: '/fixture', browseTop: '/fixture', entries: [{type: 'file', name: file, path: '/fixture/' + file, relPath: file, size: 1000}] };
+  } else if (url.pathname === '/api/settings/project') {
+    body = { project: { hideFileContent: f.rules }, path: '/fixture/.mouaif.json' };
+  } else if (url.pathname === '/api/settings/resolved') {
+    body = { resolved: {} };
+  } else if (url.pathname === '/api/tools/authorization') {
+    body = { tools: {}, mcp: {} };
+  } else if (url.pathname === '/api/tools/list') {
+    body = { tools: [{ name: 'read_file', description: 'Read a project file' }] };
+  } else if (url.pathname === '/api/mcp/servers') {
+    body = { servers: [] };
+  } else if (url.pathname === '/api/prompts') {
+    body = { prompts: [] };
+  } else if (url.pathname === '/api/agents') {
+    body = { agents: [] };
   }
   return new Response(JSON.stringify(body), { status });
 };
@@ -33,6 +48,8 @@ function App() {
   const [hash, setHash] = useState(location.hash);
   useEffect(() => { const fn = () => setHash(location.hash); addEventListener('hashchange', fn); return () => removeEventListener('hashchange', fn); }, []);
   const qs = new URLSearchParams(hash.split('?')[1] || '');
+  const path = hash.split('?')[0];
+  if (path === '#/settings/project') return h(SettingsProjectView, {projectDir: '/fixture', from: 'settings/projects'});
   return h(SettingsHiddenContentView, {projectDir: '/fixture', from: 'settings/projects', filePath: qs.get('file') || ''});
 }
 render(h(App), document.getElementById('root'));

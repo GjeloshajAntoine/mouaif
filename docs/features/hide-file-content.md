@@ -63,7 +63,8 @@ And a `search_files` call for text that only appears on a hidden line returns no
 - Frontend route `#/settings/project/hide?projectDir=<dir>` renders the lazily loaded [SettingsHiddenContent.jsx](../../frontend/src/components/SettingsHiddenContent.jsx). Adding `&file=<project-relative-path>` opens [HiddenContentEditor.jsx](../../frontend/src/components/settings/HiddenContentEditor.jsx); caller context is preserved. The picker reuses [AgentFilePicker.jsx](../../frontend/src/components/AgentFilePicker.jsx) with contextual labels.
 - The preview uses the existing owner-facing `GET /api/file?projectDir=<dir>&path=<path>` endpoint. It is read-only: the editor never calls `PUT /api/file` or sends file content to the model. Redaction saves still use the existing settings endpoint.
 - Mobile-first: one column, a separate editor instead of a nested settings card, wrapped source lines, 44px-minimum controls, and a sticky safe-area-aware Save / Cancel footer. Selection is indicated by both color and a check mark, with pressed-state semantics and accessible source descriptions.
-- Tests: `npm run test:hidden-content` covers range operations, routing, failure/retry and draft behavior. `node scripts/test-hidden-content-ui.mjs` starts a time-limited isolated browser fixture with a fake API for mobile, paging, and failure tests. Neither writes real project settings.
+- The parent Project settings page derives its hidden-file count from the already-loaded project settings, independently of the dedicated editor’s state.
+- Tests: `npm run test:hidden-content` covers parent-page initial/loaded rendering, hidden-file counts, sibling pages, range operations, routing, failure/retry and draft behavior. `node scripts/test-hidden-content-ui.mjs` starts a time-limited isolated browser fixture with a fake API for mobile, paging, and failure tests; open `#/settings/project` to test the parent-page round trip. Neither writes real project settings.
 
 ## Related
 
