@@ -359,6 +359,41 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
+  // ---- Hide file content (redaction) --------------------------------------
+  // Per-project "hide file content" rules (docs/features/hide-file-content.md).
+  // The user marks line ranges of a project file that the agent file tools
+  // should not reveal. Stored on the project object under `hideFileContent`.
+  //   GET  /api/settings/hide-file-content?projectDir=<abs>  -> { rules, project }
+  //   PUT  /api/settings/hide-file-content                 body { projectDir, rules }
+  // GET reads the normalized rules so the UI always sees a clean shape.
+  const hideFileContent = require('./hideFileContent.js');
+  if (urlPath === '/api/settings/hide-file-content' && method === 'GET') {
+    const dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    try {
+      return sendJSON(res, 200, { rules: hideFileContent.getRules(dir) });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+  if (urlPath === '/api/settings/hide-file-content' && method === 'PUT') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!Array.isArray(body.rules)) {
+      return sendJSON(res, 400, { error: 'rules must be an array' });
+    }
+    // Normalize each entry; drop malformed ones. This keeps the stored value
+    // canonical so the file-tool reader and this endpoint never disagree.
+    const normalized = body.rules.map(hideFileContent.normalizeEntry).filter(Boolean);
+    try {
+      settings.setProject(dir, { hideFileContent: normalized });
+      return sendJSON(res, 200, { rules: hideFileContent.getRules(dir) });
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+  }
   return sendJSON(res, 404, { error: 'Not found', scope: 'settings' });
 }
 

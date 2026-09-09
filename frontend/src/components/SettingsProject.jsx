@@ -108,8 +108,16 @@ const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim())
   const [agentFilesStatusMsg, setAgentFilesStatusMsg] = useState('');
 
   // Agent file picker overlay
-  const [agentFilePickerOpen, setAgentFilePickerOpen] = useState(false);
-  const [skillsOn, setSkillsOn] = useState(true);
+const [agentFilePickerOpen, setAgentFilePickerOpen] = useState(false);
+// Hide-file-content (redaction) rules. `hideRules` holds the per-file rule
+// list from the project. `hidePickOpen` toggles the file picker overlay;
+// `hideEditing` is the file currently being edited (relPath + rules) or
+// null when the page is showing the saved list.
+const [hideRules, setHideRules] = useState([]);
+const [hidePickOpen, setHidePickOpen] = useState(false);
+const [hideEditing, setHideEditing] = useState(null);
+const [hideStatusMsg, setHideStatusMsg] = useState('');
+const [skillsOn, setSkillsOn] = useState(true);
   const [skillsStatusMsg, setSkillsStatusMsg] = useState('');
 
   const [promptsSummaryMsg, setPromptsSummaryMsg] = useState('—');
@@ -287,8 +295,9 @@ const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask
     } catch { /* keep empty list */ }
 
     setAgentFilesOn(cp.agentFiles !== false);
-    setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
-    setSkillsOn(cp.skills !== false);
+setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
+loadHideRules().catch(() => {});
+setSkillsOn(cp.skills !== false);
 
     setEditorText(JSON.stringify(cp, null, 2));
     setSaveDisabled(false);
@@ -651,11 +660,109 @@ function pickAskUserMode(newMode) {
     };
   });
   function onAgentFileNamesChange(e) {
-    const v = e.target.value;
-    setAgentFileNames(v);
-    setAgentFilesStatusMsg('…');
-    debouncer(() => saveAgentFiles(agentFilesOn, v));
-  }
+const v = e.target.value;
+setAgentFileNames(v);
+setAgentFilesStatusMsg('…');
+debouncer(() => saveAgentFiles(agentFilesOn, v));
+}
+// ---- Hide file content handlers ---------------------------------------
+// Redaction rules stored on the project object under `hideFileContent`.
+// Each rule is { path, ranges: [{ start, end }] } with 1-indexed inclusive
+// line spans. GET /PUT through /api/settings/hide-file-content so the UI and
+// the file-tool reader share one canonical shape.
+async function loadHideRules() {
+const d = dir();
+if (!d) return;
+try {
+const r = await fetchJson('/api/settings/hide-file-content?projectDir=' + encodeURIComponent(d));
+if (r.status === 200) setHideRules(Array.isArray(r.body.rules) ? r.body.rules : []);
+} catch { /* leave the current list */ }
+}
+async function saveHideRules(rules) {
+const d = dir();
+if (!d) { setHideStatusMsg('no project'); return; }
+setHideStatusMsg('saving…');
+try {
+const r = await fetchJson('/api/settings/hide-file-content', {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ projectDir: d, rules })
+});
+if (r.status === 200) {
+setHideRules(Array.isArray(r.body.rules) ? r.body.rules : []);
+setHideStatusMsg('saved');
+} else {
+setHideStatusMsg('HTTP ' + r.status);
+}
+} catch (e) {
+setHideStatusMsg('save failed: ' + ((e && e.message) || String(e)));
+}
+}
+// Open the file picker and start editing a fresh rule for that file.
+function onHideFilePicked(relPath) {
+setHidePickOpen(false);
+if (!relPath) return;
+// Reuse an existing rule for the same file if present, else create one.
+const existing = hideRules.find((rule) => rule.path === relPath);
+const rule = existing
+? { path: relPath, ranges: existing.ranges.map((r) => ({ start: r.start, end: r.end })) }
+: { path: relPath, ranges: [{ start: 1, end: 1 }] };
+setHideEditing(rule);
+setHideStatusMsg('Pick the line range to hide.');
+}
+function onHideEditingPathChange(path) {
+setHideEditing((cur) => (cur ? { ...cur, path, ranges: cur.ranges } : cur));
+}
+function onHideAddRange() {
+setHideEditing((cur) => {
+if (!cur) return cur;
+// Default a new range to the next line after the last hidden one.
+const last = cur.ranges.length ? cur.ranges[cur.ranges.length - 1] : null;
+const start = last ? last.end + 1 : 1;
+const ranges = cur.ranges.concat({ start, end: start });
+return { ...cur, ranges };
+});
+}
+function onHideRemoveRange(index) {
+setHideEditing((cur) => {
+if (!cur) return cur;
+const ranges = cur.ranges.filter((_, i) => i !== index);
+return { ...cur, ranges };
+});
+}
+function onHideRangeField(index, field, value) {
+setHideEditing((cur) => {
+if (!cur) return cur;
+const ranges = cur.ranges.map((r, i) => (i === index ? { ...r, [field]: value } : r));
+// Clamp: start must be >= 1 and end >= start when both are set.
+return { ...cur, ranges };
+});
+}
+async function onHideSaveEditing() {
+if (!hideEditing) return;
+const path = hideEditing.path.trim();
+if (!path) { setHideStatusMsg('Pick a file first.'); return; }
+// Normalize ranges: drop invalid ones, clamp end >= start.
+const ranges = hideEditing.ranges
+.map((r) => {
+const start = Number.isInteger(r.start) ? r.start : (Number(r.start) || 1);
+const end = Number.isInteger(r.end) ? r.end : (Number(r.end) || start);
+if (start < 1) return null;
+return { start, end: end < start ? start : end };
+})
+.filter(Boolean);
+const rules = hideRules
+.filter((rule) => rule.path !== path)
+.concat({ path, ranges });
+setHideEditing(null);
+await saveHideRules(rules);
+}
+function onHideRemoveRule(path) {
+if (!path) return;
+const rules = hideRules.filter((rule) => rule.path !== path);
+setHideStatusMsg('removing…');
+saveHideRules(rules);
+}
 
   async function saveRaw() {
     const d = dir();
@@ -1183,11 +1290,157 @@ h('h2', { class: 'view-title' }, 'Web preview')
   preview: previewPayload,
   onClose: () => setPreviewViewOpen(false),
   onRecapture: onPreviewRecapture
-  })
-  : null
-  )
-  ;
-  if (page === 'technical') return h(Fragment, null,
+})
+: null
+)
+;
+function hideRangeRow(range, index) {
+return h('div', { class: 'settings-project__hide-range', key: index },
+h('label', { class: 'settings-project__hide-range-field', 'aria-label': 'Start line' },
+h('span', { class: 'settings-project__hide-range-label' }, 'From'),
+h('input', {
+class: 'input settings-project__hide-input',
+type: 'number',
+min: 1,
+step: 1,
+value: range.start,
+onInput: (e) => onHideRangeField(index, 'start', parseInt(e.target.value, 10))
+})
+),
+h('label', { class: 'settings-project__hide-range-field', 'aria-label': 'End line' },
+h('span', { class: 'settings-project__hide-range-label' }, 'To'),
+h('input', {
+class: 'input settings-project__hide-input',
+type: 'number',
+min: 1,
+step: 1,
+value: range.end,
+onInput: (e) => onHideRangeField(index, 'end', parseInt(e.target.value, 10))
+})
+),
+h('button', {
+class: 'icon-btn settings-project__hide-remove',
+type: 'button',
+onClick: () => onHideRemoveRange(index),
+'aria-label': 'Remove this line range',
+title: 'Remove range'
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
+)
+)
+);
+}
+if (page === 'hide') return h(Fragment, null,
+h('div', { class: 'view-head' },
+h('a', { href: '#/settings/project?' + projectBackQS(), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+h('h2', { class: 'view-title' }, 'Hide file content')
+),
+h('section', { class: 'settings-project' },
+h('div', { class: 'group settings-project__section' },
+h('div', { class: 'group__title settings-project__section-title' },
+sectionIcon('files'),
+h('span', null, 'Redacted files'),
+h('details', { class: 'settings-project__info' },
+h('summary', { 'aria-label': 'About hiding file content' }, '?'),
+h('div', { class: 'settings-project__info-body' },
+h('p', null, 'Pick a project file and mark the line ranges the agent file tools must not reveal. ', h('code', null, 'read_file'), ' replaces each hidden line with ', h('code', null, '[hidden]'), ', and ', h('code', null, 'search_files'), ' skips matches on hidden lines. The on-disk file is never modified.')
+)
+)
+),
+h('p', { class: 'hint hint--compact' }, 'Rules are stored in ', h('code', null, '.mouaif.json'), ' under ', h('code', null, 'hideFileContent'), '.'),
+h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, hideStatusMsg),
+h('div', { class: 'settings-project__hide-list' },
+hideRules.length === 0
+? h('p', { class: 'settings-project__item-note' }, 'No file content is hidden yet.')
+: h('ul', { class: 'settings-project__hide-items' },
+hideRules.map((rule) => h('li', { class: 'settings-project__hide-item', key: rule.path },
+h('div', { class: 'settings-project__hide-item-main' },
+h('div', { class: 'settings-project__hide-item-path' }, rule.path),
+h('div', { class: 'settings-project__hide-item-ranges' },
+rule.ranges.map((r) => 'L' + r.start + (r.end !== r.start ? '-' + r.end : '')).join(', ')
+)
+),
+h('div', { class: 'settings-project__hide-item-actions' },
+h('button', {
+class: 'btn',
+type: 'button',
+onClick: () => setHideEditing({ path: rule.path, ranges: rule.ranges.map((r) => ({ start: r.start, end: r.end })) })
+}, 'Edit'),
+h('button', {
+class: 'btn btn--danger btn--small',
+type: 'button',
+onClick: () => onHideRemoveRule(rule.path)
+}, 'Remove')
+)
+))
+)
+),
+h('button', {
+class: 'btn btn--primary',
+type: 'button',
+onClick: () => setHidePickOpen(true)
+}, '+ Add file')
+),
+hideEditing
+? h('div', { class: 'group settings-project__section' },
+h('div', { class: 'group__title' }, 'Edit hidden lines'),
+h('ul', { class: 'group__list' },
+h('li', { class: 'settings-project__item settings-project__item--col' },
+h('div', { class: 'settings-project__item-main' },
+h('label', { class: 'settings-project__item-title', for: 'sp-hide-path' }, 'File'),
+h('div', { class: 'settings-project__item-note' }, 'Project-relative path of the file to redact.')
+),
+h('div', { class: 'settings-project__afn-row' },
+h('input', {
+class: 'input settings-project__mono settings-project__hide-path',
+id: 'sp-hide-path',
+value: hideEditing.path,
+readOnly: true,
+placeholder: 'src/index.js',
+'aria-label': 'File path'
+}),
+h('button', {
+class: 'btn btn--ghost settings-project__afn-pick',
+type: 'button',
+onClick: () => setHidePickOpen(true)
+}, 'Pick…')
+)
+),
+h('li', { class: 'settings-project__item settings-project__item--col' },
+h('div', { class: 'settings-project__item-main' },
+h('label', { class: 'settings-project__item-title' }, 'Line ranges'),
+h('div', { class: 'settings-project__item-note' }, '1-indexed, inclusive. A range hides every line from its start to its end.')
+),
+h('div', { class: 'settings-project__hide-ranges' },
+hideEditing.ranges.map((range, index) => hideRangeRow(range, index))
+),
+h('button', {
+class: 'btn btn--ghost settings-project__hide-add',
+type: 'button',
+onClick: onHideAddRange
+}, '+ Add range')
+),
+h('div', { class: 'settings-project__item-actions' },
+h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, hideStatusMsg),
+h('button', { class: 'btn', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
+h('button', { class: 'btn btn--primary', type: 'button', onClick: onHideSaveEditing }, 'Save')
+)
+)
+)
+: null
+)
+,
+hidePickOpen
+? h(AgentFilePicker, {
+projectDir: dir(),
+onPick: onHideFilePicked,
+onClose: () => setHidePickOpen(false)
+})
+: null
+)
+;
+if (page === 'technical') return h(Fragment, null,
 h('div', { class: 'view-head' },
 h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : ('#/settings/project?' + projectBackQS()), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
 h('h2', { class: 'view-title' }, 'Technical details')
@@ -1497,20 +1750,34 @@ href: '#/settings/project/output?' + projectBackQS()
         ),
         h('ul', { class: 'group__list' },
           h('li', null,
-            h('a', {
+h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'Web preview',
 href: '#/settings/project/preview?' + projectBackQS()
 },
-              h('span', { class: 'group__row-body' },
-                h('span', { class: 'group__row-label' }, 'Web preview'),
-                h('span', { class: 'settings-project__link-sub' }, 'Capture and view a web page')
-              ),
-              h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-            )
-          ),
-          h('li', null,
-            h('a', {
+h('span', { class: 'group__row-body' },
+h('span', { class: 'group__row-label' }, 'Web preview'),
+h('span', { class: 'settings-project__link-sub' }, 'Capture and view a web page')
+),
+h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+)
+),
+h('li', null,
+h('a', {
+class: 'group__row settings-project__link-row',
+'aria-label': 'Hide file content',
+href: '#/settings/project/hide?' + projectBackQS()
+},
+h('span', { class: 'group__row-body' },
+h('span', { class: 'group__row-label' }, 'Hide file content'),
+h('span', { class: 'settings-project__link-sub' }, 'Redact code from the agent file tools')
+),
+h('span', { class: 'group__row-detail' }, hideRules.length ? hideRules.length + ' file' + (hideRules.length === 1 ? '' : 's') : ''),
+h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+)
+),
+h('li', null,
+h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'MCP servers',
 href: '#/settings/mcp?' + projectBackQS()

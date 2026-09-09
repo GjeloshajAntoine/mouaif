@@ -52,6 +52,7 @@ settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ proj
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
 settingsProjectOutput: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'output' })],
 settingsProjectPreview: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'preview' })],
+settingsProjectHide: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'hide' })],
 settingsDefaults: [SettingsDefaultsView],
 settingsNotifications: [SettingsNotificationsView],
 settingsPrompts: [SettingsPromptsView, ({ projectDir, id = '', scope = '', from }) => ({ projectDir, initialId: id, scope, from })],
@@ -77,7 +78,7 @@ const FULL_PAGE_ROUTES = new Set([
 const LAZY_ROUTE_NAMES = new Set([
 'inspector',
 'settingsProviders', 'settingsProviderNew', 'settingsProviderEdit',
-'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview',
+'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectHide',
 'settingsDefaults', 'settingsNotifications', 'settingsAbout',
 'settingsPrompts', 'settingsAgents', 'settingsAgentEdit',
 'settingsActions', 'settingsActionEdit',

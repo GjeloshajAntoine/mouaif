@@ -51,6 +51,7 @@ Every tool:
 - Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`. .`, absolute paths outside the root, and symlinks that point outside are all rejected).
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
+- Honors per-project [hide-file-content](./hide-file-content.md) rules: `read_file` returns `[hidden]` for each marked line, and `search_files` skips matches on marked lines. `write_file` / `edit_file` and `list_files` are unaffected.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
 - Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars scanned (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the `# Matches` header line.
 

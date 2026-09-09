@@ -35,6 +35,7 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const hideFileContent = require('../hideFileContent.js');
 
 // ---- Constants ---------------------------------------------------------
 
@@ -179,17 +180,24 @@ async function runReadFile(opts) {
 
   const raw = await fsp.readFile(abs, 'utf8');
   const totalLines = raw ? raw.split('\n').length : 0;
-
+  // Project-level redaction: any 1-indexed line the user marked hidden in
+  // project settings is replaced with the REDACT_MARKER before the model
+  // sees the body. Applied to both whole-file reads and slices so a hidden
+  // range cannot leak through a `startLine`/`endLine` window. Line numbers
+  // and the total count stay identical to the on-disk file.
   if (!isSlice) {
     if (totalLines > cap) {
       throw err('ETOOL_CAP', 'file has ' + totalLines + ' lines, exceeds cap ' + cap + ' (use startLine/endLine)', { lines: totalLines, cap });
     }
+    const out = hideFileContent.redactText(projectDir, rel, raw);
     return {
       relPath: rel,
       startLine: 1,
       endLine: totalLines,
-      body: raw,
-      truncated: false
+      body: out.text,
+      truncated: false,
+      redacted: out.redacted,
+      redactedLines: out.hiddenLines
     };
   }
 
@@ -200,13 +208,16 @@ async function runReadFile(opts) {
   const a = Math.max(1, startLine);
   const b = Math.min(totalLines, endLine);
   const slice = lines.slice(a - 1, b).join('\n');
+  const sliceOut = hideFileContent.redactText(projectDir, rel, slice);
   return {
     relPath: rel,
     startLine: a,
     endLine: b,
     totalLines,
-    body: slice,
-    truncated: b < endLine
+    body: sliceOut.text,
+    truncated: b < endLine,
+    redacted: sliceOut.redacted,
+    redactedLines: sliceOut.hiddenLines
   };
 }
 
@@ -474,7 +485,11 @@ async function runSearchFiles(opts) {
       charsRead += content.length;
       if (charsRead > cap.bytes) { truncated = true; return; }
       const lines = content.split('\n');
+      // Skip lines the user marked hidden in project settings so a match
+      // on a redacted line never reaches the model. Best-effort: if the
+      // rules cannot be read, the line is searched as normal.
       for (let i = 0; i < lines.length; i++) {
+        if (hideFileContent.lineIsHidden(projectDir, childRel, i + 1)) continue;
         if (re.test(lines[i])) {
           matches.push({ path: childRel, line: i + 1, text: lines[i].slice(0, 240) });
           if (matches.length >= cap.matches) { truncated = true; return; }
