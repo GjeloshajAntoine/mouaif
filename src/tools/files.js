@@ -487,13 +487,23 @@ async function runSearchFiles(opts) {
       const lines = content.split('\n');
       // Skip lines the user marked hidden in project settings so a match
       // on a redacted line never reaches the model. Best-effort: if the
-      // rules cannot be read, the line is searched as normal.
+      // rules cannot be read, the line is searched as normal. A match that
+      // falls inside a hidden character span is also suppressed, so selecting
+      // text in the editor hides it from search too.
       for (let i = 0; i < lines.length; i++) {
-        if (hideFileContent.lineIsHidden(projectDir, childRel, i + 1)) continue;
-        if (re.test(lines[i])) {
-          matches.push({ path: childRel, line: i + 1, text: lines[i].slice(0, 240) });
-          if (matches.length >= cap.matches) { truncated = true; return; }
-        }
+      const lineNumber = i + 1;
+      if (hideFileContent.lineIsHidden(projectDir, childRel, lineNumber)) continue;
+      // Reset lastIndex so a reused regex (from a 'g'/flags build) behaves
+      // deterministically on each line.
+      re.lastIndex = 0;
+      const match = re.exec(lines[i]);
+      if (match) {
+      const colStart = match.index + 1;
+      const colEnd = colStart + match[0].length - 1;
+      if (hideFileContent.matchIsHidden(projectDir, childRel, lineNumber, colStart, colEnd)) continue;
+      matches.push({ path: childRel, line: lineNumber, text: lines[i].slice(0, 240) });
+      if (matches.length >= cap.matches) { truncated = true; return; }
+      }
       }
     }
   }

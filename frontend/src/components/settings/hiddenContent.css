@@ -51,6 +51,9 @@ border: 1px solid var(--border); border-radius: var(--r-md); background: var(--s
   text-align: center; color: var(--accent); font-weight: 700;
 }
 .hidden-content__editor .hc__line-hidden { background: var(--accent-soft); }
+.hidden-content__editor .hc__char-hidden { background: var(--accent-soft); border-bottom: 2px dotted var(--accent); }
+.hidden-content__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-top: 0.5rem; }
+.hidden-content__toolbar > .hidden-content__muted { flex: 1 1 auto; min-width: 0; }
 .hidden-content button:focus-visible, .hidden-content summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hidden-content button:disabled { opacity: 0.5; cursor: default; }
 .hidden-content__pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }

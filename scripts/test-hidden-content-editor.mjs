@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = (file) => fs.readFileSync(new URL('../frontend/src/' + file, import.meta.url), 'utf8');
 const helpers = await import('data:text/javascript;base64,' + Buffer.from(source('components/settings/hiddenRanges.js')).toString('base64'));
-const { normalizeRanges, toggleLine, hiddenContentPath } = helpers;
+const { normalizeRanges, toggleLine, hiddenContentPath, normalizeChars, toggleChar, isValidCharSpan, charSpanCount } = helpers;
 assert.deepEqual(normalizeRanges([{ start: '3', end: '5' }, { start: 1, end: 2 }]), [{ start: 1, end: 5 }]);
 assert.deepEqual(toggleLine([{ start: 1, end: 5 }], 3), [{ start: 1, end: 2 }, { start: 4, end: 5 }]);
 assert.deepEqual(toggleLine([{ start: 1, end: 1 }], 1), []);
@@ -11,12 +11,46 @@ assert.deepEqual(toggleLine([{ start: 2, end: 2 }], 1), [{ start: 1, end: 2 }]);
 for (const [start, end] of [['', 2], [0, 2], [3, 2], [1.5, 2], [1, ''], [1, Infinity]]) {
   assert.throws(() => normalizeRanges([{ start, end }]));
 }
+// Char-span unit tests: single-line merge, containment drop, toggle add/remove,
+// isValidCharSpan rejections and multi-line span count.
+assert.deepEqual(
+  normalizeChars([{ startLine: 1, endLine: 1, startCol: 5, endCol: 10 }, { startLine: 1, endLine: 1, startCol: 8, endCol: 12 }]),
+  [{ startLine: 1, endLine: 1, startCol: 5, endCol: 12 }],
+  'overlapping single-line spans merge'
+);
+assert.deepEqual(
+  normalizeChars([{ startLine: 1, endLine: 1, startCol: 1, endCol: 10 }, { startLine: 1, endLine: 1, startCol: 15, endCol: 20 }]),
+  [{ startLine: 1, endLine: 1, startCol: 1, endCol: 20 }],
+  'same-line spans merge across gaps'
+);
+assert.deepEqual(
+  normalizeChars([{ startLine: 1, endLine: 1, startCol: 1, endCol: 10 }, { startLine: 2, endLine: 2, startCol: 15, endCol: 20 }]),
+  [{ startLine: 1, endLine: 1, startCol: 1, endCol: 10 }, { startLine: 2, endLine: 2, startCol: 15, endCol: 20 }],
+  'different-line spans do not merge'
+);
+assert.deepEqual(
+  normalizeChars([{ startLine: 1, endLine: 3, startCol: 4, endCol: 9 }, { startLine: 1, endLine: 1, startCol: 5, endCol: 7 }]),
+  [{ startLine: 1, endLine: 3, startCol: 4, endCol: 9 }],
+  'a span fully inside another is dropped'
+);
+assert.equal(isValidCharSpan({ startLine: 0, endLine: 1, startCol: 1, endCol: 2 }), false, 'startLine below 1');
+assert.equal(isValidCharSpan({ startLine: 2, endLine: 1, startCol: 1, endCol: 2 }), false, 'end before start');
+assert.equal(isValidCharSpan({ startLine: 1, endLine: 1, startCol: 4, endCol: 2 }), false, 'empty single-line span');
+assert.equal(isValidCharSpan({ startLine: 1, endLine: 2, startCol: 4, endCol: 2 }), true, 'multi-line span allows reverse boundary columns');
+assert.equal(isValidCharSpan({}), false, 'empty object');
+const span = { startLine: 1, endLine: 1, startCol: 4, endCol: 9 };
+const afterAdd = toggleChar([], span);
+assert.equal(afterAdd.length, 1, 'toggleChar adds a missing span');
+const afterRemove = toggleChar(afterAdd, span);
+assert.equal(afterRemove.length, 0, 'toggleChar removes an existing span');
+assert.equal(charSpanCount([{ startLine: 1, endLine: 1, startCol: 4, endCol: 9 }]), 6, 'single-line span counts characters');
+assert.equal(charSpanCount([{ startLine: 1, endLine: 3, startCol: 4, endCol: 9 }]), 2, 'multi-line span counts boundary lines');
 const routeContext = { projectDir: '/projects/a & b', from: 'settings/projects', filePath: 'src/a #?.js' };
 const routeSandbox = { URLSearchParams, route: {}, window: { location: { hash: '#/' + hiddenContentPath(routeContext) }, addEventListener() {} } };
 vm.runInNewContext(source('router.js').replace("import { route } from './api.js';", '').replace('export function nav', 'function nav'), routeSandbox);
 for (const field of Object.keys(routeContext)) assert.equal(routeSandbox.route.value[field], routeContext[field]);
 assert.equal(routeSandbox.route.value.name, 'settingsProjectHide');
-console.log('PASS range merging, splitting, validation and project-scoped file routing');
+console.log('PASS range merging, splitting, validation, char-span merge/contain/toggle, count, project-scoped file routing');
 
 // Execute the real component event handlers with a minimal hook harness.
 // Browser layout/DOM coverage lives in test-hidden-content-ui.mjs.
@@ -35,14 +69,15 @@ const context = vm.createContext({
 });
 vm.runInContext(source('components/settings/HiddenContentEditor.jsx').replace(/^import .*;$/gm, '').replace(/^export /gm, ''), context);
 const props = {
-  projectDir: '/fixture', filePath: 'sample.txt', initialRanges: [], onClose: () => closed++,
-  onSave: async (path, ranges) => {
-    requests++;
-    assert.equal(path, 'sample.txt');
-    assert.deepEqual(JSON.parse(JSON.stringify(ranges)), [{ start: 1, end: 1 }]);
-    await new Promise(resolve => { release = resolve; });
-    if (fail) throw new Error('Could not save. Selection kept.');
-  }
+projectDir: '/fixture', filePath: 'sample.txt', initialRule: null, onClose: () => closed++,
+onSave: async (path, payload) => {
+requests++;
+assert.equal(path, 'sample.txt');
+assert.deepEqual(JSON.parse(JSON.stringify(payload.ranges)), [{ start: 1, end: 1 }]);
+assert.deepEqual(JSON.parse(JSON.stringify(payload.chars)), []);
+await new Promise(resolve => { release = resolve; });
+if (fail) throw new Error('Could not save. Selection kept.');
+}
 };
 function render() { cursor = 0; nodes = []; effects = []; context.HiddenContentEditor(props); first = false; }
 const button = (label) => nodes.find(n => n.tag === 'button' && n.children.includes(label));

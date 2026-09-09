@@ -37,9 +37,10 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
   function onClose() {
     nav(hiddenContentPath({ projectDir: dir, from }));
   }
-  async function onSave(path, ranges) {
+  async function onSave(path, { ranges, chars }) {
     const next = rules.filter((rule) => rule.path !== path);
-    if (ranges.length) next.push({ path, ranges });
+    const hasAny = ranges.length || chars.length;
+    if (hasAny) next.push({ path, ranges, chars });
     const r = await fetchJson('/api/settings/hide-file-content', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: dir, rules: next })
@@ -48,12 +49,12 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
       throw new Error(`Could not save (HTTP ${r.status}).`);
     }
     setRules(r.body.rules);
-    setNotice(ranges.length ? 'Hidden lines saved.' : 'File is no longer hidden.');
+    setNotice(hasAny ? 'Hidden content saved.' : 'File is no longer hidden.');
   }
 
   if (filePath && rules) return h(HiddenContentEditor, {
     key: dir + '|' + filePath, projectDir: dir, filePath,
-    initialRanges: rules.find((rule) => rule.path === filePath)?.ranges || [],
+    initialRule: rules.find((rule) => rule.path === filePath),
     onSave, onClose
   });
   const backParams = new URLSearchParams({ projectDir: dir });

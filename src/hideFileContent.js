@@ -2,17 +2,24 @@
 // Per-project "hide file content" (redaction) rules.
 //
 // The user can mark line ranges of a specific source file that the agent
-// file tools should not reveal. This module owns the read side: it loads
-// the rules from the project settings (<projectDir>/.mouaif.json or the
-// DB-backed project row, via src/settings.js) and tells the file-tool
-// runners which lines of which file are hidden.
+// file tools should not reveal, and can also select arbitrary text to hide
+// by character range. This module owns the read side: it loads the rules
+// from the project settings (<projectDir>/.mouaif.json or the DB-backed
+// project row, via src/settings.js) and tells the file-tool runners which
+// lines (and which characters within a line) of which file are hidden.
 //
 // The rules are stored on the project object under `hideFileContent`:
 //   [
-//     { path: 'src/index.js', ranges: [ { start: 12, end: 20 }, { start: 45, end: 45 } ] }
+//     { path: 'src/index.js',
+//       ranges: [ { start: 12, end: 20 }, { start: 45, end: 45 } ],   // whole lines
+//       chars:  [ { startLine: 3, endLine: 3, startCol: 5, endCol: 11 } ] } // character spans
 //   ]
 // `path` is a POSIX-relative path from the project root (the same value
-// the file picker reports); `ranges` are 1-indexed, inclusive line spans.
+// the file picker reports). `ranges` are 1-indexed, inclusive line spans;
+// `chars` are 1-indexed, inclusive line & column spans. Both are optional
+// per rule (older saved rules only have `ranges`), so existing data stays
+// valid. A character span hides the selected characters on its boundary
+// lines and the full lines between them.
 //
 // Scope: only the tools that *reveal* content are redacted — `read_file`
 // and `search_files`. `list_files` lists paths (no content), and
@@ -51,9 +58,34 @@ while (s.startsWith('./')) s = s.slice(2);
 s = s.replace(/\/+/g, '/').replace(/\/+$/, '');
 return s;
 }
-// Sanitize a single rules entry to a { path, ranges } shape. Invalid
-// ranges are dropped; valid ranges are clamped to start <= end. Returns
-// null for a malformed entry so the caller can skip it.
+// Sanitize a single character span to { startLine, endLine, startCol,
+// endCol }. Columns are 1-indexed, inclusive character positions; lines
+// are 1-indexed, inclusive. A span must be non-empty (the end position
+// must be at or after the start) to be worth storing. Returns null for a
+// malformed span so the caller can drop it.
+function normalizeCharSpan(raw) {
+if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+const startLine = Number.isInteger(raw.startLine) ? raw.startLine : 0;
+const endLine = Number.isInteger(raw.endLine) ? raw.endLine : 0;
+const startCol = Number.isInteger(raw.startCol) ? raw.startCol : 0;
+const endCol = Number.isInteger(raw.endCol) ? raw.endCol : 0;
+// Validate line ordering first, then the column ordering for a
+// single-line span (a multi-line span allows any column, since the
+// middle lines are fully hidden and the boundary lines are partial).
+if (startLine < 1 || endLine < startLine) return null;
+if (startCol < 1 || endCol < startCol) {
+// A multi-line span only needs its boundary columns to be at least 1.
+if (startLine === endLine) return null;
+if (startCol < 1 || endCol < 1) return null;
+}
+return { startLine, endLine, startCol, endCol };
+}
+// Sanitize a single rules entry to a { path, ranges, chars } shape. Invalid
+// spans are dropped; valid spans are kept with start clamped to <= end.
+// Returns null for a malformed entry (no path, or no spans at all) so the
+// caller can skip it. Both `ranges` (line spans) and `chars` (character
+// spans) are optional; a rule needs at least one of them to be worth
+// storing.
 function normalizeEntry(raw) {
 if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 const path = normalizePath(raw.path);
@@ -66,8 +98,100 @@ if (start < 1 || end < start) return null;
 return { start, end };
 }).filter(Boolean)
 : [];
-if (!ranges.length) return null;
-return { path, ranges };
+const chars = Array.isArray(raw.chars)
+? raw.chars.filter((c) => c && typeof c === 'object').map(normalizeCharSpan).filter(Boolean)
+: [];
+if (!ranges.length && !chars.length) return null;
+// Keep the serialized shape clean and backward-compatible: only include
+// `chars` when there are character spans, so a line-only rule stays
+// `{ path, ranges }` exactly as it was before character ranges existed.
+const entry = { path, ranges };
+if (chars.length) entry.chars = chars;
+return entry;
+}
+// Are `line` (1-indexed) and any other line within a hidden range of the
+// given rule? `line` is a single 1-indexed line number.
+function isLineHidden(rule, line) {
+if (!rule || !rule.ranges || !Number.isInteger(line) || line < 1) return false;
+return rule.ranges.some((r) => line >= r.start && line <= r.end);
+}
+// Apply the character spans of `rule` to a single line of text and return
+// the redacted line (or the original). `lineNumber` is the 1-indexed line
+// in the file; the whole-line `hidden` flag is also honoured. Character
+// spans on a line are redacted in place: the selected characters are
+// replaced by the marker. A single-line span hides [startCol, endCol]; a
+// multi-line span hides from startCol on the first line, the full middle
+// lines, and up to endCol on the last. Returns { text, redacted }.
+function redactLine(rule, lineNumber, line, hidden) {
+let text = line;
+let redacted = false;
+if (hidden) return { text: REDACT_MARKER, redacted: true };
+const spans = rule && rule.chars ? rule.chars : [];
+const selected = spans.filter((s) => lineNumber >= s.startLine && lineNumber <= s.endLine);
+if (!selected.length) return { text, redacted };
+const chars = Array.from(text);
+const length = chars.length;
+// Collect the absolute [start, end) character range to hide. We clamp to
+// the line length so a stale span (line shrunk since it was saved) never
+// throws and never hides beyond the line. Suffixes / prefixes that fall
+// outside the file are simply not hidden.
+const range = selected.reduce((acc, s) => {
+let from, to;
+if (s.startLine === s.endLine) {
+from = s.startCol - 1;
+to = s.endCol;
+} else if (lineNumber === s.startLine) {
+from = s.startCol - 1;
+to = length;
+} else if (lineNumber === s.endLine) {
+from = 0;
+to = s.endCol;
+} else {
+from = 0;
+to = length;
+}
+if (from < 0) from = 0;
+if (to > length) to = length;
+if (to < from) to = from;
+if (from < acc.from) acc.from = from;
+if (to > acc.to) acc.to = to;
+return acc;
+}, { from: length, to: 0 });
+if (range.to <= range.from) return { text, redacted };
+const before = chars.slice(0, range.from).join('');
+const after = chars.slice(range.to).join('');
+text = before + REDACT_MARKER + after;
+redacted = text !== line;
+return { text, redacted };
+}
+// Replace every hidden line in `text` with the REDACT_MARKER, keeping the
+// newline structure intact so line numbers and the total line count stay
+// identical to the on-disk file. Whole-line ranges collapse to the marker;
+// character spans redact the selected characters in place. Returns
+// { text, redacted, hiddenLines }. `redacted` is true when at least one
+// line was changed; `hiddenLines` is the count of lines that were fully
+// hidden. A rule that no longer matches the file leaves the text
+// untouched. `startLine` is the original 1-indexed line of the first line
+// in a read_file slice.
+function redactText(projectDir, relPath, text, startLine = 1) {
+const rule = ruleForPath(projectDir, relPath);
+if (!rule || typeof text !== 'string') {
+return { text, redacted: false, hiddenLines: 0, rule };
+}
+let hiddenLines = 0;
+let changed = false;
+const lines = text.split('\n').map((line, idx) => {
+const lineNumber = idx + startLine;
+if (isLineHidden(rule, lineNumber)) {
+hiddenLines++;
+changed = true;
+return REDACT_MARKER;
+}
+const out = redactLine(rule, lineNumber, line, false);
+if (out.redacted) changed = true;
+return out.text;
+});
+return { text: lines.join('\n'), redacted: changed, hiddenLines, rule };
 }
 // Build a normalized (read-only) rule list for a project. Also used by the
 // settings UI to show a clean view of what is stored.
@@ -76,7 +200,7 @@ return getEntries(projectDir)
 .map(normalizeEntry)
 .filter(Boolean);
 }
-// Return the { path, ranges } rule for a given project file, or null.
+// Return the { path, ranges, chars } rule for a given project file, or null.
 function ruleForPath(projectDir, relPath) {
 const target = normalizePath(relPath);
 if (!target) return null;
@@ -86,37 +210,32 @@ if (rule.path === target) return rule;
 }
 return null;
 }
-// Are `line` (1-indexed) and any other line within a hidden range of the
-// given rule? `line` is a single 1-indexed line number.
-function isLineHidden(rule, line) {
-if (!rule || !rule.ranges || !Number.isInteger(line) || line < 1) return false;
-return rule.ranges.some((r) => line >= r.start && line <= r.end);
-}
-// Replace every hidden line in `text` with the REDACT_MARKER, keeping the
-// newline structure intact so line numbers and the total line count stay
-// identical to the on-disk file. Returns { text, redacted, hiddenLines }.
-// `redacted` is true when at least one line was replaced; `hiddenLines`
-// is the count of lines hidden. A rule that no longer matches the file
-// (path changed, ranges empty) leaves the text untouched. `startLine` is
-// the original 1-indexed line of the first line in a read_file slice.
-function redactText(projectDir, relPath, text, startLine = 1) {
-const rule = ruleForPath(projectDir, relPath);
-if (!rule || typeof text !== 'string') {
-return { text, redacted: false, hiddenLines: 0, rule };
-}
-let hiddenLines = 0;
-const lines = text.split('\n').map((line, idx) => {
-if (isLineHidden(rule, idx + startLine)) {
-hiddenLines++;
-return REDACT_MARKER;
-}
-return line;
-});
-return { text: lines.join('\n'), redacted: hiddenLines > 0, hiddenLines, rule };
-}
 // A predicate used by search_files: returns true when the given 1-indexed
 // line of the given file is hidden and should therefore be excluded from
-// any match list. Never throws.
+// any match list (the whole line is redacted, or a character span covers
+// the match's column range). `colStart`/`colEnd` are 1-indexed inclusive
+// character columns occupied by the match on that line; when omitted the
+// whole line is treated as potentially hidden so a search result is
+// conservatively suppressed. Never throws.
+function matchIsHidden(projectDir, relPath, line, colStart, colEnd) {
+const rule = ruleForPath(projectDir, relPath);
+if (!rule || !Number.isInteger(line) || line < 1) return false;
+if (isLineHidden(rule, line)) return true;
+const spans = rule.chars || [];
+if (!spans.length) return false;
+// A character span hides the line if it overlaps the match's columns.
+for (const s of spans) {
+if (line < s.startLine || line > s.endLine) continue;
+if (typeof colStart !== 'number' || typeof colEnd !== 'number') return true;
+const startCol = line === s.startLine ? s.startCol : 1;
+const endCol = line === s.endLine ? s.endCol : Number.MAX_SAFE_INTEGER;
+const from = Math.max(startCol, colStart);
+const to = Math.min(endCol, colEnd);
+if (from <= to) return true;
+}
+return false;
+}
+// Convenience predicate for callers that only care about whole lines.
 function lineIsHidden(projectDir, relPath, line) {
 const rule = ruleForPath(projectDir, relPath);
 return rule ? isLineHidden(rule, line) : false;
@@ -130,5 +249,7 @@ isLineHidden,
 redactText,
 lineIsHidden,
 normalizePath,
-normalizeEntry
+normalizeEntry,
+normalizeCharSpan,
+matchIsHidden
 };

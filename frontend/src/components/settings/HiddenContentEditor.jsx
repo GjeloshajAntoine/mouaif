@@ -11,7 +11,7 @@ import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
-import { describeRanges, lineIsSelected, normalizeRanges, toggleLine } from './hiddenRanges.js';
+import { charSpanCount, describeChars, describeRanges, isValidCharSpan, lineIsSelected, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
 import './hiddenContent.css';
 // Retain only line numbers (never file content) across in-app navigation.
 // Explicit Cancel/Save clears the draft; a reload clears this in-memory cache.
@@ -44,19 +44,46 @@ default:
 return null;
 }
 }
+// Turn the editor's current selection into a character span, and report
+// whether there is a non-empty selection at all. A selection that spans
+// multiple lines hides from the first column on the start line through the
+// last column on the end line (the middle lines are fully hidden).
+function selectionInfo(view) {
+const sel = view.state.selection.main;
+if (sel.empty) return { hasSelection: false, span: null };
+const doc = view.state.doc;
+const fromLine = doc.lineAt(sel.from);
+const toLine = doc.lineAt(sel.to);
+const span = {
+startLine: fromLine.number,
+endLine: toLine.number,
+startCol: sel.from - fromLine.from + 1,
+endCol: sel.to - toLine.from + 1
+};
+return { hasSelection: true, span };
+}
+
 // Build a read-only CodeMirror editor for a file with a toggle gutter.
 // Everything CodeMirror-specific lives inside this factory so the module can
 // be loaded (and the component rendered) in a harness without the runtime —
 // the real editor is only created when this is called in the browser.
-function createEditorEngine(doc, filePath, initialRanges, onChange, parent) {
+function createEditorEngine(doc, filePath, initialRanges, initialChars, onChange, onSelection, parent) {
 const setHidden = StateEffect.define();
+const setChars = StateEffect.define();
 const hiddenRangesField = StateField.define({
-    create: () => initialRanges,
-    update(value, tr) {
-      for (const e of tr.effects) if (e.is(setHidden)) return e.value;
-      return value;
-    }
-  });
+create: () => initialRanges,
+update(value, tr) {
+for (const e of tr.effects) if (e.is(setHidden)) return e.value;
+return value;
+}
+});
+const hiddenCharsField = StateField.define({
+create: () => initialChars,
+update(value, tr) {
+for (const e of tr.effects) if (e.is(setChars)) return e.value;
+return value;
+}
+});
 
   // A check / empty marker rendered in the toggle gutter for one line.
   class HideToggleMarker extends GutterMarker {
@@ -88,65 +115,123 @@ deco.push(Decoration.line({ class: 'hc__line-hidden' }).range(state.doc.line(n).
 return Decoration.set(deco, true);
 }
 );
+// Highlight the exact characters covered by the marked char spans. Each
+// span is broken into per-line pieces (a multi-line span hides the full
+// middle lines and partial boundary lines) and mapped to document offsets,
+// clamped to the line so a stale span never throws.
+const charDecorations = EditorView.decorations.compute(
+[hiddenCharsField],
+(state) => {
+const deco = [];
+for (const span of state.field(hiddenCharsField)) {
+if (!isValidCharSpan(span)) continue;
+const doc = state.doc;
+const startLine = Math.max(1, span.startLine);
+const endLine = Math.min(doc.lines, span.endLine);
+if (startLine > endLine) continue;
+for (let n = startLine; n <= endLine; n++) {
+const line = doc.line(n);
+let from, to;
+if (span.startLine === span.endLine) {
+from = Math.min(span.startCol - 1, line.length);
+to = Math.min(span.endCol, line.length);
+} else if (n === span.startLine) {
+from = Math.min(span.startCol - 1, line.length);
+to = line.length;
+} else if (n === span.endLine) {
+from = 0;
+to = Math.min(span.endCol, line.length);
+} else {
+from = 0;
+to = line.length;
+}
+if (to <= from) continue;
+deco.push(Decoration.mark({ class: 'hc__char-hidden' }).range(line.from + from, line.from + to));
+}
+}
+return Decoration.set(deco, true);
+}
+);
 
   const toggleGutter = gutter({
-    class: 'hc__toggle',
-    lineMarker(view, block) {
-      const number = view.state.doc.lineAt(block.from).number;
-      return new HideToggleMarker(lineIsSelected(view.state.field(hiddenRangesField), number));
-    },
-    lineMarkerChange(update) {
-      return update.docChanged ||
-        update.transactions.some((tr) => tr.effects.some((e) => e.is(setHidden)));
-    },
-    domEventHandlers: {
-      click(view, block) {
-        const number = view.state.doc.lineAt(block.from).number;
-        const next = toggleLine(view.state.field(hiddenRangesField), number);
-        view.dispatch({ effects: setHidden.of(next) });
-        onChange(next);
-        return true;
-      }
-    }
-  });
-
-  const state = EditorState.create({
+class: 'hc__toggle',
+lineMarker(view, block) {
+const number = view.state.doc.lineAt(block.from).number;
+return new HideToggleMarker(lineIsSelected(view.state.field(hiddenRangesField), number));
+},
+lineMarkerChange(update) {
+return update.docChanged ||
+update.transactions.some((tr) => tr.effects.some((e) => e.is(setHidden)));
+},
+domEventHandlers: {
+click(view, block) {
+const number = view.state.doc.lineAt(block.from).number;
+const next = toggleLine(view.state.field(hiddenRangesField), number);
+view.dispatch({ effects: setHidden.of(next) });
+onChange(next);
+return true;
+}
+}
+});
+const state = EditorState.create({
 doc,
 extensions: [
 hiddenRangesField,
+hiddenCharsField,
 lineNumbers(),
 highlightActiveLine(),
 highlightActiveLineGutter(),
 toggleGutter,
 lineDecorations,
+charDecorations,
 syntaxHighlighting(oneDarkHighlightStyle),
-EditorState.readOnly.of(true),
+// `EditorState.readOnly.of(true)` blocks drag-selection in CodeMirror 6, not
+// just typing. We want users to be able to select text (so they can then tap
+// "Hide selected text") without being able to mutate the document, so use the
+// editable facet instead.
+EditorView.editable.of(false),
 EditorView.lineWrapping,
 ...(langExtForPath(filePath) ? [langExtForPath(filePath)] : []),
 oneDark
 ]
 });
-  const view = new EditorView({ state, parent });
-  requestAnimationFrame(() => { if (!view.dom.isConnected) return; view.requestMeasure(); });
-  return { view, setHidden, hiddenRangesField };
+const view = new EditorView({ state, parent });
+view.dispatch({
+effects: StateEffect.appendConfig.of(EditorView.updateListener.of((update) => {
+if (update.selectionSet || update.docChanged) onSelection(selectionInfo(update.view));
+}))
+});
+requestAnimationFrame(() => { if (!view.dom.isConnected) return; view.requestMeasure(); });
+onSelection(selectionInfo(view));
+return { view, setHidden, setChars, hiddenRangesField, hiddenCharsField };
 }
 
-export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSave, onClose }) {
-  const draftKey = JSON.stringify([projectDir, filePath]);
-  const [ranges, setRanges] = useState(() => drafts.get(draftKey) || initialRanges.map((r) => ({ ...r })));
-  const [preview, setPreview] = useState({ loading: true, content: null, error: '' });
-  const [reload, setReload] = useState(0);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const mounted = useRef(true);
-  const heading = useRef(null);
-  const editorHost = useRef(null);
-  const engineRef = useRef(null);
-  const dirty = JSON.stringify(ranges) !== JSON.stringify(initialRanges);
-  let normalized = [], validation = '';
-  try { normalized = normalizeRanges(ranges); } catch (e) { validation = e.message; }
-  const count = normalized.reduce((n, r) => n + r.end - r.start + 1, 0);
+export function HiddenContentEditor({ projectDir, filePath, initialRule, onSave, onClose }) {
+const draftKey = JSON.stringify([projectDir, filePath]);
+const initialRanges = (initialRule && Array.isArray(initialRule.ranges)) ? initialRule.ranges.map((r) => ({ ...r })) : [];
+const initialChars = (initialRule && Array.isArray(initialRule.chars)) ? initialRule.chars.map((c) => ({ ...c })) : [];
+const draft = drafts.get(draftKey);
+const [ranges, setRanges] = useState(() => (draft ? (draft.ranges || []) : initialRanges));
+const [chars, setChars] = useState(() => (draft ? (draft.chars || []) : initialChars));
+const [sel, setSel] = useState({ hasSelection: false, span: null });
+const [preview, setPreview] = useState({ loading: true, content: null, error: '' });
+const [reload, setReload] = useState(0);
+const [error, setError] = useState('');
+const [saving, setSaving] = useState(false);
+const savingRef = useRef(false);
+const mounted = useRef(true);
+const heading = useRef(null);
+const editorHost = useRef(null);
+const engineRef = useRef(null);
+const dirty = JSON.stringify(ranges) !== JSON.stringify(initialRanges) || JSON.stringify(chars) !== JSON.stringify(initialChars);
+let normalized = [], validation = '';
+try { normalized = normalizeRanges(ranges); } catch (e) { validation = e.message; }
+const count = normalized.reduce((n, r) => n + r.end - r.start + 1, 0);
+const charCount = normalizeChars(chars).length;
+const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` : '')
++ (count && charCount ? ', ' : '')
++ (charCount ? `${charCount} ${charCount === 1 ? 'char range' : 'char ranges'}` : '')
+|| 'No content selected';
 
   useEffect(() => {
     mounted.current = true;
@@ -155,9 +240,9 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
   }, []);
 
   useEffect(() => {
-    if (dirty) drafts.set(draftKey, ranges);
-    else drafts.delete(draftKey);
-  }, [draftKey, ranges, dirty]);
+  if (dirty) drafts.set(draftKey, { ranges, chars });
+  else drafts.delete(draftKey);
+  }, [draftKey, ranges, chars, dirty]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -189,22 +274,33 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
     if (engineRef.current) { engineRef.current.view.destroy(); engineRef.current = null; }
     let seed = [];
     try { seed = normalizeRanges(ranges); } catch (e) { seed = []; }
-    const engine = createEditorEngine(preview.content, filePath, seed, (next) => { setError(''); setRanges(next); }, editorHost.current);
+    const engine = createEditorEngine(preview.content, filePath, seed, chars, (next) => { setError(''); setRanges(next); }, (info) => setSel(info), editorHost.current);
     engineRef.current = engine;
     return () => { if (engineRef.current) { engineRef.current.view.destroy(); engineRef.current = null; } };
     // Rebuild only when a new file body is loaded; the gutter reads live
     // ranges through the field, so no rebuild is needed on toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview.content]);
+    }, [preview.content]);
 
-  // Push React state (manual range edits, gutter clicks) into the editor.
+  // Push React state (manual range edits, gutter clicks, text selection)
+  // into the editor so the gutter and inline highlight stay in sync without
+  // re-creating the view.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
     let next = [];
     try { next = normalizeRanges(ranges); } catch (e) { next = []; }
-    engine.view.dispatch({ effects: engine.setHidden.of(next) });
-  }, [ranges]);
+    engine.view.dispatch({ effects: [engine.setHidden.of(next), engine.setChars.of(normalizeChars(chars))] });
+  }, [ranges, chars]);
+
+  // Toggle a character span for the current text selection. Called from the
+  // "Hide selected text" action; a non-empty selection adds (or removes, on
+  // a second tap) a char span, updating the inline highlight and the footer.
+  function onHideSelection() {
+    if (!sel.hasSelection || !sel.span) return;
+    setError('');
+    setChars(toggleChar(chars, sel.span));
+  }
 
   function onRangeField(index, field, value) {
     setError('');
@@ -219,24 +315,27 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
     onClose();
   }
   async function onSubmit(event) {
-    event.preventDefault();
-    if (savingRef.current) return;
-    let next;
-    try { next = normalizeRanges(ranges); } catch (e) { setError(e.message); return; }
-    if (!next.length && initialRanges.length && !window.confirm('Stop hiding all lines in this file?')) return;
-    savingRef.current = true;
-    setSaving(true);
-    setError('');
-    try {
-      await onSave(filePath, next);
-      if (drafts.get(draftKey) === ranges) drafts.delete(draftKey);
-      if (mounted.current) onClose();
-    } catch (e) {
-      if (mounted.current) setError((e.message || 'Could not save.') + ' Your selection is kept; you can retry.');
-    } finally {
-      savingRef.current = false;
-      if (mounted.current) setSaving(false);
-    }
+  event.preventDefault();
+  if (savingRef.current) return;
+  let next;
+  try { next = normalizeRanges(ranges); } catch (e) { setError(e.message); return; }
+  const hasAny = next.length || normalizeChars(chars).length;
+  const hadAny = initialRanges.length || initialChars.length;
+  if (!hasAny && hadAny && !window.confirm('Stop hiding content in this file?')) return;
+  savingRef.current = true;
+  setSaving(true);
+  setError('');
+  try {
+  await onSave(filePath, { ranges: next, chars: normalizeChars(chars) });
+  const draftVal = drafts.get(draftKey);
+if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.delete(draftKey);
+  if (mounted.current) onClose();
+  } catch (e) {
+  if (mounted.current) setError((e.message || 'Could not save.') + ' Your selection is kept; you can retry.');
+  } finally {
+  savingRef.current = false;
+  if (mounted.current) setSaving(false);
+  }
   }
 
   return h(Fragment, null,
@@ -246,7 +345,7 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
     ),
     h('form', { class: 'hidden-content', onSubmit, noValidate: true },
       h('p', { class: 'hidden-content__path' }, filePath),
-      h('p', { class: 'hidden-content__intro' }, 'Tap a line number in the left gutter to hide it; tap again to show it. Highlighted lines are replaced with [hidden] for the agent file tools.'),
+      h('p', { class: 'hidden-content__intro' }, 'Tap a line number in the left gutter to hide the whole line, or drag to select text and hide just that span. Either way, the redacted text is replaced with [hidden] for the agent file tools.'),
       h('p', { class: 'hidden-content__scope' }, 'Only read_file and search_files are filtered—not shell, MCP, or other access. This preview shows the original file to you; saving does not edit it.'),
       h('fieldset', { class: 'hidden-content__fields', disabled: saving },
         h('legend', { class: 'hidden-content__sr-only' }, 'Hidden line selection'),
@@ -257,7 +356,16 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
             )
           : h(Fragment, null,
               h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
-              h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it. The text is read-only.')
+              h('div', { class: 'hidden-content__toolbar' },
+                h('button', {
+                  class: 'btn', type: 'button',
+                  disabled: saving || !sel.hasSelection,
+                  onClick: onHideSelection,
+                  'aria-label': 'Hide selected text',
+                  'aria-describedby': 'hidden-content-editor-help'
+                }, 'Hide selected text'),
+                h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it, or drag to select text and tap Hide selected text. The file is read-only.')
+              )
             ),
         h('details', { class: 'hidden-content__manual', open: !!preview.error },
           h('summary', null, 'Enter line ranges manually'),
@@ -281,8 +389,8 @@ export function HiddenContentEditor({ projectDir, filePath, initialRanges, onSav
       ),
       h('footer', { class: 'hidden-content__footer' },
         h('div', { class: 'hidden-content__selection', role: 'status' },
-          h('strong', null, count ? `${count} ${count === 1 ? 'line' : 'lines'} selected` : 'No lines selected'),
-          h('span', { class: 'hidden-content__muted' }, validation ? 'Fix the range values to continue.' : describeRanges(normalized)),
+          h('strong', null, selectionSummary),
+          h('span', { class: 'hidden-content__muted' }, validation ? 'Fix the range values to continue.' : (describeRanges(normalized) + (chars.length ? ' · ' + describeChars(normalizeChars(chars)) : ''))),
           dirty && h('span', { class: 'hidden-content__muted' }, 'Unsaved selection')
         ),
         error && h('p', { class: 'hidden-content__error', role: 'alert' }, error),
