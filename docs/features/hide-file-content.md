@@ -6,7 +6,20 @@ Per-project settings page that marks specific line ranges of a source file as hi
 
 ## Usage
 
-Open **Settings → This project → More settings → Hide file content**, or navigate directly to `#/settings/project/hide`. Pick a file from the project (the same browser the chat file editor uses), add one or more 1-indexed inclusive line ranges, and save.
+Open **Settings → This project → More settings → Hide file content**, or navigate directly to `#/settings/project/hide`.
+
+1. Tap **+ Add file**, or tap a saved file row to edit it.
+2. The dedicated editor shows the original file with line numbers. Tap a line to hide it; tap it again to show it. Selected lines have a highlight and check mark.
+3. For larger selections, expand **Enter line ranges manually** and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save.
+4. Tap **Save**. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.
+
+The preview renders up to 100 lines per page, with Previous / Next and **Go to line** for longer files. It uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, manual ranges remain available.
+
+**Back** retains an unsaved selection in memory for a return visit to the same file and project. **Cancel** asks before discarding changes. Drafts contain only paths and line numbers, not file content; they do not survive a reload, which warns while an editor has unsaved changes. To stop hiding a file, remove its ranges and save; removing all saved ranges requires confirmation.
+
+### Protection limits
+
+This is **not a security boundary**. Only `read_file` and `search_files` are filtered. Shell, MCP, and other access can still read the original content. These limits are visible on the list and editor, not hidden in a help popup. Rules track line numbers, not text, so review them after editing or moving file content.
 
 ```text
 # Settings → Project → More settings → Hide file content
@@ -47,8 +60,10 @@ And a `search_files` call for text that only appears on a hidden line returns no
 - New module: [src/hideFileContent.js](../../src/hideFileContent.js) — loads, normalizes, and queries the rules. Every read is best-effort: a missing project, malformed rule, or unreadable settings store makes the tools behave as if no redaction were configured.
 - [src/tools/files.js](../../src/tools/files.js) — `runReadFile` redacts the body via `redactText`; `runSearchFiles` skips hidden lines via `lineIsHidden`.
 - REST surface: `GET /api/settings/hide-file-content?projectDir=<abs>` returns the normalized rules; `PUT /api/settings/hide-file-content` with `{ projectDir, rules }` stores them. Both live in [src/server-handlers-settings.js](../../src/server-handlers-settings.js).
-- Frontend route `#/settings/project/hide` renders inside [frontend/src/components/SettingsProject.jsx](../../frontend/src/components/SettingsProject.jsx); the file-picker overlay is the existing [AgentFilePicker.jsx](../../frontend/src/components/AgentFilePicker.jsx).
-- Mobile-first: the page is a single column of stacked cards with a full-height tap target for each line-range "remove" button and a `+ Add range` / `+ Add file` action, following the settings layout.
+- Frontend route `#/settings/project/hide?projectDir=<dir>` renders the lazily loaded [SettingsHiddenContent.jsx](../../frontend/src/components/SettingsHiddenContent.jsx). Adding `&file=<project-relative-path>` opens [HiddenContentEditor.jsx](../../frontend/src/components/settings/HiddenContentEditor.jsx); caller context is preserved. The picker reuses [AgentFilePicker.jsx](../../frontend/src/components/AgentFilePicker.jsx) with contextual labels.
+- The preview uses the existing owner-facing `GET /api/file?projectDir=<dir>&path=<path>` endpoint. It is read-only: the editor never calls `PUT /api/file` or sends file content to the model. Redaction saves still use the existing settings endpoint.
+- Mobile-first: one column, a separate editor instead of a nested settings card, wrapped source lines, 44px-minimum controls, and a sticky safe-area-aware Save / Cancel footer. Selection is indicated by both color and a check mark, with pressed-state semantics and accessible source descriptions.
+- Tests: `npm run test:hidden-content` covers range operations, routing, failure/retry and draft behavior. `node scripts/test-hidden-content-ui.mjs` starts a time-limited isolated browser fixture with a fake API for mobile, paging, and failure tests. Neither writes real project settings.
 
 ## Related
 

@@ -51,7 +51,7 @@ return { name: 'settingsProjectPreview', projectDir: params.get('projectDir') ||
 if (h === 'settings/project/hide' || h.startsWith('settings/project/hide?')) {
 const qs = h.indexOf('?') >= 0 ? h.slice(h.indexOf('?') + 1) : '';
 const params = new URLSearchParams(qs);
-return { name: 'settingsProjectHide', projectDir: params.get('projectDir') || '', from: fromParam(params) };
+return { name: 'settingsProjectHide', projectDir: params.get('projectDir') || '', from: fromParam(params), filePath: params.get('file') || '' };
 }
   // Legacy alias: agent editing used to live under settings/project.
   // Redirect to the standalone agents editor so old links keep working.

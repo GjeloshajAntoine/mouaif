@@ -25,6 +25,7 @@ const InspectorView = lazy(() => import('./Inspector.jsx').then((module) => ({ d
 const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProvidersView');
 const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
 const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
+const SettingsHiddenContentView = lazyNamed(() => import('./SettingsHiddenContent.jsx'), 'SettingsHiddenContentView');
 const SettingsDefaultsView = lazyNamed(() => import('./SettingsDefaults.jsx'), 'SettingsDefaultsView');
 const SettingsNotificationsView = lazyNamed(() => import('./SettingsNotifications.jsx'), 'SettingsNotificationsView');
 const SettingsAboutView = lazyNamed(() => import('./SettingsAbout.jsx'), 'SettingsAboutView');
@@ -52,7 +53,7 @@ settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ proj
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
 settingsProjectOutput: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'output' })],
 settingsProjectPreview: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'preview' })],
-settingsProjectHide: [SettingsProjectView, ({ projectDir, from }) => ({ projectDir, from, page: 'hide' })],
+settingsProjectHide: [SettingsHiddenContentView, ({ projectDir, from, filePath }) => ({ projectDir, from, filePath })],
 settingsDefaults: [SettingsDefaultsView],
 settingsNotifications: [SettingsNotificationsView],
 settingsPrompts: [SettingsPromptsView, ({ projectDir, id = '', scope = '', from }) => ({ projectDir, initialId: id, scope, from })],
