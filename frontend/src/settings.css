@@ -756,43 +756,40 @@ textarea#projectEditor {
 }
 .afp__foot .afp__up { margin-right: auto; }
 /* ---- Settings: Hide file content (redaction) ---------------------- */
-.settings-project__hide-list { margin-top: 4px; }
-.settings-project__hide-items {
-display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none;
+/* A saved redaction rule row. Reuses `.settings-project__item` for the
+  row chrome (border, surface, padding) so it matches the other project
+  settings rows. */
+.settings-project__hide-row { align-items: flex-start; gap: 10px; }
+.settings-project__hide-path {
+font-family: var(--font-mono, monospace); font-weight: 600;
+overflow-wrap: anywhere; word-break: break-word;
 }
-.settings-project__hide-item {
-display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
-background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+.settings-project__hide-ranges { white-space: normal; }
+.settings-project__hide-actions {
+flex: 0 0 auto;
+display: flex; align-items: center; gap: 8px;
 }
-.settings-project__hide-item-main { display: flex; flex-direction: column; gap: 2px; }
-.settings-project__hide-item-path {
-color: var(--fg); font-size: 0.82rem; font-weight: 600;
-font-family: var(--font-mono, monospace); overflow-wrap: anywhere;
-}
-.settings-project__hide-item-ranges { color: var(--muted); font-size: 0.72rem; }
-.settings-project__hide-item-actions {
-display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 2px;
-}
-.settings-project__hide-path { width: 100%; }
-.settings-project__hide-ranges {
-display: flex; flex-direction: column; gap: 6px; margin: 4px 0;
-}
+.settings-project__hide-addrow { margin-top: 10px; }
+
+/* Line-range editor rows (From / To / Remove). */
 .settings-project__hide-range {
-display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .settings-project__hide-range-field {
-display: flex; align-items: center; gap: 6px; flex: 1 1 120px; min-width: 0;
+display: flex; align-items: center; gap: 6px; flex: 1 1 110px; min-width: 0;
 }
 .settings-project__hide-range-label { color: var(--muted); font-size: 0.7rem; }
 .settings-project__hide-input {
-width: 100%; min-width: 0; max-width: none; min-height: 32px;
-padding: 4px 8px; font-size: 0.82rem; -moz-appearance: textfield;
+width: 100%; min-width: 0; max-width: none; min-height: 36px;
+padding: 5px 8px; font-size: 0.82rem; -moz-appearance: textfield;
 }
 .settings-project__hide-input::-webkit-outer-spin-button,
 .settings-project__hide-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .settings-project__hide-remove {
-flex: 0 0 auto; width: 44px; height: 44px; color: var(--danger);
+flex: 0 0 auto; min-width: 44px; min-height: 44px;
 display: inline-flex; align-items: center; justify-content: center;
-border: 0; background: transparent; cursor: pointer;
+color: var(--danger); background: transparent; border: 0; cursor: pointer;
+padding: 0 6px;
 }
-.settings-project__hide-add { margin-top: 2px; }
+.settings-project__hide-remove svg { width: 18px; height: 18px; }
+.settings-project__hide-add { margin: 4px 0 0; }

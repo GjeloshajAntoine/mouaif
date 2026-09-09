@@ -1319,7 +1319,7 @@ onInput: (e) => onHideRangeField(index, 'end', parseInt(e.target.value, 10))
 })
 ),
 h('button', {
-class: 'icon-btn settings-project__hide-remove',
+class: 'settings-project__hide-remove',
 type: 'button',
 onClick: () => onHideRemoveRange(index),
 'aria-label': 'Remove this line range',
@@ -1349,21 +1349,23 @@ h('p', null, 'Pick a project file and mark the line ranges the agent file tools 
 )
 ),
 h('p', { class: 'hint hint--compact' }, 'Rules are stored in ', h('code', null, '.mouaif.json'), ' under ', h('code', null, 'hideFileContent'), '.'),
-h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, hideStatusMsg),
-h('div', { class: 'settings-project__hide-list' },
+h('ul', { class: 'group__list' },
 hideRules.length === 0
-? h('p', { class: 'settings-project__item-note' }, 'No file content is hidden yet.')
-: h('ul', { class: 'settings-project__hide-items' },
-hideRules.map((rule) => h('li', { class: 'settings-project__hide-item', key: rule.path },
-h('div', { class: 'settings-project__hide-item-main' },
-h('div', { class: 'settings-project__hide-item-path' }, rule.path),
-h('div', { class: 'settings-project__hide-item-ranges' },
-rule.ranges.map((r) => 'L' + r.start + (r.end !== r.start ? '-' + r.end : '')).join(', ')
+? h('li', { class: 'settings-project__item' },
+h('div', { class: 'settings-project__item-main' },
+h('div', { class: 'settings-project__item-note' }, 'No file content is hidden yet.')
+)
+)
+: hideRules.map((rule) => h('li', { class: 'settings-project__item settings-project__hide-row', key: rule.path },
+h('div', { class: 'settings-project__item-main' },
+h('div', { class: 'settings-project__item-title settings-project__hide-path' }, rule.path),
+h('div', { class: 'settings-project__item-note settings-project__hide-ranges' },
+rule.ranges.map((r) => 'Line ' + r.start + (r.end !== r.start ? '–' + r.end : '')).join(', ')
 )
 ),
-h('div', { class: 'settings-project__hide-item-actions' },
+h('div', { class: 'settings-project__hide-actions' },
 h('button', {
-class: 'btn',
+class: 'btn btn--small',
 type: 'button',
 onClick: () => setHideEditing({ path: rule.path, ranges: rule.ranges.map((r) => ({ start: r.start, end: r.end })) })
 }, 'Edit'),
@@ -1373,18 +1375,24 @@ type: 'button',
 onClick: () => onHideRemoveRule(rule.path)
 }, 'Remove')
 )
-))
+)
 )
 ),
+h('div', { class: 'row row--actions settings-project__hide-addrow' },
 h('button', {
 class: 'btn btn--primary',
 type: 'button',
 onClick: () => setHidePickOpen(true)
-}, '+ Add file')
+}, '+ Add file'),
+h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg)
+)
 ),
 hideEditing
 ? h('div', { class: 'group settings-project__section' },
-h('div', { class: 'group__title' }, 'Edit hidden lines'),
+h('div', { class: 'group__title settings-project__section-title' },
+sectionIcon('files'),
+h('span', null, 'Edit hidden lines')
+),
 h('ul', { class: 'group__list' },
 h('li', { class: 'settings-project__item settings-project__item--col' },
 h('div', { class: 'settings-project__item-main' },
@@ -1415,16 +1423,18 @@ h('div', { class: 'settings-project__item-note' }, '1-indexed, inclusive. A rang
 h('div', { class: 'settings-project__hide-ranges' },
 hideEditing.ranges.map((range, index) => hideRangeRow(range, index))
 ),
+h('div', { class: 'row row--actions' },
 h('button', {
-class: 'btn btn--ghost settings-project__hide-add',
+class: 'btn btn--ghost btn--small',
 type: 'button',
 onClick: onHideAddRange
 }, '+ Add range')
+)
 ),
 h('div', { class: 'settings-project__item-actions' },
 h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, hideStatusMsg),
-h('button', { class: 'btn', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
-h('button', { class: 'btn btn--primary', type: 'button', onClick: onHideSaveEditing }, 'Save')
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
+h('button', { class: 'btn btn--primary btn--small', type: 'button', onClick: onHideSaveEditing }, 'Save')
 )
 )
 )
