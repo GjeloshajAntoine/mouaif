@@ -763,6 +763,10 @@ const rules = hideRules.filter((rule) => rule.path !== path);
 setHideStatusMsg('removing…');
 saveHideRules(rules);
 }
+function cancelHideEditing() {
+setHideEditing(null);
+setHideStatusMsg('');
+}
 
   async function saveRaw() {
     const d = dir();
@@ -1378,23 +1382,9 @@ onClick: () => onHideRemoveRule(rule.path)
 )
 )
 ),
-h('div', { class: 'settings-project__hide-addrow' },
-h('button', {
-class: 'btn btn--primary',
-type: 'button',
-onClick: () => setHidePickOpen(true)
-}, '+ Add file'),
-hideEditing ? null : h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg)
-)
-),
 hideEditing
-? h('div', { class: 'group settings-project__section' },
-h('div', { class: 'group__title settings-project__section-title' },
-sectionIcon('files'),
-h('span', null, 'Edit hidden lines')
-),
-h('ul', { class: 'group__list' },
-h('li', { class: 'settings-project__item settings-project__item--col' },
+? h('div', { class: 'settings-project__hide-edit' },
+h('div', { class: 'settings-project__item settings-project__item--col' },
 h('div', { class: 'settings-project__item-main' },
 h('label', { class: 'settings-project__item-title', for: 'sp-hide-path' }, 'File'),
 h('div', { class: 'settings-project__item-note' }, 'Project-relative path of the file to redact.')
@@ -1415,7 +1405,7 @@ onClick: () => setHidePickOpen(true)
 }, 'Pick…')
 )
 ),
-h('li', { class: 'settings-project__item settings-project__item--col' },
+h('div', { class: 'settings-project__item settings-project__item--col' },
 h('div', { class: 'settings-project__item-main' },
 h('label', { class: 'settings-project__item-title' }, 'Line ranges'),
 h('div', { class: 'settings-project__item-note' }, '1-indexed, inclusive. A range hides every line from its start to its end.')
@@ -1429,15 +1419,22 @@ type: 'button',
 onClick: onHideAddRange
 }, '+ Add range')
 ),
-h('div', { class: 'settings-project__item-actions' },
-h('button', { class: 'btn', type: 'button', onClick: () => setHideEditing(null) }, 'Cancel'),
+h('div', { class: 'settings-project__hide-edit-actions' },
+h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg),
+h('button', { class: 'btn', type: 'button', onClick: cancelHideEditing }, 'Cancel'),
 h('button', { class: 'btn btn--primary', type: 'button', onClick: onHideSaveEditing }, 'Save')
 )
 )
-)
 : null
-)
 ,
+hideEditing ? null : h('div', { class: 'settings-project__hide-addrow' },
+h('button', {
+class: 'btn btn--primary',
+type: 'button',
+onClick: () => setHidePickOpen(true)
+}, '+ Add file'),
+h('span', { class: 'status', 'aria-live': 'polite' }, hideStatusMsg)
+),
 hidePickOpen
 ? h(AgentFilePicker, {
 projectDir: dir(),
@@ -1445,6 +1442,8 @@ onPick: onHideFilePicked,
 onClose: () => setHidePickOpen(false)
 })
 : null
+)
+)
 )
 ;
 if (page === 'technical') return h(Fragment, null,
