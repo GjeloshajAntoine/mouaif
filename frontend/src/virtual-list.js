@@ -210,12 +210,17 @@ export function createVirtualList(options) {
   function refresh() { lastRange = null; schedule(); }
 
   function scrollToIndex(index) {
-    const clamped = Math.max(0, Math.min(data.length - 1, index | 0));
-    opts.scroller.scrollTop = clamped * opts.itemHeight;
-    // Sync immediately on programmatic scroll — the scroll event may not
-    // fire if the value didn't change.
-    lastRange = null;
-    render();
+  const clamped = Math.max(0, Math.min(data.length - 1, index | 0));
+  // Apply a pending data change first. The browser clamps scrollTop against
+  // the spacer's current height, so writing it while the spacer still
+  // describes the previous list lands on the wrong row (or is clamped to the
+  // old end) whenever setData() and scrollToIndex() run in the same tick.
+  if (scheduled) render();
+  opts.scroller.scrollTop = clamped * opts.itemHeight;
+  // Sync immediately on programmatic scroll — the scroll event may not
+  // fire if the value didn't change.
+  lastRange = null;
+  render();
   }
 
   function destroy() {
