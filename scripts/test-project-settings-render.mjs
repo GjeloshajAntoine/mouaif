@@ -16,6 +16,12 @@ function createView(project) {
     URLSearchParams, TextEncoder, setTimeout, clearTimeout,
     activeProject: { value: { dir: '' } }, setActiveProject() {},
     Fragment: 'fragment', ToolTree: 'tool-tree', McpAuthSeg: 'mcp-auth',
+// The shared per-tool authorization control and its helpers. The
+// component files are evaluated with their imports stripped, so the
+// names they reference have to exist on the context.
+ToolAuthSeg: 'auth-seg', TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
+ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
+segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     AgentFilePicker: 'file-picker', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
     useState: (initial) => {
       const i = cursor++;

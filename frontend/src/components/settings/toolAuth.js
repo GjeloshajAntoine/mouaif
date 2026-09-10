@@ -4,23 +4,68 @@
 import { h } from 'preact';
 import { fetchJson } from '../../api.js';
 
-// Build a segmented control (Off/Ask/Allow) for a tool's permission mode.
-// Segments are radio inputs for keyboard and screen-reader accessibility.
-export function toolModeSegs(name, activeMode, onPick, modes) {
-  return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
+// The ONE per-tool authorization control (Off / Ask / Allow, or
+// Off / Ask for binary tools). Every surface that shows a tool's
+// permission mode renders this component — the chat tools card, the
+// composer tool popup, and project settings — so no single tool can
+// drift from the others. `subagent` is not special-cased anywhere:
+// it is one entry in the same loop as `shell`, `file`, MCP, …
+//
+// Props:
+//   tool        — authorization key ('shell' | 'subagent' | 'file' | …).
+//                 Used for the radio group name so each row is its own
+//                 group.
+//   name        — aria-label / readable label; defaults to `tool`.
+//   mode        — the current raw mode ('off' | 'ask' | 'allowlist' | 'allow').
+//                 `allowlist` displays as Ask (the segment never shows a
+//                 fourth option).
+//   allowlist   — current patterns, preserved across mode changes so an
+//                 ask → off → ask round-trip never loses them.
+//   modes       — TOOL_MODE_CHOICES (default) or ASK_USER_MODE_CHOICES.
+//   namePrefix  — surface-specific radio-name prefix, so two cards on one
+//                 page never share a radio group.
+//   onPick      — (mode, allowlist) => void.
+export function ToolAuthSeg({
+  tool,
+  name,
+  mode,
+  allowlist,
+  modes = TOOL_MODE_CHOICES,
+  namePrefix = 'auth',
+  onPick
+}) {
+  const active = segMode(mode || 'ask');
+  const list = Array.isArray(allowlist) ? allowlist : [];
+  const label = name || tool || 'tool';
+  return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': label + ' authorization' },
     modes.map((m) =>
-      h('label', { key: m.value, class: 'seg__item' + (activeMode === m.value ? ' seg__item--on' : '') },
+      h('label', { key: m.value, class: 'seg__item' + (active === m.value ? ' seg__item--on' : '') },
         h('input', {
           type: 'radio',
-          name: 'sp-' + name.replace(/\s+/g, '-').toLowerCase(),
+          name: namePrefix + '-' + String(tool || label).replace(/\s+/g, '-').toLowerCase(),
           value: m.value,
-          checked: activeMode === m.value,
-          onChange: () => onPick(m.value)
+          checked: active === m.value,
+          onChange: () => {
+            if (onPick) onPick(m.value, m.value === 'allow' ? [] : list);
+          }
         }),
         h('span', { class: 'seg__pill' }, m.label)
       )
     )
   );
+}
+
+// Thin wrapper kept for the settings call sites, which pass a display
+// name and a one-argument picker. It renders the shared ToolAuthSeg.
+export function toolModeSegs(name, activeMode, onPick, modes) {
+  return h(ToolAuthSeg, {
+    tool: name,
+    name,
+    mode: activeMode,
+    namePrefix: 'sp',
+    modes: modes || TOOL_MODE_CHOICES,
+    onPick: (mode) => onPick(mode)
+  });
 }
 
 // The three standard modes shown for most tools.

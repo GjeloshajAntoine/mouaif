@@ -12,8 +12,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
-import { sectionIcon, segMode, toolModeSegs } from './settingsProjectUi.js';
-import { McpAuthSeg } from './settings/toolAuth.js';
+import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
+import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { agentEditorPath } from './settings/agentNavigation.js';
 // Web-preview components were previously chat-only. The dedicated

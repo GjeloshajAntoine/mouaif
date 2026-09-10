@@ -8,7 +8,7 @@ import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
-import { McpAuthSeg } from '../settings/toolAuth.js';
+import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 
 // buildSetupCard()
@@ -87,47 +87,36 @@ function buildToolsCard(state) {
     state.usedTools || new Set()
   );
 
-  // Inject Off/Ask/Allow authorization segments on each known group
-  // row, exactly like the project settings page. The segment calls
-  // state._saveToolAuth on tap.
+  // Inject the shared Off/Ask/Allow authorization control on each known
+  // group row, exactly like the project settings page. Every native tool
+  // — subagent included — renders the same ToolAuthSeg component from
+  // ../settings/toolAuth.js, so no row can drift from the others.
   const auth = state.toolAuth || {};
-  function segMode(m) { return m === 'allowlist' ? 'ask' : m; }
-  function makeSegVNode(toolName, _groupId) {
-    const cur = auth[toolName] || { mode: 'ask' };
-    const active = segMode(cur.mode);
-    const modes = toolName === 'ask_user'
-      ? [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }]
-      : [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }];
-    return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': toolName + ' authorization' },
-      modes.map((m) =>
-        h('label', { key: m.value, class: 'seg__item' + (active === m.value ? ' seg__item--on' : '') },
-          h('input', {
-            type: 'radio',
-            name: 'chat-auth-' + toolName,
-            value: m.value,
-            checked: active === m.value,
-            onChange: () => {
-              if (state._saveToolAuth) {
-                const allowlist = m.value === 'allow' ? [] : (Array.isArray(cur.allowlist) ? cur.allowlist : []);
-                state._saveToolAuth(toolName, m.value, allowlist);
-              }
-            }
-          }),
-          h('span', { class: 'seg__pill' }, m.label)
-        )
-      )
-    );
-  }
+  const toolByGroup = {
+    shell: 'shell',
+    subagent: 'subagent',
+    task: 'task',
+    ask_user: 'ask_user',
+    report_progress: 'report_progress',
+    webpreview: 'webpreview',
+    restart_app: 'restart_app',
+    files: 'file'
+  };
   for (const g of groups) {
-    if (g.id === 'shell') g.control = makeSegVNode('shell', g.id);
-    else if (g.id === 'subagent') g.control = makeSegVNode('subagent', g.id);
-    else if (g.id === 'task') g.control = makeSegVNode('task', g.id);
-    else if (g.id === 'ask_user') g.control = makeSegVNode('ask_user', g.id);
-    else if (g.id === 'report_progress') g.control = makeSegVNode('report_progress', g.id);
-    else if (g.id === 'webpreview') g.control = makeSegVNode('webpreview', g.id);
-else if (g.id === 'restart_app') g.control = makeSegVNode('restart_app', g.id);
-else if (g.id === 'files') g.control = makeSegVNode('file', g.id);
-
+    const toolName = toolByGroup[g.id];
+    if (!toolName) continue;
+    const cur = auth[toolName] || { mode: 'ask' };
+    g.control = h(ToolAuthSeg, {
+      tool: toolName,
+      name: toolName,
+      mode: cur.mode,
+      allowlist: cur.allowlist,
+      modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+      namePrefix: 'chat-auth',
+      onPick: (mode, allowlist) => {
+        if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
+      }
+    });
   }
 
   // MCP authorization — one Off/Ask/Allow segment per MCP server group

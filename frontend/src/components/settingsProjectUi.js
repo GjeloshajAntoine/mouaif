@@ -6,6 +6,7 @@
 // values; they never touch component refs or state, so they are safe to
 // hoist out of the component.
 import { h } from 'preact';
+import { ToolAuthSeg, TOOL_MODE_CHOICES } from './settings/toolAuth.js';
 
 // Section icons — small glyphs that mark each settings card so the
 // page scans faster. Shapes (not emoji) to keep them monochrome and
@@ -32,24 +33,19 @@ export function sectionIcon(kind) {
 // the server mode to `allowlist`; clearing them flips back to
 // `ask`. The segmented control never shows "allowlist" as a fourth
 // option — Ask stays selected — so the row reads as one choice.
-export function segMode(mode) { return mode === 'allowlist' ? 'ask' : mode; }
-
-// One-tap segmented control for a tool's permission mode. Segments
-// are radio inputs so keyboard and screen-reader users get the
-// same "pick one of N" semantics as the tap targets.
+//
+// The control itself is the shared ToolAuthSeg (./settings/toolAuth.js),
+// the same component the chat tools card and the composer tool popup
+// render, so `subagent` and every other tool row are built by one code
+// path. This wrapper only adapts the settings call signature (a display
+// name plus a one-argument picker) to the component's props.
 export function toolModeSegs(name, activeMode, onPick, modes) {
-  return h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name },
-    modes.map((m) =>
-      h('label', { key: m.value, class: 'seg__item' + (activeMode === m.value ? ' seg__item--on' : '') },
-        h('input', {
-          type: 'radio',
-          name: 'sp-' + name.replace(/\s+/g, '-').toLowerCase(),
-          value: m.value,
-          checked: activeMode === m.value,
-          onChange: () => onPick(m.value)
-        }),
-        h('span', { class: 'seg__pill' }, m.label)
-      )
-    )
-  );
+  return h(ToolAuthSeg, {
+    tool: name,
+    name,
+    mode: activeMode,
+    namePrefix: 'sp',
+    modes: modes || TOOL_MODE_CHOICES,
+    onPick: (mode) => onPick(mode)
+  });
 }

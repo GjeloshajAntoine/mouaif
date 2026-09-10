@@ -72,7 +72,22 @@ Authorization keys in the project file:
 
 The settings tree renders one group per configured MCP server (group checkbox = that server's override's `Off ↔ Ask`, segment = the full per-server authorization override showing the effective mode). Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.
 
-`buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege. MCP segments are shared with the chat view through `McpAuthSeg` in `frontend/src/components/settings/toolAuth.js` (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
+`buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege.
+
+### One authorization control for every tool
+
+`ToolAuthSeg` in `frontend/src/components/settings/toolAuth.js` is the single component that renders a tool's `Off / Ask / Allow` choice. Every surface uses it, so `subagent` is not special-cased anywhere — it goes through the same loop, the same props, and the same markup as `shell`, `task`, `ask_user`, and the file-family gate:
+
+| Surface | Call site | Radio group |
+|---|---|---|
+| Chat tools card | `frontend/src/components/chat/cards.js` (`toolByGroup` map) | `chat-auth-<tool>` |
+| Composer tool popup | `frontend/src/components/chat/ToolPopup.jsx` (`AuthSegment` wrapper) | `popup-auth-<tool>` |
+| Project settings tree | `toolModeSegs` in the same module, re-exported by `frontend/src/components/settingsProjectUi.js` | `sp-<label>` |
+| Generic settings card | `frontend/src/components/settings/ToolSettingCard.jsx` | `sp-<id>` |
+
+Component contract: `tool` (authorization key), `name` (label / `aria-label`), `mode`, `allowlist`, `modes` (`TOOL_MODE_CHOICES` or `ASK_USER_MODE_CHOICES` for binary tools), `namePrefix` (so two cards on one page never share a radio group), and `onPick(mode, allowlist)`. `allowlist` mode displays as **Ask** and the patterns survive every mode change except `allow`, which clears them — the behavior each surface previously re-implemented by hand.
+
+MCP segments are shared with the chat view through `McpAuthSeg` in the same module (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
 
 Server overrides are keyed by the server's canonical *slug*, but a hand-edited `.mcp.json` may key one by its display *`id`* instead — the two differ whenever the id contains characters `slugify` collapses (e.g. `id: "chrome-debug"` → `slug: "chrome_debug"`). A mismatch used to make the settings checkbox for that server silently show the shared default (wrongly reporting `default (ask)` / on) because the override was never found. `getAuthorization` in `src/tools/authorization.js` re-keys `mcp.servers` and the authorize-time lookup onto slugs (`mcpServersBySlug`), and `setAuthorization` also cleans the stale id-twin on write, so an id-keyed override reads and clears correctly regardless of which key the file uses.
 

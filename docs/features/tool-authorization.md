@@ -15,6 +15,8 @@ Every tool call the model initiates — and every `/shell` slash command the use
 | `allowlist` | Calls whose `cmd` matches an allowlist regex run without prompting. Calls that do not match fall through to `ask`. This is the advanced form of `ask`; patterns are stored in the project file. The app-level MCP page keeps an **Auto-approve list** textarea; project-level patterns are edited from the raw `.mouaif.json` / `.mcp.json`. |
 | `allow` | Every call is auto-approved. This project-level choice persists across chats and server restarts. |
 
+The mode is picked with one segmented control, rendered by a single shared component (`ToolAuthSeg` in `frontend/src/components/settings/toolAuth.js`) on every surface: the tool row in the chat **Tools** card, the composer **Tools** popup, and project settings. `subagent` is not special-cased — it is the same row, same control, and same save path as `shell`, `task`, and the file-family gate, so a change to the control lands everywhere at once. `ask_user` narrows the component to the binary `Off / Ask` choices.
+
 The mode is set on the project record (per decision §2) and can be overridden per session by the user without writing the new value to disk:
 
 ```jsonc

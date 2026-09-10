@@ -11,45 +11,27 @@
 import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
-import { McpAuthSeg } from '../settings/toolAuth.js';
+import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
 // Segment control for Off / Ask / Allow, same model as cards.js.
 // Picking Allow clears any allowlist; any other mode keeps it, so an
-// ask→off→ask round-trip never loses the patterns.
+// ask→off→ask round-trip never loses the patterns. The control itself
+// is the shared ToolAuthSeg (../settings/toolAuth.js) — the same
+// component the chat tools card and project settings render, so every
+// tool row (subagent included) is built by one code path.
 function AuthSegment({ toolName, current, onSave }) {
-  const active = current && current.mode;
-  if (!active) return null;
-  const modes = toolName === 'ask_user'
-    ? [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }]
-    : [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }];
-  return h('div', {
-    class: 'seg',
-    role: 'radiogroup',
-    'aria-label': toolName + ' authorization'
-  },
-    modes.map((m) =>
-      h('label', {
-        key: m.value,
-        class: 'seg__item' + (active === m.value ? ' seg__item--on' : '')
-      },
-        h('input', {
-          type: 'radio',
-          name: 'popup-auth-' + toolName,
-          value: m.value,
-          checked: active === m.value,
-          onChange: () => {
-            if (onSave) {
-              const allowlist = m.value === 'allow' ? [] : (Array.isArray(current.allowlist) ? current.allowlist : []);
-              onSave(toolName, m.value, allowlist);
-            }
-          }
-        }),
-        h('span', { class: 'seg__pill' }, m.label)
-      )
-    )
-  );
+  if (!current || !current.mode) return null;
+  return h(ToolAuthSeg, {
+    tool: toolName,
+    name: toolName,
+    mode: current.mode,
+    allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
+    modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+    namePrefix: 'popup-auth',
+    onPick: (mode, allowlist) => { if (onSave) onSave(toolName, mode, allowlist); }
+  });
 }
 
 export function ToolPopup(props) {
