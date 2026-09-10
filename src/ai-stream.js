@@ -260,6 +260,14 @@ async function runSingleToolCall(c, cx) {
         timeoutMs: args && args.timeoutMs,
         args
       });
+      // The gate returns the timeout it resolved against the project's
+      // `defaultTimeoutMs` / `maxTimeoutMs`. That value — never the raw
+      // model-supplied one — is what the runner must use and what the
+      // approval card must show: the model cannot raise its own ceiling
+      // by asking for a longer timeout.
+      const clampedTimeoutMs = Number.isFinite(authResult && authResult.timeoutMs)
+        ? authResult.timeoutMs
+        : (args && args.timeoutMs);
 
       // `ask_user` rides a separate UI card (question + options +
       // free-form "extra" textbox). The same authorization gate is
@@ -311,7 +319,7 @@ async function runSingleToolCall(c, cx) {
             path: args && args.path,
             query: args && args.query,
             summary,
-            timeoutMs: args && args.timeoutMs,
+            timeoutMs: clampedTimeoutMs,
             projectDir: opts && opts.projectDir
           });
         }
@@ -345,7 +353,7 @@ async function runSingleToolCall(c, cx) {
       // appeared permanently stuck on a tool call with no messages.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel }));
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, toolTimeoutMs: clampedTimeoutMs, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel }));
     }
   } catch (e) {
     // Denied/disabled/error calls still need a call card immediately
@@ -1239,7 +1247,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           projectDir: callOpts.projectDir,
           cmd: args && args.cmd,
           shell: args && args.shell,
-          timeoutMs: args && args.timeoutMs,
+          // Clamped by the authorization gate against the project's
+          // maxTimeoutMs. Falls back to the model's request only when the
+          // gate returned no value (it always does, so this is defensive).
+          timeoutMs: (callOpts && callOpts.toolTimeoutMs != null) ? callOpts.toolTimeoutMs : (args && args.timeoutMs),
           // Stream decoded output chunks to the chat UI while the
           // command is still running so the tool card shows a live
           // preview instead of a silent spinner.
