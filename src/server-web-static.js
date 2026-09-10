@@ -27,6 +27,16 @@ const WEB_MIME = {
 // each release because the hashed filename changes.
 const LONG_LIVED = new Set(['.js', '.css', '.png', '.webp', '.svg', '.ico']);
 
+// isInside(dir, abs) — true when `abs` is `dir` itself or lives under it.
+// A plain `abs.startsWith(dir)` also matches a sibling whose name shares
+// the prefix (`/app/frontend-evil` for `/app/frontend`), which is how a
+// prefix test silently stops being a containment test.
+function isInside(dir, abs) {
+  const root = path.resolve(dir);
+  const target = path.resolve(abs);
+  return target === root || target.startsWith(root + path.sep);
+}
+
 // Headers the service worker script needs to be installed for the
 // root scope. SW scripts normally inherit their scope from their
 // script URL's directory, but `Service-Worker-Allowed` lets the
@@ -76,7 +86,14 @@ function serveWebFile(res, absOrRel, opts) {
   // Allow serving from outside WEB_DIR only when the caller explicitly
   // opted in (used to be for the old virtual-list.js alias; no longer
   // needed now that Vite bundles it).
-  if (!abs.startsWith(WEB_DIR) && !opt.allowOutside) {
+  //
+  // `startsWith` on its own is a prefix test, not a containment test: a
+  // sibling directory whose name begins with the same characters
+  // (`frontend-evil`) would pass it. Compare against the boundary with a
+  // trailing separator. `url.parse` does not decode the path, so an
+  // encoded `%2e%2e` arrives here literally and `path.join` keeps it
+  // inside; this check is the belt to that suspenders.
+  if (!isInside(WEB_DIR, abs) && !opt.allowOutside) {
     return sendJSON(res, 400, { error: 'Bad path' });
   }
   fs.readFile(abs, (err, data) => {
@@ -100,4 +117,4 @@ function serveWebRequest(res, relPath) {
   return serveWebFile(res, relPath, { preferDist: true });
 }
 
-module.exports = { serveWebFile, serveWebRequest };
+module.exports = { serveWebFile, serveWebRequest, isInside };
