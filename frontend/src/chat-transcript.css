@@ -42,37 +42,34 @@
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { align-self: flex-end; align-items: flex-end; }
 
-/* ---- Reading measure on a wide frame ------------------------------
-   The transcript scroller stays full width — the overlay scrollbar has to
-   sit at the frame edge and the pinned composer below depends on its
-   flex contract — but its rows keep a readable measure, so a 1152px
-   frame does not render 130-character lines. The `92%` phone bubble cap
-   still wins on any frame narrower than --read-max (~765px), so phones
-   are untouched. Cards stretch the cross axis by default; `margin-inline:
-   auto` centres them once the cap binds (an auto cross-axis margin also
-   cancels the stretch, per CSS flexbox). */
-.chat-view__transcript > .chat-msg {
-  max-width: min(92%, var(--read-max, 44rem));
-}
-/* ---- Row alignment: one centred column ----------------------------
-   Assistant rows — prose bubbles, thinking cards, tool cards, the system
-   prompt card — are capped and then centred, so the left and right
-   gutters match. Before this they sat at `align-self: flex-start` under
-   the same cap, which put all the slack on one side: 8px on the left
-   against ~46px on the right at 430px wide, reading as a column that had
-   drifted off-centre. `margin-inline: auto` does the centring and also
-   cancels the stretch, per CSS flexbox (auto cross-axis margins win over
-   align-self).
-   User bubbles stay right-aligned so the two sides of the conversation
-   remain telling apart at a glance. */
-.chat-view__transcript > .chat-msg--assistant,
-.chat-view__transcript > .chat-msg--system,
+/* ---- Row alignment: one full-width column --------------------------
+   The transcript scroller stays full width — the overlay scrollbar sits
+   at the frame edge and the pinned composer below depends on its flex
+   contract — but every row spans that scroller's inner width, so all rows
+   (prose, thinking, tool cards, system card) share one left edge and one
+   right edge, and long text keeps a readable measure on a wide frame.
+   Two earlier attempts each broke the shared edge:
+     - `align-self: flex-start` under a `92%` cap left the capped row's
+       whole slack on the right (8px gutter left vs ~46px right at 430px);
+     - adding `margin-inline: auto` to centre that box made the row shrink
+       to fit-content (auto cross-axis margins cancel the stretch, per CSS
+       flexbox), so a SHORT row floated to the middle and stopped lining up
+       with the long rows around it — a short "Read …" tool card sat ~100px
+       in from the long "Ran …" rows.
+   A definite `width` is what pins the row: the box is the full inner width
+   up to the wide-frame measure, centred, so nothing can float. The bubble
+   inside still hugs its text from the shared left edge
+   (`align-items: flex-start`), and user bubbles stay right-aligned so the
+   two sides of the conversation remain telling apart. */
+.chat-view__transcript > .chat-msg,
 .chat-view__transcript > :not(.chat-msg) {
+  align-self: stretch;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
   margin-inline: auto;
 }
-.chat-view__transcript > .chat-msg--system,
-.chat-view__transcript > :not(.chat-msg) {
-  max-width: var(--read-max, 44rem);
+.chat-view__transcript > .chat-msg--assistant {
+  align-items: flex-start;
 }
 
 .chat-msg__role {
@@ -88,6 +85,7 @@
 .chat-msg--user .chat-msg__role { padding: 0 8px 0 3px; }
 .chat-msg--assistant .chat-msg__role { padding: 0 3px 0 8px; color: var(--accent); }
 .chat-msg__body {
+  max-width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md) var(--r-md) var(--r-md) var(--r-sm);
