@@ -16,6 +16,7 @@
 import { h, Fragment } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
+import { pickBannerText } from './pickMode.js';
 
 export function PreviewPanel(props) {
 const frameRef = useRef(null);
@@ -481,7 +482,28 @@ if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
   }
 
   return h(Fragment, null,
-h('div', { class: 'inspector__preview' },
+h('div', { class: 'inspector__preview' + (props.pickMode ? ' is-picking' : '') },
+// Pick-mode banner. Tap-to-select is armed from the Styles panel, whose
+// button is two panels away, so without feedback here the user taps the
+// preview and either selects an element or pokes the page with no way to
+// tell which mode they are in. The banner sits *over* the screenshot (it
+// costs no height and is exactly where the tap goes), names the gesture,
+// and carries the Cancel that disarms without a trip back to Styles.
+props.pickMode
+? h('div', { class: 'inspector__pickban', role: 'status', 'aria-live': 'polite' },
+h('span', { class: 'inspector__pickban-dot', 'aria-hidden': 'true' }),
+h('span', { class: 'inspector__pickban-text' }, props.pickHint || pickBannerText()),
+props.onPickCancel
+? h('button', {
+class: 'btn inspector__pickban-cancel',
+type: 'button',
+'aria-label': 'Cancel picking an element',
+title: 'Cancel picking',
+onClick: (event) => { event.stopPropagation(); props.onPickCancel(); }
+}, 'Cancel')
+: null
+)
+: null,
 h('div', {
 ref: frameRef,
 class: 'inspector__preview-frame',
@@ -675,11 +697,27 @@ onClick: () => submitType('', true)
 : null,
 h('div', {
 ref: fsFrameRef,
-class: 'inspector__preview-fs-frame',
+class: 'inspector__preview-fs-frame' + (props.pickMode ? ' is-picking' : ''),
 role: 'group',
 'aria-label': 'Live page preview, scrollable',
 onClick: (ev) => onPreviewClick(ev, fsImgRef.current)
 },
+// Pick-mode banner, same contract as the in-panel one: the overlay is a
+// full-screen tap surface, so it has to say what a tap will do too.
+props.pickMode
+? h('div', { class: 'inspector__pickban inspector__pickban--fs', role: 'status' },
+h('span', { class: 'inspector__pickban-dot', 'aria-hidden': 'true' }),
+h('span', { class: 'inspector__pickban-text' }, props.pickHint || pickBannerText()),
+props.onPickCancel
+? h('button', {
+class: 'btn inspector__pickban-cancel',
+type: 'button',
+'aria-label': 'Cancel picking an element',
+onClick: (event) => { event.stopPropagation(); props.onPickCancel(); }
+}, 'Cancel')
+: null
+)
+: null,
 h('img', {
 ref: fsImgRef,
 src: imgSrc,

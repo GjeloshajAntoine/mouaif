@@ -581,14 +581,16 @@ setLoading(false);
 // pickFromPoint — called by the InspectorView when the user taps the
 // preview in "pick" mode (see InspectorView's StylesPanel wiring).
 async function pickFromPoint(x, y) {
-if (!props.pickNodeAt) return;
+if (!props.pickNodeAt) return false;
 setError('');
 try {
 const m = await props.pickNodeAt(x, y);
-if (m) applyModel(m);
-else setError('Nothing selectable at that point.');
+if (m) { applyModel(m); return true; }
+setError('Nothing selectable at that point.');
+return false;
 } catch (e) {
 setError((e && e.message) || 'Inspect failed');
+return false;
 }
 }
 
@@ -619,9 +621,10 @@ if (props.pickHandlerRef) props.pickHandlerRef.current = pickFromPoint;
 return () => { if (props.pickHandlerRef) props.pickHandlerRef.current = null; };
 });
 // togglePickMode — switch "pick mode" on or off. When on, tapping the
-// live preview selects an element (routed via the parent's stylesActive).
-// The parent owns the flag (styled in the Preview header) so the two
-// panels stay in sync; we just request the flip here.
+// live preview selects an element (routed via the parent's stylesActive,
+// which also drives the banner PreviewPanel renders over the screenshot).
+// The parent owns the flag because it owns the tap routing; we just request
+// the flip here, and the parent disarms it after a successful pick.
 function togglePickMode() {
 if (!props.onPickModeChange) return;
 const next = !props.pickMode;

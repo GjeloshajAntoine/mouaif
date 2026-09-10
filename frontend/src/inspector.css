@@ -721,6 +721,68 @@ gap: 4px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* The pick-mode banner is positioned over the screenshot (see
+     .inspector__pickban), so the column is the containing block. */
+  position: relative;
+}
+/* ---- Inspector: pick mode -----------------------------------------
+   Tap-to-select is armed from the Styles panel but performed on the
+   preview, two panels away. The banner is the feedback that the tap will
+   select an element instead of clicking the page: it sits over the
+   screenshot (no height cost, and exactly where the finger goes), states
+   the gesture, and carries the Cancel that disarms without a trip back to
+   the Styles panel. The dashed outline on the frame repeats the state
+   around the whole tap surface for anyone who misses the banner. */
+.inspector__pickban {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The Cancel button is already a 44 px target, so the banner adds no
+     vertical padding of its own: on a phone it is an overlay on the
+     screenshot, and every pixel it takes is a pixel of the page hidden. */
+  padding: 0 6px 0 10px;
+  min-height: var(--tap);
+  background: rgba(10, 13, 18, 0.94);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.inspector__pickban--fs {
+  position: sticky;
+  top: 8px;
+  margin: 8px 8px 0;
+  left: auto;
+  right: auto;
+}
+.inspector__pickban-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: inspector__statuspill-pulse 1.2s ease-in-out infinite;
+}
+.inspector__pickban-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+.inspector__pickban-cancel {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 12px;
+}
+.inspector__preview.is-picking .inspector__preview-frame,
+.inspector__preview-fs-frame.is-picking {
+  border-color: var(--accent);
+  cursor: crosshair;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .inspector__preview-frame {
   /* The preview shows the page at its natural size and scrolls inside

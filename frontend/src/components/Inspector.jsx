@@ -14,6 +14,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
+import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
@@ -1110,17 +1111,29 @@ useEffect(() => {
   // doesn't force-grow the panel past the available viewport.
   const renderPanelBody = (id) => {
   if (id === 'preview') return h(PreviewPanel, {
-    capture: handlers && handlers.captureScreenshot,
-    clickAt: (x, y) => {
-      // When "pick mode" is on, a tap on the preview selects an element
-      // for the Styles panel instead of poking the page. We pass the
-      // tap coordinates straight through to the StylesPanel's handler.
-      if (stylesActive && stylesPickRef.current) {
-        stylesPickRef.current(x, y);
-        return;
-      }
-      if (handlers) handlers.clickAt(x, y).catch(() => {});
-    },
+  capture: handlers && handlers.captureScreenshot,
+  clickAt: (x, y) => {
+  // When "pick mode" is on, a tap on the preview selects an element
+  // for the Styles panel instead of poking the page. The tap
+  // coordinates go straight to the StylesPanel's handler, and the
+  // outcome is settled by settlePick: a real selection disarms pick
+  // mode (leaving it armed made the next tap silently select another
+  // element instead of clicking the page), a miss keeps it armed.
+  if (stylesActive && stylesPickRef.current) {
+    settlePick(stylesPickRef.current(x, y), () => setStylesActive(false));
+    return;
+  }
+  if (handlers) handlers.clickAt(x, y).catch(() => {});
+  },
+  // Pick-mode feedback: the banner over the screenshot (and in the
+  // full-screen overlay) is the only signal the user has that a tap
+  // will select an element rather than click the page.
+  pickMode: stylesActive,
+  pickHint: pickBannerText(),
+  onPickCancel: () => { setStylesActive(false); rerender(); },
+
+
+
     subscribe: conn.current && conn.current.cdpOn,
     ackFrame: handlers && handlers.ackPreviewFrame,
     refreshRef: previewRefreshRef,
