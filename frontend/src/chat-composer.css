@@ -77,11 +77,21 @@ height: 18px;
 position: absolute;
 inset: 0;
 }
-/* The folder glyph keeps the chevrons' currentColor: it is the icon the
-   user recognizes, and at --fg-soft it stands 8.1:1 against the button
-   circle (a near-black fill would drop that to 1.24:1 and the folder
-   would disappear into the surface). Because the folder is light, the
-   +N / -N counts on it must be dark — see below. */
+/* The folder glyph is the backing the +N / -N counts sit on, so its fill
+	is pinned to --fg instead of following the chevrons' currentColor. That
+	keeps it light in every trigger state (including the accent one, where
+	currentColor would turn it mid-tone blue) and buys the counts enough
+	contrast budget to be genuinely colored rather than near-black. The
+	pinned tone is also the *brightest* thing in the button: 13.2:1 against
+	the default circle and 11.0:1 against the hover/open circle, so the
+	folder reads more clearly than before. It sits 1.6:1 off the chevrons
+	(--fg-soft) in the resting state - a deliberate trade, and the two are
+	separate shapes.
+	If this fill is ever darkened, the two count colors below must be
+	re-checked: they are validated only against #eceaf1. */
+.file-toolbar__folder > svg path {
+fill: var(--fg);
+}
 .file-toolbar__git-stats {
 position: absolute;
 inset: 4px 3px 3px;
@@ -92,7 +102,7 @@ font-weight: 700;
 line-height: 1;
 font-variant-numeric: tabular-nums;
 /* Geometry matches the original. The counts are drawn thin (weight
-700 at 0.38rem) as plain dark glyphs on the light folder silhouette,
+700 at 0.38rem) as plain colored glyphs on the light folder silhouette,
 so they stay legible without growing past the folder's edges. */
 pointer-events: none;
 }
@@ -108,27 +118,18 @@ folder icon. Geometry and size stay identical to the original. */
 .file-toolbar__git-additions {
 top: 0;
 left: 0;
-/* Deep forest green: 5.4:1 on the light folder fill, 8.8:1 on the
-lighter hover fill. Bright lime cannot be used here — it measures
-1.68:1 on this fill and 1.04:1 on hover. Dark is the only polarity
-that works against a light backing, so the hue stays as saturated as
-the luminance budget allows. */
-color: #0b4a1e;
+/* Mid green, 4.5:1 on the pinned --fg fill. Dark enough to clear AA at
+this size while staying a real green instead of the near-black the
+unpinned fill forced (OKLCH chroma 0.173 vs 0.095). Because the folder
+fill is pinned this one color covers every trigger state - there is no
+per-state override. */
+color: #007c00;
 }
 .file-toolbar__git-deletions {
 right: 0;
 bottom: 0;
-/* Deep crimson, same budget: 5.4:1 default, 8.8:1 on hover. */
-color: #7d1717;
-}
-/* While the menu is open the trigger turns --accent, so the folder
-silhouette becomes mid-tone blue and both counts need to be deeper to
-stay above 4.5:1 (green 6.2:1, red 5.7:1). */
-.file-toolbar__trigger[aria-expanded="true"] .file-toolbar__git-additions {
-color: #052e12;
-}
-.file-toolbar__trigger[aria-expanded="true"] .file-toolbar__git-deletions {
-color: #5c1010;
+/* Pure red, 4.5:1 on the same pinned fill (chroma 0.227 vs 0.137 before). */
+color: #d70000;
 }
 .file-toolbar__stack svg {
   display: block;
