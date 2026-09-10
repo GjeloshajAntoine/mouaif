@@ -67,3 +67,27 @@ Shell and subagent call cards auto-expand while running (live output/nested acti
 ### Allowlist regex startup race (`src/tools/authorization.js`)
 
 `regexMatch` started its timeout clock when the worker thread came online — but a freshly spawned worker can take tens of milliseconds to start on a loaded machine, so allowlist patterns lost the startup race and were rejected as timeouts (flaky `test-tool-authorization`, real allowlist auth failures). The clock now starts only once the worker is actually running the pattern (floored at 1 s); catastrophic-backtracking protection is unchanged.
+
+## Rebuild safety (chunked transcript render)
+
+- Overlay cards (`ask_user` / authorization) are **not** detached during a
+  rebuild. `clearTranscriptRows` in
+  `frontend/src/components/chat/transcript.js` removes every child that is
+  not matched by `OVERLAY_CARD_SELECTOR`, so the cards stay in the DOM and
+  stay discoverable by `authCardGuard` / `removeOverlayCards` in
+  `frontend/src/components/chat/overlay.js`. `renderTranscript` then calls
+  `reanchorOverlayCards` right after the header cards are mounted, and once
+  more when the render finishes, to put the cards back at the bottom.
+  Previously the cards were pulled into a local array and re-appended at
+  the end of the pass: if a second `renderTranscript` landed while the first
+  chunked pass was still backfilling, the second `querySelectorAll` found
+  nothing (the first had already removed them) and the cancelled first pass
+  never re-attached them, silently dropping an unanswered question.
+- `renderTranscriptBackfill` clears `refs._pendingTranscriptChunk` as its
+  first statement, before any early return. `whenTranscriptSettled` polls
+  that field every animation frame, so an early return that left the frame
+  id set spun the poll forever and blocked every later overlay-card mount.
+- The `refs._suspendScrollPin` / `refs._insertAnchor` toggles in the tail
+  phase, the backfill loop and `prependOlderTranscript` are wrapped in
+  `try/finally`: a throw inside a row renderer would otherwise leave scroll
+  pinning disabled for the rest of the session.

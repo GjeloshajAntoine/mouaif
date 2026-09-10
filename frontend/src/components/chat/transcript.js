@@ -1269,16 +1269,6 @@ const TRANSCRIPT_CHUNK_ROWS = 40;   // rows appended per animation frame
 const TRANSCRIPT_CHUNK_THRESHOLD = 120; // render progressively above this many rows
 let _renderToken = 0;
 
-// reattachOverlayCards(refs, cards)
-//
-// Re-append preserved ask_user / authorization overlay cards at the
-// bottom of a freshly rebuilt transcript. They outlive the rebuild
-// because they are not part of state.messages.
-function reattachOverlayCards(refs, cards) {
-  if (!refs.transcript.current || !Array.isArray(cards) || !cards.length) return;
-  for (const card of cards) refs.transcript.current.appendChild(card);
-}
-
 function resetTranscriptRender(refs) {
   _renderToken++;
   if (refs._pendingTranscriptChunk) {
@@ -1387,9 +1377,37 @@ appendMessageToTranscript(m, false, refs, state);
 // the loops skip. Extracted so the tail-first render and the backfill
 // share one predicate.
 function isRenderableMessage(m) {
-  if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) return false;
-  return true;
+if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) return false;
+return true;
 }
+// OVERLAY_CARD_SELECTOR
+//
+// The ask_user / authorization cards. Unlike message rows they are not
+// part of state.messages — they are mounted from the pending-auth queue
+// and SSE events — so a rebuild must carry them across, and must never
+// hide them from `authCardGuard` / `removeOverlayCards` (both look the
+// cards up in the live DOM).
+const OVERLAY_CARD_SELECTOR = '.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]';
+// clearTranscriptRows(root)
+//
+// Empty the transcript for a rebuild WITHOUT detaching the overlay
+// cards. They used to be pulled into a local array and re-appended at
+// the end of the rebuild, which lost them whenever a second rebuild
+// landed while the first chunked pass was still backfilling: the second
+// call's `querySelectorAll` found nothing (the first had already removed
+// them), the first pass was then cancelled before it could re-attach
+// them, and an unanswered question silently disappeared. Leaving them in
+// the tree makes the rebuild idempotent — nothing to re-attach, nothing
+// to lose — and keeps them discoverable by the de-dupe helpers. They are
+// moved back to the bottom by reanchorOverlayCards when the rebuild ends.
+function clearTranscriptRows(root) {
+if (!root) return;
+for (const child of Array.from(root.children)) {
+if (child.matches(OVERLAY_CARD_SELECTOR)) continue;
+child.remove();
+}
+}
+
 
 // renderTranscriptChunked — latest-first progressive render.
 //
@@ -1400,7 +1418,7 @@ function isRenderableMessage(m) {
 // immediately, then backfills older rows ABOVE an anchor in rAF
 // chunks. The user sees the latest message on the first frame; the
 // history fills in behind it without moving the view.
-function renderTranscriptChunked(state, refs, expanded, overlayCards) {
+function renderTranscriptChunked(state, refs, expanded) {
   const transcriptEl = refs.transcript.current;
   if (!transcriptEl) return;
   // Cancel any previous chunked pass so two overlapping renders can't
@@ -1416,7 +1434,7 @@ function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   }
   if (!order.length) {
     restoreExpandedState(expanded, transcriptEl);
-    reattachOverlayCards(refs, overlayCards);
+    reanchorOverlayCards(refs);
     scrollTranscriptToBottomImpl(refs);
     updateUsageSummary(state, null, refs);
     return;
@@ -1431,10 +1449,15 @@ function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   const tailStart = Math.max(0, order.length - TRANSCRIPT_CHUNK_ROWS);
   const childrenBefore = transcriptEl.children.length;
   refs._insertAnchor = null;
-  for (let k = tailStart; k < order.length; k++) {
-    renderMessageRow(state, refs, state.messages[order[k]]);
+  try {
+    for (let k = tailStart; k < order.length; k++) {
+      renderMessageRow(state, refs, state.messages[order[k]]);
+    }
+  } finally {
+    // A throw inside a row renderer must not leave pinning suppressed for
+    // the rest of the session.
+    refs._suspendScrollPin = false;
   }
-  refs._suspendScrollPin = false;
   // Pin to the bottom now so the newest turn is on screen on frame one.
   scrollTranscriptToBottomImpl(refs);
 
@@ -1442,7 +1465,7 @@ function renderTranscriptChunked(state, refs, expanded, overlayCards) {
     // Everything fit in the tail — nothing to backfill.
     refs._insertAnchor = null;
     restoreExpandedState(expanded, transcriptEl);
-    reattachOverlayCards(refs, overlayCards);
+    reanchorOverlayCards(refs);
     scrollTranscriptToBottomImpl(refs);
     updateUsageSummary(state, null, refs);
     return;
@@ -1454,15 +1477,19 @@ function renderTranscriptChunked(state, refs, expanded, overlayCards) {
   const anchor = transcriptEl.children[childrenBefore] || null;
   refs._insertAnchor = anchor;
   refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptBackfill(state, refs, {
-    order, index: tailStart - 1, token, expanded, overlayCards
+    order, index: tailStart - 1, token, expanded
   }));
 }
 
 function renderTranscriptBackfill(state, refs, chunk) {
+  // Nothing below may leave `_pendingTranscriptChunk` set on an early
+  // return: whenTranscriptSettled polls it every animation frame, so a
+  // leaked id spins that loop forever and every overlay-card mount waits
+  // on it. The frame that is running right now is this one.
+  refs._pendingTranscriptChunk = null;
   if (chunk.token !== _renderToken) { refs._insertAnchor = null; return; } // superseded
   const transcriptEl = refs.transcript.current;
   if (!transcriptEl) { refs._insertAnchor = null; return; }
-  refs._pendingTranscriptChunk = null;
   const wasPinned = refs.pinnedToBottom.current;
   const prevScrollTop = transcriptEl.scrollTop;
   const prevScrollHeight = transcriptEl.scrollHeight;
@@ -1476,6 +1503,7 @@ function renderTranscriptBackfill(state, refs, chunk) {
   // lands above it — but only when a node was actually inserted (a
   // duplicate tool-call row is skipped and inserts nothing, in which
   // case the anchor must stay put).
+  try {
   while (chunk.index >= 0 && rendered < TRANSCRIPT_CHUNK_ROWS) {
     const m = state.messages[chunk.order[chunk.index]];
     chunk.index--;
@@ -1490,7 +1518,12 @@ function renderTranscriptBackfill(state, refs, chunk) {
     }
     rendered++;
   }
+} finally {
+  // A throw inside a row renderer must not leave pinning suppressed or
+  // strand the backfill anchor for the rest of the session.
   refs._suspendScrollPin = false;
+}
+
   // Keep the viewport stable: if the user was pinned to the bottom stay
   // there; otherwise preserve their reading position by compensating
   // for the height the inserted rows added above the viewport.
@@ -1504,11 +1537,11 @@ function renderTranscriptBackfill(state, refs, chunk) {
     return;
   }
   // Done: clear the anchor, restore expanded cards, final pin.
-  refs._insertAnchor = null;
-  restoreExpandedState(chunk.expanded, transcriptEl);
-  reattachOverlayCards(refs, chunk.overlayCards);
-  if (refs.pinnedToBottom.current) scrollTranscriptToBottomImpl(refs);
-  updateUsageSummary(state, null, refs);
+refs._insertAnchor = null;
+restoreExpandedState(chunk.expanded, transcriptEl);
+reanchorOverlayCards(refs);
+if (refs.pinnedToBottom.current) scrollTranscriptToBottomImpl(refs);
+updateUsageSummary(state, null, refs);
 }
 
 // restoreExpandedState(state, root)
@@ -1559,16 +1592,16 @@ function restoreExpandedState(exp, root) {
 // place" above content that arrived later. Re-anchoring after every
 // batch keeps the live question the user must answer always on top.
 function reanchorOverlayCards(refs) {
-  const el = refs.transcript.current;
-  if (!el) return;
-  const cards = el.querySelectorAll('.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]');
-  // Detach into how we append them below to avoid churn; we must
-  // iterate a live NodeList backwards since each detach mutates it.
-  for (let i = cards.length - 1; i >= 0; i--) {
-    const card = cards[i];
-    if (card.parentNode) card.parentNode.removeChild(card);
-  }
-  for (const card of cards) el.appendChild(card);
+const el = refs.transcript.current;
+if (!el) return;
+// querySelectorAll returns a static NodeList, so collecting first and
+// then moving is safe — no need to iterate in reverse.
+const cards = el.querySelectorAll(OVERLAY_CARD_SELECTOR);
+if (!cards.length) return;
+for (const card of cards) {
+if (card.parentNode) card.parentNode.removeChild(card);
+}
+for (const card of cards) el.appendChild(card);
 }
 
 // syncTranscriptAppend(state, refs, prevCount)
@@ -1629,22 +1662,18 @@ export function renderTranscript(state, refs) {
   // element re-runs renderTranscript from disk, which would otherwise
   // collapse every tool/result card the user had opened.
   const expanded = snapshotExpandedState(refs.transcript.current);
-  // Preserve pending ask_user / authorization overlay cards: they are
-  // NOT part of state.messages (they're mounted from the pending-auth
-  // queue / SSE events), so a rebuild that wipes the transcript would
-  // silently delete an unanswered question the user is looking at.
-  // Detach them first and re-append at the bottom afterwards.
-  const overlayCards = [];
-  for (const card of refs.transcript.current.querySelectorAll('.tool-card--ask-user[data-auth-call-id], .tool-card--authorization[data-auth-call-id]')) {
-    overlayCards.push(card);
-    card.remove();
-  }
   // Cancel any in-flight chunked render before rebuilding — a stream
   // reconcile can call renderTranscript while the previous chunked
   // pass is still mid-flight, and without this the two would append
   // the same rows twice.
   resetTranscriptRender(refs);
-  refs.transcript.current.innerHTML = '';
+  // Pending ask_user / authorization overlay cards are NOT part of
+  // state.messages (they're mounted from the pending-auth queue / SSE
+  // events), so the rebuild must carry them across rather than wipe an
+  // unanswered question the user is looking at. clearTranscriptRows
+  // leaves them in place; reanchorOverlayCards moves them back to the
+  // bottom once the rebuild finishes.
+  clearTranscriptRows(refs.transcript.current);
   refs.setupCard.current = null;
   if (!state.messages.length) {
     const card = buildSetupCardForMount(refs, state);
@@ -1656,17 +1685,23 @@ export function renderTranscript(state, refs) {
     mountToolsCard(refs, state);
     mountAgentFilesCard(refs, state);
     mountSkillsCard(refs, state);
-    reattachOverlayCards(refs, overlayCards);
+    reanchorOverlayCards(refs);
     return;
   }
   renderSystemPromptMessage(refs, state.systemPrompt);
   mountToolsCard(refs, state);
   mountAgentFilesCard(refs, state);
   mountSkillsCard(refs, state);
+  // Move the preserved overlay cards below the header cards before any
+  // message row is rendered. Without this they would sit above the
+  // headers for the whole rebuild, and findTranscriptContentStart (used by
+  // the pagination prepend) would treat the leading overlay card as the
+  // first message row and insert older history above the headers.
+  reanchorOverlayCards(refs);
   // Long transcripts render progressively so the first screen paints
   // immediately instead of blocking on a full DOM+markdown rebuild.
   if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD) {
-    renderTranscriptChunked(state, refs, expanded, overlayCards);
+    renderTranscriptChunked(state, refs, expanded);
     return;
   }
   for (const m of state.messages) {
@@ -1676,7 +1711,7 @@ export function renderTranscript(state, refs) {
     renderMessageRow(state, refs, m);
   }
   restoreExpandedState(expanded, refs.transcript.current);
-  reattachOverlayCards(refs, overlayCards);
+  reanchorOverlayCards(refs);
   scrollTranscriptToBottomImpl(refs);
   updateUsageSummary(state, null, refs);
 }
@@ -1722,9 +1757,14 @@ const prevScrollTop = el.scrollTop;
 refs._insertAnchor = contentStart;
 refs._suspendScrollPin = true;
 const beforeCount = el.childElementCount;
+try {
 for (const m of messages) renderMessageRow(state, refs, m);
+} finally {
+// A throw inside a row renderer must not leave scroll pinning disabled
+// for the rest of the session, nor strand the prepend anchor.
 refs._suspendScrollPin = false;
 refs._insertAnchor = null;
+}
 if (el.childElementCount === beforeCount) return false;
 // Preserve the viewport anchor: the inserted content raised the total
 // height above the viewport, so bump scrollTop by exactly the delta to
