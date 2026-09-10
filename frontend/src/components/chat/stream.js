@@ -1249,8 +1249,14 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       // this stream describe a conversation the user has left, and the
       // mounted transcript now belongs to the chat they moved to.
       if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) {
-        abortStream(state);
-        break;
+      // Flag the detach BEFORE breaking. `break` unwinds the loop
+      // normally, so the `catch` below never runs and would leave
+      // `aborted` false — the finalize path would then concat this
+      // chat's partial turn into the transcript of the chat the user
+      // just moved to.
+      aborted = true;
+      abortStream(state);
+      break;
       }
       const { value, done } = await reader.read();
       if (done) break;
@@ -1289,6 +1295,11 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     try { reader.releaseLock(); } catch { /* already released */ }
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
   }
+  // Safety net: an abort that lands between two reads unwinds the loop
+  // without throwing, so `aborted` may still be false here. The signal is
+  // the authoritative answer — `abortStream` is the only thing that sets
+  // it, and it is only ever called to detach (chat switch / unmount).
+  if (streamAbort.signal.aborted) aborted = true;
   if (aborted) {
     // Detach silently: the server still owns the turn, and the chat it
     // belongs to is no longer mounted. Hand the flags back so the chat the

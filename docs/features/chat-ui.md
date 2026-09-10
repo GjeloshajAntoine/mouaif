@@ -35,6 +35,8 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Implementation notes
 
+Detaching a turn is detected from the abort signal itself, not only from a thrown `AbortError`. The read loop also re-checks the mounted `projectDir`/`chatId` before every read, so a switch that lands between two reads unwinds the loop without throwing; both paths converge on the same silent detach and skip the finalize step that would otherwise append the abandoned chat's partial assistant turn to `state.messages` and reconcile the new chat against the old chat's cursor.
+
 Composer autosaves remain debounced. Draft-only PATCH responses update only saved text/attachment metadata: they do not rebuild the model picker, repaint the header, or fetch provider credit. A late draft acknowledgement cannot replace an in-progress model selection with an older server snapshot. Mixed metadata updates and explicit model changes retain their normal refresh behavior.
 
 The transcript observes DOM mutations and geometry changes for both its viewport and direct message rows. Geometry changes re-pin only when the reader is already at the bottom; scrolling up disables automatic movement so reading history is not interrupted.
