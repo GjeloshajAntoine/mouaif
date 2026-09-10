@@ -77,31 +77,23 @@ height: 18px;
 position: absolute;
 inset: 0;
 }
-/* The folder glyph is the *backing* for the +N / −N counts, so it is
-	filled with --bg (near-black) instead of the chevrons' currentColor.
-	That makes the folder a dark cut-out in the button circle and lets the
-	counts keep their original bright diff colors (see below) — no chip,
-	plate, or extra element is introduced. The fill is a fixed token, so
-	the digits' contrast does not change on hover or while the menu is
-	open. Measured against #0a0d12: lime 16.9:1, coral 6.3:1. This assumes a
-dark --bg, which is the only theme today; a light theme would have to
-swap the digit colors back to a dark pair. */
-.file-toolbar__folder > svg path {
-	fill: var(--bg);
-}
+/* The folder glyph keeps the chevrons' currentColor: it is the icon the
+   user recognizes, and at --fg-soft it stands 8.1:1 against the button
+   circle (a near-black fill would drop that to 1.24:1 and the folder
+   would disappear into the surface). Because the folder is light, the
+   +N / -N counts on it must be dark — see below. */
 .file-toolbar__git-stats {
 position: absolute;
 inset: 4px 3px 3px;
 z-index: 2;
 overflow: hidden;
 font-size: 0.38rem;
-font-weight: 600;
+font-weight: 700;
 line-height: 1;
 font-variant-numeric: tabular-nums;
-/* Geometry matches the original. The glyphs are drawn thin (weight
-600) so the +N / -N counts read as small digits on top of the
-now-dark folder silhouette while keeping their position and scale
-identical to the original. */
+/* Geometry matches the original. The counts are drawn thin (weight
+700 at 0.38rem) as plain dark glyphs on the light folder silhouette,
+so they stay legible without growing past the folder's edges. */
 pointer-events: none;
 }
 .file-toolbar__git-additions,
@@ -110,24 +102,33 @@ position: absolute;
 max-width: 1rem;
 overflow: hidden;
 white-space: nowrap;
-/* No stroke, no shadow — digits are drawn as plain colored glyphs
-over the folder icon. Geometry and size stay identical to the
-original layout. */
+/* No stroke, no shadow — the digits are plain colored glyphs over the
+folder icon. Geometry and size stay identical to the original. */
 }
 .file-toolbar__git-additions {
 top: 0;
 left: 0;
-/* Original saturated lime, restored. It only measured 1.68:1 while
-the folder glyph was still a light slate; on the dark --bg fill it
-reaches 16.9:1 in every trigger state. */
-color: #d6ff3a;
+/* Deep forest green: 5.4:1 on the light folder fill, 8.8:1 on the
+lighter hover fill. Bright lime cannot be used here — it measures
+1.68:1 on this fill and 1.04:1 on hover. Dark is the only polarity
+that works against a light backing, so the hue stays as saturated as
+the luminance budget allows. */
+color: #0b4a1e;
 }
 .file-toolbar__git-deletions {
 right: 0;
 bottom: 0;
-/* Original high-chroma coral, restored — 6.3:1 on the dark folder
-fill (it was 1.59:1 against the old light one). */
-color: #ff5a48;
+/* Deep crimson, same budget: 5.4:1 default, 8.8:1 on hover. */
+color: #7d1717;
+}
+/* While the menu is open the trigger turns --accent, so the folder
+silhouette becomes mid-tone blue and both counts need to be deeper to
+stay above 4.5:1 (green 6.2:1, red 5.7:1). */
+.file-toolbar__trigger[aria-expanded="true"] .file-toolbar__git-additions {
+color: #052e12;
+}
+.file-toolbar__trigger[aria-expanded="true"] .file-toolbar__git-deletions {
+color: #5c1010;
 }
 .file-toolbar__stack svg {
   display: block;
