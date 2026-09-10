@@ -4,7 +4,7 @@ import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { HiddenContentEditor } from './settings/HiddenContentEditor.jsx';
-import { describeRanges, hiddenContentPath } from './settings/hiddenRanges.js';
+import { describeHidden, hiddenContentPath } from './settings/hiddenRanges.js';
 import './settings/hiddenContent.css';
 
 export function SettingsHiddenContentView({ projectDir = '', from = '', filePath = '' }) {
@@ -65,7 +65,7 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
       h('h2', { class: 'view-title' }, 'Hide file content')
     ),
     h('section', { class: 'hidden-content', 'aria-label': 'Hidden files' },
-      h('p', { class: 'hidden-content__intro' }, 'Choose a file, then tap the lines you want hidden from the agent file tools. Your file stays unchanged.'),
+      h('p', { class: 'hidden-content__intro' }, 'Choose a file, then tap the line numbers you want hidden from the agent file tools, or select text and hide just that span. Your file stays unchanged.'),
       h('p', { class: 'hidden-content__scope' },
         h('strong', null, 'Not a security boundary. '),
         'Only ', h('code', null, 'read_file'), ' and ', h('code', null, 'search_files'),
@@ -78,11 +78,11 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
               h('button', { class: 'hidden-content__file', onClick: () => onOpen(rule.path) },
                 h('span', { class: 'hidden-content__file-main' },
                   h('span', { class: 'hidden-content__path' }, rule.path),
-                  h('span', { class: 'hidden-content__muted' }, describeRanges(rule.ranges))
+                  h('span', { class: 'hidden-content__muted' }, describeHidden(rule))
                 ),
                 h('span', { 'aria-hidden': 'true' }, '›')
               )
-            ))) : h('p', { class: 'hidden-content__empty' }, 'No hidden lines yet. Add a file to select them.'),
+            ))) : h('p', { class: 'hidden-content__empty' }, 'Nothing hidden yet. Add a file to hide whole lines or selected text.'),
             h('button', { class: 'btn btn--primary', onClick: () => setPicking(true) }, '+ Add file'),
             h('p', { role: 'status', class: 'hidden-content__notice' }, notice)
           ),

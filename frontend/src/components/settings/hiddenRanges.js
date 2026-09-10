@@ -94,13 +94,26 @@ export function toggleChar(chars, span) {
   return normalizeChars([...next, span]);
 }
 
-export function describeChars(chars) {
-  if (!chars.length) return 'No text selected';
-  return chars.map(({ startLine, endLine, startCol, endCol }) => {
-    const loc = startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
-    const cols = startLine === endLine ? `, cols ${startCol}–${endCol}` : '';
-    return `${loc}${cols}`;
-  }).join(', ');
+// One span as a short location, e.g. `line 5, cols 8–17` or `lines 4–7`.
+export function charSpanLabel({ startLine, endLine, startCol, endCol }) {
+  const loc = startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
+  const cols = startLine === endLine ? `, cols ${startCol}–${endCol}` : '';
+  return `${loc}${cols}`;
+}
+// One label for a stored rule or an in-progress selection that can carry
+// both whole-line ranges and character spans, so a list row never claims
+// lines are hidden when only text is, e.g.
+//   `Lines 3–5 · Text on line 8, cols 4–9`
+//   `Text on line 8, cols 4–9`
+//   `Lines 3–5`
+//   `Nothing hidden`
+export function describeHidden({ ranges = [], chars = [] } = {}) {
+  const lines = Array.isArray(ranges) ? ranges : [];
+  const spans = normalizeChars(chars);
+  const parts = [];
+  if (lines.length) parts.push(describeRanges(lines));
+  if (spans.length) parts.push('Text on ' + spans.map(charSpanLabel).join('; '));
+  return parts.join(' · ') || 'Nothing hidden';
 }
 
 // Count the number of hidden characters across all spans (best-effort for

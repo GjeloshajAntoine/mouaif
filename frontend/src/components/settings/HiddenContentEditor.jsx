@@ -11,7 +11,7 @@ import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
-import { charSpanCount, describeChars, describeRanges, isValidCharSpan, lineIsSelected, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
+import { charSpanCount, describeHidden, isValidCharSpan, lineIsSelected, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
 import './hiddenContent.css';
 // Retain only line numbers (never file content) across in-app navigation.
 // Explicit Cancel/Save clears the draft; a reload clears this in-memory cache.
@@ -285,8 +285,8 @@ const count = normalized.reduce((n, r) => n + r.end - r.start + 1, 0);
 const charCount = normalizeChars(chars).length;
 const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` : '')
 + (count && charCount ? ', ' : '')
-+ (charCount ? `${charCount} ${charCount === 1 ? 'char range' : 'char ranges'}` : '')
-|| 'No content selected';
++ (charCount ? `${charCount} ${charCount === 1 ? 'text span' : 'text spans'}` : '')
+|| 'Nothing hidden';
 
   useEffect(() => {
     mounted.current = true;
@@ -422,14 +422,14 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
   return h(Fragment, null,
     h('div', { class: 'view-head hidden-content__head' },
       h('button', { class: 'view-back', type: 'button', disabled: saving, onClick: onBack, 'aria-label': 'Back to hidden files' }, '←'),
-      h('h2', { class: 'view-title', tabIndex: -1, ref: heading }, 'Select hidden lines')
+      h('h2', { class: 'view-title', tabIndex: -1, ref: heading }, 'Select hidden content')
     ),
     h('form', { class: 'hidden-content', onSubmit, noValidate: true },
       h('p', { class: 'hidden-content__path' }, filePath),
       h('p', { class: 'hidden-content__intro' }, 'Tap a line number in the left gutter to hide the whole line, or drag to select text and hide just that span. Either way, the redacted text is replaced with [hidden] for the agent file tools.'),
       h('p', { class: 'hidden-content__scope' }, 'Only read_file and search_files are filtered—not shell, MCP, or other access. This preview shows the original file to you; saving does not edit it.'),
       h('fieldset', { class: 'hidden-content__fields', disabled: saving },
-        h('legend', { class: 'hidden-content__sr-only' }, 'Hidden line selection'),
+        h('legend', { class: 'hidden-content__sr-only' }, 'Hidden content selection'),
         preview.loading ? h('p', { role: 'status' }, 'Loading file preview…')
           : preview.error ? h('div', { class: 'hidden-content__preview-error' },
               h('p', { role: 'alert' }, preview.error + ' You can still edit ranges manually.'),
@@ -464,7 +464,9 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
       h('footer', { class: 'hidden-content__footer' },
         h('div', { class: 'hidden-content__selection', role: 'status' },
           h('strong', null, selectionSummary),
-          h('span', { class: 'hidden-content__muted' }, validation ? 'Fix the range values to continue.' : (describeRanges(normalized) + (chars.length ? ' · ' + describeChars(normalizeChars(chars)) : ''))),
+          h('span', { class: 'hidden-content__muted' }, validation
+          ? 'Fix the range values to continue.'
+          : ((count || charCount) ? describeHidden({ ranges: normalized, chars }) : 'Tap a line number, or select text and tap Hide selected text.')),
           dirty && h('span', { class: 'hidden-content__muted' }, 'Unsaved selection')
         ),
         error && h('p', { class: 'hidden-content__error', role: 'alert' }, error),

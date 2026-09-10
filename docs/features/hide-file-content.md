@@ -9,7 +9,7 @@ Per-project settings page that marks specific lines or character ranges of a sou
 Open **Settings → This project → More settings → Hide file content**, or navigate directly to `#/settings/project/hide`.
 
 1. Tap **+ Add file**, or tap a saved file row to edit it.
-2. The file opens in the real CodeMirror text editor (dark theme, line numbers, syntax highlighting) with the original content. It is **read-only** — the text cannot be edited, only marked.
+2. The file opens in the real CodeMirror text editor (**Select hidden content**, dark theme, line numbers, syntax highlighting) with the original content. It is **read-only** — the text cannot be edited, only marked.
 3. **Whole-line hiding** — tap a line number in the toggle gutter (the column left of the text) to hide that line; tap it again to show it. Hidden lines get a highlighted background and a ✓ in the gutter. Each gutter cell is exactly as tall as the line it belongs to and 2rem wide, so a tap always lands on the line you aimed at.
 4. **Character-range hiding** — drag to select text inside the editor. The status bar updates with the column range, and **Hide selected text** in the sticky footer becomes enabled. Tap it to mark that span; tap it again with the same selection to clear it. A span on a single line hides the exact columns; a span that crosses line breaks hides the full middle lines plus the boundary columns.
 5. For larger whole-line selections, expand **Enter line ranges manually** and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save; the same is done for character spans.
@@ -39,7 +39,7 @@ This is **not a security boundary**. Only `read_file` and `search_files` are fil
 
 ```text
 # Settings → Project → More settings → Hide file content
-src/secrets.js  →  hide lines 3-3 and chars 1:18-25
+src/secrets.js  →  Lines 3 · Text on line 1, cols 18–25
 ```
 
 After saving, a `read_file` call on that file returns the hidden content replaced by a marker:
@@ -47,13 +47,28 @@ After saving, a `read_file` call on that file returns the hidden content replace
 ```text
 # File: src/secrets.js
 # Lines: 1-4
-
 const apiKey = "[hidden]";
 const normal = 1;
 [hidden]
 ```
 
 And a `search_files` call for text that falls only inside a hidden range or character span returns no match for that line, even when the rest of the line is visible.
+
+### Labels
+
+Every summary label comes from one helper, `describeHidden({ ranges, chars })`, so the list and the editor can never disagree about what is hidden:
+
+| Hidden content | Label |
+| --- | --- |
+| lines only | `Lines 3–5` |
+| selected text only | `Text on line 8, cols 4–9` |
+| selected text across lines | `Text on lines 4–7` |
+| lines and text | `Lines 3–5 · Text on line 8, cols 4–9` |
+| nothing | file list: `Nothing hidden yet…`; editor: `Tap a line number, or select text and tap Hide selected text.` |
+
+- A rule that hides only characters is labelled as text, never as lines, so no row ever reads "No lines selected".
+- Overlapping spans on the same line are merged before they are labelled, and several spans are separated with `;`.
+- The editor footer repeats the label under the count line (`1 line, 1 text span`) and keeps showing `Fix the range values to continue.` while a manual range is invalid.
 
 ### Behavior
 
@@ -83,6 +98,7 @@ And a `search_files` call for text that falls only inside a hidden range or char
 - [src/tools/files.js](../../src/tools/files.js) — `runReadFile` redacts the body via `redactText` (which honors both `ranges` and `chars`); `runSearchFiles` skips a match whose column range overlaps a hidden character span, via `matchIsHidden`.
 - REST surface: `GET /api/settings/hide-file-content?projectDir=<abs>` returns the normalized rules; `PUT /api/settings/hide-file-content` with `{ projectDir, rules }` stores them. Both live in [src/server-handlers-settings.js](../../src/server-handlers-settings.js). The persisted shape accepts both `ranges` and `chars` per entry.
 - Frontend route `#/settings/project/hide?projectDir=<dir>` renders the lazily loaded [SettingsHiddenContent.jsx](../../frontend/src/components/SettingsHiddenContent.jsx). Adding `&file=<project-relative-path>` opens [HiddenContentEditor.jsx](../../frontend/src/components/settings/HiddenContentEditor.jsx); caller context is preserved. The picker reuses [AgentFilePicker.jsx](../../frontend/src/components/AgentFilePicker.jsx) with contextual labels.
+- Labels: `describeHidden({ ranges, chars })` in [hiddenRanges.js](../../frontend/src/components/settings/hiddenRanges.js) is the single source of the row and footer summary (`Lines 3–5 · Text on line 8, cols 4–9`, `Text on lines 4–7`, `Nothing hidden`). It normalizes the spans first, so overlapping selections merge before they are labelled, and it is the reason a character-only rule is never summarised as "No lines selected". `SettingsHiddenContent.jsx` calls it per file row; `HiddenContentEditor.jsx` calls it for the footer detail and swaps in `Tap a line number, or select text and tap Hide selected text.` while nothing is selected.
 - The editor reuses the same CodeMirror runtime the `FileEditor` modal uses (`@codemirror/state` + `@codemirror/view`, `oneDark`), loaded as its own lazy chunk. It mounts an `EditorView` with `EditorState.readOnly.of(true)`, which keeps `contenteditable` on the content DOM so touch text selection keeps working (CodeMirror's read-only facet blocks the edit pipeline, not selection). It adds a custom **toggle gutter** via `gutter()`: a `GutterMarker` per line renders ✓ when hidden / + when not, `lineMarkerChange` rebuilds when rules change, and `domEventHandlers.click` toggles the line through `toggleLine`. Two `StateEffect`+`StateField` pairs carry the whole-line list and the character-span list into the editor so the gutter and the two highlights (`.hc__line-hidden` and `.hc__char-hidden`) stay in sync with React state without re-creating the view. Each gutter element is sized by CodeMirror to its own line block (about 20px per unwrapped line, taller for wrapped lines) and is 2rem wide, so it aligns exactly with the line it toggles; the editor scrolls inside its 48dvh box instead of paging.
 - The selection is reported to React from two sources, both funnelled through one `reportSelection()` in `HiddenContentEditor.jsx`: an `EditorView.updateListener` (the editor state) and a document `selectionchange` listener that maps the browser's own DOM range through `view.posAtDOM` (`domSelectionSpan`). CodeMirror only mirrors a native selection into its state while the content DOM is focused, and a long-press selection on a phone does not always leave it focused, so the DOM range wins whenever it is non-empty and inside the editor; the editor state is the fallback. Both paths build the span with the same `spanFromPositions` helper, so they can never disagree about the columns.
 - **Hide selected text** (in the sticky footer) calls `toggleChar(chars, span)` to add or remove the span, and the editor's `charDecorations` re-renders the inline highlight on the next dispatch. It acts on `pointerdown`: on touch the same tap dismisses the active selection and a browser may swallow the click that follows, which used to leave the highlighted text unhidden. The `onClick` path stays for keyboard and assistive-technology activation and skips a click that a `pointerdown` already handled (timestamp guard), so a mouse tap never toggles twice. The button is disabled when there is no selection, when the form is saving, or when the preview is loading.
@@ -91,7 +107,7 @@ And a `search_files` call for text that falls only inside a hidden range or char
 - The preview uses the existing owner-facing `GET /api/file?projectDir=<dir>&path=<path>` endpoint. It is read-only: the editor never calls `PUT /api/file` or sends file content to the model. Redaction saves still use the existing settings endpoint.
 - Mobile-first: one column, a separate editor instead of a nested settings card, wrapped source lines, 44px-minimum controls, and a sticky safe-area-aware footer that holds every action (**Hide selected text** / Cancel / Save) so none of them can be covered by the scrolled content. Selection is indicated by both color and a check mark, with pressed-state semantics and accessible source descriptions.
 - The parent Project settings page derives its hidden-file count from the already-loaded project settings, independently of the dedicated editor’s state.
-- Tests: `npm run test:hidden-content` covers parent-page initial/loaded rendering, hidden-file counts, sibling pages, range operations, char-span merge/containment/toggle, routing, failure/retry and draft behavior. `scripts/test-hidden-content-editor.mjs` also asserts the layout contract that keeps the buttons tappable: the render puts **Hide selected text**, Cancel and Save inside the sticky footer, and the hide action is `type="button"` so it can never submit the form. `node scripts/test-hide-file-char-spans.js` exercises `normalizeCharSpan`, `matchIsHidden` with and without columns, `read_file` redaction on single- and multi-line spans, and `search_files` column filtering. `node scripts/test-hidden-content-ui.mjs` starts a time-limited isolated browser fixture with a fake API for mobile, paging, and failure tests; open `#/settings/project` to test the parent-page round trip. None of these write real project settings.
+- Tests: `npm run test:hidden-content` covers parent-page initial/loaded rendering, hidden-file counts, sibling pages, range operations, char-span merge/containment/toggle, routing, failure/retry and draft behavior. `scripts/test-hidden-content-labels.mjs` pins the label contract: `describeHidden` unit cases (lines only, text only, multi-line text, both, merged and repeated spans, invalid spans, nothing) plus a render of `SettingsHiddenContentView` asserting the file-row labels and that a char-only row never reads "No lines selected". `scripts/test-hidden-content-editor.mjs` also asserts the layout contract that keeps the buttons tappable: the render puts **Hide selected text**, Cancel and Save inside the sticky footer, and the hide action is `type="button"` so it can never submit the form. `node scripts/test-hide-file-char-spans.js` exercises `normalizeCharSpan`, `matchIsHidden` with and without columns, `read_file` redaction on single- and multi-line spans, and `search_files` column filtering. `node scripts/test-hidden-content-ui.mjs` starts a time-limited isolated browser fixture with a fake API for mobile, paging, and failure tests; open `#/settings/project` to test the parent-page round trip. None of these write real project settings.
 
 ## Related
 
