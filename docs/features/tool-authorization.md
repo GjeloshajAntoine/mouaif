@@ -67,6 +67,12 @@ The first entry with a `mode` wins; `ask` counts as a decision (so a per-server 
 
 MCP allowlists match against the summary `"<composedName> <firstStringArg>"` (e.g. `mcp__filesystem__read_file src/index.js`), so a pattern can pin either the tool itself (`^mcp__fs__read_file$`) or the resource it touches (`^mcp__fs__read_file src/.*`). Choosing **Always allow** on an MCP prompt pins only that one tool to `mode: "allow"` — it never flips the shared gate.
 
+#### Where the `off` gate is applied
+
+The "at zero prompt-token cost" property is not automatic: `off` hides tools when the advertised tool list is built, in two places that must stay in step — `src/ai-stream.js` (the streaming request) and `src/server-handlers-chats.js` (the tools-list endpoint behind the chat UI). Both resolve each `mcp__*` spec through `authorization.effectiveConfig(projectDir, name)`.
+
+`effectiveConfig` is a module export of `src/tools/authorization.js`, and every call site sits inside a `catch {}` whose documented fallback is "authorization state unreadable; keep every tool advertised". If that export is ever dropped, the calls throw `TypeError`, the fallback swallows it, and an `off` override silently stops hiding anything — the project keeps paying prompt tokens for tools it disabled, with no error anywhere. `scripts/test-mcp-authorization-gate.js` locks down the export, the layered resolution (per-tool over per-server), and the no-override case that must *not* resolve to `off`.
+
 ### Approval flow
 
 When the gate is `ask` and the model initiates a call, the chat pauses the stream and renders an **Authorization required** card. The card shows:

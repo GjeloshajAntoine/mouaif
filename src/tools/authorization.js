@@ -650,6 +650,14 @@ module.exports = {
   setAuthorization,
   getAppMcpAuthorization,
   setAppMcpAuthorization,
+  // The layered read path that every tool-advertisement gate uses to drop
+  // tools whose resolved mode is `off`. Both were defined but never
+  // exported, so each `authz.effectiveConfig(...)` call threw a TypeError
+  // that the surrounding `catch {}` swallowed. The visible effect was that
+  // a per-project MCP `off` override kept advertising its tools: the
+  // `.mcp.json` authorization block was read, but nothing acted on it.
+  effectiveConfig,
+  mcpLayeredConfig,
   authorize,
   recordDecision,
   clearGrants,
