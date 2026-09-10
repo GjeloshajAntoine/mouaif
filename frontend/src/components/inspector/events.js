@@ -1,6 +1,7 @@
 // Inspector CDP event handlers — translate CDP events into entries
 // for the console and network virtual lists.
 import { argToString } from './format.js';
+import { normalizeMatchedRules } from './matchedRules.js';
 
 export function createEventHandlers(state) {
   const { consoleEntries, networkEntries, reqMap, consoleVL, networkVL, cdpSend, onNavigate } = state;
@@ -471,6 +472,124 @@ const next = r && r.result && r.result.objectId;
 if (!next) return null;
 return buildNodeModel(next);
 }
+// SCAN_RULES_SRC — the in-page cascade scan.
+//
+// Used only as a fallback: `CSS.getMatchedStylesForNode` is the accurate
+// source, but it needs a nodeId, and DOM.requestNode maps some targets'
+// objectIds to nodeId 0. Rather than showing an empty "Matched rules"
+// section on those targets, the panel falls back to this scan, which walks
+// `document.styleSheets` and collects every style rule whose selector
+// matches the element or one of its ancestors.
+//
+// It reports the same shape the CSS domain does — inlineStyle,
+// matchedCSSRules, inherited[] — so `matchedRules.js` has exactly one
+// normalizer and the panel cannot tell which source answered.
+//
+// Deliberate limits: a cross-origin stylesheet throws on `.cssRules` and is
+// skipped; nested group rules (@media/@supports/@layer) are walked with
+// their `conditionText` kept as the media caption; and the walk stops after
+// RULE_BUDGET rules so a page shipping a 100 000-rule bundle cannot wedge
+// the tab. Ancestors are capped at 8, matching readElementTree.
+const SCAN_RULES_SRC = `function(){
+var el = this;
+var RULE_BUDGET = 20000;
+function decl(cs){
+var out = [], n = (cs && cs.length) || 0;
+for (var i = 0; i < n; i++){
+var p = cs.item(i);
+if (!p) continue;
+out.push({ name: p, value: cs.getPropertyValue(p), important: cs.getPropertyPriority(p) === "important" });
+}
+return out;
+}
+function collect(node, list, cond, sink, seen){
+for (var i = 0; i < list.length; i++){
+var r = list[i];
+if (!r) continue;
+if (r.cssRules){
+cond = r.conditionText ? (cond ? cond + " and " + r.conditionText : r.conditionText) : cond;
+seen = collect(node, r.cssRules, cond, sink, seen);
+continue;
+}
+if (!r.selectorText) continue;
+if (++seen > RULE_BUDGET) return seen;
+var hit = false;
+try { hit = node.matches(r.selectorText); } catch (e) { hit = false; }
+if (!hit) continue;
+var props = decl(r.style);
+if (!props.length) continue;
+sink.push({ rule: {
+selectorList: { selectors: [{ text: r.selectorText }] },
+origin: "regular",
+media: cond ? [{ text: cond }] : [],
+style: { cssProperties: props }
+} });
+}
+return seen;
+}
+var chain = [], up = el.parentElement;
+while (up && chain.length < 8){ chain.push(up); up = up.parentElement; }
+var sheets = document.styleSheets || [];
+var scan = function(node){
+var sink = [], seen = 0;
+for (var s = 0; s < sheets.length; s++){
+var list = null;
+try { list = sheets[s].cssRules; } catch (e) { continue; }
+seen = collect(node, list, "", sink, seen);
+if (seen > RULE_BUDGET) break;
+}
+return sink;
+};
+var inherited = [];
+for (var c = 0; c < chain.length; c++){
+inherited.push({ inlineStyle: { cssProperties: decl(chain[c].style) }, matchedCSSRules: scan(chain[c]) });
+}
+return { inlineStyle: { cssProperties: decl(el.style) }, matchedCSSRules: scan(el), inherited: inherited };
+}`;
+// hasCascade — did the CSS domain actually describe a cascade? An empty
+// response is indistinguishable from "no stylesheet rules matched", and a
+// disabled domain answers with nothing at all, so both cases fall through
+// to the scan.
+function hasCascade(raw) {
+if (!raw) return false;
+return !!(raw.inlineStyle
+|| (raw.matchedCSSRules && raw.matchedCSSRules.length)
+|| (raw.inherited && raw.inherited.length));
+}
+// readMatchedRules — where the element's styles actually come from, read
+// only. The panel has always been able to edit `element.style` and to read
+// the resolved value of every property; what it could not answer was "which
+// class or rule put this value here", which is the question that decides
+// whether an override is even fixable from this panel.
+//
+// CSS.getMatchedStylesForNode is the accurate source (shadow DOM, adopted
+// sheets, real @media applicability) and is tried first; the in-page scan
+// covers targets where DOM.requestNode yields no nodeId. Inherited rules
+// are captioned with the ancestor labels from readElementTree — Chrome's
+// inheritance chain and that label list are both built by walking up, so
+// the two line up index for index.
+async function readMatchedRules(objectId) {
+if (!objectId) return null;
+const tree = await readElementTree(objectId);
+const ancestors = (tree && tree.ancestors) || [];
+let raw = null;
+const nodeId = await requestNodeId(objectId);
+if (nodeId) {
+try { raw = await cdpSend('CSS.getMatchedStylesForNode', { nodeId }, 8000); } catch { raw = null; }
+}
+if (!hasCascade(raw)) {
+try {
+const scan = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: SCAN_RULES_SRC,
+returnByValue: true
+}, 8000);
+const v = scan && scan.result && scan.result.value;
+if (v) raw = v;
+} catch { /* keep whatever the CSS domain gave us */ }
+}
+return normalizeMatchedRules(raw, { ancestors });
+}
 // buildNodeModel — resolve everything the Styles panel needs from a
 // RemoteObject objectId: the DOM node identity (tag/id/class), the inline
 // declared styles, the computed styles, and the box-model dimensions. Also
@@ -744,6 +863,6 @@ loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
 refreshNodeModel, selectBySelector, captureElementShot, readElementStyles,
-describeNode: buildNodeModel, readElementTree, selectAncestorNode, selectChildNode
+readElementTree, selectAncestorNode, selectChildNode, readMatchedRules
 };
 }

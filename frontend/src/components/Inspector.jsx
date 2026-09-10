@@ -1157,12 +1157,14 @@ useEffect(() => {
     readElementStyles: handlers ? handlers.readElementStyles : null,
     // Element tree navigation: the breadcrumb and child chips walk the DOM
     // from the selected element, which is far faster on a phone than
-    // re-picking a parent or child on the live preview. `describeNode` turns
-    // the resulting objectId back into a full node model.
-    describeNode: handlers ? handlers.describeNode : null,
+    // re-picking a parent or child on the live preview.
     readElementTree: handlers ? handlers.readElementTree : null,
     selectAncestorNode: handlers ? handlers.selectAncestorNode : null,
     selectChildNode: handlers ? handlers.selectChildNode : null,
+    // Read-only cascade for the "Matched rules" section: which rule or class
+    // is responsible for a value, which is what decides whether an override is
+    // fixable from this panel at all.
+    readMatchedRules: handlers ? handlers.readMatchedRules : null,
     pickHandlerRef: stylesPickRef,
     pickMode: stylesActive,
     onPickModeChange: setStylesActive

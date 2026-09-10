@@ -15,6 +15,11 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/events.js'), 'utf8')
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+// events.js imports the pure matched-rules normalizer. Its import line is
+// stripped above, so load the module into the same vm context first — the
+// same way the panel composes the two files at runtime.
+const matchedRulesSource = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/matchedRules.js'), 'utf8')
+  .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 
 // A mock cdpSend that records each (method, params) call and returns canned
 // responses per method. `respond` lets the test drive command output.
@@ -78,6 +83,7 @@ async function main() {
   respond.set('Page.captureScreenshot', (p) => Promise.resolve({ data: 'BASE64PNG' }));
 
   const context = vm.createContext({ state, console: null });
+  vm.runInContext(matchedRulesSource, context);
   vm.runInContext(source, context);
   const handlers = context.createEventHandlers(state);
 
@@ -258,7 +264,58 @@ async function main() {
   const negCall = calls.slice(beforeNeg).find((c) => /k\[i\] \|\| null/.test(c.params.functionDeclaration));
   assert.deepStrictEqual(Array.from(negCall.params.arguments.map((a) => a.value)), [0], 'a negative child index clamps to the first child');
 
-  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree)');
+  // Matched rules — the read-only cascade. CSS.getMatchedStylesForNode is the
+  // accurate source and needs a nodeId, so the guard that matters is that the
+  // helper resolves one, asks the CSS domain, and normalizes the answer into
+  // the panel's ordered list. `requestNodeId` returning 0 must fall through to
+  // the in-page scan rather than leaving the section empty — that is the
+  // difference between "no rules matched" and "this target can't be asked".
+  respond.set('CSS.getMatchedStylesForNode', () => Promise.resolve({
+    inlineStyle: { cssProperties: [{ name: 'color', value: 'red' }] },
+    matchedCSSRules: [
+      { rule: { selectorList: { selectors: [{ text: 'body' }] }, origin: 'regular', style: { cssProperties: [{ name: 'margin', value: '0' }] } } },
+      { rule: { selectorList: { selectors: [{ text: '.card' }] }, origin: 'regular', style: { cssProperties: [{ name: 'padding', value: '10px' }] } } }
+    ],
+    inherited: []
+  }));
+  const rules = await handlers.readMatchedRules('obj-1');
+  assert.ok(rules, 'readMatchedRules returns a model');
+  const cssCall = calls.slice(-6).find((c) => c.method === 'CSS.getMatchedStylesForNode');
+  assert.ok(cssCall, 'readMatchedRules asks the CSS domain for the cascade');
+  assert.strictEqual(cssCall.params.nodeId, 17, 'the CSS read uses the nodeId resolved from the element objectId');
+  assert.deepStrictEqual(Array.from(rules.rules, (r) => r.selector), ['element.style', '.card', 'body'],
+    'element.style first, then the matched rules most specific first');
+  assert.strictEqual(rules.rules[0].group, 'author', 'element.style is not a UA rule');
+  assert.deepStrictEqual({ ...rules.counts }, { total: 3, author: 3, userAgent: 0 }, 'the counts describe the whole cascade');
+  assert.strictEqual(rules.truncated, 0, 'a small cascade is not truncated');
+  const scanCall = () => calls.slice(-8).find((c) => c.method === 'Runtime.callFunctionOn' && /document\.styleSheets/.test(c.params.functionDeclaration));
+  assert.strictEqual(scanCall(), undefined, 'the in-page scan is not used while the CSS domain answers');
+
+  // With no nodeId the CSS domain is unusable, so the scan fallback carries
+  // the section instead of reporting an empty cascade.
+  respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 0 }));
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/document\.styleSheets/.test(p.functionDeclaration)) {
+      return Promise.resolve({ result: { value: {
+        inlineStyle: { cssProperties: [] },
+        matchedCSSRules: [{ rule: { selectorList: { selectors: [{ text: '.scanned' }] }, origin: 'regular', style: { cssProperties: [{ name: 'color', value: 'blue' }] } } }],
+        inherited: []
+      } } });
+    }
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const beforeScan = calls.length;
+  const scanned = await handlers.readMatchedRules('obj-1');
+  assert.deepStrictEqual(Array.from(scanned.rules, (r) => r.selector), ['.scanned'],
+    'without a nodeId the in-page scan supplies the cascade');
+  assert.ok(scanCall(), 'the scan runs as a callFunctionOn on the element');
+  const scanParams = calls.slice(beforeScan).find((c) => /document\.styleSheets/.test(c.params.functionDeclaration));
+  assert.strictEqual(scanParams.params.objectId, 'obj-1', 'the scan targets the selected element');
+  assert.strictEqual(scanParams.params.returnByValue, true, 'the scan is by value — the panel only needs the description');
+  assert.strictEqual(await handlers.readMatchedRules(null), null, 'no objectId yields no cascade');
+  respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 17 }));
+
+  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

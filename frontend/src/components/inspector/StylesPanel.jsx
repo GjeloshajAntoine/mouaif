@@ -269,6 +269,91 @@ onClick: remove
 );
 }
 
+// MatchedRulesSection — the read-only "where does this value come from"
+// answer: every rule that matches the selected element, most specific
+// first, with each rule's selector, origin, @media condition, and
+// declarations. Tapping a declaration opens the edit sheet pre-filled with
+// that property and value, which is the whole point of the section: a value
+// supplied by a class is otherwise invisible and looks uneditable, and the
+// fastest fix for "I want this one thing different" is to copy it onto
+// `element.style` and change it.
+//
+// Collapsed by default. The section is an answer to a question, not
+// something to scroll past on every selection, and an element on a real
+// site matches enough rules (plus a dozen browser defaults) to be another
+// wall. UA rules get their own toggle for the same reason.
+function MatchedRulesSection(props) {
+const all = props.rules || [];
+const counts = props.counts || { total: 0, userAgent: 0 };
+const visible = all.filter((r) => props.showUa || r.group !== 'user-agent');
+let body = null;
+if (props.open) {
+if (!all.length) {
+body = h('p', { class: 'inspector__styles-none', role: 'status' },
+props.busy ? 'Reading the cascade…' : 'No stylesheet rules matched this element.');
+}
+else if (!visible.length) {
+body = h('p', { class: 'inspector__styles-none' }, 'Only browser default rules matched.', h('br'), 'Tap UA to show them.');
+}
+else {
+body = [
+h('ul', { class: 'inspector__rules', key: 'list' },
+visible.map((r) => h('li', {
+class: 'inspector__rule' + (r.group === 'user-agent' ? ' is-ua' : '') + (r.inherited ? ' is-inherited' : ''),
+key: r.id
+},
+h('div', { class: 'inspector__rule-head' },
+h('span', { class: 'inspector__rule-sel' }, r.selector),
+r.group === 'user-agent' ? h('span', { class: 'inspector__rule-tag' }, 'UA') : null,
+r.media ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--media' }, '@media ' + r.media) : null,
+r.inherited ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--inh' }, 'from ' + r.inherited) : null
+),
+h('ul', { class: 'inspector__rule-props' },
+r.props.map((p) => h('li', { key: r.id + ':' + p.name },
+h('button', {
+class: 'inspector__rule-prop' + (p.disabled ? ' is-off' : ''),
+type: 'button',
+title: 'Set ' + p.name + ' on this element',
+'aria-label': 'Set ' + p.name + ', ' + p.value + (p.important ? ' important' : '') + ', on this element as an inline style',
+onClick: () => props.onEdit(p.name, p.value)
+},
+h('span', { class: 'inspector__rule-pname' }, p.name),
+h('span', { class: 'inspector__rule-pval' }, p.value + (p.important ? ' !important' : ''))
+)
+)),
+r.more ? h('li', { class: 'inspector__rule-more' }, '+' + r.more + ' more') : null
+)
+))),
+props.truncated
+? h('p', { class: 'inspector__rules-truncated', key: 'cut' }, '+' + props.truncated + ' more rules not shown')
+: null
+];
+}
+}
+return h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__rules-bar' },
+h('h3', { class: 'inspector__styles-h' }, 'Matched rules'),
+h('span', { class: 'inspector__rules-count' }, props.busy && !all.length ? '…' : String(visible.length)),
+h('button', {
+class: 'inspector__rules-toggle',
+type: 'button',
+'aria-expanded': String(!!props.open),
+onClick: props.onToggle
+}, props.open ? 'Hide' : 'Show'),
+counts.userAgent
+? h('button', {
+class: 'inspector__rules-ua' + (props.showUa ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(!!props.showUa),
+title: props.showUa ? 'Hide browser default rules' : 'Show ' + counts.userAgent + ' browser default rules',
+'aria-label': props.showUa ? 'Hide browser default rules' : 'Show ' + counts.userAgent + ' browser default rules',
+onClick: props.onToggleUa
+}, 'UA')
+: null
+),
+body
+);
+}
 // StylesPanel — the whole "Styles" tab body.
 export function StylesPanel(props) {
 const [model, setModel] = useState(null);
@@ -298,6 +383,22 @@ const modelRef = useRef(null);
 // never overwrite the current element's breadcrumb.
 const treeSerial = useRef(0);
 const crumbRef = useRef(null);
+// rules — the cascade, read-only: every rule that matches the selected
+// element, plus the rules it inherits from its ancestors. Answering "which
+// class put this value here" is what makes the editable list above
+// actionable instead of mysterious — a value coming from a class looks
+// permanently uneditable until the rule supplying it is on screen and can
+// be brought into `element.style` in one tap.
+const [rules, setRules] = useState(null);
+const [rulesBusy, setRulesBusy] = useState(false);
+// Collapsed by default: the section is an answer to a question ("why is it
+// this value?"), not something to scroll past on every selection. UA rules
+// are hidden behind their own toggle because a dozen browser defaults per
+// element bury the author rule that matters.
+const [rulesOpen, setRulesOpen] = useState(false);
+const [showUa, setShowUa] = useState(false);
+// rulesSerial — same newest-read-wins guard as treeSerial/shotSerial.
+const rulesSerial = useRef(0);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
@@ -369,6 +470,26 @@ setShot(null);
 setShotBusy(false);
 captureShot();
 loadTree(m);
+loadRules(m);
+}
+// loadRules — read the matched cascade for the selected element. Same
+// non-blocking, newest-read-wins treatment as the tree and the pinned
+// preview: the property lists must never wait on the cascade read, and a
+// slow answer for a previously selected element must not replace the
+// current element's rules.
+async function loadRules(m) {
+const objectId = m && m.objectId;
+if (!objectId || !props.readMatchedRules) { rulesSerial.current++; setRules(null); return; }
+const serial = ++rulesSerial.current;
+setRulesBusy(true);
+try {
+const r = await props.readMatchedRules(objectId);
+if (serial === rulesSerial.current) setRules(r);
+} catch {
+if (serial === rulesSerial.current) setRules(null);
+} finally {
+if (serial === rulesSerial.current) setRulesBusy(false);
+}
 }
 
 // Dim down the inline-style list while stale after an edit. The page
@@ -441,7 +562,9 @@ modelRef.current = null;
 setModel(null);
 setShot(null);
 setTree(null);
+setRules(null);
 treeSerial.current++;
+rulesSerial.current++;
 setError('');
 } else if (props.hideNodeHighlight) {
 props.hideNodeHighlight().catch(() => {});
@@ -538,10 +661,12 @@ function clearPick() {
 modelRef.current = null;
 shotSerial.current++;
 treeSerial.current++;
+rulesSerial.current++;
 setModel(null);
 setShot(null);
 setShotBusy(false);
 setTree(null);
+setRules(null);
 setEdit(null);
 setError('');
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
@@ -768,6 +893,19 @@ onClick: () => setEdit({ prop, value: current ? current.value : '' })
 }, prop);
 })
 )
+),
+h('div', { class: 'inspector__styles-section' },
+h(MatchedRulesSection, {
+rules: rules ? rules.rules : null,
+counts: rules ? rules.counts : null,
+truncated: rules ? rules.truncated : 0,
+busy: rulesBusy,
+open: rulesOpen,
+showUa,
+onToggle: () => setRulesOpen(!rulesOpen),
+onToggleUa: () => setShowUa(!showUa),
+onEdit: (prop, value) => setEdit({ prop, value })
+})
 ),
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),

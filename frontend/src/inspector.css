@@ -2081,6 +2081,154 @@ flex: 0 0 auto;
 font-size: 0.7rem;
 color: var(--muted);
 }
+/* ---- Inspector: styles panel, matched rules ----------------------- */
+/* Read-only cascade section: one card per matching rule, most specific
+first. Collapsed by default — it answers "why is this value here?", which
+is not something to scroll past on every selection, and a real page matches
+enough rules (plus a dozen browser defaults) for the open section to be a
+second wall. */
+.inspector__rules-bar {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.inspector__rules-bar .inspector__styles-h { flex: 0 0 auto; margin: 0; }
+.inspector__rules-count {
+flex: 0 0 auto;
+min-width: 20px;
+padding: 1px 6px;
+font-size: 0.66rem;
+font-weight: 600;
+text-align: center;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* Show/Hide is a labelled button, not a chevron: the rest of this panel
+labels its buttons, and a bare glyph would need a tooltip that does not
+exist on touch. Full 44 px tap target. */
+.inspector__rules-toggle,
+.inspector__rules-ua {
+flex: 0 0 auto;
+min-height: var(--tap);
+min-width: 56px;
+margin-left: auto;
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rules-ua { margin-left: 0; min-width: var(--tap); }
+.inspector__rules-toggle:hover,
+.inspector__rules-ua:hover { background: var(--surface-3); }
+.inspector__rules-ua.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+}
+.inspector__rules {
+list-style: none;
+margin: 6px 0 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__rule {
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-left: 3px solid var(--accent);
+border-radius: var(--r-sm);
+overflow: hidden;
+}
+/* Browser defaults and inherited rules are toned down and marked with a
+different bar: they are context, not the thing the user came to change. */
+.inspector__rule.is-ua { border-left-color: var(--muted-2); opacity: 0.85; }
+.inspector__rule.is-inherited { border-left-color: var(--border-strong); }
+.inspector__rule-head {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px;
+padding: 6px 8px;
+border-bottom: 1px solid var(--border);
+}
+/* The selector is the identity of the rule, so it gets the monospace
+treatment and wraps rather than ellipsizing: a truncated comma-separated
+selector list hides exactly the part that explains the match. */
+.inspector__rule-sel {
+min-width: 0;
+flex: 1 1 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-size: 0.72rem;
+color: var(--accent-hi);
+overflow-wrap: anywhere;
+}
+.inspector__rule-tag {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.6rem;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+.inspector__rule-tag--media { color: var(--warning, var(--fg-soft)); }
+.inspector__rule-props {
+list-style: none;
+margin: 0;
+padding: 0;
+}
+/* Every declaration is a 44 px tap target that opens the edit sheet with
+that property and value pre-filled — the declared value is copied onto
+`element.style`, which is the only origin this panel can write. */
+.inspector__rule-prop {
+display: flex;
+align-items: center;
+gap: 8px;
+width: 100%;
+min-height: var(--tap);
+padding: 0 8px;
+font: inherit;
+font-size: 0.76rem;
+text-align: left;
+color: var(--fg);
+background: none;
+border: 0;
+border-top: 1px solid var(--border);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rule-props > li:first-child .inspector__rule-prop { border-top: 0; }
+.inspector__rule-prop:hover { background: var(--surface-3); }
+.inspector__rule-prop.is-off { text-decoration: line-through; opacity: 0.6; }
+.inspector__rule-pname {
+flex: 0 0 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg-soft);
+}
+.inspector__rule-pval {
+min-width: 0;
+flex: 1 1 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg);
+text-align: right;
+overflow-wrap: anywhere;
+}
+.inspector__rule-more,
+.inspector__rules-truncated {
+margin: 0;
+padding: 5px 8px;
+font-size: 0.68rem;
+color: var(--muted);
+}
 /* Value row in the edit sheet: − [input] + . The steppers nudge numeric
 values by one unit and apply immediately, which is the fastest way to size
 something on a phone. */
