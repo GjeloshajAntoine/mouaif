@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect } from './thinking.js';
-import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
@@ -1055,6 +1055,11 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     // doesn't hold a socket for a chat the user left. The owner stream
     // keeps buffering regardless — returning re-subscribes and replays.
     closeLive(state);
+    // Stop this client's own turn reader too. The server keeps running the
+    // turn, but a reader left alive would keep writing deltas into
+    // `state.messages` and render them into the transcript mounted by
+    // whatever chat the user moved to.
+    abortStream(state);
     // Cancel any in-flight chunked transcript render so a navigate-away
     // can't write into a detached transcript.
     if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);

@@ -17,6 +17,7 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 - **Inline tool execution** — tool runs (terminal commands, file changes, agent delegations) show up directly in the transcript with interactive previews and status indicators.
 - **Collapsible system prompts** — view the active system prompt, prompt profile, and tool rules at the top of the chat without crowding the conversation.
 - **Token & cost visibility** — see context tokens in the header and token speed / per-turn cost under each completed assistant turn.
+- **Leaving a chat stops its live reader** — switching chats (or unmounting the view) aborts this client's `fetch` for the streaming turn and the read loop stops. The server keeps running the turn, so returning to the chat shows the completed result; what stops is the local reader, which would otherwise keep appending to the transcript of the chat you left and render its deltas into the chat you moved to. A deliberate abort is silent — no error card, no auto-retry, no reconnect poll — and the composer is released immediately.
 
 ### Conversation management
 - **Model selection** — tap the model button in the header to search, switch, or bookmark models across your connected providers.

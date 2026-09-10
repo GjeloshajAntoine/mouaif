@@ -711,6 +711,22 @@ export async function cancelRunningChat(state, refs) {
 // optimistic bubble is appended. `options.manualRetry` is a user tap on
 // the error card's Retry button — it bypasses the one-shot auto-retry
 // guard so the user can retry as many times as they like.
+// abortStream(state) — stop this client's local SSE turn.
+//
+// Called when the user leaves the chat or the view unmounts. The server
+// keeps running the turn (a backgrounded tab must not cancel it), but this
+// reader must not: it held the fetch and its connection open, kept writing
+// deltas into `state.messages`, and rendered them into whatever transcript
+// was mounted by then — so a turn left mid-stream could paint the previous
+// chat's tool cards and text into the chat the user switched to.
+export function abortStream(state) {
+  const controller = state && state.streamAbort;
+  if (!controller) return false;
+  state.streamAbort = null;
+  try { controller.abort(); } catch { /* already aborted or unsupported */ }
+  return true;
+}
+
 export async function send(state, refs, options) {
 const { content, attachments, clearComposerDraft, setImageAttachments, retry, manualRetry } = options || {};
 const { projectDir, chatId } = state.props;
@@ -868,13 +884,27 @@ if (state._updateSetupVisibility) state._updateSetupVisibility();
   })();
 
   let resp;
+  // Abortable so leaving the chat (or unmounting) stops this reader; see
+  // abortStream() above.
+  const streamAbort = new AbortController();
+  state.streamAbort = streamAbort;
 try {
 resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/stream', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
+signal: streamAbort.signal,
 body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
 });
 } catch (err) {
+    // Leaving the chat aborts the fetch. That is not a network failure, so
+    // it must not raise an error card or trigger the auto-retry.
+    if (err && err.name === 'AbortError') {
+      if (state.streamAbort === streamAbort) state.streamAbort = null;
+      state.streaming = false;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+      if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+      return;
+    }
 const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
 const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
     setChatStatus(refs, 'network error', 'error');
@@ -995,6 +1025,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     updateUsageSummary(state, info, refs);
   }
   let streamFailed = false;
+  // Set when this reader was aborted on purpose (chat switch / unmount).
+  let aborted = false;
   function handleStreamEvent(ev, data) {
     // Nested subagent activity: render inside the parent subagent
     // card instead of the live bubble / standalone tool cards.
@@ -1213,6 +1245,13 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
   }
   try {
     for (;;) {
+      // Stop as soon as this view belongs to another chat: the deltas in
+      // this stream describe a conversation the user has left, and the
+      // mounted transcript now belongs to the chat they moved to.
+      if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) {
+        abortStream(state);
+        break;
+      }
       const { value, done } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
@@ -1232,16 +1271,32 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       }
     }
   } catch (err) {
-    streamFailed = true;
-    // Clear the per-round counters so a subsequent turn does not
-    // inherit stale tokens from the interrupted exchange.
-    roundPromptTokens = 0;
-    roundCompletionTokens = 0;
-    console.error('chat SSE reader failed', err);
-    setChatStatus(refs, 'stream interrupted: ' + (err && err.message ? err.message : 'connection closed'), 'error');
+    // An abort we caused (chat switch / unmount) is not a dropped
+    // connection: do not report it and do not start the recovery poll,
+    // which would sync a transcript the user is no longer looking at.
+    aborted = !!(err && err.name === 'AbortError') || streamAbort.signal.aborted;
+    if (!aborted) {
+      streamFailed = true;
+      // Clear the per-round counters so a subsequent turn does not
+      // inherit stale tokens from the interrupted exchange.
+      roundPromptTokens = 0;
+      roundCompletionTokens = 0;
+      console.error('chat SSE reader failed', err);
+      setChatStatus(refs, 'stream interrupted: ' + (err && err.message ? err.message : 'connection closed'), 'error');
+    }
   } finally {
+    if (state.streamAbort === streamAbort) state.streamAbort = null;
     try { reader.releaseLock(); } catch { /* already released */ }
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+  }
+  if (aborted) {
+    // Detach silently: the server still owns the turn, and the chat it
+    // belongs to is no longer mounted. Hand the flags back so the chat the
+    // user moved to does not start out stuck on "streaming…".
+    counter.reset();
+    state.streaming = false;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+    return;
   }
   if (streamFailed) {
     // The SSE socket dropped mid-turn, but the server-side agent
