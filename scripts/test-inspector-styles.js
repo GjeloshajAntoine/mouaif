@@ -364,6 +364,7 @@ async function main() {
   // (quick-add chips, breadcrumb, child chips) each had one, and each was
   // removed in favour of wrapping. This guards against one creeping back.
   const css = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector.css'), 'utf8');
+  const panelCss = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector.css'), 'utf8');
   const H_SCROLL_CLASSES = [
     'inspector__styles-add',
     'inspector__styles-crumbs',
@@ -392,6 +393,30 @@ async function main() {
         '.' + cls + ' sets overflow-y without pinning overflow-x — the computed overflow-x becomes auto and the panel can be dragged sideways');
     }
   }
+
+  // --- tap targets: a row that *looks* 44 px must *be* 44 px ------------
+  // The declared-styles row is a 44 px card whose button sat at its own 18 px
+  // text height, so most of the row did nothing when tapped — the worst kind
+  // of tap target, because it looks fine. The button must stretch to the row's
+  // full height, and the row must account for its own border.
+  assert.ok(/align-self:\s*stretch/.test(panelCss),
+    '.inspector__styles-row-main stretches to fill the row, so the whole row is tappable');
+  const rowRule = /\.inspector__styles-row\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(rowRule, 'the styles row rule exists');
+  assert.match(rowRule[1], /min-height:\s*calc\(var\(--tap\)\s*\+\s*2px\)/,
+    'the row is --tap plus its 2 px of border, so the stretched button inside is a true 44 px target');
+  assert.ok(!/padding:\s*\d+px\s+\d+px/.test(rowRule[1]),
+    'the row carries no vertical padding — padding shrinks the tappable area while the row still looks full height');
+  // Chips clip their text on a child span: `text-overflow` does not apply to
+  // the anonymous flex item a bare text child becomes, so the label used to
+  // overflow the chip's rounded border.
+  assert.ok(/\.inspector__styles-kid-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(panelCss),
+    'the child chip clips its label on a span, not on the flex button');
+  assert.ok(/\.inspector__styles-crumb-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(panelCss),
+    'the breadcrumb chip clips its label on a span too');
+  const panelSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
+  assert.ok(/inspector__styles-kid-label/.test(panelSrc) && /inspector__styles-crumb-label/.test(panelSrc),
+    'the panel renders those label spans');
 
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }

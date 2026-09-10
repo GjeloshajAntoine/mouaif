@@ -64,12 +64,16 @@ A 360 × 680 phone gives the Styles panel about 350 px of scroller, and every pi
 |---|---|---|
 | Total scroller content | 15 182 px (43 screens) | 2 634 px (7.5 screens) |
 | Pinned block (header + preview) | 139 px | 115 px |
-| Computed row | 44 px | 24 px |
+| Computed row (read-only) | 44 px | 24 px |
+| Declared row (interactive) | 44 px, of which only 18 px tappable | 44 px, fully tappable |
 | Matched-rule declaration row | 53 px (wrapped) | 44 px |
 | Quick-add chips row | 94 px (two lines) | 94 px, but fully visible — it wraps instead of hiding 260 px sideways |
 | Scroller, Styles as the only panel | 352 px | 488 px |
+| Horizontal scrollers in the panel | 3 | 0 |
 
 - **The pinned block carries only the element header and the preview.** The breadcrumb and child chips live in the scroll flow: they are a full tap target tall, and pinning them cost ~80 px of a 352 px scroller for navigation that is used deliberately and rarely, while reading values is the constant activity. The element label in the header keeps "what is selected" on screen at all times.
+- **A row that looks like a tap target must be one.** The declared-styles row was a 44 px card whose button sat at its own text height, so only the middle 18 px of the row responded to a tap — the worst kind of target, because it looks correct. The button now stretches to the row's full height (`align-self: stretch`) and the row is `--tap` plus its own 2 px of border so the button ends up at a true 44 px. The row deliberately carries no vertical padding, since padding shrinks the *tappable* area while the row still renders at full height. A test asserts both.
+- **Chip and breadcrumb labels clip on a child span.** `text-overflow: ellipsis` does not apply to the anonymous flex item a bare text child becomes, so a long `tag#id.class` label overflowed the chip's rounded border instead of ellipsizing. Each chip renders its label in a `<span>` that owns the clipping.
 - **Read-only rows are not tap targets.** The 44 px minimum is the *interactive* target size; computed rows have no button and no editor, so sizing them at 44 px was pure waste that made a 400-row list 17 000 px long. They are 24 px in a flat list with hairline separators rather than a card each. **Declared** rows and **matched-rule declarations** keep the full 44 px because they open the editor.
 - **The child chips are disclosed, not shown.** A wrapped row of children is 3-5 lines tall, and browsing children is rare next to reading values, so the row is behind a `▸ Children 13` toggle — a 44 px tap target that still reports how many there are. Collapsed, the Element tree section is two breadcrumb lines; opened, the chips wrap two to a line (`max-width: 46%`) so a long `tag#id.class` ellipsizes rather than taking a line each.
 - **Quick-add chip labels are shorter than their properties** (`bg` for `background-color`, `size` for `font-size`). The row wraps rather than scrolling, and `background-color` at 129 px was enough to push one word onto a third line. The property that actually gets applied is unchanged and stays in the chip's title and accessible name.

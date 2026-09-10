@@ -1830,8 +1830,13 @@ gap: 2px;
 display: flex;
 align-items: center;
 gap: 4px;
-min-height: 44px;
-padding: 6px 8px;
+/* --tap + the 2 x 1 px border, so the row button inside stretches to a full
+44 px tap target instead of 42. */
+min-height: calc(var(--tap) + 2px);
+/* No vertical padding: the row's own height *is* the tap target, and the row
+button inside stretches to fill it (see --row-main). Padding here would shrink
+the tappable area by 12 px while the row still looked 44 px tall. */
+padding: 0 8px;
 font-family: var(--font-mono);
 font-size: 0.76rem;
 background: var(--surface-2);
@@ -1863,8 +1868,13 @@ border-top: 1px solid var(--border);
 .inspector__styles-row-main {
 flex: 1 1 auto;
 min-width: 0;
+/* The row is 44 px tall; this button is the tap target, so it has to fill that
+height rather than sitting at its own 18 px text height. Without `stretch` the
+row *looked* like a 44 px target while only the middle 18 px of it responded —
+the worst kind of tap target, because it looks fine. */
+align-self: stretch;
 display: flex;
-align-items: baseline;
+align-items: center;
 gap: 6px;
 font: inherit;
 text-align: left;
@@ -2030,8 +2040,9 @@ strip is 40 px rather than 64: the pinned block is fixed chrome that never
 scrolls, so every pixel it takes comes straight out of the property rows, and
 40 px still shows enough of an element to read a padding or colour change. The
 grown panel on a wide screen has the room, so it stays larger there. */
+/* 42 px + the button's 1 px border each side = the full 44 px tap target. */
 .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-height: 40px;
+height: 42px;
 }
 @media (min-width: 900px) {
 .inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
@@ -2096,11 +2107,17 @@ color: var(--fg-soft);
 background: var(--surface-2);
 border: 1px solid var(--border);
 border-radius: 999px;
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
+}
+/* The label carries the clipping: `text-overflow` does not apply to the
+anonymous flex item a bare text child becomes, so without this span a long
+`tag#id.class` overflowed the chip's rounded border instead of ellipsizing. */
+.inspector__styles-crumb-label {
+min-width: 0;
+overflow: hidden;
+white-space: nowrap;
+text-overflow: ellipsis;
 }
 .inspector__styles-crumb:not(.is-here):hover { background: var(--surface-3); color: var(--fg); }
 /* The selected element is not a tap target (it is already selected), so it
@@ -2178,11 +2195,16 @@ color: var(--fg);
 background: var(--surface-2);
 border: 1px solid var(--border-strong);
 border-radius: var(--r-sm);
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
+}
+/* See .inspector__styles-crumb-label — the clipping lives on the span, not on
+the flex button, or long labels overflow the border. */
+.inspector__styles-kid-label {
+min-width: 0;
+overflow: hidden;
+white-space: nowrap;
+text-overflow: ellipsis;
 }
 .inspector__styles-kid:hover { background: var(--surface-3); }
 .inspector__styles-kid:active { transform: scale(0.98); }
@@ -2304,7 +2326,9 @@ border-radius: 999px;
 }
 /* The selector is the identity of the rule, so it gets the monospace
 treatment and wraps rather than ellipsizing: a truncated comma-separated
-selector list hides exactly the part that explains the match. */
+selector list hides exactly the part that explains the match. Clamped to two
+lines so a very long list cannot stretch the header — one long selector was
+pushing its header to 51 px while every other rule head was 44. */
 .inspector__rule-sel {
 min-width: 0;
 flex: 1 1 auto;
@@ -2312,6 +2336,11 @@ font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 font-size: 0.72rem;
 color: var(--accent-hi);
 overflow-wrap: anywhere;
+display: -webkit-box;
+-webkit-box-orient: vertical;
+-webkit-line-clamp: 2;
+line-clamp: 2;
+overflow: hidden;
 }
   .inspector__rule-tag {
 flex: 0 0 auto;

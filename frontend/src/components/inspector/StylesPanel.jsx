@@ -932,8 +932,12 @@ key: 'anc-' + a.levels,
 title: 'Select ' + a.label,
 'aria-label': 'Select ancestor element ' + a.label,
 onClick: () => selectAncestor(a.levels)
-}, a.label)),
-h('span', { class: 'inspector__styles-crumb is-here', key: 'here' }, label)
+},
+h('span', { class: 'inspector__styles-crumb-label' }, a.label)
+)),
+h('span', { class: 'inspector__styles-crumb is-here', key: 'here' },
+h('span', { class: 'inspector__styles-crumb-label' }, label)
+)
 )
 : null,
 tree.children && tree.children.length
@@ -959,7 +963,12 @@ key: 'kid-' + i,
 title: 'Select ' + c.label,
 'aria-label': 'Select child element ' + c.label,
 onClick: () => selectChild(i)
-}, c.label))
+},
+// The label needs its own element to ellipsize: `text-overflow` does not
+// apply to the anonymous flex item a bare text child becomes, so the text
+// overflowed the chip's rounded border instead of being clipped.
+h('span', { class: 'inspector__styles-kid-label' }, c.label)
+))
 : null,
 kidsOpen && tree.childCount > tree.children.length
 ? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length) + ' more')
