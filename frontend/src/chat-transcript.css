@@ -54,11 +54,27 @@
 .chat-view__transcript > .chat-msg {
   max-width: min(92%, var(--read-max, 44rem));
 }
+/* ---- Row alignment: one centred column ----------------------------
+   Assistant rows — prose bubbles, thinking cards, tool cards, the system
+   prompt card — are capped and then centred, so the left and right
+   gutters match. Before this they sat at `align-self: flex-start` under
+   the same cap, which put all the slack on one side: 8px on the left
+   against ~46px on the right at 430px wide, reading as a column that had
+   drifted off-centre. `margin-inline: auto` does the centring and also
+   cancels the stretch, per CSS flexbox (auto cross-axis margins win over
+   align-self).
+   User bubbles stay right-aligned so the two sides of the conversation
+   remain telling apart at a glance. */
+.chat-view__transcript > .chat-msg--assistant,
+.chat-view__transcript > .chat-msg--system,
+.chat-view__transcript > :not(.chat-msg) {
+  margin-inline: auto;
+}
 .chat-view__transcript > .chat-msg--system,
 .chat-view__transcript > :not(.chat-msg) {
   max-width: var(--read-max, 44rem);
-  margin-inline: auto;
 }
+
 .chat-msg__role {
   font-size: 0.62rem;
   font-weight: 700;
