@@ -1445,21 +1445,35 @@ export function syncTranscriptAppend(state, refs, prevCount) {
   if (!transcriptEl) return;
   const total = state.messages.length;
   if (total <= prevCount) return;
-  // Any in-flight chunked render is superseded: its rows are part of
-  // the prefix and the tail is rendered here instead.
-  resetTranscriptRender(refs);
   // If the transcript is still in its empty state (setup card + empty
   // state only), fall back to a full render so the setup card and
-  // system prompt mount in the right order.
+  // system prompt mount in the right order. A full render re-owns the
+  // whole transcript, so it does supersede an in-flight chunked pass.
   if (prevCount === 0) {
+    resetTranscriptRender(refs);
     renderTranscript(state, refs);
     return;
   }
+  // A chunked backfill may still be filling in older history ABOVE its
+  // anchor. It is not superseded by an append: the rows appended here
+  // belong at the bottom, and the backfill keeps inserting older rows
+  // above the tail, so the two never compete for a position. Cancelling
+  // it here (what this function used to do via resetTranscriptRender)
+  // dropped every history row the pass had not reached yet — they stayed
+  // in state.messages but never reached the DOM until some later full
+  // rebuild, leaving a hole in the middle of the transcript.
+  //
+  // transcriptInsert() targets refs._insertAnchor while one is set, so the
+  // anchor is parked for the duration of the append and handed back
+  // afterwards: without that the new rows would be inserted above the tail.
+  const anchor = refs._insertAnchor;
+  refs._insertAnchor = null;
   for (let i = prevCount; i < total; i++) {
     const m = state.messages[i];
     if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
     renderMessageRow(state, refs, m);
   }
+  if (anchor && anchor.parentNode === transcriptEl) refs._insertAnchor = anchor;
   // Don't let newly appended rows bury a pending auth/ask card.
   reanchorOverlayCards(refs);
   // One scroll decision for the whole batch (countNew drives the
