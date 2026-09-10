@@ -34,6 +34,51 @@ import {
 } from './toolRender.js';
 import { renderUsageMeta } from './usage.js';
 import { isPersistedTurnError, retryPayloadForError } from './retry.js';
+// buildSystemPromptRow(text, extraClass)
+//
+// The `system` chat row: a role head plus a body holding a collapsed
+// <details> whose summary is the line count. Shared by the top-level
+// transcript and the nested subagent transcript, so a delegated run's own
+// system message renders as a system card instead of a JSON dump of its
+// content parts.
+export function buildSystemPromptRow(text, extraClass) {
+  const row = document.createElement('div');
+  row.className = 'chat-msg chat-msg--system' + (extraClass ? ' ' + extraClass : '');
+  const head = document.createElement('div');
+  head.className = 'chat-msg__head';
+  const role = document.createElement('div');
+  role.className = 'chat-msg__role';
+  role.textContent = 'system';
+  // Same head shape as every other chat row so the nested and top-level
+  // transcripts cannot drift apart again. Nested turns carry no
+  // timestamp, so the element stays hidden rather than omitted.
+  const ts = document.createElement('span');
+  ts.className = 'chat-msg__ts';
+  ts.hidden = true;
+  head.appendChild(role);
+  head.appendChild(ts);
+  const body = document.createElement('div');
+  body.className = 'chat-msg__body';
+  // Count non-empty lines for the summary. The prompt is plain
+  // text; we only render it (as <pre> with pre-wrap) when the user
+  // expands the disclosure, so the line count is the only signal
+  // the user has of how much is behind it.
+  const lineCount = String(text || '').split(/\r?\n/).filter(l => l.length).length;
+  const details = document.createElement('details');
+  details.className = 'chat-msg__system-details';
+  const summary = document.createElement('summary');
+  summary.textContent = 'System prompt · ' + lineCount + ' line' + (lineCount === 1 ? '' : 's');
+  const pre = document.createElement('pre');
+  pre.className = 'chat-msg__system-body';
+  pre.textContent = text || '';
+  details.appendChild(summary);
+  details.appendChild(pre);
+  body.appendChild(details);
+  row.appendChild(head);
+  row.appendChild(body);
+  return row;
+}
+
 // renderSystemPromptMessage(refs, systemPrompt)
 //
 // Render (or refresh) the system prompt as the FIRST message of the
@@ -55,31 +100,8 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
   const existing = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
   if (existing) existing.remove();
   if (!systemPrompt || !systemPrompt.text) return;
-  const row = document.createElement('div');
-  row.className = 'chat-msg chat-msg--system';
+  const row = buildSystemPromptRow(systemPrompt.text);
   row.dataset.sysPrompt = '1';
-  const role = document.createElement('div');
-  role.className = 'chat-msg__role';
-  role.textContent = 'system';
-  const body = document.createElement('div');
-  body.className = 'chat-msg__body';
-  // Count non-empty lines for the summary. The prompt is plain
-  // text; we only render it (as <pre> with pre-wrap) when the user
-  // expands the disclosure, so the line count is the only signal
-  // the user has of how much is behind it.
-  const lineCount = systemPrompt.text.split(/\r?\n/).filter(l => l.length).length;
-  const details = document.createElement('details');
-  details.className = 'chat-msg__system-details';
-  const summary = document.createElement('summary');
-  summary.textContent = 'System prompt · ' + lineCount + ' line' + (lineCount === 1 ? '' : 's');
-  const pre = document.createElement('pre');
-  pre.className = 'chat-msg__system-body';
-  pre.textContent = systemPrompt.text;
-  details.appendChild(summary);
-  details.appendChild(pre);
-  body.appendChild(details);
-  row.appendChild(role);
-  row.appendChild(body);
   // Insert directly after the setup card if one is still mounted,
   // so the system message always sits under it on a new chat.
   const setup = refs.setupCard.current;
@@ -118,6 +140,25 @@ function renderImageAttachments(host, attachments) {
     wrap.appendChild(img);
   }
   host.appendChild(wrap);
+}
+
+// textOfContent(content)
+//
+// Flatten a message body into displayable text. Top-level transcript
+// messages carry a plain string, but a subagent's nested transcript is
+// rebuilt from provider-shaped messages, where the system prompt arrives
+// as an array of typed content parts. Unknown shapes fall back to pretty
+// JSON so nothing is silently dropped.
+function textOfContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => (c && typeof c.text === 'string' ? c.text : ''))
+      .filter((t) => t)
+      .join('\n\n');
+  }
+  if (content && typeof content === 'object') return JSON.stringify(content, null, 2);
+  return '';
 }
 
 // renderAssistantBody(body, content, reasoning, final)
@@ -636,13 +677,20 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   if (!live) return false;
   if (ev.eventName === 'message' && typeof data.delta === 'string') {
     live._text = (live._text || '') + data.delta;
-    let textEl = live.querySelector('.tool-card__subagent-live-text');
-    if (!textEl) {
-      textEl = document.createElement('div');
-      textEl.className = 'tool-card__subagent-live-text';
-      live.appendChild(textEl);
+    // Stream the nested answer into a real assistant chat bubble, the same
+    // row the top-level transcript streams into. The card head already says
+    // the run is a subagent and no model id is known until the result lands,
+    // so this row has no head.
+    let row = live.querySelector('.tool-card__subagent-live-msg');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'chat-msg chat-msg--assistant tool-card__subagent-msg tool-card__subagent-live-msg';
+      const rowBody = document.createElement('div');
+      rowBody.className = 'chat-msg__body';
+      row.appendChild(rowBody);
+      live.appendChild(row);
     }
-    renderAssistantBody(textEl, live._text, '', false);
+    renderAssistantBody(row.querySelector('.chat-msg__body'), live._text, '', false);
     scrollToolBodyToBottom(live);
     afterTranscriptAppend(refs, false);
     return true;
@@ -948,6 +996,10 @@ export function renderSubagentChat(card, toolResult) {
   // card's expand/collapse toggle.
   wrap.addEventListener('click', (e) => e.stopPropagation());
   const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
+  // The model that actually ran the delegated call, when the result
+  // carries it. Nested assistant turns are labelled with it, the same way
+  // the top-level transcript labels an assistant turn with its model id.
+  const nestedModelId = r && r.model && r.model.id ? r.model.id : '';
   // Nested tool results reference their call by id while the arguments
   // live on the assistant turn's `tool_calls`. Index them so a nested
   // write_file preview can render the written content, the same as the
@@ -980,20 +1032,43 @@ export function renderSubagentChat(card, toolResult) {
       continue;
     }
     if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
+    const text = textOfContent(m.content);
+    // A nested system turn is the subagent's own prompt — the generic
+    // focused-subagent instruction or the delegated agent's instructions.
+    // Render it as the same collapsed system card the top-level transcript
+    // uses instead of dumping its content parts as JSON.
+    if (role === 'system') {
+      const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg');
+      const sysCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+      for (const tc of sysCalls) appendSubagentNestedToolCall(sysRow, tc);
+      wrap.appendChild(sysRow);
+      continue;
+    }
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
+    // Same head as appendMessageToTranscript — role label left, timestamp
+    // right. A nested turn carries no timestamp, so that element stays
+    // hidden rather than omitted, keeping both transcripts identical in
+    // shape. The assistant label is the model that ran the delegated call:
+    // nested turns have no modelId of their own.
+    const head = document.createElement('div');
+    head.className = 'chat-msg__head';
     const roleEl = document.createElement('div');
     roleEl.className = 'chat-msg__role';
-    roleEl.textContent = role;
+    roleEl.textContent = role === 'assistant' ? (nestedModelId || 'assistant') : role;
+    const ts = document.createElement('span');
+    ts.className = 'chat-msg__ts';
+    ts.hidden = true;
+    head.appendChild(roleEl);
+    head.appendChild(ts);
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
-    const content = typeof m.content === 'string' ? m.content : (m.content ? JSON.stringify(m.content, null, 2) : '');
     if (role === 'assistant') {
-      renderAssistantBody(body, content || '', '', true);
+      renderAssistantBody(body, text || '', '', true);
     } else {
-      body.textContent = content || '';
+      body.textContent = text || '';
     }
-    row.appendChild(roleEl); row.appendChild(body);
+    row.appendChild(head); row.appendChild(body);
     // Inline any tool calls attached to this assistant turn so the
     // bubble shows the full assistant→tool→assistant loop.
     const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];

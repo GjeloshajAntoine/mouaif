@@ -255,7 +255,13 @@ color: var(--fg-soft);
 
 /* ---- Subagent tool card -------------------------------------------- */
 
-.tool-card--subagent .tool-card__body {
+/* The generic `.tool-card.is-expanded .tool-card__body` rule is more
+   specific than a plain `.tool-card--subagent .tool-card__body`, so the
+   nested transcript used to lose this panel the moment the card expanded:
+   it fell back to the flat, 17 px-indented tool-output style with the
+   muted type scale, and expanding a finished card visibly restyled its
+   content. The `.tool-card` qualifier keeps the panel in both states. */
+.tool-card.tool-card--subagent .tool-card__body {
   display: block;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -279,12 +285,6 @@ color: var(--fg-soft);
   font-size: 0.72rem;
   color: var(--muted);
   line-height: 1.35;
-}
-.tool-card__subagent-live-text {
-  font-size: 0.72rem;
-  color: var(--fg-soft);
-  line-height: 1.4;
-  white-space: normal;
 }
 .tool-card__subagent-tool {
   display: flex;
@@ -350,33 +350,26 @@ color: var(--fg-soft);
   overflow-y: auto;
 }
 .tool-card__shell-live-pre:empty { display: none; }
+/* Nested subagent turns are ordinary chat rows: they keep `.chat-msg`'s own
+   width cap, bubble geometry and colours so the expanded subagent transcript
+   reads exactly like the main transcript. Only the entry animation is
+   dropped — the card is rebuilt when the run settles, and re-animating every
+   nested row on each rebuild would flicker. */
 .tool-card__subagent-msg {
-  max-width: 100%;
-  align-self: stretch;
   animation: none;
 }
+
+/* The card body sets tool-output type (0.72 rem, muted); the nested chat opts
+   back into the transcript's own scale and foreground colour, which its
+   bubbles and the nested tool rows inherit. */
 .tool-card__subagent-chat {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 2px 0;
-}
-.tool-card__subagent-chat .chat-msg--assistant .chat-msg__body {
-  background: var(--surface-2);
-  border-color: var(--border);
-  border-radius: var(--r-md);
-}
-.tool-card__subagent-chat .chat-msg--user .chat-msg__body {
-  background: var(--accent-soft);
   color: var(--fg);
-  border-color: transparent;
-  border-radius: var(--r-md);
-}
-.tool-card__subagent-chat .chat-msg--system .chat-msg__body {
-  background: transparent;
-  border-color: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 /* ---- Progress card (report_progress SSE event) ------------------- */
