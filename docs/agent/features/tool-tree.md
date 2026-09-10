@@ -26,6 +26,18 @@
 
 Project settings renders the tree with `collapsedByDefault: true`, so nested groups start closed and expand on tap. `alwaysExpanded` remains available for callers that want the children permanently visible with no collapse control.
 
+### Group builders — one row shape everywhere
+
+`ToolTree` is only the renderer; the `groups` array is produced by three builders in the same module. All three emit the **same row content** for a native tool — `name`, a `shortDesc`-clamped `description`, and the full text as `title` — so a tool reads identically wherever it is listed:
+
+| Builder | Caller | Checked state comes from | Authorization control |
+|---|---|---|---|
+| `buildToolGroups(catalog, mcpServers, filter, usedTools)` | chat tools card (`chat/cards.js`), composer popup (`chat/ToolPopup.jsx`), prompt preset (`SettingsPrompts.jsx`) | the per-chat `tools` filter (`null` = all on) | yes — `ToolAuthSeg`, injected by the caller as `control` |
+| `buildSettingsToolGroups(catalog)` | `SettingsProject.jsx` | the project's `tools.<name>.mode` | yes — `ToolAuthSeg` (via `toolModeSegs`) |
+| `buildAgentToolGroups({ choices, restricted, selected, mcpServers, catalog })` | `SettingsAgents.jsx` | the agent's `tools` allowlist | no — see below |
+
+`buildAgentToolGroups` takes the tool catalog (from `GET /api/tools/list`) purely to fill in the native rows' descriptions and tooltips; without it every single-tool row rendered as a bare checkbox + name, which is what made `subagent` look unlike its chat-view counterpart. It intentionally attaches **no** authorization segment: an agent allowlist decides which tools the nested call may use, while `Off / Ask / Allow` is a project-level setting shown in Settings → Project and the chat view.
+
 ### Disabled rows explain themselves
 
 A greyed-out control with no reason is a dead end, so every `disabled` row carries a `disabledReason` string that the tree renders under the row (`.tool-tree__reason` for groups, `.tool-tree__leaf-reason` for leaves) and in the row's `title` tooltip. MCP server groups are **no longer disabled** — servers are always on and their group/leaf checkboxes flip the per-chat or per-server tool filter. The `disabled` pattern still covers project-locked groups (agent files, skills) in the chat popup.

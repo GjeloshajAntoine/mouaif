@@ -213,25 +213,36 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
 //   restricted — agent has an explicit allowlist (tools !== undefined)
 //   selected   — (value) => bool: is this tool in the allowlist
 //                (only consulted when restricted; inherit = all on)
+//   catalog    — [{ name, description }] from GET /api/tools/list. Used
+//                only for the native rows' one-line description, so an
+//                agent's tool list reads exactly like the chat tools
+//                card and the project Tools section (same `shortDesc`
+//                clamp, same `title` tooltip). Without it the rows
+//                render as a bare checkbox + name, which is what made
+//                `subagent` (and every other single native tool) look
+//                unlike its chat-view counterpart.
 // The group checkbox means "all tools in this group allowed":
 // checking a fully-off group enables all its tools; unchecking a
 // fully-on group disables all of them. A single on/off pair inside
 // a group never collapses the agent back to inherit — only every
 // tool on does (handled by the caller).
-export function buildAgentToolGroups({ choices, restricted, selected, mcpServers = [] }) {
-  const isOn = (value) => !restricted || selected(value);
-  const groups = [];
-  const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
-  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(c.value));
-  for (const c of natives) {
-    if (files.includes(c)) continue;
-    groups.push({
-      id: c.value,
-      name: c.label,
-      checked: isOn(c.value),
-      tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
-    });
-  }
+export function buildAgentToolGroups({ choices, restricted, selected, mcpServers = [], catalog = [] }) {
+const isOn = (value) => !restricted || selected(value);
+const groups = [];
+const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
+const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(c.value));
+for (const c of natives) {
+if (files.includes(c)) continue;
+const entry = catalog.find((t) => t && t.name === c.value);
+groups.push({
+id: c.value,
+name: c.label,
+description: shortDesc(entry && entry.description),
+title: (entry && entry.description) || '',
+checked: isOn(c.value),
+tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
+});
+}
   if (files.length) {
     groups.push({
       id: 'files',

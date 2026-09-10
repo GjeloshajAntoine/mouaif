@@ -183,6 +183,9 @@ export function SettingsAgentEditView(props) {
   const [projectModels, setProjectModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
+  // Tool catalog from GET /api/tools/list — supplies each native tool's
+  // description so the Tools tree matches the chat view.
+  const [toolsCatalog, setToolsCatalog] = useState([]);
   // The loaded agent in state so the tools checklist re-renders when a
   // checkbox toggles between "inherit all" and an explicit allowlist.
   const [agent, setAgent] = useState(null);
@@ -217,19 +220,24 @@ export function SettingsAgentEditView(props) {
     async function loadCatalogs() {
       if (!projectDir) return;
       try {
-        const [mr, pr, sr] = await Promise.all([
-          fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
-          fetchJson('/api/ai/models/providers'),
-          fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir))
+        const [mr, pr, sr, tr] = await Promise.all([
+        fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir)),
+        fetchJson('/api/ai/models/providers'),
+        fetchJson('/api/mcp/servers?projectDir=' + encodeURIComponent(projectDir)),
+        fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir))
         ]);
         const saved = mr.status === 200 && Array.isArray(mr.body.models) ? mr.body.models : [];
         const providers = pr.status === 200 && Array.isArray(pr.body.providers)
-          ? pr.body.providers.map((p) => p && p.id).filter(Boolean)
-          : [];
+        ? pr.body.providers.map((p) => p && p.id).filter(Boolean)
+        : [];
         if (cancelled) return;
         setProjectModels(saved);
         setModelProviders(providers);
         if (sr.status === 200 && Array.isArray(sr.body.servers)) setMcpServers(sr.body.servers);
+        // The tool catalog carries each native tool's description, so the
+        // agent editor's tool rows read the same as the chat tools card
+        // and the project Tools section.
+        if (tr.status === 200 && Array.isArray(tr.body.tools)) setToolsCatalog(tr.body.tools);
         const live = await Promise.all(providers.map((provider) =>
           fetchLiveModels(provider)
             .then((result) => ({ provider, models: result.models || [] }))
@@ -404,16 +412,19 @@ export function SettingsAgentEditView(props) {
   }
 
   const restricted = agent.tools !== undefined;
-  const toolChoices = toolChoicesWithMcp(mcpServers);
-  // Same group structure as the chat tools card and the project
-  // Tools section: one group per native tool, "File tools", one
-  // group per MCP server — minus the authorization controls.
-  const agentToolGroups = buildAgentToolGroups({
-    choices: toolChoices,
-    restricted,
-    selected: (v) => agent.tools.includes(v),
-    mcpServers
-  });
+const toolChoices = toolChoicesWithMcp(mcpServers);
+// Same group structure AND row content as the chat tools card and
+// the project Tools section: one group per native tool (each with
+// its catalog description), "File tools", one group per MCP server
+// — minus the authorization controls, which are a project-level
+// setting and have no meaning in an agent allowlist.
+const agentToolGroups = buildAgentToolGroups({
+choices: toolChoices,
+restricted,
+selected: (v) => agent.tools.includes(v),
+mcpServers,
+catalog: toolsCatalog
+});
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
