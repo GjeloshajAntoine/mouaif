@@ -34,7 +34,7 @@
 import { h } from 'preact';
 import { useRef, useState, useEffect } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
-import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, emptyMessage } from './computedFilter.js';
+import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
 
 // touchStyleRowLabel — short human label for the element being inspected.
 // Builds a DevTools-style `tag#id.class` summary from the DOM node's
@@ -287,6 +287,28 @@ function MatchedRulesSection(props) {
 const all = props.rules || [];
 const counts = props.counts || { total: 0, userAgent: 0 };
 const visible = all.filter((r) => props.showUa || r.group !== 'user-agent');
+// open — which rules show their declarations. A rule card is a header plus
+// one row per declaration, and a real page matches enough of them that
+// rendering every declaration put ~9 000 px into a 352 px panel. Rules are
+// therefore collapsed to their header, and only the first (the most
+// specific, so the one usually being asked about) starts open, so the
+// section opens on something meaningful instead of either a wall or nothing.
+const firstId = visible.length ? visible[0].id : null;
+const [open, setOpen] = useState(() => (firstId ? { [firstId]: true } : {}));
+// Re-seed when the selection changes (the same rule ids come back for a
+// different element, so the previous element's open rules would be wrong) or
+// when the UA toggle changes which rule is first.
+useEffect(() => {
+setOpen(firstId ? { [firstId]: true } : {});
+}, [props.selectionKey, firstId]);
+function toggleRule(id) {
+setOpen((prev) => {
+const next = { ...prev };
+if (next[id]) delete next[id];
+else next[id] = true;
+return next;
+});
+}
 let body = null;
 if (props.open) {
 if (!all.length) {
@@ -299,17 +321,32 @@ body = h('p', { class: 'inspector__styles-none' }, 'Only browser default rules m
 else {
 body = [
 h('ul', { class: 'inspector__rules', key: 'list' },
-visible.map((r) => h('li', {
+visible.map((r) => {
+const isOpen = !!open[r.id];
+return h('li', {
 class: 'inspector__rule' + (r.group === 'user-agent' ? ' is-ua' : '') + (r.inherited ? ' is-inherited' : ''),
 key: r.id
 },
-h('div', { class: 'inspector__rule-head' },
+h('button', {
+class: 'inspector__rule-head',
+type: 'button',
+'aria-expanded': String(isOpen),
+'aria-label': (isOpen ? 'Hide' : 'Show') + ' the ' + r.props.length + ' declaration'
++ (r.props.length === 1 ? '' : 's') + ' of ' + r.selector
++ (r.inherited ? ', inherited from ' + r.inherited : ''),
+title: isOpen ? 'Hide declarations' : 'Show declarations',
+onClick: () => toggleRule(r.id)
+},
+h('span', { class: 'inspector__rule-caret', 'aria-hidden': 'true' }, isOpen ? '▾' : '▸'),
 h('span', { class: 'inspector__rule-sel' }, r.selector),
 r.group === 'user-agent' ? h('span', { class: 'inspector__rule-tag' }, 'UA') : null,
-r.media ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--media' }, '@media ' + r.media) : null,
-r.inherited ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--inh' }, 'from ' + r.inherited) : null
+r.media ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--media', title: '@media ' + r.media }, '@media ' + r.media) : null,
+r.inherited ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--inh' }, 'from ' + r.inherited) : null,
+h('span', { class: 'inspector__rule-n', 'aria-hidden': 'true' },
+String(r.props.length) + (r.more ? '+' + r.more : ''))
 ),
-h('ul', { class: 'inspector__rule-props' },
+isOpen
+? h('ul', { class: 'inspector__rule-props' },
 r.props.map((p) => h('li', { key: r.id + ':' + p.name },
 h('button', {
 class: 'inspector__rule-prop' + (p.disabled ? ' is-off' : ''),
@@ -324,7 +361,10 @@ h('span', { class: 'inspector__rule-pval' }, p.value + (p.important ? ' !importa
 )),
 r.more ? h('li', { class: 'inspector__rule-more' }, '+' + r.more + ' more') : null
 )
-))),
+: null
+);
+})
+),
 props.truncated
 ? h('p', { class: 'inspector__rules-truncated', key: 'cut' }, '+' + props.truncated + ' more rules not shown')
 : null
@@ -403,22 +443,22 @@ const rulesSerial = useRef(0);
 // The Computed list is every property the browser resolves — ~400 rows on a
 // typical page — and had no way to narrow it. `query` searches property names
 // and resolved values; `view.filter` picks one of all / set / changed (see
-// computedFilter.js); `view.showAll` releases the render cap. They live in one
-// state object so changing the query or the filter can drop the cap in the
-// same update: a stale expanded view after narrowing the list would render
-// every row the user just filtered out.
-const [computedView, setComputedView] = useState({ query: '', filter: 'all', showAll: false });
+// computedFilter.js); `view.steps` is how many extra pages of rows the user
+// asked for. They live in one state object so changing the query or the filter
+// can reset `steps` in the same update: a stale expanded view after narrowing
+// the list would render every row the user just filtered out.
+const [computedView, setComputedView] = useState({ query: '', filter: 'all', steps: 0 });
 const computedQuery = computedView.query;
 const computedFilter = computedView.filter;
-const computedShowAll = computedView.showAll;
+const computedSteps = computedView.steps;
 function setComputedQueryState(query) {
-setComputedView((v) => ({ ...v, query: String(query || ''), showAll: false }));
+setComputedView((v) => ({ ...v, query: String(query || ''), steps: 0 }));
 }
 function setComputedFilterState(filter) {
-setComputedView((v) => ({ ...v, filter, showAll: false }));
+setComputedView((v) => ({ ...v, filter, steps: 0 }));
 }
-function setComputedShowAll(showAll) {
-setComputedView((v) => ({ ...v, showAll: !!showAll }));
+function setComputedSteps(steps) {
+setComputedView((v) => ({ ...v, steps: Math.max(0, steps) }));
 }
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
@@ -774,8 +814,9 @@ filter: computedFilter,
 setNames,
 changedNames
 });
-const computedPageLimit = pageLimit(computedVisible.length, computedShowAll);
+const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
+const computedMore = moreRows(computedVisible.length, computedSteps);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 // Sticky block: the element header and the pinned preview stay at the top
 // of the panel's scroller while the property list below scrolls. Without
@@ -969,6 +1010,10 @@ truncated: rules ? rules.truncated : 0,
 busy: rulesBusy,
 open: rulesOpen,
 showUa,
+// Which element the cascade belongs to. The section re-seeds its
+// per-rule open state from this, because the same rule ids come back for a
+// different element and the previous element's open rules would be wrong.
+selectionKey: model.objectId,
 onToggle: () => setRulesOpen(!rulesOpen),
 onToggleUa: () => setShowUa(!showUa),
 onEdit: (prop, value) => setEdit({ prop, value })
@@ -1013,7 +1058,7 @@ onClick: () => setComputedQueryState('')
 ),
 computedVisible.length
 ? [
-h('ul', { class: 'inspector__styles-list', key: 'list' },
+h('ul', { class: 'inspector__styles-list inspector__styles-list--computed', key: 'list' },
 computedPage.map((row) => h('li', {
 class: 'inspector__styles-row inspector__styles-row--computed'
 + (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
@@ -1023,20 +1068,20 @@ h('span', { class: 'inspector__styles-prop' }, row.prop),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 ))
 ),
-computedVisible.length > computedPageLimit
+computedMore > 0
 ? h('button', {
 class: 'inspector__computed-more',
 type: 'button',
 key: 'more',
-onClick: () => setComputedShowAll(true)
-}, 'Show all ' + computedVisible.length)
-: (computedShowAll && computedVisible.length > COMPUTED_PAGE
+onClick: () => setComputedSteps(computedSteps + 1)
+}, 'Show ' + Math.min(COMPUTED_PAGE, computedMore) + ' more of ' + computedVisible.length)
+: (computedSteps > 0
 ? h('button', {
 class: 'inspector__computed-more',
 type: 'button',
 key: 'less',
-onClick: () => setComputedShowAll(false)
-}, 'Show first ' + COMPUTED_PAGE)
+onClick: () => setComputedSteps(0)
+}, 'Collapse to the first ' + Math.min(COMPUTED_PAGE, computedVisible.length))
 : null)
 ]
 : h('p', { class: 'inspector__styles-none', role: 'status' },

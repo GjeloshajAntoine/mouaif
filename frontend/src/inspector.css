@@ -1615,6 +1615,12 @@ flex: 0 0 auto;
 height: 52dvh;
 min-height: 320px;
 overflow-y: auto;
+/* The panel is a scroller *inside* the page's own scroller (.app__main). With
+the default `auto`, reaching the end of a property list chains the gesture to
+the page underneath, so the view jumps by a whole panel the moment the list
+runs out — the worst part of reading a long list on a phone. `contain` keeps
+the gesture inside the panel: it stops and stays put. */
+overscroll-behavior: contain;
 padding: 6px 8px;
 background: var(--surface);
 border: 1px solid var(--border);
@@ -1623,6 +1629,13 @@ scrollbar-width: thin;
 display: flex;
 flex-direction: column;
 gap: 8px;
+}
+/* Only panel on screen: nothing else wants the space, so a 52 dvh scroller
+would leave a blank half-screen under a needlessly short list. Take the
+viewport instead — that is the difference between ~8 and ~14 visible rows on a
+360 x 680 phone, and far less scrolling for the same reading. */
+.inspector__panel--solo .inspector__panel-body .inspector__styles {
+height: 72dvh;
 }
 /* On a wide screen (where the first panel grows) the styles list gets
 the leftover height like the scroller/preview do. */
@@ -1819,6 +1832,28 @@ background: var(--surface-2);
 border: 1px solid var(--border);
 border-radius: var(--r-sm);
 }
+/* Computed rows are read-only: no button, no editor, nothing to tap. The
+44 px is the *interactive* minimum and is pure waste on them — at 44 px the
+~400-row list is ~17 000 px of scrolling inside a ~350 px panel, which is what
+made the panel feel like an endless scroll. Declared rows keep the full 44 px
+target because they open the editor. */
+.inspector__styles-row--computed {
+min-height: 0;
+padding: 3px 0;
+border: 0;
+border-radius: 0;
+background: none;
+}
+/* A flat list, not a card each: a border, a background and a gap around every
+one of several hundred read-only rows is a lot of ink and vertical space for
+zero interaction. A single hairline separator reads as one continuous list and
+is a few px shorter per row. */
+.inspector__styles-list--computed {
+gap: 0;
+}
+.inspector__styles-list--computed > li + li .inspector__styles-row--computed {
+border-top: 1px solid var(--border);
+}
 .inspector__styles-row-main {
 flex: 1 1 auto;
 min-width: 0;
@@ -1879,18 +1914,36 @@ font-size: 0.82rem;
 color: var(--muted);
 line-height: 1.4;
 }
+/* The quick-add chips were a wrapped flex row, which on a 360 px phone broke
+into two lines and cost 94 px — for a row of *optional* shortcuts sitting
+between the user and the property list. One horizontal scroller instead, so
+it is a single 44 px line and every chip keeps its full tap target. The "Add"
+label is sticky so it stays put while the chips scroll under it. */
 .inspector__styles-add {
 display: flex;
-flex-wrap: wrap;
+flex-wrap: nowrap;
 gap: 6px;
 align-items: center;
+overflow-x: auto;
+overflow-y: hidden;
+padding-bottom: 2px;
+scrollbar-width: none;
+-webkit-overflow-scrolling: touch;
 }
+.inspector__styles-add::-webkit-scrollbar { display: none; }
 .inspector__styles-add-label {
+flex: 0 0 auto;
+position: sticky;
+left: 0;
+z-index: 1;
+padding-right: 4px;
 font-size: 0.68rem;
 color: var(--muted-2);
 text-transform: uppercase;
 letter-spacing: 0.04em;
+background: var(--surface);
 }
+.inspector__styles-chip { flex: 0 0 auto; }
 .inspector__styles-chip {
   font: inherit;
   font-size: 0.8rem;
@@ -1974,12 +2027,18 @@ property list, and on a 360 px phone that scroller is only ~218 px tall, so
 the strip stays short to leave room for rows. On a wide screen the first
 panel grows to fill the leftover height, so there the preview can show more
 of the element. */
+/* Inside the panel the preview shares its scroller with the header and the
+property list, and on a 360 px phone that scroller is only ~350 px tall. The
+strip is 40 px rather than 64: the pinned block is fixed chrome that never
+scrolls, so every pixel it takes comes straight out of the property rows, and
+40 px still shows enough of an element to read a padding or colour change. The
+grown panel on a wide screen has the room, so it stays larger there. */
 .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-height: 64px;
+height: 40px;
 }
 @media (min-width: 900px) {
 .inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-height: 104px;
+height: 96px;
 }
 }
 /* The refresh hint is a caption *under* the capture, not a badge on top of
@@ -2177,13 +2236,46 @@ overflow: hidden;
 different bar: they are context, not the thing the user came to change. */
 .inspector__rule.is-ua { border-left-color: var(--muted-2); opacity: 0.85; }
 .inspector__rule.is-inherited { border-left-color: var(--border-strong); }
+/* A rule card is a header plus one row per declaration. On a real page that
+is 170 declaration rows and ~9 000 px inside a 352 px panel, which is what
+made the open section unusable on a phone. The header is now the tap target
+that opens a rule, and only the first (most specific) rule starts open — so
+the section opens on something meaningful and costs ~9 collapsed rows instead
+of every declaration at once. */
 .inspector__rule-head {
 display: flex;
 flex-wrap: wrap;
 align-items: center;
 gap: 6px;
+width: 100%;
+min-height: var(--tap);
 padding: 6px 8px;
-border-bottom: 1px solid var(--border);
+font: inherit;
+text-align: left;
+color: inherit;
+background: none;
+border: 0;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rule-head:hover { background: var(--surface-3); }
+.inspector__rule-caret {
+flex: 0 0 auto;
+width: 10px;
+font-size: 0.62rem;
+color: var(--muted-2);
+}
+/* How many declarations the rule carries, so a collapsed rule still says how
+much is inside it. */
+.inspector__rule-n {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.6rem;
+font-weight: 600;
+font-variant-numeric: tabular-nums;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
 }
 /* The selector is the identity of the rule, so it gets the monospace
 treatment and wraps rather than ellipsizing: a truncated comma-separated
@@ -2196,7 +2288,7 @@ font-size: 0.72rem;
 color: var(--accent-hi);
 overflow-wrap: anywhere;
 }
-.inspector__rule-tag {
+  .inspector__rule-tag {
 flex: 0 0 auto;
 padding: 1px 6px;
 font-size: 0.6rem;
@@ -2206,11 +2298,21 @@ color: var(--fg-soft);
 background: var(--surface-3);
 border-radius: 999px;
 }
-.inspector__rule-tag--media { color: var(--warning, var(--fg-soft)); }
+/* A long `@media (min-width: …) and (…)` condition would otherwise push the
+header past its 44 px target by wrapping. Bounded and ellipsized; the full
+condition is carried in the element's `title`. */
+.inspector__rule-tag--media {
+max-width: 40vw;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+color: var(--warning, var(--fg-soft));
+}
 .inspector__rule-props {
 list-style: none;
 margin: 0;
 padding: 0;
+border-top: 1px solid var(--border);
 }
 /* Every declaration is a 44 px tap target that opens the edit sheet with
 that property and value pre-filled — the declared value is copied onto
@@ -2246,7 +2348,13 @@ flex: 1 1 auto;
 font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 color: var(--fg);
 text-align: right;
-overflow-wrap: anywhere;
+/* One line, ellipsized. `overflow-wrap: anywhere` let a long value wrap to a
+second line, which pushed the row past its 44 px target (measured 53 px) and
+hid the fact that every row is the same size. The full value is one tap away
+in the edit sheet, which opens pre-filled with it. */
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
 }
 .inspector__rule-more,
 .inspector__rules-truncated {

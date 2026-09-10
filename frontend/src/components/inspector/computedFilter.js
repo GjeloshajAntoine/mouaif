@@ -34,11 +34,14 @@ export const FILTERS = [
 
 export const FILTER_IDS = FILTERS.map((f) => f.id);
 
-// COMPUTED_PAGE — how many rows are rendered before the list asks to be
-// expanded. 400 rows is 400 DOM nodes inside a scroller that also holds the
-// pinned preview and two other sections; paging the list keeps the first
-// paint cheap on a phone while leaving every row reachable.
-export const COMPUTED_PAGE = 120;
+// COMPUTED_PAGE — how many rows one page of the list renders. A typical
+// element resolves ~400 properties, and rendering them all at once put
+// ~11 000 px of rows into a scroller that also holds the pinned preview and
+// three other sections: a single tap on "show all" turned the panel into a
+// 30-screen scroll. The list therefore pages in steps — each tap adds one
+// more page — so the length stays bounded no matter how big the cascade is,
+// and the filters above do the real narrowing.
+export const COMPUTED_PAGE = 60;
 
 const EMPTY = new Set();
 
@@ -76,12 +79,22 @@ export function filterComputed(rows, opts) {
   return out;
 }
 
-// pageLimit — how many of the filtered rows to render. `showAll` comes from
-// the panel's "Show all" action and is reset whenever the query or the
-// filter changes, so narrowing the list never leaves a stale expanded view.
-export function pageLimit(matched, showAll) {
+// pageLimit — how many of the filtered rows to render, given how many
+// "show more" steps the user has taken. Deliberately additive rather than an
+// all-or-nothing "show all": the point of paging is to keep the scroll
+// bounded, and a single control that reveals 406 rows at once defeats it.
+// `steps` is reset whenever the query or the filter changes, so narrowing the
+// list never leaves a stale expanded view.
+export function pageLimit(matched, steps) {
   if (!Number.isFinite(matched) || matched <= 0) return 0;
-  return showAll ? matched : Math.min(matched, COMPUTED_PAGE);
+  const n = Math.max(0, Math.floor(Number(steps) || 0));
+  return Math.min(matched, COMPUTED_PAGE * (n + 1));
+}
+// moreRows — how many rows one more step would reveal, or 0 when the list is
+// fully shown. Used for the "Show N more" label so it never promises more
+// rows than exist on the last step.
+export function moreRows(matched, steps) {
+  return Math.max(0, matched - pageLimit(matched, steps));
 }
 
 // emptyMessage — why the list is empty, in the user's terms. The three

@@ -269,7 +269,7 @@ h('path', { d: 'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM6 15v3h3v2H4v-5h2Zm12 0h2v
 )
 : h('span', { class: 'inspector__panel-label' }, props.label);
 return h('div', {
-class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : ''),
+class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : '') + (props.solo ? ' inspector__panel--solo' : ''),
 'data-panel': props.id
 },
 h('div', { class: 'inspector__panel-head' },
@@ -1288,6 +1288,11 @@ useEffect(() => {
               id,
               label: PANELS.find((p) => p.id === id).label,
               grow: idx === 0,
+              // Only panel visible: the page below it is otherwise empty, so
+              // the body should take the height it has been given instead of
+              // sitting at the shared 52 dvh and leaving a blank half-screen
+              // under a scroller that is needlessly short.
+              solo: visibleIds.length === 1,
               isVisible: visiblePanels.has(id),
               onToggle: togglePanel,
 sizeId: viewportId,

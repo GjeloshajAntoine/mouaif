@@ -24,7 +24,7 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 const context = vm.createContext({});
 vm.runInContext(source, context);
-const { filterComputed, matchesQuery, pageLimit, emptyMessage } = context;
+const { filterComputed, matchesQuery, pageLimit, moreRows, emptyMessage } = context;
 // `FILTERS`, `FILTER_IDS`, and `COMPUTED_PAGE` are top-level `const`s, which a
 // vm script binds lexically rather than exposing as context properties.
 const FILTERS = vm.runInContext('FILTERS', context);
@@ -51,8 +51,8 @@ function main() {
     'the segmented control offers all / set / changed in that order');
   assert.deepStrictEqual(arr(FILTERS).map((f) => f.label), ['All', 'Set', 'Changed']);
   assert.deepStrictEqual(arr(FILTER_IDS), ['all', 'set', 'changed']);
-  assert.ok(COMPUTED_PAGE > 0 && COMPUTED_PAGE < ROWS.length * 100,
-    'the render cap is a sane page size, not the whole list');
+  assert.ok(COMPUTED_PAGE > 0 && COMPUTED_PAGE <= 100,
+    'a page is large enough to scan and small enough to keep the scroll bounded');
 
   // --- query matching -------------------------------------------------
   assert.strictEqual(matchesQuery(ROWS[0], ''), true, 'an empty query matches everything');
@@ -98,13 +98,29 @@ function main() {
   assert.deepStrictEqual(props(filterComputed(ROWS, {})), props(filterComputed(ROWS, { filter: 'all' })),
     'no options at all behaves like the default view');
 
-  // --- paging ---------------------------------------------------------
-  assert.strictEqual(pageLimit(400, false), COMPUTED_PAGE, 'a long list is capped to one page');
-  assert.strictEqual(pageLimit(400, true), 400, '"show all" releases the cap');
-  assert.strictEqual(pageLimit(12, false), 12, 'a short list is never padded or capped below its length');
-  assert.strictEqual(pageLimit(12, true), 12, 'a short list is unchanged by "show all"');
-  assert.strictEqual(pageLimit(0, false), 0, 'an empty list pages to nothing');
-  assert.strictEqual(pageLimit(undefined, false), 0, 'a missing count pages to nothing');
+  // --- paging is additive, never all-or-nothing -----------------------
+  // A single "show all" control that reveals 406 rows at once defeats the
+  // point of paging: on a phone that is ~11 000 px of rows in a 352 px
+  // scroller. Each step adds one page, so the length stays bounded.
+  assert.strictEqual(pageLimit(400, 0), COMPUTED_PAGE, 'the first page renders one page of rows');
+  assert.strictEqual(pageLimit(400, 1), COMPUTED_PAGE * 2, 'a step adds exactly one more page');
+  assert.strictEqual(pageLimit(400, 5), COMPUTED_PAGE * 6, 'steps accumulate by page');
+  assert.strictEqual(pageLimit(400, 100), 400, 'paging clamps at the total — never past the end');
+  assert.strictEqual(pageLimit(12, 0), 12, 'a short list is never padded or capped below its length');
+  assert.strictEqual(pageLimit(12, 3), 12, 'a short list is unchanged by further steps');
+  assert.strictEqual(pageLimit(0, 0), 0, 'an empty list pages to nothing');
+  assert.strictEqual(pageLimit(undefined, 0), 0, 'a missing count pages to nothing');
+  assert.strictEqual(pageLimit(400, -2), COMPUTED_PAGE, 'a negative step count is treated as the first page');
+  assert.strictEqual(pageLimit(400, 'x'), COMPUTED_PAGE, 'a non-numeric step count is treated as the first page');
+
+  // moreRows drives the button label, so it must never promise rows that
+  // do not exist — the last step would otherwise offer a full page.
+  assert.strictEqual(moreRows(400, 0), 340, 'the first page reports the remaining rows');
+  assert.strictEqual(moreRows(400, 5), 40, 'the last partial step reports only what is left');
+  assert.strictEqual(moreRows(400, 6), 0, 'a fully shown list reports nothing more');
+  assert.strictEqual(moreRows(12, 0), 0, 'a list shorter than a page reports nothing more');
+  assert.strictEqual(moreRows(0, 0), 0, 'an empty list reports nothing more');
+  assert.strictEqual(pageLimit(400, 0) + moreRows(400, 0), 400, 'the page and the remainder always add up to the total');
 
   // --- empty-state copy -----------------------------------------------
   assert.match(emptyMessage({ filter: 'changed' }), /Nothing changed yet/,
@@ -127,8 +143,12 @@ function main() {
     'StylesPanel imports the computed filter');
   assert.ok(/filterComputed\(orderedComputed, \{/.test(panel),
     'the computed list is filtered after it is ordered, so changed rows still lead');
-  assert.ok(/pageLimit\(computedVisible\.length, computedShowAll\)/.test(panel),
+  assert.ok(/pageLimit\(computedVisible\.length, computedSteps\)/.test(panel),
     'the render cap is applied to the filtered list');
+  assert.ok(/moreRows\(computedVisible\.length, computedSteps\)/.test(panel),
+    'the "show more" label is derived from the remaining rows, not the total');
+  assert.ok(/setComputedSteps\(computedSteps \+ 1\)/.test(panel),
+    'the control pages forward one step at a time rather than revealing everything');
   assert.ok(/computedPage\.map/.test(panel),
     'the list renders the paged rows, not the whole filtered set');
   assert.ok(/emptyMessage\(\{ query: computedQuery, filter: computedFilter \}\)/.test(panel),
@@ -139,8 +159,8 @@ function main() {
     'the set filter is fed from the element\'s own declared properties');
   assert.ok(/changedNames = new Set\(changed\)/.test(panel),
     'the changed filter is fed from the session edit set');
-  assert.ok(/setComputedQueryState/.test(panel) && /showAll: false/.test(panel),
-    'changing the query or the filter drops the render cap in the same update');
+  assert.ok(/setComputedQueryState/.test(panel) && /steps: 0/.test(panel),
+    'changing the query or the filter resets paging in the same update');
 
   console.log('PASS inspector computed filter (search, all/set/changed, paging, empty-state copy)');
 }
