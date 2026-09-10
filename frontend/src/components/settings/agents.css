@@ -15,12 +15,25 @@
   width: 2.75rem;
   height: 2.75rem;
 }
+/* The agent editor grows the shared .checkbox into a ≥44px thumb target
+  with a transparent border, so the tree must keep the look the rest of
+  the app paints:
+  - border-radius: the border-box radius minus the 12px border clamps
+    to 0, which squared off every corner. Adding the border width back
+    restores the shared 6px inner radius.
+  - box-shadow: .checkbox draws its 1px outline with the border; the
+    transparent border removed it, so an unchecked box was a
+    borderless fill. The inset ring re-draws it inside the padding box.
+  Together these make the checkbox here identical to the one the shared
+  ToolTree paints on every other surface, at the same thumb size. */
 .agent-editor .checkbox {
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 0.75rem solid transparent;
-  background-clip: padding-box;
+width: 2.75rem;
+height: 2.75rem;
+border: 0.75rem solid transparent;
+background-clip: padding-box;
+border-radius: calc(var(--r-sm) + 0.75rem);
+box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .agent-editor .checkbox:checked,
 .agent-editor .checkbox:indeterminate,
-.agent-editor .checkbox:hover { border-color: transparent; }
+.agent-editor .checkbox:hover { border-color: transparent; box-shadow: inset 0 0 0 1px var(--accent); }
