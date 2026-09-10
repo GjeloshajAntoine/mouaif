@@ -1,6 +1,6 @@
 // Inspector OverviewPanel — page metrics grid
 import { h } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { fmtBytes } from './format.js';
 
 export function OverviewPanel(props) {
