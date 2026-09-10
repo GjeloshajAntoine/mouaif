@@ -104,6 +104,10 @@ const chatSwitcherIdxRef = useRef(-1);
   // misread as "all loaded" — and the fetch always started at page 0,
   // so rows beyond the first 100 could never be reached.
   const chatSwitcherPager = useRef({ projectDir: '', offset: 0, total: Infinity, loading: false });
+// Guards the run-state refresh of the chat switcher: its first pass after
+// a project/chat change is skipped, because the preload effect just
+// fetched page one for that chat.
+const switcherRefreshArmed = useRef(false);
 
   // imageAttachments gets a ref mirror so the imperative `state`
   // bag can read the live value on demand (stream.js:send reads
@@ -373,6 +377,24 @@ setCustomActions(response.body.actions);
 }
 } catch { /* keep the last known action list */ }
   }, [projectDir]);
+  // patchChatDraft(projectDir, chatId, draft, draftAttachments)
+//
+// PATCH a draft onto a chat identified explicitly, not through the
+// currently mounted `projectDir`/`chatId`. Needed when flushing the
+// composer on a chat switch: at that point `state.props` already points
+// at the chat the user moved to, so `updateChatBound` would write the
+// outgoing text into the wrong chat.
+function patchChatDraft(targetProjectDir, targetChatId, draft, draftAttachments) {
+return fetchJson('/api/chats/' + encodeURIComponent(targetChatId), {
+method: 'PATCH',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+projectDir: targetProjectDir,
+draft: draft || '',
+draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? draftAttachments : null
+})
+});
+}
   const updateChatBound = useCallback(async (patch) => {
     if (!projectDir || !chatId) return;
     const safePatch = Object.assign({}, patch || {});
@@ -821,9 +843,18 @@ if (t.report_progress) auth.report_progress = { mode: t.report_progress.mode || 
               tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : {}
             };
           }
-        } catch { /* keep empty auth */ }
+                } catch { /* keep empty auth */ }
+
+        // The authorization fetch above is the last await before we start
+        // writing per-chat UI state. If the user switched chat/project
+        // while it was in flight the cleanup has already set `cancelled`;
+        // without this re-check the block below would clobber the newly
+        // loaded chat's composer, thinking level, meta line, credit and
+        // picker with this stale load's values.
+        if (cancelled) return;
 
         if (promptInput.current && !promptInput.current.value && typeof c.draft === 'string' && c.draft) {
+
           promptInput.current.value = c.draft;
           autoresize(refs);
         }
@@ -1076,8 +1107,52 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
   useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
 useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
 useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
+
+  // Per-chat cursors. These are seeded inside `load()` only on the success
+  // path, so a failed or early-returned load would leave the PREVIOUS
+  // chat's values behind: a stale `msgPager` (wrong `beforeSeq`) would then
+  // drive the scroll-up loader against the new chat, a stale
+  // `transcriptNextSeq` would skew the reconcile/recovery poll, and a stale
+  // `nextLiveSeq` would ask the live stream to replay from a cursor the new
+  // chat never reached — silently dropping its buffered events. Reset them
+  // on every chat change; `load()` re-seeds them when its page arrives.
+  useEffect(() => {
+    msgPager.current = createPager();
+    transcriptNextSeq.current = 0;
+    nextLiveSeq.current = 0;
+  }, [chatId, projectDir]);
+
+  // Composer draft is per chat (docs/features/chat-ui.md "Draft
+  // preservation"), but ChatView is reused across navigation — only props
+  // change, there is no remount — so the textarea keeps the text typed in
+  // the chat we just left. The next keystroke would then be saved as the
+  // NEW chat's draft: one chat's text bleeding into another, and the new
+  // chat's own saved draft never shown because the field was non-empty.
+  // Flush the outgoing draft to its own chat, then clear the field and the
+  // attachment list so the incoming chat starts clean.
+  useEffect(() => {
+    return () => {
+      const el = refs.promptInput.current;
+      const outgoingText = el ? el.value : '';
+      const outgoingAtts = toPublicImageAttachments(imageAttachmentsRef.current);
+      if (draftSaveTimer.current) {
+        clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+      if (projectDir && chatId && (outgoingText || outgoingAtts.length)) {
+        patchChatDraft(projectDir, chatId, outgoingText, outgoingAtts).catch(() => {});
+      }
+      if (el) {
+        el.value = '';
+        autoresize(refs);
+      }
+      setComposerText('');
+      setImageAttachments([]);
+    };
+  }, [chatId, projectDir]);
   useEffect(() => () => {
     stopStreamRecovery(state);
+
     // Drop the per-chat live subscription so a backgrounded/closed tab
     // doesn't hold a socket for a chat the user left. The owner stream
     // keeps buffering regardless — returning re-subscribes and replays.
@@ -1085,6 +1160,13 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     // overwritten with the chat the user moved to by the time a
     // chat-switch cleanup runs.
     closeLive(state, projectDir, chatId);
+    // Cancel the pending draft autosave too: leaving within the 250ms
+    // debounce window would otherwise fire a stray draft PATCH after the
+    // view is gone.
+    if (draftSaveTimer.current) {
+      clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
     // Stop this client's own turn reader too. The server keeps running the
     // turn, but a reader left alive would keep writing deltas into
     // `state.messages` and render them into the transcript mounted by
@@ -1096,21 +1178,54 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   }, [projectDir, chatId]);
 
   // Preload the chat switcher list so the dropdown opens instantly
-  // with cached rows (no network wait on first open). Refresh when
-  // the chat changes or a run in this chat ends so the rows stay
-  // current (recently auto-titled chats, stale running flags).
-  // Resets the pager so the list always restarts at the top whenever
-  // it is regenerated.
+  // with cached rows (no network wait on first open). The pager — and so
+  // the offset of the pages the user already scrolled in — resets only
+  // when the project or chat actually changes.
   useEffect(() => {
     if (!projectDir) return;
-    const pager = { projectDir, offset: 0, total: Infinity, loading: false };
+    const pager = { projectDir, chatId, offset: 0, total: Infinity, loading: false };
     chatSwitcherPager.current = pager;
+    // Any page the previous pager still had in flight is now orphaned:
+    // its callback bails on the identity guard below, so it would never
+    // clear the "Loading more…" spinner. Clear it as part of the swap.
+    setChatSwitcherLoading(false);
+    // Arm the run-state refresh below for this chat (its first pass on a
+    // chat change is a no-op — this effect just loaded page one).
+    switcherRefreshArmed.current = false;
     let cancelled = false;
     loadChatListForSwitcher(projectDir, pager, (rows) => {
       if (!cancelled && chatSwitcherPager.current === pager) setChatSwitcherList(rows);
     });
     return () => { cancelled = true; };
-  }, [projectDir, chatId, runningVisible]);
+  }, [projectDir, chatId]);
+
+  // Keep titles and running flags current across a turn. `runningVisible`
+  // flips at the start AND end of every turn; refreshing must not reset
+  // the pager or replace the list, or every flip would throw away the
+  // pages the user already scrolled in and drop them back at the top.
+  // Re-fetch just the newest page and merge it over the rows on screen.
+  useEffect(() => {
+    if (!projectDir || !chatId) return;
+    if (!switcherRefreshArmed.current) { switcherRefreshArmed.current = true; return; }
+    const pager = chatSwitcherPager.current;
+    if (!pager || pager.projectDir !== projectDir || pager.chatId !== chatId) return;
+    let cancelled = false;
+    loadChatListForSwitcher(projectDir, { projectDir, offset: 0, total: Infinity }, (rows) => {
+      if (cancelled || chatSwitcherPager.current !== pager || !rows.length) return;
+      setChatSwitcherList((prev) => {
+        const fresh = new Map(rows.map((c) => [c && c.id, c]));
+        // Fresh rows first (the list is newest-first); keep the older
+        // rows already loaded as long as the fresh page doesn't cover them.
+        const merged = rows.slice();
+        for (const c of prev) {
+          if (!c || fresh.has(c.id)) continue;
+          merged.push(c);
+        }
+        return merged;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [runningVisible, projectDir, chatId]);
 
   useEffect(() => {
     if (!chatId || !projectDir) return undefined;
@@ -1279,7 +1394,14 @@ onBack: () => { window.location.hash = '#/projects'; },
       pager.loading = true;
       setChatSwitcherLoading(true);
       loadChatListForSwitcher(projectDir, pager, (rows) => {
-        if (chatSwitcherPager.current !== pager || pager.projectDir !== projectDir) return;
+        // A project switch (or a pager swap) orphans this response. The
+        // spinner must still be released — leaving it set would pin
+        // "Loading more…" on screen forever, since only a later scroll
+        // clears it.
+        if (chatSwitcherPager.current !== pager || pager.projectDir !== projectDir) {
+          setChatSwitcherLoading(false);
+          return;
+        }
         pager.loading = false;
         setChatSwitcherLoading(false);
         if (!rows.length) return;
