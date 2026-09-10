@@ -41,6 +41,24 @@
 .chat-msg:nth-child(2)   { animation-delay: 185ms; }
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { align-self: flex-end; align-items: flex-end; }
+
+/* ---- Reading measure on a wide frame ------------------------------
+   The transcript scroller stays full width — the overlay scrollbar has to
+   sit at the frame edge and the pinned composer below depends on its
+   flex contract — but its rows keep a readable measure, so a 1152px
+   frame does not render 130-character lines. The `92%` phone bubble cap
+   still wins on any frame narrower than --read-max (~765px), so phones
+   are untouched. Cards stretch the cross axis by default; `margin-inline:
+   auto` centres them once the cap binds (an auto cross-axis margin also
+   cancels the stretch, per CSS flexbox). */
+.chat-view__transcript > .chat-msg {
+  max-width: min(92%, var(--read-max, 44rem));
+}
+.chat-view__transcript > .chat-msg--system,
+.chat-view__transcript > :not(.chat-msg) {
+  max-width: var(--read-max, 44rem);
+  margin-inline: auto;
+}
 .chat-msg__role {
   font-size: 0.62rem;
   font-weight: 700;

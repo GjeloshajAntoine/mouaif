@@ -16,6 +16,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers with a mounted example project.
 - [Retry and auto-retry](features/retry-and-auto-retry.md) — retry failed turns from their error card, or let the app retry once automatically.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside an expanded subagent card renders as chat rows.
+- [Responsive layout](features/responsive-layout.md) — the app frame grows with the window instead of staying a 480 px phone column.
 
 ## Build the documentation
 

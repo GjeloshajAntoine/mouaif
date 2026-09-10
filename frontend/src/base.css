@@ -64,6 +64,27 @@
   --pad-x: 10px;
   --pad-y: 6px;
   --gap: 6px;
+  /* Frame + measures. The layout stays mobile-first: at phone widths the
+     app frame *is* the viewport, and above that it grows with the window
+     up to --shell-max instead of staying a 480px phone column. The old
+     `max-width: 30rem` on .app__shell produced the worst of both worlds
+     on a laptop: the modals (`@media (min-width: 720px)`) and the
+     Inspector (`@media (min-width: 900px)`) switched to their desktop
+     branches — which assume a wide viewport — while the frame they were
+     laid out in stayed 480px, so the desktop UI was squeezed into a
+     phone-width strip.
+     Three stops, so that "more room" never becomes a 160-character line:
+       --shell-max  ceiling for the frame. The header and the tab bar
+                    paint to its edges; wide tool surfaces (Inspector,
+                    file editor) get all of it.
+       --list-max   single-column lists and inset groups (.group, the
+                    project / provider lists) — roughly twice a phone's
+                    width, then centred.
+       --read-max   long-form text (chat bubbles, transcript cards, the
+                    composer) where line length matters more than width. */
+  --shell-max: 72rem;   /* 1152px */
+  --list-max:  56rem;   /*  896px */
+  --read-max:  44rem;   /*  704px */
   /* Touch targets. --tap is the minimum row/button height — the
      mobile-first rule is ≥ 44px, and everything interactive that
      is not a glyph-only accessory keeps it. --tap-sm is the size

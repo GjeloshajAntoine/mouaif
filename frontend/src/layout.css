@@ -12,9 +12,14 @@
      --flush mode) can scroll internally instead of growing the page. */
   width: 100%;
   height: 100%;
-max-width: 30rem;
-min-width: 0;
-margin: 0 auto;
+  /* Grow with the window up to the frame ceiling (base.css) and centre
+     the frame inside it. A 1280px laptop now gets a 1152px app frame
+     with a 64px gutter instead of a 480px phone column — so the
+     `min-width: 720px` / `900px` branches the modals and the Inspector
+     already have finally get the width they were written for. */
+  max-width: var(--shell-max, 72rem);
+  min-width: 0;
+  margin: 0 auto;
   position: relative;
   overflow: hidden;
   background: var(--bg);
@@ -101,7 +106,12 @@ padding-top: 0;
    no border, no shadow, and only a single rounded container — the
    mobile-native shape (vs. "stacked cards" on a desktop UI). */
 .group {
-  margin: 10px 10px 0;
+  /* `auto` inline margins keep the 10px phone gutter below the list
+     measure and centre the group once the frame is wider than it: a
+     1152px frame would otherwise render a "turn this on" row 1130px
+     wide with its value 900px away from its label. */
+  margin: 10px auto 0;
+  max-width: var(--list-max, 56rem);
   padding: 0;
   border: 0;
 }
@@ -156,11 +166,14 @@ padding-top: 0;
 .sprojects__list,
 .providers__list {
   list-style: none;
-  margin: 0;
+  margin: 0 auto;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Same list measure as .group: the cards keep their phone proportions
+     on a wide frame instead of stretching to 1150px. */
+  max-width: var(--list-max, 56rem);
 }
 .group__row {
   display: flex;
@@ -420,6 +433,18 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* Above the phone breakpoint the bar paints to the frame edges but the
+   three tabs keep a comfortable width, instead of stretching one label
+   across ~380px of a 1152px frame. Below 720px the grid stays full-bleed
+   so a phone (and a landscape phone) keeps every pixel of the bar
+   tappable. */
+@media (min-width: 720px) {
+  .app__tablist {
+    max-width: 32rem;
+    width: 100%;
+    margin: 0 auto;
+  }
 }
 
 /* Each list item is a grid cell; the tab link fills it so the touch

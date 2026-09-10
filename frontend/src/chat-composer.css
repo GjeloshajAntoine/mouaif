@@ -11,6 +11,12 @@
   gap: 4px;
   padding: 6px 10px 0;
   flex: 0 0 auto;
+  /* Same reading measure as the transcript rows above, so the composer
+     column lines up with the bubbles on a wide frame. Inert on phones
+     (the row is narrower than --read-max there). */
+  max-width: var(--read-max, 44rem);
+  margin-inline: auto;
+  width: 100%;
 }
 
 /* Tool button container — sits left of the composer pill */
