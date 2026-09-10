@@ -16,6 +16,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
+import { formatCount } from './gitCount.js';
 
 function parseNumstat(stdout) {
   let additions = 0;
@@ -141,37 +142,46 @@ function handleCustomAction(action) {
 setMenuOpen(false);
 if (onRunCustomAction) onRunCustomAction(action);
 }
-const statsLabel = gitStats
-    ? gitStats.additions + ' lines added, ' + gitStats.deletions + ' lines deleted'
-    : '';
+// Only the states that carry information are drawn: a clean tree shows no
+// counts at all, and a one-sided change shows just the side that moved,
+// instead of a '+' +0' that competes with the number that matters. The
+// aria-label keeps announcing the exact figures (never the abbreviated form).
+const added = gitStats ? gitStats.additions : 0;
+const deleted = gitStats ? gitStats.deletions : 0;
+const hasAdditions = added > 0;
+const hasDeletions = deleted > 0;
+const labelParts = [];
+if (hasAdditions) labelParts.push(added + ' lines added');
+if (hasDeletions) labelParts.push(deleted + ' lines deleted');
+const statsLabel = labelParts.join(', ');
 
-  return h('div', { class: 'file-toolbar' },
-    h('button', {
-      class: 'file-toolbar__trigger',
-      type: 'button',
-      onClick: handleTrigger,
-      'aria-label': 'File tools' + (statsLabel ? '. ' + statsLabel : ''),
-      'aria-haspopup': 'true',
-      'aria-expanded': String(menuOpen),
-      title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
-    },
-      h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
-        h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
-          h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
-        ),
-        h('span', { class: 'file-toolbar__folder' },
-          h('svg', { viewBox: '0 0 20 16', width: 24, height: 18 },
-            h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
-          ),
-          gitStats ? h('span', { class: 'file-toolbar__git-stats' },
-            h('span', { class: 'file-toolbar__git-additions' }, '+' + gitStats.additions),
-            h('span', { class: 'file-toolbar__git-deletions' }, '−' + gitStats.deletions)
-          ) : null
-        ),
-        h('svg', { viewBox: '0 0 12 6', width: 12, height: 6 },
-          h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
-        )
-      )
+return h('div', { class: 'file-toolbar' },
+h('button', {
+class: 'file-toolbar__trigger',
+type: 'button',
+onClick: handleTrigger,
+'aria-label': 'File tools' + (statsLabel ? '. ' + statsLabel : ''),
+'aria-haspopup': 'true',
+'aria-expanded': String(menuOpen),
+title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
+},
+h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
+h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
+h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
+),
+h('span', { class: 'file-toolbar__folder' },
+h('svg', { viewBox: '0 0 20 16', width: 28, height: 22 },
+h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
+),
+(hasAdditions || hasDeletions) ? h('span', { class: 'file-toolbar__git-stats' },
+hasAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
+hasDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
+) : null
+),
+h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
+h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
+)
+)
     ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
 customActions && customActions.length ? [

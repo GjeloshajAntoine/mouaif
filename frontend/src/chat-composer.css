@@ -70,8 +70,8 @@ line-height: 0;
 .file-toolbar__folder {
 position: relative;
 display: block;
-width: 24px;
-height: 18px;
+width: 28px;
+height: 22px;
 }
 .file-toolbar__folder > svg {
 position: absolute;
@@ -90,46 +90,55 @@ inset: 0;
 	If this fill is ever darkened, the two count colors below must be
 	re-checked: they are validated only against #eceaf1. */
 .file-toolbar__folder > svg path {
-fill: var(--fg);
+  fill: var(--fg);
 }
 .file-toolbar__git-stats {
 position: absolute;
 inset: 4px 3px 3px;
 z-index: 2;
 overflow: hidden;
-font-size: 0.38rem;
-font-weight: 700;
+/* 0.46rem = 7.36px, up from 6.08px. The folder box grew from 24x18 to
+28x22 to make room, which still leaves the chevron+folder stack at 38px
+inside the 40px painted circle. Weight 800 and 0.01em tracking thicken and
+separate the glyphs so a 7px two- or three-digit count stays crisp. */
+font-size: 0.46rem;
+font-weight: 800;
+letter-spacing: 0.01em;
 line-height: 1;
 font-variant-numeric: tabular-nums;
-/* Geometry matches the original. The counts are drawn thin (weight
-700 at 0.38rem) as plain colored glyphs on the light folder silhouette,
-so they stay legible without growing past the folder's edges. */
+/* The counts are plain colored glyphs on the light folder silhouette, one
+to a corner, so they stay legible without growing past the folder's
+edges. */
 pointer-events: none;
 }
 .file-toolbar__git-additions,
 .file-toolbar__git-deletions {
 position: absolute;
-max-width: 1rem;
+max-width: 100%;
 overflow: hidden;
 white-space: nowrap;
+/* Each count owns a row of its own (top-left / bottom-right), so the box may
+be as wide as the stats container - the two can never collide. Capping it
+narrower than the container is what clips long counts: '+9.9k' needs 18.4px
+at 7.36px and a 1.15rem cap holds only 18px, cutting the last glyph. The
+widest form the formatter emits is 5 characters ('+' plus 4) at ~18.4px,
+which fits the 22px container with room to spare. */
 /* No stroke, no shadow — the digits are plain colored glyphs over the
-folder icon. Geometry and size stay identical to the original. */
+folder icon. Geometry and size stay identical to the original layout. */
 }
 .file-toolbar__git-additions {
 top: 0;
 left: 0;
-/* Mid green, 4.5:1 on the pinned --fg fill. Dark enough to clear AA at
-this size while staying a real green instead of the near-black the
-unpinned fill forced (OKLCH chroma 0.173 vs 0.095). Because the folder
-fill is pinned this one color covers every trigger state - there is no
-per-state override. */
-color: #007c00;
+/* Mid green at 6.1:1 on the pinned --fg fill (chroma 0.150). Sized and
+colored so the count reads at 7px; because the folder fill is pinned this
+one color covers every trigger state - there is no per-state override. */
+color: #006600;
 }
 .file-toolbar__git-deletions {
 right: 0;
 bottom: 0;
-/* Pure red, 4.5:1 on the same pinned fill (chroma 0.227 vs 0.137 before). */
-color: #d70000;
+/* Pure red at 6.0:1 on the same pinned fill (chroma 0.198). */
+color: #b30000;
 }
 .file-toolbar__stack svg {
   display: block;
