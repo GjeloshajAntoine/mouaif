@@ -49,6 +49,8 @@ export function ToolPopup(props) {
     onToggleSkills,
     onSaveToolAuth,
     onSaveMcpAuth,
+    onReloadMcpServer,
+    mcpStartBusy,
     autoRetry,
     onToggleAutoRetry
   } = props;
@@ -128,6 +130,18 @@ files: 'file'
       namePrefix: 'popup-mcp',
       onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
     });
+    // Busy marker for the row's "…" start control. Without it the button
+    // looked dead for the whole multi-second MCP cold start.
+    if (g.serverId && g.serverId === mcpStartBusy) g.reloadBusy = true;
+  }
+
+  // Start a stopped-but-enabled MCP server on demand, exactly like the
+  // transcript tools card does — the popup used to render ToolTree
+  // without any handler, so its "…" control silently did nothing.
+  function handleReloadServer(group) {
+    const id = group && group.serverId;
+    if (!id || !onReloadMcpServer) return;
+    onReloadMcpServer(id);
   }
 
   function handleToggleGroup(groupId, checked) {
@@ -235,14 +249,15 @@ files: 'file'
           }, '\u00D7')
         ),
         h('div', { class: 'tool-popup__body' },
-h(ToolTree, {
-groups,
-onToggleGroup: handleToggleGroup,
-onToggleTool: handleToggleTool,
-collapsedByDefault: true,
-class: 'tool-popup__tree'
-})
-),
+          h(ToolTree, {
+            groups,
+            onToggleGroup: handleToggleGroup,
+            onToggleTool: handleToggleTool,
+            onReloadServer: handleReloadServer,
+            collapsedByDefault: true,
+            class: 'tool-popup__tree'
+          })
+        ),
         h('div', { class: 'tool-popup__foot' },
 h('label', { class: 'switch switch--sm' },
 h('input', {

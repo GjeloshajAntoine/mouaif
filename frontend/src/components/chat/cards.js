@@ -162,13 +162,16 @@ function buildToolsCard(state) {
 
   async function onReloadServer(group) {
     // Start the stopped-but-enabled MCP server via the lifecycle
-    // endpoint, then refresh the tree so its live tools appear.
+    // endpoint, then refresh the tree so its live tools appear. The
+    // start + refresh dance lives on the hook (state._startMcpServer)
+    // so the tools popup's twin "…" control runs the same code — the
+    // popup used to render ToolTree with no handler at all, which made
+    // its control a no-op.
     const id = group && group.serverId;
-    if (!id || !state._reloadMcpServer) return;
+    if (!id || !state._startMcpServer) return;
     group.reloadBusy = true;
     if (state._updateToolsCard) state._updateToolsCard();
-    const ok = await state._reloadMcpServer(id);
-    if (ok && state._reloadMcpServerRefresh) await state._reloadMcpServerRefresh();
+    await state._startMcpServer(id);
     group.reloadBusy = false;
     if (state._updateToolsCard) state._updateToolsCard();
   }

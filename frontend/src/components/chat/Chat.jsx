@@ -35,6 +35,7 @@ export function ChatView(props) {
   const {
     refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
+mcpStartBusy,
 chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading, customActions,
 setFileEditorOpen,
     setImageAttachments,
@@ -341,6 +342,11 @@ onToggleTool: s.state._toggleTool,
             onToggleSkills: s.state._toggleSkills,
             onSaveToolAuth: s.state._saveToolAuth,
             onSaveMcpAuth: s.state._saveMcpAuth,
+            // Start a stopped-but-enabled MCP server from the tree's "…"
+            // control. The popup rendered ToolTree without this handler,
+            // so its control was inert (the transcript card's twin worked).
+            onReloadMcpServer: s.state._startMcpServer,
+            mcpStartBusy,
             // Render stamps keep ref-backed authorization and catalog data fresh.
             authStamp,
             toolDataStamp

@@ -65,6 +65,12 @@ export function useChatState(props) {
   // segments (the chat tools card re-renders imperatively instead).
   const [authStamp, setAuthStamp] = useState(0);
   const [toolDataStamp, setToolDataStamp] = useState(0);
+  // Server id of the MCP server currently being started from a tool tree's
+  // reload control (null when idle). Both surfaces that render the tree —
+  // the transcript card and the tools popup — read it so the "…" control
+  // shows busy state instead of a dead-looking button during the
+  // multi-second cold start.
+  const [mcpStartBusy, setMcpStartBusy] = useState(null);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [chatSwitcherList, setChatSwitcherList] = useState([]);
   const [chatSwitcherLoading, setChatSwitcherLoading] = useState(false);
@@ -654,6 +660,27 @@ await sendTurn(state, refs, {
     if (state._updateToolsCard) state._updateToolsCard();
   };
 
+  // Start a stopped-but-enabled MCP server from a tool tree's reload
+  // control, with the busy marker both tree surfaces render. The chat
+  // tools card routes through this too, so the popup's control cannot
+  // drift into a dead button again: the popup rendered ToolTree without
+  // an `onReloadServer` handler, which left its "…" control doing
+  // nothing at all.
+  state._startMcpServer = async (serverId) => {
+    const d = projectDir;
+    if (!d || !serverId || mcpStartBusy) return false;
+    setMcpStartBusy(serverId);
+    try {
+      const ok = await state._reloadMcpServer(serverId);
+      // Refresh either way: a failed start still leaves the row showing
+      // why (stopped / no tools) instead of a stale ready state.
+      await state._reloadMcpServerRefresh();
+      return ok;
+    } finally {
+      setMcpStartBusy(null);
+    }
+  };
+
   // ---- Initial load ----------------------------------------
   useEffect(() => {
     let cancelled = false;
@@ -1167,6 +1194,9 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   return {
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
+    // Server id being started from a tool tree's reload control (null when
+    // idle) — the tools popup renders busy state from it.
+    mcpStartBusy,
 setImageAttachments, setFileEditorOpen,
   setComposerText,
   // Reactive model-picker props (rendered by ModelPickerField)

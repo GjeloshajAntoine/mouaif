@@ -8,10 +8,24 @@ A floating popover opened from the chat view top bar lets the user inspect and c
 3. Each tool group can be expanded/collapsed with the chevron; each tool has a checkbox to toggle it on/off for the current chat.
 4. For built-in tool groups (shell, subagent, ask_user, task, progress updates, file tools), an Off/Ask/Allow segment control is shown inline.
 5. MCP servers appear as their own group; the parent checkbox flips all that server's tools in the per-chat filter at once (the server itself is always on). MCP authorization renders exactly like the chat Tools card and project settings: each server row carries an Off/Ask/Allow segment for that server's override. No separate override-reset button is shown in the compact popup.
-6. Agent files found at the project root appear under the tool list as an always-expanded group; every discovered file is shown with its own checkbox. Toggling any agent-file checkbox applies the chat-level **Use agent files** state to all discovered files.
-7. Skills found in `.agents/skills/*/SKILL.md` appear below agent files as an always-expanded group with a checkbox next to each skill. Toggling any available skill checkbox applies the chat-level Skills on/off state to the next turn.
-8. Tools that have been called in the current chat session show a dot badge (●).
-9. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
+6. A stopped-but-enabled MCP server also shows a **…** control on its row. Tapping it starts that server on demand (the same action the transcript Tools card exposes), so the server's live tools appear without waiting for the next tool call. While the server is starting, the control pulses and is disabled; the row flips to its live state when the tools are discovered. A server whose authorization is **Off** never shows the control — it is not startable.
+7. Agent files found at the project root appear under the tool list as an always-expanded group; every discovered file is shown with its own checkbox. Toggling any agent-file checkbox applies the chat-level **Use agent files** state to all discovered files.
+8. Skills found in `.agents/skills/*/SKILL.md` appear below agent files as an always-expanded group with a checkbox next to each skill. Toggling any available skill checkbox applies the chat-level Skills on/off state to the next turn.
+9. Tools that have been called in the current chat session show a dot badge (●).
+10. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
 
 ## Implementation notes
 The popup is viewport-fixed but anchored from the globe trigger and the full `.chat-view__head` bounds. Its height is capped by the remaining visual viewport, `60dvh`, and `400px`; the tool tree body scrolls while the header, close control, and auto-retry footer remain reachable.
+
+Both tree surfaces render the same `ToolTree` component, so every control it can draw has to be wired on both sides. The MCP start control was not: the popup rendered `ToolTree` without `onReloadServer`, so its **…** button had no handler and tapping it did nothing, while the transcript card's identical button started the server. The start action now lives on the chat state hook (`state._startMcpServer`), which sets the busy marker, calls `POST /api/mcp/servers/:id/start`, refreshes the server list and tool catalog, and re-renders both surfaces. The popup receives it as `onReloadMcpServer` plus the `mcpStartBusy` id, and the transcript card calls the same action instead of inlining its own copy.
+
+```jsx
+h(ToolTree, {
+  groups,
+  onToggleGroup: handleToggleGroup,
+  onToggleTool: handleToggleTool,
+  onReloadServer: handleReloadServer, // without this the "…" control is inert
+  collapsedByDefault: true,
+  class: 'tool-popup__tree'
+})
+```

@@ -142,6 +142,17 @@ appearance: none;
 .tool-tree__reload:hover { color: var(--fg); background: var(--surface-3); }
 .tool-tree__reload:active { background: var(--surface-3); }
 .tool-tree__reload:disabled { opacity: 0.5; cursor: default; }
+/* Starting state: a plain dimmed "…" read as a dead button during the
+   multi-second MCP cold start, so the control now pulses while the
+   server spins up. */
+.tool-tree__reload.is-busy { animation: tool-tree-pulse 1.1s var(--ease, ease-in-out) infinite; }
+@keyframes tool-tree-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-tree__reload.is-busy { animation: none; opacity: 0.6; }
+}
 .tool-tree__reload:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Child list */

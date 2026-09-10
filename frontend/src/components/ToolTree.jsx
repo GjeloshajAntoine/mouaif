@@ -155,9 +155,14 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
             ? null
             : h('button', {
                 type: 'button',
-                class: 'tool-tree__reload',
-                title: 'Start MCP server ' + group.name,
-                'aria-label': 'Start MCP server ' + group.name,
+                class: 'tool-tree__reload' + (group.reloadBusy ? ' is-busy' : ''),
+                title: group.reloadBusy
+                  ? 'Starting MCP server ' + group.name + '…'
+                  : 'Start MCP server ' + group.name,
+                'aria-label': group.reloadBusy
+                  ? 'Starting MCP server ' + group.name
+                  : 'Start MCP server ' + group.name,
+                'aria-busy': group.reloadBusy ? 'true' : undefined,
                 disabled: !!group.reloadBusy,
                 onClick: (e) => {
                   e.stopPropagation();
