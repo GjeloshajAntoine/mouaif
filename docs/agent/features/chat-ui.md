@@ -48,6 +48,17 @@ Tool-card rendering is isolated from the network reader. A malformed or
 unsupported tool payload can fail to render without aborting the remaining SSE
 stream or suppressing the assistant response that follows the tool result.
 
+Call and result cards are keyed by one shared `data-tool-id`. Because not every
+provider echoes a tool-call id — and a few internal call sites pass `id: null` on
+purpose (a subagent that failed to start, a tool or MCP error result) — the
+call card mints an id and parks it in `refs._anonToolCalls`;
+`appendToolResultCard` adopts a parked id when the result carries none of its
+own, preferring the entry whose tool name matches, and never reusing an entry
+whose card has left the tree. Both sides previously minted an independent random
+id in that case, so the result could never find the call card: the transcript
+grew a duplicate result card and the call card stayed on “Waiting for
+results…” forever. `scripts/test-tool-call-id-matching.js` covers this.
+
 When authorization is required, the authorization card is emitted before the
 tool-call card. The call appears as “running” only after approval; denial or a
 disabled tool still produces an adjacent call/result pair. This avoids leaving

@@ -524,6 +524,34 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   return head;
 }
 
+// Anonymous tool-call registry.
+//
+// Not every provider echoes a tool-call id, and a few internal call sites
+// deliberately pass `id: null` (a subagent that failed to start, an MCP
+// or tool error result). Call and result sides used to mint an INDEPENDENT
+// random id in that case, so the result could never find its call card:
+// it appended a second card and the call card stayed stuck on
+// "Waiting for results…" forever. Remember the id minted for the call so
+// the matching result can adopt it, preferring a name match when several
+// unidentified calls are in flight.
+function registerAnonToolCall(refs, id, name, card) {
+if (!Array.isArray(refs._anonToolCalls)) refs._anonToolCalls = [];
+refs._anonToolCalls.push({ id, name, card });
+}
+function takeAnonToolCallId(refs, name) {
+const list = Array.isArray(refs._anonToolCalls) ? refs._anonToolCalls : [];
+// Drop entries whose card is no longer in the tree (a rebuild wiped it)
+// so a stale id can never be handed to an unrelated result.
+const live = list.filter((entry) => entry && entry.card && entry.card.isConnected);
+refs._anonToolCalls = live;
+const wanted = normalizeToolName(name);
+let index = live.findIndex((entry) => entry.name === wanted);
+if (index === -1) index = 0;
+const entry = live[index];
+if (!entry) return null;
+live.splice(index, 1);
+return entry.id;
+}
 // appendToolCallCard(toolCall, refs)
 //
 // Render a tool_call event as a compact card above the live message
@@ -591,7 +619,11 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
 // would expose placeholder text instead of actual tool output.
   transcriptInsert(refs, card);
   afterTranscriptAppend(refs, true);
-}
+  // Park the minted id when the provider gave us none, so the matching
+  // result can adopt it instead of appending a duplicate card.
+  if (!toolCall.id) registerAnonToolCall(refs, id, normalizeToolName(toolCall.name), card);
+  }
+
 
 // handleShellOutputEvent(data, refs)
 //
@@ -771,8 +803,12 @@ export function handleSubagentStreamEvent(ev, data, refs) {
 // see the result regardless of order. Tap the header row to expand.
 export function appendToolResultCard(toolResult, refs, isReplay) {
   if (!refs.transcript.current) return;
-  const id = toolResult.id;
-  let card = id ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(id) + '"]') : null;
+  // Adopt the id of an unidentified call card when this result has none of
+  // its own. Without this the two sides disagree on the key and the call
+  // card is left stranded on "Waiting for results…" next to a duplicate
+  // result card.
+  const id = toolResult.id || takeAnonToolCallId(refs, toolResult.name);
+  let card = id ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(id)) + '"]') : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
@@ -1674,6 +1710,9 @@ export function renderTranscript(state, refs) {
   // leaves them in place; reanchorOverlayCards moves them back to the
   // bottom once the rebuild finishes.
   clearTranscriptRows(refs.transcript.current);
+  // The rows just discarded took their anonymous tool-call registrations
+  // with them; anything re-registered below belongs to the new tree.
+  refs._anonToolCalls = [];
   refs.setupCard.current = null;
   if (!state.messages.length) {
     const card = buildSetupCardForMount(refs, state);
