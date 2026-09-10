@@ -23,3 +23,14 @@ if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_u
 ```
 
 - The client subscription is deduped per `(projectDir, chatId)` and reserves its map entry synchronously, so a load plus a reconcile tick can never open two sockets.
+
+- `closeLive(state, projectDir, chatId)` requires the caller's own
+  `projectDir`/`chatId`, captured by the effect closure that owns the
+  subscription. `state` is a stable ref object whose `props` field is
+  reassigned during every render, so a chat-switch cleanup would otherwise
+  resolve the key from the chat the user moved *to* and leak the previous
+  chat's socket. `dispatchLiveEvent` and `handleLiveRunEnd` also verify the
+  subscription key against `state.props` before touching `refs`, so a
+  socket that is still draining after a switch cannot paint into the
+  transcript that replaced it (notably `removeOverlayCards`, which would
+  otherwise wipe the new chat's pending authorization card).

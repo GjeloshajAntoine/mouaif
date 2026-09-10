@@ -1081,7 +1081,10 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     // Drop the per-chat live subscription so a backgrounded/closed tab
     // doesn't hold a socket for a chat the user left. The owner stream
     // keeps buffering regardless — returning re-subscribes and replays.
-    closeLive(state);
+    // Pass THIS effect's identity: `state.props` has already been
+    // overwritten with the chat the user moved to by the time a
+    // chat-switch cleanup runs.
+    closeLive(state, projectDir, chatId);
     // Stop this client's own turn reader too. The server keeps running the
     // turn, but a reader left alive would keep writing deltas into
     // `state.messages` and render them into the transcript mounted by

@@ -79,7 +79,7 @@ export function subscribeLive(state, refs) {
             handleLiveRunEnd(ev, refs, state, key);
             return; // run finished — close
           }
-          dispatchLiveEvent(ev, refs, state);
+          dispatchLiveEvent(ev, refs, state, key);
         }
       }
     } catch { /* socket closed / aborted */ }
@@ -97,20 +97,39 @@ export function subscribeLive(state, refs) {
   return true;
 }
 
-// closeLive(state)
+// closeLive(state, projectDir, chatId)
 //
-// Drop the current chat's live subscription (call on unmount so a
-// backgrounded/closed tab doesn't hold a socket for a chat the user
+// Drop a live subscription (call on chat switch / unmount so a
+// backgrounded or closed tab doesn't hold a socket for a chat the user
 // left). No-op when this client doesn't own a subscription for it.
-export function closeLive(state) {
-  const { projectDir, chatId } = state.props;
-  if (!projectDir || !chatId) return;
-  const key = projectDir + '::' + chatId;
+//
+// Callers MUST pass the projectDir/chatId captured by their own effect
+// closure. `state` is a stable ref object whose `props` field is
+// reassigned during every render, so on a chat switch it already points
+// at the chat the user moved TO by the time the cleanup runs — resolving
+// the key from it would always miss and leak the previous chat's socket.
+export function closeLive(state, projectDir, chatId) {
+  const dir = projectDir || (state.props && state.props.projectDir);
+  const id = chatId || (state.props && state.props.chatId);
+  if (!dir || !id) return false;
+  const key = dir + '::' + id;
   const entry = liveByChat.get(key);
-  if (!entry) return;
+  if (!entry) return false;
   liveByChat.delete(key);
   setLiveRunState(state, key, { active: false, connected: false });
   if (entry.abort) entry.abort.abort();
+  return true;
+}
+
+// isCurrentChat(state, key) -> boolean
+//
+// Whether a subscription key still belongs to the chat mounted right now.
+// A socket for a chat the user has left keeps draining until its abort is
+// observed, and must not paint into the transcript that replaced it.
+function isCurrentChat(state, key) {
+  const { projectDir, chatId } = state.props || {};
+  if (!projectDir || !chatId) return false;
+  return !key || key === projectDir + '::' + chatId;
 }
 
 // dispatchLiveEvent(ev, refs, state)
@@ -120,8 +139,11 @@ export function closeLive(state) {
 // progress_update creates/updates a progress card; authorization prompts
 // mount the same overlay cards as the owner stream so returning to a chat
 // shows the approval UI immediately instead of waiting for /pending.
-function dispatchLiveEvent(ev, refs, state) {
+function dispatchLiveEvent(ev, refs, state, key) {
   if (!refs.transcript || !refs.transcript.current) return;
+  // The subscription belongs to a chat the user may have left; its socket
+  // can still deliver a frame or two before the abort is observed.
+  if (!isCurrentChat(state, key)) return;
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { return; }
   if (!data || typeof data !== 'object') return;
@@ -161,6 +183,10 @@ function dispatchLiveEvent(ev, refs, state) {
 }
 
 function handleLiveRunEnd(ev, refs, state, key) {
+  // A run that ended for a chat the user already left must not repaint the
+  // chat mounted now — `removeOverlayCards` in particular would wipe a
+  // pending authorization card belonging to the new chat.
+  if (!isCurrentChat(state, key)) return;
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { data = null; }
   if (data && typeof data.nextLiveSeq === 'number' && data.nextLiveSeq > (state.nextLiveSeq || 0)) state.nextLiveSeq = data.nextLiveSeq;
