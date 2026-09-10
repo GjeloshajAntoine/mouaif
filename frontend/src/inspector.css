@@ -386,11 +386,6 @@ min-width: 0;
   .inspector__panelbar {
     flex-wrap: nowrap;
   }
-  .inspector__panelchip--reset {
-    width: auto;
-    margin-top: 0;
-    margin-left: auto;
-  }
   .inspector__panel-body .inspector__metrics {
     /* 4 columns on wider screens — fits a row of 8
        counters without horizontal scroll on a 600 px
@@ -511,17 +506,6 @@ min-width: 0;
 .inspector__row-status--error,
 .inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
 .inspector__row-status--pending { color: var(--muted); }
-
-.inspector__sheet-note {
-  margin: 6px 0 0;
-  font-size: 0.74rem;
-  line-height: 1.4;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 6px 8px;
-}
 
 /* ---- Inspector: targets list --------------------------------------- */
 /* Card-based targets list. Each row is a tappable card: type chip

@@ -214,8 +214,6 @@ body {
 .icon-btn:hover { background: var(--surface-2); color: var(--fg); }
 .icon-btn:active { background: var(--surface-3); }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.icon-btn--danger { color: var(--danger); }
-.icon-btn--danger:hover { background: var(--danger-soft); }
 .icon-btn--close { color: var(--fg-soft); }
 .icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
 /* .icon-btn--labeled — an icon button that also shows a small text label
@@ -246,28 +244,11 @@ body {
   max-width: 100%;
   color: inherit;
 }
-.shimmer {
-  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-3) 50%, var(--surface) 100%);
-  background-size: 200% 100%;
-  animation: mouaif-shimmer 1.4s linear infinite;
-}
-.flex-1 { flex: 1; min-width: 0; }
-.flex-row { display: flex; flex-direction: row; }
-.flex-col { display: flex; flex-direction: column; }
-.tap-min { min-height: var(--tap); }
 .pill-dot {
   width: 8px; height: 8px; padding: 0; border-radius: 50%; border: 0;
   overflow: hidden; white-space: nowrap; text-indent: 200%;
   font-size: 0; line-height: 0; color: transparent;
 }
-.scroll-y {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.scroll-y::-webkit-scrollbar { width: 6px; }
-.scroll-y::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-sm); }
 .empty-icon {
   width: 28px; height: 28px; border-radius: var(--r-sm);
   background: var(--accent-soft); color: var(--accent);

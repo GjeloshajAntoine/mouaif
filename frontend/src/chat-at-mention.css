@@ -85,21 +85,6 @@ color: var(--accent);
   color: var(--accent);
 }
 
-/* ---- Popup headers ---------------------------------------------- */
-
-.at-mention__header {
-  font-size: 0.62rem;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 4px 8px 2px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
 .at-mention__item {
 display: flex;
 align-items: center;

@@ -33,7 +33,6 @@ background: transparent; color: var(--fg); text-align: left; cursor: pointer;
 .prompts__picker-check { flex: 0 0 1rem; color: var(--accent); font-weight: 700; }
 .prompts__picker-option-label { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
 .prompts__picker-preset { color: var(--muted); font-size: 0.68rem; }
-.prompts__picker-empty { padding: 10px; color: var(--muted); font-size: 0.76rem; }
 .prompts__picker-section {
 padding: 6px 10px 4px; border-bottom: 1px solid var(--border);
 color: var(--muted); font-size: 0.66rem; font-weight: 600;
@@ -396,7 +395,6 @@ transform: rotate(45deg); }
   linear-gradient(currentColor, currentColor) 100% 100% / 5px 5px;
   background-repeat: no-repeat; }
 .settings-project__section-icon--chat { background: var(--success-soft); color: var(--success); }
-.settings-project__section-icon--skills { background: var(--accent-soft); color: var(--accent); }
 .settings-project__section-icon--tools { background: var(--warning-soft); color: var(--warning); }
 .settings-project__section-icon--more { background: var(--surface-3); color: var(--fg-soft); }
 
@@ -557,8 +555,6 @@ transform: rotate(45deg); }
 .settings-project__agents-list { list-style: none; margin: 0; padding: 0; }
 .settings-project__agents-list > li + li { border-top: 1px solid var(--border); }
 .settings-project__agent-link { min-height: var(--tap); padding: 7px 10px; align-items: center; }
-.settings-project__agent-field { margin-bottom: 6px; }
-.settings-project__agent-field .label { font-size: 0.82rem; color: var(--muted); display: block; margin-bottom: 2px; }
 .settings-project__add-agent { margin: 8px 12px 10px; width: calc(100% - 24px); }
 
 /* ---- MCP Registry browse ----------------------------------------- */

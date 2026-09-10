@@ -527,49 +527,6 @@ overscroll-behavior: contain;
 padding: 4px 0;
 min-height: 0;
 }
-.tool-popup__actions {
-margin: 0 0 0.35rem;
-padding: 0 0.35rem 0.4rem;
-border-bottom: 1px solid var(--border);
-}
-.tool-popup__section-title {
-padding: 0.25rem 0.35rem;
-color: var(--muted);
-font-size: 0.62rem;
-font-weight: 700;
-letter-spacing: 0.06em;
-text-transform: uppercase;
-}
-.tool-popup__action {
-width: 100%;
-min-height: 44px;
-display: flex;
-align-items: center;
-gap: 0.55rem;
-padding: 0.4rem 0.45rem;
-border: 0;
-border-radius: var(--r-sm);
-color: var(--fg);
-background: transparent;
-font: inherit;
-text-align: left;
-}
-.tool-popup__action:active { background: var(--surface-3); }
-.tool-popup__action-icon {
-width: 2rem;
-height: 2rem;
-flex: 0 0 2rem;
-display: inline-flex;
-align-items: center;
-justify-content: center;
-border-radius: var(--r-sm);
-color: var(--accent);
-background: var(--surface-3);
-font: 700 0.65rem var(--font-mono);
-}
-.tool-popup__action-body { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.tool-popup__action-label { overflow: hidden; font-size: 0.76rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.tool-popup__action-meta { color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem; }
 
 /* Keep the wrapper layout-neutral; only the popup itself is viewport-fixed. */
 .tool-popup__layer {
