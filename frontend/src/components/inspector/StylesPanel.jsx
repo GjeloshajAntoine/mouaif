@@ -149,7 +149,12 @@ if (alive.current) setBusy(false);
 }
 async function apply() {
 if (!propName) { setError('Property is required.'); return; }
-await commit(propName, (value || '').trim());
+const v = (value || '').trim();
+// An empty value is not a no-op: `style.setProperty(p, '')` drops the
+// declaration, so "Apply" with a blank field would silently unset the
+// property the user came here to change. Removal is explicit (Remove).
+if (!v) { setError('Value is required — use Remove to drop the property.'); return; }
+await commit(propName, v);
 }
 // Steppers apply immediately: on a phone, tapping + while watching the
 // pinned preview is the fastest way to size something.
@@ -246,7 +251,7 @@ h('div', { class: 'inspector__sheet-actions' },
 h('button', {
 class: 'btn inspector__style-apply',
 type: 'button',
-disabled: busy || !propName,
+disabled: busy || !propName || !(value || '').trim(),
 onClick: apply
 }, busy ? 'Applying…' : 'Apply'),
 props.isRemove
@@ -588,13 +593,22 @@ h('span', { class: 'inspector__styles-val' }, row.value || '')
 : h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap a chip below to add one.'),
 h('div', { class: 'inspector__styles-add' },
 h('span', { class: 'inspector__styles-add-label' }, 'Add'),
-COMMON_CSS.map(([prop, desc]) => h('button', {
-class: 'inspector__styles-chip',
+COMMON_CSS.map(([prop, desc]) => {
+// A chip for a property that is already declared re-opens it with its
+// current value. Opening it blank forced the value to be retyped from
+// memory, and an accidental Apply wrote an empty value (which drops the
+// declaration).
+const current = inlineRows.find((x) => x.prop === prop);
+return h('button', {
+class: 'inspector__styles-chip' + (current ? ' is-set' : ''),
 type: 'button',
-title: desc,
-'aria-label': 'Add ' + desc + ' (' + prop + ')',
-onClick: () => setEdit({ prop, value: '' })
-}, prop))
+title: current ? desc + ' — set to ' + current.value : desc,
+'aria-label': current
+? 'Edit ' + desc + ' (' + prop + '), currently ' + current.value
+: 'Add ' + desc + ' (' + prop + ')',
+onClick: () => setEdit({ prop, value: current ? current.value : '' })
+}, prop);
+})
 )
 ),
 h('div', { class: 'inspector__styles-section' },
