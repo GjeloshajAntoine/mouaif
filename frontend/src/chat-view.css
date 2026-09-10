@@ -24,6 +24,14 @@ padding: 0 8px;
 border-bottom: 1px solid var(--border);
 flex: 0 0 auto;
 position: relative;
+/* `--read-max` is only inert on a wide frame: it sits on the same
+measure as the transcript rows and composer below. Without it the
+title stack (`flex: 1 1 96px`) grew into the whole frame and pushed
+the icon column hard right — on a 1152px frame the back button and
+the gear ended up ~1000px apart with an empty middle. */
+max-width: var(--read-max, 44rem);
+width: 100%;
+margin-inline: auto;
 }
 
 .chat-view__setup {

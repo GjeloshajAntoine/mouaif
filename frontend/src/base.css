@@ -75,13 +75,14 @@
      phone-width strip.
      Three stops, so that "more room" never becomes a 160-character line:
        --shell-max  ceiling for the frame. The header and the tab bar
-                    paint to its edges; wide tool surfaces (Inspector,
-                    file editor) get all of it.
-       --list-max   single-column lists and inset groups (.group, the
-                    project / provider lists) — roughly twice a phone's
-                    width, then centred.
+                    paint to its edges; the modal sheets (sheets.css,
+                    file-editor.css) size themselves separately.
+       --list-max   the content column of every non-chat view — lists,
+                    inset groups, view heads, hints and form rows —
+                    roughly twice a phone's width, then centred.
        --read-max   long-form text (chat bubbles, transcript cards, the
-                    composer) where line length matters more than width. */
+                    chat head, the composer) where line length matters
+                    more than width. */
   --shell-max: 72rem;   /* 1152px */
   --list-max:  56rem;   /*  896px */
   --read-max:  44rem;   /*  704px */

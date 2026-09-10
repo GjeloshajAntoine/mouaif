@@ -96,22 +96,40 @@ padding-top: 0;
   background: var(--bg);
 }
 /* Chat moves the safe-area inset into its painted status row, avoiding a
-   second empty strip below the composer. Other drill-in views keep the
-   inset on main because they do not have a persistent bottom surface. */
+second empty strip below the composer. Other drill-in views keep the
+inset on main because they do not have a persistent bottom surface. */
 .app__main--flush.app__main--chat {
-  padding-bottom: 0;
+padding-bottom: 0;
 }
+/* ---- Content column on a wide frame -------------------------------
+   A route renders one or more direct children into .app__main (a
+   <section> for most views, and a view-head / hint / page-bar sibling
+   for the flush ones). Every one of them except chat is a single column
+   of lists, groups, form rows and hint paragraphs. Letting that column
+   grow to the whole frame made a 1152px-wide "turn this on" row with its
+   value marooned ~900px from its label, 130-character hint lines, and a
+   view head whose title no longer lined up with the content below it.
+   Capping the children (rather than each list) is what keeps a page
+   internally consistent: head, prose, groups and cards share one column.
+   Chat is excluded — it centres its own surfaces on the narrower
+   --read-max (head, transcript rows, composer).
+   Scoped to >= 900px on purpose: below that the cap never binds anyway,
+   and staying out of the cascade means a phone keeps every element's own
+   inline margin, so nothing about the narrow layout can drift. */
+@media (min-width: 900px) {
+  .app__main > *:not(.chat-view) {
+    width: 100%;
+    max-width: var(--list-max, 56rem);
+    margin-inline: auto;
+  }
+}
+
 /* Groups: iOS-style inset lists. A <section class="group"> holds a
    title (optional, .group__title) and a list of rows. The list has
    no border, no shadow, and only a single rounded container — the
    mobile-native shape (vs. "stacked cards" on a desktop UI). */
 .group {
-  /* `auto` inline margins keep the 10px phone gutter below the list
-     measure and centre the group once the frame is wider than it: a
-     1152px frame would otherwise render a "turn this on" row 1130px
-     wide with its value 900px away from its label. */
-  margin: 10px auto 0;
-  max-width: var(--list-max, 56rem);
+  margin: 10px 10px 0;
   padding: 0;
   border: 0;
 }
@@ -166,14 +184,11 @@ padding-top: 0;
 .sprojects__list,
 .providers__list {
   list-style: none;
-  margin: 0 auto;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Same list measure as .group: the cards keep their phone proportions
-     on a wide frame instead of stretching to 1150px. */
-  max-width: var(--list-max, 56rem);
 }
 .group__row {
   display: flex;
