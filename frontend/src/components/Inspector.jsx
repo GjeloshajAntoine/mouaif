@@ -1155,6 +1155,14 @@ useEffect(() => {
     // resolved values so the hoisted "changed" rows in both lists show the
     // value that was actually just applied.
     readElementStyles: handlers ? handlers.readElementStyles : null,
+    // Element tree navigation: the breadcrumb and child chips walk the DOM
+    // from the selected element, which is far faster on a phone than
+    // re-picking a parent or child on the live preview. `describeNode` turns
+    // the resulting objectId back into a full node model.
+    describeNode: handlers ? handlers.describeNode : null,
+    readElementTree: handlers ? handlers.readElementTree : null,
+    selectAncestorNode: handlers ? handlers.selectAncestorNode : null,
+    selectChildNode: handlers ? handlers.selectChildNode : null,
     pickHandlerRef: stylesPickRef,
     pickMode: stylesActive,
     onPickModeChange: setStylesActive

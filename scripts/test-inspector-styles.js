@@ -196,7 +196,69 @@ async function main() {
   const empty = await handlers.captureElementShot('obj-1');
   assert.strictEqual(empty, null, 'a zero-size element yields no shot');
 
-  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview)');
+  // Element tree navigation — readElementTree / selectAncestorNode /
+  // selectChildNode. Walking the DOM from the selected element is what makes
+  // the Styles panel usable on a phone: re-picking on the live preview for
+  // every parent or child is the slowest possible way to move one level, and
+  // overlapping elements make it unreliable. The guards here are that the
+  // ancestor read reports real parent-hop counts (the panel hands one back to
+  // move up), that the caps are applied, and that a step returns a complete
+  // node model — not a bare objectId — so the panel adopts it exactly like a
+  // fresh pick.
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/return \{ ancestors: anc/.test(p.functionDeclaration)) {
+      return Promise.resolve({ result: { value: {
+        ancestors: [{ label: 'main#app', levels: 1 }, { label: 'body', levels: 2 }],
+        children: [{ label: 'span.count' }, { label: 'a' }],
+        childCount: 5,
+        label: 'div#hero.card'
+      } } });
+    }
+    if (/e=e\.parentElement/.test(p.functionDeclaration)) return Promise.resolve({ result: { objectId: 'obj-parent' } });
+    if (/k\[i\] \|\| null/.test(p.functionDeclaration)) return Promise.resolve({ result: { objectId: 'obj-kid' } });
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+
+  const tree = await handlers.readElementTree('obj-1');
+  assert.ok(tree, 'readElementTree returns a tree');
+  assert.strictEqual(tree.ancestors.length, 2, 'ancestors are reported nearest-first');
+  assert.strictEqual(tree.ancestors[0].label, 'main#app', 'each ancestor carries a tag#id.class label');
+  assert.strictEqual(tree.ancestors[1].levels, 2, 'each ancestor carries the parent hops needed to reach it');
+  assert.strictEqual(tree.children.length, 2, 'direct children are reported for the child chips');
+  assert.strictEqual(tree.childCount, 5, 'the real child count is reported so the panel can show what was left off');
+  const treeCall = calls.slice(-1).find((c) => /return \{ ancestors: anc/.test(c.params.functionDeclaration));
+  assert.ok(treeCall, 'readElementTree dispatches one callFunctionOn');
+  assert.strictEqual(treeCall.params.objectId, 'obj-1', 'the tree read targets the selected element');
+  assert.strictEqual(treeCall.params.returnByValue, true, 'the tree read is by value — no objectId is leaked for a label');
+  assert.strictEqual(await handlers.readElementTree(null), null, 'no objectId yields no tree');
+
+  const beforeUp = calls.length;
+  const up = await handlers.selectAncestorNode('obj-1', 2);
+  assert.ok(up, 'selectAncestorNode returns a model');
+  assert.strictEqual(up.objectId, 'obj-parent', 'the step up is described as a full node model');
+  assert.strictEqual(up.inlineProps.length, 2, 'the stepped-to element gets the same model as a pick');
+  const hopCall = calls.slice(beforeUp).find((c) => /e=e\.parentElement/.test(c.params.functionDeclaration));
+  assert.ok(hopCall, 'selectAncestorNode dispatches one callFunctionOn');
+  assert.deepStrictEqual(Array.from(hopCall.params.arguments.map((a) => a.value)), [2], 'the hop count is passed as an argument');
+  assert.strictEqual(hopCall.params.returnByValue, false, 'the step up resolves a real element objectId');
+  const beforeClamp = calls.length;
+  await handlers.selectAncestorNode('obj-1', 99);
+  const clampCall = calls.slice(beforeClamp).find((c) => /e=e\.parentElement/.test(c.params.functionDeclaration));
+  assert.deepStrictEqual(Array.from(clampCall.params.arguments.map((a) => a.value)), [8], 'the hop count is clamped to the ancestor cap');
+
+  const beforeDown = calls.length;
+  const down = await handlers.selectChildNode('obj-1', 1);
+  assert.ok(down, 'selectChildNode returns a model');
+  assert.strictEqual(down.objectId, 'obj-kid', 'the step down is described as a full node model');
+  const kidCall = calls.slice(beforeDown).find((c) => /k\[i\] \|\| null/.test(c.params.functionDeclaration));
+  assert.ok(kidCall, 'selectChildNode dispatches one callFunctionOn');
+  assert.deepStrictEqual(Array.from(kidCall.params.arguments.map((a) => a.value)), [1], 'the child index is passed as an argument');
+  const beforeNeg = calls.length;
+  await handlers.selectChildNode('obj-1', -3);
+  const negCall = calls.slice(beforeNeg).find((c) => /k\[i\] \|\| null/.test(c.params.functionDeclaration));
+  assert.deepStrictEqual(Array.from(negCall.params.arguments.map((a) => a.value)), [0], 'a negative child index clamps to the first child');
+
+  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

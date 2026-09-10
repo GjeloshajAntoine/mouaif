@@ -1981,6 +1981,106 @@ background: rgba(0, 0, 0, 0.55);
 border-radius: 999px;
 pointer-events: none;
 }
+/* ---- Inspector: styles panel, element tree ------------------------ */
+/* Breadcrumb: ancestors + the current element, as a single horizontally
+scrollable strip inside the pinned block. A deep tree cannot fit 360 px, so
+the strip scrolls and is auto-scrolled to the end (the current element) on
+every selection. `min-width: 0` + `overflow-x: auto` is what keeps the row
+from stretching the flex column instead of scrolling. */
+.inspector__styles-crumbs {
+display: flex;
+align-items: center;
+gap: 4px;
+flex: 0 0 auto;
+min-width: 0;
+overflow-x: auto;
+overflow-y: hidden;
+padding-bottom: 2px;
+scrollbar-width: none;
+-webkit-overflow-scrolling: touch;
+}
+.inspector__styles-crumbs::-webkit-scrollbar { display: none; }
+.inspector__styles-crumb {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+max-width: 40vw;
+height: 26px;
+padding: 0 10px;
+font: inherit;
+font-size: 0.7rem;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: 999px;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-crumb:not(.is-here):hover { background: var(--surface-3); color: var(--fg); }
+/* The selected element is not a tap target (it is already selected), so it
+reads as a static accent chip rather than a button. */
+.inspector__styles-crumb.is-here {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+font-weight: 600;
+cursor: default;
+}
+/* Child chips: one tap into a child element. Sits in the scroll flow under
+the pinned block, so it never competes with the property list for the
+~353 px the panel has on a phone. */
+.inspector__styles-kids {
+display: flex;
+align-items: center;
+gap: 6px;
+flex: 0 0 auto;
+min-width: 0;
+overflow-x: auto;
+overflow-y: hidden;
+padding: 2px 0 6px;
+scrollbar-width: none;
+-webkit-overflow-scrolling: touch;
+}
+.inspector__styles-kids::-webkit-scrollbar { display: none; }
+.inspector__styles-kids-label {
+flex: 0 0 auto;
+font-size: 0.62rem;
+font-weight: 600;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+.inspector__styles-kid {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+max-width: 44vw;
+height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.74rem;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-kid:hover { background: var(--surface-3); }
+.inspector__styles-kid:active { transform: scale(0.98); }
+.inspector__styles-kids-more {
+flex: 0 0 auto;
+font-size: 0.7rem;
+color: var(--muted);
+}
 /* Value row in the edit sheet: − [input] + . The steppers nudge numeric
 values by one unit and apply immediately, which is the fastest way to size
 something on a phone. */

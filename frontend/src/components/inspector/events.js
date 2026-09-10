@@ -394,6 +394,83 @@ const objectId = ev && ev.result && ev.result.objectId;
 if (!objectId) return null;
 return buildNodeModel(objectId);
 }
+// PAGE_LABEL_SRC — the in-page `tag#id.class` labeller, shared by every
+// helper that reports an element identity back to the Styles panel
+// (breadcrumb ancestors, child chips, matched-rule inheritance labels).
+// It is a string rather than a module import because it runs inside the
+// inspected page, in the same Runtime context as the element; keeping one
+// copy means the breadcrumb, the child chips, and the panel header all
+// spell the same element the same way. `ml` is namespaced to avoid
+// colliding with a page global.
+const PAGE_LABEL_SRC = 'function ml(n){ if(!n||!n.nodeName) return ""; var s=String(n.nodeName).toLowerCase(); if(n.id) s+="#"+n.id; var c=(typeof n.className==="string")?n.className.trim().split(/\\s+/).filter(Boolean):[]; if(c.length) s+="."+c.slice(0,2).join("."); if(c.length>2) s+="…"; return s; }';
+// How much of the tree the panel is offered in one read. A 360 px strip
+// shows about four chips; the caps keep a deep or wide subtree from
+// producing a multi-screen row of tap targets the user can't reach anyway.
+const MAX_ANCESTORS = 8;
+const MAX_CHILDREN = 12;
+// requestNodeId — resolve a DOM nodeId from a Runtime objectId, or 0.
+// Several CSS-domain reads need a nodeId, but DOM.requestNode can map to 0
+// on some targets (and DOM.domain may be off), so every caller treats 0 as
+// "fall back to the Runtime path" instead of an error.
+async function requestNodeId(objectId) {
+if (!objectId) return 0;
+try {
+const req = await cdpSend('DOM.requestNode', { objectId }, 8000);
+return (req && req.nodeId) || 0;
+} catch { return 0; }
+}
+// readElementTree — where the selected element sits in the DOM: its
+// ancestors (nearest first, each with the number of `parentElement` hops
+// needed to reach it) and its direct children. The Styles panel turns both
+// into tap targets, which is how the tree is walked on a phone — the
+// alternative, re-picking on the live preview for every parent or child,
+// is the slowest possible way to move one level.
+//
+// One round-trip, returnByValue, no nodeId: the hops are counted here so
+// the panel only has to hand back a number to move up. Ancestors are capped
+// at 8 (the strip scrolls) and children at 12, with the real child count
+// reported so the panel can say how many were left off.
+async function readElementTree(objectId) {
+if (!objectId) return null;
+try {
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(){ ' + PAGE_LABEL_SRC + ' var anc=[],n=this.parentElement,lv=1; while(n && lv<=' + MAX_ANCESTORS + '){ anc.push({ label: ml(n), levels: lv }); n=n.parentElement; lv++; } var k=this.children||[],kids=[]; for(var i=0;i<k.length && i<' + MAX_CHILDREN + ';i++){ kids.push({ label: ml(k[i]) }); } return { ancestors: anc, children: kids, childCount: k.length, label: ml(this) }; }',
+returnByValue: true
+}, 8000);
+return (r && r.result && r.result.value) || null;
+} catch { return null; }
+}
+// selectAncestorNode — move up `levels` parents and describe the result.
+// Returns a full node model (or null at the top of the tree) so the panel
+// adopts it exactly like a fresh pick: new objectId, new styles, new
+// highlight. The element stays a live RemoteObject the whole way, so this
+// needs no nodeId and no re-query by selector.
+async function selectAncestorNode(objectId, levels) {
+const hops = Math.max(1, Math.min(MAX_ANCESTORS, Number(levels) || 1));
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(n){ var e=this; for(var i=0;i<n && e;i++){ e=e.parentElement; } return e || null; }',
+arguments: [{ value: hops }],
+returnByValue: false
+}, 8000);
+const next = r && r.result && r.result.objectId;
+if (!next) return null;
+return buildNodeModel(next);
+}
+// selectChildNode — move down into child element `index`.
+async function selectChildNode(objectId, index) {
+const i = Math.max(0, Number(index) || 0);
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(i){ var k=this.children||[]; return k[i] || null; }',
+arguments: [{ value: i }],
+returnByValue: false
+}, 8000);
+const next = r && r.result && r.result.objectId;
+if (!next) return null;
+return buildNodeModel(next);
+}
 // buildNodeModel — resolve everything the Styles panel needs from a
 // RemoteObject objectId: the DOM node identity (tag/id/class), the inline
 // declared styles, the computed styles, and the box-model dimensions. Also
@@ -422,13 +499,12 @@ model.computed = (v.computed || []).map((x) => ({ prop: x[0], value: String(x[1]
 model.box = { width: v.width, height: v.height };
 }
 } catch { /* element model unavailable */ }
-// Best-effort highlight. Overlay.highlightNode needs a nodeId; try to
-// resolve one from the objectId, but if that's unavailable (nodeId 0) just
-// skip the highlight rather than failing the pick.
-try {
-const req = await cdpSend('DOM.requestNode', { objectId }, 8000);
-const nodeId = req && req.nodeId;
+// Best-effort highlight. Overlay.highlightNode needs a nodeId; resolve one
+// from the objectId, and if that's unavailable (nodeId 0) just skip the
+// highlight rather than failing the pick.
+const nodeId = await requestNodeId(objectId);
 if (nodeId) {
+try {
 await cdpSend('Overlay.highlightNode', {
 nodeId,
 highlightConfig: {
@@ -439,8 +515,8 @@ paddingColor: { r: 110, g: 168, b: 254, a: 0.15 },
 borderColor: { r: 110, g: 168, b: 254, a: 0.6 }
 }
 });
-}
 } catch { /* highlight unavailable */ }
+}
 return model;
 }
 // captureElementShot — a small clipped screenshot of one element. The
@@ -667,6 +743,7 @@ startPreviewStream, stopPreviewStream, ackPreviewFrame,
 loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
-refreshNodeModel, selectBySelector, captureElementShot, readElementStyles
+refreshNodeModel, selectBySelector, captureElementShot, readElementStyles,
+describeNode: buildNodeModel, readElementTree, selectAncestorNode, selectChildNode
 };
 }

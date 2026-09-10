@@ -287,7 +287,17 @@ const [shotBusy, setShotBusy] = useState(false);
 // so "what did I change and what is it now?" is answerable at a glance
 // instead of hunting through ~400 computed rows.
 const [changed, setChanged] = useState([]);
+// tree — the selected element's ancestors and direct children (see
+// readElementTree). Rendered as the breadcrumb at the top of the pinned
+// block and as the child chips under it, so the user can walk up or down
+// the DOM without going back to the live preview to tap again.
+const [tree, setTree] = useState(null);
 const modelRef = useRef(null);
+// treeSerial — same guard as shotSerial: only the newest tree read may
+// write to state, so a slow read for a previously selected element can
+// never overwrite the current element's breadcrumb.
+const treeSerial = useRef(0);
+const crumbRef = useRef(null);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
@@ -310,6 +320,39 @@ setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.heig
 if (serial === shotSerial.current) setShotBusy(false);
 }
 }
+// loadTree — read the selected element's ancestors and children for the
+// breadcrumb / child chips. Best-effort and non-blocking: the property
+// lists must not wait on it, and a target that can't answer leaves the tree
+// strip hidden rather than showing a broken row.
+function loadTree(m) {
+const objectId = m && m.objectId;
+if (!objectId || !props.readElementTree) { treeSerial.current++; setTree(null); return; }
+const serial = ++treeSerial.current;
+Promise.resolve(props.readElementTree(objectId))
+.then((t) => { if (serial === treeSerial.current) setTree(t); })
+.catch(() => { if (serial === treeSerial.current) setTree(null); });
+}
+// selectAncestor / selectChild — walk one step in the DOM tree. The parent
+// helper returns a complete node model, so the result is adopted exactly
+// like a fresh pick: same code path as tapping the live preview, which
+// keeps the breadcrumb, the pinned preview, the changed-set reset, and the
+// highlight all in sync for free.
+function selectAncestor(levels) {
+const objectId = modelRef.current && modelRef.current.objectId;
+if (!objectId || !props.selectAncestorNode) return;
+loadModel(() => props.selectAncestorNode(objectId, levels).then((m) => {
+if (!m) throw new Error('Nothing above this element.');
+return m;
+}));
+}
+function selectChild(index) {
+const objectId = modelRef.current && modelRef.current.objectId;
+if (!objectId || !props.selectChildNode) return;
+loadModel(() => props.selectChildNode(objectId, index).then((m) => {
+if (!m) throw new Error('That child is no longer on the page.');
+return m;
+}));
+}
 // applyModel — adopt a freshly built node model: store it, clear the
 // previous element's preview immediately (so a stale image never sits above
 // a new element's properties), then capture the new one.
@@ -325,6 +368,7 @@ shotSerial.current++;
 setShot(null);
 setShotBusy(false);
 captureShot();
+loadTree(m);
 }
 
 // Dim down the inline-style list while stale after an edit. The page
@@ -396,6 +440,8 @@ if (next) {
 modelRef.current = null;
 setModel(null);
 setShot(null);
+setTree(null);
+treeSerial.current++;
 setError('');
 } else if (props.hideNodeHighlight) {
 props.hideNodeHighlight().catch(() => {});
@@ -491,13 +537,22 @@ loadModel(() => props.refreshNodeModel(objectId));
 function clearPick() {
 modelRef.current = null;
 shotSerial.current++;
+treeSerial.current++;
 setModel(null);
 setShot(null);
 setShotBusy(false);
+setTree(null);
 setEdit(null);
 setError('');
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
+// Keep the current element's breadcrumb chip in view. The strip reads
+// root → … → current and starts scrolled to the left, so without this the
+// one chip that explains what is selected is the one that is off-screen.
+useEffect(() => {
+const el = crumbRef.current;
+if (el) el.scrollLeft = el.scrollWidth;
+}, [tree]);
 
 // Idle state — nothing selected yet. Prompts the user to tap the preview
 // (if available) or type a selector.
@@ -601,6 +656,25 @@ h('span', { class: 'icon-btn__label' }, props.pickMode ? 'Stop' : 'Pick')
 )
 )
 ),
+// Breadcrumb — the selected element's ancestors as tap targets, plus the
+// current element pinned at the end. It is the cheapest way to move up a
+// level: one tap on `main` or `body` instead of re-picking a possibly
+// overlapping element on the live preview. Horizontally scrollable because
+// a deep tree cannot fit 360 px, and auto-scrolled to the end (see the
+// effect above) so the chip for the element you are looking at is visible.
+tree && tree.ancestors && tree.ancestors.length
+? h('div', { class: 'inspector__styles-crumbs', ref: crumbRef, role: 'group', 'aria-label': 'Element ancestors' },
+tree.ancestors.slice().reverse().map((a) => h('button', {
+class: 'inspector__styles-crumb',
+type: 'button',
+key: 'anc-' + a.levels,
+title: 'Select ' + a.label,
+'aria-label': 'Select ancestor element ' + a.label,
+onClick: () => selectAncestor(a.levels)
+}, a.label)),
+h('span', { class: 'inspector__styles-crumb is-here', key: 'here' }, label)
+)
+: null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
@@ -624,6 +698,27 @@ h('span', { class: 'inspector__styles-shot-note' }, shotBusy ? 'Updating…' : '
 )
 : null
 ),
+// Child chips — one tap into a child element. Deliberately *outside* the
+// pinned block: the pin already carries the header, the breadcrumb, and the
+// preview, and nothing that scrolls away should be the only route to a
+// feature. The breadcrumb above brings the user straight back up, so losing
+// sight of the children while reading the property list costs nothing.
+tree && tree.children && tree.children.length
+? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
+h('span', { class: 'inspector__styles-kids-label' }, 'Children'),
+tree.children.map((c, i) => h('button', {
+class: 'inspector__styles-kid',
+type: 'button',
+key: 'kid-' + i,
+title: 'Select ' + c.label,
+'aria-label': 'Select child element ' + c.label,
+onClick: () => selectChild(i)
+}, c.label)),
+tree.childCount > tree.children.length
+? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length))
+: null
+)
+: null,
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length
