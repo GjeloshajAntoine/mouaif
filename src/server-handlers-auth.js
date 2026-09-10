@@ -16,7 +16,8 @@ const {
   auth,
   oauthAnthropic,
   oauthCopilot,
-  oauthOpenRouter
+  oauthOpenRouter,
+  safeDecode
 } = require('./server-shared.js');
 
 // The URL the OAuth provider must redirect the user's browser back to.
@@ -61,7 +62,7 @@ async function handleAuth(req, res, parsed, serverConfig) {
   const delMatch = urlPath.match(/^\/api\/auth\/accounts\/([a-z0-9-]+)\/(.+)$/);
   if (delMatch && method === 'DELETE') {
     const provider = delMatch[1];
-    const account = decodeURIComponent(delMatch[2]);
+    const account = safeDecode(delMatch[2]);
     if (!auth.SUPPORTED_PROVIDERS.includes(provider)) {
       return sendJSON(res, 400, { error: 'Unknown provider', provider });
     }

@@ -15,7 +15,8 @@ const {
   projects,
   chats,
   files,
-  tags
+  tags,
+  safeDecode
 } = require('./server-shared.js');
 
 function projectsErrorStatus(err) {
@@ -225,7 +226,7 @@ async function handleTags(req, res, parsed) {
   // Pull the project id out of the path and resolve to an absolute dir.
   const idMatch = urlPath.match(/^\/api\/projects\/([^/]+)\/tags/);
   if (!idMatch) return sendJSON(res, 404, { error: 'Not found', scope: 'tags' });
-  const projectId = decodeURIComponent(idMatch[1]);
+  const projectId = safeDecode(idMatch[1]);
   const project = projects.getProject(projectId);
   if (!project) return sendJSON(res, 404, { error: 'Project not registered', id: projectId });
   const dir = project.path;
@@ -268,7 +269,7 @@ async function handleTags(req, res, parsed) {
   // DELETE /api/projects/:id/tags/files/<relPath>
   const fileMatch = rest.match(/^\/files\/(.+)$/);
   if (fileMatch && method === 'DELETE') {
-    const relPath = decodeURIComponent(fileMatch[1]);
+    const relPath = safeDecode(fileMatch[1]);
     try {
       const removed = tags.removeTag(dir, relPath);
       if (!removed) return sendJSON(res, 404, { error: 'Tag entry not found', path: relPath });

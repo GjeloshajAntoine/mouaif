@@ -176,6 +176,20 @@ function runWorker(options) {
 
   start();
 
+  // Last-resort breadcrumbs. The HTTP dispatcher (src/http-server.js
+  // handleRequest) already converts anything a request handler throws or
+  // rejects into a logged 500, so reaching these handlers means the
+  // failure came from outside a request (a timer, an SSE write, a
+  // background MCP child). Log them loudly and keep serving rather than
+  // letting Node's default `--unhandled-rejections=throw` exit the
+  // process and drop every connected client.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[mouaif] unhandled rejection:', (reason && reason.stack) || reason);
+  });
+  process.on('uncaughtException', (error) => {
+    console.error('[mouaif] uncaught exception:', (error && error.stack) || error);
+  });
+
   function shutdown() {
     console.log('\n⏹  Shutting down...');
     closeServer(server).then(() => process.exit(0));

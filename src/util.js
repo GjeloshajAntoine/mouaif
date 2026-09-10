@@ -60,6 +60,19 @@ function qs(q, name) {
   return (q && typeof q[name] === 'string') ? q[name] : '';
 }
 
+// safeDecode(value) — decodeURIComponent that never throws. Every REST
+// route that takes an id out of the path decodes the raw segment before
+// handing it to a domain module; a malformed escape (`/api/chats/%zz`,
+// `/api/projects/%zz/tags`, ...) used to raise a URIError from inside an
+// async handler, which the HTTP dispatcher cannot catch: it surfaced as
+// an unhandled rejection and, under Node's default
+// `--unhandled-rejections=throw`, exited the process. Returning the raw
+// segment on failure keeps the request a normal 400/404. Callers echo
+// the value back through sendJSON, so nothing is interpreted as a path.
+function safeDecode(value) {
+  if (typeof value !== 'string') return '';
+  try { return decodeURIComponent(value); } catch { return value; }
+}
 // errCodeToHttpStatus(code, def) — one source of truth for mapping the
 // typed error codes the domain modules throw (files, tags, mcp, the
 // project/file/tags/prompt/agent handlers) to HTTP status codes. The
@@ -89,10 +102,11 @@ function errCodeToHttpStatus(code, def) {
 }
 
 module.exports = {
-  err,
-  joinUrl,
-  qs,
-  firstStringField,
-  firstStringValue,
-  errCodeToHttpStatus
+err,
+joinUrl,
+qs,
+safeDecode,
+firstStringField,
+firstStringValue,
+errCodeToHttpStatus
 };

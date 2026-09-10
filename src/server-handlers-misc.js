@@ -16,7 +16,8 @@ firstStringValue,
 chats,
 liveChat,
 mcp,
-inspector
+inspector,
+safeDecode
 } = require('./server-shared.js');
 const { requestRestart } = require('./restart.js');
 
@@ -97,7 +98,7 @@ async function handleMcp(req, res, parsed) {
   // PATCH /api/mcp/servers/:id  body: { projectDir?, ...patch }
   let m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)$/);
   if (m && method === 'PATCH') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = readMcpProjectDir(q, body);
@@ -112,7 +113,7 @@ async function handleMcp(req, res, parsed) {
 
   // DELETE /api/mcp/servers/:id?projectDir=...
   if (m && method === 'DELETE') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const dir = readMcpProjectDir(q);
     try {
       const ok = mcp.removeServer(dir || null, id);
@@ -126,7 +127,7 @@ async function handleMcp(req, res, parsed) {
   // POST /api/mcp/servers/:id/start  body: { projectDir? }
   m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/start$/);
   if (m && method === 'POST') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
     const dir = readMcpProjectDir(q, body);
@@ -141,7 +142,7 @@ async function handleMcp(req, res, parsed) {
   // POST /api/mcp/servers/:id/stop  body: { projectDir? }
   m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/stop$/);
   if (m && method === 'POST') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { /* body may be empty */ }
     const dir = readMcpProjectDir(q, body);
@@ -156,7 +157,7 @@ async function handleMcp(req, res, parsed) {
   // GET /api/mcp/servers/:id/tools?projectDir=...  -> forces a re-discovery
   m = urlPath.match(/^\/api\/mcp\/servers\/([^/]+)\/tools$/);
   if (m && method === 'GET') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const dir = readMcpProjectDir(q);
     try {
       const tools = await mcp.listDiscoveredTools(dir || null, id);

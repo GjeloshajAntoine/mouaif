@@ -11,7 +11,8 @@ const {
   prompts,
   chats,
   agents,
-  agentFeatures
+  agentFeatures,
+  safeDecode
 } = require('./server-shared.js');
 
 // ---- Prompts API ---------------------------------------------------------
@@ -51,7 +52,7 @@ async function handlePrompts(req, res, parsed) {
   // GET /api/prompts/:id[?projectDir=<abs>]
   const getMatch = urlPath.match(/^\/api\/prompts\/([^/]+)$/);
   if (getMatch && method === 'GET') {
-    const id = decodeURIComponent(getMatch[1]);
+    const id = safeDecode(getMatch[1]);
     const dir = qs(q, 'projectDir');
     const scope = qs(q, 'scope');
     try {
@@ -82,7 +83,7 @@ async function handlePrompts(req, res, parsed) {
 
   // PATCH /api/prompts/:id  body: { projectDir?, scope?, title?, content?, role? }
   if (getMatch && method === 'PATCH') {
-    const id = decodeURIComponent(getMatch[1]);
+    const id = safeDecode(getMatch[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = projectDirFrom(body);
@@ -97,7 +98,7 @@ async function handlePrompts(req, res, parsed) {
 
   // DELETE /api/prompts/:id[?projectDir=<abs>]
   if (getMatch && method === 'DELETE') {
-    const id = decodeURIComponent(getMatch[1]);
+    const id = safeDecode(getMatch[1]);
     const dir = qs(q, 'projectDir');
     const scope = qs(q, 'scope');
     try {
@@ -215,7 +216,7 @@ async function handleAgents(req, res, parsed) {
   // GET|PATCH|DELETE /api/agents/:name
   let getMatch = urlPath.match(/^\/api\/agents\/([^/]+)$/);
   if (getMatch) {
-    const name = decodeURIComponent(getMatch[1]);
+    const name = safeDecode(getMatch[1]);
     if (method === 'GET') {
       if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
       try {

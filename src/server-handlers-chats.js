@@ -29,7 +29,8 @@ const {
   mcp,
   shellTool,
   ai,
-  liveChat
+  liveChat,
+  safeDecode
 } = require('./server-shared.js');
 
 // resolveNotificationPrefs(saved) — collapse the persisted notification
@@ -107,7 +108,7 @@ c.messageCount = pageCounts[c.id] || 0;
   // GET /api/chats/:id?projectDir=<abs>
   let m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'GET') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -143,7 +144,7 @@ const chat = chats.createChat(dir, body || {});
   // PATCH /api/chats/:id   body: { projectDir, title?, trace?, promptSize?, draft?, draftAttachments? }
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'PATCH') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = readProjectDir(body);
@@ -174,7 +175,7 @@ const chat = chats.updateChat(dir, id, safeBody);
   // POST /api/chats/:id/touch   body: { projectDir }
   m = urlPath.match(/^\/api\/chats\/([^/]+)\/touch$/);
   if (m && method === 'POST') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = readProjectDir(body);
@@ -192,7 +193,7 @@ const chat = chats.updateChat(dir, id, safeBody);
   // DELETE /api/chats/:id?projectDir=<abs>
   m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    const id = decodeURIComponent(m[1]);
+    const id = safeDecode(m[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -231,7 +232,7 @@ const chat = chats.updateChat(dir, id, safeBody);
 //     know when every older row has been reached.
 const getMsgsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/messages$/);
 if (getMsgsMatch && method === 'GET') {
-const id = decodeURIComponent(getMsgsMatch[1]);
+const id = safeDecode(getMsgsMatch[1]);
 const dir = qs(q, 'projectDir');
 if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
 try {
@@ -285,7 +286,7 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
   // the client fetches just `/messages?fromSeq=<localNextSeq>`.
   const revMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/revision$/);
   if (revMatch && method === 'GET') {
-    const id = decodeURIComponent(revMatch[1]);
+    const id = safeDecode(revMatch[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -309,7 +310,7 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
   // to be a permanent fixture.
   const sysPromptMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/system-prompt$/);
   if (sysPromptMatch && method === 'GET') {
-    const id = decodeURIComponent(sysPromptMatch[1]);
+    const id = safeDecode(sysPromptMatch[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -407,7 +408,7 @@ disabled: skillState.disabled.has(s.id)
   // stream will apply — so the preview is always what the model gets.
   const toolPreviewMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/tool-preview$/);
   if (toolPreviewMatch && method === 'GET') {
-    const id = decodeURIComponent(toolPreviewMatch[1]);
+    const id = safeDecode(toolPreviewMatch[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -511,7 +512,7 @@ if (fileToolsEnabled) {
   // does the same internally for user / assistant messages; this
   // route is for manual edits and tests.
   if (getMsgsMatch && method === 'POST') {
-    const id = decodeURIComponent(getMsgsMatch[1]);
+    const id = safeDecode(getMsgsMatch[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
@@ -527,7 +528,7 @@ if (fileToolsEnabled) {
 
   // DELETE /api/chats/:id/messages?projectDir= -> { ok, removed }
   if (getMsgsMatch && method === 'DELETE') {
-    const id = decodeURIComponent(getMsgsMatch[1]);
+    const id = safeDecode(getMsgsMatch[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
@@ -542,7 +543,7 @@ return sendJSON(res, 200, { ok: true, removed });
 
   const exportTraceMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/trace\/export$/);
   if (exportTraceMatch && method === 'POST') {
-    const id = decodeURIComponent(exportTraceMatch[1]);
+    const id = safeDecode(exportTraceMatch[1]);
     const body = await readJsonOr400(req, res);
     if (!body) return;
     const dir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
@@ -584,7 +585,7 @@ return sendJSON(res, 200, { ok: true, imported: result });
   // holding a dead connection waiting for content that will never come.
   const liveMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/live$/);
   if (liveMatch && method === 'GET') {
-    const id = decodeURIComponent(liveMatch[1]);
+    const id = safeDecode(liveMatch[1]);
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {

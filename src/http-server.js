@@ -81,7 +81,38 @@ const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
 
 // ---- Route table --------------------------------------------------------
 
+// handleRequest — public entry point for a request. It delegates to
+// dispatchRequest and makes the handler failure path total: a handler
+// that throws synchronously, or rejects asynchronously, is logged and
+// answered instead of escaping. The route table calls its async handlers
+// without awaiting each one (`return handleChats(...)`), so a rejected
+// handler promise becomes an unhandledRejection, and Node's default
+// `--unhandled-rejections=throw` turns that into a process exit. Any
+// single bad request was therefore a crash: `GET /api/chats/%zz` raised
+// a URIError out of decodeURIComponent (now safeDecode) with nothing to
+// catch it.
 function handleRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
+  try {
+    const pending = dispatchRequest(req, res, activePort, sessionToken, lifecycle, serverConfig);
+    if (pending && typeof pending.then === 'function') pending.catch((e) => failRequest(res, e, req));
+  } catch (e) {
+    failRequest(res, e, req);
+  }
+}
+
+function failRequest(res, e, req) {
+  console.error('[mouaif] request failed:', (req && req.method) + ' ' + (req && req.url), (e && e.stack) || e);
+  if (res.headersSent) {
+    // The handler already started responding (an SSE stream, most
+    // likely). The only way left to signal the failure is to drop the
+    // connection so the client sees a truncation instead of hanging.
+    try { res.destroy(); } catch { /* already gone */ }
+    return;
+  }
+  try { sendJSON(res, 500, { error: 'Internal server error', code: 'EINTERNAL' }); } catch { /* already gone */ }
+}
+
+function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
   const parsed = url.parse(req.url, true);
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -447,6 +478,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
 
 module.exports = {
   createServer,
+  handleRequest,
   broadcast,
   destroyOpenSockets,
   DEFAULT_PORT,

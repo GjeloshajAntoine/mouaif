@@ -1,7 +1,7 @@
 'use strict';
 
 const oauth = require('./oauth-mcp.js');
-const { sendJSON, readJsonOr400, expectedOrigin, mcp } = require('./server-shared.js');
+const { sendJSON, readJsonOr400, expectedOrigin, mcp, safeDecode } = require('./server-shared.js');
 
 async function handleMcpOAuth(req, res, parsed, serverConfig) {
   const match = parsed.pathname.match(/^\/api\/mcp\/servers\/([^/]+)\/oauth(?:\/(start))?$/);
@@ -16,7 +16,7 @@ async function handleMcpOAuth(req, res, parsed, serverConfig) {
   if (!body) return true;
   const dir = typeof parsed.query?.projectDir === 'string' ? parsed.query.projectDir : (typeof body.projectDir === 'string' ? body.projectDir : '');
   try {
-    const context = mcp.getOAuthContext(dir, decodeURIComponent(match[1]));
+    const context = mcp.getOAuthContext(dir, safeDecode(match[1]));
     if (!context) { sendJSON(res, 404, { error: 'Server not found' }); return true; }
     if (isStart) {
       await mcp.stopOAuthSessions(context);

@@ -1,6 +1,6 @@
 'use strict';
 // Project custom-action CRUD + execution REST handlers.
-const { sendJSON, qs, readJsonOr400, chats, mcp, shellTool } = require('./server-shared.js');
+const { sendJSON, qs, safeDecode, readJsonOr400, chats, mcp, shellTool } = require('./server-shared.js');
 const customActions = require('./custom-actions.js');
 function statusFor(error) {
 if (error && ['EBADINPUT', 'MOUAIF_PROJECT_PARSE_ERROR'].includes(error.code)) return 400;
@@ -42,7 +42,7 @@ let match = urlPath.match(/^\/api\/actions\/([^/]+)$/);
 if (match && method === 'DELETE') {
 const projectDir = qs(q, 'projectDir');
 if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
-const id = decodeURIComponent(match[1]);
+const id = safeDecode(match[1]);
 try {
 const actions = customActions.listActions(projectDir);
 const next = actions.filter((action) => action.id !== id);
@@ -63,7 +63,7 @@ const callId = body && typeof body.callId === 'string' ? body.callId : '';
 if (!projectDir || !chatId || !callId) return sendJSON(res, 400, { error: 'projectDir, chatId, and callId are required' });
 if (!chats.getChat(projectDir, chatId)) return sendJSON(res, 404, { error: 'Chat not found', chatId });
 try {
-const id = decodeURIComponent(match[1]);
+const id = safeDecode(match[1]);
 const action = findAction(projectDir, id);
 if (!action) return sendJSON(res, 404, { error: 'Action not found', id });
 if (action.kind === 'cli') {

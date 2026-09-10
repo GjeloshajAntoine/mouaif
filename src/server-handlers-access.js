@@ -15,7 +15,8 @@ const {
   publicAccessStatus,
   ACCESS_COOKIE,
   accessAuth,
-  qr
+  qr,
+  safeDecode
 } = require('./server-shared.js');
 
 async function handleAccess(req, res, parsed, serverConfig) {
@@ -146,7 +147,7 @@ async function handleAccess(req, res, parsed, serverConfig) {
 
   if (urlPath.startsWith('/api/access/passkeys/') && method === 'DELETE') {
     if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
-    const id = decodeURIComponent(urlPath.slice('/api/access/passkeys/'.length));
+    const id = safeDecode(urlPath.slice('/api/access/passkeys/'.length));
     return sendJSON(res, accessAuth.deletePasskey(id) ? 200 : 404, { ok: true });
   }
 
