@@ -15,8 +15,36 @@ export function createEventHandlers(state) {
 
   function touchEntry(e) { e.rev = (e.rev || 0) + 1; }
 
+  // How many entries the panels keep. pushConsole()/pushNetwork() render
+  // the newest 2000 rows, so anything older is unreachable from the UI —
+  // but it stayed in the backing array for the life of the tab, and a
+  // network entry can hold a response body of up to 200 KB. A busy page
+  // (a dev server HMR loop, a polling app) therefore grew the tab's heap
+  // without bound until the inspector was disconnected.
+  const MAX_ENTRIES = 2000;
+
+  // Drop the oldest entries once the cap is exceeded. `map` (the request
+  // id → entry map) is trimmed with them, and any body they captured is
+  // released so the array slice is not the only thing that shrinks.
+  function trim(list, map) {
+    const over = list.current.length - MAX_ENTRIES;
+    if (over <= 0) return;
+    const dropped = list.current.splice(0, over);
+    for (const entry of dropped) {
+      if (!entry) continue;
+      entry.body = null;
+      entry.args = null;
+      // Only forget the in-flight lookup when it still points at this
+      // exact entry: a later request reusing the id must keep its own.
+      if (map && entry.requestId && map.current.get(entry.requestId) === entry) {
+        map.current.delete(entry.requestId);
+      }
+    }
+  }
+
   function pushConsole() {
-    const data = consoleEntries.current.slice(-2000);
+    trim(consoleEntries, null);
+    const data = consoleEntries.current.slice(-MAX_ENTRIES);
     const vl = consoleVL.current;
     if (vl) {
       try { vl.setData(data); vl.scrollToIndex(data.length - 1); } catch { /* vl destroyed */ consoleVL.current = null; }
@@ -25,7 +53,8 @@ export function createEventHandlers(state) {
   }
 
   function pushNetwork() {
-    const data = networkEntries.current.slice(-2000);
+    trim(networkEntries, reqMap);
+    const data = networkEntries.current.slice(-MAX_ENTRIES);
     const vl = networkVL.current;
     if (vl) {
       try { vl.setData(data); } catch { /* vl destroyed */ networkVL.current = null; }

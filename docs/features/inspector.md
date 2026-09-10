@@ -45,6 +45,16 @@ You can toggle each of the four panels on and off to customize your workspace:
 ### 4. Info panel
 - **Page vitals** — monitor live DOM node counts, JavaScript heap usage, event listeners, frame rates, and layout recalculations.
 
+### Entry retention
+
+Both list panels keep the newest **2000** entries and drop the rest. The
+cap applies to the backing store, not only to the rendered window: an
+evicted entry releases the response body it captured (up to 200 KB) and is
+removed from the request-id map, so a long session against a chatty page
+(polling app, HMR loop) cannot grow the tab's heap without bound. A CDP
+event for an already-evicted request is ignored rather than re-creating the
+row. Disconnecting resets the buffers entirely.
+
 ## Tab management
 
 Use the top navigation bar to:
