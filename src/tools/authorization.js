@@ -37,29 +37,49 @@ function getSession(projectDir, chatId) {
   return session;
 }
 
-function clearGrants(projectDir, chatId) {
-  if (projectDir && chatId) sessions.delete(sessionKey(projectDir, chatId));
-}
-
-// Reject every pending authorization wait for a chat. Called when the
-// SSE client disconnects mid-run: a tool call parked on `await
-// authResult.wait` would otherwise hold the chat's running marker
-// forever (the upstream-abort signal does not fire while the loop is
-// waiting on a user decision, not a fetch), so every retry bounced off
-// 409 EALREADY_RUNNING and the chat looked frozen. Rejecting with
-// EDENIED unwinds the tool loop through its normal error path, which
-// clears the marker and persists the failure.
-function cancelSession(projectDir, chatId) {
-  if (!projectDir || !chatId) return 0;
-  const session = sessions.get(sessionKey(projectDir, chatId));
+// Reject every wait parked on a decision the caller is discarding.
+//
+// A pending entry owns the promise the tool loop is awaiting. Deleting it
+// without settling that promise leaves the loop parked forever — the
+// upstream-abort signal never fires while the loop is waiting on a user
+// decision rather than a fetch — so the chat keeps its running marker and
+// every retry bounces off 409 EALREADY_RUNNING. Rejecting with EDENIED
+// unwinds the loop through its normal error path, which clears the marker
+// and persists the failure. Returns how many waits were rejected.
+function rejectPending(session, message) {
   if (!session || !session.pending.size) return 0;
   let count = 0;
   for (const [callId, pending] of session.pending) {
     session.pending.delete(callId);
-    try { pending.reject(typedError('EDENIED', 'client disconnected')); } catch { /* already settled */ }
+    try { pending.reject(typedError('EDENIED', message)); } catch { /* already settled */ }
     count++;
   }
   return count;
+}
+
+// Revoke a chat's session grants (a reopened chat loses its blanket
+// "allow" state). The pending map is settled first: this used to delete
+// the session outright, so a call already parked on `await
+// authResult.wait` was orphaned — `recordDecision` then threw ENOTFOUND
+// for the decision the user was still able to make, and the run never
+// resumed. Returns the number of pending waits that were rejected.
+function clearGrants(projectDir, chatId) {
+  if (!projectDir || !chatId) return 0;
+  const key = sessionKey(projectDir, chatId);
+  const session = sessions.get(key);
+  if (!session) return 0;
+  const rejected = rejectPending(session, 'chat session was reopened');
+  sessions.delete(key);
+  return rejected;
+}
+
+// Reject every pending authorization wait for a chat. Called when the
+// SSE client disconnects mid-run. The session itself is kept (its grants
+// are still meaningful if the user reconnects), but every parked wait is
+// settled so the tool loop can unwind.
+function cancelSession(projectDir, chatId) {
+  if (!projectDir || !chatId) return 0;
+  return rejectPending(sessions.get(sessionKey(projectDir, chatId)), 'client disconnected');
 }
 
 function listPending(projectDir, chatId) {

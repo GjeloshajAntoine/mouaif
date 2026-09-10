@@ -175,6 +175,11 @@ async function main() {
     projectDir, chatId: 'ask00001', callId: 'call_ask', tool: 'ask_user'
   });
   check('ask_user always prompts in ask mode', asked.decision === 'prompt');
+  // This prompt is deliberately left unanswered: case 18 clears the chat's
+  // session grants, which now settles every parked wait with EDENIED so the
+  // tool loop can never be left blocked. Handle it, or the rejection of a
+  // decision this test never makes counts as an unhandled rejection.
+  asked.wait.catch(() => {});
 
   // 17) Authorization — even with a legacy `allow` value in the project
   //     file, the binary-mode clamp forces `ask`. A future migration
