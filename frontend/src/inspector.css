@@ -1817,6 +1817,123 @@ width budget that ignores the level chip. */
 flex: 1 1 0;
 min-width: 0;
 }
+/* ---- Inspector: value-type switch (edit sheet) ---------------------
+   A declaration's type is invisible: 14px, 14, 87.5% and auto all read as
+   "the value". The switch makes it explicit and states the cost of each form
+   before it is tapped — a lossless rewrite names the same-value conversion, a
+   lossy one names what it discards, and a form that cannot be derived is
+   disabled with its reason rather than showing a guessed number.
+
+   Two rows: the kind segments (Length / Number / Percent / Keyword) and the
+   unit cycle within the kind (px / rem / em). Same 44 px targets as the rest
+   of the sheet, and the value under each label is what tapping it would write. */
+.inspector__valueswitch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+.inspector__valueswitch-kind {
+  color: var(--muted-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.inspector__kindseg {
+  display: flex;
+  gap: 4px;
+}
+.inspector__kindseg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(var(--tap) + 4px);
+  padding: 5px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font: inherit;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--fg-soft);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__kindseg-btn:disabled { cursor: default; }
+.inspector__kindseg-btn.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+/* A form that cannot be derived: visible (so the user knows the type exists)
+   but not tappable, and its reason is in the note line and the title. */
+.inspector__kindseg-btn.is-blocked {
+  border-style: dashed;
+  color: var(--muted-2);
+  background: transparent;
+}
+.inspector__kindseg-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.inspector__kindseg-val {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.inspector__unitrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inspector__unitrow-label {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.inspector__unitchip {
+  flex: 0 1 auto;
+  min-height: var(--tap);
+  padding: 0 12px;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-soft);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__unitchip.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.inspector__unitchip:disabled {
+  opacity: 0.5;
+  border-style: dashed;
+  cursor: default;
+}
+.inspector__valueswitch-note {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+.inspector__valueswitch-warn { color: var(--warning); }
+.inspector__valueswitch-blocked { color: var(--muted-2); }
+
 /* ---- Inspector: styles panel ------------------------------------- */
 /* The Styles panel is the on-device equivalent of the desktop DevTools
 "Styles" pane. It stacks a header (element label + box size), a

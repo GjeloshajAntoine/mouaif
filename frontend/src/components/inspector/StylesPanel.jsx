@@ -35,6 +35,93 @@ import { h } from 'preact';
 import { useRef, useState, useEffect } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
+import { alternatives, unitOptions } from './valueKinds.js';
+
+// ValueTypes — the explicit switch between value types, plus the unit cycle for
+// the type in force.
+//
+// A declaration's type is invisible in the panel: `14px`, `14`, `87.5%` and
+// `auto` all look like "the value of padding". They are not interchangeable, so
+// each alternative states its cost before it is tapped — a lossless form is
+// silent, a lossy one names what it discards, and one that cannot be derived
+// (a percentage of padding needs the containing block's width, which the
+// inspector does not read) is disabled with the reason instead of showing a
+// guessed number.
+//
+// Tapping an alternative only rewrites the field: nothing is written to the page
+// until Apply, so a type switch stays one property and one undo entry, and the
+// element's other declarations are never touched.
+function ValueTypes(props) {
+const prop = props.prop || '';
+const value = props.value || '';
+const ctx = props.ctx || {};
+if (!prop || !value) return null;
+const alts = alternatives(prop, value, ctx);
+const units = unitOptions(prop, value, ctx);
+// Nothing to switch between (a single kind, no unit cycle): the switch would be
+// a row of one, so it is not rendered at all.
+if (alts.length < 2 && units.length < 2) return null;
+const current = alts.find((a) => a.isCurrent);
+return h('div', { class: 'inspector__valueswitch' },
+h('label', { class: 'label' }, 'Value type',
+h('span', { class: 'inspector__valueswitch-kind' }, current ? ' — ' + current.label : '')
+),
+h('div', { class: 'inspector__kindseg', role: 'group', 'aria-label': 'Value type' },
+alts.map((a) => h('button', {
+class: 'inspector__kindseg-btn' + (a.isCurrent ? ' is-on' : '') + (a.ok ? '' : ' is-blocked'),
+type: 'button',
+key: a.kind,
+'aria-pressed': String(!!a.isCurrent),
+disabled: !a.ok || a.isCurrent,
+title: a.isCurrent
+? a.label + ' — the form this value is in now'
+: a.ok
+? 'Rewrite as ' + a.label + ': ' + a.value + (a.lossless ? ' (same value)' : ' (' + a.note + ')')
+: 'Not available: ' + a.reason,
+'aria-label': a.isCurrent
+? a.label + ', current'
+: a.ok
+? 'Use ' + a.label + ', ' + a.value + (a.lossless ? '' : ', ' + a.note)
+: a.label + ' unavailable, ' + a.reason,
+onClick: () => props.onChange(a.value)
+},
+h('span', { class: 'inspector__kindseg-name' }, a.label),
+h('span', { class: 'inspector__kindseg-val' }, a.isCurrent ? value : (a.ok ? a.value : '—'))
+))
+),
+units.length > 1
+? h('div', { class: 'inspector__unitrow', role: 'group', 'aria-label': 'Unit' },
+h('span', { class: 'inspector__unitrow-label' }, 'Unit'),
+units.map((u) => h('button', {
+class: 'inspector__unitchip' + (u.current ? ' is-on' : ''),
+type: 'button',
+key: u.unit,
+disabled: !u.ok,
+'aria-pressed': String(!!u.current),
+title: u.current ? u.unit + ' — the unit in use'
+  : u.ok ? 'Rewrite as ' + u.value + (u.note ? ' (' + u.note + ')' : '') : 'Not available: ' + u.reason,
+onClick: () => props.onChange(u.value)
+}, u.unit))
+)
+: null,
+// The warning line: what a tap would cost. Shown for the alternatives so the
+// user reads it before tapping rather than after.
+(() => {
+const lossy = alts.filter((a) => !a.isCurrent && a.ok && !a.lossless);
+const blocked = alts.filter((a) => !a.isCurrent && !a.ok);
+if (!lossy.length && !blocked.length) return null;
+return h('p', { class: 'inspector__valueswitch-note' },
+lossy.length
+? h('span', { class: 'inspector__valueswitch-warn' }, '! ', lossy.map((a) => a.label + ' ' + a.note).join(' · '))
+: null,
+lossy.length && blocked.length ? ' ' : null,
+blocked.length
+? h('span', { class: 'inspector__valueswitch-blocked' }, blocked.map((a) => a.label + ': ' + a.reason).join(' · '))
+: null
+);
+})()
+);
+}
 
 // touchStyleRowLabel — short human label for the element being inspected.
 // Builds a DevTools-style `tag#id.class` summary from the DOM node's
@@ -224,6 +311,14 @@ spellcheck: 'false',
 onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); }
 }),
 h('label', { class: 'label' }, 'Value'),
+// The value-type switch sits directly above the value field: it changes the
+// form of that value, so it has to be read before the field, not after.
+h(ValueTypes, {
+prop: propName,
+value,
+ctx: props.unitCtx,
+onChange: (next) => { setValue(next); setApplied(false); setError(''); }
+}),
 h('div', { class: 'inspector__style-valuerow' },
 h('button', {
 class: 'inspector__style-step',
@@ -716,6 +811,11 @@ function applyInlineSnapshot(snapshot) {
 if (!snapshot || !snapshot.inline) return;
 const inline = snapshot.inline || {};
 const resolved = snapshot.computed || {};
+// The base font sizes come back on the same answer (see events.js
+// readElementStyles). They are what makes the value-type switch's rem/em and
+// font-size percentage conversions real numbers instead of an assumed 16px, so
+// they are kept on the model and handed to the edit sheet as its unit context.
+const bases = snapshot.bases || null;
 setModel((prev) => {
 if (!prev) return prev;
 const inlineProps = Object.keys(inline).map((prop) => ({ prop, value: String(inline[prop] || '') }));
@@ -724,7 +824,7 @@ Object.prototype.hasOwnProperty.call(resolved, row.prop)
 ? { ...row, value: String(resolved[row.prop] || '') }
 : row
 ));
-return { ...prev, inlineProps, computed, rev: (prev.rev || 0) + 1 };
+return { ...prev, inlineProps, computed, bases: bases || prev.bases || null, rev: (prev.rev || 0) + 1 };
 });
 }
 // syncFromPage — pull the element's styles after an edit. Best-effort: a
@@ -1165,6 +1265,9 @@ isInline: true,
 isRemove: inlineRows.some((x) => x.prop === edit.prop),
 shot: shot && shot.src,
 shotBusy,
+// The real base font sizes (root for rem, parent for em / font-size %) so the
+// value-type switch converts with numbers instead of assuming 16px.
+unitCtx: model.bases ? { rootFontSize: model.bases.root, parentFontSize: model.bases.parent, fontSize: model.bases.self } : undefined,
 onRefreshShot: captureShot,
 onApply: applyEdit,
 onRemove: removeEdit,

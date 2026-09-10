@@ -665,7 +665,7 @@ const model = { objectId, node: null, inlineProps: [], computed: [], box: null }
 try {
 const s = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; var root=null, parent=null; try { root=parseFloat(getComputedStyle(document.documentElement).fontSize)||null; } catch(e){ root=null; } try { var pe=this.parentElement; parent=pe?parseFloat(getComputedStyle(pe).fontSize)||null:null; } catch(e){ parent=null; } if (parent==null) parent=parseFloat(cs.fontSize)||null; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height, bases:{ root:root, parent:parent, self:parseFloat(cs.fontSize)||null } }; }',
 returnByValue: true
 });
 const v = s && s.result && s.result.value;
@@ -676,8 +676,12 @@ model.inlineProps = (v.inline || []).map((x) => ({ prop: x[0], value: String(x[1
 // CSSStyleDeclaration; sort alphabetically so the long read-only list is
 // scannable (mirrors the desktop DevTools Styles pane).
 model.computed = (v.computed || []).map((x) => ({ prop: x[0], value: String(x[1] || '') }))
-  .sort((a, b) => (a.prop < b.prop ? -1 : a.prop > b.prop ? 1 : 0));
+.sort((a, b) => (a.prop < b.prop ? -1 : a.prop > b.prop ? 1 : 0));
 model.box = { width: v.width, height: v.height };
+// The base font sizes travel with every pick, not only with a post-edit read:
+// the value-type switch needs them the moment an element is selected (a rem or
+// font-size-% form must be a real number, not an assumed 16px root).
+model.bases = v.bases || null;
 }
 } catch { /* element model unavailable */ }
 // Best-effort highlight. Overlay.highlightNode needs a nodeId; resolve one
@@ -773,9 +777,14 @@ height: Math.max(1, Math.round(height * scale))
 // reflected in both lists without a second lookup.
 async function readElementStyles(objectId) {
 if (!objectId) return null;
+// The same call also reports the two base font sizes the value-type switch
+// needs: `bases.root` for rem and `bases.parent` for em/percent-of-font-size
+// conversions. Reading them here (rather than in the value-kind module) keeps
+// the conversions honest instead of assuming a 16px root, and costs no extra
+// round-trip — it is the same callFunctionOn the post-edit read already makes.
 const r = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); computed[p] = cs.getPropertyValue(p); } return { inline: inline, computed: computed }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); computed[p] = cs.getPropertyValue(p); } var root = null, parent = null; try { root = parseFloat(getComputedStyle(document.documentElement).fontSize) || null; } catch (e) { root = null; } try { var pe = this.parentElement; if (pe) parent = parseFloat(getComputedStyle(pe).fontSize) || null; } catch (e) { parent = null; } if (parent == null) parent = parseFloat(cs.fontSize) || null; return { inline: inline, computed: computed, bases: { root: root, parent: parent, self: parseFloat(cs.fontSize) || null } }; }',
 returnByValue: true
 }, 8000);
 return (r && r.result && r.result.value) || null;

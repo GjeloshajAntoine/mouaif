@@ -216,6 +216,10 @@ check('target bar: breadcrumb can walk to an ancestor',
 check('target bar: states where an edit lands', /onRuleTap/.test(inspector));
 check('styles panel publishes the selection to the target bar',
   /onSelectionChange/.test(styles));
+check('the edit sheet switches value types', /inspector__kindseg/.test(styles));
+check('the edit sheet offers the unit cycle', /inspector__unitchip/.test(styles));
+check('the value-type context comes from the page, not a guessed root size',
+  /bases: \{ root: root, parent: parent, self:/.test(read('frontend/src/components/inspector/events.js')));
 check('preview: zoom fit/natural toggle', /toggleZoom/.test(preview));
 check('preview: escape closes the overlay', /Escape/.test(preview));
 check('preview: viewport capture for the PDF viewer', /viewport|clip/i.test(preview));
