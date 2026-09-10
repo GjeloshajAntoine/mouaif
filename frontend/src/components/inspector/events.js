@@ -507,6 +507,21 @@ width: Math.max(1, Math.round(width * scale)),
 height: Math.max(1, Math.round(height * scale))
 };
 }
+// readElementStyles — one round-trip that returns the element's own inline
+// properties and their resolved values: { inline: {prop: value}, computed:
+// {prop: value} }. Inline property names are the CSSOM's, so a shorthand the
+// user typed (`margin: 40px`) comes back as the longhands it expanded to —
+// which are exactly the names the Computed list carries, so an edit can be
+// reflected in both lists without a second lookup.
+async function readElementStyles(objectId) {
+if (!objectId) return null;
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); computed[p] = cs.getPropertyValue(p); } return { inline: inline, computed: computed }; }',
+returnByValue: true
+}, 8000);
+return (r && r.result && r.result.value) || null;
+}
 // hideNodeHighlight — clear the Overlay box-model highlight on the page.
 async function hideNodeHighlight() {
 try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
@@ -652,6 +667,6 @@ startPreviewStream, stopPreviewStream, ackPreviewFrame,
 loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
-refreshNodeModel, selectBySelector, captureElementShot
+refreshNodeModel, selectBySelector, captureElementShot, readElementStyles
 };
 }

@@ -166,6 +166,28 @@ async function main() {
   assert.strictEqual(windowClip.x, 740, 'the context window is centred on the element');
   assert.strictEqual(windowClip.y, 1320, 'the context window is centred on the element');
   assert.ok(windowed.width <= 1040, 'the captured image stays small');
+  // readElementStyles — the post-edit sync. It returns the element's own
+  // inline properties AND their resolved values in one round-trip, so the
+  // panel can refresh a hoisted "changed" row with the value just applied
+  // (a highlighted row showing the previous value would be worse than none).
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/style\.item\(i\)/.test(p.functionDeclaration)) {
+      return Promise.resolve({ result: { value: {
+        inline: { 'margin-left': '60px' },
+        computed: { 'margin-left': '60px', 'padding-top': '14px' }
+      } } });
+    }
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const styles = await handlers.readElementStyles('obj-1');
+  assert.ok(styles, 'readElementStyles returns a snapshot');
+  assert.strictEqual(styles.inline['margin-left'], '60px', 'the inline value is reported');
+  assert.strictEqual(styles.computed['padding-top'], '14px', 'the resolved values are reported');
+  const readCall = calls.slice(-3).find((c) => c.method === 'Runtime.callFunctionOn' && /style\.item\(i\)/.test(c.params.functionDeclaration));
+  assert.ok(readCall, 'readElementStyles dispatches one callFunctionOn');
+  assert.strictEqual(readCall.params.objectId, 'obj-1', 'the read targets the selected element');
+  assert.strictEqual(await handlers.readElementStyles(null), null, 'no objectId yields no snapshot');
+
   // A degenerate box (display:none / detached) must not produce a capture.
   respond.set('Runtime.callFunctionOn', (p) => {
     if (/scrollIntoView/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { x: 0, y: 0, width: 0, height: 0 } } });

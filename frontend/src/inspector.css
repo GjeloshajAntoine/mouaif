@@ -1802,6 +1802,29 @@ color: var(--accent-hi);
 flex-shrink: 0;
 }
 .inspector__styles-row--declared .inspector__styles-prop { color: var(--fg); }
+/* Changed in this session. These rows are hoisted to the top of the list
+(see stylesOrder.js), so the highlight is what explains why they are there —
+an accent left bar plus a tinted background, and a "changed" word chip so the
+state is not signalled by colour alone. */
+.inspector__styles-row--changed {
+background: var(--accent-soft);
+border-color: var(--accent);
+box-shadow: inset 3px 0 0 var(--accent);
+}
+.inspector__styles-row--changed .inspector__styles-prop { color: var(--accent-hi); }
+.inspector__styles-row--changed .inspector__styles-val { color: var(--fg); }
+.inspector__styles-changed {
+flex-shrink: 0;
+padding: 1px 5px;
+font-family: inherit;
+font-size: 0.6rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--on-accent);
+background: var(--accent);
+border-radius: 999px;
+}
 .inspector__styles-val {
 flex: 1 1 auto;
 min-width: 0;

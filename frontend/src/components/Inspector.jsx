@@ -1151,6 +1151,10 @@ useEffect(() => {
     // so the panel can show the result of an edit in place (no page scroll
     // back to the Preview panel).
     captureElementShot: handlers ? handlers.captureElementShot : null,
+    // After an inline edit, re-read the element's own properties and their
+    // resolved values so the hoisted "changed" rows in both lists show the
+    // value that was actually just applied.
+    readElementStyles: handlers ? handlers.readElementStyles : null,
     pickHandlerRef: stylesPickRef,
     pickMode: stylesActive,
     onPickModeChange: setStylesActive

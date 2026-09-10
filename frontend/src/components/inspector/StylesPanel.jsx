@@ -33,6 +33,7 @@
 //     than inlining a monospace wall.
 import { h } from 'preact';
 import { useRef, useState, useEffect } from 'preact/hooks';
+import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 
 // touchStyleRowLabel — short human label for the element being inspected.
 // Builds a DevTools-style `tag#id.class` summary from the DOM node's
@@ -281,6 +282,11 @@ const [selValue, setSelValue] = useState('');
 // scrolling the page back up to the Preview panel.
 const [shot, setShot] = useState(null);
 const [shotBusy, setShotBusy] = useState(false);
+// changed — property names edited in this session, most recent first. They
+// are hoisted to the top of the Declared and Computed lists and highlighted,
+// so "what did I change and what is it now?" is answerable at a glance
+// instead of hunting through ~400 computed rows.
+const [changed, setChanged] = useState([]);
 const modelRef = useRef(null);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
@@ -308,6 +314,11 @@ if (serial === shotSerial.current) setShotBusy(false);
 // previous element's preview immediately (so a stale image never sits above
 // a new element's properties), then capture the new one.
 function applyModel(m) {
+// A different element means the previous edits' highlight is meaningless
+// (the properties belong to the old node). A refresh of the same element
+// keeps it.
+const prevId = modelRef.current && modelRef.current.objectId;
+if (!m || m.objectId !== prevId) setChanged([]);
 modelRef.current = m;
 setModel(m);
 shotSerial.current++;
@@ -408,12 +419,50 @@ return { ...prev, inlineProps: list, rev: (prev.rev || 0) + 1 };
 });
 }
 
+// applyInlineSnapshot — fold readElementStyles' answer back into the model.
+// The page is authoritative for the element's own inline style: rows come
+// back CSSOM-normalised (so `margin: 40px` shows as the longhands the engine
+// actually stored, and `#ffe600` as `rgb(255, 230, 0)`), and a property that
+// no longer exists on the element simply disappears. The resolved values for
+// those same properties are merged into the Computed list, which is what
+// keeps a hoisted "changed" computed row from displaying the previous value.
+function applyInlineSnapshot(snapshot) {
+if (!snapshot || !snapshot.inline) return;
+const inline = snapshot.inline || {};
+const resolved = snapshot.computed || {};
+setModel((prev) => {
+if (!prev) return prev;
+const inlineProps = Object.keys(inline).map((prop) => ({ prop, value: String(inline[prop] || '') }));
+const computed = (prev.computed || []).map((row) => (
+Object.prototype.hasOwnProperty.call(resolved, row.prop)
+? { ...row, value: String(resolved[row.prop] || '') }
+: row
+));
+return { ...prev, inlineProps, computed, rev: (prev.rev || 0) + 1 };
+});
+}
+// syncFromPage — pull the element's styles after an edit. Best-effort: a
+// failed read leaves the model alone rather than blanking the lists.
+async function syncFromPage() {
+const objId = modelRef.current && modelRef.current.objectId;
+if (!objId || !props.readElementStyles) return;
+try {
+applyInlineSnapshot(await props.readElementStyles(objId));
+} catch { /* leave the model as-is */ }
+}
+
 async function applyEdit(prop, value) {
 if (!props.setInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
 await props.setInlineStyleProperty(objId, prop, value);
 upsertLocal(prop, value);
+// Record the edit so the row is hoisted + highlighted from here on.
+setChanged((prev) => markChanged(prev, prop));
+// Re-read the page so both lists show the value that was just applied (the
+// Computed list is otherwise a snapshot that goes stale after an edit, and a
+// hoisted "changed" row showing the old value is worse than no highlight).
+await syncFromPage();
 // Re-capture the pinned preview so the edit is visible in the panel and
 // in the still-open edit sheet.
 captureShot();
@@ -425,6 +474,11 @@ if (!objId) throw new Error('element not resolved');
 await props.removeInlineStyleProperty(objId, prop);
 // Drop the row entirely so the property returns to its inherited state.
 setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
+// Nothing left to highlight for a property that no longer exists here.
+setChanged((prev) => unmarkChanged(prev, prop));
+// The property now resolves from a class / stylesheet, so its computed value
+// changed too.
+await syncFromPage();
 captureShot();
 }
 
@@ -490,6 +544,11 @@ error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null
 const label = elementLabel(model.node);
 const inlineRows = (model.inlineProps || []);
 const computedRows = (model.computed || []);
+// Hoist the properties changed in this session to the top of both lists
+// (most recent first) so the edit you just made is the first thing you see,
+// rather than something to hunt for in the ~400-row computed wall.
+const declaredRows = orderChangedFirst(inlineRows, changed);
+const orderedComputed = orderChangedFirst(computedRows, changed);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 // Sticky block: the element header and the pinned preview stay at the top
 // of the panel's scroller while the property list below scrolls. Without
@@ -569,8 +628,9 @@ h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length
 ? h('ul', { class: 'inspector__styles-list' },
-inlineRows.map((row) => h('li', {
-class: 'inspector__styles-row inspector__styles-row--declared',
+declaredRows.map((row) => h('li', {
+class: 'inspector__styles-row inspector__styles-row--declared'
++ (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
 key: (model.rev || 0) + ':' + row.prop
 },
 h('button', {
@@ -580,12 +640,15 @@ type: 'button',
 // Name): the row visibly shows `{prop} {value}`, so echo both in the
 // label alongside the edit action — a bare "Edit color" would fail the
 // label-content-name-mismatch check and be confusing for screen-reader
-// users who see "color #00ff00" on screen.
-'aria-label': (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
+// users who see "color #00ff00" on screen. Changed rows also announce
+// that state, since the highlight is colour-only for sighted users.
+'aria-label': (isChanged(changed, row.prop) ? 'Changed. ' : '')
++ (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
 title: 'Edit ' + row.prop,
 onClick: () => setEdit({ prop: row.prop, value: row.value })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
+isChanged(changed, row.prop) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 )
 ))
@@ -614,8 +677,9 @@ onClick: () => setEdit({ prop, value: current ? current.value : '' })
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),
 h('ul', { class: 'inspector__styles-list' },
-computedRows.map((row) => h('li', {
-class: 'inspector__styles-row inspector__styles-row--computed',
+orderedComputed.map((row) => h('li', {
+class: 'inspector__styles-row inspector__styles-row--computed'
++ (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
 key: row.prop
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
