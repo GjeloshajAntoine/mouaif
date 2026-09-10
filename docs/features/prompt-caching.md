@@ -1,8 +1,10 @@
-# Anthropic prompt caching
+# Prompt caching
 
 ## Overview
 
 Anthropic's Messages API supports **prompt caching**: a stable prefix of the prompt (system block, tools, earlier messages) can be marked with `cache_control` so the provider stores it once and serves subsequent requests from cache. Cached reads are billed at **10%** of the input rate and cache writes at **125%**, so multi-turn and tool-heavy Claude chats become markedly cheaper once the cache is warm.
+
+OpenAI-family providers cache automatically rather than through markers, and there the lever is a per-conversation routing key instead — see [OpenAI-family cache routing](#openai-family-cache-routing).
 
 `mouaif` enables this for every Anthropic model, including OAuth-authenticated models. The cached prefix is the **system block plus the native tool definitions, with the breakpoint extended to the penultimate message**: the combined system block (prompt profile + agent files + skills + feature summary + tagged files + custom prompt) is the most stable part of the prompt across turns, the last tool definition is marked with `cache_control` per Anthropic's own recommendation, and the second-to-last message carries a breakpoint too. The message breakpoint is what makes caching actually engage: Anthropic silently ignores a `cache_control` breakpoint whose prefix is below the per-model minimum cacheable length (1024 tokens for Sonnet 3.5/3.7, 4096 for the current generation — Sonnet 4 / Opus 4 / Haiku 4.5), and a system block alone — or even a small tool set — is usually below that. The penultimate message guarantees the cached prefix (system + tools + history) clears the minimum whenever there is any history to replay, so caching works from the second request of a conversation **even with every tool switched off**. The cache read/write token counts are surfaced in the chat usage line and priced at the discounted tiers.
 
@@ -59,6 +61,36 @@ Anthropic's three input fields are disjoint buckets: `input_tokens` is uncached 
 ```
 
 The chat UI shows a `cache 900 read · 300 written` token in the per-turn meta line (only when the provider reported any cache activity), and the cost line prices the cached tokens at the discounted rates.
+
+### OpenAI-family cache routing
+
+OpenAI-family endpoints cache prompt prefixes automatically and need no `cache_control` markers. What they do need is a routing hint: the cache is machine-local, so two requests of the same conversation only hit a warm cache if they land on the same machine. Every request carries `prompt_cache_key`, derived from the chat id:
+
+```jsonc
+// Request body, OpenAI-shaped providers.
+{
+  "model": "gpt-4o",
+  "messages": [ /* … */ ],
+  "stream": true,
+  "prompt_cache_key": "mouaif-<chatId>"
+}
+```
+
+The key is byte-identical for every request of one chat — every tool round and every follow-up turn — and different between chats, which is exactly what the hint is for. A request with no chat (a one-shot `POST /api/chat`) omits the field, because there is no conversation worth keeping warm. Hits come back as `prompt_tokens_details.cached_tokens` and are priced by [usage-metrics.md](./usage-metrics.md).
+
+The field is sent only to `openai-compatible`, `azure`, and `openrouter`. `github-copilot` is OpenAI-shaped but rides a gateway of its own, and the remaining OpenAI-shaped providers are non-OpenAI upstreams; a strict gateway that rejects unknown body fields would turn the optimisation into a 400. Anthropic is never sent the field — it uses `cache_control` instead.
+
+| Provider | Caching mechanism | Routing key |
+| --- | --- | --- |
+| `anthropic` | explicit `cache_control` breakpoints | not applicable |
+| `openai-compatible` | automatic | `prompt_cache_key` |
+| `azure` | automatic | `prompt_cache_key` |
+| `openrouter` | automatic, forwarded to the routed upstream | `prompt_cache_key` |
+| `github-copilot` | automatic | not sent |
+| `gemini` | automatic (implicit caching) | not applicable |
+| `ollama` | none | not applicable |
+
+The derivation lives in `src/ai-stream.js` (`promptCacheKeyFor`) and the provider gate in `src/ai-endpoints.js` (`PROMPT_CACHE_KEY_PROVIDERS`). `scripts/test-prompt-cache-key.js` locks both halves down: which providers receive the field, which must not, and that the key stays stable within a chat and distinct between chats.
 
 ## Behavior
 

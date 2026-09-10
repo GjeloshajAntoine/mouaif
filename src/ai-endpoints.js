@@ -845,7 +845,16 @@ function credential(model) {
   return model.__accessToken || model.apiKey;
 }
 
-function buildOpenAIRequest(model, messages, stream) {
+// Providers whose upstream accepts OpenAI's `prompt_cache_key`. The field
+// is OpenAI-specific: OpenAI and Azure OpenAI document it, and OpenRouter
+// forwards it to the OpenAI-family upstream it routes to. It is deliberately
+// NOT sent to every OpenAI-shaped provider — a strict gateway that rejects
+// unknown body fields would turn the optimisation into a 400 — and never to
+// Anthropic, which uses explicit `cache_control` breakpoints instead
+// (see docs/features/prompt-caching.md).
+const PROMPT_CACHE_KEY_PROVIDERS = new Set(['openai-compatible', 'azure', 'openrouter']);
+
+function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   const def = ENDPOINTS[model.provider] || ENDPOINTS['openai-compatible'];
   // Fall back to the per-provider defaultBaseUrl when the saved
   // record's baseUrl is empty. Without this, an openai-compatible or
@@ -904,6 +913,18 @@ function buildOpenAIRequest(model, messages, stream) {
     // OpenRouter only includes its authoritative billed `usage.cost` when
     // asked. Prefer that over local pricing when present.
     body.usage = { include: true };
+  }
+  // OpenAI-family prompt caching. The upstream caches prompt prefixes
+  // automatically, but it can only serve a warm cache when consecutive
+  // requests of one conversation land on the same machine. `prompt_cache_key`
+  // is the documented routing hint for exactly that: a stable key per
+  // conversation raises the hit rate, and the hits are already reported back
+  // through `prompt_tokens_details.cached_tokens` (see src/usage.js). The key
+  // is supplied by the caller (src/ai-stream.js) because only it knows the
+  // chat id; a request with no chat omits the field.
+  const cacheKey = requestOpts && requestOpts.promptCacheKey;
+  if (cacheKey && PROMPT_CACHE_KEY_PROVIDERS.has(model.provider)) {
+    body.prompt_cache_key = String(cacheKey);
   }
   // Azure OpenAI requires an `api-version` query parameter on every
   // request. The provider form lets the user set model.apiVersion

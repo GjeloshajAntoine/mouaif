@@ -390,6 +390,27 @@ async function runSingleToolCall(c, cx) {
   return { exec, imageParts };
 }
 
+// ---- OpenAI prompt-cache routing key ----------------------------------
+// OpenAI-family endpoints cache prompt prefixes automatically, but they only
+// serve a warm cache when consecutive requests of one conversation reach the
+// same machine. `prompt_cache_key` is the documented routing hint for that.
+//
+// The key must be identical for every request of one chat — every tool round
+// and every follow-up turn — and different between chats, which makes the
+// chat id exactly the right source. A request with no chat (a one-shot
+// /api/chat call) returns null, and the builder then omits the field: there
+// is no conversation worth keeping warm. The builder decides which providers
+// accept the field (see ai-endpoints.js → PROMPT_CACHE_KEY_PROVIDERS).
+function promptCacheKeyFor(opts) {
+  const chatId = opts && opts.chatId;
+  if (!chatId) return null;
+  const key = 'mouaif-' + String(chatId);
+  // Defensive cap so a hand-set or future id shape can never produce an
+  // oversized field. Truncation keeps the prefix, so distinct ids stay
+  // distinct.
+  return key.length > 64 ? key.slice(0, 64) : key;
+}
+
 async function streamChat(opts) {
   const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel, maxOutputTokens } = opts || {};
   if (!model || !model.provider) {
@@ -744,7 +765,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // or { ok: false, error }. `done` is NOT emitted here — the caller
   // decides when the whole exchange is finished.
   async function runUpstreamTurn(convoMessages, specs) {
-  const req = build(model, convoMessages, true, specs);
+  const req = build(model, convoMessages, true, specs, { promptCacheKey: promptCacheKeyFor(opts) });
   const supportsOpenAITools = model.provider === 'openai-compatible'
     || model.provider === 'openrouter'
     || model.provider === 'github-copilot';
@@ -1813,6 +1834,8 @@ module.exports = {
   // byte-stream helpers, re-exported for tests through src/ai.js
   parseSSEFrame,
   readSSE,
-  readNDJSON
+  readNDJSON,
+  // OpenAI prompt-cache routing key derivation, exported for tests
+  promptCacheKeyFor
 };
 
