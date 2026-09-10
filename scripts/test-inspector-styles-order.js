@@ -99,8 +99,9 @@ assert.ok(/orderChangedFirst\(inlineRows, changed\)/.test(panel),
   'the declared list is ordered with the change set');
 assert.ok(/orderChangedFirst\(computedRows, changed\)/.test(panel),
   'the computed list is ordered with the change set');
-assert.ok(/declaredRows\.map/.test(panel) && /orderedComputed\.map/.test(panel),
-  'both lists render the ordered rows');
+assert.ok(/declaredRows\.map/.test(panel) && /computedPage\.map/.test(panel),
+  'both lists render the ordered rows (the computed list renders the filtered+'
+  + 'paged slice of orderedComputed, so changed rows still lead the visible list)');
 assert.ok(/inspector__styles-row--changed/.test(panel),
   'changed rows carry the highlight class');
 // The highlight is only honest if the hoisted rows show the value that was

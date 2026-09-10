@@ -2229,6 +2229,100 @@ padding: 5px 8px;
 font-size: 0.68rem;
 color: var(--muted);
 }
+/* ---- Inspector: styles panel, computed filter --------------------- */
+/* The Computed list is the panel's most complete read-out and was its least
+usable: ~400 rows with no way to narrow them. The bar carries the count and
+the all/set/changed filter; the row under it carries the search field.
+`flex-wrap` is the safety net — the heading, the count, and three filter
+pills have to fit 344 px of content width at the 360 px minimum, and a wrap
+beats a squashed control. */
+.inspector__computed-bar {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 8px;
+}
+.inspector__computed-bar .inspector__styles-h { flex: 0 0 auto; margin: 0; }
+.inspector__computed-count {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.66rem;
+font-weight: 600;
+font-variant-numeric: tabular-nums;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* Segmented filter. Exactly one option is active, so it is a radio group
+rather than independent toggles (an independent "set" and "changed" pair
+would imply an AND the user has to reason about). */
+.inspector__computed-filters {
+display: flex;
+flex: 0 0 auto;
+margin-left: auto;
+gap: 2px;
+padding: 2px;
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+.inspector__computed-filter {
+min-height: var(--tap);
+padding: 0 10px;
+font: inherit;
+font-size: 0.7rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: none;
+border: 0;
+border-radius: calc(var(--r-sm) - 2px);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-filter:hover { color: var(--fg); }
+.inspector__computed-filter.is-on {
+color: var(--on-accent);
+background: var(--accent);
+}
+.inspector__computed-searchrow {
+display: flex;
+align-items: stretch;
+gap: 6px;
+margin-top: 8px;
+}
+.inspector__computed-search { flex: 1 1 auto; min-width: 0; min-height: var(--tap); }
+.inspector__computed-clear {
+flex: 0 0 auto;
+width: var(--tap);
+min-height: var(--tap);
+font: inherit;
+font-size: 0.9rem;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-clear:hover { background: var(--surface-3); }
+/* The render cap's release valve: a full-width 44 px row, so "show all" is
+findable by thumb at the end of a long list. */
+.inspector__computed-more {
+display: block;
+width: 100%;
+min-height: var(--tap);
+margin-top: 6px;
+font: inherit;
+font-size: 0.74rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-more:hover { background: var(--surface-3); }
 /* Value row in the edit sheet: − [input] + . The steppers nudge numeric
 values by one unit and apply immediately, which is the fastest way to size
 something on a phone. */

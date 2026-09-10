@@ -34,6 +34,7 @@
 import { h } from 'preact';
 import { useRef, useState, useEffect } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
+import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, emptyMessage } from './computedFilter.js';
 
 // touchStyleRowLabel — short human label for the element being inspected.
 // Builds a DevTools-style `tag#id.class` summary from the DOM node's
@@ -399,6 +400,26 @@ const [rulesOpen, setRulesOpen] = useState(false);
 const [showUa, setShowUa] = useState(false);
 // rulesSerial — same newest-read-wins guard as treeSerial/shotSerial.
 const rulesSerial = useRef(0);
+// The Computed list is every property the browser resolves — ~400 rows on a
+// typical page — and had no way to narrow it. `query` searches property names
+// and resolved values; `view.filter` picks one of all / set / changed (see
+// computedFilter.js); `view.showAll` releases the render cap. They live in one
+// state object so changing the query or the filter can drop the cap in the
+// same update: a stale expanded view after narrowing the list would render
+// every row the user just filtered out.
+const [computedView, setComputedView] = useState({ query: '', filter: 'all', showAll: false });
+const computedQuery = computedView.query;
+const computedFilter = computedView.filter;
+const computedShowAll = computedView.showAll;
+function setComputedQueryState(query) {
+setComputedView((v) => ({ ...v, query: String(query || ''), showAll: false }));
+}
+function setComputedFilterState(filter) {
+setComputedView((v) => ({ ...v, filter, showAll: false }));
+}
+function setComputedShowAll(showAll) {
+setComputedView((v) => ({ ...v, showAll: !!showAll }));
+}
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
@@ -729,6 +750,20 @@ const computedRows = (model.computed || []);
 // rather than something to hunt for in the ~400-row computed wall.
 const declaredRows = orderChangedFirst(inlineRows, changed);
 const orderedComputed = orderChangedFirst(computedRows, changed);
+// The Computed list, narrowed. `setNames` is what this element declares
+// itself (its inline style plus anything edited in this session), which is
+// the useful half of a computed wall that is otherwise mostly inherited and
+// default values.
+const setNames = new Set(inlineRows.map((x) => x.prop));
+const changedNames = new Set(changed);
+const computedVisible = filterComputed(orderedComputed, {
+query: computedQuery,
+filter: computedFilter,
+setNames,
+changedNames
+});
+const computedPageLimit = pageLimit(computedVisible.length, computedShowAll);
+const computedPage = computedVisible.slice(0, computedPageLimit);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 // Sticky block: the element header and the pinned preview stay at the top
 // of the panel's scroller while the property list below scrolls. Without
@@ -908,9 +943,46 @@ onEdit: (prop, value) => setEdit({ prop, value })
 })
 ),
 h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__computed-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),
-h('ul', { class: 'inspector__styles-list' },
-orderedComputed.map((row) => h('li', {
+h('span', { class: 'inspector__computed-count' }, computedVisible.length + '/' + computedRows.length),
+h('div', { class: 'inspector__computed-filters', role: 'group', 'aria-label': 'Filter computed properties' },
+FILTERS.map((f) => h('button', {
+class: 'inspector__computed-filter' + (computedFilter === f.id ? ' is-on' : ''),
+type: 'button',
+key: f.id,
+'aria-pressed': String(computedFilter === f.id),
+title: 'Show ' + f.label.toLowerCase() + ' computed properties',
+onClick: () => setComputedFilterState(f.id)
+}, f.label))
+)
+),
+h('div', { class: 'inspector__computed-searchrow' },
+h('input', {
+class: 'input inspector__computed-search',
+type: 'search',
+value: computedQuery,
+placeholder: 'Filter property or value…',
+'aria-label': 'Filter computed properties by name or value',
+autocapitalize: 'off',
+autocorrect: 'off',
+spellcheck: 'false',
+onInput: (e) => setComputedQueryState(e.currentTarget.value)
+}),
+computedQuery
+? h('button', {
+class: 'inspector__computed-clear',
+type: 'button',
+'aria-label': 'Clear the computed filter',
+title: 'Clear the computed filter',
+onClick: () => setComputedQueryState('')
+}, '✕')
+: null
+),
+computedVisible.length
+? [
+h('ul', { class: 'inspector__styles-list', key: 'list' },
+computedPage.map((row) => h('li', {
 class: 'inspector__styles-row inspector__styles-row--computed'
 + (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
 key: row.prop
@@ -918,7 +990,25 @@ key: row.prop
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 ))
-)
+),
+computedVisible.length > computedPageLimit
+? h('button', {
+class: 'inspector__computed-more',
+type: 'button',
+key: 'more',
+onClick: () => setComputedShowAll(true)
+}, 'Show all ' + computedVisible.length)
+: (computedShowAll && computedVisible.length > COMPUTED_PAGE
+? h('button', {
+class: 'inspector__computed-more',
+type: 'button',
+key: 'less',
+onClick: () => setComputedShowAll(false)
+}, 'Show first ' + COMPUTED_PAGE)
+: null)
+]
+: h('p', { class: 'inspector__styles-none', role: 'status' },
+emptyMessage({ query: computedQuery, filter: computedFilter }))
 ),
 edit ? h(StyleEditSheet, {
 prop: edit.prop,
