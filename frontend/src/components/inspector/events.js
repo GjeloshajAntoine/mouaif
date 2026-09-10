@@ -404,11 +404,12 @@ return buildNodeModel(objectId);
 // spell the same element the same way. `ml` is namespaced to avoid
 // colliding with a page global.
 const PAGE_LABEL_SRC = 'function ml(n){ if(!n||!n.nodeName) return ""; var s=String(n.nodeName).toLowerCase(); if(n.id) s+="#"+n.id; var c=(typeof n.className==="string")?n.className.trim().split(/\\s+/).filter(Boolean):[]; if(c.length) s+="."+c.slice(0,2).join("."); if(c.length>2) s+="…"; return s; }';
-// How much of the tree the panel is offered in one read. A 360 px strip
-// shows about four chips; the caps keep a deep or wide subtree from
-// producing a multi-screen row of tap targets the user can't reach anyway.
+// How much of the tree the panel is offered in one read. The caps keep a deep
+// or wide subtree from producing a multi-line wall of tap targets: the strips
+// wrap instead of scrolling sideways, so 12 children of a wide element would be
+// 6 lines of chips. Overflow is reported as `+N`.
 const MAX_ANCESTORS = 8;
-const MAX_CHILDREN = 12;
+const MAX_CHILDREN = 6;
 // requestNodeId — resolve a DOM nodeId from a Runtime objectId, or 0.
 // Several CSS-domain reads need a nodeId, but DOM.requestNode can map to 0
 // on some targets (and DOM.domain may be off), so every caller treats 0 as

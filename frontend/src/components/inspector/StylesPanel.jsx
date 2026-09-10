@@ -74,13 +74,19 @@ return (box.width ? round(box.width) : '—') + ' × ' + (box.height ? round(box
 // "add a property" chips. Tapping one opens the editor with that property
 // pre-filled. Kept intentionally small; the user can type any property in
 // the editor's property field.
+//
+// Each entry is [property, description, chip label]. The label is deliberately
+// shorter than the property: the row wraps rather than scrolling sideways, so
+// `background-color` at 129 px was enough to push the row onto a third line for
+// one word. The full property name is what gets applied, and it is in the
+// chip's title and accessible name.
 const COMMON_CSS = [
-['color', 'text color'],
-['background-color', 'background'],
-['font-size', 'font size'],
-['margin', 'margin'],
-['padding', 'padding'],
-['border', 'border']
+['color', 'text color', 'color'],
+['background-color', 'background', 'bg'],
+['font-size', 'font size', 'size'],
+['margin', 'margin', 'margin'],
+['padding', 'padding', 'padding'],
+['border', 'border', 'border']
 ];
 
 // STEP_RE — a value the −/+ steppers can nudge: a number with an optional
@@ -423,7 +429,6 @@ const modelRef = useRef(null);
 // write to state, so a slow read for a previously selected element can
 // never overwrite the current element's breadcrumb.
 const treeSerial = useRef(0);
-const crumbRef = useRef(null);
 // rules — the cascade, read-only: every rule that matches the selected
 // element, plus the rules it inherits from its ancestors. Answering "which
 // class put this value here" is what makes the editable list above
@@ -438,6 +443,11 @@ const [rulesBusy, setRulesBusy] = useState(false);
 // element bury the author rule that matters.
 const [rulesOpen, setRulesOpen] = useState(false);
 const [showUa, setShowUa] = useState(false);
+// kidsOpen — whether the children chips are shown. The breadcrumb is always
+// on screen (it answers "where am I"), but the child chips are a browsing aid
+// used deliberately and rarely, and a wrapped row of them is 3-5 lines tall.
+// Collapsed, the Element tree section is one or two breadcrumb lines.
+const [kidsOpen, setKidsOpen] = useState(false);
 // rulesSerial — same newest-read-wins guard as treeSerial/shotSerial.
 const rulesSerial = useRef(0);
 // The Computed list is every property the browser resolves — ~400 rows on a
@@ -732,14 +742,6 @@ setEdit(null);
 setError('');
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
-// Keep the current element's breadcrumb chip in view. The strip reads
-// root → … → current and starts scrolled to the left, so without this the
-// one chip that explains what is selected is the one that is off-screen.
-useEffect(() => {
-const el = crumbRef.current;
-if (el) el.scrollLeft = el.scrollWidth;
-}, [tree]);
-
 // Idle state — nothing selected yet. Prompts the user to tap the preview
 // (if available) or type a selector.
 if (!model) {
@@ -922,7 +924,7 @@ shot.width && shot.height ? shot.width + '×' + shot.height : '')
 ? h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
 tree.ancestors && tree.ancestors.length
-? h('div', { class: 'inspector__styles-crumbs', ref: crumbRef, role: 'group', 'aria-label': 'Element ancestors' },
+? h('div', { class: 'inspector__styles-crumbs', role: 'group', 'aria-label': 'Element ancestors' },
 tree.ancestors.slice().reverse().map((a) => h('button', {
 class: 'inspector__styles-crumb',
 type: 'button',
@@ -936,17 +938,31 @@ h('span', { class: 'inspector__styles-crumb is-here', key: 'here' }, label)
 : null,
 tree.children && tree.children.length
 ? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
+h('button', {
+class: 'inspector__styles-kids-toggle',
+type: 'button',
+'aria-expanded': String(kidsOpen),
+'aria-label': (kidsOpen ? 'Hide' : 'Show') + ' the ' + tree.childCount + ' child element'
++ (tree.childCount === 1 ? '' : 's') + ' of ' + label,
+title: kidsOpen ? 'Hide children' : 'Show children',
+onClick: () => setKidsOpen(!kidsOpen)
+},
+h('span', { class: 'inspector__styles-kids-caret', 'aria-hidden': 'true' }, kidsOpen ? '▾' : '▸'),
 h('span', { class: 'inspector__styles-kids-label' }, 'Children'),
-tree.children.map((c, i) => h('button', {
+h('span', { class: 'inspector__styles-kids-n', 'aria-hidden': 'true' }, String(tree.childCount))
+),
+kidsOpen
+? tree.children.map((c, i) => h('button', {
 class: 'inspector__styles-kid',
 type: 'button',
 key: 'kid-' + i,
 title: 'Select ' + c.label,
 'aria-label': 'Select child element ' + c.label,
 onClick: () => selectChild(i)
-}, c.label)),
-tree.childCount > tree.children.length
-? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length))
+}, c.label))
+: null,
+kidsOpen && tree.childCount > tree.children.length
+? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length) + ' more')
 : null
 )
 : null
@@ -984,7 +1000,7 @@ h('span', { class: 'inspector__styles-val' }, row.value || '')
 : h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap a chip below to add one.'),
 h('div', { class: 'inspector__styles-add' },
 h('span', { class: 'inspector__styles-add-label' }, 'Add'),
-COMMON_CSS.map(([prop, desc]) => {
+COMMON_CSS.map(([prop, desc, short]) => {
 // A chip for a property that is already declared re-opens it with its
 // current value. Opening it blank forced the value to be retyped from
 // memory, and an accidental Apply wrote an empty value (which drops the
@@ -993,12 +1009,12 @@ const current = inlineRows.find((x) => x.prop === prop);
 return h('button', {
 class: 'inspector__styles-chip' + (current ? ' is-set' : ''),
 type: 'button',
-title: current ? desc + ' — set to ' + current.value : desc,
+title: current ? prop + ' — set to ' + current.value : desc + ' (' + prop + ')',
 'aria-label': current
 ? 'Edit ' + desc + ' (' + prop + '), currently ' + current.value
 : 'Add ' + desc + ' (' + prop + ')',
 onClick: () => setEdit({ prop, value: current ? current.value : '' })
-}, prop);
+}, short || prop);
 })
 )
 ),

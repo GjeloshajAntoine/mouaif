@@ -236,6 +236,14 @@ async function main() {
   assert.ok(treeCall, 'readElementTree dispatches one callFunctionOn');
   assert.strictEqual(treeCall.params.objectId, 'obj-1', 'the tree read targets the selected element');
   assert.strictEqual(treeCall.params.returnByValue, true, 'the tree read is by value — no objectId is leaked for a label');
+  // The caps are inlined into the in-page function, and they are the reason a
+  // wide subtree cannot flood the panel. Children are capped tighter than
+  // ancestors because the child chips wrap instead of scrolling sideways, so N
+  // children are N/wrapped lines of chips rather than a hidden strip.
+  assert.match(treeCall.params.functionDeclaration, /lv<=8/, 'ancestors are capped at 8 in the in-page read');
+  assert.match(treeCall.params.functionDeclaration, /i<6/, 'children are capped at 6 in the in-page read');
+  assert.ok(/var anc=\[\],n=this\.parentElement/.test(treeCall.params.functionDeclaration),
+    'the read walks up from the element and counts hops for each ancestor');
   assert.strictEqual(await handlers.readElementTree(null), null, 'no objectId yields no tree');
 
   const beforeUp = calls.length;
@@ -347,6 +355,43 @@ async function main() {
   assert.strictEqual(await handlers.readMatchedRules(null), null, 'no objectId yields no cascade');
   respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 17 }));
   respond.set('DOM.getDocument', () => Promise.resolve({ root: { nodeId: 1 } }));
+
+  // --- the panel must never scroll horizontally ------------------------
+  // This is a UI invariant, not a detail: the Styles panel sits inside the
+  // page's vertical scroller, so any horizontal scroller in it hides its own
+  // content and steals the vertical gesture from a slightly diagonal swipe —
+  // which is exactly how a long list gets scrolled on a phone. Three rows
+  // (quick-add chips, breadcrumb, child chips) each had one, and each was
+  // removed in favour of wrapping. This guards against one creeping back.
+  const css = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector.css'), 'utf8');
+  const H_SCROLL_CLASSES = [
+    'inspector__styles-add',
+    'inspector__styles-crumbs',
+    'inspector__styles-kids',
+    'inspector__styles',
+    'inspector__styles-list',
+    'inspector__styles-section',
+    'inspector__computed-bar',
+    'inspector__computed-searchrow',
+    'inspector__rules-bar'
+  ];
+  for (const cls of H_SCROLL_CLASSES) {
+    // Pull the rule bodies that mention this class as a selector, then check
+    // none of them turns on horizontal scrolling. `overflow-x: hidden` (the
+    // panel's belt-and-braces clip) is fine; `auto`/`scroll` is not.
+    const re = new RegExp('\\.' + cls + '[^{]*\\{([^}]*)\\}', 'g');
+    let m;
+    while ((m = re.exec(css))) {
+      const body = m[1];
+      const overflowX = /overflow-x:\s*([a-z]+)/.exec(body);
+      if (overflowX) {
+        assert.ok(overflowX[1] === 'hidden' || overflowX[1] === 'clip',
+          '.' + cls + ' must not scroll horizontally (found overflow-x: ' + overflowX[1] + ')');
+      }
+      assert.ok(!/overflow-y:\s*(auto|scroll)/.test(body) || /overflow-x:\s*(hidden|clip)/.test(body),
+        '.' + cls + ' sets overflow-y without pinning overflow-x — the computed overflow-x becomes auto and the panel can be dragged sideways');
+    }
+  }
 
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
