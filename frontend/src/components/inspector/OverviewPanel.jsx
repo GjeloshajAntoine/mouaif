@@ -6,13 +6,23 @@ import { fmtBytes } from './format.js';
 export function OverviewPanel(props) {
   const [metrics, setMetrics] = useState(null);
 
+  // The parent builds a fresh `() => handlers.fetchMetrics()` arrow on
+  // every render, so depending on props.metrics would tear down and
+  // restart this 2.5 s poll on each parent render — including the render
+  // triggered by every console/network row — and call
+  // Performance.getMetrics far more often than the cadence asks for. Read
+  // the latest callback through a ref and start the loop once.
+  const metricsFn = useRef(props.metrics);
+  metricsFn.current = props.metrics;
+
   useEffect(() => {
     let stop = false;
     let timer = null;
     async function tick() {
       if (stop) return;
       try {
-        const m = await props.metrics();
+        const fn = metricsFn.current;
+        const m = fn ? await fn() : null;
         if (stop) return;
         setMetrics(m);
       } catch { /* leave stale */ }
@@ -20,7 +30,7 @@ export function OverviewPanel(props) {
     }
     tick();
     return () => { stop = true; if (timer) clearTimeout(timer); };
-  }, [props.metrics]);
+  }, []);
 
   const rows = metrics ? [
     ['Documents', metrics.documents], ['Frames', metrics.frames], ['Nodes', metrics.nodes],

@@ -159,6 +159,14 @@ if (value) setLiveTitle(value);
 // so the previous frame's natural size is a safe approximation.
 const lastDims = useRef({ w: 0, h: 0 });
 const latestImage = useRef(null);
+// The capture effect below is keyed on props.capture/subscribe/ackFrame
+// only, so its `img.onload` closure would otherwise keep whatever
+// sizeId/sizePresets were current when the effect last restarted — a
+// device-preset change would not reach the DPR decision. Read them
+// through a ref that every render refreshes.
+const sizeRef = useRef({ presets: props.sizePresets, id: props.sizeId });
+sizeRef.current = { presets: props.sizePresets, id: props.sizeId };
+
 
   useEffect(() => {
     if (!props.capture) return;
@@ -269,7 +277,7 @@ latestImage.current.height = cur.naturalHeight || 0;
 // manual toggle clears the gate so the user's choice always wins.
 if (!autoZoomRef.current && cur.naturalWidth && frameRef.current) {
 const frameW = frameRef.current.clientWidth || frameRef.current.offsetWidth;
-const dpr = currentDeviceScaleFactor(props.sizePresets, props.sizeId);
+const dpr = currentDeviceScaleFactor(sizeRef.current.presets, sizeRef.current.id);
 if (frameW && previewZoomForWidth(cur.naturalWidth, frameW, dpr) === 'size') {
 setZoom('size');
 try { localStorage.setItem(ZOOM_STATE_KEY, 'size'); } catch { /* ignore */ }
