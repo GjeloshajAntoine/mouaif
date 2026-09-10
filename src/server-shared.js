@@ -21,7 +21,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('node:child_process');
-const { qs, safeDecode, firstStringValue, errCodeToHttpStatus } = require('./util.js');
+const { qs, safeDecode, projectModelRecord, firstStringValue, errCodeToHttpStatus } = require('./util.js');
 const settings = require('./settings.js');
 const projects = require('./projects.js');
 const ai = require('./ai.js');
@@ -419,16 +419,7 @@ function resolveModel(modelId, projectDir, providerId) {
 
   // Never let committed project JSON redirect a global credential to an
   // attacker-controlled endpoint or replace auth/account/header policy.
-  const safeModel = { ...m };
-  delete safeModel.apiKey;
-  delete safeModel.baseUrl;
-  delete safeModel.auth;
-  delete safeModel.oauthAccount;
-  delete safeModel.headers;
-  delete safeModel.staticHeaders;
-  delete safeModel.authHeader;
-  delete safeModel.token;
-  delete safeModel.accessToken;
+  const safeModel = projectModelRecord(m);
 
   const hydrated = Object.assign({}, connection || {}, safeModel, { provider: m.provider });
   if (!hydrated.auth) hydrated.auth = 'apikey';

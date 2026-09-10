@@ -73,6 +73,30 @@ function safeDecode(value) {
   if (typeof value !== 'string') return '';
   try { return decodeURIComponent(value); } catch { return value; }
 }
+// projectModelRecord(record) — the only fields a project's `.mouaif.json`
+// model entry may contribute to a request. Project models are identity and
+// selection metadata only (decision §3): transport and credentials always
+// come from the app-level provider connection. The project file is
+// committed with the project, so a `baseUrl`, `apiKey`, `auth`, `headers`
+// or `token` written there must never reach a request builder — it would
+// point a global credential at an attacker-controlled endpoint.
+//
+// Allow-list, not deny-list: a field added later is ignored until it is
+// listed here, instead of silently flowing through.
+const PROJECT_MODEL_FIELDS = [
+  'id', 'provider', 'label', 'contextWindow', 'pricing',
+  'thinking', 'thinkingLevel', 'maxOutputTokens', 'maxTokens'
+];
+
+function projectModelRecord(record) {
+  const out = {};
+  if (!record || typeof record !== 'object') return out;
+  for (const key of PROJECT_MODEL_FIELDS) {
+    if (record[key] !== undefined) out[key] = record[key];
+  }
+  return out;
+}
+
 // errCodeToHttpStatus(code, def) — one source of truth for mapping the
 // typed error codes the domain modules throw (files, tags, mcp, the
 // project/file/tags/prompt/agent handlers) to HTTP status codes. The
@@ -106,6 +130,8 @@ err,
 joinUrl,
 qs,
 safeDecode,
+projectModelRecord,
+PROJECT_MODEL_FIELDS,
 firstStringField,
 firstStringValue,
 errCodeToHttpStatus

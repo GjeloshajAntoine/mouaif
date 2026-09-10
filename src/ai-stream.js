@@ -9,6 +9,7 @@
 // src/ai-endpoints.js; the public facade is src/ai.js.
 
 const { endpointFor, requireApiKey, BUILDERS, PARSERS, parseMiniMaxTextToolCalls } = require('./ai-endpoints.js');
+const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
 
@@ -1400,9 +1401,9 @@ return { ok: false, content: JSON.stringify(r), result: r };
               const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
               return { ok: false, content: JSON.stringify(r), result: r };
             }
-            nestedModel = Object.assign({}, connection, rec, {
+            nestedModel = Object.assign({}, connection, projectModelRecord(rec), {
               provider: rec.provider,
-              auth: rec.auth || connection.auth || 'apikey'
+              auth: connection.auth || 'apikey'
             });
           } catch (e) {
             const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
@@ -1443,23 +1444,17 @@ return { ok: false, content: JSON.stringify(r), result: r };
             // provider id; the URL/credential come from the connection.
             rec = { id: chosenModel.modelId, provider: chosenModel.providerId };
           }
-          const safe = {};
-          for (const key of ['id', 'provider', 'label']) {
-            if (rec[key] !== undefined) safe[key] = rec[key];
-          }
-          if (rec.contextWindow !== undefined) safe.contextWindow = rec.contextWindow;
-          if (rec.thinking !== undefined) safe.thinking = rec.thinking;
-          if (rec.pricing && typeof rec.pricing === 'object') safe.pricing = rec.pricing;
+          const safe = projectModelRecord(rec);
           const app = settingsMod.getApp();
           const providers = Array.isArray(app.providers) ? app.providers : [];
           const connection = providers.find((p) => p && p.id === rec.provider) || null;
           if (!connection) {
-            const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
-            return { ok: false, content: JSON.stringify(r), result: r };
+          const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
+          return { ok: false, content: JSON.stringify(r), result: r };
           }
           nestedModel = Object.assign({}, connection, safe, {
-            provider: rec.provider,
-            auth: safe.auth || connection.auth || 'apikey'
+          provider: rec.provider,
+          auth: connection.auth || 'apikey'
           });
         } catch (e) {
           const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
