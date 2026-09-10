@@ -1600,11 +1600,20 @@ min-width: 0;
 read-only "Computed" list. Everything is a 44 px min-height tap target;
 editing opens a bottom sheet (StyleEditSheet) so no hover-only or
 tiny-inline-text affordances exist. The body is a scroll container that
-fills the panel, matching the console/network scrollers. */
+fills the panel, matching the console/network scrollers.
+
+The height is deliberately larger than the other panel bodies (32 dvh).
+A styles row is a 44 px tap target, and the panel's pinned block — element
+header + the element preview — is a further ~115 px that never scrolls. At
+32 dvh on a 360 x 680 phone the scroller is 218 px, which left room for
+exactly one property row: the changed-first rows at the top of the list
+were technically correct but effectively invisible, and the panel read as
+broken. 52 dvh / 320 px floors it at ~5 visible rows, which is what the
+list needs to be usable for comparing values. */
 .inspector__panel-body .inspector__styles {
 flex: 0 0 auto;
-height: 32dvh;
-min-height: 200px;
+height: 52dvh;
+min-height: 320px;
 overflow-y: auto;
 padding: 6px 8px;
 background: var(--surface);
@@ -1618,15 +1627,28 @@ gap: 8px;
 /* On a wide screen (where the first panel grows) the styles list gets
 the leftover height like the scroller/preview do. */
 @media (min-width: 900px) {
+/* A non-grow styles panel (the first panel is the preview) still needs
+the taller floor: the pinned block is the same size regardless of the
+viewport, so the reason for 52 dvh does not go away on a tablet. It is
+slightly shorter only because a wide screen has the room to scroll the
+page for the rest. */
 .inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__styles {
 flex: 0 0 auto;
-height: 32dvh;
-min-height: 200px;
+height: 46dvh;
+min-height: 320px;
 }
 .inspector__panel--grow .inspector__panel-body .inspector__styles {
 flex: 1 1 auto;
 height: auto;
 min-height: 0;
+/* Guard against an unbounded expansion. `height: auto` sizes this flex
+child to its content, and the panel column above it is content-sized
+(no definite height to grow into), so without a ceiling the styles
+scroller grew to the full height of its ~400 computed rows — a 19000 px
+panel that pushed the rest of the inspector off the page instead of
+scrolling. The value is generous enough to keep "fill the leftover
+height" working on a real wide-screen layout. */
+max-height: 78dvh;
 }
 }
 .inspector__styles-empty {
