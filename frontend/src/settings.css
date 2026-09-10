@@ -102,14 +102,6 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
 .settings-home { margin: 0; padding: 0; border: 0; }
 
 /* ---- Settings: projects list ------------------------------------ */
-.sprojects__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 .sprojects__empty {
   background: var(--surface);
   border: 1px dashed var(--border);
@@ -206,14 +198,6 @@ font-size: 0.78rem;
 
 /* ---- Settings: provider list + edit form ------------------------ */
 
-.providers__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 .providers__empty {
   background: var(--surface);
   border: 1px dashed var(--border);
