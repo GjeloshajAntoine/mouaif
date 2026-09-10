@@ -7,7 +7,7 @@ The thinking level is a lightweight parameter stored on the chat record (`thinki
 The selected value is sent to the AI provider's API as the appropriate native field:
 
 - **OpenAI-compatible** (including OpenRouter, GitHub Copilot): maps to `reasoning_effort` — any provider-reported level is passed through verbatim (`"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, …)
-- **Anthropic**: maps to `thinking.budget_tokens` (low=2048, medium=8192, high=16384, or a custom number)
+- **Anthropic**: maps to `thinking.budget_tokens` (low=2048, medium=8192, high=16384, or a custom number). A custom number is capped at **100 000** tokens, and `max_tokens` is raised to `min(budget, 100000) + 256` when it would otherwise be smaller — Anthropic rejects a request whose `max_tokens` does not clear its thinking budget, so both values come from the same capped number.
 - **Gemini** (2.5+ models): maps to `generationConfig.thinkingConfig.thinkingBudget`
 - **Ollama**: maps to the boolean `think` flag on the chat request
 

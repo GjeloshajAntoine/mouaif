@@ -1141,9 +1141,13 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     return parent == null || delegated == null ? null : parent + delegated;
   }
   function delegatedCostForResult(result) {
-    const total = Number(result && result.totalCost);
+    // An explicit null/undefined means "unknown", not $0: Number(null) is
+    // 0, so the old form counted a subagent whose cost could not be
+    // determined as an exact zero and silently dragged the run's known-cost
+    // guard into "known", understating the total.
+    const total = result && result.totalCost != null ? Number(result.totalCost) : NaN;
     if (isFinite(total) && total >= 0) return total;
-    const exact = Number(result && result.providerCost);
+    const exact = result && result.providerCost != null ? Number(result.providerCost) : NaN;
     if (isFinite(exact) && exact >= 0) return exact;
     if (!result || !result.model || !result.usage) return null;
     try {

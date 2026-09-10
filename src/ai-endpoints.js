@@ -1222,9 +1222,15 @@ function buildAnthropicRequest(model, messages, stream, specs) {
       if (isFinite(n) && n > 0) budget = n;
     }
     if (budget > 0) {
-      body.thinking = { type: 'enabled', budget_tokens: Math.min(budget, 100000) };
-      // ensure max_tokens is at least budget + 256
-      if (body.max_tokens < budget + 256) body.max_tokens = budget + 256;
+    // The budget is capped so a bogus "999999" from a project file cannot
+    // ask for an absurd thinking window. max_tokens must clear the
+    // thinking budget (Anthropic rejects the request otherwise), so it is
+    // derived from the same capped value — computing it from the
+    // uncapped `budget` produced `budget_tokens: 100000` next to
+    // `max_tokens: 200256` for a 200000-token request.
+    const capped = Math.min(budget, 100000);
+    body.thinking = { type: 'enabled', budget_tokens: capped };
+    if (body.max_tokens < capped + 256) body.max_tokens = capped + 256;
     }
   }
   return {
@@ -1245,7 +1251,11 @@ function buildGeminiRequest(model, messages, stream) {
   // Gemini uses ?alt=sse for streaming responses.
   const url = joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'));
   const systemMsgs = messages.filter(m => m.role === 'system');
-  const systemContent = systemMsgs.map(m => m.content).filter(Boolean).join('\n\n');
+  // systemContentText handles both shapes a system message can take: a
+  // plain string, and the block array the subagent runner pushes
+  // (`[{ type: 'text', text }]`). Joining `m.content` directly sent
+  // "[object Object]" as the entire system instruction.
+  const systemContent = systemMsgs.map(m => systemContentText(m.content)).filter(Boolean).join('\n\n');
   const contents = messages
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: openAIContentToGeminiParts(m.content) }));
@@ -1280,7 +1290,16 @@ function buildGeminiRequest(model, messages, stream) {
 }
 
 function buildOllamaRequest(model, messages, stream) {
-  const body = { model: model.id, messages, stream: !!stream };
+  // Ollama's /api/chat takes OpenAI-shaped messages but expects `content`
+  // to be a string: a block array (the subagent runner's system message)
+  // is rejected or mis-parsed upstream. Flatten the same way the Anthropic
+  // and Gemini builders do.
+  const normalized = messages.map((m) => (
+    m && Array.isArray(m.content)
+      ? Object.assign({}, m, { content: systemContentText(m.content) })
+      : m
+  ));
+  const body = { model: model.id, messages: normalized, stream: !!stream };
   // Ollama's reasoning switch is a boolean `think` flag. Any non-empty
   // thinking level means "on"; empty means upstream default (off for
   // most models).
