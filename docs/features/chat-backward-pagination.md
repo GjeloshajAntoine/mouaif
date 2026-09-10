@@ -28,6 +28,10 @@ The transcript cursor is the same stable per-chat `seq` used by the append-only 
 
 **Scroll preservation.** `prependOlderTranscript` inserts rows before the first non-header content node, suppresses per-row pinning while filling, then bumps `scrollTop` by exactly the height delta so the rows the user was reading stay in place.
 
+**Progress vs. existence.** A page's return value reports whether the DOM changed, never whether older history remains. A page can legitimately insert nothing — a reconcile that landed between loads can already hold the rows a page returns — while still advancing `beforeSeq`. Two places used to conflate the two: the pager cleared `hasMore` when a page inserted nothing even though the server had reported more, and the drainer stopped on that `false` return. Together they hid every remaining older page. `hasMore` now comes only from the server's own flag, and the drainer decides from cursor advance: a failed fetch leaves `beforeSeq` untouched (so the drain stops and the next scroll retries), while a no-op page advances it and keeps the drain going. An absent `hasMore` in the response is read as "a cursor exists", not as "false", so legacy responses without the flag cannot latch pagination off.
+
+`scripts/test-chat-pagination-drain.js` covers the no-op page, the empty page, the failed fetch and the single-page loader's return contract; `scripts/test-chat-pagination.js` covers the seeding rules including the absent `hasMore` case.
+
 ## Related
 
 - [Chat load performance](./chat-load-performance.md) — the earlier load-time work (cost aggregation, revision cursor, lazy tool results).

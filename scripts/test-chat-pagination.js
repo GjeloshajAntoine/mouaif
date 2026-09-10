@@ -66,6 +66,29 @@ t('last page hasMore false', p.hasMore === false, p.hasMore);
 // beforeSeq 0 means "nothing older"; even at the top we must not load.
 t('last page not loadable', shouldLoadOlder(p, 0) === false, couldLoad(p));
 
+// 7. A response that omits `hasMore` must not latch pagination off.
+// The legacy message endpoints do not send the flag; reading the absent
+// value as false left a cursor that could never fetch history even
+// though a valid beforeSeq bound came back with the same response.
+resetPager(p);
+recordInitialPage(p, { messages: [{ seq: 20 }, { seq: 21 }], total: 30, beforeSeq: 20 });
+t('absent hasMore stays loadable', p.hasMore === true, p.hasMore);
+t('absent hasMore keeps the cursor', p.beforeSeq === 20, p.beforeSeq);
+t('absent hasMore loads at the top', shouldLoadOlder(p, 0) === true, couldLoad(p));
+
+// 8. ...but an explicit false still stops it, and a missing cursor is
+// still unloadable (there is nothing to page back from).
+resetPager(p);
+recordInitialPage(p, { messages: [{ seq: 20 }], total: 21, hasMore: false, beforeSeq: 20 });
+t('explicit hasMore false stops loads', p.hasMore === false, p.hasMore);
+resetPager(p);
+recordInitialPage(p, { messages: [{ seq: 20 }], total: 21 });
+t('a cursor is derived from the oldest row', p.beforeSeq === 20, p.beforeSeq);
+resetPager(p);
+recordInitialPage(p, { messages: [{ role: 'user' }], total: 21 });
+t('no cursor at all, no loads', p.hasMore === false && shouldLoadOlder(p, 0) === false, couldLoad(p));
+t('no cursor means hasMore false', p.hasMore === false, p.hasMore);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
 }

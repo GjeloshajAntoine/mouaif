@@ -49,7 +49,6 @@ export function recordInitialPage(pager, body) {
 if (!pager || !body) return;
 pager.offset = Array.isArray(body.messages) ? body.messages.length : 0;
 pager.total = typeof body.total === 'number' ? body.total : null;
-pager.hasMore = !!body.hasMore;
 // The next older page is everything strictly below the oldest row we
 // hold. The server echoes the smallest seq on this page (beforeSeq),
 // which is exactly that bound.
@@ -61,6 +60,14 @@ pager.beforeSeq = typeof body.beforeSeq === 'number' && body.beforeSeq >= 0
 pager.firstSeq = Array.isArray(body.messages) && body.messages.length
   ? body.messages[0].seq
   : null;
+// An absent `hasMore` must not latch pagination off. Older servers (and
+// the legacy message endpoints) omit the flag; reading that as "false"
+// left a pager that can never load history even though a valid
+// `beforeSeq` bound was returned. Only an explicit `false` stops the
+// loader; otherwise infer from whether a cursor actually exists.
+pager.hasMore = typeof body.hasMore === 'boolean'
+  ? body.hasMore
+  : pager.beforeSeq !== null && pager.beforeSeq !== undefined;
 }
 
 // resetPager(pager) -> void

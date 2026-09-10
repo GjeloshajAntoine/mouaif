@@ -397,9 +397,10 @@ beforeSeq: (typeof r.body.beforeSeq === 'number' && isFinite(r.body.beforeSeq)) 
 // pagination cursor. Latch-free — the caller owns the in-flight latch
 // (either the scroll loader's single-page latch or the eager drainer's
 // session latch), so a drain loop can reuse this core without its own
-// call being swallowed by `loading === true`. Returns true when a page
-// was fetched (or when nothing is left), false when the request failed
-// or was a no-op. The prepend preserves scroll position.
+// call being swallowed by `loading === true`. Returns whether the DOM
+// changed; `pager.hasMore` — set from the server's own flag — is the only
+// authority on whether older history remains. The prepend preserves
+// scroll position.
 async function fetchAndPrependOlderPage(state, refs, pager) {
 if (!pager || !state || !refs) return false;
 if (!pager.hasMore) return false;
@@ -457,8 +458,14 @@ pager.beforeSeq = null;
 pager.hasMore = !!body.hasMore;
 pager.offset += body.messages.length;
 pager.firstSeq = fresh.length ? fresh[0].seq : pager.firstSeq;
-if (!body.hasMore || !inserted) pager.hasMore = false;
+// `inserted` says whether the DOM changed, NOT whether more history
+// exists. A page whose rows were all already in `seenSeqs` (a window
+// edge from a reconcile that landed between loads) inserts nothing yet
+// is real progress: `beforeSeq` advanced. Forcing hasMore to false there
+// silently hid every remaining older page. Only the server's answer ends
+// pagination; the scroll handler already ignores a `false` return.
 return inserted;
+
 } catch {
 // Leave hasMore true so a later scroll can retry; clearing it would
 // permanently hide history that a transient failure interrupted.
@@ -468,10 +475,12 @@ return false;
 // loadOlderMessages(state, refs, pager) -> Promise<boolean>
 //
 // Fetch the next older page and prepend it to the transcript, updating
-// the pagination cursor. Returns true when a page was fetched (or when
-// nothing is left), false when the request failed or was a no-op. The
-// caller (the scroll-up listener) awaits this so a single in-flight page
-// flag can stay across the fetch. The prepend preserves scroll position.
+// the pagination cursor. The boolean is whether the DOM actually changed
+// (rows were inserted); it is NOT a "more history exists" signal — read
+// `pager.hasMore` for that. Failures keep the pager intact so the next
+// scroll retries. The caller (the scroll-up listener) awaits this so a
+// single in-flight page flag can stay across the fetch. The prepend
+// preserves scroll position.
 export async function loadOlderMessages(state, refs, pager) {
 if (!pager || !state || !refs) return false;
 if (pager.loading) return false;
@@ -533,18 +542,18 @@ if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) retu
 if (state.streaming || state.watchingRun) return;
 if (typeof refs.transcript === 'undefined' || (refs.transcript && !refs.transcript.current)) return;
 const before = pager.beforeSeq;
-const ok = await fetchAndPrependOlderPage(state, refs, pager);
-if (!ok) return; // error or top reached — the pager is authoritative
-if (pager.beforeSeq === before) {
-// No cursor advance (server returned the same bound); guard
-// against an infinite loop even though hasMore should be false.
-return;
-}
+await fetchAndPrependOlderPage(state, refs, pager);
+// The cursor, not the "did the DOM change" return value, decides
+// whether we made progress. A fetch error leaves it untouched, so
+// we stop and retry on the next scroll; a page whose rows were all
+// already on screen still advances it and must NOT end the drain —
+// that page is real progress toward the top of the history.
+if (pager.beforeSeq === before) return;
 // Yield between pages so the browser can paint the just-inserted
 // rows before more are prepended.
 await new Promise((resolve) => setTimeout(resolve, 0));
-if (!pager.hasMore) return;
 }
+
 } finally {
 pager.loading = false;
 }
