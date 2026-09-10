@@ -12,7 +12,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [MCP OAuth sign-in](features/mcp-oauth.md) — connect HTTP MCP servers with PKCE, keychain-backed tokens, and refresh.
 - [Custom actions](features/custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the Tools popup.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a web URL from project settings.
-- [Hide file content](features/hide-file-content.md) — mark line ranges the agent file tools must not reveal.
+- [Hide file content](features/hide-file-content.md) — mark line ranges or selected text the agent file tools must not reveal.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers with a mounted example project.
 - [Retry and auto-retry](features/retry-and-auto-retry.md) — retry failed turns from their error card, or let the app retry once automatically.
 
