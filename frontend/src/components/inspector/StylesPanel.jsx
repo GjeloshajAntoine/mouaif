@@ -620,6 +620,49 @@ useEffect(() => {
 if (props.pickHandlerRef) props.pickHandlerRef.current = pickFromPoint;
 return () => { if (props.pickHandlerRef) props.pickHandlerRef.current = null; };
 });
+// Publish the selection so the TargetBar above the panels can show the
+// element, its rule chips and where an edit lands. The bar is a separate
+// component (and can be seen while this panel is hidden), so the data has to
+// leave here — but the *selection* stays owned by this panel, which is what
+// keeps tap-to-select, the tree, and the pinned preview working exactly as
+// before. `onSelectionChange` is optional: without it this panel behaves as it
+// always did.
+useEffect(() => {
+if (!props.onSelectionChange) return;
+props.onSelectionChange({
+  label: model ? elementLabel(model.node) : '',
+  size: boxSummary(model && model.box),
+  objectId: (model && model.objectId) || '',
+  declared: (model && model.inlineProps) || [],
+  rules: rules || null,
+  tree: tree || null,
+  changed: changed || [],
+  editing: edit ? edit.prop : ''
+});
+}, [model, rules, tree, changed, edit]);
+// Expose the panel's own actions to the TargetBar above it, so the bar's
+// header buttons and breadcrumb are shortcuts into this panel rather than a
+// second implementation. The selection stays owned here (with the highlight,
+// pinned preview and changed-set reset that go with it); the bar only asks.
+useEffect(() => {
+if (!props.panelHandlesRef) return;
+props.panelHandlesRef.current = {
+  // Move the selection up the tree. `levels` is the hop count readElementTree
+  // returns (the same number this panel's own breadcrumb passes), with a label
+  // match as a fallback so a crumb from a stale tree still works.
+  selectAncestor: (crumb) => {
+    if (!crumb) return Promise.resolve(false);
+    const list = (tree && tree.ancestors) || [];
+    const found = list.find((a) => a && a.label === crumb.label);
+    const levels = crumb.levels != null ? crumb.levels : (found && found.levels);
+    if (levels == null) return Promise.resolve(false);
+    return selectAncestor(levels);
+  },
+  clear: () => clearPick(),
+  refresh: () => refreshStyles()
+};
+return () => { if (props.panelHandlesRef) props.panelHandlesRef.current = null; };
+});
 // togglePickMode — switch "pick mode" on or off. When on, tapping the
 // live preview selects an element (routed via the parent's stylesActive,
 // which also drives the banner PreviewPanel renders over the screenshot).

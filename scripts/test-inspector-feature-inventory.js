@@ -207,6 +207,15 @@ check('response bodies are truncated before storing', /200000/.test(events));
 
 // Panels' own features.
 check('preview: text-input bar', /inspector__typebar/.test(preview));
+check('preview: pick-mode banner', /inspector__pickban/.test(preview));
+check('target bar: renders the element, its rules and the write target',
+  /inspector__targetbar/.test(read('frontend/src/components/inspector/TargetBar.jsx'))
+  && /TargetBar/.test(inspector));
+check('target bar: breadcrumb can walk to an ancestor',
+  /onSelectAncestor/.test(inspector));
+check('target bar: states where an edit lands', /onRuleTap/.test(inspector));
+check('styles panel publishes the selection to the target bar',
+  /onSelectionChange/.test(styles));
 check('preview: zoom fit/natural toggle', /toggleZoom/.test(preview));
 check('preview: escape closes the overlay', /Escape/.test(preview));
 check('preview: viewport capture for the PDF viewer', /viewport|clip/i.test(preview));

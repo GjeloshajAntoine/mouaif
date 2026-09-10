@@ -7,6 +7,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
+- [Inspector target bar](features/inspector-target-origin.md) — which element is selected, which rule a value comes from, and where an edit lands.
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.
 - [MCP OAuth sign-in](features/mcp-oauth.md) — connect HTTP MCP servers with PKCE, keychain-backed tokens, and refresh.

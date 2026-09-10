@@ -1508,6 +1508,184 @@ color: var(--danger);
   50%      { opacity: 0.35; }
 }
 
+/* ---- Inspector: target & origin bar -------------------------------
+   "Which element, which rule, and where does my edit go?" — the three
+   answers the Styles panel only implies. It sits directly above the panels,
+   is a fixed column of small rows, and never scrolls: the panels below keep
+   the only scroller, so a long cascade cannot push the property list down.
+
+   Every interactive element is a ≥44 px target, the breadcrumb *wraps*
+   rather than scrolling sideways (a horizontal scroller inside a vertical
+   page steals the vertical gesture — see the styles panel's rules above),
+   and the chips are labelled on screen, not icon-only. */
+.inspector__targetbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 6px 8px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+}
+.inspector__targetbar-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.inspector__targetbar-spacer { flex: 1 1 auto; }
+.inspector__targetbar-btn {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+}
+.inspector__targetbar-btn.is-on {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* The tag chip: the element in DevTools notation, plus its box size. It
+   ellipsizes rather than wrapping — the identity matters, the tail of a long
+   class list does not. */
+.inspector__tagchip {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  height: var(--tap);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector__tagchip-name { font-weight: 700; }
+.inspector__tagchip-dim { color: var(--accent-hi); }
+.inspector__tagchip-size {
+  margin-left: 6px;
+  font-size: 0.7rem;
+  color: var(--muted-2);
+}
+/* Breadcrumb: the path to the element, tap to walk up. Wraps, and the
+   current element is the only non-button crumb. */
+.inspector__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+.inspector__crumb {
+  font: inherit;
+  min-height: var(--tap);
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.inspector__crumb:hover { background: var(--surface-2); color: var(--fg); }
+.inspector__crumb.is-here {
+  color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 700;
+}
+.inspector__crumb.is-elided {
+  color: var(--muted-2);
+  cursor: default;
+}
+/* Rule chips: the cascade at a glance, most likely answer first. */
+.inspector__rulerow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.inspector__rulerow-label {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.inspector__rulechip {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-soft);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__rulechip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__rulechip-n {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  color: var(--muted-2);
+}
+/* The write target: the one rule this panel can actually change. */
+.inspector__rulechip.is-target {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.inspector__rulechip.is-target .inspector__rulechip-n { color: var(--on-accent); opacity: 0.75; }
+.inspector__rulechip.is-ua { opacity: 0.8; }
+.inspector__rulechip.is-inherited { border-style: dashed; }
+.inspector__rulerow-more {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  color: var(--muted-2);
+  padding: 0 6px;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+/* Collapsed: the identity row and the rule chips stay, the path and the origin
+   sentence go. The strip keeps its border so it still reads as one surface. */
+.inspector__targetbar.is-collapsed {
+  gap: 4px;
+  padding-bottom: 6px;
+}
+/* The origin sentence — why the value is what it is, and where an edit
+   lands. Plain text, not a chip: it is the one thing here that is meant to
+   be read rather than tapped. */
+.inspector__origin {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--fg-soft);
+}
+
 /* ---- Inspector: 2-line panel chips with corner badge -------------- */
 .inspector__panelbar {
   /* Same outer shape as before; the chips inside have changed. */
