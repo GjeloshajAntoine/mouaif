@@ -153,7 +153,7 @@ const hasStats = gitStats != null;
 const showAdditions = hasStats && (added > 0 || deleted === 0);
 const showDeletions = hasStats && (deleted > 0 || added === 0);
 const statsLabel = hasStats
-  ? added + ' lines added, ' + deleted + ' lines deleted'
+  ? added + (added === 1 ? ' line added, ' : ' lines added, ') + deleted + (deleted === 1 ? ' line deleted' : ' lines deleted')
   : '';
 
 return h('div', { class: 'file-toolbar' },
