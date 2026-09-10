@@ -352,19 +352,43 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   }
 
   // REST: POST /data
+  //
+  // Legacy KV demo surface. It merges client JSON into the in-memory
+  // `store`, so the payload is validated before it lands: a non-object
+  // body, a body over the cap, or a `__proto__`-style key is refused
+  // rather than merged. Without that, `Object.assign(store, parsedBody)`
+  // let any no-Origin client replace the object's prototype and grow the
+  // buffer without limit.
   if (urlPath === '/data' && method === 'POST') {
+    const MAX_BODY = 256 * 1024;
+    const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let tooLarge = false;
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      body += chunk;
+      if (body.length > MAX_BODY) { tooLarge = true; body = ''; }
+    });
     req.on('end', () => {
+      if (tooLarge) return sendJSON(res, 413, { error: 'Payload too large', code: 'ETOOLARGE', maxBytes: MAX_BODY });
+      let parsedBody;
       try {
-        const parsedBody = JSON.parse(body);
-        Object.assign(store, parsedBody);
-        store.timestamp = new Date().toISOString();
-        broadcast('data-update', store);
-        sendJSON(res, 200, { ok: true, data: store });
+        parsedBody = JSON.parse(body || '{}');
       } catch (e) {
-        sendJSON(res, 400, { error: 'Invalid JSON' });
+        return sendJSON(res, 400, { error: 'Invalid JSON' });
       }
+      if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+        return sendJSON(res, 400, { error: 'Body must be a JSON object', code: 'EBADINPUT' });
+      }
+      const clean = {};
+      for (const [key, value] of Object.entries(parsedBody)) {
+        if (BLOCKED_KEYS.has(key)) continue;
+        clean[key] = value;
+      }
+      Object.assign(store, clean);
+      store.timestamp = new Date().toISOString();
+      broadcast('data-update', store);
+      sendJSON(res, 200, { ok: true, data: store });
     });
     return;
   }

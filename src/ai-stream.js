@@ -20,24 +20,25 @@ const usageMetrics = require('./usage.js');
 async function* readSSE(stream) {
   const decoder = new TextDecoder('utf-8');
   let buf = '';
-  // SSE frames are separated by a blank line. Both the spec form
-  // (`\n\n`, LF) and the CRLF form (`\r\n\r\n`) occur in the wild:
-  // Azure OpenAI, Ollama's OpenAI-compatible mode, and many
-  // gateways/proxies emit CRLF. Splitting on `\n\n` only would glue
-  // CRLF frames into one giant frame with literal `\r\n` inside the
-  // JSON, so every chunk would fail JSON.parse and stream as
-  // `passthrough` (no visible text). The frame separator regex
-  // (`(?:\r?\n){2}`) matches both, and each frame's line endings are
-  // normalized to LF so parseSSEFrame's `\n`-based field splitting
-  // sees a clean frame.
+  // SSE frames are separated by a blank line. The spec allows LF, CRLF,
+  // and bare CR as line endings, and all three occur in the wild: Azure
+  // OpenAI, Ollama's OpenAI-compatible mode, and many gateways emit CRLF,
+  // and an old-style proxy can emit CR-only. Splitting on `\n\n` alone
+  // would glue such frames into one giant frame with literal `\r` inside
+  // the JSON, so every chunk would fail JSON.parse and stream as
+  // `passthrough` (no visible text). The separator pattern below matches
+  // all three (CRLF first, so it is never read as two CR/LF breaks), and
+  // each frame's line endings are normalized to LF so parseSSEFrame's
+  // `\n`-based field splitting sees a clean frame.
+  const FRAME_SEP = /(?:\r\n|\r|\n){2}/;
   for await (const chunk of stream) {
     buf += decoder.decode(chunk, { stream: true });
     let idx;
-    while ((idx = buf.search(/(?:\r?\n){2}/)) !== -1) {
-      const frame = buf.slice(0, idx).replace(/\r\n/g, '\n');
-      // Consume the separator (2 or 4 chars: "\n\n" / "\r\n\r\n") —
-      // a plain slice by fixed length would leave a stray "\r" behind.
-      const sep = buf.slice(idx, idx + 4).match(/^(?:\r?\n){2}/)[0];
+    while ((idx = buf.search(FRAME_SEP)) !== -1) {
+      const frame = buf.slice(0, idx).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      // Consume the separator (2 or 4 chars: "\n\n" / "\r\n\r\n" / "\r\r")
+      // — a plain slice by fixed length would leave a stray "\r" behind.
+      const sep = buf.slice(idx, idx + 4).match(FRAME_SEP)[0];
       buf = buf.slice(idx + sep.length);
       const ev = parseSSEFrame(frame);
       if (ev) yield ev;
