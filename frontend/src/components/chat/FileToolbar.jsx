@@ -142,18 +142,19 @@ function handleCustomAction(action) {
 setMenuOpen(false);
 if (onRunCustomAction) onRunCustomAction(action);
 }
-// Only the states that carry information are drawn: a clean tree shows no
-// counts at all, and a one-sided change shows just the side that moved,
-// instead of a '+' +0' that competes with the number that matters. The
-// aria-label keeps announcing the exact figures (never the abbreviated form).
+// Each count is drawn unless it is a zero sitting next to a non-zero sibling —
+// the "+0" beside a "−25" is noise. When both sides are zero the pair IS drawn
+// ("+0" / "−0"), because hiding everything makes the button look like the
+// counts failed to load rather than like the tree is clean. The aria-label
+// always announces both exact figures (never the abbreviated form).
 const added = gitStats ? gitStats.additions : 0;
 const deleted = gitStats ? gitStats.deletions : 0;
-const hasAdditions = added > 0;
-const hasDeletions = deleted > 0;
-const labelParts = [];
-if (hasAdditions) labelParts.push(added + ' lines added');
-if (hasDeletions) labelParts.push(deleted + ' lines deleted');
-const statsLabel = labelParts.join(', ');
+const hasStats = gitStats != null;
+const showAdditions = hasStats && (added > 0 || deleted === 0);
+const showDeletions = hasStats && (deleted > 0 || added === 0);
+const statsLabel = hasStats
+  ? added + ' lines added, ' + deleted + ' lines deleted'
+  : '';
 
 return h('div', { class: 'file-toolbar' },
 h('button', {
@@ -173,9 +174,9 @@ h('span', { class: 'file-toolbar__folder' },
 h('svg', { viewBox: '0 0 20 16', width: 28, height: 22 },
 h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
 ),
-(hasAdditions || hasDeletions) ? h('span', { class: 'file-toolbar__git-stats' },
-hasAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
-hasDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
+hasStats ? h('span', { class: 'file-toolbar__git-stats' },
+showAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
+showDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
 ) : null
 ),
 h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
