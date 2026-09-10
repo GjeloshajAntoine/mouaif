@@ -82,6 +82,27 @@ if (fail) throw new Error('Could not save. Selection kept.');
 function render() { cursor = 0; nodes = []; effects = []; context.HiddenContentEditor(props); first = false; }
 const button = (label) => nodes.find(n => n.tag === 'button' && n.children.includes(label));
 render();
+// Load the preview so the editor + footer branch renders, then assert the
+// ownership rule that keeps this view's buttons tappable: every action lives
+// in the sticky footer. A control rendered outside it (the old editor
+// toolbar) could overlap the footer and swallow taps on Cancel/Save.
+effects[3]();
+await new Promise(resolve => setTimeout(resolve, 0));
+render();
+const descendants = (node, out = []) => {
+for (const child of node.children || []) { if (child && child.tag) { out.push(child); descendants(child, out); } }
+return out;
+};
+const footer = nodes.find(n => n.tag === 'footer' && n.attrs.class === 'hidden-content__footer');
+assert.ok(footer, 'the sticky footer renders');
+const footerNodes = descendants(footer);
+const hideAction = footerNodes.find(n => n.attrs['aria-label'] === 'Hide selected text');
+assert.ok(hideAction, 'the hide-selection action lives in the sticky footer');
+assert.equal(hideAction.attrs.type, 'button', 'the hide-selection action never submits the form');
+assert.ok(button('Hide selected text') === hideAction, 'the hide-selection action is not rendered outside the footer');
+for (const label of ['Cancel', 'Save']) {
+assert.ok(footerNodes.some(n => n.tag === 'button' && n.children.includes(label)), label + ' lives in the sticky footer');
+}
 button('+ Add range').attrs.onClick();
 render();
 let submit = nodes.find(n => n.tag === 'form').attrs.onSubmit;

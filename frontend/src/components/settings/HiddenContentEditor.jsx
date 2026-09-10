@@ -44,6 +44,22 @@ default:
 return null;
 }
 }
+// Turn a pair of document offsets into the canonical character-span shape,
+// clamped to the document. Shared by the editor-state path and the
+// native-selection path so both produce identical spans.
+function spanFromPositions(doc, from, to) {
+const lo = Math.max(0, Math.min(from, to));
+const hi = Math.min(doc.length, Math.max(from, to));
+if (hi <= lo) return null;
+const fromLine = doc.lineAt(lo);
+const toLine = doc.lineAt(hi);
+return {
+startLine: fromLine.number,
+endLine: toLine.number,
+startCol: lo - fromLine.from + 1,
+endCol: hi - toLine.from + 1
+};
+}
 // Turn the editor's current selection into a character span, and report
 // whether there is a non-empty selection at all. A selection that spans
 // multiple lines hides from the first column on the start line through the
@@ -51,16 +67,30 @@ return null;
 function selectionInfo(view) {
 const sel = view.state.selection.main;
 if (sel.empty) return { hasSelection: false, span: null };
-const doc = view.state.doc;
-const fromLine = doc.lineAt(sel.from);
-const toLine = doc.lineAt(sel.to);
-const span = {
-startLine: fromLine.number,
-endLine: toLine.number,
-startCol: sel.from - fromLine.from + 1,
-endCol: sel.to - toLine.from + 1
-};
-return { hasSelection: true, span };
+const span = spanFromPositions(view.state.doc, sel.from, sel.to);
+return span ? { hasSelection: true, span } : { hasSelection: false, span: null };
+}
+// The browser's own selection, mapped to a span. CodeMirror only copies a
+// native selection into its state while the content DOM is focused (its
+// selectionchange observer bails out otherwise) and a long-press selection on
+// a phone does not always leave it focused, so the editor state can lag behind
+// what the user sees highlighted. Reading the live DOM range keeps the hide
+// action working off the same text the user selected.
+function domSelectionSpan(view) {
+if (!view.root || typeof view.root.getSelection !== 'function') return null;
+const sel = view.root.getSelection();
+if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+const range = sel.getRangeAt(0);
+if (!view.contentDOM.contains(range.startContainer) || !view.contentDOM.contains(range.endContainer)) return null;
+try {
+return spanFromPositions(
+view.state.doc,
+view.posAtDOM(range.startContainer, range.startOffset),
+view.posAtDOM(range.endContainer, range.endOffset)
+);
+} catch (e) {
+return null; // Selection rooted in a widget or an unmapped node.
+}
 }
 
 // Build a read-only CodeMirror editor for a file with a toggle gutter.
@@ -198,14 +228,30 @@ oneDark
 ]
 });
 const view = new EditorView({ state, parent });
+// One reporting path for both sources: whatever the browser shows as
+// selected wins, the editor state is the fallback.
+function reportSelection() {
+const span = domSelectionSpan(view) || selectionInfo(view).span;
+onSelection(span ? { hasSelection: true, span } : { hasSelection: false, span: null });
+}
 view.dispatch({
 effects: StateEffect.appendConfig.of(EditorView.updateListener.of((update) => {
-if (update.selectionSet || update.docChanged) onSelection(selectionInfo(update.view));
+if (update.selectionSet || update.docChanged) reportSelection();
 }))
 });
+const ownerDoc = view.dom.ownerDocument;
+ownerDoc.addEventListener('selectionchange', reportSelection);
 requestAnimationFrame(() => { if (!view.dom.isConnected) return; view.requestMeasure(); });
-onSelection(selectionInfo(view));
-return { view, setHidden, setChars, hiddenRangesField, hiddenCharsField };
+reportSelection();
+return {
+view, setHidden, setChars, hiddenRangesField, hiddenCharsField,
+// The highlighted range right now, without waiting for a re-render.
+selectionSpan: () => domSelectionSpan(view) || selectionInfo(view).span,
+destroy() {
+ownerDoc.removeEventListener('selectionchange', reportSelection);
+view.destroy();
+}
+};
 }
 
 export function HiddenContentEditor({ projectDir, filePath, initialRule, onSave, onClose }) {
@@ -226,10 +272,12 @@ const heading = useRef(null);
 const editorHost = useRef(null);
 const engineRef = useRef(null);
 // The "Hide selected text" button captures the editor span on pointerdown
-// (before it steals focus and collapses the selection), so the click handler
-// still has the text that was highlighted. Without this, real taps collapse
-// the selection to a cursor and the click sees an empty span — nothing saves.
+// (before it steals focus and collapses the selection), so a real tap still
+// has the text that was highlighted rather than an empty cursor.
 const hideSpanRef = useRef(null);
+// Timestamp of a pointerdown that already applied the toggle, so the click
+// that follows it does not undo it.
+const pointerActedAt = useRef(0);
 const dirty = JSON.stringify(ranges) !== JSON.stringify(initialRanges) || JSON.stringify(chars) !== JSON.stringify(initialChars);
 let normalized = [], validation = '';
 try { normalized = normalizeRanges(ranges); } catch (e) { validation = e.message; }
@@ -278,16 +326,16 @@ const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` :
   // Load the file into the read-only editor once the body arrives.
   useEffect(() => {
     if (!editorHost.current || preview.content === null) return;
-    if (engineRef.current) { engineRef.current.view.destroy(); engineRef.current = null; }
+    if (engineRef.current) { engineRef.current.destroy(); engineRef.current = null; }
     let seed = [];
     try { seed = normalizeRanges(ranges); } catch (e) { seed = []; }
     const engine = createEditorEngine(preview.content, filePath, seed, chars, (next) => { setError(''); setRanges(next); }, (info) => setSel(info), editorHost.current);
     engineRef.current = engine;
-    return () => { if (engineRef.current) { engineRef.current.view.destroy(); engineRef.current = null; } };
+    return () => { if (engineRef.current) { engineRef.current.destroy(); engineRef.current = null; } };
     // Rebuild only when a new file body is loaded; the gutter reads live
     // ranges through the field, so no rebuild is needed on toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [preview.content]);
+  }, [preview.content]);
 
   // Push React state (manual range edits, gutter clicks, text selection)
   // into the editor so the gutter and inline highlight stay in sync without
@@ -303,13 +351,36 @@ const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` :
   // Toggle a character span for the current text selection. Called from the
   // "Hide selected text" action; a non-empty selection adds (or removes, on
   // a second tap) a char span, updating the inline highlight and the footer.
-  function onHideSelection() {
-  // Prefer the span captured on pointerdown, which still reflects what the user
-  // highlighted even though the button click collapsed the editor selection.
-  const span = hideSpanRef.current || sel.span;
-  if (!span) return;
-  setError('');
-  setChars(toggleChar(chars, span));
+  // The span is resolved from the editor itself — the browser's live selection
+  // first — because a tap collapses the editor selection before the click
+  // handler runs, and CodeMirror may never have mirrored a touch selection.
+  function currentSpan() {
+    const live = engineRef.current ? engineRef.current.selectionSpan() : null;
+    return live || (sel.hasSelection ? sel.span : null);
+  }
+  function hideSpan(span) {
+    if (!span) return false;
+    setError('');
+    setChars(toggleChar(chars, span));
+    return true;
+  }
+  // Act on pointerdown: on touch the same tap dismisses the active selection,
+  // and a browser may swallow the click that follows it, which left the
+  // highlighted text unhidden. The click handler below stays for keyboard and
+  // assistive-technology activation and skips a click this already handled.
+  function onHidePointerDown(event) {
+    if (event && event.button > 0) return;
+    const span = currentSpan();
+    hideSpanRef.current = span;
+    if (hideSpan(span)) pointerActedAt.current = Date.now();
+  }
+  function onHideClick() {
+    if (pointerActedAt.current && Date.now() - pointerActedAt.current < 1000) {
+    pointerActedAt.current = 0;
+    return;
+  }
+    pointerActedAt.current = 0;
+    hideSpan(currentSpan() || hideSpanRef.current);
   }
 
   function onRangeField(index, field, value) {
@@ -367,15 +438,7 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
           : h(Fragment, null,
               h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
               h('div', { class: 'hidden-content__toolbar' },
-                h('button', {
-                class: 'btn', type: 'button',
-                disabled: saving || !sel.hasSelection,
-                onPointerDown: (e) => { hideSpanRef.current = sel.hasSelection ? sel.span : null; },
-                onClick: onHideSelection,
-                'aria-label': 'Hide selected text',
-                'aria-describedby': 'hidden-content-editor-help'
-                }, 'Hide selected text'),
-                h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it, or drag to select text and tap Hide selected text. The file is read-only.')
+              h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it, or drag to select text and tap Hide selected text in the footer. The file is read-only.')
               )
             ),
         h('details', { class: 'hidden-content__manual', open: !!preview.error },
@@ -406,8 +469,16 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
         ),
         error && h('p', { class: 'hidden-content__error', role: 'alert' }, error),
         h('div', { class: 'hidden-content__actions' },
-          h('button', { class: 'btn', type: 'button', disabled: saving, onClick: onCancel }, 'Cancel'),
-          h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length) }, saving ? 'Saving…' : 'Save')
+        h('button', {
+        class: 'btn hidden-content__hide-action', type: 'button',
+        disabled: saving || !sel.hasSelection,
+        onPointerDown: onHidePointerDown,
+        onClick: onHideClick,
+        'aria-label': 'Hide selected text',
+        'aria-describedby': 'hidden-content-editor-help'
+        }, 'Hide selected text'),
+        h('button', { class: 'btn', type: 'button', disabled: saving, onClick: onCancel }, 'Cancel'),
+        h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length) }, saving ? 'Saving…' : 'Save')
         )
       )
     )
