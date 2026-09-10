@@ -472,6 +472,67 @@ const next = r && r.result && r.result.objectId;
 if (!next) return null;
 return buildNodeModel(next);
 }
+// NODE_PATH_SRC — a unique CSS selector path for the element.
+//
+// `DOM.requestNode` is the documented way to turn a Runtime objectId into a
+// nodeId, and it is unreliable: on several targets (including the fixture
+// this feature was verified against) it answers `nodeId: 0` for an object
+// resolved through Runtime, which silently kills every CSS-domain read that
+// needs a nodeId. The DOM domain's own resolution path is reliable, so we
+// build a selector that identifies the element and let `DOM.querySelector`
+// resolve it from the document root.
+//
+// The path stops as soon as a unique `#id` is reached, so the common case is
+// a one-part `#hero`; otherwise it walks up emitting `tag:nth-of-type(n)`
+// only where a sibling of the same tag exists (a bare `tag` is already unique
+// in that position). Capped at 32 parts so a pathological tree cannot produce
+// a selector longer than the protocol will accept.
+const NODE_PATH_SRC = 'function(){'
++ 'function nth(n){ var i=1,s=n; while((s=s.previousElementSibling)) i++; return i; }'
++ 'function esc(v){ return (window.CSS && CSS.escape) ? CSS.escape(v) : v; }'
++ 'function unique(sel){ try { return document.querySelectorAll(sel).length === 1; } catch (e) { return false; } }'
++ 'var el=this, parts=[];'
++ 'while(el && el.nodeType===1){'
++ 'if(el.id && unique("#"+esc(el.id))){ parts.unshift("#"+esc(el.id)); break; }'
++ 'var p=el.nodeName.toLowerCase(), parent=el.parentElement;'
++ 'if(parent){'
++ 'var same=0, k=parent.children;'
++ 'for(var i=0;i<k.length;i++){ if(k[i].nodeName===el.nodeName) same++; }'
++ 'if(same>1) p+=":nth-of-type("+nth(el)+")";'
++ '}'
++ 'parts.unshift(p);'
++ 'el=parent;'
++ 'if(parts.length>=32) break;'
++ '}'
++ 'return parts.join(" > ");'
++ '}';
+// resolveNodeId — a DOM nodeId for a Runtime objectId, or 0. Tries the
+// documented `DOM.requestNode` first and falls back to the selector path
+// above, which is what makes the accurate cascade and the page highlight work
+// on the targets where `requestNode` answers 0. Best-effort throughout: a
+// failure returns 0 and the caller degrades instead of throwing.
+async function resolveNodeId(objectId) {
+if (!objectId) return 0;
+const direct = await requestNodeId(objectId);
+if (direct) return direct;
+let selector = '';
+try {
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: NODE_PATH_SRC,
+returnByValue: true
+}, 8000);
+selector = (r && r.result && r.result.value) || '';
+} catch { return 0; }
+if (!selector) return 0;
+try {
+const doc = await cdpSend('DOM.getDocument', { depth: 0 }, 8000);
+const rootId = doc && doc.root && doc.root.nodeId;
+if (!rootId) return 0;
+const q = await cdpSend('DOM.querySelector', { nodeId: rootId, selector }, 8000);
+return (q && q.nodeId) || 0;
+} catch { return 0; }
+}
 // SCAN_RULES_SRC — the in-page cascade scan.
 //
 // Used only as a fallback: `CSS.getMatchedStylesForNode` is the accurate
@@ -573,7 +634,7 @@ if (!objectId) return null;
 const tree = await readElementTree(objectId);
 const ancestors = (tree && tree.ancestors) || [];
 let raw = null;
-const nodeId = await requestNodeId(objectId);
+const nodeId = await resolveNodeId(objectId);
 if (nodeId) {
 try { raw = await cdpSend('CSS.getMatchedStylesForNode', { nodeId }, 8000); } catch { raw = null; }
 }
@@ -619,9 +680,10 @@ model.box = { width: v.width, height: v.height };
 }
 } catch { /* element model unavailable */ }
 // Best-effort highlight. Overlay.highlightNode needs a nodeId; resolve one
-// from the objectId, and if that's unavailable (nodeId 0) just skip the
-// highlight rather than failing the pick.
-const nodeId = await requestNodeId(objectId);
+// from the objectId (through the reliable path, not only DOM.requestNode),
+// and if that's unavailable just skip the highlight rather than failing the
+// pick.
+const nodeId = await resolveNodeId(objectId);
 if (nodeId) {
 try {
 await cdpSend('Overlay.highlightNode', {

@@ -291,10 +291,18 @@ async function main() {
   const scanCall = () => calls.slice(-8).find((c) => c.method === 'Runtime.callFunctionOn' && /document\.styleSheets/.test(c.params.functionDeclaration));
   assert.strictEqual(scanCall(), undefined, 'the in-page scan is not used while the CSS domain answers');
 
-  // With no nodeId the CSS domain is unusable, so the scan fallback carries
-  // the section instead of reporting an empty cascade.
+  // With no nodeId the CSS domain is unusable, so the panel tries the DOM
+  // domain's own resolution path (a unique selector + DOM.querySelector)
+  // before falling back to the in-page scan. `DOM.requestNode` answering 0 is
+  // a real Chrome behaviour on some targets, and without this second attempt
+  // the accurate cascade would silently degrade to the scan on exactly those
+  // targets — which is how this was found: the fixture used to verify the
+  // section reported no browser-default rules at all.
   respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 0 }));
   respond.set('Runtime.callFunctionOn', (p) => {
+    if (p.functionDeclaration && /previousElementSibling/.test(p.functionDeclaration)) {
+      return Promise.resolve({ result: { value: 'body > main#app > div.card:nth-of-type(2)' } });
+    }
     if (/document\.styleSheets/.test(p.functionDeclaration)) {
       return Promise.resolve({ result: { value: {
         inlineStyle: { cssProperties: [] },
@@ -304,6 +312,30 @@ async function main() {
     }
     return Promise.resolve({ result: { value: modelValue() } });
   });
+  respond.set('DOM.getDocument', () => Promise.resolve({ root: { nodeId: 1 } }));
+  respond.set('DOM.querySelector', (p) => {
+    if (p.selector === 'body > main#app > div.card:nth-of-type(2)') return Promise.resolve({ nodeId: 42 });
+    return Promise.resolve({ nodeId: 0 });
+  });
+  const beforePath = calls.length;
+  const viaPath = await handlers.readMatchedRules('obj-1');
+  assert.ok(calls.slice(beforePath).some((c) => c.method === 'Runtime.callFunctionOn' && /previousElementSibling/.test(c.params.functionDeclaration)),
+    'without a requestNode nodeId the helper builds a CSS selector path for the element');
+  const docCall = calls.slice(beforePath).find((c) => c.method === 'DOM.getDocument');
+  assert.ok(docCall, 'the selector is resolved against the document root');
+  assert.strictEqual(docCall.params.depth, 0, 'the document is read shallow — only the root nodeId is needed');
+  const qCall = calls.slice(beforePath).find((c) => c.method === 'DOM.querySelector');
+  assert.ok(qCall, 'DOM.querySelector resolves the element from the built selector');
+  assert.strictEqual(qCall.params.nodeId, 1, 'the query starts at the document root');
+  const cssViaPath = calls.slice(beforePath).find((c) => c.method === 'CSS.getMatchedStylesForNode');
+  assert.ok(cssViaPath, 'the CSS domain is asked once a nodeId was found');
+  assert.strictEqual(cssViaPath.params.nodeId, 42, 'the CSS read uses the nodeId resolved through the DOM domain');
+  assert.strictEqual(calls.slice(beforePath).filter((c) => /document\.styleSheets/.test(c.params.functionDeclaration)).length, 0,
+    'the scan does not run once the DOM-domain resolution produced a nodeId');
+
+  // With no nodeId at all, the scan fallback carries the section instead of
+  // reporting an empty cascade.
+  respond.set('DOM.getDocument', () => Promise.resolve({ root: { nodeId: 0 } }));
   const beforeScan = calls.length;
   const scanned = await handlers.readMatchedRules('obj-1');
   assert.deepStrictEqual(Array.from(scanned.rules, (r) => r.selector), ['.scanned'],
@@ -314,6 +346,7 @@ async function main() {
   assert.strictEqual(scanParams.params.returnByValue, true, 'the scan is by value — the panel only needs the description');
   assert.strictEqual(await handlers.readMatchedRules(null), null, 'no objectId yields no cascade');
   respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 17 }));
+  respond.set('DOM.getDocument', () => Promise.resolve({ root: { nodeId: 1 } }));
 
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
