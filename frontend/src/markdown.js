@@ -14,6 +14,38 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// Schemes a rendered href/src may use. Anything else — `javascript:`,
+// `data:`, `vbscript:`, `blob:`, `file:` — is rendered as plain text,
+// because the output of this module is injected with innerHTML on the
+// app's own origin (frontend/src/components/chat/transcript.js), where a
+// script URL would run with the user's session.
+const SAFE_URL_SCHEMES = new Set(['http', 'https', 'mailto', 'ftp', 'ftps']);
+
+// isSafeUrl(rawUrl) — true when a markdown link/image target may become a
+// real href/src. `rawUrl` is the text as it appears after the escapeHtml
+// pass, so an `&` stands for text the browser will decode.
+//
+// The scheme is resolved the way a browser resolves it: control
+// characters and whitespace are ignored ("java\tscript:alert(1)" runs), and
+// an entity-encoded prefix ("&#106;avascript:", "javascript&colon;") means
+// the prefix that reaches the URL parser is not the prefix we see here.
+// Rather than guess, any candidate whose pre-colon text contains `&` is
+// rejected: no legitimate scheme needs an entity before its colon.
+function isSafeUrl(rawUrl) {
+  const url = String(rawUrl == null ? '' : rawUrl).replace(/[\u0000-\u0020\u007F]+/g, '');
+  if (!url) return false;
+  const colon = url.indexOf(':');
+  // No colon: a relative path, a `#fragment`, or a `//host` reference.
+  // None of those can carry a script scheme.
+  if (colon === -1) return true;
+  const prefix = url.slice(0, colon);
+  if (prefix.includes('&')) return false;
+  // A colon that sits after a path/query character belongs to the path,
+  // not to a scheme ("/docs/a:b", "?q=a:b").
+  if (/[/?#]/.test(prefix)) return true;
+  return /^[a-z][a-z0-9+.-]*$/i.test(prefix) && SAFE_URL_SCHEMES.has(prefix.toLowerCase());
+}
+
 // Auto-link bare URLs that start with a protocol (http, https, ftp,
 // mailto) or a www. prefix. Also link text like user@host for email.
 function autoLink(text) {
@@ -77,8 +109,12 @@ function renderInline(text) {
   // SPA routes — a live <img src="/..."> makes the browser fetch the app
   // shell as an image (and a quoted `![alt](url)` in a reasoning trace would
   // otherwise load garbage paths). Render the alt text as plain text instead.
+  // Non-allowlisted schemes (data:, javascript:, ...) are dropped too: an
+  // `<img src="data:image/svg+xml,...">` can execute script, and the app
+  // never needs a data URL in markdown.
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
     if (/^(https?:\/\/[^/]*)?\/#\//i.test(url.trim())) return alt;
+    if (!isSafeUrl(url)) return alt;
     return '<img src="' + url + '" alt="' + alt + '" loading="lazy" />';
   });
 
@@ -91,6 +127,9 @@ function renderInline(text) {
   // HTML-escaped by step 2.)
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, label, url) => {
     if (/^(https?:\/\/[^/]*)?\/#\//i.test(url.trim())) return label;
+    // javascript:, data:, vbscript: and entity-obfuscated variants never
+    // reach an href — they render as the plain label.
+    if (!isSafeUrl(url)) return label;
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   });
 
@@ -124,8 +163,21 @@ function renderInline(text) {
     return match;
   });
 
-  // Step 10: restore backslash-escaped literal characters
-  s = s.replace(/\uE002(\d+)\uE002/g, (m, i) => escaped[Number(i)] || m);
+  // Step 10: restore backslash-escaped literal characters.
+  //
+  // These are re-escaped on the way out, not restored verbatim. Step 0
+  // stashes the escaped character (including `<`, `>`, and `"`) in a
+  // placeholder *before* step 2 escapes the text, so putting the raw
+  // character back afterwards undid that escaping for exactly those
+  // characters. The result was live markup in output that is injected via
+  // innerHTML: `\<img src=x onerror=alert(1)>` rendered a real <img>, and
+  // `[x](https://a\" onmouseover=alert(1) z)` closed the href attribute of
+  // a generated anchor and added an event handler to it. The author's
+  // intent is a literal character, so the escaped form is what they mean.
+  s = s.replace(/\uE002(\d+)\uE002/g, (m, i) => {
+    const ch = escaped[Number(i)];
+    return ch === undefined ? m : escapeHtml(ch);
+  });
 
   return s;
 }
