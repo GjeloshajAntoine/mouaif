@@ -703,14 +703,26 @@ if (el) el.scrollLeft = el.scrollWidth;
 // Idle state — nothing selected yet. Prompts the user to tap the preview
 // (if available) or type a selector.
 if (!model) {
+// Pick mode only works through the live preview, so when that panel is
+// hidden the button is disabled rather than offering an action that cannot
+// complete. `undefined` (an unwired prop) is treated as visible.
+const previewHidden = props.previewVisible === false;
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 h('div', { class: 'inspector__styles-empty', role: 'status' },
+h('p', { class: 'inspector__styles-intro' }, 'Select an element to edit its inline CSS and read the result here.'),
+props.pickMode
+? h('p', { class: 'inspector__styles-or' },
+previewHidden ? 'The Preview panel is hidden — use a selector below.' : 'Now tap the element in the live preview.')
+: null,
 h('button', {
 class: 'inspector__styles-pick' + (props.pickMode ? ' is-on' : ''),
 type: 'button',
 'aria-pressed': String(!!props.pickMode),
-onClick: togglePickMode,
-title: props.pickMode ? 'Pick mode on — tap the preview to select' : 'Pick mode off — tap the preview to select'
+disabled: previewHidden && !props.pickMode,
+title: previewHidden && !props.pickMode
+? 'Turn the Preview panel on to pick elements from the page'
+: (props.pickMode ? 'Pick mode on — tap the preview to select' : 'Pick mode off — tap the preview to select'),
+onClick: togglePickMode
 }, h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M5 3l14 7-6.5 1.5L10 19 5 3Z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' })
 ),
@@ -816,31 +828,20 @@ h('span', { class: 'icon-btn__label' }, props.pickMode ? 'Stop' : 'Pick')
 )
 )
 ),
-// Breadcrumb — the selected element's ancestors as tap targets, plus the
-// current element pinned at the end. It is the cheapest way to move up a
-// level: one tap on `main` or `body` instead of re-picking a possibly
-// overlapping element on the live preview. Horizontally scrollable because
-// a deep tree cannot fit 360 px, and auto-scrolled to the end (see the
-// effect above) so the chip for the element you are looking at is visible.
-tree && tree.ancestors && tree.ancestors.length
-? h('div', { class: 'inspector__styles-crumbs', ref: crumbRef, role: 'group', 'aria-label': 'Element ancestors' },
-tree.ancestors.slice().reverse().map((a) => h('button', {
-class: 'inspector__styles-crumb',
-type: 'button',
-key: 'anc-' + a.levels,
-title: 'Select ' + a.label,
-'aria-label': 'Select ancestor element ' + a.label,
-onClick: () => selectAncestor(a.levels)
-}, a.label)),
-h('span', { class: 'inspector__styles-crumb is-here', key: 'here' }, label)
-)
-: null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
 // panel. Hidden until the first capture lands.
+//
+// The "tap to refresh" hint is a caption *under* the image, not a label on
+// top of it. Drawn over the capture it sat on whatever the element happened
+// to render in that corner — on a page of body text it landed on the text —
+// and a 56 px strip of an element is exactly where the user is trying to read
+// small type. The caption also carries the "Updating…" state, so the strip
+// never changes height and the list below never shifts.
 shot
-? h('button', {
+? h('div', { class: 'inspector__styles-shotwrap' },
+h('button', {
 class: 'inspector__styles-shot',
 type: 'button',
 title: 'Tap to refresh the element preview',
@@ -853,17 +854,46 @@ class: 'inspector__styles-shot-img',
 src: shot.src,
 alt: 'Preview of ' + label,
 draggable: 'false'
-}),
-h('span', { class: 'inspector__styles-shot-note' }, shotBusy ? 'Updating…' : 'Tap to refresh')
+})
+),
+h('p', { class: 'inspector__styles-shot-note', role: 'status' },
+h('span', null, shotBusy ? 'Updating…' : 'Element preview — tap to refresh'),
+h('span', { class: 'inspector__styles-shot-dims' },
+shot.width && shot.height ? shot.width + '×' + shot.height : '')
+)
 )
 : null
 ),
-// Child chips — one tap into a child element. Deliberately *outside* the
-// pinned block: the pin already carries the header, the breadcrumb, and the
-// preview, and nothing that scrolls away should be the only route to a
-// feature. The breadcrumb above brings the user straight back up, so losing
-// sight of the children while reading the property list costs nothing.
-tree && tree.children && tree.children.length
+// Element tree — the selected element's ancestors as a breadcrumb and its
+// direct children as chips, so the DOM can be walked without going back to
+// the live preview to tap again. One tap on `main` or `body` beats
+// re-picking a possibly overlapping element on a 360 px screenshot.
+//
+// Deliberately *inside the scroll flow*, not in the sticky block above it.
+// Both strips are horizontal scrollers a full tap-target tall, and pinning
+// them cost ~80 px of the 352 px scroller on a 360 × 680 phone — about two
+// property rows, for a navigation affordance that is used deliberately and
+// rarely. Reading values is what happens constantly, so the pin carries only
+// the element header and the preview, and the tree scrolls away behind it.
+// The element label in the header keeps "what is selected" on screen at all
+// times; this section answers "what is it inside of".
+(tree && ((tree.ancestors && tree.ancestors.length) || (tree.children && tree.children.length)))
+? h('div', { class: 'inspector__styles-section' },
+h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
+tree.ancestors && tree.ancestors.length
+? h('div', { class: 'inspector__styles-crumbs', ref: crumbRef, role: 'group', 'aria-label': 'Element ancestors' },
+tree.ancestors.slice().reverse().map((a) => h('button', {
+class: 'inspector__styles-crumb',
+type: 'button',
+key: 'anc-' + a.levels,
+title: 'Select ' + a.label,
+'aria-label': 'Select ancestor element ' + a.label,
+onClick: () => selectAncestor(a.levels)
+}, a.label)),
+h('span', { class: 'inspector__styles-crumb is-here', key: 'here' }, label)
+)
+: null,
+tree.children && tree.children.length
 ? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
 h('span', { class: 'inspector__styles-kids-label' }, 'Children'),
 tree.children.map((c, i) => h('button', {
@@ -876,6 +906,8 @@ onClick: () => selectChild(i)
 }, c.label)),
 tree.childCount > tree.children.length
 ? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length))
+: null
+)
 : null
 )
 : null,

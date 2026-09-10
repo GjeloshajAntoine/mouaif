@@ -1165,6 +1165,10 @@ useEffect(() => {
     // is responsible for a value, which is what decides whether an override is
     // fixable from this panel at all.
     readMatchedRules: handlers ? handlers.readMatchedRules : null,
+    // Whether the Preview panel is on screen. Pick mode only works by tapping
+    // the live preview, so the panel uses this to disable the pick button (and
+    // say why) instead of offering an action that cannot complete.
+    previewVisible: visiblePanels.has('preview'),
     pickHandlerRef: stylesPickRef,
     pickMode: stylesActive,
     onPickModeChange: setStylesActive
