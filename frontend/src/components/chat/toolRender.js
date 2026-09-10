@@ -13,6 +13,12 @@ import {
 } from './tools.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 
+// Caps for the expanded write_file content preview. The tool itself
+// allows a 1 MB write; painting that as one text node would jank the
+// expand, so the preview truncates and says so.
+const MAX_WRITE_PREVIEW_LINES = 2000;
+const MAX_WRITE_PREVIEW_CHARS = 200000;
+
 // renderToolMeta(parent, items)
 //
 // Render the small "file.ts · 12 lines" header above a preview.
@@ -234,8 +240,14 @@ function renderEditFileToolResult(body, r) {
   renderDiffPreview(body, r.diff || '(edit applied)');
 }
 
-// renderWriteFileToolResult(body, r)
-function renderWriteFileToolResult(body, r) {
+// renderWriteFileToolResult(body, r, args)
+//
+// The result object carries metadata only (path, chars, lines), so the
+// written content shown when the card is expanded comes from the call's
+// arguments (`content`). When the arguments were lost — a result with no
+// matching call row, or a nested preview with no call data — the card
+// falls back to the plain "write complete" line.
+function renderWriteFileToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--file');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
@@ -244,7 +256,24 @@ function renderWriteFileToolResult(body, r) {
   else if (r.bytesWritten != null) writeMeta.push(r.bytesWritten + 'B');
   else if (r.size != null) writeMeta.push(r.size + 'B');
   renderToolMeta(body, writeMeta);
-  renderPreviewPre(body, 'write complete', 'tool-preview__pre');
+  const content = args && typeof args.content === 'string' ? args.content : '';
+  if (!content) return renderPreviewPre(body, 'write complete', 'tool-preview__pre');
+  renderPreviewPre(body, writeContentPreview(content), 'tool-preview__pre tool-preview__pre--content');
+}
+
+// writeContentPreview(content) -> string
+//
+// Cap what one expanded write_file card paints. The write itself is
+// capped server-side by `fileWriteMaxBytes` (1 MB default); rendering a
+// file that size as a single text node janks the frame, so the preview
+// stops at MAX_WRITE_PREVIEW_LINES / MAX_WRITE_PREVIEW_CHARS and says so.
+function writeContentPreview(content) {
+  const text = String(content);
+  const lines = text.split('\n');
+  if (lines.length <= MAX_WRITE_PREVIEW_LINES && text.length <= MAX_WRITE_PREVIEW_CHARS) return text;
+  let kept = lines.slice(0, MAX_WRITE_PREVIEW_LINES).join('\n');
+  if (kept.length > MAX_WRITE_PREVIEW_CHARS) kept = kept.slice(0, MAX_WRITE_PREVIEW_CHARS);
+  return kept + '\n… preview truncated (' + lines.length + ' lines, ' + text.length + ' chars written)';
 }
 
 // renderShellToolResult(body, r)
@@ -425,12 +454,16 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   const cardTool = body.closest && body.closest('.tool-card');
   const name = normalizeToolName((toolResult && toolResult.name) || (cardTool && cardTool.dataset.toolName));
   const r = coerceToolResult(toolResult && toolResult.result, name);
+  // Arguments a preview may need (write_file's content). The caller passes
+  // them on the toolResult when it has them; the card keeps them too, so a
+  // render reached through another path still finds them.
+  const args = (toolResult && toolResult.args) || (cardTool && cardTool._toolArgs) || null;
   if (name === 'shell') return renderShellToolResult(body, r);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
   if (name === 'list_files') return renderListFilesToolResult(body, r);
   if (name === 'search_files') return renderSearchFilesToolResult(body, r);
   if (name === 'edit_file') return renderEditFileToolResult(body, r);
-  if (name === 'write_file') return renderWriteFileToolResult(body, r);
+  if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {

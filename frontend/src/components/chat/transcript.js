@@ -505,6 +505,11 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   card.className = 'tool-card tool-card--call';
   card.dataset.toolId = id;
   card.dataset.toolName = normalizeToolName(toolCall.name);
+  // Keep the call's arguments on the card. The matching `tool_result`
+  // frame carries only the result, so a preview that renders the model's
+  // own payload — write_file's content — reads it from here when the
+  // card is expanded.
+  card._toolArgs = toolCall.args && typeof toolCall.args === 'object' ? toolCall.args : null;
   card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running'));
   if (isSubagentTool(toolCall.name)) {
     card.classList.add('tool-card--subagent');
@@ -679,6 +684,9 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     callArgs.className = 'tool-card__subagent-text';
     callArgs.textContent = shortToolText(callArgsText, 160);
     if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
+    // Keep the nested call's args on the row so its result preview can use
+    // them (nested write_file renders the written content).
+    if (data.args && typeof data.args === 'object') row._toolArgs = data.args;
     const status = document.createElement('span');
     status.className = 'tool-card__pill tool-card__pill--busy';
     status.textContent = 'running…';
@@ -699,7 +707,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
       }
       const oldPreview = row.querySelector('.tool-card__subagent-preview');
       if (oldPreview) oldPreview.remove();
-      renderSubagentToolPreview(row, data.name, data.result);
+      renderSubagentToolPreview(row, data.name, data.result, row._toolArgs);
     }
     scrollToolBodyToBottom(live);
     afterTranscriptAppend(refs, false);
@@ -728,16 +736,28 @@ const summary = toolResult.ok ? formatResultSummary(toolResult && toolResult.nam
 if (toolResult.ok && normalizeToolName(toolResult.name) === 'webpreview' && rawR && rawR.thumbnail) {
 publishWebPreview(rawR);
 }
-  if (!card) {
+// A `tool_result` frame carries only the result, so recover the call
+// arguments a preview may need — the `write_file` card renders the
+// content the model wrote. Preference order: args on the result event
+// (direct invocations), then the args stashed by the call card this
+// result is updating (the live-stream order).
+const callArgs = (toolResult && toolResult.args && typeof toolResult.args === 'object')
+  ? toolResult.args
+  : (card && card._toolArgs) || null;
+if (callArgs && card) card._toolArgs = callArgs;
+if (!card) {
     card = document.createElement('div');
     card.className = 'tool-card tool-card--result';
     card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
     card.dataset.toolName = normalizeToolName(toolResult.name);
+    // Keep the recovered call args on the card (same contract as the call
+    // card), so any later re-render of this body still has them.
+    card._toolArgs = callArgs;
     // Show the command/args in the collapsed header for shell
     // (and any tool that carries args on the result event).
     const name = normalizeToolName(toolResult.name);
-    const headArgs = (isSubagent || name === 'shell' || (toolResult.args && toolResult.args.cmd))
-      ? formatToolArgs(toolResult.args, toolResult.name)
+    const headArgs = (isSubagent || name === 'shell' || (callArgs && callArgs.cmd))
+      ? formatToolArgs(callArgs, toolResult.name)
       : null;
     card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary));
     const body = document.createElement('div');
@@ -780,7 +800,7 @@ publishWebPreview(rawR);
     const lazyBody = () => {
       if (card._resultBodyBuilt) return;
       card._resultBodyBuilt = true;
-      renderToolResultBody(body, toolResult, isSubagentTool);
+      renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
       if (isSubagent) renderSubagentChat(card, toolResult);
       afterTranscriptAppend(refs, false);
     };
@@ -837,26 +857,31 @@ function appendSubagentNestedToolCall(parent, tc) {
     : String(rawArgs || '');
   callArgs.textContent = shortToolText(callArgsText, 160);
   if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
+  // Same contract as the live nested rows: keep the args so a result that
+  // lands on this row later can render them.
+  if (parsedArgs && typeof parsedArgs === 'object') call._toolArgs = parsedArgs;
   call.appendChild(callName); call.appendChild(callArgs);
   parent.appendChild(call);
   return call;
 }
 
-function appendSubagentToolResult(parent, m) {
+function appendSubagentToolResult(parent, m, args) {
   const call = document.createElement('div');
   call.className = 'tool-card__subagent-tool';
   const callName = document.createElement('span');
   callName.className = 'tool-card__subagent-tool-name';
   callName.textContent = toolCardLabel(m.name);
   call.appendChild(callName);
-  renderSubagentToolPreview(call, m.name, m.content);
+  renderSubagentToolPreview(call, m.name, m.content, args);
   parent.appendChild(call);
 }
 
-// renderSubagentToolPreview(parent, name, raw)
+// renderSubagentToolPreview(parent, name, raw, args)
 //
-// Use the per-tool preview renderer for the nested tool result.
-function renderSubagentToolPreview(parent, name, raw) {
+// Use the per-tool preview renderer for the nested tool result. `args`
+// is the matching nested call's argument object when the caller has it
+// (write_file's preview renders the written content from it).
+function renderSubagentToolPreview(parent, name, raw, args) {
   const toolName = normalizeToolName(name);
   const r = coerceToolResult(raw, toolName);
   const preview = document.createElement('div');
@@ -867,7 +892,7 @@ function renderSubagentToolPreview(parent, name, raw) {
   if (toolName === 'list_files') return renderListFilesInPreview(preview, r);
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
   if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);
-  if (toolName === 'write_file') return renderWriteFileInPreview(preview, r);
+  if (toolName === 'write_file') return renderWriteFileInPreview(preview, r, args);
   if (r && Array.isArray(r.content)) {
     const lines = [];
     for (const c of r.content) {
@@ -888,7 +913,7 @@ function renderReadFileInPreview(host, r) { return renderReadFileInto(host, r); 
 function renderListFilesInPreview(host, r) { return renderListFilesInto(host, r); }
 function renderSearchFilesInPreview(host, r) { return renderSearchFilesInto(host, r); }
 function renderEditFileInPreview(host, r) { return renderEditFileInto(host, r); }
-function renderWriteFileInPreview(host, r) { return renderWriteFileInto(host, r); }
+function renderWriteFileInPreview(host, r, args) { return renderWriteFileInto(host, r, args); }
 function renderPreviewInPreview(host, text, cls) {
   const pre = document.createElement('pre');
   pre.className = cls || 'tool-preview__pre';
@@ -902,7 +927,7 @@ function renderReadFileInto(host, r) { renderReadFileToolResult(host, r); }
 function renderListFilesInto(host, r) { renderListFilesToolResult(host, r); }
 function renderSearchFilesInto(host, r) { renderSearchFilesToolResult(host, r); }
 function renderEditFileInto(host, r) { renderEditFileToolResult(host, r); }
-function renderWriteFileInto(host, r) { renderWriteFileToolResult(host, r); }
+function renderWriteFileInto(host, r, args) { renderWriteFileToolResult(host, r, args); }
 
 // renderSubagentChat(card, toolResult)
 //
@@ -923,6 +948,22 @@ export function renderSubagentChat(card, toolResult) {
   // card's expand/collapse toggle.
   wrap.addEventListener('click', (e) => e.stopPropagation());
   const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
+  // Nested tool results reference their call by id while the arguments
+  // live on the assistant turn's `tool_calls`. Index them so a nested
+  // write_file preview can render the written content, the same as the
+  // top-level card.
+  const argsByCallId = new Map();
+  for (const m of turns) {
+    const tcs = m && Array.isArray(m.tool_calls) ? m.tool_calls : [];
+    for (const tc of tcs) {
+      const id = tc && (tc.id || (tc.function && tc.function.id));
+      const raw = tc && tc.function ? tc.function.arguments : (tc && tc.args);
+      if (!id || raw == null) continue;
+      let parsed = raw;
+      if (typeof raw === 'string') { try { parsed = JSON.parse(raw); } catch { /* not JSON */ } }
+      if (parsed && typeof parsed === 'object') argsByCallId.set(id, parsed);
+    }
+  }
   for (const m of turns) {
     const role = m && m.role;
     if (role === 'tool') {
@@ -934,7 +975,7 @@ export function renderSubagentChat(card, toolResult) {
       if (toolCalls.length) {
         for (const tc of toolCalls) appendSubagentNestedToolCall(wrap, tc);
       } else {
-        appendSubagentToolResult(wrap, m);
+        appendSubagentToolResult(wrap, m, argsByCallId.get(m.tool_call_id) || null);
       }
       continue;
     }
@@ -1205,6 +1246,27 @@ export function cancelTranscriptRender(refs) {
   resetTranscriptRender(refs);
 }
 
+// toolCallArgsFor(state, resultRow) -> object | null
+//
+// Persisted transcripts keep a tool call's arguments on the `call` row
+// and only the result on the `result` row. The tail-first render can
+// build a card from a result row whose call row is still up in the
+// backfill (the card then wins the tool-id de-dup and the call row is
+// skipped), so a write_file preview recovers the arguments from the
+// transcript itself. Only called for tools whose preview renders the
+// model's payload — it is a linear scan and does not belong on the
+// generic result path.
+function toolCallArgsFor(state, m) {
+if (!state || !Array.isArray(state.messages) || !m.toolCallId) return null;
+const messages = state.messages;
+for (let i = messages.length - 1; i >= 0; i--) {
+const row = messages[i];
+if (row && row.role === 'tool' && row.phase === 'call' && row.toolCallId === m.toolCallId
+&& row.args && typeof row.args === 'object') return row.args;
+}
+return null;
+}
+
 // renderMessageRow(state, refs, m)
 //
 // Render a single persisted message into a transcript row. Extracted
@@ -1225,7 +1287,11 @@ function renderMessageRow(state, refs, m) {
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
 } else if (m.role === 'tool' && m.phase === 'result') {
-appendToolResultCard({ id: m.toolCallId, name: m.name, ok: m.ok, args: m.args, result: m.content || '' }, refs, true);
+appendToolResultCard({
+id: m.toolCallId, name: m.name, ok: m.ok,
+args: m.args || (normalizeToolName(m.name) === 'write_file' ? toolCallArgsFor(state, m) : null),
+result: m.content || ''
+}, refs, true);
 } else if (isPersistedTurnError(m)) {
 const payload = retryPayloadForError(state.messages, m);
 appendErrorCard(m.content, refs, state, {

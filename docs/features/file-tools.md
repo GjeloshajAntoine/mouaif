@@ -100,6 +100,18 @@ The chat UI gets a richer object on the `tool_result` SSE event (full result, no
 
 The collapsed summary flags truncation instead of presenting a capped total as complete. A truncated `list_files` card reads `1000 files (capped at 1000)` and a truncated `search_files` card reads `200 matches (capped at 200)`, matching the inline header the model already receives (`# Count: N (capped at M)` / `# Matches: N (capped at M matches / B chars)`). The text-reparse path extracts the same `truncated` + cap fields from those header lines, so subagent-nested results and message-store replays show the same annotation as the live SSE path.
 
+### Tool card previews
+
+Expanding a file-tool card shows the payload that matters for that tool — `read_file` the file body, `list_files` the grouped entries, `search_files` the matches, `edit_file` its unified diff, and **`write_file` the content that was written**.
+
+The `tool_result` frame carries metadata only (`relPath`, `chars`, `lines`), so the `write_file` preview renders the call's `content` argument. The card resolves it from whichever side of the call/result pair it was built:
+
+- the live `tool_call` event's args, stashed on the card before the result arrives;
+- the persisted `call` row with the same `toolCallId`, used by the tail-first transcript render when a result row is painted before its call row (the result card then wins the tool-id de-dup, so the call row is skipped);
+- the nested call row inside a subagent card, where the arguments come from the assistant turn's `tool_calls` entry.
+
+Nothing is rendered until the card is expanded, and the preview stops at 2000 lines / 200 KB with a `… preview truncated (N lines, M chars written)` line, so a 1 MB write (the `fileWriteMaxBytes` cap) cannot jank the expand. A result with no recoverable args — an orphan row whose call was never persisted — keeps the plain `write complete` line.
+
 ## Related
 
 - Decisions: [docs/decisions.md §16](../decisions.md) (shell tool), [docs/decisions.md §17](../decisions.md) (tool authorization), [docs/decisions.md §18](../decisions.md) (MCP).
