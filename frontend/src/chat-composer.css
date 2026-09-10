@@ -638,51 +638,15 @@ transform: translateX(14px);
 
 /* ---- CLI and Git modals -------------------------------------------- */
 
-/* Full-screen overlay + sheet pattern */
-.cli__overlay,
-.gm__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  /* Fixed overlays sit outside the safe-area-padded app shell. */
-  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: mouaif-overlay-fade-in 120ms ease-out;
-}
+/* Overlay, sheet and desktop card come from the shared sheet idiom in
+   frontend/src/sheets.css; both modals only widen the desktop card. */
 .cli__sheet,
 .gm__sheet {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  min-height: 0;
-  overflow: hidden;
+  --sheet-width: 860px;
+  --sheet-max-width: 1000px;
+  --sheet-height: min(80vh, 720px);
 }
-@media (min-width: 720px) {
-  .cli__overlay,
-  .gm__overlay {
-    padding: 32px;
-    align-items: center;
-    justify-content: center;
-  }
-  .cli__sheet,
-  .gm__sheet {
-    flex: 0 1 860px;
-    max-width: 1000px;
-    width: 100%;
-    height: min(80vh, 720px);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-  }
-}
+
 
 .cli__head {
   flex: 0 0 auto;
@@ -1391,47 +1355,21 @@ a long landing page) keeps its full strip visible without
 horizontal scroll on phone. The header hosts the page title, the
 URL with a copy-to-clipboard button, and a Refresh action that
 asks the model to recapture the same URL. */
+/* Overlay, sheet and desktop card come from the shared sheet idiom in
+   frontend/src/sheets.css. The preview is the widest card, and it
+   darkens the backdrop further so the captured page reads as the
+   subject rather than the app chrome. */
 .wp__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.72);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  /* Honor the safe-area inset on mobile so the close button and
-     footer don't slide under the OS chrome. */
-  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: mouaif-overlay-fade-in 120ms ease-out;
+  --sheet-backdrop: rgba(0, 0, 0, 0.72);
+  --sheet-desktop-pad: 24px;
 }
 .wp__sheet {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  min-height: 0;
-  overflow: hidden;
+  --sheet-width: 960px;
+  --sheet-max-width: 1120px;
+  --sheet-height: min(86vh, 860px);
+  --sheet-shadow: rgba(0, 0, 0, 0.55);
 }
-@media (min-width: 720px) {
-  .wp__overlay {
-    padding: 24px;
-    align-items: center;
-    justify-content: center;
-  }
-  .wp__sheet {
-    flex: 0 1 960px;
-    max-width: 1120px;
-    width: 100%;
-    height: min(86vh, 860px);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-  }
-}
+
 .wp__head {
   position: relative;
   flex: 0 0 auto;
@@ -1793,48 +1731,20 @@ background: var(--surface);
   font-size: 0.7rem;
 }
 /* ---- MCP error modal ------------------------------------------------ */
-/* Full-screen overlay + sheet pattern (same as .gm__overlay / .gm__sheet).
-   Shows the full typed MCP failure — code, message, tool, and the raw
-   result body — instead of the collapsed transcript card's one-liner. */
+/* Overlay, sheet and desktop card come from the shared sheet idiom in
+   frontend/src/sheets.css. This modal sits above the other modals
+   (z-index 62) so it can be opened from within one. Shows the full
+   typed MCP failure — code, message, tool, and the raw result body —
+   instead of the collapsed transcript card's one-liner. */
 .mcp-err__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 62;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: mouaif-overlay-fade-in 120ms ease-out;
+  --sheet-z: 62;
+  --sheet-backdrop: rgba(0, 0, 0, 0.6);
 }
 .mcp-err__sheet {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  min-height: 0;
-  overflow: hidden;
+  --sheet-width: 560px;
+  --sheet-max-width: 640px;
 }
-@media (min-width: 720px) {
-  .mcp-err__overlay {
-    padding: 32px;
-    align-items: center;
-    justify-content: center;
-  }
-  .mcp-err__sheet {
-    flex: 0 1 560px;
-    max-width: 640px;
-    width: 100%;
-    height: min(70vh, 560px);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-  }
-}
+
 .mcp-err__head {
   flex: 0 0 auto;
   display: flex;

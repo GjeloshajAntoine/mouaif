@@ -6,21 +6,30 @@
 
    Order:
    1. base.css         — design tokens, reset, html/body, selection, focus
-   2. layout.css       — app shell, tab bar, view headers, groups, keyframes
-   3. forms.css        — rows, labels, inputs, buttons, status
-   4. auth.css         — auth, keys, accounts
-   5. settings.css     — settings pages
-   6. projects.css     — project list, cards, picker
-   7. chat-view.css    — chat view layout, head, title, model picker
-   8. chat-transcript.css — bubbles, system prompt, usage, jump-to-bottom
-   9. chat-cards.css   — tools card, agent files card
-   10. chat-markdown.css — markdown content, reasoning, tables
-   11. chat-composer.css — composer, file toolbar, tool popup, send button
-   12. chat-at-mention.css — @-mention popup, arg bar
-   13. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
-   14. draft-craft.css — draft handoff picker and image annotator
-   15. tool-tree.css   — tool tree component
-   16. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
+   2. sheets.css       — shared modal overlay/sheet idiom (see below)
+   3. layout.css       — app shell, tab bar, view headers, groups, keyframes
+   4. forms.css        — rows, labels, inputs, buttons, status
+   5. auth.css         — auth, keys, accounts
+   6. settings.css     — settings pages
+   7. projects.css     — project list, cards, picker
+   8. chat-view.css    — chat view layout, head, title, model picker
+   9. chat-transcript.css — bubbles, system prompt, usage, jump-to-bottom
+   10. chat-cards.css  — tools card, agent files card
+   11. chat-markdown.css — markdown content, reasoning, tables
+   12. chat-composer.css — composer, file toolbar, tool popup, send button
+   13. chat-at-mention.css — @-mention popup, arg bar
+   14. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
+   15. draft-craft.css — draft handoff picker and image annotator
+   16. tool-tree.css   — tool tree component
+   17. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
+
+   sheets.css is imported early on purpose. It declares the shared
+   overlay + sheet + desktop-card block for the six full-screen modals
+   (`.afp__*`, `.cli__*`, `.gm__*`, `.wp__*`, `.mcp-err__*`, `.fe__*`);
+   each modal's own file then only overrides custom properties. Loading
+   it before every modal's file keeps the cascade identical to the six
+   copies it replaced — `.wp__prompt-sheet` must still beat the base
+   `.wp__sheet` at every width.
 
    NOTE: inspector.css and file-editor.css are intentionally NOT imported
    here. They are lazy-loaded through their components (Inspector.jsx and
@@ -29,6 +38,7 @@
 */
 
 @import './base.css';
+@import './sheets.css';
 @import './layout.css';
 @import './forms.css';
 @import './auth.css';

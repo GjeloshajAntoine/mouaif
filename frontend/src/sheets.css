@@ -1,0 +1,100 @@
+/* mouaif mobile-first — shared modal sheet idiom.
+
+   Six full-screen modals used to each re-declare the same overlay and
+   sheet declarations (`.afp__*` in settings.css, `.cli__*` / `.gm__*` /
+   `.wp__*` / `.mcp-err__*` in chat-composer.css, `.fe__*` in
+   file-editor.css): a nine-declaration overlay block, a
+   ten-declaration sheet block, and a desktop `@media (min-width: 720px)`
+   block that centred the sheet as a fixed-width card. Diffing the six
+   copies showed only three real variables — the backdrop, the z-index,
+   and the card's desktop width/height/shadow.
+
+   This file holds those declarations once. Each modal keeps a small
+   per-modal rule with custom-property overrides only, so a change to
+   the backdrop, the safe-area padding or the desktop centring is made
+   in exactly one place instead of six.
+
+   Import order: this file is imported early (right after base.css) so
+   that every modal's own rules still win by cascade order — including
+   modifiers such as `.wp__prompt-sheet`, which must override the base
+   `.wp__sheet` at every width.
+
+   Deliberately NOT included: `.draft-craft__overlay` /
+   `.draft-craft__sheet`. That surface is a bottom-anchored sheet with
+   its own radius, animation and no desktop centring; it shared no
+   duplicated block with these six. */
+
+/* Overlay: full-screen scrim, safe-area padded, flex parent for the
+   sheet. `--sheet-z` and `--sheet-backdrop` are the only per-modal
+   variables; the defaults match the four modals that need no override
+   (`.afp__overlay`, `.cli__overlay`, `.gm__overlay`, `.fe__overlay`). */
+.afp__overlay,
+.cli__overlay,
+.gm__overlay,
+.wp__overlay,
+.mcp-err__overlay,
+.fe__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sheet-z, 60);
+  background: var(--sheet-backdrop, rgba(0, 0, 0, 0.55));
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  /* Fixed overlays sit outside the safe-area-padded app shell. */
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+
+/* Sheet: full-bleed on phones. Identical for all six — each modal is a
+   flex column so its head / scroller / footer own their own height. The
+   file editor adds `width: 100%; min-width: 0` in its own file. */
+.afp__sheet,
+.cli__sheet,
+.gm__sheet,
+.wp__sheet,
+.mcp-err__sheet,
+.fe__sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Desktop: centre the sheet as a card. `--sheet-width` doubles as the
+   flex-basis so the card grows and shrinks around its content between
+   the phone layout and `--sheet-max-width`. The defaults match
+   `.afp__sheet` (520px wide, 70vh tall, soft shadow); the other five
+   modals override them. */
+@media (min-width: 720px) {
+  .afp__overlay,
+  .cli__overlay,
+  .gm__overlay,
+  .wp__overlay,
+  .mcp-err__overlay,
+  .fe__overlay {
+    padding: var(--sheet-desktop-pad, 32px);
+    align-items: center;
+    justify-content: center;
+  }
+  .afp__sheet,
+  .cli__sheet,
+  .gm__sheet,
+  .wp__sheet,
+  .mcp-err__sheet,
+  .fe__sheet {
+    flex: 0 1 var(--sheet-width, 520px);
+    max-width: var(--sheet-max-width, 520px);
+    width: 100%;
+    height: var(--sheet-height, min(70vh, 560px));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 18px 48px var(--sheet-shadow, rgba(0, 0, 0, 0.45));
+  }
+}

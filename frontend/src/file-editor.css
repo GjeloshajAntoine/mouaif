@@ -1,47 +1,17 @@
 /* File editor popup (CodeMirror-based).
    Imported by style.css. */
 
-.fe__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  /* Fixed overlays sit outside the safe-area-padded app shell. */
-  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
-  animation: mouaif-overlay-fade-in 120ms ease-out;
-}
+/* File editor modal. The overlay, sheet and desktop card come from the
+   shared sheet idiom in frontend/src/sheets.css; the split list layout
+   wants a wider card than the default, and this sheet also keeps an
+   explicit full width on phones (it is the one sheet whose inner panes
+   can force a scrollbar, so `min-width: 0` matters). */
 .fe__sheet {
-  flex: 1 1 auto;
+  --sheet-width: 960px;
+  --sheet-max-width: 1100px;
+  --sheet-height: min(80vh, 720px);
   width: 100%;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  min-height: 0;
-  overflow: hidden;
-}
-@media (min-width: 720px) {
-  .fe__overlay {
-    padding: 32px;
-    align-items: center;
-    justify-content: center;
-  }
-  .fe__sheet {
-    flex: 0 1 960px;
-    max-width: 1100px;
-    width: 100%;
-    height: min(80vh, 720px);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-lg);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-  }
 }
 
 .fe__head {
