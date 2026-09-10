@@ -60,14 +60,22 @@ async function main() {
     return Promise.resolve({ result: { type: 'object', subtype: 'node', objectId: 'obj-1', description: 'div#hero.card' } });
   });
   respond.set('Runtime.callFunctionOn', (p) => {
-    // The model builder reads the element; the edit helpers call setProperty /
-    // removeProperty. Return the model for reads and an ok result for edits.
-    if (/setProperty|removeProperty/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { ok: true } } });
-    return Promise.resolve({ result: { value: modelValue() } });
+  // The model builder reads the element; the edit helpers call setProperty /
+  // removeProperty. Return the model for reads and an ok result for edits.
+  if (/setProperty|removeProperty/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { ok: true } } });
+  // The pinned-preview read centres the element and reports its box.
+  if (/scrollIntoView/.test(p.functionDeclaration)) {
+  return Promise.resolve({ result: { value: { x: 20, y: 480, width: 200, height: 100, sx: 0, sy: 400, dpr: 1 } } });
+  }
+  return Promise.resolve({ result: { value: modelValue() } });
   });
   // DOM.requestNode may or may not yield a usable nodeId; here it does.
   respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 17 }));
   respond.set('Overlay.highlightNode', () => Promise.resolve({}));
+  // Page.captureScreenshot is used by the pinned element preview: the clip
+  // must be a padded box around the element and the response data is what the
+  // panel renders.
+  respond.set('Page.captureScreenshot', (p) => Promise.resolve({ data: 'BASE64PNG' }));
 
   const context = vm.createContext({ state, console: null });
   vm.runInContext(source, context);
@@ -117,7 +125,56 @@ async function main() {
   assert.ok(calls.some((c) => c.method === 'Runtime.evaluate' && /querySelector/.test(c.params.expression)),
     'querySelector evaluated for the selector path');
 
-  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit)');
+  // captureElementShot — the pinned element preview. It reads a padded box
+  // around the (re-centred) element and asks Page.captureScreenshot for that
+  // region only, so the panel never downloads a full-page PNG just to show
+  // one card.
+  const beforeShot = calls.length;
+  const shot = await handlers.captureElementShot('obj-1');
+  assert.ok(shot, 'captureElementShot returns a shot');
+  assert.strictEqual(shot.data, 'BASE64PNG');
+  const shotCalls = calls.slice(beforeShot);
+  assert.ok(shotCalls.some((c) => c.method === 'Runtime.callFunctionOn' && /scrollIntoView/.test(c.params.functionDeclaration)),
+    'captureElementShot centres the element before capturing');
+  const capCall = shotCalls.find((c) => c.method === 'Page.captureScreenshot');
+  assert.ok(capCall, 'captureElementShot dispatches Page.captureScreenshot');
+  assert.ok(capCall.params.clip, 'the capture is clipped to the element box');
+  assert.strictEqual(capCall.params.clip.x, 4, 'clip is padded from the element box');
+  // 480 (viewport y) + 400 (page scrollY) - 16 (padding): the clip is in
+  // document coordinates because captureBeyondViewport is on.
+  assert.strictEqual(capCall.params.clip.y, 864, 'clip uses document coordinates plus padding');
+  assert.strictEqual(capCall.params.clip.width, 232, 'clip width is the box plus padding');
+  assert.strictEqual(capCall.params.clip.height, 132, 'clip height is the box plus padding');
+  assert.ok(capCall.params.clip.scale > 0, 'clip carries a positive scale');
+  // The full-page capture path stays unclipped.
+  const beforePlain = calls.length;
+  await handlers.captureScreenshot();
+  const plainCall = calls.slice(beforePlain).find((c) => c.method === 'Page.captureScreenshot');
+  assert.ok(plainCall, 'captureScreenshot still dispatches a capture');
+  assert.strictEqual(plainCall.params.clip, undefined, 'the plain capture stays unclipped');
+  // An element larger than the context window is captured as a centred
+  // window instead of its whole (potentially huge) box.
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/scrollIntoView/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { x: 0, y: 0, width: 2000, height: 3000, sx: 0, sy: 0, dpr: 1 } } });
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const beforeWindow = calls.length;
+  const windowed = await handlers.captureElementShot('obj-1');
+  const windowClip = calls.slice(beforeWindow).find((c) => c.method === 'Page.captureScreenshot').params.clip;
+  assert.strictEqual(windowClip.width, 520, 'a large element is clipped to the context window');
+  assert.strictEqual(windowClip.height, 360, 'a large element is clipped to the context window');
+  assert.strictEqual(windowClip.x, 740, 'the context window is centred on the element');
+  assert.strictEqual(windowClip.y, 1320, 'the context window is centred on the element');
+  assert.ok(windowed.width <= 1040, 'the captured image stays small');
+  // A degenerate box (display:none / detached) must not produce a capture.
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/scrollIntoView/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { x: 0, y: 0, width: 0, height: 0 } } });
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const empty = await handlers.captureElementShot('obj-1');
+  assert.strictEqual(empty, null, 'a zero-size element yields no shot');
+
+  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

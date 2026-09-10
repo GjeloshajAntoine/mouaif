@@ -1147,6 +1147,10 @@ useEffect(() => {
     hideNodeHighlight: handlers ? handlers.hideNodeHighlight : null,
     setInlineStyleProperty: handlers ? handlers.setInlineStyleProperty : null,
     removeInlineStyleProperty: handlers ? handlers.removeInlineStyleProperty : null,
+    // Pinned element preview: a clipped screenshot of the selected element
+    // so the panel can show the result of an edit in place (no page scroll
+    // back to the Preview panel).
+    captureElementShot: handlers ? handlers.captureElementShot : null,
     pickHandlerRef: stylesPickRef,
     pickMode: stylesActive,
     onPickModeChange: setStylesActive

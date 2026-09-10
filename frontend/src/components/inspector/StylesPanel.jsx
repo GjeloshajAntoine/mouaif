@@ -81,14 +81,42 @@ const COMMON_CSS = [
 ['border', 'border']
 ];
 
+// STEP_RE — a value the −/+ steppers can nudge: a number with an optional
+// unit. Deliberately narrow (`px`, `%`, `rem`, …) so the steppers only show
+// up for lengths and unitless numbers — never for colors, keywords, or
+// multi-part shorthands where "+1" would be meaningless.
+const STEP_RE = /^(-?\d+(?:\.\d+)?)(px|em|rem|%|vh|vw|pt|ch|ex)?$/;
+// stepValue — the value one step up or down, or null when the current value
+// isn't steppable. Negative results clamp at 0 rather than producing an
+// invalid `-4px` for a padding.
+function stepValue(value, dir) {
+const m = STEP_RE.exec(String(value == null ? '' : value).trim());
+if (!m) return null;
+const next = parseFloat(m[1]) + dir;
+if (!Number.isFinite(next)) return null;
+const n = next < 0 ? 0 : next;
+return String(Number(n.toFixed(2))) + (m[2] || '');
+}
 // StyleEditSheet — bottom sheet that edits one property. Shown when the
-// user taps a property row or an add-chip. Big inputs + three actions:
-// Apply (commit to the element), Remove (drop the property), Cancel.
+// user taps a property row or an add-chip. Big inputs, a pinned preview of
+// the element being edited, and three actions: Apply (commits to the
+// element and keeps the sheet open so the user can keep nudging the same
+// property), Remove (drops the property), Cancel/Done.
+//
+// Applying used to close the sheet, which forced a scroll back to the
+// Preview panel to check the result and then a re-open of the sheet to try
+// another value. Keeping it open, with the element preview at the top of
+// the sheet, turns "edit → look → edit" into one continuous loop.
 function StyleEditSheet(props) {
 const [prop, setProp] = useState(props.prop || '');
 const [value, setValue] = useState(props.value || '');
 const [busy, setBusy] = useState(false);
 const [error, setError] = useState('');
+const [applied, setApplied] = useState(false);
+// Guards every post-await setState: the sheet unmounts on Done/Cancel while
+// an apply is still in flight.
+const alive = useRef(true);
+useEffect(() => () => { alive.current = false; }, []);
 // When the sheet opens for a different row / chip, reset the field. A
 // `key` on the caller side also does this; resetting here makes the
 // component self-contained regardless of how it's mounted.
@@ -96,32 +124,50 @@ useEffect(() => {
 setProp(props.prop || '');
 setValue(props.value || '');
 setError('');
+setApplied(false);
 }, [props.prop, props.value]);
 const propName = (prop || '').trim();
-async function apply() {
-if (!propName) { setError('Property is required.'); return; }
-if (busy) return;
-if (!props.onApply) return;
+const down = stepValue(value, -1);
+const up = stepValue(value, 1);
+async function commit(p, v) {
+if (busy || !props.onApply) return;
 setBusy(true);
 setError('');
 try {
-await props.onApply(propName, (value || '').trim());
-props.onDone();
+await props.onApply(p, v);
+if (!alive.current) return;
+setApplied(true);
+// The element's box can change size with the property (padding, font
+// size) — re-read the pinned preview so the sheet shows the new state.
+if (props.onRefreshShot) props.onRefreshShot();
 } catch (e) {
-setError((e && e.message) || 'Could not set ' + propName);
-setBusy(false);
+if (!alive.current) return;
+setError((e && e.message) || 'Could not set ' + p);
+} finally {
+if (alive.current) setBusy(false);
 }
+}
+async function apply() {
+if (!propName) { setError('Property is required.'); return; }
+await commit(propName, (value || '').trim());
+}
+// Steppers apply immediately: on a phone, tapping + while watching the
+// pinned preview is the fastest way to size something.
+async function nudge(next) {
+if (!propName || next == null) return;
+setValue(next);
+await commit(propName, next);
 }
 async function remove() {
 if (!propName) { setError('Property is required.'); return; }
-if (busy) return;
-if (!props.onRemove) return;
+if (busy || !props.onRemove) return;
 setBusy(true);
 setError('');
 try {
 await props.onRemove(propName);
-props.onDone();
+if (alive.current) props.onDone();
 } catch (e) {
+if (!alive.current) return;
 setError((e && e.message) || 'Could not remove ' + propName);
 setBusy(false);
 }
@@ -136,9 +182,23 @@ onClick: (e) => e.stopPropagation()
 },
 h('div', { class: 'inspector__sheet-head' },
 h('strong', { class: 'inspector__sheet-title' }, propName ? 'Edit ' + propName : 'Add style'),
-h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onCancel }, 'Cancel')
+h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onCancel }, applied ? 'Done' : 'Cancel')
 ),
 h('div', { class: 'inspector__sheet-body inspector__sheet-body--style' },
+// Pinned element preview — the reason the sheet can stay open. Tap it to
+// re-capture when a property changed the page outside this edit.
+props.shot
+? h('button', {
+class: 'inspector__styles-shot inspector__styles-shot--sheet',
+type: 'button',
+title: 'Tap to refresh the element preview',
+'aria-label': 'Refresh the element preview',
+disabled: !!props.shotBusy,
+onClick: props.onRefreshShot
+},
+h('img', { class: 'inspector__styles-shot-img', src: props.shot, alt: 'Preview of the edited element', draggable: 'false' })
+)
+: null,
 h('label', { class: 'label' }, 'Property'),
 h('input', {
 class: 'input inspector__style-input',
@@ -148,20 +208,39 @@ placeholder: 'e.g. background-color',
 autocapitalize: 'off',
 autocorrect: 'off',
 spellcheck: 'false',
-onInput: (e) => setProp(e.currentTarget.value)
+onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); }
 }),
 h('label', { class: 'label' }, 'Value'),
+h('div', { class: 'inspector__style-valuerow' },
+h('button', {
+class: 'inspector__style-step',
+type: 'button',
+disabled: busy || down == null,
+'aria-label': 'Decrease ' + (propName || 'value'),
+title: down == null ? 'Not a number' : 'Decrease to ' + down,
+onClick: () => nudge(down)
+}, '−'),
 h('input', {
-class: 'input inspector__style-input',
+class: 'input inspector__style-input inspector__style-input--value',
 type: 'text',
 value,
 placeholder: 'e.g. #ffcc00',
 autocapitalize: 'off',
 autocorrect: 'off',
 spellcheck: 'false',
-onInput: (e) => setValue(e.currentTarget.value)
+onInput: (e) => { setValue(e.currentTarget.value); setApplied(false); }
 }),
+h('button', {
+class: 'inspector__style-step',
+type: 'button',
+disabled: busy || up == null,
+'aria-label': 'Increase ' + (propName || 'value'),
+title: up == null ? 'Not a number' : 'Increase to ' + up,
+onClick: () => nudge(up)
+}, '+')
+),
 props.isInline ? h('p', { class: 'inspector__style-hint' }, 'This sets the element’s own inline style') : null,
+applied ? h('p', { class: 'inspector__style-applied', role: 'status' }, 'Applied — keep editing or tap Done') : null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 h('div', { class: 'inspector__sheet-actions' },
 h('button', {
@@ -191,7 +270,46 @@ const [loading, setLoading] = useState(false);
 const [error, setError] = useState('');
 const [edit, setEdit] = useState(null); // { prop, value } when editing
 const [selValue, setSelValue] = useState('');
+// shot — the pinned element preview: a clipped screenshot of the selected
+// element (data URL) plus its device-pixel size. Shown at the top of the
+// panel and inside the edit sheet so an edit's result is readable without
+// scrolling the page back up to the Preview panel.
+const [shot, setShot] = useState(null);
+const [shotBusy, setShotBusy] = useState(false);
 const modelRef = useRef(null);
+// shotSerial — only the newest capture may write to state. Picks, applies,
+// and manual refreshes can overlap, and a slow capture for a previously
+// selected element must not replace the current element's preview.
+const shotSerial = useRef(0);
+// captureShot — grab a clipped screenshot of the currently selected
+// element. Never throws: a failed capture leaves the previous preview in
+// place rather than blanking the panel.
+async function captureShot() {
+const objectId = modelRef.current && modelRef.current.objectId;
+if (!objectId || !props.captureElementShot) return;
+const serial = ++shotSerial.current;
+setShotBusy(true);
+try {
+const r = await props.captureElementShot(objectId);
+if (serial !== shotSerial.current) return;
+if (r && r.data) {
+setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
+}
+} catch { /* keep the previous preview */ } finally {
+if (serial === shotSerial.current) setShotBusy(false);
+}
+}
+// applyModel — adopt a freshly built node model: store it, clear the
+// previous element's preview immediately (so a stale image never sits above
+// a new element's properties), then capture the new one.
+function applyModel(m) {
+modelRef.current = m;
+setModel(m);
+shotSerial.current++;
+setShot(null);
+setShotBusy(false);
+captureShot();
+}
 
 // Dim down the inline-style list while stale after an edit. The page
 // recomputes, so we hold the previous model and keep a "refresh" affordance.
@@ -200,10 +318,7 @@ setLoading(true);
 setError('');
 try {
 const m = await fn();
-if (m) {
-modelRef.current = m;
-setModel(m);
-}
+if (m) applyModel(m);
 } catch (e) {
 setError((e && e.message) || 'Could not inspect element');
 } finally {
@@ -218,7 +333,7 @@ if (!props.pickNodeAt) return;
 setError('');
 try {
 const m = await props.pickNodeAt(x, y);
-if (m) { modelRef.current = m; setModel(m); }
+if (m) applyModel(m);
 else setError('Nothing selectable at that point.');
 } catch (e) {
 setError((e && e.message) || 'Inspect failed');
@@ -233,7 +348,7 @@ setLoading(true);
 setError('');
 try {
 const m = await props.selectBySelector(selValue);
-if (m) { modelRef.current = m; setModel(m); }
+if (m) applyModel(m);
 else setError('No element matches “' + selValue.trim() + '”.');
 } catch (e) {
 setError((e && e.message) || 'Selector failed');
@@ -264,6 +379,7 @@ props.onPickModeChange(next);
 if (next) {
 modelRef.current = null;
 setModel(null);
+setShot(null);
 setError('');
 } else if (props.hideNodeHighlight) {
 props.hideNodeHighlight().catch(() => {});
@@ -293,8 +409,10 @@ const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
 await props.setInlineStyleProperty(objId, prop, value);
 upsertLocal(prop, value);
+// Re-capture the pinned preview so the edit is visible in the panel and
+// in the still-open edit sheet.
+captureShot();
 }
-
 async function removeEdit(prop) {
 if (!props.removeInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
@@ -302,6 +420,7 @@ if (!objId) throw new Error('element not resolved');
 await props.removeInlineStyleProperty(objId, prop);
 // Drop the row entirely so the property returns to its inherited state.
 setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
+captureShot();
 }
 
 function refreshStyles() {
@@ -312,7 +431,10 @@ loadModel(() => props.refreshNodeModel(objectId));
 
 function clearPick() {
 modelRef.current = null;
+shotSerial.current++;
 setModel(null);
+setShot(null);
+setShotBusy(false);
 setEdit(null);
 setError('');
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
@@ -364,6 +486,11 @@ const label = elementLabel(model.node);
 const inlineRows = (model.inlineProps || []);
 const computedRows = (model.computed || []);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
+// Sticky block: the element header and the pinned preview stay at the top
+// of the panel's scroller while the property list below scrolls. Without
+// this the header (and the only read-out of the edit's result) scrolled
+// away as soon as the user reached the "Declared styles" rows.
+h('div', { class: 'inspector__styles-pin' },
 h('div', { class: 'inspector__styles-head' },
 h('button', {
 class: 'icon-btn icon-btn--labeled inspector__styles-clear',
@@ -411,6 +538,28 @@ h('span', { class: 'icon-btn__label' }, props.pickMode ? 'Stop' : 'Pick')
 )
 ),
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
+// Pinned element preview: a clipped screenshot of the selected element, so
+// the result of an edit is readable without scrolling back to the Preview
+// panel. Hidden until the first capture lands.
+shot
+? h('button', {
+class: 'inspector__styles-shot',
+type: 'button',
+title: 'Tap to refresh the element preview',
+'aria-label': 'Refresh the element preview for ' + label,
+disabled: shotBusy,
+onClick: captureShot
+},
+h('img', {
+class: 'inspector__styles-shot-img',
+src: shot.src,
+alt: 'Preview of ' + label,
+draggable: 'false'
+}),
+h('span', { class: 'inspector__styles-shot-note' }, shotBusy ? 'Updating…' : 'Tap to refresh')
+)
+: null
+),
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length
@@ -465,6 +614,9 @@ prop: edit.prop,
 value: edit.value,
 isInline: true,
 isRemove: inlineRows.some((x) => x.prop === edit.prop),
+shot: shot && shot.src,
+shotBusy,
+onRefreshShot: captureShot,
 onApply: applyEdit,
 onRemove: removeEdit,
 onDone: () => setEdit(null),

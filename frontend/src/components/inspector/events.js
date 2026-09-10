@@ -255,16 +255,21 @@ export function createEventHandlers(state) {
     pushNetwork();
   }
 
-  function captureScreenshot() {
-    return cdpSend('Page.captureScreenshot', {
-      // Lossless PNG preserves small text, colored edges, and fine UI detail.
-      // Keep the discarded screencast signal cheap; only this image is shown.
-      format: 'png',
-      // Chrome's PDF viewer is a separately composited extension webview.
-      // Asking it for a beyond-viewport capture can stall indefinitely;
-      // viewport capture includes the rendered PDF surface immediately.
-      captureBeyondViewport: state.captureBeyondViewport !== false
-    }, 8000);
+  function captureScreenshot(opts) {
+  const params = {
+  // Lossless PNG preserves small text, colored edges, and fine UI detail.
+  // Keep the discarded screencast signal cheap; only this image is shown.
+  format: 'png',
+  // Chrome's PDF viewer is a separately composited extension webview.
+  // Asking it for a beyond-viewport capture can stall indefinitely;
+  // viewport capture includes the rendered PDF surface immediately.
+  captureBeyondViewport: state.captureBeyondViewport !== false
+  };
+  // Optional region capture. The Styles panel's pinned element preview asks
+  // for the selected element's box only, so a full-page PNG (megabytes on a
+  // real page) is never produced or decoded just to show one card.
+  if (opts && opts.clip) params.clip = opts.clip;
+  return cdpSend('Page.captureScreenshot', params, 8000);
   }
 
   // A small screencast acts as an event-driven repaint signal. Its frame
@@ -438,6 +443,70 @@ borderColor: { r: 110, g: 168, b: 254, a: 0.6 }
 } catch { /* highlight unavailable */ }
 return model;
 }
+// captureElementShot — a small clipped screenshot of one element. The
+// Styles panel pins it above its property list and repeats it inside the
+// edit sheet, so a CSS edit can be read back without scrolling the page to
+// the Preview panel — the single biggest usability problem with editing
+// styles on a phone.
+//
+// The element is centred in the viewport first (so a below-the-fold edit is
+// actually rendered into the capture), its box is re-read afterwards, and
+// the clip is padded so borders, outlines, and shadows survive. Returns
+// { data, width, height } in device pixels, or null when the element has no
+// usable box (display:none, detached node, zero-size).
+async function captureElementShot(objectId, opts) {
+if (!objectId) return null;
+const pad = Math.max(0, Math.min(48, (opts && opts.pad) || 16));
+const maxWidth = Math.max(64, (opts && opts.maxWidth) || 480);
+let rect = null;
+try {
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(){ if(!this.getBoundingClientRect) return null; try { this.scrollIntoView({ block: "center", inline: "nearest" }); } catch (e) { try { this.scrollIntoView(); } catch (e2) { return null; } } var b = this.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, sx: window.scrollX || 0, sy: window.scrollY || 0, dpr: window.devicePixelRatio || 1 }; }',
+returnByValue: true
+}, 8000);
+rect = r && r.result && r.result.value;
+} catch { return null; }
+if (!rect || !(rect.width > 0) || !(rect.height > 0)) return null;
+// Clip geometry is in CSS pixels. With captureBeyondViewport the origin is
+// the document, otherwise the viewport — build whichever the current target
+// wants (PDF-viewer targets force viewport captures).
+const beyond = state.captureBeyondViewport !== false;
+const originX = beyond ? 0 : (rect.sx || 0);
+const originY = beyond ? 0 : (rect.sy || 0);
+// Bound the captured region to a "context window" centred on the element.
+// Capturing a whole <body> (thousands of pixels tall) would either produce a
+// multi-megabyte PNG or, once scaled to fit a 360 px panel, an unreadable
+// smear. A window keeps the scale near 1:1 for small elements (their own box
+// plus padding) and shows the element's surroundings for large ones.
+const ctxW = Math.max(120, (opts && opts.contextWidth) || 520);
+const ctxH = Math.max(90, (opts && opts.contextHeight) || 360);
+const width = Math.min(rect.width + pad * 2, ctxW);
+const height = Math.min(rect.height + pad * 2, ctxH);
+const centreX = rect.x + (rect.sx || 0) + rect.width / 2;
+const centreY = rect.y + (rect.sy || 0) + rect.height / 2;
+const x = Math.max(0, centreX - width / 2 - originX);
+const y = Math.max(0, centreY - height / 2 - originY);
+// Render across at most `maxWidth` device pixels (a ~360 px panel can't use
+// more), never above 2x.
+let scale = Math.min(2, maxWidth / width);
+if (!Number.isFinite(scale) || scale <= 0.05) scale = 0.05;
+let shot = null;
+try {
+const r = await cdpSend('Page.captureScreenshot', {
+format: 'png',
+captureBeyondViewport: beyond,
+clip: { x, y, width, height, scale }
+}, 8000);
+shot = r && r.data;
+} catch { return null; }
+if (!shot) return null;
+return {
+data: shot,
+width: Math.max(1, Math.round(width * scale)),
+height: Math.max(1, Math.round(height * scale))
+};
+}
 // hideNodeHighlight — clear the Overlay box-model highlight on the page.
 async function hideNodeHighlight() {
 try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
@@ -583,6 +652,6 @@ startPreviewStream, stopPreviewStream, ackPreviewFrame,
 loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
-refreshNodeModel, selectBySelector
+refreshNodeModel, selectBySelector, captureElementShot
 };
 }
