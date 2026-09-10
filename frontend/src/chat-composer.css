@@ -78,17 +78,17 @@ position: absolute;
 inset: 0;
 }
 /* The folder glyph is the backing the +N / -N counts sit on, so its fill
-	is pinned to --fg instead of following the chevrons' currentColor. That
-	keeps it light in every trigger state (including the accent one, where
-	currentColor would turn it mid-tone blue) and buys the counts enough
-	contrast budget to be genuinely colored rather than near-black. The
-	pinned tone is also the *brightest* thing in the button: 13.2:1 against
-	the default circle and 11.0:1 against the hover/open circle, so the
-	folder reads more clearly than before. It sits 1.6:1 off the chevrons
-	(--fg-soft) in the resting state - a deliberate trade, and the two are
-	separate shapes.
-	If this fill is ever darkened, the two count colors below must be
-	re-checked: they are validated only against #eceaf1. */
+  is pinned to --fg instead of following the chevrons' currentColor. That
+  keeps it light in every trigger state (including the accent one, where
+  currentColor would turn it mid-tone blue) and buys the counts enough
+  contrast budget to be genuinely colored rather than near-black. The
+  pinned tone is also the *brightest* thing in the button: 13.2:1 against
+  the default circle and 11.0:1 against the hover/open circle, so the
+  folder reads more clearly than before. It sits 1.6:1 off the chevrons
+  (--fg-soft) in the resting state - a deliberate trade, and the two are
+  separate shapes.
+  If this fill is ever darkened, the two count colors below must be
+  re-checked: they are validated only against #eceaf1. */
 .file-toolbar__folder > svg path {
   fill: var(--fg);
 }
@@ -407,13 +407,13 @@ pointer-events: none;
   justify-content: center;
   gap: 0.5rem;
   margin: 0;
-	/* Paint and own the home-indicator inset instead of leaving it as
-	   transparent padding below the chat. Use the page background (not
-	   --surface): the composer above sits on --bg, so a --surface strip
-	   here read as a lighter colored band across the bottom of the
-	   installed PWA. --bg keeps the inset covered but invisible. */
-	padding: 2px 10px calc(6px + var(--safe-bottom));
-	background: var(--bg);
+  /* Paint and own the home-indicator inset instead of leaving it as
+     transparent padding below the chat. Use the page background (not
+     --surface): the composer above sits on --bg, so a --surface strip
+     here read as a lighter colored band across the bottom of the
+     installed PWA. --bg keeps the inset covered but invisible. */
+  padding: 2px 10px calc(6px + var(--safe-bottom));
+  background: var(--bg);
 }
 .chat-view__status {
   display: block;

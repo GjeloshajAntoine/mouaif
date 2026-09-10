@@ -6,19 +6,19 @@
 .app__shell {
   display: flex;
   flex-direction: column;
-  	/* Fill #app (fixed, inset 0 — the visual viewport). A single
-	   `height: 100%` chains from that box, so the shell never runs its
-	   own viewport-unit calculation and a flex child (the chat view in
-	   --flush mode) can scroll internally instead of growing the page. */
-	width: 100%;
-	height: 100%;
+  /* Fill #app (fixed, inset 0 — the visual viewport). A single
+     `height: 100%` chains from that box, so the shell never runs its
+     own viewport-unit calculation and a flex child (the chat view in
+     --flush mode) can scroll internally instead of growing the page. */
+  width: 100%;
+  height: 100%;
 max-width: 30rem;
 min-width: 0;
 margin: 0 auto;
   position: relative;
   overflow: hidden;
   background: var(--bg);
-	/* Safe-area insets live in the app chrome, not on <html>/<body>: the
+  /* Safe-area insets live in the app chrome, not on <html>/<body>: the
 document is locked to the viewport (base.css) so it can never become
 a scroll container that competes with inner scrollers on iOS. The
 header absorbs --safe-top so its compact brand row uses the otherwise
