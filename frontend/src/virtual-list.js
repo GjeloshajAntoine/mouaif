@@ -21,21 +21,29 @@
 // ---- Pure range math (no DOM). Used by the browser driver. ------------
 
 export function computeRange(opts) {
-  const { itemHeight, overscan, scrollTop, viewportHeight, count } = opts;
-  if (!itemHeight || itemHeight <= 0) throw new Error('itemHeight must be > 0');
-  if (count === 0) {
-    return { start: 0, end: 0, padTop: 0, padBottom: 0 };
-  }
-  const first = Math.floor(scrollTop / itemHeight);
-  const visibleCount = Math.ceil(viewportHeight / itemHeight);
-  const start = Math.max(0, first - overscan);
-  const end = Math.min(count, first + visibleCount + overscan);
-  return {
-    start,
-    end,
-    padTop: start * itemHeight,
-    padBottom: Math.max(0, (count - end) * itemHeight)
-  };
+const { itemHeight, overscan, scrollTop, viewportHeight, count } = opts;
+if (!itemHeight || itemHeight <= 0) throw new Error('itemHeight must be > 0');
+if (count === 0) {
+return { start: 0, end: 0, padTop: 0, padBottom: 0 };
+}
+const first = Math.floor(scrollTop / itemHeight);
+const visibleCount = Math.ceil(viewportHeight / itemHeight);
+// `first` can sit past the last item: the list shrank under a scroll
+// offset that was valid for the previous, longer list (setData after a
+// filter/rescan, or a call that replaced the data). Clamping `start` to
+// `count` and `end` to `start` keeps `end >= start`, which the caller
+// relies on for its pool size — `start > end` used to make
+// ensurePoolSize() pop from an empty pool and build a negative-length
+// pool. The scrollbar still gets the right height: padTop alone covers
+// the whole list, and the browser clamps scrollTop on the next read.
+const start = Math.min(Math.max(0, first - overscan), count);
+const end = Math.min(count, Math.max(start, first + visibleCount + overscan));
+return {
+start,
+end,
+padTop: start * itemHeight,
+padBottom: Math.max(0, (count - end) * itemHeight)
+};
 }
 
 export const DEFAULTS = Object.freeze({
