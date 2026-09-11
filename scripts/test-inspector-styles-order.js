@@ -136,6 +136,21 @@ assert.ok(/function changedNamesFor\(prop\)[\s\S]{0,400}writtenNames\(prop/.test
   'the changed set is built from the names the element actually carries');
 assert.ok(/function markWritten\(prop\)[\s\S]{0,400}setChanged/.test(panel),
   'marking a written edit goes through one helper');
+// The mark is only as good as the list it is read from. Both readers of
+// `modelRef.current` run *after* a write — the changed-row marks ask it which
+// names were written, and applyEdit takes the value an undo must restore from it
+// — and the ref used to keep whatever the element had when it was picked. A
+// shorthand applied to an element with no inline styles therefore marked nothing
+// (its longhands were not in the stale list), which is the same missing highlight
+// this test exists to prevent, one layer down.
+assert.ok(/function setModelBoth\(next\)\s*\{\s*modelRef\.current = next;\s*setModel\(next\);\s*\}/.test(panel),
+  'the model and the ref are written by one helper');
+assert.ok(/function upsertLocal\(prop, value\)[\s\S]{0,500}setModelBoth\(/.test(panel),
+  'an optimistic local write updates the ref too');
+assert.ok(/function applyInlineSnapshot\(snapshot\)[\s\S]{0,1600}setModelBoth\(/.test(panel),
+  'the post-edit snapshot updates the ref, so the next reader sees the page as it now is');
+assert.ok(/async function applyEdit[\s\S]{0,2000}setModelBoth\(m\)|setModelBoth\(m\)/.test(panel),
+  'a freshly built node model goes through the same helper');
 assert.ok(/applyEdit[\s\S]*?await revalidate\(\);[\s\S]{0,900}?markWritten\(prop\)/.test(panel),
   'an applied edit marks what the page wrote, after the re-read');
 assert.ok(!/setChanged\(\(prev\) => markChanged\(prev, prop\)\)/.test(panel),

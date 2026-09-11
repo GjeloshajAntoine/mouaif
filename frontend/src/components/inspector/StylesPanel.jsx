@@ -995,8 +995,7 @@ function applyModel(m) {
 // keeps it.
 const prevId = modelRef.current && modelRef.current.objectId;
 if (!m || m.objectId !== prevId) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
-modelRef.current = m;
-setModel(m);
+setModelBoth(m);
 shotSerial.current++;
 setShot(null);
 setShotBusy(false);
@@ -1156,21 +1155,34 @@ props.hideNodeHighlight().catch(() => {});
 }
 }
 
+// setModelBoth — write the model and the ref together.
+//
+// `modelRef` is what the paths that run *after* a write read: applyEdit takes the
+// value an undo has to restore from it, and markWritten asks it which names the
+// edit actually wrote. Both used to read a list that had not changed since the
+// element was picked, so a shorthand applied to an element with no inline styles
+// marked nothing (the longhands were not in the stale list) and a re-edit of a
+// property could record an empty "was". Updating both keeps "the model" and "the
+// model the ref points at" the same thing, which is the invariant the rest of the
+// panel already assumes.
+function setModelBoth(next) {
+modelRef.current = next;
+setModel(next);
+}
 // Rebuild the inline-props list to reflect an edit we just applied. The
 // parent holds the authoritative objectId; here we simply merge the new
 // value into the existing list (or add it), and bump a `rev` so the key
 // changes and Preact re-renders the row.
 function upsertLocal(prop, value) {
-setModel((prev) => {
-if (!prev) return prev;
+const prev = modelRef.current;
+if (!prev) return;
 let found = false;
-const list = prev.inlineProps.map((x) => {
+const list = (prev.inlineProps || []).map((x) => {
 if (x.prop === prop) { found = true; return { prop, value }; }
 return x;
 });
 if (!found) list.push({ prop, value });
-return { ...prev, inlineProps: list, rev: (prev.rev || 0) + 1 };
-});
+setModelBoth({ ...prev, inlineProps: list, rev: (prev.rev || 0) + 1 });
 }
 // changedNamesFor — the property names an edit of `prop` wrote, as the
 // *element* reports them: the typed property plus every declaration of the
@@ -1215,16 +1227,15 @@ const resolved = snapshot.computed || {};
 // font-size percentage conversions real numbers instead of an assumed 16px, so
 // they are kept on the model and handed to the edit sheet as its unit context.
 const bases = snapshot.bases || null;
-setModel((prev) => {
-if (!prev) return prev;
+const prev = modelRef.current;
+if (!prev) return;
 const inlineProps = Object.keys(inline).map((prop) => ({ prop, value: String(inline[prop] || '') }));
 const computed = (prev.computed || []).map((row) => (
 Object.prototype.hasOwnProperty.call(resolved, row.prop)
 ? { ...row, value: String(resolved[row.prop] || '') }
 : row
 ));
-return { ...prev, inlineProps, computed, bases: bases || prev.bases || null, rev: (prev.rev || 0) + 1 };
-});
+setModelBoth({ ...prev, inlineProps, computed, bases: bases || prev.bases || null, rev: (prev.rev || 0) + 1 });
 }
 // syncFromPage — pull the element's styles after an edit. Best-effort: a
 // failed read leaves the model alone rather than blanking the lists.
@@ -1294,7 +1305,9 @@ const written = changedNamesFor(prop);
 await props.removeInlineStyleProperty(objId, prop);
 if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: '' });
 // Drop the row entirely so the property returns to its inherited state.
-setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
+if (modelRef.current) {
+setModelBoth({ ...modelRef.current, inlineProps: modelRef.current.inlineProps.filter((x) => x.prop !== prop), rev: (modelRef.current.rev || 0) + 1 });
+}
 // Nothing left to highlight for a property that no longer exists here — nor
 // for the longhands it took with it.
 setChanged((prev) => written.reduce((acc, name) => unmarkChanged(acc, name), prev));
