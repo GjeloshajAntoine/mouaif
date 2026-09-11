@@ -3959,10 +3959,19 @@ color: var(--fg-soft);
 background: var(--surface-3);
 border-radius: 999px;
 }
-/* "Show" turns the chips into a filter rather than a second row of tabs. */
-.inspector__computed-show {
+/* "Show" turns the chips into a filter rather than a second row of tabs. The
+label rides inside the same flex item as the chips (see the comment in
+`StylesPanel.jsx`): as a sibling pinned right it stayed on the first row while
+the chips wrapped under it, so the row ended in a lone "SHOW". */
+.inspector__computed-showgroup {
+display: flex;
+align-items: center;
+gap: 8px;
 flex: 0 0 auto;
 margin-left: auto;
+}
+.inspector__computed-show {
+flex: 0 0 auto;
 font-size: 0.62rem;
 font-weight: 600;
 letter-spacing: 0.06em;

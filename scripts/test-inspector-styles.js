@@ -418,6 +418,23 @@ async function main() {
   assert.ok(/inspector__styles-kid-label/.test(panelSrc) && /inspector__styles-crumb-label/.test(panelSrc),
     'the panel renders those label spans');
 
+  // --- the computed filter label never leaves its chips -----------------
+  // The label ("Show") explains what the three chips under it do, so it has to
+  // travel with them. As siblings in the wrapping bar, the label — pinned right
+  // by `margin-left: auto` — stayed on the first row at 360 px while the chips
+  // dropped to the next one, so the bar read "COMPUTED 0/406 ... SHOW" with the
+  // chips below and the word attached to nothing.
+  assert.ok(/inspector__computed-showgroup/.test(panelSrc),
+    'the computed Show label and its chips are rendered inside one wrapper');
+  const showGroupRule = /\.inspector__computed-showgroup\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(showGroupRule, '.inspector__computed-showgroup has its own rule');
+  assert.match(showGroupRule[1], /margin-left:\s*auto/,
+    'the wrapper is the item that is pushed to the right edge, not the label');
+  const showLabelRule = /\.inspector__computed-show\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(showLabelRule, '.inspector__computed-show has its own rule');
+  assert.ok(!/margin-left/.test(showLabelRule[1]),
+    '.inspector__computed-show must not push itself away from the chips it labels');
+
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
 

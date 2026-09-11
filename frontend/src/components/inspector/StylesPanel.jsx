@@ -1607,9 +1607,15 @@ h('div', { class: 'inspector__styles-section' },
 h('div', { class: 'inspector__computed-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),
 h('span', { class: 'inspector__computed-count' }, computedVisible.length + '/' + computedRows.length),
-// "Show:" turns three chips into a filter, not a second set of tabs. Each
+// "Show" turns three chips into a filter, not a second set of tabs. Each
 // chip also carries its meaning in the title / accessible name, and the
 // status line under the search states the one in force in words.
+//
+// The label and the chips are one flex item, so they wrap together. As two
+// siblings the label — pinned right by `margin-left: auto` — stayed on the
+// first row at 360 px while the chips dropped to the next one, leaving a
+// lone "SHOW" at the right edge with nothing beside it.
+h('div', { class: 'inspector__computed-showgroup' },
 h('span', { class: 'inspector__computed-show', 'aria-hidden': 'true' }, 'Show'),
 h('div', { class: 'inspector__computed-filters', role: 'group', 'aria-label': 'Filter computed properties' },
 FILTERS.map((f) => h('button', {
@@ -1621,6 +1627,7 @@ title: 'Show ' + f.hint,
 'aria-label': 'Show ' + f.hint,
 onClick: () => setComputedFilterState(f.id)
 }, f.label))
+)
 )
 ),
 h('div', { class: 'inspector__computed-searchrow' },
