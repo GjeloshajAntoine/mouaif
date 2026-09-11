@@ -14,13 +14,18 @@
 display: flex;
 flex-wrap: wrap;
 align-items: center;
-gap: 1px 4px;
-/* No vertical padding: the head hugs its content (back button,
-title, usage chips, model row) so there is no visible gap between
-the app header and the title, and no gap between the usage chips
-and the model picker row below. Vertical rhythm comes from the
-border-bottom + the flex `gap` only. */
-padding: 0 8px;
+/* Row gap 2 / column gap 4. The row gap used to be 1px with the model
+row pulled up by a -6px top margin, which made the two rows *overlap*:
+the model row started 5px inside the icon column and 3px inside the
+title stack, so the usage chips and the two dropdowns visually collided
+and the globe glyph sat between them. The padding is now explicit on all
+four sides instead of borrowed from a margin hack. */
+gap: 2px 4px;
+/* No top padding (the shell owns the space above the head) and 4px at the
+bottom, where the old layout had the model row's own +6px margin. The
+difference is small on purpose: the -6px tuck that used to sit here was
+not spacing, it was overlap. */
+padding: 0 8px 4px;
 border-bottom: 1px solid var(--border);
 flex: 0 0 auto;
 position: relative;
@@ -86,16 +91,13 @@ width: 100%;
 display: flex;
 flex-wrap: wrap;
 align-items: center;
-/* Center the two dropdowns horizontally and add breathing room
-below the model row before the transcript. The row sits inside a
-flex-wrap head with a 1px row gap, so we pull it up by 6px with a
-negative top margin to tuck it closer to the usage chips, and add
-the same 6px as bottom margin so the total row height is unchanged
-— only the vertical balance shifts toward the bottom. */
+/* Centered horizontally, no negative margin: the model row used to be
+pulled 6px up into the row above (and 6px added below) to "tuck" it under
+the usage chips, which overlapped the chips and the icon column instead of
+just tightening the rhythm. The head's own padding owns that spacing now. */
 justify-content: center;
 gap: 2px 6px;
 min-width: 96px;
-margin: -6px 0 6px;
 }
 /* One icon button per line: the two header actions (project settings
    + tool popup) stack vertically so the top row stays short and the

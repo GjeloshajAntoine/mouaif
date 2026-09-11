@@ -5,18 +5,24 @@
 /* ---- Composer row: tool button beside composer pill ----------------- */
 
 .chat-view__composer-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 6px 10px 0;
-  flex: 0 0 auto;
-  /* Same reading measure as the transcript rows above, so the composer
-     column lines up with the bubbles on a wide frame. Inert on phones
-     (the row is narrower than --read-max there). */
-  max-width: var(--read-max, 44rem);
-  margin-inline: auto;
-  width: 100%;
+display: flex;
+flex-direction: row;
+/* Center, not flex-end. The file-toolbar trigger is a 44px target whose
+painted circle is 40px (2px inset on each side), and the pill is 40px, so
+bottom-aligning them left the circle sitting 2px above the pill's top and
+bottom edges — the composer read as two misaligned pieces. Centering both
+in the row puts the painted circle on the pill's own centre line, and keeps
+it centred while the pill grows with a multi-line draft. */
+align-items: center;
+gap: 4px;
+padding: 6px 10px 0;
+flex: 0 0 auto;
+/* Same reading measure as the transcript rows above, so the composer
+column lines up with the bubbles on a wide frame. Inert on phones
+(the row is narrower than --read-max there). */
+max-width: var(--read-max, 44rem);
+margin-inline: auto;
+width: 100%;
 }
 
 /* Tool button container — sits left of the composer pill */
@@ -215,23 +221,23 @@ it's tappable without covering the preview. Tapping the card opens the
 full-screen viewer.
 */
 .webpreview-dock {
-  position: relative;
-  flex: 0 0 auto;
-  align-self: flex-end;
-  width: min(26%, 6.5rem);
-  min-width: 5.5rem;
-  margin: 0.4rem 0.75rem 0;
+position: relative;
+flex: 0 0 auto;
+align-self: flex-end;
+width: min(26%, 6.5rem);
+min-width: 5.5rem;
+margin: 0.4rem 0.75rem 0;
 }
 .webpreview-dock__open {
-  display: block;
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-md);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  overflow: hidden;
+display: block;
+width: 100%;
+padding: 0;
+background: transparent;
+border: 0;
+border-radius: var(--r-md);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+overflow: hidden;
 }
 .webpreview-dock__open:hover,
 .webpreview-dock__open:focus-visible {
@@ -239,15 +245,26 @@ full-screen viewer.
 }
 .webpreview-dock__open:active { opacity: 0.86; }
 .webpreview-dock__image {
-  display: block;
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  object-position: top;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg);
-  box-shadow: var(--shadow-sm);
+display: block;
+width: 100%;
+height: auto;
+/* Height cap, on the replaced element itself. The dock is in the flow above
+  the composer, so its height comes straight out of the transcript, and a
+  tall capture (a 375x812 phone page at 26% width) made it ~200px tall on a
+  360px phone — a band across the whole chat, two thirds of it empty because
+  the card is right-aligned. The cap keeps it a thumbnail; `cover` + `top`
+  crops to the top of the page (the part worth previewing) instead of
+  letterboxing, and the full capture is one tap away in the viewer.
+  Cap the image, not the card: a max-height on the flex item left the image
+  overflowing its own box, because a percentage height cannot resolve
+  against an auto-height parent. */
+max-height: min(24dvh, 11rem);
+object-fit: cover;
+object-position: top;
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+background: var(--bg);
+box-shadow: var(--shadow-sm);
 }
 .webpreview-dock__dismiss {
   position: absolute;

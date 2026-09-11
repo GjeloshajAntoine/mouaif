@@ -35,6 +35,13 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Implementation notes
 
+### Spacing in the chat head and composer
+- `.chat-view__head` owns its own vertical rhythm: `gap: 2px 4px` and `padding: 0 8px 4px`. The model row used to carry `margin: -6px 0 6px` to tuck it under the usage chips; because the title/icon row is taller than the chips line, that negative margin made the two rows **overlap** (measured: the model row started 5 px inside the icon column and 3 px inside the title stack, so the chips, the globe glyph and the two dropdowns collided). Removing it costs 5 px of head height and removes the overlap.
+- `.chat-view__composer-row` uses `align-items: center`. The file-toolbar trigger is a 44 px target whose painted circle is 40 px (2 px `::before` inset), and the composer pill is 40 px: bottom-aligning them left the circle 2 px above the pill on both edges. Centering puts the painted circle exactly on the pill's centre line (verified: both at y 724–764 on a 360 px viewport) and keeps it centred while a multi-line draft grows the pill.
+- Chrome reports `.webpreview-dock` at 94 × 176 for a 375 × 812 capture with the height cap on `.webpreview-dock__image` (`max-height: min(24dvh, 11rem)`, `object-fit: cover`, `object-position: top`). The cap must be on the image: a `max-height` on the flex item clamps the card's box while the percentage-height image keeps its intrinsic height and overflows.
+
+### Transcript
+
 Detaching a turn is detected from the abort signal itself, not only from a thrown `AbortError`. The read loop also re-checks the mounted `projectDir`/`chatId` before every read, so a switch that lands between two reads unwinds the loop without throwing; both paths converge on the same silent detach and skip the finalize step that would otherwise append the abandoned chat's partial assistant turn to `state.messages` and reconcile the new chat against the old chat's cursor.
 
 Per-chat state that is normally seeded by the chat load — the backward-pagination cursor, the transcript append cursor, and the live replay cursor — is reset by a dedicated effect on every `projectDir`/`chatId` change, so a failed or superseded load cannot leave the previous chat's cursor driving the next chat's fetches. The chat load re-checks its `cancelled` flag after its last `await` (the tool-authorization fetch), so a load that is still in flight when the user switches away cannot overwrite the incoming chat's composer, thinking level, meta line, provider credit, or model picker.
