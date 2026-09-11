@@ -24,7 +24,7 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 const context = vm.createContext({});
 vm.runInContext(source, context);
-const { filterComputed, matchesQuery, pageLimit, moreRows, emptyMessage } = context;
+const { filterComputed, matchesQuery, pageLimit, moreRows, emptyMessage, statusLine } = context;
 // `FILTERS`, `FILTER_IDS`, and `COMPUTED_PAGE` are top-level `const`s, which a
 // vm script binds lexically rather than exposing as context properties.
 const FILTERS = vm.runInContext('FILTERS', context);
@@ -49,7 +49,10 @@ function main() {
   // --- the filter options are the documented three --------------------
   assert.deepStrictEqual(arr(FILTERS).map((f) => f.id), ['all', 'set', 'changed'],
     'the segmented control offers all / set / changed in that order');
-  assert.deepStrictEqual(arr(FILTERS).map((f) => f.label), ['All', 'Set', 'Changed']);
+  assert.deepStrictEqual(arr(FILTERS).map((f) => f.label), ['All', 'Declared', 'Changed'],
+  'the labels name what each filter keeps: everything, what this element declares, what you changed');
+assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length > 10),
+  'every filter carries a sentence for its title / accessible name');
   assert.deepStrictEqual(arr(FILTER_IDS), ['all', 'set', 'changed']);
   assert.ok(COMPUTED_PAGE > 0 && COMPUTED_PAGE <= 100,
     'a page is large enough to scan and small enough to keep the scroll bounded');
@@ -134,13 +137,33 @@ function main() {
   assert.match(emptyMessage({}), /No computed styles/,
     'the default empty state is about the element, not about a filter');
 
+  // --- status line ----------------------------------------------------
+  // The bar says what the list below holds, in words. The count alone cannot
+  // distinguish "2 of 406 because you typed a search" from "2 of 406 because
+  // the panel broke", which is the failure this line exists to prevent.
+  assert.match(statusLine({ filter: 'all', shown: 406, total: 406 }),
+  /all resolved/, 'the default status names the filter in force');
+  assert.match(statusLine({ filter: 'set', shown: 12, total: 406 }),
+  /Showing 12 of 406 · declared here/, 'the declared filter is spelled out');
+  assert.match(statusLine({ filter: 'changed', shown: 3, total: 406 }),
+  /you changed here/, 'the changed filter is spelled out');
+  assert.match(statusLine({ filter: 'all', shown: 2, total: 406, query: 'px' }),
+  /2 of 406 match “px”/, 'a search is named with the count it produced');
+  assert.strictEqual(statusLine({ filter: 'nonsense', shown: -1, total: 'x' }),
+  'Showing 0 of 0 · all resolved', 'an unknown filter and junk counts fall back safely');
+  assert.ok(statusLine({ filter: 'all', shown: 406, total: 406 }).indexOf('\n') === -1,
+  'the status line is one line');
   // --- the panel actually wires the filter in --------------------------
   // Guards against the module being orphaned: the matching rules are
   // worthless if the render path stops calling them, and the render cap is
   // only honest if the count in the bar is the unfiltered total.
   const panel = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
   assert.ok(/import \{[^}]*filterComputed[^}]*\} from '\.\/computedFilter\.js'/.test(panel),
-    'StylesPanel imports the computed filter');
+  'StylesPanel imports the computed filter');
+  assert.ok(/import \{[^}]*statusLine[^}]*\} from '\.\/computedFilter\.js'/.test(panel),
+  'StylesPanel imports the status line');
+  assert.ok(/statusLine\(\{/.test(panel),
+  'the status line is rendered from the live filter, count and query');
   assert.ok(/filterComputed\(orderedComputed, \{/.test(panel),
     'the computed list is filtered after it is ordered, so changed rows still lead');
   assert.ok(/pageLimit\(computedVisible\.length, computedSteps\)/.test(panel),
@@ -162,7 +185,7 @@ function main() {
   assert.ok(/setComputedQueryState/.test(panel) && /steps: 0/.test(panel),
     'changing the query or the filter resets paging in the same update');
 
-  console.log('PASS inspector computed filter (search, all/set/changed, paging, empty-state copy)');
+  console.log('PASS inspector computed filter (search, all/declared/changed, status line, paging, empty-state copy)');
 }
 
 main();

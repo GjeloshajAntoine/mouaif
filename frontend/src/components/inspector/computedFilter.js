@@ -27,9 +27,9 @@
 //   changed — only what the user edited in this session, which is the
 //             "what did I just do" view.
 export const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'set', label: 'Set' },
-  { id: 'changed', label: 'Changed' }
+{ id: 'all', label: 'All', hint: 'every property the browser resolves for this element' },
+{ id: 'set', label: 'Declared', hint: 'only the properties this element declares in its own inline style' },
+{ id: 'changed', label: 'Changed', hint: 'only the properties you changed in this session' }
 ];
 
 export const FILTER_IDS = FILTERS.map((f) => f.id);
@@ -102,10 +102,33 @@ export function moreRows(matched, steps) {
 // different things, and "nothing matches" in front of a filter the user
 // forgot they set is the classic way a panel reads as broken.
 export function emptyMessage(opts) {
-  const options = opts || {};
-  const query = String(options.query == null ? '' : options.query).trim();
-  if (query) return 'No property matches “' + query + '”.';
-  if (options.filter === 'changed') return 'Nothing changed yet — edited properties appear here.';
-  if (options.filter === 'set') return 'Nothing set on this element yet — tap a declared row or a chip to add one.';
-  return 'No computed styles for this element.';
+const options = opts || {};
+const query = String(options.query == null ? '' : options.query).trim();
+if (query) return 'No property matches “' + query + '”.';
+if (options.filter === 'changed') return 'Nothing changed yet — edited properties appear here.';
+if (options.filter === 'set') return 'Nothing set on this element yet — tap a declared row or a chip to add one.';
+return 'No computed styles for this element.';
+}
+// statusLine — what the list below is showing, in one line and in words.
+//
+// The bare `12/406` counter tells the user how much is on screen but not
+// *what*, and the three filter chips are only useful if it is obvious which one
+// is in force. This sentence is the chip's meaning spelled out, and it also
+// states the search when one is active (the case where the count alone is
+// actively misleading: 2 of 406 looks like a broken read, not a filter).
+// Short by design — one line at 360 px, no wrapping.
+export function statusLine(opts) {
+const o = opts || {};
+const filter = FILTER_IDS.indexOf(o.filter) === -1 ? 'all' : o.filter;
+const shown = Math.max(0, Number(o.shown) || 0);
+const total = Math.max(0, Number(o.total) || 0);
+const query = String(o.query == null ? '' : o.query).trim();
+// "of the ones ..." is the qualifier for both halves: with a search the count
+// is of the matches, without one it is simply which filter is in force.
+const what = filter === 'changed' ? 'you changed here'
+: filter === 'set' ? 'declared here'
+: 'all resolved';
+return query
+? shown + ' of ' + total + ' match “' + query + '” · ' + what
+: 'Showing ' + shown + ' of ' + total + ' · ' + what;
 }

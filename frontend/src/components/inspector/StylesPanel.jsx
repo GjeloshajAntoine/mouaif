@@ -34,7 +34,7 @@
 import { h } from 'preact';
 import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
-import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
+import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage, statusLine } from './computedFilter.js';
 import { alternatives, unitOptions, classify } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
@@ -69,12 +69,33 @@ onClick: props.onUndoAll
 }, '↺ Undo all')
 ),
 rows.map((r) => h('div', { class: 'inspector__receipt-row', key: r.key },
+// The changed value is the control: tapping it reopens the editor on the
+// current value, so the strip is not only a list of what happened but a way
+// back to the property. A removal has nothing left to edit, so that row
+// keeps its value as plain text and offers only the undo button.
+props.onEditRow && !r.isRemoval
+? h('button', {
+class: 'inspector__receipt-main',
+type: 'button',
+title: 'Edit ' + r.prop,
+'aria-label': 'Edit ' + r.prop + ', now ' + r.to,
+onClick: () => props.onEditRow(r)
+},
 h('span', { class: 'inspector__receipt-prop' }, r.prop),
 r.wasSet
 ? h('span', { class: 'inspector__receipt-was', title: 'was ' + r.from }, r.from)
 : h('span', { class: 'inspector__receipt-was inspector__receipt-was--unset', title: 'was not set on this element' }, '—'),
 h('span', { class: 'inspector__receipt-arrow', 'aria-hidden': 'true' }, '→'),
-h('span', { class: 'inspector__receipt-now' + (r.isRemoval ? ' is-removed' : '') }, r.isRemoval ? '(removed)' : r.to),
+h('span', { class: 'inspector__receipt-now' }, r.to)
+)
+: h('span', { class: 'inspector__receipt-main' },
+h('span', { class: 'inspector__receipt-prop' }, r.prop),
+r.wasSet
+? h('span', { class: 'inspector__receipt-was', title: 'was ' + r.from }, r.from)
+: h('span', { class: 'inspector__receipt-was inspector__receipt-was--unset', title: 'was not set on this element' }, '—'),
+h('span', { class: 'inspector__receipt-arrow', 'aria-hidden': 'true' }, '→'),
+h('span', { class: 'inspector__receipt-now is-removed' }, '(removed)')
+),
 h('button', {
 class: 'inspector__receipt-revert',
 type: 'button',
@@ -1404,7 +1425,11 @@ h(Receipt, {
 receipt,
 busy: false,
 onUndo: (row) => { noteUndone(row.prop); if (props.onUndo) props.onUndo(row); },
-onUndoAll: () => { setChanged([]); if (props.onUndoAll) props.onUndoAll(); }
+onUndoAll: () => { setChanged([]); if (props.onUndoAll) props.onUndoAll(); },
+// Tapping a changed value reopens its editor on the value that is on the
+// page now, so the strip at the top of the panel is also the shortest way
+// back to the property that was just changed.
+onEditRow: (row) => setEdit({ prop: row.prop, value: row.to })
 }),
 // Deliberately *inside the scroll flow*, not in the sticky block above it.
 // Both strips are horizontal scrollers a full tap-target tall, and pinning
@@ -1563,13 +1588,18 @@ h('div', { class: 'inspector__styles-section' },
 h('div', { class: 'inspector__computed-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),
 h('span', { class: 'inspector__computed-count' }, computedVisible.length + '/' + computedRows.length),
+// "Show:" turns three chips into a filter, not a second set of tabs. Each
+// chip also carries its meaning in the title / accessible name, and the
+// status line under the search states the one in force in words.
+h('span', { class: 'inspector__computed-show', 'aria-hidden': 'true' }, 'Show'),
 h('div', { class: 'inspector__computed-filters', role: 'group', 'aria-label': 'Filter computed properties' },
 FILTERS.map((f) => h('button', {
 class: 'inspector__computed-filter' + (computedFilter === f.id ? ' is-on' : ''),
 type: 'button',
 key: f.id,
 'aria-pressed': String(computedFilter === f.id),
-title: 'Show ' + f.label.toLowerCase() + ' computed properties',
+title: 'Show ' + f.hint,
+'aria-label': 'Show ' + f.hint,
 onClick: () => setComputedFilterState(f.id)
 }, f.label))
 )
@@ -1595,6 +1625,18 @@ title: 'Clear the computed filter',
 onClick: () => setComputedQueryState('')
 }, '✕')
 : null
+),
+// What the list below actually holds, in one line: the active filter spelled
+// out, and — when a search is on — how many rows matched out of the whole
+// resolved set. Without this, "2/406" reads as a broken read rather than as
+// the search the user just typed.
+h('p', { class: 'inspector__computed-status', role: 'status' },
+statusLine({
+filter: computedFilter,
+shown: computedVisible.length,
+total: computedRows.length,
+query: computedQuery
+})
 ),
 computedVisible.length
 ? [
