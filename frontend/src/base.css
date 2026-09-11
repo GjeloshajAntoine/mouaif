@@ -238,6 +238,32 @@ body {
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon-btn--close { color: var(--fg-soft); }
 .icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
+
+/* ---- .tap-target — hit-area expansion ---------------------------- */
+/* Grow a compact control's *hit* area to the 44 px minimum without
+   changing what it paints. The pseudo-element belongs to the control
+   itself, so a tap anywhere inside it activates the control: no wrapper
+   element, no JS, no visual change.
+
+   Only safe for a control that stands alone. An expanded area that
+   overlaps a neighbouring control wins the tap for whichever of the two
+   comes later in the document, so:
+     - isolated or trailing controls (a banner action, a close glyph) can
+       use this class directly;
+     - two small controls side by side need the control itself sized up,
+       because the two hit areas would overlap in the gap between them.
+   Do not add it to a control that already draws a ::after of its own
+   (`.checkbox` draws its tick that way). */
+.tap-target { position: relative; }
+.tap-target::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--tap));
+  height: max(100%, var(--tap));
+  transform: translate(-50%, -50%);
+}
 /* .icon-btn--labeled — an icon button that also shows a small text label
    under its glyph, the iOS DevTools segmented-control / panel-chip pattern.
    Used where a glyph alone is ambiguous (inspector header controls) but a

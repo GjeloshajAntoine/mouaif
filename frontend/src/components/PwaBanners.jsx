@@ -19,7 +19,10 @@ import { offline } from '../pwa-connectivity.js';
 function ReloadButton() {
   return h('button', {
     type: 'button',
-    class: 'pwa-banner__btn',
+    // `tap-target` grows the hit area to 44 px without growing the banner:
+    // a transient strip's action button is exactly the isolated control
+    // the helper is for.
+    class: 'pwa-banner__btn tap-target',
     onClick: () => { applyUpdate(); }
   }, 'Reload');
 }
@@ -39,9 +42,9 @@ export function PwaBanners() {
       ),
       h('span', { class: 'pwa-banner__text' }, 'You are offline. Showing the last cached view.'),
       h('button', {
-        type: 'button',
-        class: 'pwa-banner__btn',
-        onClick: () => { window.location.reload(); }
+      type: 'button',
+      class: 'pwa-banner__btn tap-target',
+      onClick: () => { window.location.reload(); }
       }, 'Retry')
     ) : null,
     showUpdate ? h('div', { class: 'pwa-banner pwa-banner--update', role: 'status' },

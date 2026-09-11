@@ -526,8 +526,11 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   border: 0;
   border-radius: var(--r-md);
   padding: 0 4px;
-  min-height: var(--tap-sm);
-  min-width: var(--tap-sm);
+  /* Full 44 px target: this is the only way out of a sub-page, it sits
+     alone at the left edge of the page header, and the heading next to
+     it is inert — growing it costs nothing and cannot overlap. */
+  min-height: var(--tap);
+  min-width: var(--tap);
   text-decoration: none;
   display: inline-flex;
   align-items: center;

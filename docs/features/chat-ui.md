@@ -28,7 +28,7 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Keyboard & Mobile considerations
 
-- **Touch-friendly** — comfortable tap targets (≥ 44 × 44 px) and smooth mobile scrolling.
+- **Touch-friendly** — every non-accessory control in the chat header and composer is a full `--tap` (44 px) target: the title (**Switch chat**), the model picker, the thinking level select, the back button, the textarea, send, image and tools. The two stacked header glyph buttons (project settings, tools) stay at 32 px of paint, because a 44 px pair would add ~24 px to the header row; see [Responsive layout](responsive-layout.md) for the helper and the remaining density trade-offs. Scrolling stays smooth on mobile.
 - **Virtual keyboard support** — the composer adjusts automatically as the on-screen keyboard opens and closes.
 - **Auto-scroll & unpin** — the transcript follows new streaming messages automatically when at the bottom; scrolling up shows a jump-to-bottom button. While pinned, it also follows existing rows that expand after rendering, such as tool cards, decoded images, and asynchronously laid-out markdown.
 - **PWA resume refresh** — returning to an installed PWA reconciles the visible chat immediately, including messages, run state, and pending authorization or question cards received while the app was backgrounded.

@@ -302,9 +302,11 @@ padding: 3px 2px 3px 4px;
   position: relative;
 }
 
-/* Toolbar buttons live inline inside the composer pill */
+/* Toolbar buttons live inline inside the composer pill. 44 px each: the
+   pill grows to a normal mobile composer height, and the buttons stop
+   being the smallest targets on the screen. */
 .chat-view__toolbar-btn {
-  width: 28px; height: 28px; padding: 0; min-height: 28px;
+  width: var(--tap); height: var(--tap); padding: 0; min-height: var(--tap);
   flex: 0 0 auto;
   color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
@@ -322,10 +324,13 @@ padding: 3px 2px 3px 4px;
   resize: none;
   font-family: inherit;
   font-size: 1rem;
-  min-height: 32px;
+  /* 44 px with the padding above/below the line box, so a single line
+     sits vertically centred in a full-height target instead of leaving a
+     strip of dead space at the bottom of the pill. */
+  min-height: var(--tap);
   max-height: 120px;
   line-height: 20px;
-  padding: 6px 4px;
+  padding: 12px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
@@ -397,10 +402,10 @@ line-height: 15px;
 pointer-events: none;
 }
 .chat-view__send {
-  width: 32px;
-  height: 32px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
-  min-height: 32px;
+  min-height: var(--tap);
   flex-shrink: 0;
   border-radius: 50%;
   margin: 0;
@@ -438,7 +443,7 @@ pointer-events: none;
 }
 
 .chat-view__image-btn {
-  width: 32px; height: 32px; padding: 0; min-height: 32px;
+  width: var(--tap); height: var(--tap); padding: 0; min-height: var(--tap);
   flex: 0 0 auto; align-self: flex-start;
   color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;

@@ -46,23 +46,25 @@ margin-inline: auto;
 /* ---- Chat head controls ------------------------------------------ */
 
 .chat-view__back {
-  font: inherit;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  padding: 0;
-  min-height: var(--tap-sm);
-  min-width: var(--tap-sm);
-  width: var(--tap-sm);
-  height: var(--tap-sm);
-  font-size: 0.95rem;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 80ms ease, color 80ms ease;
+font: inherit;
+color: var(--fg-soft);
+background: transparent;
+border: 0;
+border-radius: var(--r-sm);
+padding: 0;
+/* 44 px: the head's first row is already as tall as the stacked icon
+  column beside it, so a full-size back target costs no layout. */
+min-height: var(--tap);
+min-width: var(--tap);
+width: var(--tap);
+height: var(--tap);
+font-size: 0.95rem;
+line-height: 1;
+cursor: pointer;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+transition: background 80ms ease, color 80ms ease;
 }
 .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
 .chat-view__back:active { background: var(--surface-3); }
@@ -159,12 +161,14 @@ color: var(--muted);
 /* ---- Thinking level select + custom input ------------------------ */
 
 .chat-view__thinking-select {
-  flex: 0 1 auto;
-  min-width: 72px;
-  max-width: 110px;
-  height: 26px;
-  min-height: 26px;
-  padding: 0 16px 0 8px;
+flex: 0 1 auto;
+min-width: 72px;
+max-width: 110px;
+/* A form control, so the hit area cannot be faked with a pseudo-element:
+  the box itself is the target. 26 px was below every touch minimum. */
+height: var(--tap);
+min-height: var(--tap);
+padding: 0 16px 0 8px;
   font-size: 0.72rem;
   color: var(--fg);
   background: var(--surface-2);
@@ -188,11 +192,11 @@ color: var(--muted);
   outline: none;
 }
 .chat-view__thinking-custom {
-  flex: 0 1 auto;
-  max-width: 90px;
-  height: 26px;
-  min-height: 26px;
-  padding: 0 6px;
+flex: 0 1 auto;
+max-width: 90px;
+height: var(--tap);
+min-height: var(--tap);
+padding: 0 6px;
   font-size: 0.72rem;
   color: var(--fg);
   background: var(--surface-2);
@@ -256,6 +260,11 @@ color: var(--muted);
   align-items: center;
   gap: 4px;
   min-width: 0;
+  /* 44 px minimum: this is the *only* way to switch chats from the chat
+     screen, and at 20 px it was the smallest target for the biggest
+     action. The row it sits in is already taller (the stacked icon
+     column beside it), so this fills the row instead of growing it. */
+  min-height: var(--tap);
   flex: 1;
   font: inherit;
   color: inherit;
@@ -823,10 +832,13 @@ font-size: 0.72rem;
 display: none;
 }
 /* The chat header uses the same visual treatment in a denser control.
-Other sheet triggers keep `.mp__trigger`'s mobile-sized minimum height. */
+It is still a full 44 px target: on the denser row the height comes from
+the row, and the picker is one of the two most-tapped controls in the
+app (the model). Other sheet triggers keep `.mp__trigger`'s mobile-sized
+minimum height. */
 .mp--chat > .mp__trigger {
-min-height: 26px;
-height: 26px;
+min-height: var(--tap);
+height: var(--tap);
 padding-block: 0;
 }
 

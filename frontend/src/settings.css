@@ -511,7 +511,9 @@ transform: rotate(45deg); }
   max-width: none;
   font-size: 0.82rem;
   padding: 4px 8px;
-  min-height: 32px;
+  /* Same 44 px floor as every other `.input` in the settings forms; this
+     one used to shrink to 32 px, which is below the touch minimum. */
+  min-height: var(--tap);
 }
 .settings-project__item-status:empty { display: none; }
 .settings-project__tools-tree {
