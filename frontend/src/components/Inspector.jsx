@@ -1448,6 +1448,10 @@ useEffect(() => {
     // resolved values so the hoisted "changed" rows in both lists show the
     // value that was actually just applied.
     readElementStyles: handlers ? handlers.readElementStyles : null,
+// What the element's *siblings* use for the property being edited ("the
+// 2nd section.input-section uses 16px"), for the sheet's Match-a-sibling
+// group. One read per property the sheet opens on.
+readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // Element tree navigation: the breadcrumb and child chips walk the DOM
     // from the selected element, which is far faster on a phone than
     // re-picking a parent or child on the live preview.

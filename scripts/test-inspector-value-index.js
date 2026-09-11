@@ -254,8 +254,24 @@ check('no index is zero, not a throw', VI.valuesSeen(null, 'padding').values ===
     sib[0].labels.join(',') === 'section.input-section,section.compare', sib[0].labels.join(','));
   check('another property is excluded', VI.siblingValues(rows, 'gap').length === 1);
   check('no siblings of that property yields nothing', VI.siblingValues([], 'padding').length === 0);
-  check('a sibling with no value for the property is skipped',
-    VI.siblingValues([{ prop: 'padding', value: '' }], 'padding').length === 0);
+check('a sibling with no value for the property is skipped',
+VI.siblingValues([{ prop: 'padding', value: '' }], 'padding').length === 0);
+// The read that feeds it: one call per property, on the panel's event
+// handlers, wired to the selected element's objectId.
+{
+const events = read('frontend/src/components/inspector/events.js');
+check('the panel can read the siblings\' values', /readSiblingValues/.test(events)
+&& /async function readSiblingValues\(objectId, property\)/.test(events));
+check('the sibling read is a single in-page call carrying the property',
+/functionDeclaration: 'function\(prop\)\{'/.test(events)
+&& /arguments: \[\{ value: String\(property\) \}\]/.test(events));
+check('the sibling read is exported to the panel', /readSiblingValues,/.test(events));
+check('the read is capped so a wide row cannot be read element by element',
+/const MAX_SIBLINGS = 12;/.test(events) && /out\.length < ' \+ MAX_SIBLINGS/.test(events));
+check('the label names the element, with its ordinal',
+/previousElementSibling/.test(events) && /"st" : nth === 2 \? "nd"/.test(events));
+}
+
 }
 
 // ---- robustness --------------------------------------------------------
@@ -372,7 +388,64 @@ check('a chip per page value, capped', chips.length === 4, String(chips.length))
       return /^--space-/.test(picked);
     })());
 
-    check('nothing is emitted without a property',
+    // Match a sibling — the group the page's own stylesheets cannot answer for.
+{
+const rows = [
+{ prop: 'padding', value: '16px', label: '2nd section.input-section' },
+{ prop: 'padding', value: '16px', label: '3rd section.compare' },
+{ prop: 'padding', value: '8px', label: '4th section.toolbar' },
+{ prop: 'gap', value: '12px', label: '4th section.toolbar' }
+];
+const sibTree = comp.Suggestions({ index, prop: 'padding', siblings: rows, onPick: () => {} });
+check('a sibling group is rendered', /Match a sibling/.test(text(sibTree)), text(sibTree));
+check('a sibling chip shows the value and the element it comes from',
+/16px/.test(text(sibTree)) && /2nd section\.input-section/.test(text(sibTree)), text(sibTree));
+check('the peers\' group is one chip per distinct value',
+byClass(sibTree, 'inspector__suggest-sibling').length === 2,
+String(byClass(sibTree, 'inspector__suggest-sibling').length));
+check('another property\'s sibling value is not offered', (() => {
+const sibText = byClass(sibTree, 'inspector__suggest-sibling').map(text).join(' ');
+return !/12px/.test(sibText) && /16px/.test(sibText);
+})(), text(sibTree));
+check('a sibling chip names the element in its accessible name',
+byClass(sibTree, 'inspector__suggest-sibling').every((c) => /what .* uses$/.test(c.props['aria-label'] || '')),
+JSON.stringify(byClass(sibTree, 'inspector__suggest-sibling').map((c) => c.props['aria-label'])));
+check('picking a sibling chip reports its value', (() => {
+let picked = '';
+const t2 = comp.Suggestions({ index, prop: 'padding', siblings: rows, onPick: (v) => { picked = v; } });
+byClass(t2, 'inspector__suggest-sibling')[0].props.onClick();
+return picked === '16px';
+})());
+check('the value already in the field is not offered back', (() => {
+const t2 = comp.Suggestions({ index, prop: 'padding', value: '8px', siblings: rows, onPick: () => {} });
+return byClass(t2, 'inspector__suggest-sibling').length === 1;
+})());
+check('the sibling row is capped at three', (() => {
+const many = [1, 2, 3, 4, 5].map((i) => ({ prop: 'padding', value: i * 4 + 'px', label: i + 'th section.x' }));
+const t2 = comp.Suggestions({ index, prop: 'padding', siblings: many, onPick: () => {} });
+return byClass(t2, 'inspector__suggest-sibling').length === 3;
+})());
+check('siblings alone are enough to render the row', (() => {
+// A property the page declares nothing for, but whose peers have a value: the
+// index has no suggestions at all, and the group must still appear.
+const spacing = [{ prop: 'letter-spacing', value: '0.02em', label: '2nd section.input-section' }];
+const t2 = comp.Suggestions({ index, prop: 'letter-spacing', siblings: spacing, onPick: () => {} });
+return t2 !== null && /Match a sibling/.test(text(t2)) && /0\.02em/.test(text(t2));
+})());
+check('no sibling rows means no group',
+!/Match a sibling/.test(text(comp.Suggestions({ index, prop: 'padding', onPick: () => {} }))));
+check('the sheet hands the read rows to this component',
+/h\(Suggestions, \{/.test(read('frontend/src/components/inspector/StylesPanel.jsx'))
+&& /siblings: siblings/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the sheet asks for the siblings once per property, not per render',
+/const readSiblingsRef = useRef\(props\.readSiblings\);/.test(read('frontend/src/components/inspector/StylesPanel.jsx'))
+&& /\}, \[propName\]\);/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the panel binds the read to the selected element',
+/readSiblingValues: handlers \? handlers\.readSiblingValues : null/.test(read('frontend/src/components/Inspector.jsx')));
+check('a sibling chip is styled so a long label cannot widen the sheet',
+/\.inspector__suggest-sibling \.inspector__suggest-ev \{/.test(read('frontend/src/inspector.css')));
+}
+check('nothing is emitted without a property',
       comp.Suggestions({ index, prop: '', onPick: () => {} }) === null);
     check('nothing is emitted without an index',
       comp.Suggestions({ prop: 'padding', onPick: () => {} }) === null);

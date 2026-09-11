@@ -1907,7 +1907,20 @@ cursor: pointer;
   border-color: var(--border-strong);
 }
 .inspector__suggest-token .inspector__suggest-value {
-  color: var(--accent-hi);
+color: var(--accent-hi);
+}
+/* Match a sibling: the value is the value, and the label is the *element* it
+  came from. Both are bounded — an ordinal plus a two-class selector
+  (`2nd section.input-section`) is wide enough to push the sheet sideways on a
+  360 px phone, so it ellipsizes rather than wrapping the chip. */
+.inspector__suggest-sibling .inspector__suggest-value {
+max-width: 6rem;
+}
+.inspector__suggest-sibling .inspector__suggest-ev {
+min-width: 0;
+max-width: 9rem;
+overflow: hidden;
+text-overflow: ellipsis;
 }
 .inspector__suggest-note {
 margin: 0;

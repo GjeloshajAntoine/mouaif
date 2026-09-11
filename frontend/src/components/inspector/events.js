@@ -789,6 +789,54 @@ returnByValue: true
 }, 8000);
 return (r && r.result && r.result.value) || null;
 }
+// readSiblingValues — what the element's siblings use for one property.
+//
+// "The other section on this page uses 16px" is the answer to a spacing
+// decision that the page's own stylesheet values cannot give: the rules say
+// what the *page* declares, this says what the *peers* do. It is one
+// Runtime.callFunctionOn against the selected element (no nodeId, like every
+// other read here), so it costs one round-trip per property asked about.
+//
+// The value is the sibling's *computed* value: a sibling that inherits its
+// padding from a parent is using that padding, whether or not it declares it.
+// The label is how a person refers to the element — `2nd section.input-section`
+// — because the ordinal is what makes it findable on the page, and the read is
+// capped at MAX_SIBLINGS so a 500-row table cannot turn one tap into a
+// thousand-element read.
+const MAX_SIBLINGS = 12;
+async function readSiblingValues(objectId, property) {
+if (!objectId || !property) return [];
+try {
+const r = await cdpSend('Runtime.callFunctionOn', {
+objectId,
+functionDeclaration: 'function(prop){'
++ ' var out = [];'
++ ' var parent = this.parentElement;'
++ ' if (!parent) return out;'
++ ' var kids = parent.children;'
++ ' for (var i = 0; i < kids.length && out.length < ' + MAX_SIBLINGS + '; i++) {'
++ '   var k = kids[i];'
++ '   if (k === this) continue;'
++ '   var v = "";'
++ '   try { v = getComputedStyle(k).getPropertyValue(prop); } catch (e) { continue; }'
++ '   v = String(v || "").trim();'
++ '   if (!v) continue;'
++ '   var nth = 1; var s = k;'
++ '   while ((s = s.previousElementSibling)) nth++;'
++ '   var suffix = nth === 1 ? "st" : nth === 2 ? "nd" : nth === 3 ? "rd" : "th";'
++ '   var cls = (typeof k.className === "string") ? k.className.trim() : "";'
++ '   var names = cls ? cls.split(/\\s+/).slice(0, 2).join(".") : "";'
++ '   out.push({ prop: prop, value: v, label: nth + suffix + " " + k.nodeName.toLowerCase() + (names ? "." + names : "") });'
++ ' }'
++ ' return out;'
++ '}',
+arguments: [{ value: String(property) }],
+returnByValue: true
+}, 8000);
+const rows = r && r.result && r.result.value;
+return Array.isArray(rows) ? rows : [];
+} catch { return []; }
+}
 // hideNodeHighlight — clear the Overlay box-model highlight on the page.
 async function hideNodeHighlight() {
 try { await cdpSend('Overlay.hideHighlight'); } catch { /* ignore */ }
@@ -935,6 +983,7 @@ loadResponseBody, evaluateExpression, setViewportSize,
 insertText, pressEnter,
 pickNodeAt, hideNodeHighlight, setInlineStyleProperty, removeInlineStyleProperty,
 refreshNodeModel, selectBySelector, captureElementShot, readElementStyles,
+readSiblingValues,
 readElementTree, selectAncestorNode, selectChildNode, readMatchedRules
 };
 }

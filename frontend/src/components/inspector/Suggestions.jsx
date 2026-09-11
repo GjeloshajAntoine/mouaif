@@ -24,7 +24,7 @@
 // Tapping any chip only rewrites the sheet's value field — Apply still commits —
 // so a suggestion is as reversible as anything typed.
 import { h } from 'preact';
-import { valuesFor, valuesSeen, tokensFor, scaleFor, scaleNote } from './valueIndex.js';
+import { valuesFor, valuesSeen, tokensFor, scaleFor, scaleNote, siblingValues, valueKey } from './valueIndex.js';
 import { snapValue, snapNote, usableScale } from './snapping.js';
 import { readableOn, suggestTextColor } from './contrast.js';
 // MAX_CHIPS — values shown. The list is a choice, not an inventory: a phone chip
@@ -36,6 +36,10 @@ const MAX_TOKEN_CHIPS = 4;
 // is wider than a bare value chip, so the row shows fewer of them before it
 // wraps to a second line.
 const MAX_COLOUR_CHIPS = 5;
+// MAX_SIBLING_CHIPS — the Match-a-sibling row. Each chip carries a value *and*
+// the element it comes from (`2nd section.input-section`), which is twice a plain
+// chip's width, so the row shows the few that matter rather than every peer.
+const MAX_SIBLING_CHIPS = 3;
 // isColourProperty — whether a contrast reading applies. Colour chips are a
 // separate group because their evidence is a ratio, not a use count.
 function isColourProperty(prop, values) {
@@ -108,6 +112,14 @@ const countText = total > values.length
 ? ' · ' + total + ' values seen'
 : ' · ' + total + (total === 1 ? ' value' : ' values');
 const tokens = tokensFor(index, prop, MAX_TOKEN_CHIPS);
+// Match a sibling — what the element's peers use for this property. The page's
+// stylesheet values are anonymous; a peer is a *referent* the user can go and
+// look at ("the 2nd section.input-section uses 16px"), which is the question a
+// spacing decision usually starts from. The value already in the field is
+// dropped: offering the user their own value back is noise.
+const siblings = siblingValues(props.siblings || [], prop)
+.filter((s) => valueKey(s.value) !== valueKey(value))
+.slice(0, MAX_SIBLING_CHIPS);
 // Snapping is a property-level question (does this page have a step for this
 // property?), so it is answered even when there is nothing to suggest: an
 // off-scale value on a scale the index knows about is exactly the case where
@@ -125,7 +137,7 @@ const colours = colour
 const defaults = colour && colours.length < 3
 ? suggestTextColor(colourCtx.bg || props.bg || '', colourCtx)
 : [];
-if (!values.length && !tokens.length && !snap) return null;
+if (!values.length && !tokens.length && !snap && !siblings.length) return null;
 return h('div', { class: 'inspector__suggest' },
 values.length
 ? h('div', { class: 'grp' },
@@ -188,6 +200,25 @@ onClick: () => props.onPick(d.value)
 h('span', { class: 'inspector__suggest-sw', style: swatchStyle(d.value), 'aria-hidden': 'true' }),
 h('span', { class: 'inspector__suggest-value' }, d.label),
 h('span', { class: badgeClass(d.readable) }, d.text)
+))
+)
+)
+: null,
+siblings.length
+? h('div', { class: 'grp' },
+h('div', { class: 'gh' }, 'Match a sibling', h('span', null, ' · what the peers use')),
+h('div', { class: 'opts' },
+siblings.map((s) => h('button', {
+class: 'opt inspector__suggest-sibling',
+type: 'button',
+key: 's-' + s.value,
+title: s.value + ' — ' + (s.labels[0] || 'a sibling element') + ' uses ' + s.value
++ (s.count > 1 ? ' (' + s.count + ' peers)' : ''),
+'aria-label': 'Use ' + s.value + ', what ' + (s.labels[0] || 'a sibling element') + ' uses',
+onClick: () => props.onPick(s.value)
+},
+h('span', { class: 'inspector__suggest-value' }, s.value),
+h('span', { class: 'inspector__suggest-ev' }, s.labels[0] || '')
 ))
 )
 )

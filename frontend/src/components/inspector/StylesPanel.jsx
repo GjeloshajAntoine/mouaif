@@ -259,6 +259,11 @@ const [applied, setApplied] = useState(false);
 // survives a drag on one of the colour rails: writing the value back in the
 // format the user picked is the difference between a view and a converter.
 const [format, setFormat] = useState(null);
+// siblings — what the element's *peers* use for the property being edited
+// ("the 2nd section.input-section uses 16px"). Read once per property, because
+// it is one page round-trip and only the property in the sheet is interesting;
+// a failed read leaves the group out rather than blocking the sheet.
+const [siblings, setSiblings] = useState([]);
 // Guards every post-await setState: the sheet unmounts on Done/Cancel while
 // an apply is still in flight.
 const alive = useRef(true);
@@ -276,6 +281,25 @@ setApplied(false);
 setFormat(null);
 }, [props.prop, props.value]);
 const propName = (prop || '').trim();
+// The sibling read. Guarded on the property (and on the panel actually giving us
+// a reader) so opening the sheet for a property the page cannot answer for costs
+// nothing. The reader is held in a ref rather than in the effect's dependencies:
+// the panel re-renders on every CDP event and passes a fresh closure each time,
+// which would otherwise re-run the read on every console row that lands. It is
+// cancelled on unmount / property change, so a slow answer for `padding` cannot
+// render under `gap`.
+const readSiblingsRef = useRef(props.readSiblings);
+readSiblingsRef.current = props.readSiblings;
+useEffect(() => {
+let live = true;
+setSiblings([]);
+const read = readSiblingsRef.current;
+if (!read || !propName) return () => { live = false; };
+read(propName).then((rows) => {
+if (live) setSiblings(Array.isArray(rows) ? rows : []);
+}).catch(() => { if (live) setSiblings([]); });
+return () => { live = false; };
+}, [propName]);
 // The page's own step for this property, when it has one: the steppers move by
 // 4px on a 4px design scale instead of by 1, which is what makes −/+ land on
 // values the rest of the page actually uses (see snapping.js). The precision
@@ -486,6 +510,9 @@ prop: propName,
 value,
 contrastCtx: props.contrastCtx,
 ownColour: shape === 'colour',
+// What the peers use for this property — the one group the page's own
+// stylesheets cannot answer.
+siblings: siblings,
 onPick: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
 ...valueChangers,
@@ -1611,6 +1638,11 @@ contrastCtx: (() => {
   };
 })(),
 onRefreshShot: captureShot,
+// The sibling read the sheet's Match-a-sibling group uses: bound to the
+// selected element's objectId here, so the sheet only has to name a property.
+readSiblings: props.readSiblingValues && model.objectId
+? (property) => props.readSiblingValues(model.objectId, property)
+: null,
 onApply: applyEdit,
 onRemove: removeEdit,
 onDone: () => setEdit(null),
