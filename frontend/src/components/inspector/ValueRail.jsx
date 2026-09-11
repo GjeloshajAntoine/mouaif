@@ -90,6 +90,10 @@ const units = unitOptions(prop, value, ctx);
 function write(n) {
 if (!range) return;
 const clamped = quantize(n, null, range);
+// The range is already expressed in the value's own unit — `railRange` converts
+// a length's bounds through the page's real root font size for a rem value (see
+// toUnit), so a drag writes rem against that root and not against a hard-coded
+// 16. An unknown root leaves the bounds in px, and the write is px with them.
 const next = asText(Number(clamped.toFixed(MAX_DECIMALS)), range.unit);
 // A no-op drag (the thumb has not moved) must not churn the value field, or a
 // tap on the track would clear a half-typed value.

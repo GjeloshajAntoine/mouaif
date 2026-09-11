@@ -39,7 +39,7 @@ function check(name, condition, detail) {
 // onto the context by appending one statement to the same script (it shares
 // the scope, so the names resolve).
 const ctx = vm.createContext({});
-vm.runInContext(modelSource + '\n;globalThis.TB = { MAX_CRUMBS, MAX_RULE_CHIPS, CRUMB_MAX, WRITE_TARGETS, INLINE_TARGET };\n', ctx);
+vm.runInContext(modelSource + '\n;globalThis.TB = { MAX_CRUMBS, MAX_RULE_CHIPS, CRUMB_MAX, WRITE_TARGETS, INLINE_TARGET, inlineValueOf, inlineValueLookup, originSentence, SIDES_OF };\n', ctx);
 check('the caps and targets are re-exported for the test', !!ctx.TB && !!ctx.TB.MAX_CRUMBS);
 
 // A representative inspection: the element carries one inline declaration,
@@ -521,6 +521,58 @@ if (headBtn) check('header controls are 44 px targets', /width:\s*var\(--tap\)/.
 check('the breadcrumb wraps rather than scrolling sideways',
   /\.inspector__crumbs \{[\s\S]{0,160}flex-wrap:\s*wrap/.test(css));
 check('the rule row wraps too', /\.inspector__rulerow \{[\s\S]{0,120}flex-wrap:\s*wrap/.test(css));
+
+// ---- the shorthand the CSSOM expanded (R3) -----------------------------
+// Writing `padding: 24px 14px 18px` makes `element.style` report the four
+// longhands and *not* `padding`, so a lookup that only matches the property name
+// would claim there is no declaration moments after the user wrote one.
+{
+const TB = ctx.TB;
+const expanded = [
+{ prop: 'padding-top', value: '24px' },
+{ prop: 'padding-right', value: '14px' },
+{ prop: 'padding-bottom', value: '18px' },
+{ prop: 'padding-left', value: '14px' }
+];
+const look = TB.inlineValueLookup(expanded, 'padding');
+check('a shorthand is found through its longhands', look.value === '24px 14px 18px', JSON.stringify(look));
+check('the lookup says which property it was found on', look.via === 'padding-top', look.via);
+check('a property declared as itself is found directly',
+TB.inlineValueLookup([{ prop: 'padding', value: '8px' }], 'padding').value === '8px');
+check('a directly declared property reports itself as the location',
+TB.inlineValueLookup([{ prop: 'padding', value: '8px' }], 'padding').via === 'padding');
+check('the direct declaration wins over an expansion',
+TB.inlineValueLookup([{ prop: 'padding', value: '4px' }, { prop: 'padding-top', value: '9px' }], 'padding').value === '4px');
+check('a partially declared shorthand is not invented',
+TB.inlineValueLookup([{ prop: 'padding-top', value: '4px' }], 'padding').value === '');
+check('an unrelated property is still empty',
+TB.inlineValueLookup(expanded, 'margin').value === '');
+check('an empty property name is safe', TB.inlineValueLookup(expanded, '').value === '');
+check('a null list is safe', TB.inlineValueLookup(null, 'padding').value === '');
+check('the corner order is CSS order',
+TB.SIDES_OF['border-radius'].join(',').indexOf('top-left') < TB.SIDES_OF['border-radius'].join(',').indexOf('top-right'));
+check('an expanded shorthand is explained in the origin sentence',
+/as four longhands|expanded to padding-top/.test(TB.originSentence({
+property: 'padding',
+inlineValue: look,
+target: 'inline'
+})), TB.originSentence({ property: 'padding', inlineValue: look, target: 'inline' }));
+check('the origin sentence names the value that was written',
+/24px 14px 18px/.test(TB.originSentence({ property: 'padding', inlineValue: look, target: 'inline' })));
+check('a plain string inlineValue still reads as before',
+TB.originSentence({ property: 'color', inlineValue: '#fff', target: 'inline' })
+=== 'color: #fff is set on element.style, which wins this value for this element only.',
+TB.originSentence({ property: 'color', inlineValue: '#fff', target: 'inline' }));
+check('a property declared as itself is not called expanded',
+!/expanded to/.test(TB.originSentence({ property: 'padding', inlineValue: { value: '8px', via: 'padding' }, target: 'inline' })));
+check('an empty inline value falls through to the rule sentence',
+/comes from the stylesheet rule/.test(TB.originSentence({
+property: 'padding',
+inlineValue: { value: '', via: '' },
+declaringRule: { rule: { selector: '.scale-d' }, prop: { value: '16px' } },
+target: 'inline'
+})));
+}
 
 // ---- summary -----------------------------------------------------------
 

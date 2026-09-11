@@ -727,7 +727,10 @@ const receipt = props.receipt || [];
 // panel re-reads the element: its copy of the declarations is stale by then.
 useEffect(() => {
 if (!props.receiptNonce) return;
-syncFromPage();
+// The parent reversed an entry, so everything a write touched is stale: the
+// inline declarations, and the matched rules that carry the element's own
+// `element.style` entry (what the origin sentence is built from).
+revalidate();
 captureShot();
 }, [props.receiptNonce]);
 // adoptRestored — take back the selection the Inspector retained.
@@ -1077,6 +1080,17 @@ try {
 applyInlineSnapshot(await props.readElementStyles(objId));
 } catch { /* leave the model as-is */ }
 }
+// revalidate — re-read everything a write (or an undo) can invalidate. The
+// inline list is not the only thing that goes stale: the matched-rules read
+// carries the element's own `element.style` entry, which is what the target
+// bar's origin sentence is computed from. Re-reading only the inline styles
+// left that sentence claiming a value the element no longer has, which is the
+// one thing the bar exists to get right.
+async function revalidate() {
+await syncFromPage();
+const objId = modelRef.current && modelRef.current.objectId;
+if (objId) await loadRules({ objectId: objId });
+}
 
 async function applyEdit(prop, value) {
 if (!props.setInlineStyleProperty) throw new Error('not connected');
@@ -1098,8 +1112,11 @@ upsertLocal(prop, value);
 setChanged((prev) => markChanged(prev, prop));
 // Re-read the page so both lists show the value that was just applied (the
 // Computed list is otherwise a snapshot that goes stale after an edit, and a
-// hoisted "changed" row showing the old value is worse than no highlight).
-await syncFromPage();
+// hoisted "changed" row showing the old value is worse than no highlight), and
+// so the target bar's origin sentence describes the declaration that now
+// exists — a shorthand is expanded by the CSSOM, so its rules entry has to be
+// re-read for the bar to find it.
+await revalidate();
 // Re-capture the pinned preview so the edit is visible in the panel and
 // in the still-open edit sheet.
 captureShot();
@@ -1119,8 +1136,9 @@ setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) =>
 // Nothing left to highlight for a property that no longer exists here.
 setChanged((prev) => unmarkChanged(prev, prop));
 // The property now resolves from a class / stylesheet, so its computed value
-// changed too.
-await syncFromPage();
+// changed too — and its `element.style` rule entry is gone, which the bar's
+// origin sentence reads.
+await revalidate();
 captureShot();
 }
 // The undo handlers left this panel with the receipt: the LIST is owned by the

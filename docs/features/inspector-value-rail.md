@@ -95,6 +95,35 @@ padding: 10px 14px 18px 14px
 
 An image is not a number, so the image view offers the page's own `url()` and gradient values instead of a rail — the honest alternative to dragging nothing. Everything else (an unparsable value, a keyword with no choice set, a font stack) renders the typed field with a one-line note stating why there is no view. Nothing is ever a silently disabled control with no explanation.
 
+### Write-back: what the page reads back
+
+![The padding fan-out with four sub-rails at 360 px](./images/inspector/value-fanout-360.png)
+
+A fan-out edit drags four sides, and what the sheet writes has to be both the shortest valid form and something the page reads back as the same four values:
+
+```text
+10px 10px 10px 10px   ->   10px
+10px 20px 10px 20px   ->   10px 20px
+4px 8px 12px 8px      ->   4px 8px 12px
+```
+
+The CSS rules are the whole of the arithmetic (all equal → one; top == bottom and left == right → two; left == right → three; otherwise four), and there are three cases where the value must **not** be collapsed:
+
+- **A `var()` side.** An unresolvable custom property invalidates the *whole* shorthand at computed-value time, so folding four sides into one would spread a single missing variable across all four. `env()` and `attr()` are refused for the same reason. The view still shows the four sub-rails and the value line, and the note says `Not rewritten from here: a custom property cannot join a shorthand…`.
+- **A value that would re-split.** A side containing top-level whitespace (`1px 2px`) cannot sit in a shorthand, because the parser would read it as two sides. A parenthesised `calc(1px + 2px)` is fine — it is one token.
+- **A `border-radius` pair.** `8px 8px 12px 12px` is four values; the two-value form of `border-radius` is the slash form (`8px / 12px`), a different declaration. Where the corners would collapse to a pair, they are written as the four corner longhands instead.
+
+A shorthand is **expanded by the browser the moment it is set**: after writing `padding: 24px 14px 18px`, `element.style` reports `padding-top`, `padding-right`, `padding-bottom` and `padding-left` and *not* `padding`. The target bar's origin sentence and the panel's scope summary therefore look a property up through its longhands too, and say so:
+
+```text
+padding: 24px 14px 18px is set on element.style (expanded to padding-top and its
+siblings), which wins this value for this element only.
+```
+
+Without that fallback the bar would claim `padding has no declaration on this element` seconds after the user wrote one.
+
+**Undo restores every side.** One fan-out drag is one receipt entry (`padding  —  →  24px 14px 18px`), because the write is one declaration: `recordChange` merges same-property edits and keeps the original *from* value, so **Undo all** returns an element that had no `padding` of its own to exactly that state — no inline style at all — and the origin sentence goes back to naming the stylesheet rule. A value the sheet wrote is re-read after the write (inline declarations *and* the matched-rules entry), so the pinned preview, the Declared list, the Computed list and the origin sentence all describe the same page.
+
 ## Behaviour
 
 - **The rail never writes to the page.** It only rewrites the sheet's value field, so a drag is one property and one undo receipt entry, and the element's other declarations are untouched. Verified live: after a full drag the inspected element's `style` attribute is still empty, and it changes only after **Apply**.
@@ -113,11 +142,12 @@ An image is not a number, so the image view offers the page's own `url()` and gr
 ## Implementation notes
 
 - **Pure model:** [`frontend/src/components/inspector/valueRail.js`](../../frontend/src/components/inspector/valueRail.js) exports `railRange`, `familyOf`, `valueToRatio`, `ratioToValue`, `quantize`, `snapStep`, `nudge`, `tickValues`, `majorValues`, `railTicks`, `railLabel`, `railWritable`, `isLogRange`, `fromUnit`, `LOG_RATIO`, `MAX_TICKS` and `MAX_MAJOR`. It consumes the scale shape the value index already produces (`{ unit, values, step, decimals }`), so the rail costs no extra page read.
+- **Write-back model:** [`frontend/src/components/inspector/shorthand.js`](../../frontend/src/components/inspector/shorthand.js) exports `shorthandFor` (the shortest form, or the longhand fallback with the reason), `shorthandWrites` (the same as an apply-list), `collapse`, `toRoot` / `fromRoot` / `asRem` / `asPx` (unit round-trips against the page's real root font size) and the refusal rules. It is the only place that decides whether a fan-out may collapse.
 - **Per-kind model:** [`frontend/src/components/inspector/valueShapes.js`](../../frontend/src/components/inspector/valueShapes.js) exports `valueShape` (the ladder), `sidesFor` / `splitSides` / `joinSides` (the fan-out), `functionList` / `joinFunctions` / `listItems` / `joinListItems` (function and comma lists), `enumValues` (the ranking), `parseColourParts` / `joinColourParts` / `colourRailValues` / `applyRailPart` (the colour view) and `timeOptions` / `angleOptions` / `imageCandidates` / `ANGLE_SNAPS`. It is the only place that knows how to take a value apart and put it together, so the components stay thin and every round trip is testable without a DOM.
 - **Component:** [`frontend/src/components/inspector/ValueRail.jsx`](../../frontend/src/components/inspector/ValueRail.jsx) exports `ValueRail` (the track), and [`frontend/src/components/inspector/ValueKindsView.jsx`](../../frontend/src/components/inspector/ValueKindsView.jsx) exports `ValueKindsView` (the per-kind views, plus the compact `SubRail` the fan-out and function rows share). Both read a property, a value, a context and an `onChange`.
 - **Wiring:** `StylesPanel.jsx` assembles the context once per render (`scaleFor` for the step, `tokensFor` for the violet ticks, the element's box or font size for a length range, `snapValue`'s nearest value for the ghost) and passes `onChange` that only calls `setValue` — the same contract as `ValueTypes` and `Suggestions`, so `Apply` remains the single commit point. It also decides which of the two changers is shown, from the shape held per sheet.
 - **Mobile-first:** the track is 60 px tall with a 34 px thumb, `touch-action: none` keeps the vertical gesture with the sheet, the labels are absolutely positioned so a long token name cannot widen the rail, the end labels and end marks are shifted inside rather than centred so nothing hangs past the track, and the footer wraps.
-- **Tests:** `npm run test:inspector` covers this with three suites. `scripts/test-inspector-value-rail.js` (134 assertions) covers the per-family ranges, monotonicity and exact endpoints for every range, the log mapping and its geometric-mean midpoint, clamping in both directions, step selection and precedence, the nudge pair, tick generation with the cap, major-label rounding, token ticks (in range, out of range, wrong unit, unparsable, duplicated), label round-trips, the `railWritable` fallback reasons, the unit bases, and the mock's own rail end to end. `scripts/test-inspector-value-shapes.js` (157 assertions) covers the shape ladder for 27 property/value pairs, the shorthand expansion and collapse round trip, the function and comma-list splitting with nested brackets, the enum ranking and de-duplication, the colour parsing and write-back in all three formats, the HSL round trip, the three rails, the time and angle conversions, the image candidates and the contrast hand-off. Gesture handling is verified live, not unit-tested.
+- **Tests:** `npm run test:inspector` covers this with four suites. `scripts/test-inspector-value-rail.js` (134 assertions) covers the per-family ranges, monotonicity and exact endpoints for every range, the log mapping and its geometric-mean midpoint, clamping in both directions, step selection and precedence, the nudge pair, tick generation with the cap, major-label rounding, token ticks (in range, out of range, wrong unit, unparsable, duplicated), label round-trips, the `railWritable` fallback reasons, the unit bases, and the mock's own rail end to end. `scripts/test-inspector-value-shapes.js` (157 assertions) covers the shape ladder for 27 property/value pairs, the shorthand expansion and collapse round trip, the function and comma-list splitting with nested brackets, the enum ranking and de-duplication, the colour parsing and write-back in all three formats, the HSL round trip, the three rails, the time and angle conversions, the image candidates and the contrast hand-off. `scripts/test-inspector-shorthand.js` (67 assertions) covers the four collapse rules, the `var()` / `env()` / `attr()` refusals, the value-would-re-split refusal, the `border-radius` slash rule, the longhand fallback, the split→write→split round trip for nine shorthand values, and the unit conversions against 12 / 16 / 17.5 / 20 px roots. `scripts/test-inspector-target-bar.js` gained 15 assertions for the shorthand lookup (a shorthand found through its longhands, the direct declaration winning, a partial expansion not invented, and the origin sentence explaining the expansion). Gesture handling is verified live, not unit-tested.
 
 ## Related
 

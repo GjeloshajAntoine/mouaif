@@ -28,6 +28,7 @@ listItems, joinListItems, enumValues, parseColourParts, joinColourParts,
 colourRailValues, applyRailPart, timeOptions, angleOptions, imageCandidates,
 contrastForValue
 } from './valueShapes.js';
+import { shorthandFor } from './shorthand.js';
 import { railRange, valueToRatio, ratioToValue, quantize, tickValues } from './valueRail.js';
 import { formatNumber } from './valueKinds.js';
 // SubRail — the short rail the fan-out and function rows use. It is the same
@@ -204,14 +205,23 @@ return h('p', { class: 'inspector__shape-note' },
 // drag surprising.
 const isLinked = linked == null ? split.uniform : linked;
 const unit = split.unit || 'px';
+// The write the fan-out will make, in the form the sheet can make it. The sheet
+// edits ONE property (Apply sets `edit.prop`), so a side set becomes the
+// property's whole value — the shortest valid shorthand. A value whose sides
+// cannot legally be collapsed (a side that is itself several tokens) is the one
+// case the view will not rewrite: it says why and leaves the field alone.
+const write = shorthandFor(props.prop, split.sides);
+const canWrite = write.ok && write.form === 'shorthand';
 const setSide = (key, n) => {
+if (!canWrite) return;
 const sides = Object.assign({}, split.sides);
 if (isLinked) {
 for (const s of def) sides[s.key] = formatNumber(n) + unit;
 } else {
 sides[key] = formatNumber(n) + unit;
 }
-props.onChange(joinSides(props.prop, sides));
+const next = shorthandFor(props.prop, sides);
+if (next.ok && next.form === 'shorthand') props.onChange(next.value);
 };
 return h('div', { class: 'inspector__shape inspector__shape--fanout' },
 h('div', { class: 'inspector__linkrow' },
@@ -243,7 +253,13 @@ onChange: (v) => setSide(s.key, v)
 ),
 h('p', { class: 'inspector__shape-line' }, props.prop + ': ' + joinSides(props.prop, split.sides)),
 h('p', { class: 'inspector__shape-note' },
-'Written back as the shortest valid shorthand; every side is one declaration and one undo.'
+// What will actually be written. A value whose sides cannot be collapsed (a
+// `var()` side, which would invalidate the whole shorthand) is not rewritten
+// from here: the note says why, the sub-rails still show the sides, and the
+// typed field remains the control.
+canWrite
+? 'Written back as the shortest valid shorthand; every side is one declaration and one undo.'
+: 'Not rewritten from here: ' + (write.reason || 'the sides cannot be collapsed') + '. The typed field is the control.'
 )
 );
 }

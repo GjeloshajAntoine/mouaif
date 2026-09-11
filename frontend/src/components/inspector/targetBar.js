@@ -188,13 +188,64 @@ export function findDeclaringRule(rules, property) {
 // `{ prop, value }` (the `name` alias is accepted because the CDP-shaped rows
 // carry `name`).
 export function inlineValueOf(declared, property) {
-  const want = String(property || '').trim().toLowerCase();
-  if (!want) return '';
-  for (const row of declared || []) {
-    const name = String((row && (row.prop || row.name)) || '').toLowerCase();
-    if (name === want) return String((row && row.value) == null ? '' : row.value);
-  }
-  return '';
+const want = String(property || '').trim().toLowerCase();
+if (!want) return '';
+for (const row of declared || []) {
+const name = String((row && (row.prop || row.name)) || '').toLowerCase();
+if (name === want) return String((row && row.value) == null ? '' : row.value);
+}
+return '';
+}
+// SIDES_OF — the longhands a shorthand expands to, in CSS's own order.
+//
+// A shorthand is expanded by the CSSOM the moment it is set: after writing
+// `padding: 24px 14px 18px`, `element.style` reports `padding-top`,
+// `padding-right`, `padding-bottom` and `padding-left` and *not* `padding`. So a
+// lookup that only matches the property name would say "padding has no
+// declaration on this element" moments after the user wrote one — the exact bug
+// the target bar exists to prevent.
+const SIDES_OF = {
+padding: ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+inset: ['top', 'right', 'bottom', 'left'],
+'border-width': ['border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'],
+'border-radius': ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius'],
+gap: ['row-gap', 'column-gap'],
+'background-position': ['background-position-x', 'background-position-y']
+};
+// inlineValueLookup — the element's inline value for a property, whether it is
+// declared as itself or as the longhands its shorthand expanded to.
+//
+// Returns `{ value, via }`, where `via` names the property the value was
+// actually found on. `via` is what the origin sentence can use to be exact:
+// "padding is set on element.style (as four longhands)" rather than a claim
+// that a declaration exists that the CSSOM cannot see.
+export function inlineValueLookup(declared, property) {
+const want = String(property || '').trim().toLowerCase();
+if (!want) return { value: '', via: '' };
+const direct = inlineValueOf(declared, want);
+if (direct) return { value: direct, via: want };
+// A sensible-but-not-canonical shorthand value, rebuilt from the sides so the
+// origin line can show what the element actually holds. Reconstructed in CSS's
+// own expansion order and de-duplicated the same way `shorthandFor` collapses,
+// so the sentence shows `24px 14px 18px` for the declaration the fan-out wrote
+// rather than the browser's four longhand values.
+const sides = SIDES_OF[want];
+if (!sides) return { value: '', via: '' };
+const found = sides.map((name) => inlineValueOf(declared, name));
+if (found.some((v) => !v)) return { value: '', via: '' };
+const collapsed = collapseSides(found);
+return { value: collapsed, via: sides[0] };
+}
+// collapseSides — the shortest equivalent list for a set of side values, using
+// CSS's own rules: all equal collapses to one, top == bottom && left == right
+// to two, left == right to three. This is the display form only; the values the
+// page holds are unchanged either way.
+function collapseSides(v) {
+if (v.length === 2) return v[0] === v[1] ? v[0] : v.join(' ');
+if (v[1] === v[3] && v[0] === v[2]) return v[0] === v[1] ? v[0] : v[0] + ' ' + v[1];
+if (v[1] === v[3]) return v[0] + ' ' + v[1] + ' ' + v[2];
+return v.join(' ');
 }
 
 // pickFocusProperty — which property the origin line describes.
@@ -245,15 +296,22 @@ export function firstAuthorProperty(rules) {
 // declares but the browser resolves (inherited/default), and no declaration at
 // all.
 export function originSentence(opts) {
-  const o = opts || {};
-  const property = String(o.property || '').trim();
-  if (!property) return '';
-  const target = WRITE_TARGETS.find((t) => t.id === (o.target || INLINE_TARGET)) || WRITE_TARGETS[0];
-  const inline = String(o.inlineValue == null ? '' : o.inlineValue).trim();
-
-  if (inline) {
-    return property + ': ' + inline + ' is set on ' + target.label + ', which wins this value for this element only.';
-  }
+const o = opts || {};
+const property = String(o.property || '').trim();
+if (!property) return '';
+const target = WRITE_TARGETS.find((t) => t.id === (o.target || INLINE_TARGET)) || WRITE_TARGETS[0];
+const lookup = (o.inlineValue && typeof o.inlineValue === 'object')
+? o.inlineValue
+: { value: o.inlineValue, via: '' };
+const inline = String(lookup.value == null ? '' : lookup.value).trim();
+const via = String(lookup.via || '').trim();
+if (inline) {
+// A shorthand the CSSOM expanded: the element *does* hold the declaration, it
+// is just reported as its longhands. Saying so is the difference between
+// answering the question and claiming the value is not there.
+const asSides = via && via !== property ? ' (expanded to ' + via + ' and its siblings)' : '';
+return property + ': ' + inline + ' is set on ' + target.label + asSides
++ ', which wins this value for this element only.';}
 
   const declaring = o.declaringRule;
   if (declaring && declaring.rule) {
@@ -378,20 +436,23 @@ export function buildTargetBar(info) {
     targetNote: WRITE_TARGETS[0].note,
     focusProperty: property,
     origin: originSentence({
-      property,
-      target: INLINE_TARGET,
-      inlineValue: inlineValueOf(declared, property),
-      declaringRule,
-      computedValue: i.computedValue
+    property,
+    target: INLINE_TARGET,
+    // The lookup, not just the value: a shorthand is reported by the CSSOM as its
+    // longhands, so the sentence needs to know whether the value was found as
+    // itself or through its sides (see inlineValueLookup).
+    inlineValue: inlineValueLookup(declared, property),
+    declaringRule,
+    computedValue: i.computedValue
     }),
     // The scope summary, in the same words the (upcoming) commit summary uses:
     // one property changes, everything else on the element is kept, no rule is
     // touched, and only this element is affected.
     scope: {
-      changed: property ? 1 : 0,
-      kept: Math.max(0, declared.length - (property && inlineValueOf(declared, property) ? 1 : 0)),
-      rulesEdited: 0,
-      elements: property ? 1 : 0
+    changed: property ? 1 : 0,
+    kept: Math.max(0, declared.length - (property && inlineValueLookup(declared, property).value ? 1 : 0)),
+    rulesEdited: 0,
+    elements: property ? 1 : 0
     }
   };
 }

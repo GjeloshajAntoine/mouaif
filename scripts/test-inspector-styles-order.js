@@ -106,11 +106,16 @@ assert.ok(/inspector__styles-row--changed/.test(panel),
   'changed rows carry the highlight class');
 // The highlight is only honest if the hoisted rows show the value that was
 // actually applied: the panel re-reads the element after every edit, and
-// clears the set when a different element is selected.
-assert.ok(/applyEdit[\s\S]*?await syncFromPage\(\)/.test(panel),
+// clears the set when a different element is selected. The re-read goes through
+// `revalidate` since R3, because the matched-rules entry carries the element's
+// own `element.style` rule and a shorthand the CSSOM expanded is only findable
+// through that (see the value-rail doc).
+assert.ok(/applyEdit[\s\S]*?await revalidate\(\)/.test(panel),
   'an applied edit re-reads the element so the changed rows are current');
-assert.ok(/removeEdit[\s\S]*?await syncFromPage\(\)/.test(panel),
+assert.ok(/removeEdit[\s\S]*?await revalidate\(\)/.test(panel),
   'a removed property re-reads the element too');
+assert.ok(/function revalidate\(\)[\s\S]{0,200}await syncFromPage\(\)[\s\S]{0,200}loadRules\(/.test(panel),
+  'the re-read covers both the inline declarations and the matched rules');
 assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
   'selecting a different element clears the change set');
 // …and the receipt with it: its entries name properties of the element that was
