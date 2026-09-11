@@ -2458,6 +2458,173 @@ color: var(--muted);
 font-size: 0.8rem;
 cursor: pointer;
 }
+/* ---- Inspector: Intent (Part H) --------------------------------------
+Describe the change in words, review a cited diff, apply the lines you tick.
+The surface is a field, a proposal list where every line carries its evidence,
+and a button that states how many changes it will make. Every row is a ≥44 px
+target, the list is a single column (no horizontal scroller inside a vertical
+sheet), and a line the panel cannot check is disabled with its reason rather
+than hidden. */
+/* The surface reuses the panel card (it sits in the same column, under the same
+  chrome), so it only has to supply the body's padding and its own rhythm. */
+.inspector__panel--intent {
+padding: 8px 10px 10px;
+overflow: visible;
+}
+.inspector__intent {
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.inspector__intent-head {
+display: flex;
+align-items: baseline;
+gap: 7px;
+flex-wrap: wrap;
+}
+.inspector__intent-title { font-size: 0.78rem; }
+.inspector__intent-meta {
+margin-left: auto;
+font-size: 0.62rem;
+color: var(--muted);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+max-width: 60%;
+}
+.inspector__intent-ask {
+display: flex;
+align-items: stretch;
+gap: 6px;
+}
+.inspector__intent-input {
+flex: 1 1 auto;
+min-width: 0;
+min-height: var(--tap);
+}
+.inspector__intent-go {
+flex: 0 0 auto;
+min-height: var(--tap);
+min-width: 5.5rem;
+}
+.inspector__intent-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+/* The examples wrap rather than scroll: three chips, two lines at most. */
+.inspector__intent-examples {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__intent-chip {
+min-height: var(--tap);
+padding: 0 11px;
+border-radius: 9px;
+border: 1px dashed var(--border-strong);
+background: none;
+color: var(--fg-soft);
+font: inherit;
+font-size: 0.7rem;
+cursor: pointer;
+}
+.inspector__intent-chip:active { transform: scale(0.98); }
+.inspector__intent-summary {
+font-size: 0.62rem;
+color: var(--muted);
+}
+/* The diff. One column, full width, no horizontal scroll. */
+.inspector__intent-rows {
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__intent-row {
+display: flex;
+align-items: flex-start;
+gap: 8px;
+width: 100%;
+min-height: 44px;
+padding: 8px 10px;
+border-radius: 9px;
+border: 1px solid var(--border-strong);
+background: var(--surface-2);
+color: var(--fg);
+font: inherit;
+text-align: left;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__intent-row.is-ticked { border-color: var(--accent); background: var(--accent-soft); }
+.inspector__intent-row.is-blocked { opacity: 0.6; cursor: default; }
+/* The tick: a 24 px box inside the row, so the row itself stays the target. */
+.inspector__intent-tick {
+flex: 0 0 auto;
+width: 24px;
+height: 24px;
+border-radius: 6px;
+border: 1px solid var(--border-strong);
+display: grid;
+place-items: center;
+font-size: 0.72rem;
+color: var(--accent-hi);
+background: var(--surface);
+}
+.inspector__intent-row.is-ticked .inspector__intent-tick {
+background: var(--accent);
+border-color: var(--accent);
+color: var(--on-accent);
+}
+.inspector__intent-body {
+display: flex;
+flex-direction: column;
+gap: 2px;
+min-width: 0;
+flex: 1 1 auto;
+}
+.inspector__intent-line {
+display: flex;
+align-items: baseline;
+gap: 6px;
+flex-wrap: wrap;
+font-family: var(--font-mono);
+font-size: 0.72rem;
+}
+.inspector__intent-line b { color: var(--fg); }
+.inspector__intent-was { color: var(--muted-2); text-decoration: line-through; }
+.inspector__intent-arrow { color: var(--muted-2); }
+.inspector__intent-now { color: var(--accent-hi); }
+.inspector__intent-why {
+font-size: 0.62rem;
+color: var(--muted-2);
+line-height: 1.35;
+overflow-wrap: anywhere;
+}
+.inspector__intent-actions {
+display: flex;
+gap: 6px;
+flex-wrap: wrap;
+}
+.inspector__intent-actions .btn { min-height: var(--tap); }
+.inspector__intent-apply { flex: 1 1 auto; }
+.inspector__intent-error {
+margin: 0;
+font-size: 0.72rem;
+color: var(--danger);
+line-height: 1.35;
+}
+.inspector__intent-raw {
+margin: 0;
+font-family: var(--font-mono);
+font-size: 0.62rem;
+color: var(--muted-2);
+overflow-wrap: anywhere;
+max-height: 8rem;
+overflow-y: auto;
+overscroll-behavior: contain;
+}
 
 /* ---- Inspector: edit receipt + scope -------------------------------
    Two answers the "changed" chip could not give: what exactly did I change

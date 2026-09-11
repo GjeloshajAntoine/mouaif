@@ -16,6 +16,9 @@ import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { TargetBar, BarReceipt } from './inspector/TargetBar.jsx';
 import { buildTargetBar, selectionAcrossModes } from './inspector/targetBar.js';
+import { IntentPanel } from './inspector/IntentPanel.jsx';
+import { buildIntentPrompt } from './inspector/intent.js';
+import { activeProject } from '../api.js';
 import { summarizeReceipt, recordChange, undoPlan, undoOrder } from './inspector/scope.js';
 import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
@@ -144,6 +147,17 @@ function loadTargetBarCollapsed() {
 }
 function saveTargetBarCollapsed(value) {
   try { localStorage.setItem(TARGETBAR_STATE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
+}
+// The Intent surface's own visibility. A separate key from the panel list
+// because it is a separate thing: PANELS is the five inspection views, and this
+// is the describe-a-change surface introduced with Part H — a request box and a
+// cited diff, not another view of the connected page.
+const INTENT_STATE_KEY = 'mouaif:inspector:intent';
+function loadIntentState() {
+  try { return localStorage.getItem(INTENT_STATE_KEY) === '1'; } catch { return false; }
+}
+function saveIntentState(value) {
+  try { localStorage.setItem(INTENT_STATE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
 }
 // Hoisted sub-components (module scope) so their identity is stable
 // across InspectorView re-renders. Defining them *inside* the render
@@ -551,7 +565,142 @@ const [receipt, setReceipt] = useState([]);
 // re-reads the element (its own copy of the declarations is now stale).
 const [receiptNonce, setReceiptNonce] = useState(0);
 function recordReceipt(change) {
-  setReceipt((prev) => recordChange(prev, change));
+setReceipt((prev) => recordChange(prev, change));
+}
+// ---- Intent (Part H) ---------------------------------------------------
+//
+// The describe-a-change surface. Three pieces, in order:
+//
+//   proposeIntent(text) — build the prompt from what the panel already read
+//     (the element, its declarations, the page's values and tokens) and send it
+//     through the app's existing model client. No new page scrape: the context
+//     is the selection snapshot the target bar renders from.
+//   applyIntent(writes) — one `style.setProperty` per line through the same
+//     handler every other edit uses, and one receipt entry per property, so the
+//     whole intent is undoable exactly like a hand-made edit.
+//
+// The inspector has no models of its own: it uses whichever model the project
+// has configured for chat, which is what "reuses the app's existing model
+// client" means. With none configured the request fails with a message that
+// says so, rather than a spinner that never resolves.
+async function proposeIntent(text) {
+const selection = selectionAcrossModes(stylesSelection, selectionStore);
+if (!selection) throw new Error('Select an element first.');
+const modelId = await currentModelId();
+if (!modelId) throw new Error('No model configured. Add one in Settings → Models, then try again.');
+// The context the prompt is built from: the element, its own declarations, the
+// page values and tokens for the properties it declares, and the element's own
+// values (the strongest evidence). All of it is already in hand.
+const index = {};
+const props = new Set(((selection.declared || []).map((d) => String(d.prop || '').toLowerCase())) || []);
+// The page index rides on the Styles panel's snapshot; without the panel there
+// is no index, and the prompt then says so rather than inventing values.
+const pageIndex = (stylesSelection && stylesSelection.index) || null;
+for (const prop of pageIndex ? Object.keys(pageIndex.props || {}) : []) {
+if (!props.has(prop) && props.size) continue;
+const bucket = pageIndex.props[prop];
+if (bucket) index[prop] = { values: (bucket.values || []).map((v) => v.value).slice(0, 12) };
+}
+const tokens = (pageIndex && pageIndex.tokens ? pageIndex.tokens : [])
+.map((t) => ({ property: '', name: t.name, value: t.resolved || t.value, count: t.count || 0 }))
+.filter((t) => t.value && !/^var\(/i.test(t.value));
+const prompt = buildIntentPrompt(text, {
+label: selection.label || '',
+tag: (selection.label || '').split(/[.#]/)[0],
+size: selection.size || '',
+role: '',
+declared: (selection.declared || []).map((d) => ({ prop: d.prop, value: d.value })),
+index,
+tokens
+});
+const projectDir = (activeProject && activeProject.value && activeProject.value.dir) || '';
+const r = await fetchJson('/api/ai/chat', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+modelId,
+projectDir,
+messages: [
+{ role: 'system', content: prompt.system },
+{ role: 'user', content: prompt.user }
+]
+})
+});
+if (r.status !== 200) {
+throw new Error((r.body && r.body.error) || ('the model request failed (HTTP ' + r.status + ')'));
+}
+return String((r.body && r.body.text) || '');
+}
+// currentModelId — the model the project is configured to use. The same list
+// the chat picker reads, with the recent-model order as the preference, so the
+// inspector and the chat agree on the default without a second setting.
+async function currentModelId() {
+const projectDir = (activeProject && activeProject.value && activeProject.value.dir) || '';
+try {
+const recent = await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir));
+const fromRecent = recent.status === 200 && recent.body && Array.isArray(recent.body.recent)
+? recent.body.recent[0] : null;
+if (fromRecent && fromRecent.modelId) return fromRecent.modelId;
+} catch { /* fall through to the model list */ }
+try {
+const models = await fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir));
+const first = models.status === 200 && models.body && Array.isArray(models.body.models)
+? models.body.models[0] : null;
+return first ? first.id : '';
+} catch { return ''; }
+}
+// applyIntent — write the ticked lines, one property at a time.
+//
+// Each write reads the property's current value first, so the receipt records
+// the true "before" and the whole intent unwinds to the state it started in.
+// The receipt is the Inspector's own, so this works with the Styles panel off.
+async function applyIntent(writes) {
+const objectId = selectionStore && selectionStore.objectId;
+if (!objectId || !handlers || !handlers.setInlineStyleProperty) {
+throw new Error('No element selected.');
+}
+for (const w of writes || []) {
+if (!w || !w.prop) continue;
+const prev = ((selectionStore && selectionStore.declared) || [])
+.filter((x) => String(x.prop).toLowerCase() === String(w.prop).toLowerCase())
+.map((x) => x.value)[0] || '';
+await handlers.setInlineStyleProperty(objectId, w.prop, w.value);
+recordReceipt({ prop: w.prop, from: prev, to: w.value });
+}
+// Re-read so the bar's origin sentence, the Declared list and the Computed list
+// all describe the page the intent just changed (the panel does this through
+// its own mount; the nonce covers the case where it is switched off).
+if (handlers.refreshNodeModel) {
+const fresh = await handlers.refreshNodeModel(objectId);
+if (fresh) {
+const inline = (fresh.inlineProps || []).map((x) => ({ prop: x.prop, value: String(x.value || '') }));
+setSelectionStore((prev) => (prev && prev.objectId === objectId ? { ...prev, declared: inline } : prev));
+}
+}
+setReceiptNonce((n) => n + 1);
+rerender();
+return { ok: true, count: (writes || []).length };
+}
+// intentContext — what the Intent panel validates proposals against: the
+// element's own declarations, the page's values and tokens for them, and the
+// numeric step of each scale. Assembled from the retained selection, so a
+// proposal is checked against the same evidence the prompt was built from.
+function intentContext() {
+const selection = selectionAcrossModes(stylesSelection, selectionStore);
+if (!selection) return {};
+const pageIndex = (stylesSelection && stylesSelection.index) || null;
+const index = {};
+const declared = (selection.declared || []).map((d) => ({ prop: String(d.prop || '').toLowerCase(), value: d.value }));
+const wanted = new Set(declared.map((d) => d.prop));
+for (const prop of wanted) {
+const bucket = pageIndex && pageIndex.props ? pageIndex.props[prop] : null;
+if (!bucket) continue;
+const scale = (bucket.values || []).map((v) => v.value);
+index[prop] = { values: scale, step: null, unit: '' };
+}
+const tokens = (pageIndex && pageIndex.tokens ? pageIndex.tokens : [])
+.map((t) => ({ property: '', name: t.name, value: t.resolved || t.value, count: t.count || 0 }));
+return { declared, index, tokens };
 }
 // undoEntryFromBar — reverse one entry against the retained element.
 //
@@ -609,6 +758,20 @@ async function undoAllFromBar() {
 // the panel's own controls, which is what keeps the highlight, the pinned
 // preview and the changed-set reset in sync.
 const stylesHandlesRef = useRef(null);
+// intentOpen — the Intent surface (Part H). It is NOT a sixth panel: PANELS is
+// the panel list the feature inventory pins, and the Intent surface is a
+// different kind of thing (a request box and a cited diff, not an inspection
+// view of the connected page). It is toggled from the panel bar and persists
+// like the bar's collapse state, so a user who works this way keeps it.
+const [intentOpen, setIntentOpen] = useState(() => loadIntentState());
+function toggleIntent() {
+setIntentOpen((prev) => {
+const next = !prev;
+saveIntentState(next);
+return next;
+});
+rerender();
+}
 // targetBarCollapsed — the path and origin rows are ~100 px of a 667 px
 // screen, so the bar can be closed down to its identity row plus the rule
 // chips. Persisted like the panel visibility, so a user who prefers the space
@@ -1413,13 +1576,30 @@ useEffect(() => {
           },
             h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, PANEL_ICONS[p.id]),
             h('span', { class: 'inspector__panelchip-label' }, p.label),
-            showBadge
-              ? h('span', { class: 'inspector__panelchip-badge', 'aria-hidden': 'true' }, badgeText)
-              : null
-          );
-        })
-      ),
-      h(StatusPill, { text: statusText }),
+showBadge
+? h('span', { class: 'inspector__panelchip-badge', 'aria-hidden': 'true' }, badgeText)
+: null
+);
+}),
+// Intent — the sixth chip, but not a sixth panel: it is the describe-a-change
+// surface (Part H), toggled here so it is reachable exactly where the other
+// surfaces are. It shares the chip's look and its localStorage-persisted state
+// (its own key), and it keeps its own aria-label because "Show Intent" is not a
+// panel visibility toggle.
+h('button', {
+class: 'inspector__panelchip inspector__panelchip--intent' + (intentOpen ? ' is-on' : ''),
+type: 'button',
+'aria-label': (intentOpen ? 'Hide' : 'Show') + ' Intent — describe a change in words',
+'aria-pressed': String(!!intentOpen),
+title: (intentOpen ? 'Hide' : 'Show') + ' Intent — describe a change in words',
+'data-panel-id': 'intent',
+onClick: toggleIntent
+},
+h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, '✎'),
+h('span', { class: 'inspector__panelchip-label' }, 'Intent')
+)
+),
+h(StatusPill, { text: statusText }),
       // TargetBar + the session receipt — "which element, which rule, where does
       // my edit go, and what have I changed?". They sit directly above the
       // panels because they describe their subject, and — since T4 — they render
@@ -1463,8 +1643,25 @@ useEffect(() => {
       })
       );
       })(),
+    // Intent (Part H) — the describe-a-change surface, directly above the panels
+    // because it is a way to *make* an edit rather than a view of the page. It
+    // renders from the same retained selection the target bar uses, so it works
+    // with the Styles panel off.
+    intentOpen
+    ? h('div', { class: 'inspector__panel inspector__panel--intent' },
+    h(IntentPanel, {
+    connected: !!selectionAcrossModes(stylesSelection, selectionStore),
+    label: (selectionAcrossModes(stylesSelection, selectionStore) || {}).label || '',
+    selectionKey: (selectionStore && selectionStore.objectId) || '',
+    context: intentContext(),
+    onPropose: proposeIntent,
+    onApply: applyIntent,
+    onDone: () => setStatus('applied')
+    })
+    )
+    : null,
     noPanelsVisible
-        ? h('div', { class: 'inspector__panels-empty', role: 'status' },
+    ? h('div', { class: 'inspector__panels-empty', role: 'status' },
             h('p', null, 'No panels visible.'),
             h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
             h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
