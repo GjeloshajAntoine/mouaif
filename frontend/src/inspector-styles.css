@@ -281,7 +281,7 @@ is a few px shorter per row. */
 .inspector__styles-list--computed {
 gap: 0;
 }
-.inspector__styles-list--computed > li + li .inspector__styles-row--computed {
+.inspector__styles-list--computed > li + li.inspector__styles-row--computed {
 border-top: 1px solid var(--border);
 }
 /* …with one exception: a row changed in this session is the one row in this
@@ -292,7 +292,7 @@ not what a changed row needs — and keeps the accent bar the highlight already
 drew. Scoped through the list so it outweighs the hairline separator rule
 directly above it, which would otherwise leave a changed row that follows
 another row with a stray top border. */
-.inspector__styles-list--computed > li .inspector__styles-row--computed.inspector__styles-row--changed {
+.inspector__styles-list--computed > li.inspector__styles-row--computed.inspector__styles-row--changed {
 min-height: calc(var(--tap) + 2px);
 padding: 0 8px;
 border: 1px solid var(--accent);

@@ -508,12 +508,23 @@ async function main() {
   assert.ok(compactComputed, 'the compact computed-row rule exists');
   assert.match(compactComputed[1], /min-height:\s*0/,
   'the plain computed row stays below the interactive minimum');
-  const changedComputed = /\.inspector__styles-list--computed > li \.inspector__styles-row--computed\.inspector__styles-row--changed\s*\{([^}]*)\}/.exec(panelCss);
-  assert.ok(changedComputed, 'a changed computed row has its own rule');
+  // The row classes are on the <li> itself, so these rules must compound on the
+  // same element (`li.inspector__styles-row--computed`) — a descendant
+  // combinator (`> li .inspector__styles-row--computed`) matches nothing at all,
+  // which is how the changed row stayed a 24 px strip and how the separator rule
+  // below it never drew a line.
+  const changedComputed = /\.inspector__styles-list--computed > li\.inspector__styles-row--computed\.inspector__styles-row--changed\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(changedComputed, 'a changed computed row has its own rule, compounded on the row element');
   assert.match(changedComputed[1], /min-height:\s*calc\(var\(--tap\)\s*\+\s*2px\)/,
   'a changed computed row is a full 44 px tap target');
   assert.match(changedComputed[1], /border:\s*1px solid var\(--accent\)/,
-  'its border is pinned in that rule, so the separators of the rows around it cannot leak in');
+  'its border is pinned in that rule, so the separator of the row above cannot leak in');
+  const separator = /\.inspector__styles-list--computed > li \+ li\.inspector__styles-row--computed\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(separator, 'the computed list draws its row separator on the row element');
+  assert.match(separator[1], /border-top:\s*1px solid var\(--border\)/,
+  'one hairline between two rows, which is what makes the flat list readable');
+  assert.ok(!/\.inspector__styles-list--computed > li\s+\./.test(panelCss),
+  'no computed-list rule uses a descendant combinator that cannot match the row element');
   // Chips clip their text on a child span: `text-overflow` does not apply to
   // the anonymous flex item a bare text child becomes, so the label used to
   // overflow the chip's rounded border.
