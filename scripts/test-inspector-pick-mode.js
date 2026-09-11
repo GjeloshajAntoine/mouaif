@@ -265,7 +265,29 @@ check('pick mode changes the cursor to crosshair',
 check('pick mode outlines the tap surface',
   /\.inspector__preview\.is-picking \.inspector__preview-frame[\s\S]{0,160}border-color:\s*var\(--accent\)/.test(css));
 check('the cancel button is at least a 44 px tap target',
-  /\.inspector__pickban-cancel \{[\s\S]{0,120}min-height:\s*var\(--tap\)/.test(css));
+/\.inspector__pickban-cancel \{[\s\S]{0,120}min-height:\s*var\(--tap\)/.test(css));
+// ---- E. The wrapped close button sits inside its own band ----------------
+// Regression guard for a shipped defect. At ≤ 430 px the preview header
+// wraps and the close ✕ is absolutely positioned. It used to be offset
+// `top: calc(var(--safe-top) + 8px)`, but the overlay already applies
+// `padding: var(--safe-top) 0 var(--safe-bottom)`, so the head is the ✕'s
+// containing block and already starts below the status bar — the inset was
+// applied twice. On a notched phone (safe-top 47px) the ✕ landed at
+// y 102..146 while the size <select> occupied y 104..148, so its transparent
+// 44 px square covered the right end of the dropdown: a tap there resolved to
+// the close button and dismissed the overlay instead of opening the size
+// picker. Re-measured in Chrome at 360 px, the same taps now hit the <select>.
+// The two headers that share this pattern (`.wp__close` in chat-composer.css
+// and `.inspector__preview-fs-close` here) must both measure from the head.
+const narrow = css.slice(css.indexOf('@media (max-width: 430px)'));
+check('the preview overlay pads out the status bar itself',
+/inspector__preview-fs \{[\s\S]{0,400}?padding:\s*var\(--safe-top/.test(css));
+check('the wrapped close button is offset from the head, not the viewport',
+/\.inspector__preview-fs-close \{[\s\S]{0,400}?top:\s*8px/.test(narrow));
+check('the wrapped close button never re-adds the safe-area inset',
+!/\.inspector__preview-fs-close \{[\s\S]{0,200}?top:\s*calc\(var\(--safe-top/.test(narrow));
+check('the mobile header still reserves the close-button band',
+/\.inspector__preview-fs-text \{[\s\S]{0,200}?flex:\s*0 0 calc\(100% - 52px\)/.test(narrow));
 
 // ---- Summary -----------------------------------------------------------
 

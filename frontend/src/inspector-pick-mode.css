@@ -403,8 +403,12 @@ display: none;
 flex: 1 1 0;
 }
 .inspector__preview-fs-close {
+/* Same correction as .wp__close: `.inspector__preview-fs` owns
+`padding: var(--safe-top, 0px) ...`, so the head (the close button's
+containing block) already starts below the status bar and the button
+must be offset from the head, not from the viewport. */
 position: absolute;
-top: calc(var(--safe-top, 0px) + 8px);
+top: 8px;
 right: 4px;
 }
 }

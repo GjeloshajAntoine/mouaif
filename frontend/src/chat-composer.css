@@ -1574,8 +1574,14 @@ width: 100%;
 flex: 1 1 0;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__close {
+/* 8px from the head's own top edge, NOT from the viewport top: the
+overlay already applies `padding: var(--safe-top) 0 var(--safe-bottom)`
+(frontend/src/sheets.css), so the head — the close button's containing
+block — starts below the status bar. Adding --safe-top again offset the
+button by a second inset (47px on a notched phone), which dropped it out
+of its reserved band and onto the Refresh / Size row below. */
 position: absolute;
-top: calc(var(--safe-top, 0px) + 8px);
+top: 8px;
 right: 4px;
 }
 }
