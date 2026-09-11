@@ -36,7 +36,7 @@ import { useRef, useState, useEffect } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
 import { alternatives, unitOptions } from './valueKinds.js';
-import { scopeSummary, recordChange, undoPlan, undoOrder, summarizeReceipt, receiptRows } from './scope.js';
+import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
 // Receipt — the changes this session made, newest first, each with the value the
 // property had **before the session touched it**. That is what makes one tap of
@@ -581,13 +581,36 @@ const [shotBusy, setShotBusy] = useState(false);
 // so "what did I change and what is it now?" is answerable at a glance
 // instead of hunting through ~400 computed rows.
 const [changed, setChanged] = useState([]);
-// receipt — the session's edits with the value each property had before the
-// session touched it (see scope.js). Rendered as the strip above Declared
-// styles, and the source of both per-row undo and Undo all.
-const [receipt, setReceipt] = useState([]);
-// busyUndo — a revert is in flight, so the strip's buttons are disabled rather
-// than queueing a second write on the same property.
-const [busyUndo, setBusyUndo] = useState(false);
+// receipt — the session's edits. The LIST is owned by the Inspector (so it
+// survives this panel being switched off, and so the target bar can undo while
+// the user is reading Console output); this panel renders it, records into it,
+// and asks the parent to reverse an entry.
+const receipt = props.receipt || [];
+// receiptNonce — bumped by the parent after an undo it performed itself, so this
+// panel re-reads the element: its copy of the declarations is stale by then.
+useEffect(() => {
+if (!props.receiptNonce) return;
+syncFromPage();
+captureShot();
+}, [props.receiptNonce]);
+// adoptRestored — take back the selection the Inspector retained.
+//
+// This panel unmounts when its chip is switched off, which loses its model
+// (element, tree, rules, receipt) while the parent still holds the objectId. On
+// mount, if this panel has nothing selected and the parent names an element, the
+// element is re-read through the same path as a Refresh — so switching to
+// Console and back, or undoing from the bar while this panel was hidden, lands
+// on the element that is still on screen above, rather than on an empty panel.
+const adoptedRef = useRef('');
+useEffect(() => {
+const objectId = props.restoreObjectId || '';
+if (!objectId || adoptedRef.current === objectId) return;
+if (modelRef.current) return;              // a live selection of our own wins
+if (!props.refreshNodeModel) return;
+adoptedRef.current = objectId;
+loadModel(() => props.refreshNodeModel(objectId));
+});
+
 // tree — the selected element's ancestors and direct children (see
 // readElementTree). Rendered as the breadcrumb at the top of the pinned
 // block and as the child chips under it, so the user can walk up or down
@@ -702,7 +725,7 @@ function applyModel(m) {
 // (the properties belong to the old node). A refresh of the same element
 // keeps it.
 const prevId = modelRef.current && modelRef.current.objectId;
-if (!m || m.objectId !== prevId) { setChanged([]); setReceipt([]); }
+if (!m || m.objectId !== prevId) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
 modelRef.current = m;
 setModel(m);
 shotSerial.current++;
@@ -806,9 +829,16 @@ props.onSelectionChange({
   rules: rules || null,
   tree: tree || null,
   changed: changed || [],
+  receipt: receipt || [],
   editing: edit ? edit.prop : ''
 });
-}, [model, rules, tree, changed, edit]);
+// Clear the published snapshot on unmount. The Inspector keeps its own copy so
+// the target bar and the receipt survive this panel being switched off — which
+// is the point of the store — but it must stop reading a live snapshot that no
+// longer has a panel behind it, or the bar would describe an element the panel
+// is no longer tracking.
+return () => { if (props.onSelectionChange) props.onSelectionChange(null); };
+}, [model, rules, tree, changed, receipt, edit]);
 // Expose the panel's own actions to the TargetBar above it, so the bar's
 // header buttons and breadcrumb are shortcuts into this panel rather than a
 // second implementation. The selection stays owned here (with the highlight,
@@ -922,7 +952,10 @@ const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
   .filter((x) => x.prop === prop)
   .map((x) => x.value)[0] || '';
 await props.setInlineStyleProperty(objId, prop, value);
-setReceipt((prev) => recordChange(prev, { prop, from: prevValue, to: value }));
+// Record the change ABOVE the panels (see the Inspector's recordReceipt): the
+// entry has to outlive this panel's mount so the target bar can still undo it
+// after the panel is switched off.
+if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: value });
 upsertLocal(prop, value);
 // Record the edit so the row is hoisted + highlighted from here on.
 setChanged((prev) => markChanged(prev, prop));
@@ -943,7 +976,7 @@ const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
   .filter((x) => x.prop === prop)
   .map((x) => x.value)[0] || '';
 await props.removeInlineStyleProperty(objId, prop);
-setReceipt((prev) => recordChange(prev, { prop, from: prevValue, to: '' }));
+if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: '' });
 // Drop the row entirely so the property returns to its inherited state.
 setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
 // Nothing left to highlight for a property that no longer exists here.
@@ -953,56 +986,14 @@ setChanged((prev) => unmarkChanged(prev, prop));
 await syncFromPage();
 captureShot();
 }
-
-// undoChange — reverse one receipt entry.
-//
-// The plan says whether to restore a value or remove a property that did not
-// exist before (see scope.js), so undo never writes an empty value: setting
-// `padding: ''` would silently remove the declaration, which is the same to the
-// browser but a different action to read back.
-async function undoEntry(entry) {
-const plan = undoPlan(entry);
-const objId = modelRef.current && modelRef.current.objectId;
-if (!plan || !objId) return;
-if (plan.kind === 'remove') {
-  if (props.removeInlineStyleProperty) await props.removeInlineStyleProperty(objId, plan.prop);
-} else if (props.setInlineStyleProperty) {
-  await props.setInlineStyleProperty(objId, plan.prop, plan.value);
+// The undo handlers left this panel with the receipt: the LIST is owned by the
+// Inspector now (see its receipt state), which reverses entries against the
+// objectId it retains, so an undo works while this panel is switched off. This
+// panel only reports the result to its own highlight set, and re-reads the
+// element when the parent says a change was reversed (receiptNonce).
+function noteUndone(prop) {
+setChanged((prev) => unmarkChanged(prev, prop));
 }
-setReceipt((prev) => prev.filter((x) => String(x.prop).toLowerCase() !== String(plan.prop).toLowerCase()));
-setChanged((prev) => unmarkChanged(prev, plan.prop));
-}
-async function undoOne(row) {
-setBusyUndo(true);
-setError('');
-try {
-  await undoEntry({ prop: row.prop, from: row.from, to: row.to });
-  await syncFromPage();
-  captureShot();
-} catch (e) {
-  setError((e && e.message) || 'Could not undo ' + row.prop);
-} finally {
-  setBusyUndo(false);
-}
-}
-// undoAll — reverse every change, newest first, so a property edited twice
-// unwinds in one pass and cannot be left holding a value a later entry wrote.
-async function undoAll() {
-setBusyUndo(true);
-setError('');
-try {
-  for (const entry of undoOrder(receipt)) await undoEntry(entry);
-  setReceipt([]);
-  setChanged([]);
-  await syncFromPage();
-  captureShot();
-} catch (e) {
-  setError((e && e.message) || 'Could not undo every change');
-} finally {
-  setBusyUndo(false);
-}
-}
-
 function refreshStyles() {
 const objectId = modelRef.current && modelRef.current.objectId;
 if (!objectId) return;
@@ -1021,9 +1012,10 @@ setTree(null);
 setRules(null);
 setEdit(null);
 setError('');
-// The receipt describes edits made to the element that was selected; with no
-// selection there is nothing to undo, so it goes with the element.
-setReceipt([]);
+// The receipt describes edits made to the element that was selected, and the
+// Inspector owns it: with no selection there is nothing to undo, so it is
+// cleared there rather than here.
+if (props.onSelectionReset) props.onSelectionReset();
 setChanged([]);
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
@@ -1203,9 +1195,9 @@ shot.width && shot.height ? shot.width + '×' + shot.height : '')
 // cannot answer. It renders nothing when there is nothing to undo.
 h(Receipt, {
 receipt,
-busy: busyUndo,
-onUndo: undoOne,
-onUndoAll: undoAll
+busy: false,
+onUndo: (row) => { noteUndone(row.prop); if (props.onUndo) props.onUndo(row); },
+onUndoAll: () => { setChanged([]); if (props.onUndoAll) props.onUndoAll(); }
 }),
 // Deliberately *inside the scroll flow*, not in the sticky block above it.
 // Both strips are horizontal scrollers a full tap-target tall, and pinning

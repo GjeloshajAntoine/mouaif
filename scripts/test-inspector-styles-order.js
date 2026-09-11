@@ -116,7 +116,7 @@ assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
 // …and the receipt with it: its entries name properties of the element that was
 // selected, so undoing them against a new element would be a write to the wrong
 // node.
-assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setReceipt\(\[\]\)/.test(panel),
+assert.ok(/m\.objectId !== prevId\)[\s\S]{0,120}props\.onSelectionReset/.test(panel),
   'selecting a different element clears the session receipt');
 
 console.log('PASS inspector styles changed-first ordering (mark/unmark, hoist, stable remainder, highlighted rows)');

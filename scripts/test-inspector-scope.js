@@ -92,6 +92,13 @@ const DECLARED = [
     SC.recordChange([], { prop: 'color', from: '#fff', to: '' })[0].to === '');
   check('a no-op write of nothing is not recorded',
     SC.recordChange([], { prop: 'color', from: '', to: '' }).length === 0);
+  // Re-applying the value a property already had is not a change either, so it
+  // must not offer an undo — the strip is a list of things that happened.
+  check('re-applying the same value is not recorded',
+    SC.recordChange([], { prop: 'font-size', from: '15px', to: '15px' }).length === 0,
+    JSON.stringify(SC.recordChange([], { prop: 'font-size', from: '15px', to: '15px' })));
+  check('removing a property that was not there is not recorded',
+    SC.recordChange([], { prop: 'color', from: '', to: '' }).length === 0);
   check('an entry without a property is not recorded',
     SC.recordChange([], { from: 'a', to: 'b' }).length === 0);
   check('recording does not mutate the input list', (() => {
@@ -169,24 +176,35 @@ const DECLARED = [
   check('a non-array receipt is treated as empty', SC.summarizeReceipt(null).count === 0);
 }
 
-// ---- the panel wiring --------------------------------------------------
+// ---- ownership: the receipt lives above the panel ----------------------
+//
+// T4 moved the list out of the Styles panel. The panel records into it and
+// renders it, but the Inspector stores and reverses it — against the objectId it
+// retains — so switching the panel off cannot take the undo list (or the ability
+// to use it) with it.
 
-check('the panel keeps a receipt', /const \[receipt, setReceipt\] = useState\(\[\]\)/.test(stylesSource));
-check('an applied edit records what it replaced',
-  /recordChange\(prev, \{ prop, from: prevValue, to: value \}\)/.test(stylesSource), null);
+check('the panel renders the receipt from a prop, not its own state',
+  /const receipt = props\.receipt \|\| \[\]/.test(stylesSource));
+check('the panel no longer keeps its own receipt state',
+  !/const \[receipt, setReceipt\] = useState/.test(stylesSource));
+check('an applied edit reports what it replaced to the owner',
+  /if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: value \}\)/.test(stylesSource));
 check('the previous value is read before the write',
-  /const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,160}recordChange/.test(stylesSource));
-check('a removal is recorded too', /recordChange\(prev, \{ prop, from: .*to: '' \}\)/.test(stylesSource));
-check('undo uses the plan rather than guessing',
-  /undoPlan\(entry\)/.test(stylesSource) && /plan\.kind === 'remove'/.test(stylesSource));
-check('undo all runs through undoOrder', /undoOrder\(receipt\)/.test(stylesSource));
-check('undoing drops the property from the changed set',
-  /setChanged\(\(prev\) => unmarkChanged\(prev, plan\.prop\)\)/.test(stylesSource));
-check('a new selection clears the receipt (the entries belong to the old element)',
-  /if \(!m \|\| m\.objectId !== prevId\) \{ setChanged\(\[\]\); setReceipt\(\[\]\); \}/.test(stylesSource)
-  || /setReceipt\(\[\]\)[\s\S]{0,120}setChanged\(\[\]\)/.test(stylesSource),
-  'receipt reset on selection change');
-check('clearing the selection clears the receipt', /function clearPick\(\)[\s\S]{0,400}setReceipt\(\[\]\)/.test(stylesSource));
+  /const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,200}props\.onRecordChange/.test(stylesSource));
+check('a removal is reported too',
+  /if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '' \}\)/.test(stylesSource));
+check('the panel asks the owner to undo rather than writing itself',
+  /if \(props\.onUndo\) props\.onUndo\(row\)/.test(stylesSource)
+  && /if \(props\.onUndoAll\) props\.onUndoAll\(\)/.test(stylesSource));
+check('the panel still clears its own highlight when an entry is reversed',
+  /noteUndone\(row\.prop\)/.test(stylesSource)
+  && /setChanged\(\(prev\) => unmarkChanged\(prev, prop\)\)/.test(stylesSource));
+check('a new selection resets the receipt through the owner',
+  /if \(props\.onSelectionReset\) props\.onSelectionReset\(\);/.test(stylesSource));
+check('clearing the selection resets it through the owner too',
+  /function clearPick\(\)[\s\S]{0,420}props\.onSelectionReset/.test(stylesSource));
+check('the panel re-reads the element after an undo it did not perform',
+  /if \(!props\.receiptNonce\) return/.test(stylesSource));
 check('the sheet is told how many declarations are kept',
   /declared: inlineRows/.test(stylesSource));
 check('the sheet shows the scope summary', /scopeSummary\(\{/.test(stylesSource));

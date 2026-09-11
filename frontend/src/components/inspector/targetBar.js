@@ -294,6 +294,63 @@ export function cleanSize(size) {
   return text;
 }
 
+// selectionAcrossModes — merge the panel's live read of the selection with the
+// store the Inspector keeps above it.
+//
+// The store exists so the target bar and the receipt survive switching a panel
+// off, or away to Console / Network / Info: the selection belongs to the
+// Inspector, not to the Styles panel's mount. The two can disagree for a moment
+// (the panel is repainting, the store still holds the previous element), so the
+// rule is "the live read wins while the panel is mounted".
+//
+//   live     the snapshot the Styles panel published, or null when it is not
+//            mounted (its published values are cleared on unmount — see
+//            StylesPanel's publish effect).
+//   stored   the snapshot the Inspector retained.
+//
+// Returns null when both are empty, so the bar can hide itself. Returns the
+// stored snapshot when the panel is gone, which is what keeps the element's
+// identity and rules on screen while the user is reading Console output.
+export function selectionAcrossModes(live, stored) {
+  const use = (s) => s && typeof s === 'object' && String(s.label || '').trim() !== '';
+  if (use(live)) return live;
+  if (use(stored)) return stored;
+  return null;
+}
+
+// mergeReceipts — the session receipt as seen above the panels.
+//
+// The Styles panel owns the writes and therefore the authoritative list, but it
+// unmounts when its chip is switched off, and a freshly mounted panel has an
+// empty list until the user edits again. So the rule is "the non-empty list
+// wins": the panel's while it has entries, the retained one while it does not.
+// (Preferring a live-but-empty list made the receipt vanish from the bar the
+// moment the panel was switched off and on again, while the changes it
+// described were still applied to the page.)
+export function mergeReceipts(live, stored) {
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const l = list(live);
+  if (l.length) return l;
+  const s = list(stored);
+  if (s.length) return s;
+  return [];
+}
+
+// shouldAdopt — whether the Styles panel should re-adopt the retained selection
+// on mount.
+//
+// The selection is published by the panel, so switching the panel off loses the
+// panel's own state: the objectId, the element tree, the rule list and the
+// receipt all go with the mount. The Inspector keeps the objectId in its store,
+// and this is the decision to hand it back — adopt only when the panel has
+// nothing selected of its own and the store names an element, so a fresh pick
+// after a remount is never overwritten by the stored one.
+export function shouldAdopt(liveLabel, storedObjectId) {
+  if (String(liveLabel || '').trim()) return '';
+  const id = String(storedObjectId || '').trim();
+  return id || '';
+}
+
 // buildTargetBar — the whole model the bar renders. Every field is display
 // data: the component adds no logic of its own.
 export function buildTargetBar(info) {

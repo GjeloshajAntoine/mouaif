@@ -277,6 +277,55 @@ function sampleInfo(over) {
     /Editing element\.style overrides it for this element only\./.test(bar.origin), bar.origin);
 }
 
+// ---- selection across modes (T4) ---------------------------------------
+//
+// The bar and the receipt render from a store the Inspector keeps above the
+// panels, so they survive the Styles panel being switched off. The rules are
+// "the live read wins while the panel is mounted", "a non-empty receipt wins",
+// and "a fresh panel re-adopts the retained element but never over its own
+// selection" — and the panel's unmount clear must not wipe the store.
+{
+  const live = { label: 'div.live' };
+  const stored = { label: 'div.stored' };
+  check('a live selection wins while the panel is mounted',
+    ctx.selectionAcrossModes(live, stored).label === 'div.live');
+  check('the retained store is used when the panel is gone',
+    ctx.selectionAcrossModes(null, stored).label === 'div.stored');
+  check('an empty live snapshot falls back to the store',
+    ctx.selectionAcrossModes({ label: '' }, stored).label === 'div.stored');
+  check('a whitespace label is treated as empty',
+    ctx.selectionAcrossModes({ label: '   ' }, stored).label === 'div.stored');
+  check('no live selection and no store renders nothing',
+    ctx.selectionAcrossModes(null, null) === null);
+  check('a non-object live value is ignored',
+    ctx.selectionAcrossModes('nope', stored).label === 'div.stored');
+
+  check('a non-empty live receipt wins while the panel is mounted',
+    ctx.mergeReceipts([{ prop: 'a' }], [{ prop: 'b' }])[0].prop === 'a');
+  check('the retained receipt is used when the panel is gone',
+    ctx.mergeReceipts(undefined, [{ prop: 'b' }])[0].prop === 'b');
+  // A freshly mounted panel has an empty list until the user edits again; the
+  // changes it describes are still applied to the page, so the list must not
+  // vanish from the bar while the panel comes back up.
+  check('an empty live receipt falls back to the retained one',
+    ctx.mergeReceipts([], [{ prop: 'b' }])[0].prop === 'b');
+  check('no receipt anywhere is an empty list',
+    ctx.mergeReceipts(undefined, null).length === 0);
+  check('a non-array live receipt falls back to the store',
+    ctx.mergeReceipts('nope', [{ prop: 'b' }])[0].prop === 'b');
+
+  // Re-adoption: the panel loses its state on unmount, so the retained objectId
+  // is handed back — but never over a live selection of the panel's own.
+  check('a panel with nothing selected adopts the retained element',
+    ctx.shouldAdopt('', 'obj-1') === 'obj-1');
+  check('a panel with a live selection keeps it',
+    ctx.shouldAdopt('p.admin-hint', 'obj-1') === '');
+  check('a whitespace label does not count as a live selection',
+    ctx.shouldAdopt('   ', 'obj-1') === 'obj-1');
+  check('no retained element means nothing to adopt', ctx.shouldAdopt('', '') === '');
+  check('a missing objectId is ignored', ctx.shouldAdopt('', null) === '');
+}
+
 // ---- the component -----------------------------------------------------
 
 function renderBar(props) {
@@ -425,8 +474,8 @@ check('the published snapshot carries label, size, rules, tree and declared',
   && /rules: rules \|\| null/.test(stylesSource)
   && /tree: tree \|\| null/.test(stylesSource)
   && /declared: \(model && model\.inlineProps\) \|\| \[\]/.test(stylesSource));
-check('the snapshot is republished when the selection or the cascade changes',
-  /\}, \[model, rules, tree, changed, edit\]\);/.test(stylesSource));
+check('the snapshot is republished when the selection, the cascade or the receipt changes',
+/\}, \[model, rules, tree, changed, receipt, edit\]\);/.test(stylesSource));
 check('the panel exposes its own clear / refresh / ancestor actions',
   /panelHandlesRef/.test(stylesSource)
   && /clear: \(\) => clearPick\(\)/.test(stylesSource)
@@ -435,8 +484,9 @@ check('the panel exposes its own clear / refresh / ancestor actions',
 check('the parent passes the selection change callback and the handles ref',
   /onSelectionChange: \(info\) => setStylesSelection\(info\)/.test(inspectorSource)
   && /panelHandlesRef: stylesHandlesRef/.test(inspectorSource));
-check('the parent builds the model from the published snapshot',
-  /model: buildTargetBar\(stylesSelection\)/.test(inspectorSource));
+check('the parent builds the model from the merged snapshot',
+  /model: buildTargetBar\(selection\)/.test(inspectorSource)
+  && /const selection = selectionAcrossModes\(stylesSelection, selectionStore\)/.test(inspectorSource));
 check('the bar is rendered above the panels, under the panel chips',
   inspectorSource.indexOf('h(TargetBar, {') > inspectorSource.indexOf('inspector__panelbar')
   && inspectorSource.indexOf('h(TargetBar, {') < inspectorSource.indexOf("h('div', { class: 'inspector__panels' }"));
@@ -447,8 +497,8 @@ check('the collapse choice persists like the panel visibility',
 check('the parent passes and toggles the collapse state',
   /collapsed: targetBarCollapsed/.test(inspectorSource)
   && /onToggleCollapsed: toggleTargetBar/.test(inspectorSource));
-check('the bar hides itself when there is no selection',
-  /stylesSelection && stylesSelection\.label/.test(inspectorSource));
+check('the bar renders nothing when there is no selection at all',
+  /if \(!selection\) return null;/.test(inspectorSource));
 check('the pick control toggles the same pick mode the preview uses',
   /onPick: \(\) => \{ setStylesActive\(!stylesActive\); rerender\(\); \}/.test(inspectorSource));
 check('tapping a rule chip reveals the cascade instead of faking an editor',

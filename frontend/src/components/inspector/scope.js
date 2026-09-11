@@ -92,7 +92,10 @@ export function recordChange(receipt, change) {
   const at = list.findIndex((e) => String(e.prop || '').toLowerCase() === key);
   if (at < 0) {
     const entry = { prop, from: normalize(change.from), to: normalize(change.to) };
-    if (entry.from === '' && entry.to === '') return list;
+    // Nothing was written, and nothing to undo: a no-op (applying the value the
+    // property already had, or a removal of something that was not there) must
+    // not put an "undo" in front of the user for a change that did not happen.
+    if (entry.from === entry.to) return list;
     list.push(entry);
     return list.slice(-MAX_RECEIPT);
   }

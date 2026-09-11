@@ -25,6 +25,57 @@
 // explanation of where a value comes from is there for a first-time user
 // rather than behind a control they have no reason to look for.
 import { h } from 'preact';
+import { summarizeReceipt, receiptRows } from './scope.js';
+
+// BarReceipt — the session's edits, shown above the panels.
+//
+// It renders the same rows the Styles panel's strip does, from the same model
+// (scope.js), but it is deliberately a second, smaller surface: the panel's copy
+// lives inside that panel's scroll flow and disappears with it, while this one
+// stays put when the user switches to Console to read a log. It never renders
+// when there is nothing to undo, it shows the newest three entries and points at
+// the panel for the rest, and its undo goes through the panel's own handle
+// (receiptHandleRef) so there is one write path rather than two.
+export function BarReceipt(props) {
+  const receipt = props.receipt || [];
+  const sum = summarizeReceipt(receipt);
+  if (!sum.hasChanges) return null;
+  return h('div', { class: 'inspector__receipt inspector__receipt--bar', role: 'group', 'aria-label': 'Changes made in this session' },
+    h('div', { class: 'inspector__receipt-head' },
+      h('strong', { class: 'inspector__receipt-title' }, String(sum.count) + (sum.count === 1 ? ' change' : ' changes')),
+      h('span', { class: 'inspector__receipt-meta' },
+        [sum.added ? sum.added + ' added' : null, sum.removed ? sum.removed + ' removed' : null].filter(Boolean).join(' · ')
+      ),
+      h('button', {
+        class: 'btn inspector__receipt-undoall',
+        type: 'button',
+        disabled: !!props.busy,
+        title: 'Reverse every change in this list',
+        'aria-label': 'Undo all ' + sum.count + ' changes',
+        onClick: props.onUndoAll
+      }, '↺ Undo all')
+    ),
+    receiptRows(receipt).slice(0, 3).map((r) => h('div', { class: 'inspector__receipt-row', key: r.key },
+      h('span', { class: 'inspector__receipt-prop' }, r.prop),
+      r.wasSet
+        ? h('span', { class: 'inspector__receipt-was', title: 'was ' + r.from }, r.from)
+        : h('span', { class: 'inspector__receipt-was inspector__receipt-was--unset', title: 'was not set on this element' }, '—'),
+      h('span', { class: 'inspector__receipt-arrow', 'aria-hidden': 'true' }, '→'),
+      h('span', { class: 'inspector__receipt-now' + (r.isRemoval ? ' is-removed' : '') }, r.isRemoval ? '(removed)' : r.to),
+      h('button', {
+        class: 'inspector__receipt-revert',
+        type: 'button',
+        disabled: !!props.busy,
+        title: 'Reverse this change: ' + r.text,
+        'aria-label': 'Undo ' + r.text,
+        onClick: () => props.onUndo(r)
+      }, '↺')
+    )),
+    sum.count > 3
+      ? h('p', { class: 'inspector__receipt-more' }, '+' + (sum.count - 3) + ' more in the Styles panel')
+      : null
+  );
+}
 
 const COLLAPSED_KEY = 'mouaif:inspector:targetbar:collapsed';
 

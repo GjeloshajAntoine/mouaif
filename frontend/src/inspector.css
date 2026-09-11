@@ -1954,6 +1954,17 @@ min-width: 0;
 }
 .inspector__scope-kept { color: var(--fg-soft); }
 
+/* The bar's copy of the receipt: same rows as the panel's strip, at most three
+   of them, so it can sit above the panels without eating the phone's height.
+   It exists so the undo list survives switching the Styles panel off. */
+.inspector__receipt--bar { margin-bottom: 8px; }
+.inspector__receipt-more {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 0.68rem;
+  color: var(--muted-2);
+}
+
 /* ---- Inspector: value-type switch (edit sheet) ---------------------
    A declaration's type is invisible: 14px, 14, 87.5% and auto all read as
    "the value". The switch makes it explicit and states the cost of each form

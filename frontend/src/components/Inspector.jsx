@@ -14,8 +14,9 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
-import { TargetBar } from './inspector/TargetBar.jsx';
-import { buildTargetBar } from './inspector/targetBar.js';
+import { TargetBar, BarReceipt } from './inspector/TargetBar.jsx';
+import { buildTargetBar, selectionAcrossModes } from './inspector/targetBar.js';
+import { summarizeReceipt, recordChange, undoPlan, undoOrder } from './inspector/scope.js';
 import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
@@ -523,12 +524,84 @@ const stylesPickRef = useRef(null);
 // stylesActive — whether "pick mode" is on. Used to decide onPreviewTap's
 // routing and to toggle the pick-mode hint on the Preview panel header.
 const [stylesActive, setStylesActive] = useState(false);
-// stylesSelection — what the Styles panel currently has selected, published
-// upward so the TargetBar above the panels can say which element, which rules
-// and which write target are in play. The selection itself stays owned by the
-// panel (see StylesPanel's onSelectionChange effect); this is a read-only copy
-// for the bar. `null` means "nothing selected", which hides the bar.
+// stylesSelection — the Styles panel's live selection snapshot. The Inspector
+// keeps its own copy (`selectionStore`) so the target bar and the receipt
+// survive that panel being switched off: the selection belongs to the tab, not
+// to one panel's mount. The panel clears this to null on unmount, which is what
+// tells the store that the live read is gone and the retained copy is all there
+// is (see selectionAcrossModes in targetBar.js).
 const [stylesSelection, setStylesSelection] = useState(null);
+// selectionStore — the retained snapshot. Written only from a live selection,
+// never from the unmount clear, so switching Styles off keeps the element on
+// screen while the user reads Console output.
+const [selectionStore, setSelectionStore] = useState(null);
+useEffect(() => {
+  if (stylesSelection && String(stylesSelection.label || '').trim()) setSelectionStore(stylesSelection);
+}, [stylesSelection]);
+// receipt — the session's edits, owned HERE rather than in the Styles panel.
+//
+// This is what T4 is for: the receipt has to outlive the panel that made the
+// writes. It is recorded by the panel (which knows the value before the write)
+// but stored, rendered and *reversed* above the panels, using the objectId the
+// Inspector retains — so switching the Styles panel off, or moving to Console,
+// leaves an undo list that still works and still describes the element on
+// screen. The panel renders its own strip from this same list.
+const [receipt, setReceipt] = useState([]);
+// receiptNonce — bumped after an undo performed from above, so the Styles panel
+// re-reads the element (its own copy of the declarations is now stale).
+const [receiptNonce, setReceiptNonce] = useState(0);
+function recordReceipt(change) {
+  setReceipt((prev) => recordChange(prev, change));
+}
+// undoEntryFromBar — reverse one entry against the retained element.
+//
+// The plan decides whether to restore a value or remove a property that did not
+// exist before (see scope.js), so an undo never writes an empty value: that is
+// the same to the browser as a removal but a different action to read back.
+async function undoEntryFromBar(entry) {
+  const plan = undoPlan(entry);
+  const objectId = selectionStore && selectionStore.objectId;
+  if (!plan || !objectId || !handlers) return;
+  try {
+    if (plan.kind === 'remove') {
+      if (handlers.removeInlineStyleProperty) await handlers.removeInlineStyleProperty(objectId, plan.prop);
+    } else if (handlers.setInlineStyleProperty) {
+      await handlers.setInlineStyleProperty(objectId, plan.prop, plan.value);
+    }
+    setReceipt((prev) => prev.filter((x) => String(x.prop).toLowerCase() !== String(plan.prop).toLowerCase()));
+    // Re-read the element so the retained snapshot stays true while the Styles
+    // panel is off: without this the bar's origin sentence keeps describing the
+    // value the undo just replaced, because the only other reader of the page is
+    // the panel — which is exactly the one that is not mounted.
+    if (handlers.refreshNodeModel) {
+      const fresh = await handlers.refreshNodeModel(objectId);
+      if (fresh) {
+        const inline = (fresh.inlineProps || []).map((x) => ({ prop: x.prop, value: String(x.value || '') }));
+        setSelectionStore((prev) => (prev && prev.objectId === objectId
+        ? { ...prev, declared: inline }
+        : prev));
+      }
+    }
+  } catch (e) {
+    setStatus((e && e.message) || 'could not undo ' + plan.prop);
+    return;
+  }
+  setReceiptNonce((n) => n + 1);
+  rerender();
+}
+// undoAllFromBar — newest first, so a property edited twice unwinds in one pass
+// and cannot be left holding a value a later entry wrote.
+async function undoAllFromBar() {
+  const entries = undoOrder(receipt);
+  for (const entry of entries) {
+    // Sequential on purpose: each write re-reads the element, and two writes to
+    // the same property must not race.
+    // eslint-disable-next-line no-await-in-loop
+    await undoEntryFromBar(entry);
+  }
+  setReceipt([]);
+  rerender();
+}
 // stylesHandlesRef — the Styles panel's own actions (selectAncestor / clear /
 // refresh), published so the TargetBar's breadcrumb and header buttons are
 // shortcuts into the panel instead of a second implementation. The selection
@@ -1221,6 +1294,21 @@ useEffect(() => {
     previewVisible: visiblePanels.has('preview'),
     pickHandlerRef: stylesPickRef,
     panelHandlesRef: stylesHandlesRef,
+    // The objectId the Inspector retained, so a freshly mounted panel re-adopts
+    // the element that is still shown above rather than coming up empty.
+    restoreObjectId: (selectionStore && selectionStore.objectId) || '',
+    // The receipt is owned above the panels (see the receipt state): the panel
+    // renders it, records into it, and asks for undos through these props, so
+    // switching this panel off cannot take the undo list with it.
+    receipt,
+    onRecordChange: recordReceipt,
+    onUndo: (entry) => undoEntryFromBar(entry),
+    onUndoAll: () => undoAllFromBar(),
+    receiptNonce,
+    // A new selection starts a new receipt: the entries name properties of the
+    // element that was selected, so undoing them against another element would
+    // write to the wrong node.
+    onSelectionReset: () => { setReceipt([]); },
     // The TargetBar renders the element, its rule chips and its edit target
     // from this snapshot. Optional on the panel side: without it the Styles
     // panel is exactly what it was before.
@@ -1332,38 +1420,50 @@ useEffect(() => {
         })
       ),
       h(StatusPill, { text: statusText }),
-      // TargetBar — "which element, which rule, and where does my edit go?".
-      // It sits directly above the panels because it describes their subject.
-      // Rendered only for a live selection published by the Styles panel:
-      // with no selection there is nothing to describe, and the selection
-      // currently lives with that panel, so the bar goes away with it. T4
-      // hoists the selection above the panels so the bar survives a mode
-      // switch — this is deliberately the honest version for now.
-      stylesSelection && stylesSelection.label
-        ? h(TargetBar, {
-          model: buildTargetBar(stylesSelection),
-          pickMode: stylesActive,
-          collapsed: targetBarCollapsed,
-          onToggleCollapsed: toggleTargetBar,
-          onPick: () => { setStylesActive(!stylesActive); rerender(); },
-          onClear: () => {
-            setStylesSelection(null);
-            if (stylesHandlesRef.current) stylesHandlesRef.current.clear();
-            rerender();
-          },
-          onRefresh: () => { if (stylesHandlesRef.current) stylesHandlesRef.current.refresh(); },
-          onSelectAncestor: (crumb) => {
-            if (stylesHandlesRef.current) stylesHandlesRef.current.selectAncestor(crumb);
-          },
-          onRuleTap: () => {
-            // Reveal the full cascade rather than pretending the chip is the
-            // editor: the Styles panel's Matched rules section is where a
-            // rule's declarations — and the one-tap override — live.
-            if (!visiblePanels.has('styles')) togglePanel('styles');
-          }
-        })
-        : null,
-noPanelsVisible
+      // TargetBar + the session receipt — "which element, which rule, where does
+      // my edit go, and what have I changed?". They sit directly above the
+      // panels because they describe their subject, and — since T4 — they render
+      // from the Inspector's retained selection rather than the Styles panel's
+      // live one, so switching that panel off or moving to Console keeps the
+      // element, its rules and its undo on screen.
+      (() => {
+      const selection = selectionAcrossModes(stylesSelection, selectionStore);
+      if (!selection) return null;
+      return h(Fragment, null,
+      h(TargetBar, {
+        model: buildTargetBar(selection),
+        pickMode: stylesActive,
+        collapsed: targetBarCollapsed,
+        onToggleCollapsed: toggleTargetBar,
+        onPick: () => { setStylesActive(!stylesActive); rerender(); },
+        onClear: () => {
+        setStylesSelection(null);
+        setSelectionStore(null);
+        if (stylesHandlesRef.current) stylesHandlesRef.current.clear();
+        rerender();
+        },
+        onRefresh: () => { if (stylesHandlesRef.current) stylesHandlesRef.current.refresh(); },
+        onSelectAncestor: (crumb) => {
+        // Walking the tree needs the panel that owns the selection; make
+        // sure it is on screen first, then ask it.
+        if (!visiblePanels.has('styles')) togglePanel('styles');
+        if (stylesHandlesRef.current) stylesHandlesRef.current.selectAncestor(crumb);
+        },
+        onRuleTap: () => {
+        // Reveal the full cascade rather than pretending the chip is the
+        // editor: the Styles panel's Matched rules section is where a
+        // rule's declarations — and the one-tap override — live.
+        if (!visiblePanels.has('styles')) togglePanel('styles');
+        }
+      }),
+      h(BarReceipt, {
+      receipt,
+      onUndo: (row) => undoEntryFromBar(row),
+      onUndoAll: () => undoAllFromBar()
+      })
+      );
+      })(),
+    noPanelsVisible
         ? h('div', { class: 'inspector__panels-empty', role: 'status' },
             h('p', null, 'No panels visible.'),
             h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
