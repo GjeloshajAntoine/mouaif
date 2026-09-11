@@ -63,7 +63,10 @@ const CASES = [
 ['gap', '12px', 'rail'],
 ['opacity', '0.5', 'rail'],
 ['font-family', 'system-ui, sans-serif', 'text'],
-['content', '"…"', 'image']
+// `content` takes a url() but it is a text value first, and the mock lists it
+// under STRING: the image view gave a text value a panel with no candidates.
+['content', '"…"', 'text'],
+['content', 'url(icon.svg)', 'text']
 ];
 for (const [prop, val, want] of CASES) {
 const got = VS.valueShape(prop, val);

@@ -76,7 +76,12 @@ gap: (s) => (s === 'row' ? 'row-gap' : 'column-gap'),
 export const FUNCTION_PROPERTIES = new Set(['transform', 'filter', 'backdrop-filter', 'box-shadow', 'text-shadow', 'transition', 'animation']);
 // IMAGE_PROPERTIES — properties whose value is a URL or a gradient. The mock's
 // K4 note: "no rail — the page's own images and gradients are offered instead".
-export const IMAGE_PROPERTIES = new Set(['background-image', 'mask-image', 'list-style-image', 'border-image-source', 'content']);
+//
+// `content` is deliberately *not* here even though it accepts a `url()`: it is
+// a string property first (`content: "→"`, `counter(x)`, `attr(data-label)`), and
+// routing it to the image view meant a text value got a view with no candidates
+// in it — the mock lists `content` under STRING for exactly that reason.
+export const IMAGE_PROPERTIES = new Set(['background-image', 'mask-image', 'list-style-image', 'border-image-source']);
 // valueShape — which view a declaration gets. This is the fallback ladder the
 // mock states, in order: a numeric kind gets the rail (handled by the caller),
 // a numeric shorthand fans out, a known keyword set gets segments, a list of

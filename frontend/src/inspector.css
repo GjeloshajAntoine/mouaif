@@ -1904,7 +1904,15 @@ cursor: pointer;
   color: var(--accent-hi);
 }
 .inspector__suggest-token {
-  border-color: var(--border-strong);
+border-color: var(--border-strong);
+}
+/* A string value's keyword chips (`inherit`, `unset`, `initial`, `revert`, and a
+  property's own words). They are the only chips a value with no per-kind view
+  gets, so they read as plain words, not as values. */
+.inspector__suggest-word .inspector__suggest-value {
+/* Not the mono value face: a keyword is a word, not a number. */
+font-family: inherit;
+color: var(--fg-soft);
 }
 .inspector__suggest-token .inspector__suggest-value {
 color: var(--accent-hi);

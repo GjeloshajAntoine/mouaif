@@ -510,6 +510,10 @@ prop: propName,
 value,
 contrastCtx: props.contrastCtx,
 ownColour: shape === 'colour',
+// The view the sheet picked. A `text` value has no per-kind view of its own, so
+// this is what tells the row that the keyword forms are the only chips worth
+// adding (see Suggestions.jsx).
+shape: shape,
 // What the peers use for this property — the one group the page's own
 // stylesheets cannot answer.
 siblings: siblings,

@@ -445,6 +445,83 @@ check('the panel binds the read to the selected element',
 check('a sibling chip is styled so a long label cannot widen the sheet',
 /\.inspector__suggest-sibling \.inspector__suggest-ev \{/.test(read('frontend/src/inspector.css')));
 }
+// ---- string values: the page's stacks, and the keyword forms ------------
+//
+// The mock's STRING row: "No rail. Suggestions: the page's loaded font stacks,
+// the CSS-wide keywords, the page's cursors." The stacks and the cursors are the
+// page's own values (the group above this one); what a string value could not
+// reach at all was the keyword forms, because `text` is the shape that has no
+// per-kind view.
+{
+const rules = [
+{ selector: ':root', origin: 'regular', props: [{ name: 'font-family', value: 'Inter, system-ui, sans-serif' }] },
+{ selector: '.card', origin: 'regular', props: [
+{ name: 'font-family', value: 'Georgia, serif' },
+{ name: 'cursor', value: 'pointer' },
+{ name: 'grid-template-areas', value: '"a b" "c d"' }
+] }
+];
+const idx = VI.buildValueIndex({ rules });
+const sib = [];
+const words = (t) => byClass(t, 'inspector__suggest-word').map((n) => text({ children: n.children }));
+{
+const t = comp.Suggestions({ index: idx, prop: 'font-family', value: '', shape: 'text', siblings: sib, onPick: () => {} });
+check('the page\'s font stacks are offered', /Inter, system-ui, sans-serif/.test(text(t)) && /Georgia, serif/.test(text(t)), text(t));
+check('a string value gets the CSS-wide keywords', words(t).join(',') === 'inherit,initial,unset,revert', words(t).join(','));
+check('the keyword group says why it is there', /Keywords/.test(text(t)) && /valid for any property/.test(text(t)));
+check('a font stack is not offered as a duplicate of itself', (() => {
+const t2 = comp.Suggestions({ index: idx, prop: 'font-family', value: 'Georgia, serif', shape: 'text', siblings: sib, onPick: () => {} });
+return !byClass(t2, 'opt').some((c) => /is-current/.test(cls(c)) && text({ children: c.children }).includes('Georgia'));
+})());
+}
+// A property with its own words gets those first, and the row is capped.
+{
+const t = comp.Suggestions({ index: idx, prop: 'cursor', value: '', shape: 'text', siblings: sib, onPick: () => {} });
+const w = words(t);
+check('a property\'s own keywords come before the CSS-wide ones',
+w.length > 0 && w[0] === 'auto', w.join(','));
+check('the keyword row is capped', w.length <= 6, String(w.length));
+}
+// The current word is not offered back to the user.
+{
+const t = comp.Suggestions({ index: idx, prop: 'font-family', value: 'inherit', shape: 'text', siblings: sib, onPick: () => {} });
+check('the keyword in force is not offered again', !words(t).includes('inherit'), words(t).join(','));
+}
+// Picking one writes it.
+{
+let picked = '';
+const t = comp.Suggestions({ index: idx, prop: 'font-family', value: '', shape: 'text', siblings: sib, onPick: (v) => { picked = v; } });
+byClass(t, 'inspector__suggest-word')[0].props.onClick();
+check('picking a keyword reports it', picked === 'inherit', picked);
+}
+// An enum-shaped property renders its own chips, so the keyword row stays out of
+// its way rather than showing the same list twice.
+{
+const t = comp.Suggestions({ index: idx, prop: 'cursor', value: '', shape: 'enum', siblings: sib, onPick: () => {} });
+check('an enum-shaped value does not also get the keyword row', words(t).length === 0 && /On this page/.test(text(t)), text(t));
+}
+// No shape prop (an older caller) means no keyword row, not a crash.
+check('a missing shape renders the row without keywords',
+words(comp.Suggestions({ index: idx, prop: 'font-family', onPick: () => {} })).length === 0);
+// A string value with nothing at all to offer still emits nothing rather than an
+// empty group.
+check('a string property the page never declares gets the keyword row only',
+(() => {
+const t = comp.Suggestions({ index: idx, prop: 'font-feature-settings', value: '', shape: 'text', siblings: sib, onPick: () => {} });
+return t !== null && words(t).length === 4 && !/On this page/.test(text(t));
+})());
+// `content` is a string property, not an image: it accepts a url() but it is a
+// text value first, and the image view gave it candidates that were never there.
+{
+const shapes = read('frontend/src/components/inspector/valueShapes.js');
+check('content is no longer routed to the image view',
+!/IMAGE_PROPERTIES = new Set\(\[[^\]]*'content'/.test(shapes), 'content is still in IMAGE_PROPERTIES');
+check('the image properties are still the three real ones',
+/'background-image', 'mask-image', 'list-style-image', 'border-image-source'/.test(shapes));
+check('the sheet tells the row which view it picked', /shape: shape,/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the keyword chips are styled', /\.inspector__suggest-word \.inspector__suggest-value \{/.test(read('frontend/src/inspector.css')));
+}
+}
 check('nothing is emitted without a property',
       comp.Suggestions({ index, prop: '', onPick: () => {} }) === null);
     check('nothing is emitted without an index',

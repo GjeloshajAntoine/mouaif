@@ -25,6 +25,7 @@
 // so a suggestion is as reversible as anything typed.
 import { h } from 'preact';
 import { valuesFor, valuesSeen, tokensFor, scaleFor, scaleNote, siblingValues, valueKey } from './valueIndex.js';
+import { keywordsFor } from './valueKinds.js';
 import { snapValue, snapNote, usableScale } from './snapping.js';
 import { readableOn, suggestTextColor } from './contrast.js';
 // MAX_CHIPS — values shown. The list is a choice, not an inventory: a phone chip
@@ -40,6 +41,12 @@ const MAX_COLOUR_CHIPS = 5;
 // the element it comes from (`2nd section.input-section`), which is twice a plain
 // chip's width, so the row shows the few that matter rather than every peer.
 const MAX_SIBLING_CHIPS = 3;
+// MAX_WORD_CHIPS — the keyword row a *string* value gets. The mock's STRING row
+// offers "the page's loaded font stacks, the CSS-wide keywords, the page's
+// cursors": the stacks and the cursors come from the page groups above, and this
+// is the other half — the keywords that are valid for any property, which are
+// otherwise unreachable for a value with no per-kind view.
+const MAX_WORD_CHIPS = 6;
 // isColourProperty — whether a contrast reading applies. Colour chips are a
 // separate group because their evidence is a ratio, not a use count.
 function isColourProperty(prop, values) {
@@ -120,6 +127,16 @@ const tokens = tokensFor(index, prop, MAX_TOKEN_CHIPS);
 const siblings = siblingValues(props.siblings || [], prop)
 .filter((s) => valueKey(s.value) !== valueKey(value))
 .slice(0, MAX_SIBLING_CHIPS);
+// A string value — `font-family`, `cursor`, `content`, `grid-template-areas` —
+// has no rail and no per-kind view, so the typed field is the control. What it
+// can still be given is the keyword forms: a family stack that falls back, a
+// cursor that inherits, a `content` that is unset. `keywordsFor` returns the
+// property's own keywords first and the CSS-wide four last, which is the order
+// the row wants; the enum-shaped properties are skipped, because they render
+// their own chips and two copies of the same row is worse than one.
+const words = props.shape === 'text'
+? keywordsFor(prop).filter((k) => valueKey(k) !== valueKey(value)).slice(0, MAX_WORD_CHIPS)
+: [];
 // Snapping is a property-level question (does this page have a step for this
 // property?), so it is answered even when there is nothing to suggest: an
 // off-scale value on a scale the index knows about is exactly the case where
@@ -137,7 +154,7 @@ const colours = colour
 const defaults = colour && colours.length < 3
 ? suggestTextColor(colourCtx.bg || props.bg || '', colourCtx)
 : [];
-if (!values.length && !tokens.length && !snap && !siblings.length) return null;
+if (!values.length && !tokens.length && !snap && !siblings.length && !words.length) return null;
 return h('div', { class: 'inspector__suggest' },
 values.length
 ? h('div', { class: 'grp' },
@@ -238,6 +255,21 @@ onClick: () => props.onPick(t.name)
 h('span', { class: 'inspector__suggest-value' }, t.name),
 h('span', { class: 'inspector__suggest-ev' }, '= ' + t.value)
 ))
+)
+)
+: null,
+words.length
+? h('div', { class: 'grp' },
+h('div', { class: 'gh' }, 'Keywords', h('span', null, ' · valid for any property')),
+h('div', { class: 'opts' },
+words.map((k) => h('button', {
+class: 'opt inspector__suggest-word',
+type: 'button',
+key: 'w-' + k,
+title: k + ' — the ' + (/^(inherit|initial|unset|revert)$/.test(k) ? 'CSS-wide' : 'property\'s own') + ' keyword',
+'aria-label': 'Use ' + k,
+onClick: () => props.onPick(k)
+}, h('span', { class: 'inspector__suggest-value' }, k)))
 )
 )
 : null,
