@@ -1,6 +1,9 @@
 'use strict';
 // Lossless Inspector capture contract and its panel/full-screen/annotation consumers.
 // No Chrome required: run the actual handlers and Preact capture effect with stubs.
+// Also pins the preview's cost model: the capture reaches the <img> as a data
+// URL (no JS base64 copy, no object URL) and a capture that has not changed is
+// dropped before it can re-decode, re-lay out, or move the scroll position.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -49,21 +52,28 @@ async function main() {
   }
   console.log('PASS lossless captures, PDF viewport fallback, timeout, and cheap screencast signal');
 
-  const hooks = [], effects = [], urls = [], revoked = [], timers = new Set();
+  const hooks = [], effects = [], srcWrites = [], timers = new Set();
   let cursor = 0, firstRender = true;
   const nodes = [];
   const refreshRef = {}, fullscreenRef = {}, draftCraftRef = {};
   let annotation = null;
+  let srcValue = '';
+  // The preview <img>, with `src` recorded. The capture must reach the DOM as
+  // a data URL (no JS base64 copy and no object URL), and a capture that did
+  // not change must not reach the DOM at all.
+  const imgNode = {
+    scrollTop: 0, scrollLeft: 0, naturalWidth: 375, naturalHeight: 1200,
+    get src() { return srcValue; },
+    set src(value) { srcValue = value; srcWrites.push(value); }
+  };
   const props = {
     capture: async () => ({ data: png }), refreshRef, fullscreenRef, draftCraftRef,
     onDraftCraft: (image) => { annotation = image; }
   };
+  // Note the missing Blob / atob / URL / Uint8Array: the panel no longer
+  // copies the capture through JS, so referencing them would throw here.
   const context = vm.createContext({
-    Blob, Uint8Array, atob, Date,
-    URL: {
-      createObjectURL: (blob) => { urls.push(blob); return 'blob:preview-' + urls.length; },
-      revokeObjectURL: (url) => revoked.push(url)
-    },
+    Date,
     setTimeout: (fn) => { timers.add(fn); return fn; },
     clearTimeout: (fn) => timers.delete(fn),
     document: { body: {}, addEventListener() {}, removeEventListener() {} },
@@ -81,7 +91,9 @@ async function main() {
     Fragment: 'fragment', createPortal: (child) => child,
     h: (tag, attrs, ...children) => {
       if (attrs && attrs.ref && !attrs.ref.current) {
-        attrs.ref.current = { scrollTop: 0, scrollLeft: 0, naturalWidth: 375, naturalHeight: 1200 };
+        attrs.ref.current = tag === 'img'
+          ? imgNode
+          : { scrollTop: 0, scrollLeft: 0, naturalWidth: 375, naturalHeight: 1200 };
       }
       const node = { tag, attrs, children };
       nodes.push(node);
@@ -93,22 +105,29 @@ async function main() {
   firstRender = false;
   const cleanups = effects.map((fn) => fn());
   await new Promise(setImmediate);
-  assert.equal(urls.length, 1);
-  assert.equal(urls[0].type, 'image/png');
-  assert.deepEqual(Buffer.from(await urls[0].arrayBuffer()), Buffer.from(png, 'base64'));
+  const dataUrl = 'data:image/png;base64,' + png;
+  assert.deepEqual(srcWrites, [dataUrl], 'the capture reaches the <img> as a data URL, with no object URL');
+  assert.deepEqual(Buffer.from(srcWrites[0].split(',')[1], 'base64'), Buffer.from(png, 'base64'),
+    'the inspected page PNG bytes survive to the <img>');
+  // A second capture of an unchanged page (safety poll / manual refresh)
+  // returns the identical payload. Swapping it in anyway re-decodes the
+  // capture, re-lays out the frame, and rewrites the scroll offsets on every
+  // tick, so the panel must drop it before touching the DOM.
+  refreshRef.current();
+  await new Promise(setImmediate);
+  assert.equal(srcWrites.length, 1, 'an identical capture is dropped before the DOM swap');
   draftCraftRef.current();
-  assert.equal(annotation.dataUrl, 'data:image/png;base64,' + png);
+  assert.equal(annotation.dataUrl, dataUrl);
   fullscreenRef.current();
   cursor = 0;
   nodes.length = 0;
   context.PreviewPanel(props);
   const images = nodes.filter((node) => node.tag === 'img');
   assert.equal(images.length, 2, 'panel and full-screen images render');
-  for (const image of images) assert.equal(image.attrs.src, 'blob:preview-1');
+  for (const image of images) assert.equal(image.attrs.src, dataUrl);
   for (const cleanup of cleanups) if (cleanup) cleanup();
-  assert.deepEqual(revoked, ['blob:preview-1']);
   assert.equal(timers.size, 0);
   assert.equal(refreshRef.current, null);
-  console.log('PASS PNG bytes/MIME, shared panel/full-screen image, annotation data URL, and cleanup');
+  console.log('PASS data-URL PNG capture, unchanged-capture skip, shared panel/full-screen image, annotation data URL, and cleanup');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

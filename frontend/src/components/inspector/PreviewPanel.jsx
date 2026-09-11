@@ -9,10 +9,16 @@
 // Capture triggers:
 //   - Page.screencastFrame — Chrome's event-driven visual-change stream;
 //     frames are acknowledged after each full-page capture, naturally
-//     limiting the stream to ~10 fps without busy polling.
+//     pacing the stream to ~10 captures per second without busy polling.
+//     The pacing window opens when the previous capture *finished*, so a
+//     slow capture cannot be followed by another one immediately.
 //   - Page.frameNavigated / Page.frameStoppedLoading — document lifecycle.
 //   - a slow 3 s safety fallback when Chrome emits no screencast frame.
 //   - a manual "Refresh preview" button in the panel header.
+//
+// Every trigger lands on the same guard: a capture whose PNG is
+// byte-identical to the one already on screen is dropped, so a page that
+// is not changing costs no decode, no layout, and no scroll writes.
 import { h, Fragment } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
@@ -160,6 +166,12 @@ if (value) setLiveTitle(value);
 // so the previous frame's natural size is a safe approximation.
 const lastDims = useRef({ w: 0, h: 0 });
 const latestImage = useRef(null);
+// Base64 payload of the capture that is currently on screen. A page that
+// did not change between two captures yields a byte-identical PNG, and
+// re-assigning that image makes the browser re-decode it, re-lay out the
+// frame, and rewrite the scroll offsets — a hitch the user sees on every
+// tick. Identical payloads are dropped before any of that work happens.
+const lastPngRef = useRef('');
 // The capture effect below is keyed on props.capture/subscribe/ackFrame
 // only, so its `img.onload` closure would otherwise keep whatever
 // sizeId/sizePresets were current when the effect last restarted — a
@@ -176,10 +188,13 @@ sizeRef.current = { presets: props.sizePresets, id: props.sizeId };
 let pendingTimer = null;
 let streamTimer = null;
 let lastCaptureAt = 0;
+// When the last capture *finished*, as opposed to when it started. The
+// screencast pacing below measures from here so a slow capture cannot
+// chain another one the moment it lands.
+let lastCaptureEndAt = 0;
 let captureSerial = 0;
 let pendingFrameAck = null;
 let pendingAckAfter = 0;
-let pendingRevoke = null;
     // Keep one event-driven capture queued while Chrome is already taking
     // a screenshot. Reload emits frameNavigated before the new document is
     // ready, then frameStoppedLoading while that first capture can still be
@@ -239,12 +254,21 @@ if (stop) return;
           setNote(imgRef.current && imgRef.current.src ? 'live' : 'capturing…');
           return;
         }
-        const bin = atob(r.data);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const blob = new Blob([bytes], { type: 'image/png' });
-        latestImage.current = { dataUrl: 'data:image/png;base64,' + r.data, width: 0, height: 0 };
-        const next = URL.createObjectURL(blob);
+        // An unchanged page yields a byte-identical PNG. Nothing on screen
+        // would change, so skip the swap (and the decode, layout, and scroll
+        // writes it triggers) instead of re-rendering the same image.
+        if (r.data === lastPngRef.current) {
+          setNote('live');
+          return;
+        }
+        lastPngRef.current = r.data;
+        // The capture already *is* base64 PNG, so it goes straight into the
+        // <img> as a data URL and the browser decodes it natively. Turning it
+        // into a Blob first copies every byte through JS (atob + a per-char
+        // loop), which blocks the main thread for tens of ms per capture on a
+        // full-page shot of a real page.
+        const next = 'data:image/png;base64,' + r.data;
+        latestImage.current = { dataUrl: next, width: 0, height: 0 };
         const img = imgRef.current;
         const frame = frameRef.current;
         if (img && frame) {
@@ -261,8 +285,11 @@ if (stop) return;
 const prevOnload = img.onload;
 img.onload = () => {
 if (frameRef.current) {
-frameRef.current.scrollTop = prevTop;
-frameRef.current.scrollLeft = prevLeft;
+// Only write the offsets when they actually moved. A redundant write
+// cancels an in-flight momentum scroll, which reads as the preview
+// fighting the finger.
+if (frameRef.current.scrollTop !== prevTop) frameRef.current.scrollTop = prevTop;
+if (frameRef.current.scrollLeft !== prevLeft) frameRef.current.scrollLeft = prevLeft;
 }
 const cur = imgRef.current;
 if (cur) {
@@ -288,11 +315,6 @@ autoZoomRef.current = true;
 cur.onload = prevOnload || null;
 }
 };
-          // Defer revoking the previous URL until the new one has
-          // actually decoded — revoking too early used to abort
-          // the in-flight decode and show a blank frame.
-          if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
-          pendingRevoke = next;
           img.src = next;
           setImgSrc(next);
           setNote('live');
@@ -300,8 +322,6 @@ cur.onload = prevOnload || null;
           // No img node yet (first render before commit) — fall
           // back to setting state so React mounts the element on
           // the next pass, then we'll swap src on the tick after.
-          if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
-          pendingRevoke = next;
           setImgSrc(next);
           setNote('live');
         }
@@ -315,6 +335,10 @@ cur.onload = prevOnload || null;
         }
 } finally {
 inFlight = false;
+// The next capture's pacing window opens when this one finished, not when it
+// started: a capture that took ~100 ms would otherwise be followed by another
+// one immediately, and every extra capture re-encodes a full-page PNG.
+lastCaptureEndAt = Date.now();
 if (pendingFrameAck != null && props.ackFrame && serial >= pendingAckAfter) {
 const sessionId = pendingFrameAck;
 pendingFrameAck = null;
@@ -337,9 +361,11 @@ props.ackFrame(sessionId).catch(() => { /* stream stopped */ });
     }
 
     // Subscribe to lifecycle events and Chrome's visual-change stream.
-    // Frames are acknowledged after a full-page screenshot, and captures are
-// coalesced to at most ~10 fps. This keeps animation, typing, hover, and
-    // DOM mutations live while retaining the scrollable full-page image.
+    // Frames are acknowledged after a full-page screenshot, which paces
+    // captures to one per ~100 ms of capture time; identical captures are
+    // dropped by the guard in runCapture. This keeps animation, typing,
+    // hover, and DOM mutations live while retaining the scrollable
+    // full-page image.
     const subs = [];
     if (props.subscribe) {
 subs.push(props.subscribe('Page.frameNavigated', (params) => {
@@ -379,7 +405,7 @@ if (stop || !frame || frame.sessionId == null || !props.ackFrame) return;
 pendingFrameAck = frame.sessionId;
 pendingAckAfter = captureSerial + 1;
 if (streamTimer) return;
-const wait = Math.max(0, 100 - (Date.now() - lastCaptureAt));
+const wait = Math.max(0, 100 - (Date.now() - lastCaptureEndAt));
 streamTimer = setTimeout(() => {
 streamTimer = null;
 if (!stop) runCapture('stream');
@@ -434,7 +460,6 @@ if (props.draftCraftRef) props.draftCraftRef.current = null;
 if (pendingTimer) clearTimeout(pendingTimer);
 if (streamTimer) clearTimeout(streamTimer);
 for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
-if (pendingRevoke) URL.revokeObjectURL(pendingRevoke);
 };
 }, [props.capture, props.subscribe, props.ackFrame]);
 
@@ -725,6 +750,7 @@ class: 'inspector__preview-fs-img' + (zoom === 'size' ? ' inspector__preview-img
 alt: 'Live page preview',
 draggable: 'false'
 })
+
 )
 ),
 document.body
