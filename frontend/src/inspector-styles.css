@@ -444,14 +444,17 @@ border-bottom: 1px solid var(--border);
 /* Pinned element preview. A clipped screenshot of the selected element,
 part of the sticky block so it stays visible while the property rows
 scroll — the user reads an edit's result in place instead of scrolling the
-page back to the Preview panel. Fixed height so swapping in a new capture
-never shifts the list, and the image is contained (not stretched) so a wide
-or tall element stays recognisable. */
+page back to the Preview panel. The image shows the *whole* capture, so the
+element is on screen rather than a middle band of it, and the button keeps a
+44 px floor so a one-line element is still a full tap target. */
 .inspector__styles-shot {
-display: block;
+display: flex;
+align-items: center;
+justify-content: center;
 position: relative;
 flex: 0 0 auto;
 width: 100%;
+min-height: var(--tap);
 padding: 0;
 background: var(--bg);
 border: 1px solid var(--border);
@@ -468,44 +471,48 @@ width: 100%;
 }
 .inspector__styles-shot-img {
 display: block;
+flex: 0 0 auto;
 width: 100%;
-height: 120px;
-/* `cover` rather than `contain`: the capture is a page-shaped context
-window around the element, and the panel's preview is a short wide strip.
-Containing it would shrink the element to an unreadable sliver; covering
-crops to the element's middle band at (near) full scale, which is what the
-user needs to read an edit's result. */
-object-fit: cover;
+/* The whole capture, at the strip's width: `height: auto` keeps the image's own
+aspect ratio, so the element is scaled to fit instead of cropped. The preview
+used to be a fixed 42 px strip with `object-fit: cover`, which showed a middle
+band of a 480 px-wide capture — padding, a slice of text, no edges — so the
+element itself was never really on screen. */
+height: auto;
+/* A capture taller than this (an element bigger than the 520 x 360 context
+window) is capped rather than allowed to take the panel over; `contain` keeps
+the whole capture inside the capped box — letterboxed, not cropped again. */
+max-height: 50dvh;
+object-fit: contain;
 object-position: center;
 background: var(--bg);
 border-radius: var(--r-sm);
 }
 /* Inside the panel the preview shares its scroller with the header and the
-property list, and on a 360 px phone that scroller is only ~218 px tall, so
-the strip stays short to leave room for rows. On a wide screen the first
-panel grows to fill the leftover height, so there the preview can show more
-of the element. */
-/* Inside the panel the preview shares its scroller with the header and the
 property list, and on a 360 px phone that scroller is only ~350 px tall. The
-strip is 40 px rather than 64: the pinned block is fixed chrome that never
-scrolls, so every pixel it takes comes straight out of the property rows, and
-40 px still shows enough of an element to read a padding or colour change. The
-grown panel on a wide screen has the room, so it stays larger there. */
-/* 42 px + the button's 1 px border each side = the full 44 px tap target. */
+pinned block is fixed chrome that never scrolls, so every pixel it takes comes
+straight out of the property rows: the cap is what keeps the element visible
+*and* leaves rows to read. A short element is much smaller than the cap (the
+image is as tall as its own aspect ratio needs), so this only bites on a tall
+one — and there the capture is letterboxed rather than cropped. */
 .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-height: 42px;
+max-height: 132px;
 }
 @media (min-width: 900px) {
+/* The grown panel has the room, so the element can be shown larger there. */
 .inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
-height: 96px;
+max-height: 220px;
 }
 }
 /* The refresh hint is a caption *under* the capture, not a badge on top of
 it. Drawn over the image it landed on whatever the element rendered in that
 corner — on a page of body text, on the text — and a 56 px strip of an
 element is exactly where the user is trying to read small type. The caption
-also carries the "Updating…" state and the capture's pixel size, so the strip
-never changes height and the rows below never shift. */
+also carries the "Updating…" state and the capture's pixel size, and the
+"Updating…" swap is a same-length word on the same line, so a refresh in flight
+does not move the rows below. (A *different* element does resize the strip, and
+that is the point: the strip is as tall as the element it shows, up to the cap,
+so a short element does not reserve space it never uses.) */
 .inspector__styles-shotwrap {
 display: flex;
 flex-direction: column;

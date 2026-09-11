@@ -158,8 +158,12 @@ async function main() {
   const plainCall = calls.slice(beforePlain).find((c) => c.method === 'Page.captureScreenshot');
   assert.ok(plainCall, 'captureScreenshot still dispatches a capture');
   assert.strictEqual(plainCall.params.clip, undefined, 'the plain capture stays unclipped');
-  // An element larger than the context window is captured as a centred
-  // window instead of its whole (potentially huge) box.
+  // An element larger than the context window is captured as a window instead
+  // of its whole (potentially huge) box — and the window starts at the element's
+  // own top-left corner, not at its centre. Centring captured the middle band of
+  // a long element: no header, no first row, no edge, which is why the preview
+  // read as "this never shows the component". The scale is unchanged either way,
+  // since only the clip origin moved.
   respond.set('Runtime.callFunctionOn', (p) => {
     if (/scrollIntoView/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { x: 0, y: 0, width: 2000, height: 3000, sx: 0, sy: 0, dpr: 1 } } });
     return Promise.resolve({ result: { value: modelValue() } });
@@ -169,9 +173,21 @@ async function main() {
   const windowClip = calls.slice(beforeWindow).find((c) => c.method === 'Page.captureScreenshot').params.clip;
   assert.strictEqual(windowClip.width, 520, 'a large element is clipped to the context window');
   assert.strictEqual(windowClip.height, 360, 'a large element is clipped to the context window');
-  assert.strictEqual(windowClip.x, 740, 'the context window is centred on the element');
-  assert.strictEqual(windowClip.y, 1320, 'the context window is centred on the element');
+  assert.strictEqual(windowClip.x, 0, 'the window starts at the element\'s own left edge, minus the padding, clamped at the document edge');
+  assert.strictEqual(windowClip.y, 0, 'the window starts at the element\'s own top edge, minus the padding, clamped at the document edge');
   assert.ok(windowed.width <= 1040, 'the captured image stays small');
+  // An element that overflows the top-left of the document is still clipped to
+  // the document, and a *below-the-fold* element's window follows its scrolled
+  // position (the origin is the document, not the viewport).
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/scrollIntoView/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { x: 8, y: 700, width: 2000, height: 3000, sx: 0, sy: 600, dpr: 1 } } });
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const beforeOffset = calls.length;
+  await handlers.captureElementShot('obj-1');
+  const offsetClip = calls.slice(beforeOffset).find((c) => c.method === 'Page.captureScreenshot').params.clip;
+  assert.strictEqual(offsetClip.x, 0, 'a window whose left edge would fall before the document starts is clamped to 0');
+  assert.strictEqual(offsetClip.y, 1284, 'a scrolled element\'s window starts at its own top edge in document coordinates');
   // readElementStyles — the post-edit sync. It returns the element's own
   // inline properties AND their resolved values in one round-trip, so the
   // panel can refresh a hoisted "changed" row with the value just applied
@@ -387,6 +403,34 @@ async function main() {
   // read `.inspector__styles-tree-row--parents .inspector__styles-crumbs { ... }`
   // as a rule about `.inspector__styles`, so a scroller on the breadcrumb strip
   // was reported as the panel itself scrolling sideways.
+  // The pinned preview must show the *element*, not a slice of it. A fixed
+  // 42 px strip with `object-fit: cover` showed the middle band of a 480 px-wide
+  // capture — padding, a slice of text, no edges — so the preview read as "this
+  // never shows the component". The image is now the whole capture, scaled to
+  // the strip's width, and only capped (contained, not cropped) when the element
+  // is taller than the panel can spare.
+  const shotImg = /\.inspector__styles-shot-img\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(shotImg, 'the preview image has its own rule');
+  assert.match(shotImg[1], /height:\s*auto/,
+    'the preview image keeps its own aspect ratio, so the whole capture is shown');
+  assert.match(shotImg[1], /object-fit:\s*contain/,
+    'and a capped capture is letterboxed rather than cropped again');
+  assert.match(shotImg[1], /max-height:\s*50dvh/, 'the base preview has a ceiling');
+  // Comments are stripped first: this very rule explains what `cover` used to
+  // do, and a scan over the source text would read that explanation as the rule.
+  const panelCssCode = panelCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/object-fit:\s*cover/.test(panelCssCode),
+    'nothing in the panel crops a capture again — cover is what hid the element');
+  const panelShotImg = /\.inspector__panel-body \.inspector__styles-shot:not\(\.inspector__styles-shot--sheet\) \.inspector__styles-shot-img\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(panelShotImg, 'the in-panel preview is capped separately');
+  assert.ok(!/(^|[;\s])height:\s*\d+px/.test(panelShotImg[1]),
+    'the in-panel preview is capped, not fixed — a short element must not reserve a tall strip');
+  assert.match(panelShotImg[1], /max-height:\s*\d+px/, 'the cap is a max-height');
+  const shotBtn = /\.inspector__styles-shot\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(shotBtn, 'the preview button has its own rule');
+  assert.match(shotBtn[1], /min-height:\s*var\(--tap\)/,
+    'the preview button keeps a 44 px floor, so a one-line element is still a full tap target');
+
   const cssRules = [];
   for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     for (const part of m[1].split(',')) {

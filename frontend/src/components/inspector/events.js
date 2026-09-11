@@ -713,7 +713,9 @@ return model;
 //
 // The element is centred in the viewport first (so a below-the-fold edit is
 // actually rendered into the capture), its box is re-read afterwards, and
-// the clip is padded so borders, outlines, and shadows survive. Returns
+// the clip is padded so borders, outlines, and shadows survive. The clip starts
+// at the element's own top-left corner, so a component bigger than the context
+// window shows its beginning rather than its middle. Returns
 // { data, width, height } in device pixels, or null when the element has no
 // usable box (display:none, detached node, zero-size).
 async function captureElementShot(objectId, opts) {
@@ -736,19 +738,26 @@ if (!rect || !(rect.width > 0) || !(rect.height > 0)) return null;
 const beyond = state.captureBeyondViewport !== false;
 const originX = beyond ? 0 : (rect.sx || 0);
 const originY = beyond ? 0 : (rect.sy || 0);
-// Bound the captured region to a "context window" centred on the element.
+// Bound the captured region to a "context window" around the element.
 // Capturing a whole <body> (thousands of pixels tall) would either produce a
 // multi-megabyte PNG or, once scaled to fit a 360 px panel, an unreadable
 // smear. A window keeps the scale near 1:1 for small elements (their own box
-// plus padding) and shows the element's surroundings for large ones.
+// plus padding, which is what the window *is* when the element fits in it) and
+// shows the element's top-left corner for large ones.
 const ctxW = Math.max(120, (opts && opts.contextWidth) || 520);
 const ctxH = Math.max(90, (opts && opts.contextHeight) || 360);
 const width = Math.min(rect.width + pad * 2, ctxW);
 const height = Math.min(rect.height + pad * 2, ctxH);
-const centreX = rect.x + (rect.sx || 0) + rect.width / 2;
-const centreY = rect.y + (rect.sy || 0) + rect.height / 2;
-const x = Math.max(0, centreX - width / 2 - originX);
-const y = Math.max(0, centreY - height / 2 - originY);
+// The window is anchored at the element's own top-left corner, not centred on
+// it. Centring was the wrong default for a preview that is supposed to show
+// *the component*: for anything bigger than the window — a <body>, a long card,
+// a page section — a centred window captures the element's middle band, which
+// has no header, no first row and no edge, so the reader cannot tell what they
+// are looking at. Anchoring shows the element from its own top-left, which is
+// where a component starts, and for anything that fits in the window (the common
+// case) the clip is exactly the element plus its padding, so the two agree.
+const x = Math.max(0, rect.x + (rect.sx || 0) - pad - originX);
+const y = Math.max(0, rect.y + (rect.sy || 0) - pad - originY);
 // Render across at most `maxWidth` device pixels (a ~360 px panel can't use
 // more), never above 2x.
 let scale = Math.min(2, maxWidth / width);
