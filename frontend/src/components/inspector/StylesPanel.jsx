@@ -42,6 +42,7 @@ import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
 import { valueShape } from './valueShapes.js';
+import { writtenNames } from './shorthand.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 import { ORIGIN_LABEL } from './matchedRules.js';
 
@@ -1139,6 +1140,32 @@ if (!found) list.push({ prop, value });
 return { ...prev, inlineProps: list, rev: (prev.rev || 0) + 1 };
 });
 }
+// changedNamesFor — the property names an edit of `prop` wrote, as the
+// *element* reports them: the typed property plus every declaration of the
+// element's own style that the write created (see writtenNames in shorthand.js).
+//
+// The page is the authority here on purpose. `padding: 30px` is stored by the
+// CSSOM as `padding-top/right/bottom/left`, and a shorthand is never a row in
+// either list — the computed list cannot even enumerate one — so an edit
+// tracked by the typed name alone highlighted and hoisted nothing. Reading the
+// names back means only declarations that really exist are marked, and an edit
+// that expanded differently than expected still highlights what it wrote.
+function changedNamesFor(prop) {
+const rows = (modelRef.current && modelRef.current.inlineProps) || [];
+return writtenNames(prop, rows.map((x) => x && x.prop));
+}
+// markWritten — record an edit in the changed set. Called after the post-edit
+// read so the expansion above is the one the page produced.
+function markWritten(prop) {
+const names = changedNamesFor(prop);
+setChanged((prev) => {
+// Reversed so the property the user actually edited ends up first (markChanged
+// unshifts), with the longhands it wrote following it.
+let next = prev;
+for (const name of names.slice().reverse()) next = markChanged(next, name);
+return next;
+});
+}
 
 // applyInlineSnapshot — fold readElementStyles' answer back into the model.
 // The page is authoritative for the element's own inline style: rows come
@@ -1204,8 +1231,6 @@ await props.setInlineStyleProperty(objId, prop, value);
 // after the panel is switched off.
 if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: value });
 upsertLocal(prop, value);
-// Record the edit so the row is hoisted + highlighted from here on.
-setChanged((prev) => markChanged(prev, prop));
 // Re-read the page so both lists show the value that was just applied (the
 // Computed list is otherwise a snapshot that goes stale after an edit, and a
 // hoisted "changed" row showing the old value is worse than no highlight), and
@@ -1213,6 +1238,12 @@ setChanged((prev) => markChanged(prev, prop));
 // exists — a shorthand is expanded by the CSSOM, so its rules entry has to be
 // re-read for the bar to find it.
 await revalidate();
+// Record the edit so its rows are hoisted + highlighted — after the read, not
+// before it, because what has to be marked is what the page *wrote*. The CSSOM
+// expands `padding: 30px` into four longhands and those are the rows both lists
+// carry, so marking the typed name alone highlighted nothing at all (see
+// writtenNames). Only names the element really has are marked.
+markWritten(prop);
 // Re-capture the pinned preview so the edit is visible in the panel and
 // in the still-open edit sheet.
 captureShot();
@@ -1225,12 +1256,16 @@ if (!objId) throw new Error('element not resolved');
 const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
   .filter((x) => x.prop === prop)
   .map((x) => x.value)[0] || '';
+// What this removal takes off the element: read before the write, since the
+// longhands a shorthand wrote are gone from the style the moment it is removed.
+const written = changedNamesFor(prop);
 await props.removeInlineStyleProperty(objId, prop);
 if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: '' });
 // Drop the row entirely so the property returns to its inherited state.
 setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
-// Nothing left to highlight for a property that no longer exists here.
-setChanged((prev) => unmarkChanged(prev, prop));
+// Nothing left to highlight for a property that no longer exists here — nor
+// for the longhands it took with it.
+setChanged((prev) => written.reduce((acc, name) => unmarkChanged(acc, name), prev));
 // The property now resolves from a class / stylesheet, so its computed value
 // changed too — and its `element.style` rule entry is gone, which the bar's
 // origin sentence reads.
@@ -1243,7 +1278,10 @@ captureShot();
 // panel only reports the result to its own highlight set, and re-reads the
 // element when the parent says a change was reversed (receiptNonce).
 function noteUndone(prop) {
-setChanged((prev) => unmarkChanged(prev, prop));
+// The receipt names the property the user edited; the highlight covers the
+// longhands that edit wrote, so the whole group is dropped together.
+const written = changedNamesFor(prop);
+setChanged((prev) => written.reduce((acc, name) => unmarkChanged(acc, name), prev));
 }
 function refreshStyles() {
 const objectId = modelRef.current && modelRef.current.objectId;

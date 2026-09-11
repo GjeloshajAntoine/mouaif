@@ -162,6 +162,51 @@ if (!result.ok) return [];
 if (result.form === 'shorthand') return [{ prop: property, value: result.value }];
 return Object.entries(result.longhands).map(([prop, value]) => ({ prop, value }));
 }
+// writesProperty — whether setting `property` writes the declaration `name`.
+//
+// This is the question the Styles panel has to answer after an edit, because
+// the CSSOM expands *every* shorthand when it lands on an element: setting
+// `padding: 30px` stores four longhands, `border: 1px solid` stores twelve,
+// and the rows the panel lists are the longhands — a shorthand itself is never
+// a row (`getComputedStyle` does not enumerate shorthands either). Without this
+// an edit tracked by the name the user typed matched no row at all: nothing was
+// hoisted and nothing was highlighted, so "what did I just change?" — the one
+// question the changed-first ordering exists to answer — had no answer for
+// every shorthand chip (`margin`, `padding`, `border`).
+//
+// Three ways a property writes a name:
+//   * itself                        (`padding-top` -> `padding-top`);
+//   * a prefixed longhand           (`border` -> `border-top-width`,
+//                                   `background` -> `background-color`);
+//   * a fan-out side                (`inset` -> `top`, `gap` -> `row-gap`,
+//                                   `border-width` -> `border-top-width`).
+//
+// Custom properties are never expanded: `--a-b` is a different property from
+// `--a`, not a longhand of it.
+export function writesProperty(property, name) {
+const prop = String(property == null ? '' : property).trim().toLowerCase();
+const target = String(name == null ? '' : name).trim().toLowerCase();
+if (!prop || !target) return false;
+if (prop === target) return true;
+if (prop.startsWith('--')) return false;
+if (target.startsWith(prop + '-')) return true;
+const def = sidesFor(prop);
+return def ? def.some((s) => s.longhand === target) : false;
+}
+// writtenNames — every property name an edit of `property` wrote, as a list:
+// the property itself first, then the longhands the page actually carries after
+// the write (in the order the page lists them). The page is the authority, so a
+// name nothing in `names` corresponds to is never invented.
+export function writtenNames(property, names) {
+const prop = String(property == null ? '' : property).trim();
+if (!prop) return [];
+const out = [prop];
+for (const name of names || []) {
+const row = String(name == null ? '' : name).trim();
+if (row && row !== prop && writesProperty(prop, row) && !out.includes(row)) out.push(row);
+}
+return out;
+}
 // toRoot — a pixel number as the page's own `rem`, using the real root font size
 // the panel read (`bases.root`), never a hard-coded 16.
 //

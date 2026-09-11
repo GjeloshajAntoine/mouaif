@@ -26,7 +26,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/contrast.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueShapes.js')).replace(/^export \{ hslToRgb, rgbToHsl \};$/m, ''), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/shorthand.js'))
-+ '\n;globalThis.SH = { collapse, shorthandFor, shorthandWrites, toRoot, fromRoot, asRem, asPx };\n', ctx);
++ '\n;globalThis.SH = { collapse, shorthandFor, shorthandWrites, writesProperty, writtenNames, toRoot, fromRoot, asRem, asPx };\n', ctx);
 const SH = ctx.SH;
 check('the module loads', !!SH && typeof SH.shorthandFor === 'function');
 // ---- collapse: the four shorthand rules ---------------------------------
@@ -169,6 +169,46 @@ check('a zero root yields nothing', SH.asRem(16, 0) === null);
 check('a negative root yields nothing', SH.asRem(16, -4) === null);
 check('a non-number yields nothing', SH.asRem('auto', 16) === null);
 check('a decimal root works', SH.asRem(18, 17.5) === '1.0286rem', SH.asRem(18, 17.5));
+}
+// ---- what a shorthand writes ------------------------------------------
+// The Styles panel tracks an edit by the names the *element* carries after the
+// write, because the CSSOM expands a shorthand into longhands and a shorthand
+// is never a row in either list. Getting this wrong left every shorthand edit
+// (margin, padding, border — three of the six quick-add chips) with no
+// highlight and no hoist at all, so "what did I just change?" had no answer.
+{
+check('a property writes itself', SH.writesProperty('padding-top', 'padding-top') === true);
+check('a property does not write a neighbour', SH.writesProperty('padding-top', 'padding-right') === false);
+check('a prefix longhand is written by its shorthand',
+SH.writesProperty('padding', 'padding-top') === true);
+check('an unprefixed pair is written by its shorthand',
+SH.writesProperty('border', 'border-top-width') === true);
+check('background writes its longhands', SH.writesProperty('background', 'background-color') === true);
+check('a fan-out side is written by its shorthand', SH.writesProperty('inset', 'top') === true);
+check('border-width writes the per-side widths',
+SH.writesProperty('border-width', 'border-top-width') === true);
+check('border-radius writes its corners',
+SH.writesProperty('border-radius', 'border-top-left-radius') === true);
+check('gap writes the two axis gaps',
+SH.writesProperty('gap', 'row-gap') === true && SH.writesProperty('gap', 'column-gap') === true);
+check('the match is case-insensitive', SH.writesProperty('Padding', 'padding-top') === true);
+check('a longhand does not write its shorthand', SH.writesProperty('padding-top', 'padding') === false);
+check('a custom property writes only itself',
+SH.writesProperty('--a', '--a-b') === false);
+check('a blank name is never written', SH.writesProperty('padding', '') === false
+&& SH.writesProperty('', 'padding-top') === false);
+// writtenNames — the property first, then the longhands the page carries, and
+// nothing that is not there.
+check('the written names lead with the property itself',
+JSON.stringify(SH.writtenNames('padding', ['padding-top', 'padding-right', 'color']))
+=== JSON.stringify(['padding', 'padding-top', 'padding-right']),
+JSON.stringify(SH.writtenNames('padding', ['padding-top', 'padding-right', 'color'])));
+check('a property that was not expanded stands alone',
+JSON.stringify(SH.writtenNames('background-color', ['background-color', 'color']))
+=== JSON.stringify(['background-color']));
+check('a missing name list yields the property alone',
+JSON.stringify(SH.writtenNames('padding', null)) === JSON.stringify(['padding']));
+check('a blank property yields nothing', SH.writtenNames('', ['padding-top']).length === 0);
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' shorthand assertion(s) failed');

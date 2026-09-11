@@ -123,5 +123,26 @@ assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
 // node.
 assert.ok(/m\.objectId !== prevId\)[\s\S]{0,120}props\.onSelectionReset/.test(panel),
   'selecting a different element clears the session receipt');
+// --- a shorthand edit marks the longhands it wrote -------------------------
+// The rows the lists carry are the element's own declarations, and the CSSOM
+// expands every shorthand when it lands (`padding: 30px` is stored as four
+// longhands). Marking the typed name alone therefore highlighted and hoisted
+// nothing for `margin`, `padding` or `border` — the three shorthand quick-add
+// chips. The set is the names the page reports after the read, so the mark
+// happens *after* `revalidate()` and never before it.
+assert.ok(/import \{[^}]*writtenNames[^}]*\} from '\.\/shorthand\.js'/.test(panel),
+  'StylesPanel takes the written-name expansion from shorthand.js');
+assert.ok(/function changedNamesFor\(prop\)[\s\S]{0,400}writtenNames\(prop/.test(panel),
+  'the changed set is built from the names the element actually carries');
+assert.ok(/function markWritten\(prop\)[\s\S]{0,400}setChanged/.test(panel),
+  'marking a written edit goes through one helper');
+assert.ok(/applyEdit[\s\S]*?await revalidate\(\);[\s\S]{0,900}?markWritten\(prop\)/.test(panel),
+  'an applied edit marks what the page wrote, after the re-read');
+assert.ok(!/setChanged\(\(prev\) => markChanged\(prev, prop\)\)/.test(panel),
+  'the old exact-name marking is gone — it is what left a shorthand unhighlighted');
+assert.ok(/removeEdit[\s\S]{0,900}?changedNamesFor\(prop\)[\s\S]{0,900}?unmarkChanged/.test(panel),
+  'a removal drops the highlight for every name it took off the element');
+assert.ok(/function noteUndone\(prop\)[\s\S]{0,600}changedNamesFor\(prop\)[\s\S]{0,400}unmarkChanged/.test(panel),
+  'an undo from the receipt drops the whole group too');
 
 console.log('PASS inspector styles changed-first ordering (mark/unmark, hoist, stable remainder, highlighted rows)');

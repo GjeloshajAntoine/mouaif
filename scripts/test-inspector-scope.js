@@ -194,17 +194,26 @@ check('the panel renders the receipt from a prop, not its own state',
 check('the panel no longer keeps its own receipt state',
   !/const \[receipt, setReceipt\] = useState/.test(stylesSource));
 check('an applied edit reports what it replaced to the owner',
-  /if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: value \}\)/.test(stylesSource));
+/if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: value \}\)/.test(stylesSource));
+// The write happens after the read in both paths — the value the property has
+// now is what an undo has to put back, so it has to be captured before the
+// setProperty/removeProperty call. Each path is read on its own: they used to
+// share one loose pattern, which was satisfied by whichever of the two happened
+// to have a short gap and said nothing about the other.
 check('the previous value is read before the write',
-  /const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,200}props\.onRecordChange/.test(stylesSource));
+/const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.setInlineStyleProperty\(objId, prop, value\)/.test(stylesSource));
+check('the previous value is read before a removal too',
+/const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.removeInlineStyleProperty\(objId, prop\)/.test(stylesSource));
 check('a removal is reported too',
-  /if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '' \}\)/.test(stylesSource));
+/if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '' \}\)/.test(stylesSource));
 check('the panel asks the owner to undo rather than writing itself',
-  /if \(props\.onUndo\) props\.onUndo\(row\)/.test(stylesSource)
-  && /if \(props\.onUndoAll\) props\.onUndoAll\(\)/.test(stylesSource));
+/if \(props\.onUndo\) props\.onUndo\(row\)/.test(stylesSource)
+&& /if \(props\.onUndoAll\) props\.onUndoAll\(\)/.test(stylesSource));
+// The highlight covers every name the edit wrote — a shorthand writes longhands
+// — so reversing an entry has to drop the whole group, not the typed name alone.
 check('the panel still clears its own highlight when an entry is reversed',
-  /noteUndone\(row\.prop\)/.test(stylesSource)
-  && /setChanged\(\(prev\) => unmarkChanged\(prev, prop\)\)/.test(stylesSource));
+/noteUndone\(row\.prop\)/.test(stylesSource)
+&& /function noteUndone\(prop\)[\s\S]{0,600}unmarkChanged/.test(stylesSource));
 check('a new selection resets the receipt through the owner',
   /if \(props\.onSelectionReset\) props\.onSelectionReset\(\);/.test(stylesSource));
 check('clearing the selection resets it through the owner too',
