@@ -289,6 +289,33 @@ export function kindsFor(property, value) {
   return kinds;
 }
 
+// seedValue — the value the edit sheet's field starts on when the property has
+// nothing to copy.
+//
+// A quick-add chip opens the sheet for a property the element does not declare,
+// so there is no value to show. The field used to stay blank, and a blank value
+// has no type: the value-type switch, the unit chips and the rail were all
+// hidden exactly when the user was about to choose a unit and type a number into
+// it. Seeding the field with the family's neutral value makes the property's own
+// form visible — the switch lists the types it accepts, the unit row offers
+// px / rem / em with their conversions, the rail and the ± steppers work — and
+// nothing reaches the page until Apply.
+//
+// Only the families whose neutral value is a *neutral* are seeded. A colour or a
+// keyword has no neutral worth inventing (`#000000` is a choice, not an
+// absence), so those fields stay empty and the palette / keyword chips are the
+// input; `''` is what says so.
+export function seedValue(property) {
+  const prop = String(property || '').trim();
+  if (!prop) return '';
+  const family = propertyFamily(prop);
+  if (family === 'length') return '0px';
+  if (family === 'number') return '0';
+  if (family === 'time') return '0ms';
+  if (family === 'angle-or-transform') return '0deg';
+  return '';
+}
+
 // unitOf — the unit implied by a kind + context for a conversion target.
 function absPx(value, unit, ctx) {
   const c = ctx || {};

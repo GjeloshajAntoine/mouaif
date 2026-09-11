@@ -29,7 +29,7 @@ function check(name, condition, detail) {
 }
 
 const ctx = vm.createContext({});
-vm.runInContext(source + '\n;globalThis.VK = { UNITS, KIND_LABEL, keywordsFor, classify, kindsFor, convert, alternatives, unitOptions, propertyFamily, formatNumber, percentBase };\n', ctx);
+vm.runInContext(source + '\n;globalThis.VK = { UNITS, KIND_LABEL, keywordsFor, classify, kindsFor, convert, alternatives, unitOptions, propertyFamily, formatNumber, percentBase, seedValue };\n', ctx);
 const VK = ctx.VK;
 
 // A normal context: 16 px root, 18 px parent font (so em/rem conversions have a
@@ -314,6 +314,37 @@ check('the CSS-wide keywords come last',
 VK.keywordsFor('transition-timing-function').slice(-4).join(',') === 'inherit,initial,unset,revert');
 check('easing is not offered for a property that does not take it',
 !VK.keywordsFor('display').includes('ease-in-out'));
+
+// ---- the neutral seed for a property with no value yet ------------------
+//
+// A quick-add chip opens the sheet for a property the element does not declare,
+// so there is no value to show. A blank value has no type, which hid the
+// value-type switch, the unit chips and the rail on exactly the sheet where the
+// user was about to pick a unit and type a number. The field therefore starts on
+// the family's neutral value.
+check('a length seeds as a length', VK.seedValue('padding') === '0px', VK.seedValue('padding'));
+check('a font size seeds as a length too', VK.seedValue('font-size') === '0px');
+check('a number seeds as a number', VK.seedValue('opacity') === '0', VK.seedValue('opacity'));
+check('a time seeds as a time', VK.seedValue('transition-duration') === '0ms', VK.seedValue('transition-duration'));
+check('an angle seeds as an angle', VK.seedValue('rotate') === '0deg', VK.seedValue('rotate'));
+check('a colour is not seeded with an invented black', VK.seedValue('background-color') === '');
+check('a keyword property is not seeded', VK.seedValue('display') === '');
+check('a custom property is not seeded', VK.seedValue('--space-card') === '');
+check('a blank property seeds nothing', VK.seedValue('') === '');
+check('a missing property seeds nothing', VK.seedValue(null) === '');
+check('the seed is case-insensitive', VK.seedValue('PADDING') === '0px');
+check('the seeded value classifies as the family it was seeded for',
+VK.classify('padding', VK.seedValue('padding')).kind === 'length');
+check('the seeded length offers the unit cycle', VK.unitOptions('padding', VK.seedValue('padding'), CTX).length === 3);
+check('the seeded value offers the type switch', VK.alternatives('padding', VK.seedValue('padding'), CTX).length >= 2);
+// The sheet is where the seed has to be applied — once on mount and once on the
+// reset effect, or opening a second row keeps the first row's value.
+check('the sheet seeds its field on mount',
+/const \[value, setValue\] = useState\(props\.value \|\| seedValue\(props\.prop\)\)/.test(stylesSource));
+check('the sheet re-seeds when it opens on another property',
+/setValue\(props\.value \|\| seedValue\(props\.prop\)\)/.test(stylesSource));
+check('the sheet takes the seed from valueKinds', /seedValue/.test(stylesSource)
+&& /import \{[^}]*seedValue[^}]*\} from '\.\/valueKinds\.js'/.test(stylesSource));
 
 // ---- summary -----------------------------------------------------------
 

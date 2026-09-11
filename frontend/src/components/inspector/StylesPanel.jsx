@@ -35,7 +35,7 @@ import { h } from 'preact';
 import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage, statusLine } from './computedFilter.js';
-import { alternatives, unitOptions, classify } from './valueKinds.js';
+import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { Suggestions } from './Suggestions.jsx';
@@ -145,6 +145,11 @@ function ValueTypes(props) {
 const prop = props.prop || '';
 const value = props.value || '';
 const ctx = props.ctx || {};
+// No value means no type to switch, and every segment would be a disabled chip
+// (a conversion has nothing to convert). The sheet seeds a numeric property's
+// field with its family's neutral value, so this only hides the switch for the
+// families with no neutral form to show — a colour, a keyword, a custom
+// property — where the palette / keyword chips are the input instead.
 if (!prop || !value) return null;
 const alts = alternatives(prop, value, ctx);
 const units = unitOptions(prop, value, ctx);
@@ -292,7 +297,13 @@ return stepValuePure(value, dir, step);
 // the sheet, turns "edit → look → edit" into one continuous loop.
 function StyleEditSheet(props) {
 const [prop, setProp] = useState(props.prop || '');
-const [value, setValue] = useState(props.value || '');
+// A property with nothing to copy starts on its family's neutral value rather
+// than an empty field (see seedValue): a blank value has no type, so the
+// value-type switch, the unit chips and the rail — the controls that answer
+// "which unit, and what number?" — were all hidden on exactly the sheet that
+// needed them, the one opened from a quick-add chip. Nothing is written to the
+// page until Apply.
+const [value, setValue] = useState(props.value || seedValue(props.prop));
 const [busy, setBusy] = useState(false);
 const [error, setError] = useState('');
 const [applied, setApplied] = useState(false);
@@ -314,7 +325,7 @@ useEffect(() => () => { alive.current = false; }, []);
 // component self-contained regardless of how it's mounted.
 useEffect(() => {
 setProp(props.prop || '');
-setValue(props.value || '');
+setValue(props.value || seedValue(props.prop));
 setError('');
 setApplied(false);
 // A different row means a different value: the colour format chips reset so
