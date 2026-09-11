@@ -339,6 +339,86 @@ export function joinFunctions(list) {
 if (!Array.isArray(list) || !list.length) return 'none';
 return list.map((f) => String(f.name || '') + '(' + (f.args || []).map((a) => String(a.value == null ? a.raw : a.value)).join(', ') + ')').join(' ');
 }
+// FUNCTION_CATALOG — the functions worth *adding*, with one sensible default
+// argument each.
+//
+// The mock's functions row ends `add / remove / reorder; none as a chip`, and an
+// add button that produces `translateX()` is a broken declaration: the only way
+// an add can be useful on a phone is if the function arrives already valid and
+// already near what a person wants. The defaults are therefore real values from
+// the same vocabulary the rest of the panel uses (`-4px` is a lift, `1.05` is a
+// hover growth, `45deg` is a rotation), and the catalogue is deliberately short:
+// a property with twenty addable functions is a menu, not a control.
+export const FUNCTION_CATALOG = {
+  transform: [
+    { name: 'translateX', args: ['0px'] },
+    { name: 'translateY', args: ['-4px'] },
+    { name: 'scale', args: ['1.05'] },
+    { name: 'rotate', args: ['45deg'] },
+    { name: 'skewX', args: ['0deg'] },
+    { name: 'skewY', args: ['0deg'] }
+  ],
+  filter: [
+    { name: 'blur', args: ['4px'] },
+    { name: 'brightness', args: ['1.1'] },
+    { name: 'contrast', args: ['1.1'] },
+    { name: 'saturate', args: ['1.2'] },
+    { name: 'grayscale', args: ['0.5'] },
+    { name: 'hue-rotate', args: ['45deg'] },
+    { name: 'opacity', args: ['0.5'] }
+  ]
+};
+// MAX_ADD_CHIPS — how many add buttons a row shows before it stops being a
+// control and starts being a list.
+export const MAX_ADD_CHIPS = 6;
+// addableFunctions — the catalogue entries for a property that this list does
+// not already contain. A function already in the value is not offered again:
+// `transform: translateY(-4px)` does not need a second translateY chip, and the
+// one it has can be edited in place.
+export function addableFunctions(property, list) {
+const prop = String(property || '').trim().toLowerCase();
+const spec = FUNCTION_CATALOG[prop];
+if (!spec) return [];
+const used = new Set((list || []).map((f) => String(f && f.name || '').toLowerCase()));
+return spec.filter((s) => !used.has(s.name.toLowerCase())).slice(0, MAX_ADD_CHIPS);
+}
+// addFunction — the list with one catalogue entry appended, in the same shape
+// `functionList` produces (`{ name, args: [{ raw, value }], index }`), so the
+// result can be written with `joinFunctions` and read straight back.
+export function addFunction(list, spec) {
+const base = Array.isArray(list) ? list : [];
+if (!spec || !spec.name) return base;
+const next = base.concat([{
+name: String(spec.name),
+args: (spec.args || []).map((a) => ({ raw: String(a), value: String(a) })),
+index: base.length
+}]);
+return next.map((f, i) => Object.assign({}, f, { index: i }));
+}
+// moveFunction — the list with one entry swapped with its neighbour. `dir` is
+// -1 for earlier and +1 for later; a move off either end returns the list
+// unchanged, so the caller can render both buttons without checking first.
+//
+// Order matters for a transform list (the operations are not commutative) and
+// for a filter list (a blur before a contrast is not the same as after), which
+// is why reordering is a real feature and not just a tidy-up.
+export function moveFunction(list, index, dir) {
+if (!Array.isArray(list)) return [];
+const from = Number(index);
+const to = from + (dir < 0 ? -1 : 1);
+if (!Number.isFinite(from) || from < 0 || from >= list.length) return list;
+if (to < 0 || to >= list.length) return list;
+const next = list.slice();
+const tmp = next[from];
+next[from] = next[to];
+next[to] = tmp;
+return next.map((f, i) => Object.assign({}, f, { index: i }));
+}
+// functionsToNone — the value a function list writes when it is emptied. `none`
+// is what the mock's chip writes, and it is a real declaration for the
+// properties that take it (`transform: none`), which is why it is a chip rather
+// than a delete-to-empty text field.
+export const FUNCTIONS_NONE = 'none';
 // enumValues — the keyword chips for a property, ranked: the values the page
 // actually uses first (in the order the index reports them), then the property's
 // own spec set, then the CSS-wide keywords last.

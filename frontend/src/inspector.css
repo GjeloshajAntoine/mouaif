@@ -2537,6 +2537,39 @@ color: var(--muted);
 font-size: 0.8rem;
 cursor: pointer;
 }
+/* Reorder. The pair sits before the remove button in the card header: a
+  transform list is not commutative, so the order is part of the value. Each is
+  a 44 px target, and the end stops are disabled rather than removed so the row
+  does not reflow under the finger mid-edit. */
+.inspector__fn-move {
+min-width: 44px;
+min-height: 44px;
+padding: 0;
+border: 0;
+background: none;
+color: var(--muted);
+font-size: 0.7rem;
+cursor: pointer;
+}
+.inspector__fn-move:disabled {
+opacity: 0.3;
+cursor: default;
+}
+/* The add row: one chip per function this list does not have yet, then `none`.
+  Wraps, because six chips plus the label is wider than 360 px. */
+.inspector__fn-addrow {
+display: flex;
+align-items: center;
+gap: 6px;
+flex-wrap: wrap;
+margin-top: 2px;
+}
+.inspector__fn-addlabel {
+font-size: 0.62rem;
+color: var(--muted-2);
+text-transform: uppercase;
+letter-spacing: 0.04em;
+}
 /* ---- Inspector: Intent (Part H) --------------------------------------
 Describe the change in words, review a cited diff, apply the lines you tick.
 The surface is a field, a proposal list where every line carries its evidence,

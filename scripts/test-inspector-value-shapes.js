@@ -32,7 +32,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/contrast.js')), ct
 // valueShapes imports hslToRgb/rgbToHsl from valueKinds and contrast from
 // contrast.js in the real module; both are already in this context.
 vm.runInContext(strip(read('frontend/src/components/inspector/valueShapes.js')).replace(/^export \{ hslToRgb, rgbToHsl \};$/m, '')
-+ '\n;globalThis.VS = { valueShape, sidesFor, splitSides, joinSides, functionList, joinFunctions, splitArgs, enumValues, parseColourParts, joinColourParts, colourRailValues, applyRailPart, timeOptions, angleOptions, imageCandidates, contrastForValue, listItems, joinListItems, splitLooseArgs, ownKeywords, COMMA_LISTS, ANGLE_SNAPS, FANOUT, SIDE_LABEL, FUNCTION_PROPERTIES, IMAGE_PROPERTIES };\n', ctx);
++ '\n;globalThis.VS = { valueShape, sidesFor, splitSides, joinSides, functionList, joinFunctions, splitArgs, enumValues, parseColourParts, joinColourParts, colourRailValues, applyRailPart, timeOptions, angleOptions, imageCandidates, contrastForValue, listItems, joinListItems, splitLooseArgs, ownKeywords, COMMA_LISTS, ANGLE_SNAPS, FANOUT, SIDE_LABEL, FUNCTION_PROPERTIES, IMAGE_PROPERTIES, FUNCTION_CATALOG, MAX_ADD_CHIPS, addableFunctions, addFunction, moveFunction, FUNCTIONS_NONE };\n', ctx);
 const VS = ctx.VS;
 check('the module loads', !!VS && typeof VS.valueShape === 'function');
 // ---- which view each property gets -------------------------------------
@@ -333,6 +333,88 @@ check('no candidates for nothing', VS.imageCandidates(null).length === 0);
 const r = VS.contrastForValue('#9cc2ff', '#1c2333');
 check('a colour candidate gets its ratio', r.ok === true && r.ratio > 7, JSON.stringify(r));
 check('an unreadable candidate reports the reason', VS.contrastForValue('var(--x)', '#fff').ok === false);
+}
+// ---- adding, reordering and emptying a function list ---------------------
+//
+// The mock's functions row ends `add / remove / reorder; none as a chip`. An add
+// that produces `translateX()` would be a broken declaration, so every catalogue
+// entry carries a valid default argument, and the catalogue is short on purpose.
+{
+const list = VS.functionList('translateY(-4px) scale(1.02)');
+{
+const addable = VS.addableFunctions('transform', list);
+check('a transform offers the functions it does not have yet',
+addable.map((s) => s.name).join(',') === 'translateX,rotate,skewX,skewY', addable.map((s) => s.name).join(','));
+check('the functions already in the list are not offered again',
+!addable.some((s) => ['translateY', 'scale'].includes(s.name)));
+check('every catalogue entry has a default argument',
+Object.values(VS.FUNCTION_CATALOG).every((spec) => spec.every((s) => s.args.length > 0 && s.args.every((a) => String(a).length > 0))));
+const added = VS.addFunction(list, addable.find((s) => s.name === 'rotate'));
+check('an added function is joined as a valid call',
+VS.joinFunctions(added) === 'translateY(-4px) scale(1.02) rotate(45deg)', VS.joinFunctions(added));
+check('the added entry carries raw and value like a parsed one',
+added[2].args[0].raw === '45deg' && added[2].args[0].value === '45deg');
+check('an added entry is re-parsed by the same parser',
+(VS.functionList(VS.joinFunctions(added)) || []).length === 3);
+check('the indices are renumbered after an add',
+VS.addFunction(list, addable[0]).map((f) => f.index).join(',') === '0,1,2');
+check('adding nothing is a no-op', VS.addFunction(list, null).length === 2);
+check('adding to a missing list still works', VS.addFunction(null, { name: 'scale', args: ['1'] }).length === 1);
+check('the add row is capped', VS.addableFunctions('filter', []).length <= VS.MAX_ADD_CHIPS);
+}
+// Reorder: a transform list is not commutative, so this is part of the value.
+{
+const moved = VS.moveFunction(list, 0, 1);
+check('a swap moves the entry one place later',
+moved.map((f) => f.name).join(',') === 'scale,translateY', moved.map((f) => f.name).join(','));
+check('the moved list joins in the new order',
+VS.joinFunctions(moved) === 'scale(1.02) translateY(-4px)', VS.joinFunctions(moved));
+check('moving up from the top changes nothing', VS.moveFunction(list, 0, -1) === list);
+check('moving down from the bottom changes nothing', VS.moveFunction(list, 1, 1) === list);
+check('an out-of-range index changes nothing', VS.moveFunction(list, 9, -1) === list);
+check('a move does not mutate the input',
+list.map((f) => f.name).join(',') === 'translateY,scale');
+check('a move renumbers the indices',
+VS.moveFunction(list, 0, 1).map((f) => f.index).join(',') === '0,1');
+check('a three-item middle move works both ways',
+VS.moveFunction(VS.functionList('a(1) b(2) c(3)'), 1, 1).map((f) => f.name).join(',') === 'a,c,b'
+&& VS.moveFunction(VS.functionList('a(1) b(2) c(3)'), 1, -1).map((f) => f.name).join(',') === 'b,a,c');
+check('a non-array is handled', VS.moveFunction(null, 0, 1) === null || Array.isArray(VS.moveFunction(null, 0, 1)));
+}
+// The filter side of the catalogue.
+{
+const f = VS.addableFunctions('filter', []);
+check('a filter offers its own functions',
+f.map((s) => s.name).includes('blur') && f.map((s) => s.name).includes('hue-rotate'), f.map((s) => s.name).join(','));
+check('blur arrives with a length, not a bare call', f.find((s) => s.name === 'blur').args[0] === '4px');
+check('a property with no catalogue offers nothing', VS.addableFunctions('box-shadow', []).length === 0);
+check('an empty property offers nothing', VS.addableFunctions('', []).length === 0);
+}
+// `none` is a real declaration for these properties, not an empty string.
+{
+check('emptying the list writes none', VS.joinFunctions([]) === 'none');
+check('the none constant is the mock\'s word', VS.FUNCTIONS_NONE === 'none');
+check('none does not re-parse as a list', VS.functionList('none') === null);
+}
+// The view renders the three controls and writes through onChange.
+{
+const src = read('frontend/src/components/inspector/ValueKindsView.jsx');
+check('the view offers an add row', /inspector__fn-addrow/.test(src) && /addableFunctions\(props\.prop, list\)/.test(src));
+check('an add chip writes the extended list',
+/joinFunctions\(addFunction\(list, s\)\)/.test(src));
+check('the view offers a reorder pair', /inspector__fn-move/.test(src) && /moveFunction\(list, fi, dir\)/.test(src));
+check('a move at the end is disabled, not hidden', /disabled: f\.index === 0/.test(src)
+&& /disabled: f\.index === list\.length - 1/.test(src));
+check('the view offers the none chip', /FUNCTIONS_NONE\b/.test(src) && /onClick: \(\) => props\.onChange\(FUNCTIONS_NONE\)/.test(src));
+check('the comma list reorders too', /moveItem\(ii, -1\)/.test(src) && /moveItem\(ii, 1\)/.test(src));
+check('a comma-list move joins through joinListItems', /joinListItems\(copy\.map/.test(src));
+check('remove is still there and still writes none when emptied',
+/copy\.length \? joinFunctions\(copy\) : FUNCTIONS_NONE/.test(src));
+const css = read('frontend/src/inspector.css');
+check('the reorder buttons are 44 px targets', /\.inspector__fn-move \{/.test(css)
+&& /min-width: 44px/.test(css.slice(css.indexOf('.inspector__fn-move {'))));
+check('the add row wraps rather than scrolling', /\.inspector__fn-addrow \{[^}]*flex-wrap: wrap/.test(css));
+}
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-shape assertion(s) failed');

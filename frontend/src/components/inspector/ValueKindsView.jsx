@@ -26,7 +26,7 @@ import {
 valueShape, sidesFor, splitSides, joinSides, functionList, joinFunctions,
 listItems, joinListItems, enumValues, parseColourParts, joinColourParts,
 colourRailValues, applyRailPart, timeOptions, angleOptions, imageCandidates,
-contrastForValue
+contrastForValue, addableFunctions, addFunction, moveFunction, FUNCTIONS_NONE
 } from './valueShapes.js';
 import { shorthandFor } from './shorthand.js';
 import { railRange, valueToRatio, ratioToValue, quantize, tickValues } from './valueRail.js';
@@ -300,21 +300,48 @@ props.onChange(joinFunctions(copy));
 };
 const remove = (fi) => {
 const copy = list.filter((f, i) => i !== fi);
-props.onChange(copy.length ? joinFunctions(copy) : 'none');
+props.onChange(copy.length ? joinFunctions(copy) : FUNCTIONS_NONE);
 };
+// The add / reorder half of the mock's row. Every edit rewrites the whole
+// declaration through joinFunctions, so a reorder is one property and one undo —
+// the same contract as dragging an argument.
+const move = (fi, dir) => {
+const next = moveFunction(list, fi, dir);
+if (next === list) return;
+props.onChange(joinFunctions(next));
+};
+const addable = addableFunctions(props.prop, list);
 return h('div', { class: 'inspector__shape inspector__shape--functions' },
 list.map((f) => h('div', { class: 'inspector__railcard', key: f.name + f.index },
 h('div', { class: 'inspector__railhead' },
 h('span', { class: 'inspector__rail-kind' }, f.name),
 h('span', { class: 'inspector__rail-ev' }, f.args.length + (f.args.length === 1 ? ' argument' : ' arguments')),
-list.length > 1
-? h('button', {
+// Reorder. A transform list is not commutative (`translateY` then `scale` is
+// not `scale` then `translateY`), so the order is part of the value, and the
+// pair is disabled rather than hidden at the ends so the row does not reflow
+// under the finger mid-edit.
+h('button', {
+class: 'inspector__fn-move',
+type: 'button',
+disabled: f.index === 0,
+'aria-label': 'Move ' + f.name + ' earlier',
+title: 'Move ' + f.name + ' earlier',
+onClick: () => move(f.index, -1)
+}, '▲'),
+h('button', {
+class: 'inspector__fn-move',
+type: 'button',
+disabled: f.index === list.length - 1,
+'aria-label': 'Move ' + f.name + ' later',
+title: 'Move ' + f.name + ' later',
+onClick: () => move(f.index, 1)
+}, '▼'),
+h('button', {
 class: 'inspector__fn-remove',
 type: 'button',
 'aria-label': 'Remove ' + f.name,
 onClick: () => remove(f.index)
 }, '✕')
-: null
 ),
 f.args.map((a, ai) => h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
 h(SubRail, {
@@ -326,7 +353,26 @@ text: a.value,
 onChange: (v) => setArg(f.index, ai, formatNumber(v) + argUnit(a.value))
 })
 ))
-))
+)),
+h('div', { class: 'inspector__fn-addrow', role: 'group', 'aria-label': 'Add a function' },
+h('span', { class: 'inspector__fn-addlabel' }, 'Add'),
+addable.map((s) => h('button', {
+class: 'inspector__shape-chip',
+type: 'button',
+key: 'add-' + s.name,
+title: 'Add ' + s.name + '(' + s.args.join(', ') + ')',
+onClick: () => props.onChange(joinFunctions(addFunction(list, s)))
+}, s.name)),
+// `none` is a real declaration for these properties, so it is a chip rather
+// than something you reach by deleting the last function.
+h('button', {
+class: 'inspector__shape-chip' + (list.length ? '' : ' is-on'),
+type: 'button',
+'aria-label': 'Set ' + props.prop + ' to none',
+title: 'Set ' + props.prop + ' to none',
+onClick: () => props.onChange(FUNCTIONS_NONE)
+}, FUNCTIONS_NONE)
+)
 );
 }
 const items = listItems(props.prop, props.value);
@@ -336,11 +382,37 @@ const copy = items.map((it) => ({ index: it.index, raw: it.raw, args: it.args.ma
 copy[ii].args[ai].value = next;
 props.onChange(joinListItems(copy));
 };
+// A comma list reorders for the same reason a function list does: the items are
+// tried in order, so a `transition` whose duration comes before its property is
+// not the same declaration as the other way round.
+const moveItem = (ii, dir) => {
+const jj = ii + (dir < 0 ? -1 : 1);
+if (jj < 0 || jj >= items.length) return;
+const copy = items.slice();
+const tmp = copy[ii];
+copy[ii] = copy[jj];
+copy[jj] = tmp;
+props.onChange(joinListItems(copy.map((it, i) => Object.assign({}, it, { index: i }))));
+};
 return h('div', { class: 'inspector__shape inspector__shape--list' },
 items.map((it, ii) => h('div', { class: 'inspector__railcard', key: 'i' + ii },
 h('div', { class: 'inspector__railhead' },
 h('span', { class: 'inspector__rail-kind' }, props.prop + ' #' + (ii + 1)),
-h('span', { class: 'inspector__rail-ev' }, it.args.length + ' values')
+h('span', { class: 'inspector__rail-ev' }, it.args.length + ' values'),
+h('button', {
+class: 'inspector__fn-move',
+type: 'button',
+disabled: ii === 0,
+'aria-label': 'Move item ' + (ii + 1) + ' earlier',
+onClick: () => moveItem(ii, -1)
+}, '▲'),
+h('button', {
+class: 'inspector__fn-move',
+type: 'button',
+disabled: ii === items.length - 1,
+'aria-label': 'Move item ' + (ii + 1) + ' later',
+onClick: () => moveItem(ii, 1)
+}, '▼')
 ),
 it.args.map((a, ai) => h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
 h(SubRail, {
