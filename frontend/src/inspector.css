@@ -1817,6 +1817,143 @@ width budget that ignores the level chip. */
 flex: 1 1 0;
 min-width: 0;
 }
+/* ---- Inspector: edit receipt + scope -------------------------------
+   Two answers the "changed" chip could not give: what exactly did I change
+   (with the value the property had before), and what did the write *not*
+   touch. The receipt strip lists the session's edits newest-first with a
+   per-row ↺ and an Undo all; the scope block inside the edit sheet counts
+   what changes, what is kept, and that no rule or other element is involved.
+
+   Both live in the normal scroll flow — they are review affordances, not
+   permanent chrome — and both use the same ≥44 px targets as everything else. */
+.inspector__receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+}
+.inspector__receipt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 4px;
+}
+.inspector__receipt-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-hi);
+}
+.inspector__receipt-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector__receipt-undoall {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 10px;
+  font-size: 0.72rem;
+}
+.inspector__receipt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  padding: 0 6px 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+.inspector__receipt-prop {
+  flex: 0 0 auto;
+  color: var(--fg);
+  font-weight: 700;
+}
+.inspector__receipt-was {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--muted-2);
+  text-decoration: line-through;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A property that was not declared before: there is no previous value to strike
+   through, so a dash stands in without pretending there was one. */
+.inspector__receipt-was--unset { text-decoration: none; }
+.inspector__receipt-arrow { flex: 0 0 auto; color: var(--muted-2); }
+.inspector__receipt-now {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--accent-hi);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__receipt-now.is-removed { color: var(--muted); font-weight: 600; }
+.inspector__receipt-revert {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__receipt-revert:hover { background: var(--surface-3); }
+.inspector__receipt-revert:disabled { opacity: 0.4; cursor: default; }
+/* The scope block in the edit sheet. */
+.inspector__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--success);
+  border-radius: var(--r-md);
+  background: var(--success-soft);
+}
+.inspector__scope-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--success);
+}
+.inspector__scope-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  font-size: 0.72rem;
+  color: var(--fg-soft);
+}
+.inspector__scope-grid b { color: var(--fg); }
+.inspector__scope-zero { color: var(--success); }
+.inspector__scope-note {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.inspector__scope-kept { color: var(--fg-soft); }
+
 /* ---- Inspector: value-type switch (edit sheet) ---------------------
    A declaration's type is invisible: 14px, 14, 87.5% and auto all read as
    "the value". The switch makes it explicit and states the cost of each form

@@ -111,7 +111,12 @@ assert.ok(/applyEdit[\s\S]*?await syncFromPage\(\)/.test(panel),
   'an applied edit re-reads the element so the changed rows are current');
 assert.ok(/removeEdit[\s\S]*?await syncFromPage\(\)/.test(panel),
   'a removed property re-reads the element too');
-assert.ok(/m\.objectId !== prevId\) setChanged\(\[\]\)/.test(panel),
+assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
   'selecting a different element clears the change set');
+// …and the receipt with it: its entries name properties of the element that was
+// selected, so undoing them against a new element would be a write to the wrong
+// node.
+assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setReceipt\(\[\]\)/.test(panel),
+  'selecting a different element clears the session receipt');
 
 console.log('PASS inspector styles changed-first ordering (mark/unmark, hoist, stable remainder, highlighted rows)');

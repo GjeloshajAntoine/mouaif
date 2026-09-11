@@ -218,6 +218,8 @@ check('styles panel publishes the selection to the target bar',
   /onSelectionChange/.test(styles));
 check('the edit sheet switches value types', /inspector__kindseg/.test(styles));
 check('the edit sheet offers the unit cycle', /inspector__unitchip/.test(styles));
+check('the session receipt is shown with undo', /inspector__receipt/.test(styles));
+check('the edit sheet states the edit scope', /inspector__scope/.test(styles));
 check('the value-type context comes from the page, not a guessed root size',
   /bases: \{ root: root, parent: parent, self:/.test(read('frontend/src/components/inspector/events.js')));
 check('preview: zoom fit/natural toggle', /toggleZoom/.test(preview));

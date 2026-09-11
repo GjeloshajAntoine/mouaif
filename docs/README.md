@@ -9,6 +9,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
 - [Inspector target bar](features/inspector-target-origin.md) — which element is selected, which rule a value comes from, and where an edit lands.
 - [Inspector value types](features/inspector-value-types.md) — switch a value between length, number, percentage and keyword, with the cost stated.
+- [Inspector non-destructive editing](features/inspector-non-destructive-editing.md) — what an edit changes, what it keeps, and how to undo it.
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.
 - [MCP OAuth sign-in](features/mcp-oauth.md) — connect HTTP MCP servers with PKCE, keychain-backed tokens, and refresh.

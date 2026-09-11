@@ -36,6 +36,49 @@ import { useRef, useState, useEffect } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
 import { alternatives, unitOptions } from './valueKinds.js';
+import { scopeSummary, recordChange, undoPlan, undoOrder, summarizeReceipt, receiptRows } from './scope.js';
+
+// Receipt — the changes this session made, newest first, each with the value the
+// property had **before the session touched it**. That is what makes one tap of
+// ↺ return to the original state rather than to the previous tap, and what lets
+// the strip say "1 changed · 3 kept · 0 rules · 0 elements" instead of only
+// highlighting a row.
+function Receipt(props) {
+const receipt = props.receipt || [];
+const sum = summarizeReceipt(receipt);
+if (!sum.hasChanges) return null;
+const rows = receiptRows(receipt);
+return h('div', { class: 'inspector__receipt', role: 'group', 'aria-label': 'Changes made in this session' },
+h('div', { class: 'inspector__receipt-head' },
+h('strong', { class: 'inspector__receipt-title' }, String(sum.count) + (sum.count === 1 ? ' change' : ' changes')),
+h('span', { class: 'inspector__receipt-meta' },
+[sum.added ? sum.added + ' added' : null, sum.removed ? sum.removed + ' removed' : null].filter(Boolean).join(' · ')
+),
+h('button', {
+class: 'btn inspector__receipt-undoall',
+type: 'button',
+title: 'Reverse every change in this list',
+'aria-label': 'Undo all ' + sum.count + ' changes',
+onClick: props.onUndoAll
+}, '↺ Undo all')
+),
+rows.map((r) => h('div', { class: 'inspector__receipt-row', key: r.key },
+h('span', { class: 'inspector__receipt-prop' }, r.prop),
+r.wasSet
+? h('span', { class: 'inspector__receipt-was', title: 'was ' + r.from }, r.from)
+: h('span', { class: 'inspector__receipt-was inspector__receipt-was--unset', title: 'was not set on this element' }, '—'),
+h('span', { class: 'inspector__receipt-arrow', 'aria-hidden': 'true' }, '→'),
+h('span', { class: 'inspector__receipt-now' + (r.isRemoval ? ' is-removed' : '') }, r.isRemoval ? '(removed)' : r.to),
+h('button', {
+class: 'inspector__receipt-revert',
+type: 'button',
+title: 'Reverse this change: ' + r.text,
+'aria-label': 'Undo ' + r.text,
+onClick: () => props.onUndo(r)
+}, '↺')
+))
+);
+}
 
 // ValueTypes — the explicit switch between value types, plus the unit cycle for
 // the type in force.
@@ -319,8 +362,7 @@ value,
 ctx: props.unitCtx,
 onChange: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
-h('div', { class: 'inspector__style-valuerow' },
-h('button', {
+h('div', { class: 'inspector__style-valuerow' },h('button', {
 class: 'inspector__style-step',
 type: 'button',
 disabled: busy || down == null,
@@ -347,7 +389,32 @@ title: up == null ? 'Not a number' : 'Increase to ' + up,
 onClick: () => nudge(up)
 }, '+')
 ),
-props.isInline ? h('p', { class: 'inspector__style-hint' }, 'This sets the element’s own inline style') : null,
+// The scope block states what Apply will and will not do, in numbers computed
+// from the element's real declarations (see scopeSummary): one property
+// changes, the rest are kept, no stylesheet rule is touched and no other
+// element is affected. The generic hint underneath used to be the whole story
+// ("this sets the element's own inline style"), which answered a different
+// question than "what else does this disturb?".
+(() => {
+const scope = scopeSummary({ declared: props.declared || [], edited: propName });
+if (!props.isInline) return null;
+return h('div', { class: 'inspector__scope' },
+h('div', { class: 'inspector__scope-head' }, 'Only one thing changes'),
+h('div', { class: 'inspector__scope-grid' },
+h('span', null, 'Properties changed ', h('b', null, String(scope.changed))),
+h('span', null, 'Declarations kept ', h('b', null, String(scope.kept))),
+h('span', null, 'Rules edited ', h('b', null, String(scope.rulesEdited))),
+// Structurally zero: the write addresses the resolved element's own style
+// object, so no selector can match a second element. Printed rather than
+// implied because "did I just change something else?" is the question.
+h('span', null, 'Other elements ', h('b', { class: 'inspector__scope-zero' }, '0'))
+),
+scope.added
+? h('p', { class: 'inspector__scope-note' }, 'Adds ' + propName + ' to this element — it had no declaration of its own before.')
+: null,
+h('p', { class: 'inspector__scope-note inspector__scope-kept' }, 'Every other declaration on this element is kept as it is.')
+);
+})(),
 applied ? h('p', { class: 'inspector__style-applied', role: 'status' }, 'Applied — keep editing or tap Done') : null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 h('div', { class: 'inspector__sheet-actions' },
@@ -514,6 +581,13 @@ const [shotBusy, setShotBusy] = useState(false);
 // so "what did I change and what is it now?" is answerable at a glance
 // instead of hunting through ~400 computed rows.
 const [changed, setChanged] = useState([]);
+// receipt — the session's edits with the value each property had before the
+// session touched it (see scope.js). Rendered as the strip above Declared
+// styles, and the source of both per-row undo and Undo all.
+const [receipt, setReceipt] = useState([]);
+// busyUndo — a revert is in flight, so the strip's buttons are disabled rather
+// than queueing a second write on the same property.
+const [busyUndo, setBusyUndo] = useState(false);
 // tree — the selected element's ancestors and direct children (see
 // readElementTree). Rendered as the breadcrumb at the top of the pinned
 // block and as the child chips under it, so the user can walk up or down
@@ -628,7 +702,7 @@ function applyModel(m) {
 // (the properties belong to the old node). A refresh of the same element
 // keeps it.
 const prevId = modelRef.current && modelRef.current.objectId;
-if (!m || m.objectId !== prevId) setChanged([]);
+if (!m || m.objectId !== prevId) { setChanged([]); setReceipt([]); }
 modelRef.current = m;
 setModel(m);
 shotSerial.current++;
@@ -841,7 +915,14 @@ async function applyEdit(prop, value) {
 if (!props.setInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
+// Read the value this property has *now*, before the write: that is what an
+// undo of this change has to restore. recordChange keeps the earliest value for
+// a property, so a chain of edits on one property still undoes to the original.
+const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
+  .filter((x) => x.prop === prop)
+  .map((x) => x.value)[0] || '';
 await props.setInlineStyleProperty(objId, prop, value);
+setReceipt((prev) => recordChange(prev, { prop, from: prevValue, to: value }));
 upsertLocal(prop, value);
 // Record the edit so the row is hoisted + highlighted from here on.
 setChanged((prev) => markChanged(prev, prop));
@@ -857,7 +938,12 @@ async function removeEdit(prop) {
 if (!props.removeInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
+// A removal is a change too, and the value it dropped is what undo restores.
+const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
+  .filter((x) => x.prop === prop)
+  .map((x) => x.value)[0] || '';
 await props.removeInlineStyleProperty(objId, prop);
+setReceipt((prev) => recordChange(prev, { prop, from: prevValue, to: '' }));
 // Drop the row entirely so the property returns to its inherited state.
 setModel((prev) => prev ? { ...prev, inlineProps: prev.inlineProps.filter((x) => x.prop !== prop), rev: (prev.rev || 0) + 1 } : prev);
 // Nothing left to highlight for a property that no longer exists here.
@@ -866,6 +952,55 @@ setChanged((prev) => unmarkChanged(prev, prop));
 // changed too.
 await syncFromPage();
 captureShot();
+}
+
+// undoChange — reverse one receipt entry.
+//
+// The plan says whether to restore a value or remove a property that did not
+// exist before (see scope.js), so undo never writes an empty value: setting
+// `padding: ''` would silently remove the declaration, which is the same to the
+// browser but a different action to read back.
+async function undoEntry(entry) {
+const plan = undoPlan(entry);
+const objId = modelRef.current && modelRef.current.objectId;
+if (!plan || !objId) return;
+if (plan.kind === 'remove') {
+  if (props.removeInlineStyleProperty) await props.removeInlineStyleProperty(objId, plan.prop);
+} else if (props.setInlineStyleProperty) {
+  await props.setInlineStyleProperty(objId, plan.prop, plan.value);
+}
+setReceipt((prev) => prev.filter((x) => String(x.prop).toLowerCase() !== String(plan.prop).toLowerCase()));
+setChanged((prev) => unmarkChanged(prev, plan.prop));
+}
+async function undoOne(row) {
+setBusyUndo(true);
+setError('');
+try {
+  await undoEntry({ prop: row.prop, from: row.from, to: row.to });
+  await syncFromPage();
+  captureShot();
+} catch (e) {
+  setError((e && e.message) || 'Could not undo ' + row.prop);
+} finally {
+  setBusyUndo(false);
+}
+}
+// undoAll — reverse every change, newest first, so a property edited twice
+// unwinds in one pass and cannot be left holding a value a later entry wrote.
+async function undoAll() {
+setBusyUndo(true);
+setError('');
+try {
+  for (const entry of undoOrder(receipt)) await undoEntry(entry);
+  setReceipt([]);
+  setChanged([]);
+  await syncFromPage();
+  captureShot();
+} catch (e) {
+  setError((e && e.message) || 'Could not undo every change');
+} finally {
+  setBusyUndo(false);
+}
 }
 
 function refreshStyles() {
@@ -886,6 +1021,10 @@ setTree(null);
 setRules(null);
 setEdit(null);
 setError('');
+// The receipt describes edits made to the element that was selected; with no
+// selection there is nothing to undo, so it goes with the element.
+setReceipt([]);
+setChanged([]);
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
 // Idle state — nothing selected yet. Prompts the user to tap the preview
@@ -1058,6 +1197,16 @@ shot.width && shot.height ? shot.width + '×' + shot.height : '')
 // the live preview to tap again. One tap on `main` or `body` beats
 // re-picking a possibly overlapping element on a 360 px screenshot.
 //
+// The receipt strip sits first in the scroll flow, above the tree and the
+// property lists: it answers "what did I change, and can I get back?" — which is
+// the question immediately after an edit, and the one the "changed" chip alone
+// cannot answer. It renders nothing when there is nothing to undo.
+h(Receipt, {
+receipt,
+busy: busyUndo,
+onUndo: undoOne,
+onUndoAll: undoAll
+}),
 // Deliberately *inside the scroll flow*, not in the sticky block above it.
 // Both strips are horizontal scrollers a full tap-target tall, and pinning
 // them cost ~80 px of the 352 px scroller on a 360 × 680 phone — about two
@@ -1263,6 +1412,9 @@ prop: edit.prop,
 value: edit.value,
 isInline: true,
 isRemove: inlineRows.some((x) => x.prop === edit.prop),
+// What the element declares right now, so the sheet can count what the write
+// keeps as well as what it changes (see scopeSummary).
+declared: inlineRows,
 shot: shot && shot.src,
 shotBusy,
 // The real base font sizes (root for rem, parent for em / font-size %) so the
