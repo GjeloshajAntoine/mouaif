@@ -22,12 +22,15 @@
 // `regular` for author rules, `user-agent` for the browser's own defaults,
 // `injected` for extensions, and `inspector` for styles the DevTools front
 // end wrote. Author rules get no chip: they are the boring majority.
+// The browser-default chip is spelled out — "UA" is DevTools shorthand that
+// reads as nothing at all next to a selector, and both the chip and the
+// toggle that reveals these rules need to say the same thing.
 export const ORIGIN_LABEL = {
-  regular: '',
-  'user-agent': 'UA',
-  injected: 'ext',
-  inspector: 'inspector',
-  inline: 'inline'
+regular: '',
+'user-agent': 'browser',
+injected: 'ext',
+inspector: 'inspector',
+inline: 'inline'
 };
 
 // Author/default classification. The panel hides UA rules by default: a

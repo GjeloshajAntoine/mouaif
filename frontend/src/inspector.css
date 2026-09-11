@@ -3739,6 +3739,7 @@ enough rules (plus a dozen browser defaults) for the open section to be a
 second wall. */
 .inspector__rules-bar {
 display: flex;
+flex-wrap: wrap;
 align-items: center;
 gap: 8px;
 }
@@ -3754,11 +3755,12 @@ color: var(--fg-soft);
 background: var(--surface-3);
 border-radius: 999px;
 }
-/* Show/Hide is a labelled button, not a chevron: the rest of this panel
-labels its buttons, and a bare glyph would need a tooltip that does not
-exist on touch. Full 44 px tap target. */
-.inspector__rules-toggle,
-.inspector__rules-ua {
+/* "Show rules" / "Hide rules" is a labelled button, not a chevron: the rest
+of this panel labels its buttons, and a bare glyph would need a tooltip that
+does not exist on touch. Full 44 px tap target. The bar wraps as a safety net
+(`flex-wrap` above) so a longer label drops to its own row instead of being
+squeezed to an unreadable width at 320 px. */
+.inspector__rules-toggle {
 flex: 0 0 auto;
 min-height: var(--tap);
 min-width: 56px;
@@ -3774,13 +3776,35 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__rules-ua { margin-left: 0; min-width: var(--tap); }
-.inspector__rules-toggle:hover,
+/* The browser-default toggle lives under the rules it filters, not in the bar,
+and reads as a sentence: "Show 5 browser default rules". It has the full
+panel width because the label is what makes it legible — a two-letter "UA"
+pill in the header explained nothing. */
+.inspector__rules-ua {
+display: flex;
+align-items: center;
+justify-content: center;
+width: 100%;
+min-height: var(--tap);
+margin: 6px 0 0;
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px dashed var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rules-toggle:hover { background: var(--surface-3); }
 .inspector__rules-ua:hover { background: var(--surface-3); }
 .inspector__rules-ua.is-on {
 color: var(--on-accent);
 background: var(--accent);
 border-color: var(--accent);
+border-style: solid;
 }
 .inspector__rules {
 list-style: none;

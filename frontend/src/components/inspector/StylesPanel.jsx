@@ -43,6 +43,7 @@ import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
 import { valueShape } from './valueShapes.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
+import { ORIGIN_LABEL } from './matchedRules.js';
 
 // valueSwatch — a colour value gets a swatch in front of its text. `rgb(255,
 // 230, 0)` is the same length as three other colours at this row size, and the
@@ -669,7 +670,7 @@ onClick: remove
 // Collapsed by default. The section is an answer to a question, not
 // something to scroll past on every selection, and an element on a real
 // site matches enough rules (plus a dozen browser defaults) to be another
-// wall. UA rules get their own toggle for the same reason.
+// wall. Browser defaults get their own labelled toggle for the same reason.
 function MatchedRulesSection(props) {
 const all = props.rules || [];
 const counts = props.counts || { total: 0, userAgent: 0 };
@@ -684,7 +685,7 @@ const firstId = visible.length ? visible[0].id : null;
 const [open, setOpen] = useState(() => (firstId ? { [firstId]: true } : {}));
 // Re-seed when the selection changes (the same rule ids come back for a
 // different element, so the previous element's open rules would be wrong) or
-// when the UA toggle changes which rule is first.
+// when the browser-defaults toggle changes which rule is first.
 useEffect(() => {
 setOpen(firstId ? { [firstId]: true } : {});
 }, [props.selectionKey, firstId]);
@@ -697,17 +698,32 @@ return next;
 });
 }
 let body = null;
+// uaToggle — the browser-default control, in the list it filters rather than
+// in the bar above it. A two-letter "UA" pill next to "Show" told the reader
+// nothing (it is DevTools shorthand for the user-agent stylesheet), and a
+// label long enough to be understood does not fit the 320 px bar alongside
+// the heading, the count, and "Show rules". Here it has a full row and says
+// exactly what it does — and it sits where the rules it reveals would appear,
+// under the author rules that they would otherwise bury.
+const uaToggle = counts.userAgent
+? h('button', {
+class: 'inspector__rules-ua' + (props.showUa ? ' is-on' : ''),
+type: 'button',
+key: 'ua',
+'aria-pressed': String(!!props.showUa),
+onClick: props.onToggleUa
+}, (props.showUa ? 'Hide ' : 'Show ') + counts.userAgent + ' browser default rule'
++ (counts.userAgent === 1 ? '' : 's'))
+: null;
 if (props.open) {
 if (!all.length) {
 body = h('p', { class: 'inspector__styles-none', role: 'status' },
 props.busy ? 'Reading the cascade…' : 'No stylesheet rules matched this element.');
 }
-else if (!visible.length) {
-body = h('p', { class: 'inspector__styles-none' }, 'Only browser default rules matched.', h('br'), 'Tap UA to show them.');
-}
 else {
 body = [
-h('ul', { class: 'inspector__rules', key: 'list' },
+visible.length
+? h('ul', { class: 'inspector__rules', key: 'list' },
 visible.map((r) => {
 const isOpen = !!open[r.id];
 return h('li', {
@@ -726,7 +742,7 @@ onClick: () => toggleRule(r.id)
 },
 h('span', { class: 'inspector__rule-caret', 'aria-hidden': 'true' }, isOpen ? '▾' : '▸'),
 h('span', { class: 'inspector__rule-sel' }, r.selector),
-r.group === 'user-agent' ? h('span', { class: 'inspector__rule-tag' }, 'UA') : null,
+r.group === 'user-agent' ? h('span', { class: 'inspector__rule-tag' }, ORIGIN_LABEL['user-agent']) : null,
 r.media ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--media', title: '@media ' + r.media }, '@media ' + r.media) : null,
 r.inherited ? h('span', { class: 'inspector__rule-tag inspector__rule-tag--inh' }, 'from ' + r.inherited) : null,
 h('span', { class: 'inspector__rule-n', 'aria-hidden': 'true' },
@@ -751,10 +767,13 @@ r.more ? h('li', { class: 'inspector__rule-more' }, '+' + r.more + ' more') : nu
 : null
 );
 })
-),
+)
+: h('p', { class: 'inspector__styles-none', key: 'only-ua', role: 'status' },
+'Only browser default rules matched this element.'),
 props.truncated
 ? h('p', { class: 'inspector__rules-truncated', key: 'cut' }, '+' + props.truncated + ' more rules not shown')
-: null
+: null,
+uaToggle
 ];
 }
 }
@@ -762,22 +781,17 @@ return h('div', { class: 'inspector__styles-section' },
 h('div', { class: 'inspector__rules-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Matched rules'),
 h('span', { class: 'inspector__rules-count' }, props.busy && !all.length ? '…' : String(visible.length)),
+// "Show rules", not "Show": the button opens the list of rules under it, and
+// the word on its own gave no clue what would be shown. The count beside the
+// heading already says how many there are; the accessible name spells it out.
 h('button', {
 class: 'inspector__rules-toggle',
 type: 'button',
 'aria-expanded': String(!!props.open),
+'aria-label': (props.open ? 'Hide' : 'Show') + ' the rules that match this element'
++ (visible.length ? ' (' + visible.length + ')' : ''),
 onClick: props.onToggle
-}, props.open ? 'Hide' : 'Show'),
-counts.userAgent
-? h('button', {
-class: 'inspector__rules-ua' + (props.showUa ? ' is-on' : ''),
-type: 'button',
-'aria-pressed': String(!!props.showUa),
-title: props.showUa ? 'Hide browser default rules' : 'Show ' + counts.userAgent + ' browser default rules',
-'aria-label': props.showUa ? 'Hide browser default rules' : 'Show ' + counts.userAgent + ' browser default rules',
-onClick: props.onToggleUa
-}, 'UA')
-: null
+}, props.open ? 'Hide rules' : 'Show rules')
 ),
 body
 );
@@ -852,9 +866,9 @@ const treeSerial = useRef(0);
 const [rules, setRules] = useState(null);
 const [rulesBusy, setRulesBusy] = useState(false);
 // Collapsed by default: the section is an answer to a question ("why is it
-// this value?"), not something to scroll past on every selection. UA rules
-// are hidden behind their own toggle because a dozen browser defaults per
-// element bury the author rule that matters.
+// this value?"), not something to scroll past on every selection. Browser
+// defaults are hidden behind their own labelled toggle because a dozen of them
+// per element bury the author rule that matters.
 const [rulesOpen, setRulesOpen] = useState(false);
 const [showUa, setShowUa] = useState(false);
 // kidsOpen — whether the children chips are shown. The breadcrumb is always

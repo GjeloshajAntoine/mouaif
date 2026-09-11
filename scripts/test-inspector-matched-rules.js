@@ -16,8 +16,9 @@
 //     CDP hands them over least-specific first;
 //   * implicit (shorthand-expanded) declarations dropped — `margin: 40px`
 //     must stay one row, not four;
-//   * UA rules classified, not hidden here — the panel counts them so its
-//     "UA" toggle can show a real number while keeping them out of the list;
+//   * browser-default rules classified, not hidden here — the panel counts
+//     them so its "Show N browser default rules" toggle can name a real number
+//     while keeping them out of the list;
 //   * inherited rules captioned with the ancestor label, matched to Chrome's
 //     inheritance chain index for index;
 //   * caps applied with the overflow reported rather than silently dropped.
@@ -102,9 +103,14 @@ function main() {
     'element.style first, then the matched rules most specific first (CDP order reversed)');
   assert.strictEqual(out.rules[0].origin, 'inline');
   assert.strictEqual(out.rules[0].group, 'author', 'element.style is an author origin');
-  assert.strictEqual(out.rules[1].group, 'user-agent', 'UA rules are classified, not dropped by the normalizer');
+  assert.strictEqual(out.rules[1].group, 'user-agent', 'browser-default rules are classified, not dropped by the normalizer');
   assert.deepStrictEqual({ ...out.counts }, { total: 4, author: 3, userAgent: 1 },
-    'the counts describe the uncapped list so the panel can label its UA toggle');
+    'the counts describe the uncapped list so the panel can label its browser-defaults toggle');
+  // The chip that marks a browser-default rule is the same word as the toggle
+  // that reveals it: "UA" is DevTools shorthand that reads as nothing beside a
+  // selector, and the two controls have to agree on what they call these rules.
+  assert.strictEqual(vm.runInContext("ORIGIN_LABEL['user-agent']", context), 'browser',
+    'the browser-default chip is spelled out, not abbreviated to UA');
   assert.strictEqual(out.truncated, 0);
 
   // A rule with no usable declarations is not a row.

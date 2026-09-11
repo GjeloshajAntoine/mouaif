@@ -435,6 +435,28 @@ async function main() {
   assert.ok(!/margin-left/.test(showLabelRule[1]),
     '.inspector__computed-show must not push itself away from the chips it labels');
 
+  // --- the cascade section names its controls ---------------------------
+  // The section's only two controls read "Show" and "UA", and neither said what
+  // it opened or filtered: "UA" is DevTools shorthand for the browser's own
+  // stylesheet. The bar's button now names the list it opens, and the
+  // browser-defaults toggle moved under the rules it filters with its count
+  // spelled out in words — which is also why it cannot live in the 320 px bar
+  // next to the heading, the count, and "Show rules".
+  assert.ok(/'Hide rules' : 'Show rules'/.test(panelSrc),
+    'the matched-rules button says which list it opens');
+  assert.ok(/' browser default rule'/.test(panelSrc),
+    'the browser-defaults toggle spells out what it reveals');
+  assert.ok(/ORIGIN_LABEL\['user-agent'\]/.test(panelSrc),
+    'the rule chip uses the shared origin label rather than its own abbreviation');
+  const uaRule = /\.inspector__rules-ua\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(uaRule, '.inspector__rules-ua has its own rule');
+  assert.match(uaRule[1], /width:\s*100%/,
+    'the browser-defaults toggle owns a full row under the rules it filters');
+  assert.ok(!/\.inspector__rules-toggle,\s*\n\.inspector__rules-ua\s*\{/.test(panelCss),
+    'the two controls are no longer one shared rule — the toggle is not a bar item');
+  assert.match(/\.inspector__rules-bar\s*\{([^}]*)\}/.exec(panelCss)[1], /flex-wrap:\s*wrap/,
+    'the rules bar wraps rather than squeezing its labels at 320 px');
+
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
 
