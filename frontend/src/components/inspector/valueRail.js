@@ -329,6 +329,21 @@ tokens.push({ name: String(t.name || ''), value: formatNumber(n) + range.unit, n
 }
 return { minor, major, tokens };
 }
+// unitEquivalent — the same value written in another unit, for the readout the
+// mock's K1 footer prints beside the unit chips: `px  = 0.875rem`.
+//
+// The list is `unitOptions`' own answer (valueKinds.js), so the footer can only
+// ever show a conversion that a chip in the same row would actually write — the
+// readout and the control cannot disagree. A unit whose base size the inspector
+// has not read comes back `ok: false` and is skipped rather than guessed, and
+// the first *convertible* alternative wins, which is the cycle's own order.
+export function unitEquivalent(options) {
+for (const o of options || []) {
+if (o && !o.current && o.ok && o.value) return String(o.value);
+}
+return '';
+}
+
 // railLabel — the readout beside the rail, in the mock's shape: the number and
 // its unit, no trailing zeros. A `null` ratio (an unparsable value) reads as an
 // empty string so the control shows nothing rather than a zero.

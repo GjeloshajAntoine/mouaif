@@ -27,7 +27,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueRail.js'))
-+ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit };\n', ctx);
++ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
 const VR = ctx.VR;
 check('the module loads', !!VR && typeof VR.railRange === 'function');
 // ---- per-family ranges -------------------------------------------------
@@ -236,6 +236,30 @@ check('dragging with the 4px step snaps to 16px', VR.ratioToValue(0.4375, range,
 check('the 0/8/16/32 ticks all land on the rail',
 [0, 8, 16, 32].every((n) => VR.valueToRatio(n, range) >= 0 && VR.valueToRatio(n, range) <= 1));
 check('the readout matches the mock', VR.railLabel(14, range) === '14px');
+}
+// ---- the footer's converted equivalent (K1's `= 0.875rem`) --------------
+{
+const U = ctx.unitOptions;
+const px = U('padding', '14px', { rootFontSize: 16, parentFontSize: 16, fontSize: 16 });
+const rem = px.find((o) => o.unit === 'rem');
+check('14px converts to 0.875rem', rem && rem.ok && rem.value === '0.875rem', rem && rem.value);
+check('the equivalent is the first convertible other unit',
+VR.unitEquivalent(px) === '0.875rem', VR.unitEquivalent(px));
+check('the unit in use is never the equivalent itself',
+VR.unitEquivalent([{ unit: 'px', value: '14px', current: true, ok: true }]) === '');
+check('a unit the inspector cannot resolve is skipped',
+VR.unitEquivalent([
+{ unit: 'em', value: '', ok: false, reason: 'needs the em base font size' },
+{ unit: 'rem', value: '0.875rem', ok: true }
+]) === '0.875rem');
+check('no alternatives means no readout', VR.unitEquivalent([]) === '');
+check('a missing option list means no readout', VR.unitEquivalent(undefined) === '');
+// The readout is only useful if the component draws it: the chips would
+// otherwise be the only place the conversion exists, one tap away.
+const railSrc = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the rail renders the equivalent', /inspector__rail-equiv/.test(railSrc)
+&& /unitEquivalent\(units\)/.test(railSrc));
+check('the equivalent is styled', /\.inspector__rail-equiv \{/.test(read('frontend/src/inspector.css')));
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-rail assertion(s) failed');

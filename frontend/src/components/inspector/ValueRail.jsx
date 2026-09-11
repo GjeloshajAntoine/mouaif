@@ -18,7 +18,7 @@
 // computed by valueRail.js, which is pure and unit-tested.
 import { h } from 'preact';
 import { useRef, useState } from 'preact/hooks';
-import { railRange, railTicks, railLabel, railWritable, valueToRatio, ratioToValue, quantize, snapStep, nudge } from './valueRail.js';
+import { railRange, railTicks, railLabel, railWritable, unitEquivalent, valueToRatio, ratioToValue, quantize, snapStep, nudge } from './valueRail.js';
 import { classify, formatNumber, unitOptions } from './valueKinds.js';
 // PRECISIONS — the segment's steps. 1 px for a placed value, 4 px for a scale
 // value, 8 px for a coarse one; the page's own step is always available as a
@@ -87,6 +87,9 @@ return { number: n, ratio: valueToRatio(n, range) };
 // switch uses — so a rail-edited value and a switch-edited value end up in the
 // same unit with the same base font size.
 const units = unitOptions(prop, value, ctx);
+// The conversion the footer prints beside the chips (`= 0.875rem`): read from
+// the same option list, so it is always a conversion a chip would really write.
+const equivalent = unitEquivalent(units);
 function write(n) {
 if (!range) return;
 const clamped = quantize(n, null, range);
@@ -263,6 +266,12 @@ title: u.current ? u.unit + ' — the unit in use' : (u.ok ? 'Rewrite as ' + u.v
 onClick: () => { if (u.ok) props.onChange(u.value); }
 }, u.unit))
 )
+: null,
+// `= 0.875rem` — the unit chip cycles, so the footer says what the other unit
+// is worth before the user spends a tap finding out. Rendered only when a chip
+// in this row could actually make the change.
+equivalent
+? h('span', { class: 'inspector__rail-equiv' }, '= ' + equivalent)
 : null,
 ctx.scaleNote
 ? h('span', { class: 'inspector__rail-mini' }, ctx.scaleNote)

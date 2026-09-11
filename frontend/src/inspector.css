@@ -2211,6 +2211,15 @@ border-color: var(--accent);
 color: var(--accent);
 }
 .inspector__rail-unitchip:disabled { opacity: 0.4; cursor: default; }
+/* The conversion beside the unit chips (`= 0.875rem`). Monospace and tabular so
+  the readout does not reflow the footer as the drag changes the value. */
+.inspector__rail-equiv {
+font-family: var(--font-mono);
+font-size: 0.6rem;
+color: var(--fg-soft);
+font-variant-numeric: tabular-nums;
+white-space: nowrap;
+}
 .inspector__rail-mini {
 margin-left: auto;
 font-size: 0.6rem;
