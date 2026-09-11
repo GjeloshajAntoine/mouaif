@@ -70,6 +70,76 @@ function applyPwaHeaders(res, absPath, relPath) {
   }
 }
 
+// ---- Content-Security-Policy ------------------------------------------
+//
+// Served with every HTML document (the app shell at `/`, and any SPA
+// fallback that resolves to index.html). The policy is a second line of
+// defence behind the escaping each surface already does: it is what stops
+// a markup-injection bug (like the SVG preview that used to feed a
+// project file's bytes to innerHTML — see
+// docs/features/files-modal-text-and-images.md) from becoming script
+// execution in the app's origin, where the access cookie and the whole
+// `/api/*` surface live.
+//
+// Directive by directive:
+//   default-src 'self'          everything else falls back to same-origin
+//   script-src 'self'           no inline script, no eval, no remote script.
+//                               The bundle is a Vite ESM build at /assets/*;
+//                               index.html has no inline <script>.
+//   style-src 'self' 'unsafe-inline'
+//                               CodeMirror injects a <style> element at
+//                               runtime (style-mod), and a few components set
+//                               style attributes. Styles are not a script
+//                               execution path, so this stays pragmatic.
+//   img-src 'self' data: blob:  file previews and pasted images arrive as
+//                               data: URLs from the API
+//   font-src 'self' data:       system font stacks, but keep data: for a
+//                               future webfont
+//   media-src 'self' data: blob:
+//   connect-src 'self' ws: wss: fetch + EventSource are same-origin; the
+//                               Inspector's CDP socket is the same-origin
+//                               `/api/inspector/proxy` WebSocket ('self'
+//                               covers it in CSP3, listed explicitly for the
+//                               browsers that do not implement that)
+//   worker-src 'self' blob:     the service worker is /sw.js (same origin)
+//   manifest-src 'self'         /manifest.webmanifest
+//   frame-src 'self'            nothing frames anything today
+//   base-uri 'none'             no <base> in the app shell, so a <base>
+//                               injection cannot retarget every relative URL
+//   object-src 'none'           no <embed>/<object>/<applet>
+//   form-action 'self'          forms, if added, may only post to us
+//   frame-ancestors ...         clickjacking guard that still allows a local
+//                               shell (host app, test harness) to embed the
+//                               UI over http://localhost / 127.0.0.1 on any
+//                               port, while remote origins cannot frame it
+const WEB_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "media-src 'self' data: blob:",
+  "connect-src 'self' ws: wss:",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "frame-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'self' http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*"
+].join('; ');
+
+// applyDocumentHeaders(res, absPath) — the headers that only make sense on
+// a document (index.html). `nosniff` rides along: the static layer already
+// sends an explicit Content-Type, and nosniff stops a browser from
+// re-typing an asset that arrives with the wrong one.
+function applyDocumentHeaders(res, absPath) {
+  if (path.extname(absPath).toLowerCase() !== '.html') return;
+  res.setHeader('Content-Security-Policy', WEB_CSP);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+}
+
 function serveWebFile(res, absOrRel, opts) {
   const opt = opts || {};
   let abs;
@@ -99,6 +169,7 @@ function serveWebFile(res, absOrRel, opts) {
   fs.readFile(abs, (err, data) => {
     if (err) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
     applyPwaHeaders(res, abs, absOrRel);
+    applyDocumentHeaders(res, abs);
     res.writeHead(200, { 'Content-Type': WEB_MIME[path.extname(abs)] || 'application/octet-stream' });
     res.end(data);
   });
@@ -117,4 +188,4 @@ function serveWebRequest(res, relPath) {
   return serveWebFile(res, relPath, { preferDist: true });
 }
 
-module.exports = { serveWebFile, serveWebRequest, isInside };
+module.exports = { serveWebFile, serveWebRequest, isInside, WEB_CSP };

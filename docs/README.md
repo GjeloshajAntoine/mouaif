@@ -23,6 +23,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Retry and auto-retry](features/retry-and-auto-retry.md) — retry failed turns from their error card, or let the app retry once automatically.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside an expanded subagent card renders as chat rows.
 - [Responsive layout](features/responsive-layout.md) — the app frame grows with the window instead of staying a 480 px phone column.
+- [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with, directive by directive.
 
 ## Build the documentation
 

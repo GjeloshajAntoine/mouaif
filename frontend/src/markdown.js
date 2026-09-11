@@ -156,11 +156,17 @@ function renderInline(text) {
   // '/+%20safe%20+'. The inline-code step above already extracted backtick
   // content, but code fragments written without backticks (e.g. ' + safe + '
   // in a server-side template literal) can reach autoLink as bare text.
-  s = s.replace(/<a\s+href="([^"]*)"[^>]*>[^<]+<\/a>/gi, (match, href) => {
-    if (/\+[^=]*\+/.test(href) && /^https?:\/\//i.test(href)) {
-      return match.replace(/<a\s+/i, '<a rel="nofollow noopener noreferrer" onclick="return false" ');
-    }
-    return match;
+  //
+  // Such a "link" used to be neutralised with an inline
+  // `onclick="return false"`, which is exactly what this module must never
+  // emit (see scripts/test-markdown-safety.mjs — no `on*` attribute may
+  // survive) and which the app's Content-Security-Policy (`script-src
+  // 'self'`) refuses to run, so the attribute only ever looked like
+  // protection. Unwrap the anchor instead: the label stays, escaped and
+  // inert, with no href to navigate to.
+  s = s.replace(/<a\s+href="([^"]*)"[^>]*>([^<]+)<\/a>/gi, (match, href, label) => {
+  if (/\+[^=]*\+/.test(href) && /^https?:\/\//i.test(href)) return label;
+  return match;
   });
 
   // Step 10: restore backslash-escaped literal characters.
