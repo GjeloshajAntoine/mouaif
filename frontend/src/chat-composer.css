@@ -1547,42 +1547,68 @@ border-radius: var(--r-sm);
   height: 14px;
 }
 @media (max-width: 430px) {
-/* Scoped to the main viewer — the URL prompt sheet only has a close
-button in .wp__head-actions, so wrapping it onto a second row leaves
-an empty band and absolute-positioning the close button jumps it to
-the top-right corner of the sheet. Keep the prompt sheet on a single
-row with the close button inline next to the title. */
+/* One header row, however narrow the phone. The viewer's four controls —
+  the title block, Refresh, the capture-size select and the close ✕ —
+  used to be split across two rows, which cost 107px of a 740px viewport
+  (a sixth of the screen) and left the first row two-thirds empty once the
+  title ellipsized. They now share a single 55px row:
+  - the title block is the only flexible child (flex: 1 1 auto with
+    min-width: 0), so it absorbs all the slack and ellipsizes; the
+    controls keep their intrinsic widths;
+  - Refresh collapses to its icon — its label is the widest thing in the
+    row and the icon is self-explanatory beside the Size select — which
+    is what buys the title its room;
+  - the Size select stays within the 7.5rem basis the base rule already
+    gives it, enough for the widest option ("Laptop · 1280×800" needs
+    110px) so a native select never renders a clipped label;
+  - the close ✕ returns to the normal flow (it was absolutely
+    positioned only to float above the wrapped row) and keeps its 44px
+    tap target, as does every other control here — a 36px ✕ would have
+    fit more comfortably but is below the project's --tap minimum.
+  Verified at 320/340/360/390/414/430 px: one row at every width, head
+  55px, all four controls 44px tall with 8px gaps, no overflow.
+  Scope is the viewer only. The URL prompt sheet has a single close button
+  and never wrapped, so it keeps its own single row untouched. */
 .wp__sheet:not(.wp__prompt-sheet) .wp__head {
-align-items: flex-start;
-flex-wrap: wrap;
+align-items: center;
+flex-wrap: nowrap;
+gap: 8px;
+padding: 5px 8px;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-text {
-/* Reserve the close-button band without letting the title grow past it.
-The base rule is flex: 1 1 auto, so flex-basis alone is defeated by
-flex-grow — the title block expands to the full row and the text runs
-under the absolutely-positioned close ✕. Pin flex-grow to 0 so the
-calc(100% - 52px) basis is actually honored. */
-flex: 0 0 calc(100% - 52px);
+flex: 1 1 auto;
+min-width: 0;
 min-height: 44px;
 justify-content: center;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__head-actions {
-width: 100%;
+flex: 0 0 auto;
+width: auto;
+gap: 8px;
 }
-.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh,
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh {
+min-width: 44px;
+padding: 4px;
+}
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh span {
+display: none;
+}
 .wp__sheet:not(.wp__prompt-sheet) .wp__size-select {
-flex: 1 1 0;
+flex: 0 1 auto;
+min-width: 0;
+max-width: 7.5rem;
+padding: 0 0.25rem;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__close {
-/* 8px from the head's own top edge, NOT from the viewport top: the
-overlay already applies `padding: var(--safe-top) 0 var(--safe-bottom)`
-(frontend/src/sheets.css), so the head — the close button's containing
-block — starts below the status bar. Adding --safe-top again offset the
-button by a second inset (47px on a notched phone), which dropped it out
-of its reserved band and onto the Refresh / Size row below. */
-position: absolute;
-top: 8px;
-right: 4px;
+/* Back into the flow. It was absolutely positioned because the wrapped
+  header had no room for it on the first row; a single row does.
+  Do NOT offset this with `top: calc(var(--safe-top) + 8px)` like the old
+  rule did — the ✕'s containing block is the head, and the overlay already
+  applies `padding: var(--safe-top) 0 var(--safe-bottom)`
+  (frontend/src/sheets.css), so the head starts below the status bar and
+  re-adding the inset offset the button a second time (47px on a notched
+  phone), dropping it onto the controls row. */
+position: static;
 }
 }
 .wp__body {

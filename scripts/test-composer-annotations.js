@@ -83,6 +83,82 @@ const css = fs.readFileSync(path.join(__dirname, '../frontend/src/chat-composer.
 const removeRule = (css.match(/\.chat-view__image-chipremove \{[\s\S]*?\n\}/) || [''])[0];
 check('remove-image button uses the compact 32px dismiss target', /width:\s*var\(--tap-sm\)/.test(removeRule) && /height:\s*var\(--tap-sm\)/.test(removeRule), removeRule);
 
+// The web-preview viewer's header is one row at every phone width. It used to
+// wrap onto two, which cost 107px of a 740px viewport and left the first row
+// two-thirds empty once the title ellipsized. These guards pin the contract
+// that makes one row work, so a future edit cannot quietly reintroduce the
+// wrap (or a control too small to tap). Measured in Chrome at
+// 320/340/360/390/414/430 px: one row, head 55px, four 44px-tall controls,
+// 8px gaps, no overflow.
+const narrowStart = css.indexOf('@media (max-width: 430px)');
+// Slice the block and drop the `@media ... {` wrapper plus its closing brace,
+// leaving only flat rules to parse.
+const narrowRaw = css.slice(narrowStart, css.indexOf('\n.wp__body {', narrowStart));
+const narrow = narrowRaw.slice(narrowRaw.indexOf('{') + 1, narrowRaw.lastIndexOf('}'));
+// Strip comments before matching: the blocks are heavily commented, and a
+// comment that quotes the old declaration (e.g. "do NOT offset this with
+// `top: calc(var(--safe-top) + 8px)`") would otherwise satisfy a pattern
+// meant to catch the real declaration.
+const uncomment = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '');
+// Parse `selector-list { decls }` pairs so a rule reached through a comma
+// list (`.wp__close,\n.mcp-err__close { ... }`) is found too — matching
+// `.sel {` textually misses those, and the tap-target rules are written that
+// way.
+function rules(src) {
+  const out = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(uncomment(src)))) {
+    const selectors = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+    out.push({ selectors, decls: m[2] });
+  }
+  return out;
+}
+const declsFor = (src, sel) => {
+  const hit = rules(src).filter((r) => r.selectors.includes(sel));
+  return hit.map((r) => r.decls).join('\n');
+};
+const narrowRule = (sel) => declsFor(narrow, sel);
+const baseRule = (sel) => declsFor(css, sel);
+const REVIEWER = '.wp__sheet:not(.wp__prompt-sheet)';
+const HEAD = REVIEWER + ' .wp__head';
+// Every selector the phone block declares, so the scoping can be asserted.
+const narrowSelectors = rules(narrow).flatMap((r) => r.selectors);
+check('the viewer header does not wrap on a phone',
+  /flex-wrap:\s*nowrap/.test(narrowRule(HEAD)), narrowRule(HEAD) || 'no rule');
+check('the title block is the only flexible child, so it ellipsizes',
+  /flex:\s*1 1 auto/.test(narrowRule(HEAD + '-text')) && /min-width:\s*0/.test(narrowRule(HEAD + '-text')));
+check('the actions group does not stretch to a full row',
+  /flex:\s*0 0 auto/.test(narrowRule(HEAD + '-actions')));
+check('Refresh collapses to its icon',
+  /display:\s*none/.test(narrowRule(REVIEWER + ' .wp__action--refresh span')), narrowRule(REVIEWER + ' .wp__action--refresh span') || 'no rule');
+check('the Refresh icon keeps a 44px tap target',
+  /min-width:\s*44px/.test(narrowRule(REVIEWER + ' .wp__action--refresh')) ||
+  /min-width:\s*44px/.test(baseRule('.wp__action')));
+check('the size select is capped but wide enough for its longest option',
+  /max-width:\s*7\.5rem/.test(narrowRule(REVIEWER + ' .wp__size-select')));
+check('the title block and Refresh are 44px tall in the row',
+  /min-height:\s*44px/.test(narrowRule(HEAD + '-text')) &&
+  /min-height:\s*44px/.test(baseRule('.wp__action')));
+check('the size select and close button are 44px tall',
+  /min-height:\s*44px/.test(baseRule('.wp__size-select')) &&
+  /min-height:\s*44px/.test(baseRule('.wp__close')));
+// The close button is only absolutely positioned in a *wrapped* header. In the
+// single-row layout it is back in the flow, which is what keeps it at the end
+// of the row without any safe-area arithmetic. Offsetting it with
+// `calc(var(--safe-top) + 8px)` double-applied the inset (the overlay already
+// pads it) and dropped its 44px square onto the controls, stealing taps.
+const closeRule = narrowRule(REVIEWER + ' .wp__close');
+check('the close button sits in the row, not absolutely positioned',
+  /position:\s*static/.test(closeRule) && !/top:\s*calc\(var\(--safe-top/.test(closeRule), closeRule || 'no rule');
+// Every rule in the phone block must be scoped to the viewer. The URL prompt
+// sheet has a single inline close button and never wrapped, so a bare
+// `.wp__prompt-sheet .wp__head` selector here would break it.
+const headSelectors = narrowSelectors.filter((s) => s.includes('.wp__head'));
+check('the URL prompt sheet keeps its own single row',
+  headSelectors.length > 0 && headSelectors.every((s) => s.includes(':not(.wp__prompt-sheet)')),
+  headSelectors.join(' | '));
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
 }
