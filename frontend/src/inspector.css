@@ -2271,6 +2271,30 @@ margin-left: auto;
 font-size: 0.6rem;
 color: var(--muted);
 }
+/* The common durations (100/150/200/300 ms). Dragging to an exact 150 ms on a
+  0…2000 ms rail is not a thumb gesture, so they are one tap each; the row wraps
+  because four chips plus the precision segment and the unit group is already a
+  full width at 360 px. */
+.inspector__rail-presets {
+display: inline-flex;
+gap: 4px;
+flex-wrap: wrap;
+}
+.inspector__rail-presetchip {
+min-height: 44px;
+padding: 0 10px;
+border-radius: 7px;
+border: 1px solid var(--border-strong);
+background: var(--surface);
+color: var(--fg-soft);
+font-family: var(--font-mono);
+font-size: 0.63rem;
+cursor: pointer;
+}
+.inspector__rail-presetchip.is-on {
+border-color: var(--accent);
+color: var(--accent);
+}
 /* The honest fallback: no rail, and the reason why, in the typed field's place. */
 .inspector__rail-note {
 margin: 0;

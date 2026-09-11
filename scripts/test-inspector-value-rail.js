@@ -27,7 +27,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueRail.js'))
-+ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, BOX_FRACTIONS, stepLadder, familyStep, fractionSnaps, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
++ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, BOX_FRACTIONS, TIME_PRESETS, stepLadder, familyStep, fractionSnaps, timePresets, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
 const VR = ctx.VR;
 check('the module loads', !!VR && typeof VR.railRange === 'function');
 // ---- per-family ranges -------------------------------------------------
@@ -452,6 +452,61 @@ const css = read('frontend/src/inspector.css');
 check('fraction ticks are styled and hit-sized', /\.inspector__rail-frac \{/.test(css)
 && /\.inspector__rail-frac::after \{/.test(css));
 check('their labels have their own colour', /span\.is-fraction \{/.test(css) && /--rail-fraction:/.test(css));
+}
+// ---- the time presets (100/150/200/300 ms) ------------------------------
+//
+// The mock's third time snap source. A 0…2000 ms rail is ~10 ms per pixel on a
+// phone, so 150 ms is not a value a thumb can hit: for this family the durations
+// a transition actually uses are one tap each.
+{
+const ms = VR.railRange('transition-duration', '180ms', {});
+{
+const p = VR.timePresets(ms, {});
+check('a ms rail offers the mock\'s four durations', p.map((x) => x.number).join(',') === '100,150,200,300',
+p.map((x) => x.number).join(','));
+check('each chip carries its unit', p.every((x) => /^\d+ms$/.test(x.label)), p.map((x) => x.label).join(','));
+check('150 ms is one tap, which the drag cannot reach reliably',
+p.some((x) => x.number === 150) && VR.timePresets(ms, {}).find((x) => x.number === 150).label === '150ms');
+check('a preset is a real write: quantizing it keeps its value',
+p.every((x) => VR.quantize(x.number, 10, ms) === x.number), JSON.stringify(p));
+}
+// A rail already in seconds offers seconds — the chip writes what the field
+// would hold, so it cannot say 100ms while the field reads 0.1s.
+{
+const sec = VR.railRange('transition-duration', '0.18s', {});
+check('the seconds rail says so', sec.unit === 's');
+const p = VR.timePresets(sec, {});
+check('a seconds rail offers 0.1s / 0.15s / 0.2s / 0.3s',
+p.map((x) => x.label).join(',') === '0.1s,0.15s,0.2s,0.3s', p.map((x) => x.label).join(','));
+check('the numbers are seconds, not milliseconds', p[1].number === 0.15, String(p[1].number));
+}
+// A short rail drops the presets it cannot hold rather than clamping them.
+{
+const short = VR.railRange('transition-duration', '20ms', {});
+check('a 20 ms rail still holds the 100 ms preset', short.max >= 100);
+const tiny = { min: 0, max: 120, family: 'time', unit: 'ms' };
+check('presets outside the range are dropped',
+VR.timePresets(tiny, {}).map((x) => x.number).join(',') === '100', JSON.stringify(VR.timePresets(tiny, {})));
+check('a range holding none yields none',
+VR.timePresets({ min: 0, max: 50, family: 'time', unit: 'ms' }, {}).length === 0);
+check('no range yields none', VR.timePresets(null, {}).length === 0);
+}
+// Only for time: a duration ladder has nothing to say about a padding.
+check('a length gets no duration presets',
+VR.timePresets(VR.railRange('padding', '14px', {}), {}).length === 0);
+check('an angle gets none', VR.timePresets(VR.railRange('rotate', '45deg', {}), {}).length === 0);
+check('the preset table is the mock\'s four', VR.TIME_PRESETS.join(',') === '100,150,200,300');
+// The rail draws them, one tap each.
+{
+const src = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the rail renders the presets', /timePresets\(range, ctx\)/.test(src) && /inspector__rail-presets/.test(src));
+check('a preset chip writes its own value', /onClick: \(\) => write\(p\.number\)/.test(src));
+check('the chip in force is marked', /inspector__rail-presetchip' \+ \(info\.number === p\.number \? ' is-on' : ''\)/.test(src));
+const css = read('frontend/src/inspector.css');
+check('preset chips are 44 px targets', /\.inspector__rail-presetchip \{/.test(css)
+&& /min-height: 44px/.test(css.slice(css.indexOf('.inspector__rail-presetchip {'))));
+check('the preset row wraps rather than scrolling', /\.inspector__rail-presets \{[^}]*flex-wrap: wrap/.test(css));
+}
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-rail assertion(s) failed');

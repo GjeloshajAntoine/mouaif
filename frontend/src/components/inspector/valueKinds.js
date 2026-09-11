@@ -72,6 +72,12 @@ const KEYWORD_SETS = {
   'flex': ['none', 'auto', 'initial'],
   'transform': ['none'],
   'transition': ['none'],
+  /* Easing: the mock's "easing presets for timing-function". These are the
+     property's whole choice set, and they are worth segments rather than a
+     typed field because `cubic-bezier(...)` is not something anyone types on a
+     phone — and because the page's own usage is ranked first by enumValues. */
+  'transition-timing-function': ['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out', 'step-start', 'step-end'],
+  'animation-timing-function': ['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out', 'step-start', 'step-end'],
   'transition-duration': ['inherit', 'initial', 'unset'],
   'animation-duration': ['inherit', 'initial', 'unset'],
   'border-radius': ['inherit', 'initial', 'unset'],

@@ -18,7 +18,7 @@
 // computed by valueRail.js, which is pure and unit-tested.
 import { h } from 'preact';
 import { useRef, useState } from 'preact/hooks';
-import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, fractionSnaps, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
+import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, fractionSnaps, timePresets, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
 import { classify, formatNumber, unitOptions } from './valueKinds.js';
 // THUMB — the visual and hit sizes. The thumb is 34 px (what a finger sees) and
 // the pointer target is the whole 60 px track, so a drag never needs pixel aim.
@@ -75,6 +75,10 @@ const ticks = range ? railTicks(range, { step, tokens: ctx.tokens || [] }) : { m
 // snap source that knows how big *this* element is. Only a length gets them, and
 // only when the sheet read a real size — see fractionSnaps.
 const fractions = range ? fractionSnaps(range, ctx) : [];
+// The durations a transition actually uses (100/150/200/300 ms). Dragging to an
+// exact 150 ms on a 0…2000 ms rail is not a gesture a thumb can make, so for the
+// time family these are one tap each — the mock's third time snap source.
+const presets = range ? timePresets(range, ctx) : [];
 const ratio = range ? valueToRatio(info.number, range) : 0;
 // The off-scale ghost: the page's nearest on-scale value, drawn dashed and not
 // draggable. `ctx.nearest` comes from the same snapValue reading the sheet's
@@ -296,6 +300,18 @@ onClick: () => { if (u.ok) props.onChange(u.value); }
 // in this row could actually make the change.
 equivalent
 ? h('span', { class: 'inspector__rail-equiv' }, '= ' + equivalent)
+: null,
+presets.length
+? h('div', { class: 'inspector__rail-presets', role: 'group', 'aria-label': 'Common durations' },
+presets.map((p) => h('button', {
+class: 'inspector__rail-presetchip' + (info.number === p.number ? ' is-on' : ''),
+type: 'button',
+key: 'd' + p.number,
+'aria-pressed': String(info.number === p.number),
+title: 'Set ' + prop + ' to ' + p.label,
+onClick: () => write(p.number)
+}, p.label))
+)
 : null,
 ctx.scaleNote
 ? h('span', { class: 'inspector__rail-mini' }, ctx.scaleNote)

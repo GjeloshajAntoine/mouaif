@@ -430,6 +430,25 @@ out.push({ label: f.label, fraction: f.fraction, number: n, ratio: valueToRatio(
 }
 return out;
 }
+// TIME_PRESETS — the durations a transition actually uses. The mock lists
+// 100/150/200/300 ms, and they are worth a tap because they are the values a
+// designer names ("a quick fade is 150") and because hitting 150 ms on a
+// 0…2000 ms rail by dragging is not a realistic gesture.
+export const TIME_PRESETS = [100, 150, 200, 300];
+// timePresets — those durations as `{ number, label }` in the rail's own unit,
+// with the ones outside the range dropped. A rail already in seconds gets
+// `0.1s`, not `100ms`, because the chip writes what the field would hold.
+export function timePresets(range, ctx) {
+if (!range || range.family !== 'time') return [];
+const inSeconds = String(range.unit || '').toLowerCase() === 's';
+const out = [];
+for (const ms of TIME_PRESETS) {
+const n = Math.round((inSeconds ? ms / 1000 : ms) * 1e4) / 1e4;
+if (n < range.min || n > range.max) continue;
+out.push({ number: n, label: formatNumber(n) + (range.unit || '') });
+}
+return out;
+}
 // railLabel — the readout beside the rail, in the mock's shape: the number and
 // its unit, no trailing zeros. A `null` ratio (an unparsable value) reads as an
 // empty string so the control shows nothing rather than a zero.

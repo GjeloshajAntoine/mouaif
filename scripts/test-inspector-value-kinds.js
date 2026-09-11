@@ -297,6 +297,24 @@ check('the switch keeps the property being edited',
     /bases: bases \|\| prev\.bases \|\| null/.test(stylesSource));
 }
 
+// ---- easing presets ----------------------------------------------------
+//
+// `transition-timing-function` is a keyword property whose whole choice set is
+// worth segments: `cubic-bezier(0.4, 0, 0.2, 1)` is not something anyone types
+// on a phone, and the mock calls these "easing presets".
+check('timing-function offers the easing keywords',
+['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out'].every((k) => VK.keywordsFor('transition-timing-function').includes(k)),
+VK.keywordsFor('transition-timing-function').join(','));
+check('the animation side gets the same set',
+['ease', 'linear', 'ease-in', 'ease-out', 'ease-in-out'].every((k) => VK.keywordsFor('animation-timing-function').includes(k)));
+check('stepped easing is offered too',
+VK.keywordsFor('transition-timing-function').includes('step-start')
+&& VK.keywordsFor('transition-timing-function').includes('step-end'));
+check('the CSS-wide keywords come last',
+VK.keywordsFor('transition-timing-function').slice(-4).join(',') === 'inherit,initial,unset,revert');
+check('easing is not offered for a property that does not take it',
+!VK.keywordsFor('display').includes('ease-in-out'));
+
 // ---- summary -----------------------------------------------------------
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
