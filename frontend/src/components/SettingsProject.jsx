@@ -990,63 +990,52 @@ else if (groupId === 'report_progress') pickProgressMode(mode);
   }
 
   // What the model receives for a representative file-tool result under the
-  // selected { size, structure } pair. This mirrors src/toolFeedback.js for
-  // ASCII text: structure first, then the byte cap, then 75/25 head-tail
-  // truncation with the standard marker. The sample is deliberately larger
-  // than every finite cap, so each size setting has a visible effect.
-  function exampleFor(size, structure) {
-    const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, full: 4, extensive: Infinity };
-    const BASE_MAX_BYTES = 64 * 1024;
-    const MIN_MAX_BYTES = 4 * 1024;
-    const utf8Len = (s) => new TextEncoder().encode(s).length;
-
-    // A representative `list_files` result from a real (monorepo-shaped)
-// project. This is the compact format the file tools produce: one
-// `# Listing`/`# Count` header, then each directory printed once as a
-// `# <dir>/` group header with bare basenames indented under it. The
-// model does not see a JSON envelope for successful file-tool output.
-// The tree is built from believable directory + file names (not a wall
-// of numbered placeholders), and is sized so the finite caps truncate
-// a real listing rather than a synthetic one.
+// selected { size, structure } pair. This mirrors src/toolFeedback.js for
+// ASCII text: structure first, then the byte cap, then 75/25 head-tail
+// truncation with the standard marker.
+function exampleFor(size, structure) {
+const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, full: 4, extensive: Infinity };
+const BASE_MAX_BYTES = 64 * 1024;
+const MIN_MAX_BYTES = 4 * 1024;
+const utf8Len = (s) => new TextEncoder().encode(s).length;
+// A representative `list_files` result from a monorepo-shaped project, in
+// the compact format the file tools produce: one `# Listing`/`# Count`
+// header, then each directory printed once as a `# <dir>/` group header
+// with bare basenames indented under it — no JSON envelope. Rather than
+// spelling every directory out, the tree is a small cross-product of a
+// few hand-picked roots, domain prefixes, module stems and variants, so a
+// handful of lines expands into hundreds of directories and comfortably
+// exceeds every finite size cap.
 const dirRows = [];
 function addDir(dir, names) {
 dirRows.push('# ' + dir);
 for (const name of names) dirRows.push('  ' + name);
 }
-// Project root and core modules (sparse, meaningful).
-addDir('src/', ['index.js', 'cli.js', 'server.js', 'ai.js', 'auth.js', 'settings.js', 'messages.js', 'usage.js', 'util.js', 'trace.js', 'tags.js', 'chats.js', 'projects.js', 'mcp.js', 'push.js', 'qr.js', 'files.js', 'inspector.js', 'live-chat.js', 'agentSkills.js', 'promptProfiles.js', 'toolFeedback.js', 'custom-actions.js', 'access-auth.js', 'constants.js']);
-addDir('src/components/', ['App.jsx', 'ToolBar.jsx', 'Composer.jsx', 'Transcript.jsx', 'SettingsView.jsx', 'Inspector.jsx', 'ModelPicker.jsx', 'ProjectCard.jsx', 'ProviderList.jsx', 'DraftCraft.jsx', 'PushBanner.jsx', 'ScrollToTop.jsx', 'FileEditor.jsx', 'Annotation.jsx', 'WebpreviewDock.jsx', 'Projects.jsx', 'Home.jsx']);
-addDir('src/components/chat/', ['Chat.jsx', 'cards.js', 'live.js', 'stream.js', 'thinking.js', 'tools.js', 'utils.js', 'scroll.js', 'pagination.js', 'retry.js', 'usage.js', 'meta.js', 'annotation.js', 'files.js', 'composer.js', 'stream-utils.js']);
-addDir('src/components/settings/', ['SettingsAgents.jsx', 'SettingsMcp.jsx', 'SettingsProviders.jsx', 'SettingsPrompts.jsx', 'SettingsTags.jsx', 'SettingsActions.jsx', 'SettingsDefaults.jsx', 'McpAuthSeg.jsx', 'ToolSettingCard.jsx', 'McpArguments.jsx', 'agentNavigation.js', 'projectQS.js', 'agentAutosave.js', 'actionSchema.js', 'toolAuth.js']);
-addDir('src/components/inspector/', ['OverviewPanel.jsx', 'NetworkPanel.jsx', 'ConsolePanel.jsx', 'PreviewPanel.jsx', 'DetailSheet.jsx', 'ConfirmSheet.jsx', 'events.js', 'cdp.js', 'format.js']);
-addDir('src/tools/', ['shell.js', 'files.js', 'subagent.js', 'ask.js', 'task.js', 'progress.js', 'restart.js', 'webpreview.js', 'authorization.js', 'timeout.js', 'retry.js', 'limits.js', 'feedback.js', 'registry.js', 'middleware.js']);
-addDir('src/providers/', ['base.js', 'index.js', 'openai.js', 'anthropic.js', 'gemini.js', 'ollama.js', 'openrouter.js', 'copilot.js', 'cost.js', 'models.js', 'keys.js', 'registry.js']);
-addDir('src/lib/', ['db.js', 'store.js', 'config.js', 'logger.js', 'format.js', 'parse.js', 'http.js', 'sse.js', 'emit.js', 'cache.js', 'throttle.js', 'traverse.js', 'normalize.js', 'bytes.js', 'events.js', 'queue.js', 'promises.js', 'timers.js', 'pool.js']);
-addDir('frontend/src/', ['main.jsx', 'api.js', 'router.js', 'markdown.js', 'virtual-list.js', 'pwa-connectivity.js', 'index.css', 'sw-registration.js', 'usage.js']);
-addDir('frontend/src/styles/', ['index.css', 'chat.css', 'inspector.css', 'settings.css', 'tokens.css', 'animations.css']);
-addDir('docs/', ['README.md', 'decisions.md', 'architecture.md', 'roadmap.md', 'contributing.md', 'changelog.md', 'licensing.md', 'guidelines.md']);
-addDir('docs/features/', ['file-tools.md', 'shell-tool.md', 'tool-authorization.md', 'tool-output.md', 'mcp-oauth.md', 'custom-prompts.md', 'webpreview.md', 'inspector.md', 'agent-skills.md', 'openrouter.md', 'ai-client.md', 'tagging.md', 'trace.md', 'live-chat.md']);
-// Feature modules — a large monorepo repeats a handful of plausible
-// module names across the tree, each with the same varied file set.
-const featureNames = ['auth', 'chat', 'sharing', 'search', 'push', 'billing', 'analytics', 'settings', 'telemetry', 'permissions', 'notifications', 'caching', 'imports', 'exports', 'uploads', 'sync', 'preferences', 'onboarding', 'invites', 'audit', 'live', 'collab', 'feedback', 'metrics', 'profile', 'threads', 'signup', 'login', 'reports', 'domains', 'locations', 'themes', 'locales', 'integrations', 'webhooks', 'payouts'];
-const featureFiles = ['index.js', 'actions.js', 'reducer.js', 'selectors.js', 'types.ts', 'api.js', 'hooks.js', 'utils.js', 'constants.js', 'validators.js', 'schema.ts', 'state.ts', 'store.ts', 'effects.ts'];
-const featureSuffixes = ['', '-core', '-ui', '-shared', '-utils', '-hooks'];
-const featureCount = 110;
-for (let i = 0; i < featureCount; i++) {
-const name = featureNames[i % featureNames.length] + featureSuffixes[Math.floor(i / featureNames.length)];
-addDir('src/features/' + name + '/', featureFiles);
+// Hand-written spine: the top of the listing reads like a real project.
+addDir('bin/', ['mouaif.js', 'mouaif-mcp.js']);
+addDir('src/', ['index.js', 'cli.js', 'server.js', 'ai.js', 'settings.js', 'toolFeedback.js']);
+addDir('frontend/src/', ['main.jsx', 'api.js', 'router.js', 'virtual-list.js']);
+addDir('frontend/src/styles/', ['index.css', 'chat.css', 'inspector.css']);
+addDir('docs/features/', ['file-tools.md', 'shell-tool.md', 'tool-output.md', 'trace.md']);
+// The bulk of the sample is one nested loop — module stems × domain
+// prefixes × variants × sub-concerns. Each resulting directory holds the
+// same unit of files, so the combinations grow multiplicatively while the
+// source stays tiny: ~14 stems × 4 prefixes × 4 variants × 4 concerns is
+// ~900 directories / ~5.4k files, comfortably past every finite size cap.
+const moduleStems = ['auth', 'chat', 'billing', 'search', 'push', 'settings', 'telemetry', 'caching', 'uploads', 'sync', 'onboarding', 'metrics', 'threads', 'webhooks'];
+const domainPrefixes = ['src/features/', 'src/components/', 'src/routes/', 'tests/unit/'];
+const variants = ['', '-core', '-ui', '-shared'];
+const concerns = ['', 'data', 'logic', 'view'];
+const unitFiles = ['index.js', 'actions.js', 'reducer.js', 'types.ts', 'hooks.js', 'schema.ts'];
+for (const prefix of domainPrefixes) {
+for (const stem of moduleStems) {
+for (const variant of variants) {
+for (const concern of concerns) {
+addDir(prefix + stem + variant + (concern ? '/' + concern : '') + '/', unitFiles);
 }
-// Component domains × base components — a realistic component library
-// that repeats a compact set of primitives across many domains.
-const compDomains = ['Profile', 'Account', 'Billing', 'Settings', 'Dashboard', 'Chat', 'Search', 'Library', 'Editor', 'Preview', 'Export', 'Import', 'Sync', 'Shared', 'Team', 'Admin', 'Metrics', 'Reports', 'Regions', 'Users', 'Groups', 'Blocks', 'Sources', 'Targets', 'Schema', 'Templates', 'Snippets', 'Themes', 'Analytics', 'Events', 'Header', 'Footer', 'Modals', 'Panels', 'Cards', 'Buttons', 'Drawers', 'Menus', 'Bars', 'Wells'];
-const compBase = ['Card', 'Row', 'Modal', 'Button', 'Input', 'List', 'Table', 'Badge', 'Avatar', 'Panel', 'Sheet', 'Drawer', 'Menu', 'Tabs', 'Skeleton', 'EmptyState', 'Spinner', 'Tooltip', 'Toast', 'Switch', 'Slider', 'Tag', 'Alert', 'Banner', 'Select', 'Checkbox', 'Radio', 'Stepper', 'Progress', 'Icon', 'Label', 'Group', 'Stack'];
-const compCount = 130;
-for (let i = 0; i < compCount; i++) {
-const name = compDomains[i % compDomains.length] + featureSuffixes[Math.floor(i / compDomains.length)];
-addDir('src/components/' + name + '/', compBase.map((c) => c + '.jsx'));
 }
-// Unit tests mirroring the feature modules.
-addDir('tests/unit/', featureNames.map((f) => f + '.test.js'));
+}
+}
 const fileCount = dirRows.filter((r) => r.startsWith('  ')).length;
 const lines = ['# Listing: **/*.{js,jsx,ts,tsx,md,css}', '# Count: ' + fileCount, '# Skipped: 12', ''].concat(dirRows);
 const raw = lines.join('\n');
