@@ -87,14 +87,8 @@ Changing the password revokes other sessions and removes existing passkeys.
 
 ## Authenticate command-line requests
 
-When access authentication is enabled, use HTTP Basic authentication for commands such as `curl`:
+When access authentication is enabled, command-line requests such as `curl` must send HTTP Basic authentication with the access username and password you created during setup. Browser sign-ins use a session cookie automatically.
 
-```bash
-curl --user 'alice:a-long-password' \
-  http://127.0.0.1:5732/api/settings
-```
-
-Browser sign-ins use a session cookie automatically.
 
 ## Next steps
 

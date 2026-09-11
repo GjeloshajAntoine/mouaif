@@ -26,9 +26,9 @@ The **Tools** strip is collapsible: tap **Tools** to fold the zoom / color / mar
 3. Draw freehand marks, add numbered/lettered marker dots with text, and optionally add a note, exactly as in the Inspector flow.
 4. Tap **Use annotated image** to replace that attachment in-place and append the annotation note to the composer without replacing existing instructions. The text and annotated image are saved together immediately, and the annotated version is the one that gets sent.
 
-The annotator keeps a **Reset** button in its footer (only when the image has already been annotated) so you can revert to the untouched original from inside the popup. Reset removes only that image's unchanged generated annotation block; user-written or edited text is preserved. A larger compact **remove** target on the chip still deletes the attachment. Reset metadata stays client-only and public attachment fields are allowlisted before draft storage or provider requests.
+The annotator keeps a **Reset** button in its footer (only when the image has already been annotated) so you can revert to the untouched original from inside the popup. Reset removes only that image's unchanged generated annotation block; user-written or edited text is preserved. A larger compact **remove** target on the chip still deletes the attachment.
 
-Annotated images are exported as PNG and automatically downscaled when necessary to stay within the server's 12 MiB data-URL limit. If an image cannot be exported within that limit, the annotator remains open and shows an error instead of silently sending without the image.
+Annotated images are exported as PNG and downscaled automatically when they are large. If an image cannot be exported, the annotator stays open and shows an error instead of silently sending without the image.
 
 ### Selected file code
 
@@ -39,23 +39,9 @@ Annotated images are exported as PNG and automatically downscaled when necessary
 
 Draft Craft appends only the file path with line range and the selected code. It adds no prose or Markdown fence around the selection. Existing draft text is preserved.
 
-## Implementation notes
+## Good to know
 
-Draft Craft uses the existing chat REST API. It reads the latest chat before patching so existing draft text and image attachments are retained.
-
-```http
-GET /api/chats/:id?projectDir=/path/to/project
-PATCH /api/chats/:id
-Content-Type: application/json
-{
-"projectDir": "/path/to/project",
-"draft": "existing draft\n\nselected code",
-"draftAttachments": []
-}
-```
-
-Image drafts keep the existing eight-image limit. Draft Craft does not send a message or start a model run.
-
-The annotator is reusable across surfaces. When a callback is provided (composer replace-in-place) it hands the annotated image back directly instead of opening the chat-picker sheet; the Inspector path keeps the sheet. The composer keeps the original image data URL on the chip so **reset** can restore it, then strips that marker before the send, mention, or draft-persist path.
-
-Project and chat loading are tracked independently so an overlapping response cannot leave the picker in a permanent loading state. Requests also time out with a retryable error instead of showing an endless spinner.
+- Adding to a draft never sends the message and never starts a model run — you review the draft and send it yourself.
+- A draft holds up to eight images in total, counted together with any images you already attached.
+- Draft text and attachments that are already in the composer are preserved; Draft Craft only appends to them.
+- If the project or chat list cannot be loaded, the picker shows a retryable error instead of a spinner that never ends.
