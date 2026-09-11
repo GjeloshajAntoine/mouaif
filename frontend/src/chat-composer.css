@@ -302,11 +302,14 @@ padding: 3px 2px 3px 4px;
   position: relative;
 }
 
-/* Toolbar buttons live inline inside the composer pill. 44 px each: the
-   pill grows to a normal mobile composer height, and the buttons stop
-   being the smallest targets on the screen. */
+/* Toolbar buttons live inline inside the composer pill. Compact glyph
+   controls at --tap-sm: the pill is the primary input and a 44 px row of
+   these makes it a 52 px slab for one line of text. Each button is
+   separated from its neighbour by the textarea, so the 32 px paint is the
+   target — `.tap-target` is NOT safe here, because an expanded hit area
+   would sit over the textarea and steal the tap that was meant to focus it. */
 .chat-view__toolbar-btn {
-  width: var(--tap); height: var(--tap); padding: 0; min-height: var(--tap);
+  width: var(--tap-sm); height: var(--tap-sm); padding: 0; min-height: var(--tap-sm);
   flex: 0 0 auto;
   color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
@@ -324,13 +327,13 @@ padding: 3px 2px 3px 4px;
   resize: none;
   font-family: inherit;
   font-size: 1rem;
-  /* 44 px with the padding above/below the line box, so a single line
-     sits vertically centred in a full-height target instead of leaving a
-     strip of dead space at the bottom of the pill. */
-  min-height: var(--tap);
+  /* One text line plus padding: a taller box leaves an empty band under the
+     caret on the first line, which is what made the composer look oversized.
+     The box still grows with the text, up to max-height. */
+  min-height: var(--tap-sm);
   max-height: 120px;
   line-height: 20px;
-  padding: 12px 4px;
+  padding: 6px 4px;
   width: auto;
   color: var(--fg);
   border-radius: 0;
@@ -402,10 +405,10 @@ line-height: 15px;
 pointer-events: none;
 }
 .chat-view__send {
-  width: var(--tap);
-  height: var(--tap);
+  width: var(--tap-sm);
+  height: var(--tap-sm);
   padding: 0;
-  min-height: var(--tap);
+  min-height: var(--tap-sm);
   flex-shrink: 0;
   border-radius: 50%;
   margin: 0;
@@ -443,7 +446,7 @@ pointer-events: none;
 }
 
 .chat-view__image-btn {
-  width: var(--tap); height: var(--tap); padding: 0; min-height: var(--tap);
+  width: var(--tap-sm); height: var(--tap-sm); padding: 0; min-height: var(--tap-sm);
   flex: 0 0 auto; align-self: flex-start;
   color: var(--fg-soft); background: transparent; border: 0; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;

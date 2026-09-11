@@ -164,10 +164,15 @@ color: var(--muted);
 flex: 0 1 auto;
 min-width: 72px;
 max-width: 110px;
-/* A form control, so the hit area cannot be faked with a pseudo-element:
-  the box itself is the target. 26 px was below every touch minimum. */
-height: var(--tap);
-min-height: var(--tap);
+/* Compact on purpose. The 44 px floor is right for a control whose box can
+   stay small — a glyph button grows its hit area with `.tap-target` — but a
+   <select> *is* its box: there is no way to keep a 26 px look and a 44 px
+   target. At 44 px this control and the model picker beside it doubled the
+   chat header, so both stay compact and rely on being wide: the effective
+   target is 110 x 26, not a 26 px square. Reverting this means owning the
+   header height, not the target size — see docs/features/responsive-layout.md. */
+height: 26px;
+min-height: 26px;
 padding: 0 16px 0 8px;
   font-size: 0.72rem;
   color: var(--fg);
@@ -194,8 +199,9 @@ padding: 0 16px 0 8px;
 .chat-view__thinking-custom {
 flex: 0 1 auto;
 max-width: 90px;
-height: var(--tap);
-min-height: var(--tap);
+/* Kept in step with the select above: same row, same reason. */
+height: 26px;
+min-height: 26px;
 padding: 0 6px;
   font-size: 0.72rem;
   color: var(--fg);
@@ -831,14 +837,15 @@ font-size: 0.72rem;
 .mp--sheet > .mp__trigger .mp__provider {
 display: none;
 }
-/* The chat header uses the same visual treatment in a denser control.
-It is still a full 44 px target: on the denser row the height comes from
-the row, and the picker is one of the two most-tapped controls in the
-app (the model). Other sheet triggers keep `.mp__trigger`'s mobile-sized
-minimum height. */
+/* The chat header uses the same visual treatment in a denser control, and
+stays at 26 px for the same reason as the thinking select beside it: this
+trigger IS the box, so a 44 px target means a 44 px box, and the pair then
+takes 44 px of a header that fits in 94. It is 200 px wide, so the target
+is comfortable at this height. Other sheet triggers keep `.mp__trigger`'s
+mobile-sized height. */
 .mp--chat > .mp__trigger {
-min-height: var(--tap);
-height: var(--tap);
+min-height: 26px;
+height: 26px;
 padding-block: 0;
 }
 

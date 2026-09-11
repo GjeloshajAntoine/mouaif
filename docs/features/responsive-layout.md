@@ -46,18 +46,25 @@ Two constraints shaped the approach:
 
 Touch targets: the frame, the tab bar and every row keep their ≥ 44 px sizing at all widths.
 
-### The 44 px floor, and the one helper that fakes it
+### The 44 px floor, and where it deliberately stops
 `--tap` (44px) in `frontend/src/base.css` is the minimum height for a control. A pass over the phone-width UI closed the gaps where a control that *looks* like a target was smaller than one:
 
 | Control | Before | Now | Why it matters |
 | --- | --- | --- | --- |
-| Chat title (**Switch chat**) | 20 px tall | `--tap` | The only way to switch chats from the chat screen was the smallest target on it. |
-| Model picker (`ModelPickerField`, chat header) | 26 px | `--tap` | A `<select>`-sized form control: the box *is* the hit area, so no pseudo-element can grow it. |
-| Thinking level select / custom input | 26 px | `--tap` | Same. |
-| Chat **Back**, sub-page **Back** (`.view-back`) | 32 px | `--tap` | Navigation, and both sit alone at the start of a row. |
-| Composer textarea, send, image, tools | 28–32 px | `--tap` | The composer pill is ~52 px tall instead of ~40 px; the transcript loses ~26 px on a 780 px phone. |
+| Chat title (**Switch chat**) | 20 px tall | `--tap` | The only way to switch chats from the chat screen. It fills the row, so the head does not grow. |
+| Chat **Back**, sub-page **Back** (`.view-back`) | 32 px | `--tap` | Navigation, and both sit alone at the start of a row, so the bigger target costs no layout. |
 | Project settings select | 32 px | `--tap` | Matches every other `.input` in the settings forms. |
 | PWA banner **Reload** / **Retry** | 65 × 28 | 44 px hit area | `.tap-target`, so the transient strip does not get taller. |
+
+Three controls stay compact, because for them a 44 px target *is* a 44 px box and that would visibly bloat the densest screen in the app:
+
+| Control | Size | Why it stays small |
+| --- | --- | --- |
+| Model picker (`ModelPickerField`, chat header) | 200 × 26 | The trigger is its own box. At 44 px the model row grew 26 → 44 and the chat head 94 → 112 px. It is 200 px wide, so the target is comfortable. |
+| Thinking level select / custom input | 110 × 26 | Same, next to it in the same row. |
+| Composer textarea, send, image, tools | 32 px (pill 40 px) | The composer is the primary input; a 44 px row of glyph buttons made the pill 52 px around a single line of text. `.tap-target` is **not** usable here: an expanded hit area would sit over the textarea and steal the tap meant to focus it, so the paint is the target. |
+
+That trade-off was measured rather than guessed: `head` and the composer pill are back to their previous heights (94 px / 40 px), and the transcript recovers the ~26 px those two rounds had cost it on a 780 px phone.
 
 Where a control is a **glyph-only accessory standing next to another one**, the paint stays at `--tap-sm` (32 px) and only the hit area grows, via the `.tap-target` helper:
 
@@ -74,9 +81,10 @@ Where a control is a **glyph-only accessory standing next to another one**, the 
 }
 ```
 
-The pseudo-element belongs to the control, so a tap inside it activates that control — no wrapper element and no JS. It is only safe on a control that **stands alone**: two expanded areas that overlap hand the tap to whichever control comes later in the document, which would silently make the earlier one unreachable in the overlap. Two small controls side by side therefore need the control itself sized up.
+The pseudo-element belongs to the control, so a tap inside it activates that control — no wrapper element and no JS. It is only safe on a control that **stands alone**: two expanded areas that overlap hand the tap to whichever control comes later in the document, which would silently make the earlier one unreachable in the overlap. Two small controls side by side therefore need the control itself sized up — and a control next to a text field (the composer) must not use it at all.
 
-The dense settings lists are deliberately not part of this pass: the tool tree in Settings → Project pairs a 20 px checkbox with a 24–26 px row (and its name text is intentionally not a label, so tapping a name never flips a tool), and the segmented pills are 26 px. Raising those to 44 px doubles the height of a list of ~30 tools, which is a density decision for that list rather than a one-line fix. The two stacked chat-header glyph buttons (project settings, tools) stay at 32 px for the same reason: the column is 2 × 32 + 2 px, and at 44 px each the header would grow by ~24 px.
+The dense settings lists are also deliberately not part of this pass: the tool tree in Settings → Project pairs a 20 px checkbox with a 24–26 px row (and its name text is intentionally not a label, so tapping a name never flips a tool), and the segmented pills are 26 px. Raising those to 44 px doubles the height of a list of ~30 tools, which is a density decision for that list rather than a one-line fix. The two stacked chat-header glyph buttons (project settings, tools) stay at 32 px for the same reason: the column is 2 × 32 + 2 px, and at 44 px each the header would grow by ~24 px.
+
 
 
 ## Related
