@@ -1,0 +1,431 @@
+/* Inspector pick mode — split out of inspector.css.
+   Sections (original inspector.css lines 728–1150):
+     - Inspector: pick mode
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: pick mode -----------------------------------------
+   Tap-to-select is armed from the Styles panel but performed on the
+   preview, two panels away. The banner is the feedback that the tap will
+   select an element instead of clicking the page: it sits over the
+   screenshot (no height cost, and exactly where the finger goes), states
+   the gesture, and carries the Cancel that disarms without a trip back to
+   the Styles panel. The dashed outline on the frame repeats the state
+   around the whole tap surface for anyone who misses the banner. */
+.inspector__pickban {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The Cancel button is already a 44 px target, so the banner adds no
+     vertical padding of its own: on a phone it is an overlay on the
+     screenshot, and every pixel it takes is a pixel of the page hidden. */
+  padding: 0 6px 0 10px;
+  min-height: var(--tap);
+  background: rgba(10, 13, 18, 0.94);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.inspector__pickban--fs {
+  position: sticky;
+  top: 8px;
+  margin: 8px 8px 0;
+  left: auto;
+  right: auto;
+}
+.inspector__pickban-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: inspector__statuspill-pulse 1.2s ease-in-out infinite;
+}
+.inspector__pickban-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+.inspector__pickban-cancel {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 12px;
+}
+.inspector__preview.is-picking .inspector__preview-frame,
+.inspector__preview-fs-frame.is-picking {
+  border-color: var(--accent);
+  cursor: crosshair;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.inspector__preview-frame {
+  /* The preview shows the page at its natural size and scrolls inside
+     the frame (the screenshot is a full-page capture, taller than the
+     frame). This is a mobile-first "scroll through the page" preview:
+     the image keeps its intrinsic dimensions, so a wide page is pannable
+     horizontally, a tall page vertically, and tapping any visible pixel
+     forwards a click to the page. */
+  width: 100%;
+  height: 56dvh;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+}
+.inspector__preview-frame::-webkit-scrollbar { width: 6px; height: 6px; }
+.inspector__preview-frame::-webkit-scrollbar-thumb {
+background: var(--border-strong);
+border-radius: var(--r-sm);
+}
+/* Preview footer — a single row holding the live status label on the left
+and the fit/natural-size (zoom) toggle on the right. Keeps the preview's
+dynamic state out of the screenshot while staying tappable. */
+.inspector__preview-foot {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 8px;
+}
+.inspector__zoom {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+flex: 0 0 auto;
+min-height: 44px;
+min-width: 44px;
+padding: 4px 10px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: transparent;
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.inspector__zoom:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__zoom.is-on {
+color: var(--accent);
+border-color: var(--accent);
+background: var(--surface-2);
+}
+.inspector__zoom svg { display: block; }
+.inspector__preview-img {
+display: block;
+width: 100%;
+height: auto;
+max-width: none;
+/* The image must fill the frame width (not render at device pixels —
+on high-DPR captures the raw shot is 2–3× wider than the frame and
+the user would see only a blank corner). Height flows from the
+aspect ratio; the frame scrolls vertically for tall pages and the
+tap-to-click mapping in PreviewPanel scales coordinates back via
+naturalWidth/naturalHeight. */
+}
+/* Natural-size mode: a wide page shows readable text and pans horizontally
+instead of being squashed to a ~30% thumbnail. The width is set inline by the
+panel from the decoded capture (the page's CSS width — a 2x-retina capture is
+halved) because CSS cannot know the image's device pixel ratio; `width: auto`
+is the fallback for the first paint, before a capture has decoded. height:auto
+preserves the aspect ratio and lets the frame scroll both axes. */
+.inspector__preview-img--size,
+.inspector__preview-fs-img.inspector__preview-img--size {
+width: auto;
+height: auto;
+max-width: none;
+}
+/* The Preview panel header replaces its text label with an icon-only
+full-screen button. It mirrors the adjacent refresh/eye icon buttons
+(full-size 44 px tap targets) so the header stays one balanced row;
+tapping it opens the viewport-spanning preview overlay below. The
+button carries the "Preview" label context in its accessible name. */
+.inspector__panel-label--fs {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-label--fs:hover { background: var(--surface-3); color: var(--fg); }
+/* "Type into page" bar — a compact text input + Send (and optional Enter)
+row that forwards typed text to the focused element in the inspected page
+via CDP Input.insertText. Sits between the preview frame and the status
+line so it never covers the screenshot; mirrors the .input/.btn sizes the
+rest of the Inspector uses. */
+.inspector__typebar {
+display: flex;
+align-items: center;
+gap: 6px;
+flex: 0 0 auto;
+}
+.inspector__typebar-input {
+flex: 1 1 auto;
+min-width: 0;
+}
+.inspector__typebar-send,
+.inspector__typebar-enter {
+flex: 0 0 auto;
+min-width: 44px;
+min-height: 44px;
+}
+.inspector__typebar--fs {
+width: 100%;
+padding: 8px 10px;
+background: var(--surface-2);
+border-top: 1px solid var(--border);
+}
+.inspector__panel-typebar {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-typebar:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-typebar:disabled { opacity: 0.5; cursor: default; }
+/* Full-screen live preview viewport. Portaled to document.body so it sits
+above the app dock (same approach as the Draft Craft / webpreview / Git
+overlays). The screenshot keeps its natural size and scrolls inside the
+frame; tap-to-click still forwards to the page via the same mapping.
+The header mirrors the .wp__head pattern from the web preview modal so
+both viewers read the same way at a glance: page title + host on the
+left, Refresh / Size / Close on the right, with the Refresh button
+tucking the label under the icon on narrow phones. */
+.inspector__preview-fs {
+position: fixed;
+inset: 0;
+z-index: 90;
+background: var(--bg);
+display: flex;
+flex-direction: column;
+padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+.inspector__preview-fs-head {
+position: relative;
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 5px 10px;
+background: var(--surface-2);
+border-bottom: 1px solid var(--border);
+min-height: 44px;
+}
+.inspector__preview-fs-text {
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 2px;
+overflow: hidden;
+}
+.inspector__preview-fs-title {
+font-size: 0.84rem;
+font-weight: 600;
+color: var(--fg);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__preview-fs-host {
+font-size: 0.66rem;
+color: var(--muted-2);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__preview-fs-actions {
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+gap: 4px;
+}
+.inspector__preview-fs-refresh {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+min-width: 44px;
+min-height: 44px;
+padding: 4px 10px;
+font: inherit;
+font-size: 0.74rem;
+font-weight: 600;
+color: var(--accent);
+background: transparent;
+border: 1px solid var(--accent);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.inspector__preview-fs-refresh:hover,
+.inspector__preview-fs-refresh:focus-visible {
+background: var(--accent);
+color: var(--on-accent);
+border-color: var(--accent);
+outline: 0;
+}
+.inspector__preview-fs-refresh:disabled {
+opacity: 0.6;
+cursor: default;
+}
+.inspector__preview-fs-size {
+flex: 0 1 7.5rem;
+min-width: 0;
+min-height: 44px;
+padding: 0 0.5rem;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+.inspector__preview-fs-size:focus-visible {
+border-color: var(--accent);
+outline: 0;
+}
+.inspector__preview-fs-zoom {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+flex: 0 0 auto;
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
+border: 1px solid var(--border);
+background: transparent;
+color: var(--fg-soft);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.inspector__preview-fs-zoom:hover,
+.inspector__preview-fs-zoom:focus-visible {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
+.inspector__preview-fs-zoom.is-on {
+color: var(--accent);
+border-color: var(--accent);
+background: var(--surface-2);
+}
+.inspector__preview-fs-close {
+width: 44px;
+height: 44px;
+min-width: 44px;
+min-height: 44px;
+border: 0;
+background: transparent;
+color: var(--fg-soft);
+border-radius: 50%;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 80ms ease, color 80ms ease;
+}
+.inspector__preview-fs-close:hover,
+.inspector__preview-fs-close:focus-visible {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
+@media (max-width: 430px) {
+/* Mirror the .wp__head mobile wrap: the title block grows to a
+flex-basis of `calc(100% - 52px)` so the actions row keeps an
+inline band without the title running under the close button.
+The Refresh label collapses to icon-only and the Size select
+widens to fill the remaining space; on very narrow viewports
+this stays comfortably within the 44 px tap minimum. */
+.inspector__preview-fs-head {
+align-items: flex-start;
+flex-wrap: wrap;
+}
+.inspector__preview-fs-text {
+flex: 0 0 calc(100% - 52px);
+min-height: 44px;
+justify-content: center;
+}
+.inspector__preview-fs-actions {
+width: 100%;
+}
+.inspector__preview-fs-refresh {
+min-width: 44px;
+padding: 4px;
+}
+.inspector__preview-fs-refresh span {
+display: none;
+}
+.inspector__preview-fs-size {
+flex: 1 1 0;
+}
+.inspector__preview-fs-close {
+position: absolute;
+top: calc(var(--safe-top, 0px) + 8px);
+right: 4px;
+}
+}
+.inspector__preview-fs-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.inspector__preview-fs-frame::-webkit-scrollbar { width: 6px; height: 6px; }
+.inspector__preview-fs-frame::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-sm);
+}
+.inspector__preview-fs-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: none;
+}

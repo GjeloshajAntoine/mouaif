@@ -32,7 +32,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+// The Inspector CSS is split into per-panel parts behind an @import
+// entry (frontend/src/inspector.css); readInspectorCss() inlines them so
+// these regex checks still see the whole cascade.
+const { readInspectorCss } = require('./inspector-css.js');
+const read = (p) => (p === 'frontend/src/inspector.css'
+  ? readInspectorCss()
+  : fs.readFileSync(path.join(root, p), 'utf8'));
 
 const inspector = read('frontend/src/components/Inspector.jsx');
 const events = read('frontend/src/components/inspector/events.js');

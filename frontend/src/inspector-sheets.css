@@ -1,0 +1,160 @@
+/* Inspector sheets — split out of inspector.css.
+   Sections (original inspector.css lines 1286–1435):
+     - Inspector: detail sheet
+     - Inspector: confirm sheet
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: detail sheet -------------------------------------- */
+
+.inspector__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+  overscroll-behavior: contain;
+}
+.inspector__sheet {
+  background: var(--surface-2);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  max-height: 80dvh;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.3);
+}
+.inspector__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+/* Inner scroller for the detail sheet. The sheet itself is overflow:hidden
+   with max-height:80dvh; the head is fixed (flex:0 0 0) and everything else
+   sits inside this flex child so swipes scroll the sheet, not the page.
+
+   flex-basis is auto (not 0) so the sheet still hugs short content — when
+   head + body intrinsic < 80dvh the sheet sizes to content and the body
+   keeps its intrinsic height. Only when the parent constraint (the
+   max-height) kicks in does the body shrink and overflow-y:auto kicks in,
+   so long content scrolls within the sheet instead of overflowing it. */
+.inspector__sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px calc(12px + var(--safe-bottom, 0px)) 12px;
+}
+.inspector__sheet-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.inspector__sheet-close { font-size: 0.78rem; }
+.inspector__sheet-h {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+  margin: 8px 0 4px 0;
+}
+.inspector__kv {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+}
+.inspector__kv dt {
+  font-weight: 700;
+  color: var(--fg-soft);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.inspector__kv dd {
+  margin: 0 0 0 8px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  word-break: break-word;
+}
+.inspector__headers {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.inspector__body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+/* ---- Inspector: confirm sheet -------------------------------------- */
+/* Reuses the .inspector__overlay / .inspector__sheet primitive from the
+detail sheet, but adds a tighter body and a row of two buttons so a
+short message + two 44 px tap targets fits the sheet on the smallest
+phones without scrolling. The cancel button uses --surface to stay
+neutral against the confirm button's --danger variant. */
+.inspector__sheet--confirm {
+max-height: 50dvh;
+}
+.inspector__sheet-body--confirm {
+padding: 12px 14px calc(16px + var(--safe-bottom, 0px)) 14px;
+}
+.inspector__confirm-msg {
+margin: 4px 2px 12px;
+color: var(--fg);
+font-size: 0.9rem;
+line-height: 1.45;
+}
+.inspector__confirm-actions {
+display: flex;
+gap: 8px;
+justify-content: flex-end;
+}
+.inspector__confirm-actions .btn {
+min-height: 44px;
+min-width: 88px;
+padding: 0 16px;
+font-size: 0.85rem;
+}
+.inspector__confirm-actions .btn[data-danger="1"] {
+background: var(--danger);
+color: var(--bg);
+border-color: transparent;
+}
+.inspector__confirm-actions .btn[data-danger="1"]:hover {
+background: var(--danger-soft);
+color: var(--danger);
+}

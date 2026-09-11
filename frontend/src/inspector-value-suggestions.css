@@ -1,0 +1,240 @@
+/* Inspector value suggestions — split out of inspector.css.
+   Sections (original inspector.css lines 1776–2004):
+     - Inspector: console row line-clamp
+     - Inspector: value suggestions (edit sheet)
+     - Inspector: scale + contrast guidance (Part V3)
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: console row line-clamp -------------------------- */
+/* Previously the row text was a single nowrap line; anything past one
+   line disappeared behind ellipsis on a 360 px phone. The current
+   64 px row height fits a 2-line wrap; line-clamp keeps longer
+   messages legible without forcing the user into a detail sheet for
+   every long log line. The third-and-later lines still fade out as a
+   soft hint that more exists, and the detail sheet remains the entry
+   point for the full text + stack trace. */
+.inspector__row-body .inspector__row-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  white-space: normal;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
+}
+/* The time stamp is moved from the row's leading slot into the meta
+   line so the level chip + body have the full row width to wrap into.
+   Time + level become a single eyebrow row and the message gets the
+   remaining ~80% of the width. */
+.inspector__row--console .inspector__row-time { display: none; }
+.inspector__row--console .inspector__row-meta {
+  display: block;
+  font-size: 0.6rem;
+  color: var(--muted-2);
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+  margin-bottom: 1px;
+}
+/* The meta line now carries the time first, then the source. Build
+   the prefix in ConsolePanel's renderer (already produces ts in the
+   meta joined with source); here we just give it a stable layout. */
+.inspector__row--console .inspector__row-level { font-size: 0.6rem; padding: 1px 5px; }
+.inspector__row--console .inspector__row-level + .inspector__row-body {
+/* When level comes first (the default layout), give the body a
+width budget that ignores the level chip. */
+flex: 1 1 0;
+min-width: 0;
+}
+/* ---- Inspector: value suggestions (edit sheet) ----------------------
+   The page's own values and tokens for the property being edited, each with its
+   evidence: `16px · 3×` is a value the design already uses three times, and
+   `--space-4 = 16px` is a token that resolves to one. Tapping a chip rewrites
+   the field only — Apply still commits — so a suggestion is as reversible as a
+   typed value. Same 44 px targets as the rest of the sheet. */
+.inspector__suggest {
+display: flex;
+flex-direction: column;
+gap: 8px;
+margin-top: 2px;
+}
+/* The chip row. Each chip is a ≥44 px target (mobile-first rule) and the row
+wraps rather than scrolling: a horizontal scroller inside the sheet would steal
+the vertical drag. `.opt` / `.grp` are the suggestion row's own class names —
+they are not shared with the rest of the panel. */
+.inspector__suggest .grp {
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__suggest .gh {
+display: flex;
+align-items: baseline;
+gap: 4px;
+flex-wrap: wrap;
+font-size: 0.6rem;
+font-weight: 700;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+.inspector__suggest .gh span {
+letter-spacing: 0;
+text-transform: none;
+font-weight: 500;
+}
+.inspector__suggest .opts {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__suggest .opt {
+display: inline-flex;
+align-items: center;
+gap: 6px;
+min-height: 44px;
+padding: 0 11px;
+border-radius: 9px;
+border: 1px solid var(--border-strong);
+background: var(--surface-2);
+color: var(--fg);
+font: inherit;
+font-size: 0.72rem;
+font-family: var(--font-mono);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__suggest .opt:active { transform: scale(0.98); }
+.inspector__suggest-value {
+  font-family: var(--font-mono);
+  /* A shorthand value (`12px 10px 32px`) is a legitimate chip label but wider
+     than a phone: the value ellipsizes and the evidence stays visible, so the
+     chip never wraps to a second line and the row keeps its rhythm. */
+  min-width: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__suggest-ev {
+  font: inherit;
+  font-size: 0.62rem;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+/* The value the element already resolves to: marked, not disabled — picking it
+   back is a legitimate way to undo a pending edit. */
+.inspector__suggest .opt.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+.inspector__suggest .opt.is-current .inspector__suggest-ev {
+  color: var(--accent-hi);
+}
+.inspector__suggest-token {
+border-color: var(--border-strong);
+}
+/* A string value's keyword chips (`inherit`, `unset`, `initial`, `revert`, and a
+  property's own words). They are the only chips a value with no per-kind view
+  gets, so they read as plain words, not as values. */
+.inspector__suggest-word .inspector__suggest-value {
+/* Not the mono value face: a keyword is a word, not a number. */
+font-family: inherit;
+color: var(--fg-soft);
+}
+.inspector__suggest-token .inspector__suggest-value {
+color: var(--accent-hi);
+}
+/* Match a sibling: the value is the value, and the label is the *element* it
+  came from. Both are bounded — an ordinal plus a two-class selector
+  (`2nd section.input-section`) is wide enough to push the sheet sideways on a
+  360 px phone, so it ellipsizes rather than wrapping the chip. */
+.inspector__suggest-sibling .inspector__suggest-value {
+max-width: 6rem;
+}
+.inspector__suggest-sibling .inspector__suggest-ev {
+min-width: 0;
+max-width: 9rem;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+.inspector__suggest-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+}
+/* ---- Inspector: scale + contrast guidance (Part V3) -----------------
+Two kinds of guidance on top of the suggestion chips, both of which have to
+work on one 360 px line:
+  * the snap hint — the page's step is `4px` and the typed value is `13px`,
+    so the line names the nearest value and offers a one-tap snap;
+  * the contrast badge — a colour candidate carries its WCAG ratio against
+    the element's resolved background.
+The hint wraps rather than scrolling, and the snap button is a ≥44 px target
+like every other control in the sheet. */
+.inspector__suggest-snap {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px 8px;
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+}
+.inspector__suggest-snap.is-on { color: var(--success); }
+.inspector__suggest-snap.is-off { color: var(--warning); }
+/* The value as typed, struck through when it is about to be replaced: the
+drag/step readout is the only way to know what changes. */
+.inspector__suggest-snap-ghost {
+font-family: var(--font-mono);
+color: var(--muted-2);
+text-decoration: line-through;
+}
+.inspector__suggest-snap-btn {
+min-height: 44px;
+padding: 0 10px;
+border-radius: 9px;
+border: 1px solid var(--warning);
+background: transparent;
+color: var(--warning);
+font: inherit;
+font-size: 0.68rem;
+font-weight: 600;
+}
+.inspector__suggest-snap-btn:active { transform: scale(0.98); }
+/* A colour chip: swatch, value, ratio. The swatch carries a border so a
+transparent or near-background colour is still visible as a chip. */
+.inspector__suggest-sw {
+width: 14px;
+height: 14px;
+border-radius: 4px;
+border: 1px solid rgba(255, 255, 255, 0.25);
+flex: 0 0 auto;
+}
+.inspector__suggest-colour { gap: 6px; }
+/* The contrast badge. `AA`/`AAA` is quiet (a pass is not news); a fail takes
+the danger colour, because an unreadable text colour is a warning. */
+.inspector__suggest-aa {
+font: inherit;
+font-size: 0.58rem;
+padding: 2px 4px;
+border-radius: 4px;
+background: var(--success-soft);
+color: var(--success);
+white-space: nowrap;
+}
+.inspector__suggest-aa.is-bad {
+background: var(--danger-soft);
+color: var(--danger);
+}
+.inspector__suggest-colour.is-unreadable {
+border-color: rgba(255, 138, 138, 0.4);
+}

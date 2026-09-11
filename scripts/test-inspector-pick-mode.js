@@ -25,7 +25,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
-const readSrc = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+// The Inspector CSS is split into per-panel parts behind an @import entry
+// (frontend/src/inspector.css); readInspectorCss() inlines them so these
+// checks still see the whole cascade.
+const { readInspectorCss } = require('./inspector-css.js');
+const readSrc = (p) => (p === 'frontend/src/inspector.css'
+  ? readInspectorCss()
+  : fs.readFileSync(path.join(root, p), 'utf8'));
 const strip = (src) => src.replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 
 const previewSource = strip(readSrc('frontend/src/components/inspector/PreviewPanel.jsx'));

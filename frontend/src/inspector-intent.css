@@ -1,0 +1,347 @@
+/* Inspector intent + receipt — split out of inspector.css.
+   Sections (original inspector.css lines 2607–2944):
+     - Inspector: Intent (Part H)
+     - Inspector: edit receipt + scope
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: Intent (Part H) --------------------------------------
+Describe the change in words, review a cited diff, apply the lines you tick.
+The surface is a field, a proposal list where every line carries its evidence,
+and a button that states how many changes it will make. Every row is a ≥44 px
+target, the list is a single column (no horizontal scroller inside a vertical
+sheet), and a line the panel cannot check is disabled with its reason rather
+than hidden. */
+/* The surface reuses the panel card (it sits in the same column, under the same
+  chrome), so it only has to supply the body's padding and its own rhythm. */
+.inspector__panel--intent {
+padding: 8px 10px 10px;
+overflow: visible;
+}
+.inspector__intent {
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.inspector__intent-head {
+display: flex;
+align-items: baseline;
+gap: 7px;
+flex-wrap: wrap;
+}
+.inspector__intent-title { font-size: 0.78rem; }
+.inspector__intent-meta {
+margin-left: auto;
+font-size: 0.62rem;
+color: var(--muted);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+max-width: 60%;
+}
+.inspector__intent-ask {
+display: flex;
+align-items: stretch;
+gap: 6px;
+}
+.inspector__intent-input {
+flex: 1 1 auto;
+min-width: 0;
+min-height: var(--tap);
+}
+.inspector__intent-go {
+flex: 0 0 auto;
+min-height: var(--tap);
+min-width: 5.5rem;
+}
+.inspector__intent-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+/* The examples wrap rather than scroll: three chips, two lines at most. */
+.inspector__intent-examples {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__intent-chip {
+min-height: var(--tap);
+padding: 0 11px;
+border-radius: 9px;
+border: 1px dashed var(--border-strong);
+background: none;
+color: var(--fg-soft);
+font: inherit;
+font-size: 0.7rem;
+cursor: pointer;
+}
+.inspector__intent-chip:active { transform: scale(0.98); }
+.inspector__intent-summary {
+font-size: 0.62rem;
+color: var(--muted);
+}
+/* The diff. One column, full width, no horizontal scroll. */
+.inspector__intent-rows {
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__intent-row {
+display: flex;
+align-items: flex-start;
+gap: 8px;
+width: 100%;
+min-height: 44px;
+padding: 8px 10px;
+border-radius: 9px;
+border: 1px solid var(--border-strong);
+background: var(--surface-2);
+color: var(--fg);
+font: inherit;
+text-align: left;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__intent-row.is-ticked { border-color: var(--accent); background: var(--accent-soft); }
+.inspector__intent-row.is-blocked { opacity: 0.6; cursor: default; }
+/* The tick: a 24 px box inside the row, so the row itself stays the target. */
+.inspector__intent-tick {
+flex: 0 0 auto;
+width: 24px;
+height: 24px;
+border-radius: 6px;
+border: 1px solid var(--border-strong);
+display: grid;
+place-items: center;
+font-size: 0.72rem;
+color: var(--accent-hi);
+background: var(--surface);
+}
+.inspector__intent-row.is-ticked .inspector__intent-tick {
+background: var(--accent);
+border-color: var(--accent);
+color: var(--on-accent);
+}
+.inspector__intent-body {
+display: flex;
+flex-direction: column;
+gap: 2px;
+min-width: 0;
+flex: 1 1 auto;
+}
+.inspector__intent-line {
+display: flex;
+align-items: baseline;
+gap: 6px;
+flex-wrap: wrap;
+font-family: var(--font-mono);
+font-size: 0.72rem;
+}
+.inspector__intent-line b { color: var(--fg); }
+.inspector__intent-was { color: var(--muted-2); text-decoration: line-through; }
+.inspector__intent-arrow { color: var(--muted-2); }
+.inspector__intent-now { color: var(--accent-hi); }
+.inspector__intent-why {
+font-size: 0.62rem;
+color: var(--muted-2);
+line-height: 1.35;
+overflow-wrap: anywhere;
+}
+.inspector__intent-actions {
+display: flex;
+gap: 6px;
+flex-wrap: wrap;
+}
+.inspector__intent-actions .btn { min-height: var(--tap); }
+.inspector__intent-apply { flex: 1 1 auto; }
+.inspector__intent-error {
+margin: 0;
+font-size: 0.72rem;
+color: var(--danger);
+line-height: 1.35;
+}
+.inspector__intent-raw {
+margin: 0;
+font-family: var(--font-mono);
+font-size: 0.62rem;
+color: var(--muted-2);
+overflow-wrap: anywhere;
+max-height: 8rem;
+overflow-y: auto;
+overscroll-behavior: contain;
+}
+
+/* ---- Inspector: edit receipt + scope -------------------------------
+   Two answers the "changed" chip could not give: what exactly did I change
+   (with the value the property had before), and what did the write *not*
+   touch. The receipt strip lists the session's edits newest-first with a
+   per-row ↺ and an Undo all; the scope block inside the edit sheet counts
+   what changes, what is kept, and that no rule or other element is involved.
+
+   Both live in the normal scroll flow — they are review affordances, not
+   permanent chrome — and both use the same ≥44 px targets as everything else. */
+.inspector__receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+}
+.inspector__receipt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 4px;
+}
+.inspector__receipt-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-hi);
+}
+.inspector__receipt-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector__receipt-undoall {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 10px;
+  font-size: 0.72rem;
+}
+.inspector__receipt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  padding: 0 6px 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+.inspector__receipt-prop {
+  flex: 0 0 auto;
+  color: var(--fg);
+  font-weight: 700;
+}
+/* The changed value is a control: tap it to reopen the property's editor on
+   the value that is on the page now. The row stays a 44 px target, and the
+   button stretches to the row's height so the whole left side responds — the
+   undo button is its sibling, not its child (a button inside a button is
+   invalid and unreachable by touch). */
+.inspector__receipt-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.inspector__receipt-main:hover { background: var(--surface-3); border-radius: var(--r-sm); }
+.inspector__receipt-was {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--muted-2);
+  text-decoration: line-through;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A property that was not declared before: there is no previous value to strike
+   through, so a dash stands in without pretending there was one. */
+.inspector__receipt-was--unset { text-decoration: none; }
+.inspector__receipt-arrow { flex: 0 0 auto; color: var(--muted-2); }
+.inspector__receipt-now {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--accent-hi);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__receipt-now.is-removed { color: var(--muted); font-weight: 600; }
+.inspector__receipt-revert {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__receipt-revert:hover { background: var(--surface-3); }
+.inspector__receipt-revert:disabled { opacity: 0.4; cursor: default; }
+/* The scope block in the edit sheet. */
+.inspector__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--success);
+  border-radius: var(--r-md);
+  background: var(--success-soft);
+}
+.inspector__scope-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--success);
+}
+.inspector__scope-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  font-size: 0.72rem;
+  color: var(--fg-soft);
+}
+.inspector__scope-grid b { color: var(--fg); }
+.inspector__scope-zero { color: var(--success); }
+.inspector__scope-note {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.inspector__scope-kept { color: var(--fg-soft); }
+
+/* The bar's copy of the receipt: same rows as the panel's strip, at most three
+   of them, so it can sit above the panels without eating the phone's height.
+   It exists so the undo list survives switching the Styles panel off. */
+.inspector__receipt--bar { margin-bottom: 8px; }
+.inspector__receipt-more {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 0.68rem;
+  color: var(--muted-2);
+}

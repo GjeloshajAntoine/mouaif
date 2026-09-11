@@ -1,0 +1,519 @@
+/* Inspector chrome — split out of inspector.css.
+   Sections (original inspector.css lines 1–509):
+     - Inspector (file header)
+     - Inspect chrome (head, nav, panelbar)
+     - Inspector: viewport size dropdown
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* Inspector: setup, targets, tabs, console, network, preview, overview, detail sheet.
+   Imported after all other styles. */
+
+/* ---- Inspector ------------------------------------------------------ */
+
+/* ---- Inspect chrome (head, nav, panelbar) ---------------------- */
+/* The head + nav + panelbar + status strip sits above the panel
+   stack. On a phone the chrome takes ~250 px of vertical space;
+   on a wider screen it wraps tighter because the panel
+   "first-grow" behaviour kicks in and the page is shorter. Every
+   strip is padded to match the rest of the mobile UI
+   (10 px sides, 4 px vertical) and uses the standard
+   surface / border / radius tokens. */
+.inspector__viewhead { gap: 0; }
+.inspector__viewhead .view-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__actions {
+  position: relative;
+  flex-shrink: 0;
+}
+.inspector__actions-btn {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.inspector__actions-btn[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.inspector__actions-pop {
+  position: absolute;
+  right: 6px;
+  top: calc(100% - 4px);
+  z-index: 20;
+  min-width: 200px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inspector__actions-pop[hidden] { display: none; }
+.inspector__actions-pop button,
+.inspector__row-menu-pop button {
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-height: var(--tap);
+}
+.inspector__actions-pop button:hover,
+.inspector__row-menu-pop button:hover { background: var(--surface-2); }
+.inspector__actions-pop button[data-danger="1"],
+.inspector__row-menu-pop button[data-danger="1"] { color: var(--danger); }
+.inspector__actions-pop button[data-danger="1"]:hover,
+.inspector__row-menu-pop button[data-danger="1"]:hover { background: rgba(255, 138, 138, 0.12); }
+.inspector__actions-pop-sep {
+  margin: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.inspector__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px;
+}
+.inspector__nav-reload {
+  flex-shrink: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  width: var(--tap);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg-soft);
+}
+.inspector__nav-reload:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.inspector__nav-back {
+  flex-shrink: 0;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  width: var(--tap);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg-soft);
+}
+.inspector__nav-back:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.inspector__nav-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Shorten the URL field on narrow screens so the Go button
+     always stays visible. Without the min-width: 0 the flex item
+     would refuse to shrink past its intrinsic content width and
+     the button would spill off the edge. */
+}
+.inspector__nav-go {
+  flex-shrink: 0;
+  min-height: var(--tap);
+  min-width: 64px;
+  padding: 0 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+/* ---- Inspector: viewport size dropdown -------------------------- */
+/* A compact dropdown in the Preview panel header. The trigger shows the
+current preset label + chevron; tapping opens a listbox of presets with
+their pixel dimensions. Uses the same popover idiom as the target-row
+and actions menus, sized for a 360 px phone. */
+.inspector__size {
+  position: relative;
+}
+.inspector__size-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 12px;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__size-btn:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__size-btn[aria-expanded="true"] {
+  background: var(--surface-3);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.inspector__size-btn svg { display: block; }
+.inspector__size-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 148px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inspector__size-pop[hidden] { display: none; }
+.inspector__size-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-height: var(--tap);
+}
+.inspector__size-opt:hover { background: var(--surface-2); }
+.inspector__size-opt.is-on {
+  background: var(--surface-2);
+}
+.inspector__size-opt.is-on .inspector__size-opt-label { color: var(--accent); font-weight: 700; }
+.inspector__size-opt-dims {
+font-family: var(--font-mono);
+font-size: 0.68rem;
+color: var(--muted);
+}
+.inspector__panels {
+display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+  min-height: 0;
+}
+.inspector__panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  min-height: 0;
+}
+.inspector__panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.inspector__panel-head-left {
+display: flex;
+align-items: center;
+gap: 8px;
+min-width: 0;
+}
+.inspector__panel-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+}
+.inspector__panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.inspector__panel-refresh {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-refresh:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.inspector__panel-eye {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-eye:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-eye.is-visible {
+  color: var(--accent);
+}
+.inspector__panel-eye.is-visible:hover {
+  color: var(--accent-press);
+}
+.inspector__panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The existing virtual-list scrollers and the preview frame
+   carry their own intrinsic heights (48dvh scroller, 56dvh
+   preview frame) that were tuned for the single-active-tab
+   layout. Inside a PanelCard the parent panel sets the size
+   and the child only provides the vertical scroll affordance,
+   so the panels stack and share the available height instead
+   of each grabbing 48dvh of the viewport.
+
+   The mobile-first sizing here is deliberately small: on a
+   360 px phone the first panel only gets the leftover 200-300
+   px above the fold, and reserving 220 px for every other
+   panel eats the whole page. We clamp each panel body to
+   ~32 dvh with a 180 px floor and let the page scroll, so
+   the user sees Preview at the top and can scroll down to
+   Console / Network / Info as needed. The wide-screen media
+   query below re-enables the "first panel grows" behaviour
+   for tablet and desktop. */
+.inspector__panel-body .inspector__scroller {
+  flex: 0 0 auto;
+  height: 32dvh;
+  min-height: 180px;
+}
+.inspector__panel-body .inspector__preview {
+  flex: 0 0 auto;
+  height: 54dvh;
+  min-height: 220px;
+}
+/* The preview frame is the only tall child of the preview column; the type
+   bar and footer sit below it. Making the frame flex-fill the panel body
+   stops the screenshot from being squeezed into a short strip by those two
+   bars, which is what made the mobile preview cramped. */
+.inspector__panel-body .inspector__preview-frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+.inspector__panel-body .inspector__metrics {
+  padding: 8px;
+  /* Metrics grid is 2 columns on mobile, 4 on wider screens. */
+}
+
+/* Wide-screen layout: 900 px and up. The page is short
+   enough (and tall enough) that all four panels can fit
+   above the fold, so the first visible panel grows to
+   fill the leftover height and the others keep their
+   intrinsic heights. Below 900 px the panels are stacked
+   with their own intrinsic heights and the page scrolls
+   — the "first grows" behaviour does not help at
+   phone and small-tablet sizes because the four panels'
+   intrinsic heights already exceed the available space
+   and the grow would just compress the other panels to
+   nothing.
+
+   The parent's height is left to the flex algorithm
+   (no `height: calc(...)`) because the chrome height
+   varies (it shrinks when the panelbar wraps to one row,
+   grows when the page title is long) and a fixed parent
+   height that is too small would clip the non-grow
+   children. The grow child has `flex: 1 1 auto` and a
+   min-height so the layout never collapses to a single
+   line at the top. */
+@media (min-width: 900px) {
+  .inspector__panel--grow {
+    flex: 1 1 auto;
+    min-height: 240px;
+  }
+  /* Stop the non-grow children from being compressed by
+     the flex algorithm when the parent's height is
+     constrained. The body still has its 32 dvh target. */
+  .inspector__panel:not(.inspector__panel--grow) {
+    flex: 0 0 auto;
+  }
+  .inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__scroller {
+    flex: 0 0 auto;
+    height: 32dvh;
+    min-height: 180px;
+  }
+  .inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__preview {
+    flex: 0 0 auto;
+    height: 40dvh;
+    min-height: 220px;
+  }
+  /* The grow child fills the leftover space: the scroller
+     / preview-frame are the only flex items in the panel
+     body, and they each become `flex: 1 1 auto; height:
+     auto` so the screenshot or list has the available
+     room. */
+  .inspector__panel--grow .inspector__panel-body .inspector__scroller,
+  .inspector__panel--grow .inspector__panel-body .inspector__preview {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+  .inspector__panelbar {
+    flex-wrap: nowrap;
+  }
+  .inspector__panel-body .inspector__metrics {
+    /* 4 columns on wider screens — fits a row of 8
+       counters without horizontal scroll on a 600 px
+       viewport. */
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Empty state when the user has hidden every panel. A small
+   hint card with a one-tap "Show all panels" button. The empty
+   state itself is a small surface; it does not block the
+   toolbar above from being used. */
+.inspector__panels-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 18px 12px;
+  margin: 0 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.inspector__panels-empty p { margin: 0; }
+.inspector__panels-empty-hint { color: var(--muted-2); font-size: 0.76rem; }
+
+.inspector__status {
+  margin: 0 10px 8px;
+  padding: 2px 4px;
+  font-size: 0.8rem;
+}
+
+
+.inspector__scroller {
+  position: relative;
+  width: 100%;
+  height: 48dvh;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  scrollbar-width: thin;
+}
+.inspector__scroller::-webkit-scrollbar { width: 6px; }
+.inspector__scroller::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-sm);
+}
+
+.inspector__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector__row--console { align-items: center; }
+.inspector__row-time {
+  color: var(--muted-2);
+  font-size: 0.62rem;
+  flex-shrink: 0;
+  width: 50px;
+}
+.inspector__row-level {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.inspector__row--error .inspector__row-level,
+.inspector__row--exception .inspector__row-level { color: var(--danger); border-color: rgba(255,138,138,.3); background: var(--danger-soft); }
+.inspector__row--warning .inspector__row-level { color: var(--warning); border-color: rgba(240,196,106,.3); }
+.inspector__row--info .inspector__row-level { color: var(--accent); border-color: rgba(110,168,254,.3); }
+.inspector__row-text { flex: 1; }
+.inspector__row--error .inspector__row-text,
+.inspector__row--exception .inspector__row-text { color: var(--danger); }
+
+.inspector__row--network { align-items: center; }
+.inspector__row-method {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: center;
+}
+.inspector__row-status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: center;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.inspector__row-status--ok       { color: var(--success); border-color: rgba(111,212,154,.3); }
+.inspector__row-status--redirect { color: var(--warning); border-color: rgba(240,196,106,.3); }
+.inspector__row-status--error,
+.inspector__row-status--failed  { color: var(--danger);  border-color: rgba(255,138,138,.3); }
+.inspector__row-status--pending { color: var(--muted); }

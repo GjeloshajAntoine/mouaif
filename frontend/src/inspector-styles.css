@@ -1,0 +1,1123 @@
+/* Inspector Styles panel — split out of inspector.css.
+   Sections (original inspector.css lines 3062–4172):
+     - Inspector: styles panel
+     - Inspector: styles panel, element tree
+     - Inspector: styles panel, matched rules
+     - Inspector: styles panel, computed filter
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: styles panel ------------------------------------- */
+/* The Styles panel is the on-device equivalent of the desktop DevTools
+"Styles" pane. It stacks a header (element label + box size), a
+"Declared styles" list of tapped-to-edit property/value rows, and a
+read-only "Computed" list. Everything is a 44 px min-height tap target;
+editing opens a bottom sheet (StyleEditSheet) so no hover-only or
+tiny-inline-text affordances exist. The body is a scroll container that
+fills the panel, matching the console/network scrollers.
+
+The height is deliberately larger than the other panel bodies (32 dvh).
+A styles row is a 44 px tap target, and the panel's pinned block — element
+header + the element preview — is a further ~115 px that never scrolls. At
+32 dvh on a 360 x 680 phone the scroller is 218 px, which left room for
+exactly one property row: the changed-first rows at the top of the list
+were technically correct but effectively invisible, and the panel read as
+broken. 52 dvh / 320 px floors it at ~5 visible rows, which is what the
+list needs to be usable for comparing values. */
+.inspector__panel-body .inspector__styles {
+flex: 0 0 auto;
+height: 52dvh;
+min-height: 320px;
+overflow-y: auto;
+/* The panel is a scroller *inside* the page's own scroller (.app__main). With
+the default `auto`, reaching the end of a property list chains the gesture to
+the page underneath, so the view jumps by a whole panel the moment the list
+runs out — the worst part of reading a long list on a phone. `contain` keeps
+the gesture inside the panel: it stops and stays put. */
+overscroll-behavior: contain;
+padding: 6px 8px;
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+scrollbar-width: thin;
+display: flex;
+flex-direction: column;
+gap: 8px;
+/* Belt and braces on the horizontal axis. `overflow-y: auto` makes the
+computed `overflow-x` `auto` too, so without this the panel is a horizontal
+scroll container that a diagonal swipe can drag sideways even when its content
+fits. Nothing in the panel is meant to scroll horizontally — the property
+rows, the tree chips, and the filter bar all wrap — so clip it outright. */
+overflow-x: hidden;
+}
+/* Only panel on screen: nothing else wants the space, so a 52 dvh scroller
+would leave a blank half-screen under a needlessly short list. Take the
+viewport instead — that is the difference between ~8 and ~14 visible rows on a
+360 x 680 phone, and far less scrolling for the same reading. */
+.inspector__panel--solo .inspector__panel-body .inspector__styles {
+height: 72dvh;
+}
+/* On a wide screen (where the first panel grows) the styles list gets
+the leftover height like the scroller/preview do. */
+@media (min-width: 900px) {
+/* A non-grow styles panel (the first panel is the preview) still needs
+the taller floor: the pinned block is the same size regardless of the
+viewport, so the reason for 52 dvh does not go away on a tablet. It is
+slightly shorter only because a wide screen has the room to scroll the
+page for the rest. */
+.inspector__panel:not(.inspector__panel--grow) .inspector__panel-body .inspector__styles {
+flex: 0 0 auto;
+height: 46dvh;
+min-height: 320px;
+}
+.inspector__panel--grow .inspector__panel-body .inspector__styles {
+flex: 1 1 auto;
+height: auto;
+min-height: 0;
+/* Guard against an unbounded expansion. `height: auto` sizes this flex
+child to its content, and the panel column above it is content-sized
+(no definite height to grow into), so without a ceiling the styles
+scroller grew to the full height of its ~400 computed rows — a 19000 px
+panel that pushed the rest of the inspector off the page instead of
+scrolling. The value is generous enough to keep "fill the leftover
+height" working on a real wide-screen layout. */
+max-height: 78dvh;
+}
+}
+.inspector__styles-empty {
+display: flex;
+flex-direction: column;
+gap: 10px;
+align-items: stretch;
+justify-content: center;
+text-align: center;
+padding: 14px 6px;
+color: var(--muted);
+font-size: 0.86rem;
+line-height: 1.45;
+}
+.inspector__styles-or {
+font-size: 0.72rem;
+color: var(--muted-2);
+margin: 2px 0;
+}
+/* One line saying what the panel is for. The empty state used to open with a
+button and no explanation, which left a first-time user guessing whether
+"Tap element" picked an element or armed something. */
+.inspector__styles-intro {
+margin: 0 0 2px;
+font-size: 0.8rem;
+color: var(--fg-soft);
+line-height: 1.4;
+}
+/* Tap-to-select button: the primary action in the empty state. A large
+touch target that shows a crosshair glyph + label; when pick mode is
+on it turns accent and reads "Selecting…". */
+.inspector__styles-pick {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+gap: 8px;
+min-height: var(--tap);
+margin: 0 auto;
+padding: 0 18px;
+font: inherit;
+font-size: 0.9rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-pick svg { display: block; }
+.inspector__styles-pick:hover { background: var(--surface-3); }
+.inspector__styles-pick:disabled {
+opacity: 0.55;
+cursor: default;
+background: var(--surface-2);
+color: var(--muted);
+border-color: var(--border);
+}
+.inspector__styles-pick.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+}
+.inspector__styles-select {
+display: flex;
+gap: 6px;
+}
+.inspector__styles-sel {
+flex: 1 1 auto;
+min-width: 0;
+min-height: var(--tap);
+}
+.inspector__styles-sel-go {
+flex-shrink: 0;
+min-height: var(--tap);
+min-width: 64px;
+padding: 0 12px;
+font-size: 0.82rem;
+}
+/* Selected-element header: clear (X) on the left, the element label +
+box size in the middle, refresh + pick tools on the right. The header
+buttons are compact (.icon-btn--labeled) so the whole row stays on one
+line; the element label ellipsizes if the tag is long. */
+.inspector__styles-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inspector__styles-clear {
+  flex-shrink: 0;
+}
+/* Selected-element header icon buttons (clear ✕, refresh, and pick
+mode) get full-size 44 px touch targets rather than the 32 px
+glyph-only accessory size. The header pick button carries the
+empty-state `.inspector__styles-pick` class too, so scope this to the
+`.icon-btn` variant — the empty-state pill keeps its own sizing. When
+the button also has the `.icon-btn--labeled` variant the label expands
+it, so the fixed `--tap` sizing only applies to the glyph-only form. */
+.icon-btn.inspector__styles-clear:not(.icon-btn--labeled),
+.icon-btn.inspector__styles-refresh:not(.icon-btn--labeled),
+.icon-btn.inspector__styles-pick:not(.icon-btn--labeled) {
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+}
+.inspector__styles-elem {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.inspector__styles-tag {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector__styles-size {
+  font-size: 0.68rem;
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+}
+.inspector__styles-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.inspector__styles-pick[aria-pressed="true"] {
+color: var(--accent);
+}
+.inspector__styles-section {
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.inspector__styles-h {
+margin: 0;
+font-size: 0.7rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--fg-soft);
+}
+.inspector__styles-list {
+list-style: none;
+margin: 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 2px;
+}
+.inspector__styles-row {
+display: flex;
+align-items: center;
+gap: 4px;
+/* --tap + the 2 x 1 px border, so the row button inside stretches to a full
+44 px tap target instead of 42. */
+min-height: calc(var(--tap) + 2px);
+/* No vertical padding: the row's own height *is* the tap target, and the row
+button inside stretches to fill it (see --row-main). Padding here would shrink
+the tappable area by 12 px while the row still looked 44 px tall. */
+padding: 0 8px;
+font-family: var(--font-mono);
+font-size: 0.76rem;
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+/* Computed rows are read-only: no button, no editor, nothing to tap. The
+44 px is the *interactive* minimum and is pure waste on them — at 44 px the
+~400-row list is ~17 000 px of scrolling inside a ~350 px panel, which is what
+made the panel feel like an endless scroll. Declared rows keep the full 44 px
+target because they open the editor. */
+.inspector__styles-row--computed {
+min-height: 0;
+padding: 3px 0;
+border: 0;
+border-radius: 0;
+background: none;
+}
+/* A flat list, not a card each: a border, a background and a gap around every
+one of several hundred read-only rows is a lot of ink and vertical space for
+zero interaction. A single hairline separator reads as one continuous list and
+is a few px shorter per row. */
+.inspector__styles-list--computed {
+gap: 0;
+}
+.inspector__styles-list--computed > li + li .inspector__styles-row--computed {
+border-top: 1px solid var(--border);
+}
+.inspector__styles-row-main {
+flex: 1 1 auto;
+min-width: 0;
+/* The row is 44 px tall; this button is the tap target, so it has to fill that
+height rather than sitting at its own 18 px text height. Without `stretch` the
+row *looked* like a 44 px target while only the middle 18 px of it responded —
+the worst kind of tap target, because it looks fine. */
+align-self: stretch;
+display: flex;
+align-items: center;
+gap: 6px;
+font: inherit;
+text-align: left;
+background: transparent;
+border: 0;
+padding: 0;
+color: var(--fg);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-prop {
+font-weight: 700;
+color: var(--accent-hi);
+flex-shrink: 0;
+}
+.inspector__styles-row--declared .inspector__styles-prop { color: var(--fg); }
+/* Changed in this session. These rows are hoisted to the top of the list
+(see stylesOrder.js), so the highlight is what explains why they are there —
+an accent left bar plus a tinted background, and a "changed" word chip so the
+state is not signalled by colour alone. */
+.inspector__styles-row--changed {
+background: var(--accent-soft);
+border-color: var(--accent);
+box-shadow: inset 3px 0 0 var(--accent);
+}
+.inspector__styles-row--changed .inspector__styles-prop { color: var(--accent-hi); }
+.inspector__styles-row--changed .inspector__styles-val { color: var(--fg); }
+.inspector__styles-changed {
+flex-shrink: 0;
+padding: 1px 5px;
+font-family: inherit;
+font-size: 0.6rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--on-accent);
+background: var(--accent);
+border-radius: 999px;
+}
+.inspector__styles-val {
+flex: 1 1 auto;
+min-width: 0;
+color: var(--muted);
+/* The value wraps instead of being cut off. A one-line ellipsis is the one
+  thing a read-only row cannot afford: there is no editor to open and no
+  tooltip on touch, so `transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1)`
+  (and every long `font-family` list, `grid-template-columns` and
+  `background-image` gradient) showed as `transition: opacity 200ms cub…` with
+  no way to read the rest. Rows grow a line or two instead. */
+white-space: normal;
+overflow-wrap: anywhere;
+}
+/* A colour value is also shown as a colour: at row size, `rgb(255, 230, 0)` is
+  the same width as three other colours and says nothing on its own. The swatch
+  is decorative — the text beside it stays the accessible content. */
+.inspector__styles-swatch {
+flex: 0 0 auto;
+width: 14px;
+height: 14px;
+border: 1px solid var(--border-strong);
+border-radius: 3px;
+/* Checkerboard-free: a transparent / currentcolor swatch still needs an edge
+  to be visible against the row's own background. */
+background-clip: padding-box;
+}
+.inspector__styles-row--computed .inspector__styles-val { color: var(--fg-soft); }
+.inspector__styles-none {
+margin: 0;
+font-size: 0.82rem;
+color: var(--muted);
+line-height: 1.4;
+}
+/* The quick-add chips *wrap* rather than scroll sideways. They were briefly a
+horizontal scroller to save a line, but a horizontal scroller sitting inside a
+vertical list is a trap on a phone: the row hides ~260 px of its own content,
+and a slightly diagonal swipe — the normal case when scrolling a long list —
+pans it instead of the list. Wrapping shows every chip at once and keeps the
+vertical gesture vertical. The "Add" label rides on the first line. */
+.inspector__styles-add {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+align-items: center;
+}
+.inspector__styles-add-label {
+flex: 0 0 auto;
+font-size: 0.68rem;
+color: var(--muted-2);
+text-transform: uppercase;
+letter-spacing: 0.04em;
+background: var(--surface);
+}
+.inspector__styles-chip { flex: 0 0 auto; }
+.inspector__styles-chip {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  min-height: var(--tap);
+  padding: 0 14px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-chip:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__styles-chip:active { transform: scale(0.98); }
+/* A chip whose property is already declared on the element: it re-opens the
+existing value rather than starting blank, and reads as "already set". */
+.inspector__styles-chip.is-set {
+color: var(--accent-hi);
+border-color: var(--accent);
+}
+/* Pinned block. The element header and the element preview are one sticky
+child of the panel's scroller: they stay at the top while the "Declared
+styles" and "Computed" rows below scroll. An opaque background is required
+so rows scrolling underneath are hidden rather than showing through, and
+the negative margins let it span the panel's 8 px padding so nothing peeks
+out at the sides. */
+.inspector__panel-body .inspector__styles-pin {
+position: sticky;
+top: -6px;
+z-index: 3;
+display: flex;
+flex-direction: column;
+gap: 4px;
+margin: -6px -8px 0;
+padding: 4px 8px 4px;
+background: var(--surface);
+border-bottom: 1px solid var(--border);
+}
+/* Pinned element preview. A clipped screenshot of the selected element,
+part of the sticky block so it stays visible while the property rows
+scroll — the user reads an edit's result in place instead of scrolling the
+page back to the Preview panel. Fixed height so swapping in a new capture
+never shifts the list, and the image is contained (not stretched) so a wide
+or tall element stays recognisable. */
+.inspector__styles-shot {
+display: block;
+position: relative;
+flex: 0 0 auto;
+width: 100%;
+padding: 0;
+background: var(--bg);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+cursor: pointer;
+overflow: hidden;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-shot:disabled { opacity: 0.7; cursor: default; }
+.inspector__styles-shot:not(:disabled):hover { border-color: var(--border-strong); }
+/* Sticky only inside the panel; the edit sheet's copy is a normal block. */
+.inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) {
+width: 100%;
+}
+.inspector__styles-shot-img {
+display: block;
+width: 100%;
+height: 120px;
+/* `cover` rather than `contain`: the capture is a page-shaped context
+window around the element, and the panel's preview is a short wide strip.
+Containing it would shrink the element to an unreadable sliver; covering
+crops to the element's middle band at (near) full scale, which is what the
+user needs to read an edit's result. */
+object-fit: cover;
+object-position: center;
+background: var(--bg);
+border-radius: var(--r-sm);
+}
+/* Inside the panel the preview shares its scroller with the header and the
+property list, and on a 360 px phone that scroller is only ~218 px tall, so
+the strip stays short to leave room for rows. On a wide screen the first
+panel grows to fill the leftover height, so there the preview can show more
+of the element. */
+/* Inside the panel the preview shares its scroller with the header and the
+property list, and on a 360 px phone that scroller is only ~350 px tall. The
+strip is 40 px rather than 64: the pinned block is fixed chrome that never
+scrolls, so every pixel it takes comes straight out of the property rows, and
+40 px still shows enough of an element to read a padding or colour change. The
+grown panel on a wide screen has the room, so it stays larger there. */
+/* 42 px + the button's 1 px border each side = the full 44 px tap target. */
+.inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
+height: 42px;
+}
+@media (min-width: 900px) {
+.inspector__panel--grow .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
+height: 96px;
+}
+}
+/* The refresh hint is a caption *under* the capture, not a badge on top of
+it. Drawn over the image it landed on whatever the element rendered in that
+corner — on a page of body text, on the text — and a 56 px strip of an
+element is exactly where the user is trying to read small type. The caption
+also carries the "Updating…" state and the capture's pixel size, so the strip
+never changes height and the rows below never shift. */
+.inspector__styles-shotwrap {
+display: flex;
+flex-direction: column;
+flex: 0 0 auto;
+gap: 2px;
+}
+.inspector__styles-shot-note {
+display: flex;
+align-items: baseline;
+justify-content: space-between;
+gap: 8px;
+margin: 0;
+font-size: 0.62rem;
+letter-spacing: 0.02em;
+color: var(--muted-2);
+}
+.inspector__styles-shot-dims {
+font-variant-numeric: tabular-nums;
+}
+/* ---- Inspector: styles panel, element tree ------------------------ */
+/* Breadcrumb and child chips live in the panel's *scroll flow*, not in the
+sticky block: pinning them cost ~80 px of the 350 px scroller on a 360 x 680
+phone — about two property rows — for navigation that is used deliberately and
+rarely, while reading values is the constant activity. Both are full 44 px tap
+targets (`--tap`), which they could not be while the pin had to stay small.
+
+Both *wrap* rather than scrolling sideways. A horizontal scroller inside a
+vertical list hides its own content and steals the vertical gesture: a
+slightly diagonal swipe — the normal case when scrolling a long list — pans
+the strip instead of the list. Wrapping shows everything at once and keeps the
+gesture vertical, which is the whole point on a phone. */
+/* One row of the Element tree: a direction label ("↑ Parents" / "▸ ↓ Children
+  13") on its own line, then the chips that belong to it. The label is what
+  keeps "go up" and "go down" from reading as one undifferentiated list of
+  pills — the two rows used to look identical. */
+.inspector__styles-tree-row {
+display: block;
+min-width: 0;
+margin-top: 6px;
+}
+.inspector__styles-tree-label {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+font-size: 0.62rem;
+font-weight: 600;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+/* Direction glyph: ↑ the parents, ↓ the children. Decorative (aria-hidden). */
+.inspector__styles-tree-arrow {
+font-size: 0.72rem;
+line-height: 1;
+color: var(--muted-2);
+}
+.inspector__styles-crumbs {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 4px;
+min-width: 0;
+margin-top: 6px;
+}
+/* The chevron between two crumbs turns a row of equal chips into a readable
+  path: html › body › div#app. Decorative, so it is never announced and has no
+  tap target of its own. */
+.inspector__styles-crumb-sep {
+flex: 0 0 auto;
+font-size: 0.72rem;
+color: var(--muted-2);
+}
+.inspector__styles-crumb {
+display: inline-flex;
+align-items: center;
+max-width: 100%;
+height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: 999px;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+/* The label carries the clipping: `text-overflow` does not apply to the
+anonymous flex item a bare text child becomes, so without this span a long
+`tag#id.class` overflowed the chip's rounded border instead of ellipsizing. */
+.inspector__styles-crumb-label {
+min-width: 0;
+overflow: hidden;
+white-space: nowrap;
+text-overflow: ellipsis;
+}
+.inspector__styles-crumb:not(.is-here):hover { background: var(--surface-3); color: var(--fg); }
+/* The selected element is not a tap target (it is already selected), so it
+reads as a static accent chip rather than a button. */
+.inspector__styles-crumb.is-here {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+font-weight: 600;
+cursor: default;
+}
+/* Child chips: one tap into a child element. They share the "Element tree"
+section with the breadcrumb above them, and wrap for the same reason — a
+horizontal strip inside a vertical list steals the vertical gesture. */
+.inspector__styles-kids {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px;
+min-width: 0;
+margin-top: 6px;
+}
+/* Inside a tree row the label line above the chips already carries the gap. */
+.inspector__styles-tree-row .inspector__styles-kids { margin-top: 2px; }
+/* The "Children 13" disclosure is the first item and a full tap target, so the
+child chips stay collapsed to one line until asked for. */
+.inspector__styles-kids-toggle {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+gap: 6px;
+min-height: var(--tap);
+padding: 0 8px;
+font: inherit;
+color: inherit;
+background: none;
+border: 0;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-kids-caret {
+width: 10px;
+font-size: 0.62rem;
+color: var(--muted-2);
+}
+.inspector__styles-kids-n {
+padding: 1px 6px;
+font-size: 0.62rem;
+font-weight: 600;
+font-variant-numeric: tabular-nums;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+.inspector__styles-kids-label {
+flex: 0 0 auto;
+font-size: 0.62rem;
+font-weight: 600;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+.inspector__styles-kid {
+flex: 0 1 auto;
+display: inline-flex;
+align-items: center;
+/* Capped so a long `tag#id.class` label ellipsizes to a chip two to a line
+instead of one label per line: an uncapped wrapped row would be one child per
+line. The full label is in the chip's title and accessible name. */
+max-width: 46%;
+height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.74rem;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+/* See .inspector__styles-crumb-label — the clipping lives on the span, not on
+the flex button, or long labels overflow the border. */
+.inspector__styles-kid-label {
+min-width: 0;
+overflow: hidden;
+white-space: nowrap;
+text-overflow: ellipsis;
+}
+.inspector__styles-kid:hover { background: var(--surface-3); }
+.inspector__styles-kid:active { transform: scale(0.98); }
+.inspector__styles-kids-more {
+flex: 0 0 auto;
+font-size: 0.7rem;
+color: var(--muted);
+}
+/* ---- Inspector: styles panel, matched rules ----------------------- */
+/* Read-only cascade section: one card per matching rule, most specific
+first. Collapsed by default — it answers "why is this value here?", which
+is not something to scroll past on every selection, and a real page matches
+enough rules (plus a dozen browser defaults) for the open section to be a
+second wall. */
+.inspector__rules-bar {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 8px;
+}
+.inspector__rules-bar .inspector__styles-h { flex: 0 0 auto; margin: 0; }
+.inspector__rules-count {
+flex: 0 0 auto;
+min-width: 20px;
+padding: 1px 6px;
+font-size: 0.66rem;
+font-weight: 600;
+text-align: center;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* "Show rules" / "Hide rules" is a labelled button, not a chevron: the rest
+of this panel labels its buttons, and a bare glyph would need a tooltip that
+does not exist on touch. Full 44 px tap target. The bar wraps as a safety net
+(`flex-wrap` above) so a longer label drops to its own row instead of being
+squeezed to an unreadable width at 320 px. */
+.inspector__rules-toggle {
+flex: 0 0 auto;
+min-height: var(--tap);
+min-width: 56px;
+margin-left: auto;
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+/* The browser-default toggle lives under the rules it filters, not in the bar,
+and reads as a sentence: "Show 5 browser default rules". It has the full
+panel width because the label is what makes it legible — a two-letter "UA"
+pill in the header explained nothing. */
+.inspector__rules-ua {
+display: flex;
+align-items: center;
+justify-content: center;
+width: 100%;
+min-height: var(--tap);
+margin: 6px 0 0;
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px dashed var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rules-toggle:hover { background: var(--surface-3); }
+.inspector__rules-ua:hover { background: var(--surface-3); }
+.inspector__rules-ua.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+border-style: solid;
+}
+.inspector__rules {
+list-style: none;
+margin: 6px 0 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__rule {
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-left: 3px solid var(--accent);
+border-radius: var(--r-sm);
+overflow: hidden;
+}
+/* Browser defaults and inherited rules are toned down and marked with a
+different bar: they are context, not the thing the user came to change. */
+.inspector__rule.is-ua { border-left-color: var(--muted-2); opacity: 0.85; }
+.inspector__rule.is-inherited { border-left-color: var(--border-strong); }
+/* A rule card is a header plus one row per declaration. On a real page that
+is 170 declaration rows and ~9 000 px inside a 352 px panel, which is what
+made the open section unusable on a phone. The header is now the tap target
+that opens a rule, and only the first (most specific) rule starts open — so
+the section opens on something meaningful and costs ~9 collapsed rows instead
+of every declaration at once. */
+.inspector__rule-head {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px;
+width: 100%;
+min-height: var(--tap);
+padding: 6px 8px;
+font: inherit;
+text-align: left;
+color: inherit;
+background: none;
+border: 0;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rule-head:hover { background: var(--surface-3); }
+.inspector__rule-caret {
+flex: 0 0 auto;
+width: 10px;
+font-size: 0.62rem;
+color: var(--muted-2);
+}
+/* How many declarations the rule carries, so a collapsed rule still says how
+much is inside it. */
+.inspector__rule-n {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.6rem;
+font-weight: 600;
+font-variant-numeric: tabular-nums;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* The selector is the identity of the rule, so it gets the monospace
+treatment and wraps rather than ellipsizing: a truncated comma-separated
+selector list hides exactly the part that explains the match. Clamped to two
+lines so a very long list cannot stretch the header — one long selector was
+pushing its header to 51 px while every other rule head was 44. */
+.inspector__rule-sel {
+min-width: 0;
+flex: 1 1 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-size: 0.72rem;
+color: var(--accent-hi);
+overflow-wrap: anywhere;
+display: -webkit-box;
+-webkit-box-orient: vertical;
+-webkit-line-clamp: 2;
+line-clamp: 2;
+overflow: hidden;
+}
+  .inspector__rule-tag {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.6rem;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* A long `@media (min-width: …) and (…)` condition would otherwise push the
+header past its 44 px target by wrapping. Bounded and ellipsized; the full
+condition is carried in the element's `title`. */
+.inspector__rule-tag--media {
+max-width: 40vw;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+color: var(--warning, var(--fg-soft));
+}
+.inspector__rule-props {
+list-style: none;
+margin: 0;
+padding: 0;
+border-top: 1px solid var(--border);
+}
+/* Every declaration is a 44 px tap target that opens the edit sheet with
+that property and value pre-filled — the declared value is copied onto
+`element.style`, which is the only origin this panel can write. */
+.inspector__rule-prop {
+display: flex;
+align-items: center;
+gap: 8px;
+width: 100%;
+min-height: var(--tap);
+padding: 0 8px;
+font: inherit;
+font-size: 0.76rem;
+text-align: left;
+color: var(--fg);
+background: none;
+border: 0;
+border-top: 1px solid var(--border);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__rule-props > li:first-child .inspector__rule-prop { border-top: 0; }
+.inspector__rule-prop:hover { background: var(--surface-3); }
+.inspector__rule-prop.is-off { text-decoration: line-through; opacity: 0.6; }
+.inspector__rule-pname {
+flex: 0 0 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg-soft);
+}
+.inspector__rule-pval {
+min-width: 0;
+flex: 1 1 auto;
+font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+color: var(--fg);
+text-align: right;
+/* One line, ellipsized. `overflow-wrap: anywhere` let a long value wrap to a
+second line, which pushed the row past its 44 px target (measured 53 px) and
+hid the fact that every row is the same size. The full value is one tap away
+in the edit sheet, which opens pre-filled with it. */
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+.inspector__rule-more,
+.inspector__rules-truncated {
+margin: 0;
+padding: 5px 8px;
+font-size: 0.68rem;
+color: var(--muted);
+}
+/* ---- Inspector: styles panel, computed filter --------------------- */
+/* The Computed list is the panel's most complete read-out and was its least
+usable: ~400 rows with no way to narrow them. The bar carries the count and
+the all/set/changed filter; the row under it carries the search field.
+`flex-wrap` is the safety net — the heading, the count, and three filter
+pills have to fit 344 px of content width at the 360 px minimum, and a wrap
+beats a squashed control. */
+.inspector__computed-bar {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 8px;
+}
+.inspector__computed-bar .inspector__styles-h { flex: 0 0 auto; margin: 0; }
+.inspector__computed-count {
+flex: 0 0 auto;
+padding: 1px 6px;
+font-size: 0.66rem;
+font-weight: 600;
+font-variant-numeric: tabular-nums;
+color: var(--fg-soft);
+background: var(--surface-3);
+border-radius: 999px;
+}
+/* "Show" turns the chips into a filter rather than a second row of tabs. The
+label rides inside the same flex item as the chips (see the comment in
+`StylesPanel.jsx`): as a sibling pinned right it stayed on the first row while
+the chips wrapped under it, so the row ended in a lone "SHOW". */
+.inspector__computed-showgroup {
+display: flex;
+align-items: center;
+gap: 8px;
+flex: 0 0 auto;
+margin-left: auto;
+}
+.inspector__computed-show {
+flex: 0 0 auto;
+font-size: 0.62rem;
+font-weight: 600;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+/* Segmented filter. Exactly one option is active, so it is a radio group
+rather than independent toggles (an independent "set" and "changed" pair
+would imply an AND the user has to reason about). */
+.inspector__computed-filters {
+display: flex;
+flex: 0 0 auto;
+gap: 2px;
+padding: 2px;
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+}
+/* The active filter in words: one line, never wrapped, so "12/406" cannot be
+  read as a broken read instead of as the search that produced it. */
+.inspector__computed-status {
+margin: 6px 0 0;
+font-size: 0.66rem;
+line-height: 1.3;
+color: var(--muted-2);
+overflow: hidden;
+white-space: nowrap;
+text-overflow: ellipsis;
+}
+.inspector__computed-filter {
+min-height: var(--tap);
+padding: 0 10px;
+font: inherit;
+font-size: 0.7rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: none;
+border: 0;
+border-radius: calc(var(--r-sm) - 2px);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-filter:hover { color: var(--fg); }
+.inspector__computed-filter.is-on {
+color: var(--on-accent);
+background: var(--accent);
+}
+.inspector__computed-searchrow {
+display: flex;
+align-items: stretch;
+gap: 6px;
+margin-top: 8px;
+}
+.inspector__computed-search { flex: 1 1 auto; min-width: 0; min-height: var(--tap); }
+.inspector__computed-clear {
+flex: 0 0 auto;
+width: var(--tap);
+min-height: var(--tap);
+font: inherit;
+font-size: 0.9rem;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-clear:hover { background: var(--surface-3); }
+/* The render cap's release valve: a full-width 44 px row, so "show all" is
+findable by thumb at the end of a long list. */
+.inspector__computed-more {
+display: block;
+width: 100%;
+min-height: var(--tap);
+margin-top: 6px;
+font: inherit;
+font-size: 0.74rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__computed-more:hover { background: var(--surface-3); }
+/* Value row in the edit sheet: − [input] + . The steppers nudge numeric
+values by one unit and apply immediately, which is the fastest way to size
+something on a phone. */
+.inspector__style-valuerow {
+display: flex;
+align-items: stretch;
+gap: 6px;
+}
+.inspector__style-input--value { flex: 1 1 auto; min-width: 0; }
+.inspector__style-step {
+flex: 0 0 auto;
+width: var(--tap);
+min-width: var(--tap);
+min-height: var(--tap);
+font: inherit;
+font-size: 1.1rem;
+font-weight: 700;
+line-height: 1;
+color: var(--fg);
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__style-step:disabled { opacity: 0.4; cursor: default; }
+.inspector__style-step:not(:disabled):active { transform: scale(0.96); }
+/* The step line under the −/+ pair: which step the nudge uses, and where the
+typed value sits on the page's scale. One small line, wrapped rather than
+scrolling, because "why did + jump by 4?" is otherwise unanswerable. */
+.inspector__style-step-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+.inspector__style-applied {
+margin: 2px 0 0;
+font-size: 0.72rem;
+color: var(--success);
+line-height: 1.35;
+}
+.inspector__style-error {
+margin: 0;
+font-size: 0.78rem;
+color: var(--danger);
+line-height: 1.35;
+}
+.inspector__style-hint {
+margin: 6px 0 0;
+font-size: 0.7rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+/* StyleEditSheet — bottom-sheet edit panel. Reuses the overlay + sheet
+primitive; adds a column of big property/value inputs and a row of
+Apply / Remove / Cancel actions. */
+.inspector__sheet--style {
+max-height: 74dvh;
+}
+.inspector__sheet-body--style {
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.inspector__sheet-body--style .label {
+margin-bottom: 2px;
+}
+.inspector__style-input {
+min-height: var(--tap);
+}
+.inspector__sheet-actions {
+display: flex;
+gap: 8px;
+justify-content: flex-end;
+margin-top: 4px;
+}
+.inspector__sheet-actions .btn {
+min-height: 44px;
+min-width: 96px;
+padding: 0 16px;
+font-size: 0.85rem;
+}
+.inspector__style-apply {
+flex: 1 1 auto;
+max-width: 60%;
+}
+.inspector__style-remove { flex-shrink: 0; }

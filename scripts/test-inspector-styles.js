@@ -363,8 +363,11 @@ async function main() {
   // which is exactly how a long list gets scrolled on a phone. Three rows
   // (quick-add chips, breadcrumb, child chips) each had one, and each was
   // removed in favour of wrapping. This guards against one creeping back.
-  const css = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector.css'), 'utf8');
-  const panelCss = fs.readFileSync(path.join(__dirname, '../frontend/src/inspector.css'), 'utf8');
+  // The Inspector CSS lives in per-panel parts behind frontend/src/inspector.css;
+  // the helper inlines the @imports so the rule checks see the whole cascade.
+  const { readInspectorCss } = require('./inspector-css.js');
+  const css = readInspectorCss();
+  const panelCss = readInspectorCss();
   const H_SCROLL_CLASSES = [
     'inspector__styles-add',
     'inspector__styles-crumbs',

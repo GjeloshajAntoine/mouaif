@@ -1,0 +1,228 @@
+/* Inspector targets — split out of inspector.css.
+   Sections (original inspector.css lines 510–727):
+     - Inspector: targets list
+     - Inspector: page preview
+
+   This file holds one contiguous slice of the original cascade. The
+   @import order in inspector.css is the original rule order — do not
+   reorder the imports or move a chunk between files without checking the
+   cascade, because several sections override each other by coming later.
+   See docs/features/inspector.md. */
+/* ---- Inspector: targets list --------------------------------------- */
+/* Card-based targets list. Each row is a tappable card: type chip
+on the left, title + host on the right, and a `…` overflow that holds
+the per-row actions (Connect, Reload, Close). Tap-anywhere on the
+card = Connect — the primary action — so the destructive actions are
+hidden one tap away but never in the way. The list is grouped in a
+single rounded container, matching the rest of the mobile UI. */
+.inspector__row-targets {
+list-style: none;
+margin: 0;
+padding: 0;
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+/* `overflow: hidden` is intentionally NOT set here so the per-row
+overflow popup (`.inspector__row-menu-pop`, position: absolute)
+can drop below the row it belongs to without being clipped by
+the list. With the original `overflow: hidden` the popup was
+clipped to a single visible row (just "Connect") which hid
+Reload / Close tab and the target-id footer. The popup's
+containing block (`.inspector__row-menu`) is also free of
+overflow clipping.
+
+The list still LOOKS rounded because the rows are transparent
+(relying on the list's own background), and the first / last
+row's main button + menu button round their outer corners via
+the two rules below, so the hover state — which paints the only
+opaque surface inside a row — also respects the rounded shape. */
+}
+.inspector__row-targets > li + li { border-top: 1px solid var(--border); }
+/* Round the first / last row's buttons at their OUTER corners so
+the hover background (the only opaque surface inside a row)
+matches the list's rounded shape. Inner corners stay sharp. */
+.inspector__row-targets > li:first-child .inspector__row-target-main {
+border-top-left-radius: var(--r-md);
+}
+.inspector__row-targets > li:first-child .inspector__row-menu-btn {
+border-top-right-radius: var(--r-md);
+}
+.inspector__row-targets > li:last-child .inspector__row-target-main {
+border-bottom-left-radius: var(--r-md);
+}
+.inspector__row-targets > li:last-child .inspector__row-menu-btn {
+border-bottom-right-radius: var(--r-md);
+}
+.inspector__row-target {
+display: flex;
+align-items: stretch;
+gap: 0;
+min-height: var(--tap);
+}
+.inspector__row-target-main {
+flex: 1;
+min-width: 0;
+display: flex;
+align-items: center;
+gap: 10px;
+padding: 8px 10px;
+text-align: left;
+background: transparent;
+border: 0;
+font: inherit;
+color: var(--fg);
+cursor: pointer;
+transition: background 80ms ease;
+}
+.inspector__row-target-main:hover { background: var(--surface-2); }
+.inspector__row-target-main:active { background: var(--surface-3); }
+/* The type chip. Color follows the row's tone (set by TargetRow) so
+the user can spot a service worker vs a tab at a glance. */
+.inspector__row-target-chip {
+flex-shrink: 0;
+min-width: 44px;
+text-align: center;
+font-size: 0.62rem;
+font-weight: 700;
+letter-spacing: 0.06em;
+padding: 4px 0;
+border-radius: var(--r-sm);
+background: var(--surface-2);
+color: var(--muted);
+border: 1px solid var(--border);
+}
+.inspector__row-target--accent  .inspector__row-target-chip {
+color: var(--accent);
+border-color: rgba(110, 168, 254, 0.32);
+background: var(--accent-soft);
+}
+.inspector__row-target--warning .inspector__row-target-chip {
+color: var(--warning);
+border-color: rgba(240, 196, 106, 0.32);
+background: var(--warning-soft);
+}
+.inspector__row-target--muted   .inspector__row-target-chip {
+color: var(--muted);
+border-color: var(--border);
+background: var(--surface-2);
+}
+.inspector__row-target-body {
+flex: 1;
+min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 1px;
+}
+.inspector__row-target-title {
+color: var(--fg);
+font-size: 0.88rem;
+font-weight: 600;
+letter-spacing: -0.005em;
+line-height: 1.2;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__row-target-sub {
+color: var(--muted);
+font-family: var(--font-mono);
+font-size: 0.7rem;
+line-height: 1.3;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+/* Overflow menu (the `…` button) on the right of each row. Same
+pattern as the project card menu: a button + a popover with the
+destructive actions. The popover drops over the next row when
+open, which is fine on mobile where the list is already
+horizontal-scrolling for the full screen. */
+.inspector__row-menu {
+position: relative;
+flex-shrink: 0;
+display: flex;
+align-items: center;
+}
+.inspector__row-menu-btn {
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+min-height: var(--tap);
+font-size: 1.2rem;
+color: var(--muted);
+background: transparent;
+border: 0;
+border-radius: var(--r-sm);
+margin: 0 4px 0 0;
+cursor: pointer;
+transition: background 80ms ease, color 80ms ease;
+}
+.inspector__row-menu-btn:hover,
+.inspector__row-menu-btn[aria-expanded="true"] {
+color: var(--fg);
+background: var(--surface-2);
+}
+.inspector__row-menu-pop {
+position: absolute;
+right: 6px;
+top: calc(100% - 4px);
+z-index: 20;
+min-width: 180px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-md);
+box-shadow: var(--shadow-md);
+padding: 4px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+}
+.inspector__row-menu-pop[hidden] { display: none; }
+.inspector__row-menu-meta {
+margin-top: 4px;
+padding: 6px 10px 2px;
+border-top: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+gap: 1px;
+}
+.inspector__row-menu-meta span:first-child {
+font-size: 0.65rem;
+font-weight: 700;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--accent);
+}
+.inspector__row-menu-meta span:last-child {
+font-family: var(--font-mono);
+font-size: 0.66rem;
+color: var(--muted-2);
+word-break: break-all;
+}
+.inspector__row-targets-empty {
+margin: 0;
+padding: 18px 10px;
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+text-align: center;
+color: var(--muted);
+font-size: 0.82rem;
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.inspector__row-targets-empty p { margin: 0; }
+.inspector__row-targets-empty-hint { color: var(--muted-2); font-size: 0.74rem; }
+.inspector__row-targets-empty strong { color: var(--fg-soft); font-weight: 600; }
+
+/* ---- Inspector: page preview -------------------------------------- */
+
+.inspector__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* The pick-mode banner is positioned over the screenshot (see
+     .inspector__pickban), so the column is the containing block. */
+  position: relative;
+}
