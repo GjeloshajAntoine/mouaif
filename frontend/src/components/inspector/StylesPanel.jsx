@@ -364,6 +364,8 @@ const shape = shapeRef.current.shape;
 // shown never changes what Apply will do.
 const railShape = shape === 'rail' || shape === 'time' || shape === 'angle';
 const onField = (next) => { setValue(next); setApplied(false); setError(''); };
+// valueInputRef — the typed field, which the rail's double-tap focuses.
+const valueInputRef = useRef(null);
 const valueChangers = [
 railShape
 ? h(ValueRail, {
@@ -372,6 +374,15 @@ prop: propName,
 value,
 ctx: railCtx,
 from: props.from,
+// The double-tap gesture: the rail writes the value under the finger, and a
+// second tap at the same place asks for the keypad, because "nearly 14px" is
+// the moment exact typing is the next move. The field is one tap away anyway;
+// this saves the tap and the aim.
+onKeypad: () => {
+const el = valueInputRef.current;
+if (!el) return;
+try { el.focus(); if (el.select) el.select(); } catch (err) { /* older engines */ }
+},
 onChange: onField
 })
 : null,
@@ -532,6 +543,7 @@ onClick: () => nudge(down)
 h('input', {
 class: 'input inspector__style-input inspector__style-input--value',
 type: 'text',
+ref: valueInputRef,
 value,
 placeholder: 'e.g. #ffcc00',
 autocapitalize: 'off',

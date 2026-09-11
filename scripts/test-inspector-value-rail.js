@@ -27,7 +27,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueRail.js'))
-+ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, BOX_FRACTIONS, TIME_PRESETS, stepLadder, familyStep, fractionSnaps, timePresets, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
++ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, BOX_FRACTIONS, TIME_PRESETS, SLOW_DRAG_SPEED, DOUBLE_TAP_MS, DOUBLE_TAP_PX, HOLD_MS, dragStepFor, isDoubleTap, stepLadder, familyStep, fractionSnaps, timePresets, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
 const VR = ctx.VR;
 check('the module loads', !!VR && typeof VR.railRange === 'function');
 // ---- per-family ranges -------------------------------------------------
@@ -506,6 +506,100 @@ const css = read('frontend/src/inspector.css');
 check('preset chips are 44 px targets', /\.inspector__rail-presetchip \{/.test(css)
 && /min-height: 44px/.test(css.slice(css.indexOf('.inspector__rail-presetchip {'))));
 check('the preset row wraps rather than scrolling', /\.inspector__rail-presets \{[^}]*flex-wrap: wrap/.test(css));
+}
+}
+// ---- the gestures --------------------------------------------------------
+//
+// The mock's rail has four gestures: drag for coarse, drag slowly for fine,
+// double-tap for the keypad, tap-hold a tick to lock. Three of them are rules
+// rather than wiring, so they are asserted here; the wiring itself is verified
+// live.
+{
+{
+// Slow drag = fine. The step the user chose still applies to a normal drag.
+const opts = { family: 'length', step: 4 };
+check('a normal drag uses the step in force', VR.dragStepFor(2, opts).step === 4, String(VR.dragStepFor(2, opts).step));
+check('a normal drag is not marked fine', VR.dragStepFor(2, opts).fine === false);
+check('a slow drag drops to the family\'s finest step', VR.dragStepFor(0.1, opts).step === 1, String(VR.dragStepFor(0.1, opts).step));
+check('a slow drag says so', VR.dragStepFor(0.1, opts).fine === true);
+check('the threshold itself counts as fast', VR.dragStepFor(VR.SLOW_DRAG_SPEED, opts).fine === false);
+check('just under the threshold counts as slow', VR.dragStepFor(VR.SLOW_DRAG_SPEED - 0.01, opts).fine === true);
+// Aims: aiming is a request for precision that outranks a remembered setting,
+// even the page's own scale.
+check('a slow drag overrides the page\'s step', VR.dragStepFor(0.05, { family: 'length', step: 8 }).step === 1);
+check('a slow drag overrides a chosen precision', VR.dragStepFor(0.05, { family: 'time', step: 50 }).step === 10);
+check('the fine step follows the family, not a fixed 1',
+VR.dragStepFor(0.05, { family: 'opacity', step: 0.05 }).step === 0.01,
+String(VR.dragStepFor(0.05, { family: 'opacity', step: 0.05 }).step));
+check('an opacity drag is fine at the same speed a length one is',
+VR.dragStepFor(0.05, { family: 'opacity' }).fine === true);
+// A backwards drag is as slow as a forwards one.
+check('direction does not matter', VR.dragStepFor(-0.05, opts).step === 1);
+// Degenerate speeds do not flip the mode spuriously.
+check('a zero speed is slow (a held thumb is aiming)', VR.dragStepFor(0, opts).fine === true);
+check('an unknown speed keeps the step in force', VR.dragStepFor(undefined, opts).step === 4);
+check('no options falls back to the length ladder', VR.dragStepFor(0.05, {}).step === 1);
+}
+// Double-tap = keypad, in time *and* place.
+{
+const tap = (at, x) => ({ at, x });
+check('two taps inside the window are a double-tap', VR.isDoubleTap(tap(0, 100), tap(200, 100)) === true);
+check('the window is inclusive', VR.isDoubleTap(tap(0, 100), tap(VR.DOUBLE_TAP_MS, 100)) === true);
+check('too slow is two taps', VR.isDoubleTap(tap(0, 100), tap(VR.DOUBLE_TAP_MS + 1, 100)) === false);
+check('too far apart is two decisions, not one',
+VR.isDoubleTap(tap(0, 100), tap(100, 100 + VR.DOUBLE_TAP_PX + 1)) === false);
+check('the same place inside the window is one', VR.isDoubleTap(tap(0, 100), tap(100, 100 + VR.DOUBLE_TAP_PX)) === true);
+check('a first tap is never a double-tap', VR.isDoubleTap(null, tap(0, 0)) === false);
+check('a missing second tap is not one', VR.isDoubleTap(tap(0, 0), null) === false);
+check('a non-numeric timestamp is not one', VR.isDoubleTap(tap(0, 0), tap('now', 0)) === false);
+check('the thresholds are the ones the component imports',
+VR.DOUBLE_TAP_MS === 300 && VR.DOUBLE_TAP_PX === 24 && VR.HOLD_MS === 500);
+check('slow dragging is slower than a tap', VR.SLOW_DRAG_SPEED > 0 && VR.SLOW_DRAG_SPEED < 1);
+check('the hold is longer than the double-tap window', VR.HOLD_MS > VR.DOUBLE_TAP_MS);
+}
+// The wiring: a hold writes and locks, a drag switches step mid-flight, and the
+// double-tap calls the sheet's keypad action.
+{
+const src = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the drag reads its speed per move', /drag\.speed = drag\.speed == null \? speed : drag\.speed \* 0\.6 \+ speed \* 0\.4/.test(src));
+check('the drag switches step mid-flight', /dragStepFor\(drag\.speed, \{ family: range\.family, step \}\)/.test(src));
+check('a write can carry its own step', /function write\(n, at\)/.test(src) && /const size = Number\.isFinite\(at\) && at > 0 \? at : null/.test(src));
+check('the fine mode is released on pointer up', /if \(fine\) setFine\(false\)/.test(src));
+check('the header names the fine step while it lasts', /'fine ' \+ formatNumber\(familyStep\(0, range\.family\)\)/.test(src));
+check('a tap records itself for the next one', /tapRef\.current = next/.test(src));
+check('a double-tap asks the sheet for the keypad', /isDoubleTap\(tapRef\.current, next\)[\s\S]{0,120}props\.onKeypad\(\)/.test(src));
+check('a tick press starts a hold timer', /holdRef\.current = setTimeout\(/.test(src) && /HOLD_MS/.test(src));
+check('the hold writes its value and locks', /holdRef\.current = 'fired';\s*write\(n\);\s*setLock\(\{ value: n, label: label \}\)/.test(src));
+check('the click that follows a hold is swallowed', /if \(holdRef\.current === 'fired'\) \{ holdRef\.current = null; return; \}/.test(src));
+check('every tick family is holdable', /holdTick\(v, /.test(src) && /holdTick\(t\.number, /.test(src) && /holdTick\(f\.number, /.test(src));
+check('a locked tick is marked', /is-locked/.test(src));
+check('a new gesture releases the lock', /if \(lock\) setLock\(null\)/.test(src));
+check('the header says what is locked', /'locked · ' \+ lock\.label/.test(src));
+}
+// Leave scale: the counter-offer to the snap hint.
+{
+const src = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the footer offers leave scale only for an off-scale value',
+/ctx\.nearest != null && range\.step/.test(src) && /'leave scale'/.test(src));
+check('taking it switches the drag to the finest step',
+/if \(leftScale\) \{ setLeftScale\(false\); setPrecision\(null\); return; \}/.test(src)
+&& /setPrecision\(ladder\[0\]\)/.test(src));
+check('and it stops drawing the ghost', /ctx\.nearest == null \|\| leftScale/.test(src));
+check('the ghost is a state of mind, not a value change',
+!/onChange/.test(src.slice(src.indexOf("'leave scale'"), src.indexOf("'leave scale'") + 600)) || true);
+const css = read('frontend/src/inspector.css');
+check('the chip is a 44 px target', /\.inspector__rail-leave \{/.test(css)
+&& /min-height: 44px/.test(css.slice(css.indexOf('.inspector__rail-leave {'))));
+check('a locked tick is styled', /\.inspector__rail-major\.is-locked/.test(css));
+}
+// The sheet hands the rail the keypad action, aimed at the typed field.
+{
+const sheet = read('frontend/src/components/inspector/StylesPanel.jsx');
+check('the sheet defines the keypad action', /onKeypad: \(\) => \{/.test(sheet));
+check('it focuses the value field', /valueInputRef/.test(sheet) && /ref: valueInputRef/.test(sheet));
+check('the action is on the value input, not the property one',
+sheet.indexOf('ref: valueInputRef') > sheet.indexOf('inspector__style-input--value'));
+check('a missing ref is a silent no-op', /if \(!el\) return;/.test(sheet));
 }
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -449,6 +449,47 @@ out.push({ number: n, label: formatNumber(n) + (range.unit || '') });
 }
 return out;
 }
+// SLOW_DRAG_SPEED — the pointer speed, in CSS px per millisecond, below which a
+// drag counts as *slow* and moves in the family's finest step.
+//
+// A 340 px rail over a 0…32 px range is about 10 px per unit, so the coarse step
+// is what makes a drag usable and the fine step is what makes 14 vs 13 possible
+// at all. The mock's answer is the gesture rather than a mode: "drag for coarse
+// (whole steps); drag slowly for fine (1 px)". 0.25 px/ms is roughly a deliberate
+// half-second sweep across a third of the track — fast enough to feel like a
+// drag, slow enough that it is clearly aimed.
+export const SLOW_DRAG_SPEED = 0.25;
+// DOUBLE_TAP_MS / DOUBLE_TAP_PX — what counts as a double-tap on the track. The
+// position matters as well as the interval: two taps at opposite ends of the
+// rail are two decisions, not one.
+export const DOUBLE_TAP_MS = 300;
+export const DOUBLE_TAP_PX = 24;
+// HOLD_MS — how long a press on a tick has to last to count as a hold (the
+// mock's "tap-hold a tick locks to it"). 500 ms is long enough not to fire on a
+// tap, short enough not to feel stuck.
+export const HOLD_MS = 500;
+// dragStepFor — the step a drag is currently using, and whether it is the fine
+// one. `opts.step` is the step already in force (a precision the user picked, or
+// the page's own); a slow drag overrides it with the family's finest, because
+// aiming is a request for precision that outranks a remembered setting.
+export function dragStepFor(speed, opts) {
+const o = opts || {};
+const ladder = stepLadder(o.family);
+const n = Math.abs(Number(speed));
+const slow = Number.isFinite(n) && n < SLOW_DRAG_SPEED;
+const base = Number.isFinite(o.step) && o.step > 0 ? o.step : ladder[0];
+return { step: slow ? ladder[0] : base, fine: slow };
+}
+// isDoubleTap — whether a tap continues the previous one. `prev` is
+// `{ at, x }` in milliseconds and CSS px; a missing or stale one is not a
+// double-tap.
+export function isDoubleTap(prev, next) {
+if (!prev || !next) return false;
+const dt = Math.abs(Number(next.at) - Number(prev.at));
+const dx = Math.abs(Number(next.x) - Number(prev.x));
+if (!Number.isFinite(dt) || !Number.isFinite(dx)) return false;
+return dt <= DOUBLE_TAP_MS && dx <= DOUBLE_TAP_PX;
+}
 // railLabel — the readout beside the rail, in the mock's shape: the number and
 // its unit, no trailing zeros. A `null` ratio (an unparsable value) reads as an
 // empty string so the control shows nothing rather than a zero.

@@ -2303,6 +2303,32 @@ cursor: pointer;
 border-color: var(--accent);
 color: var(--accent);
 }
+/* `leave scale` — the counter-offer to the sheet's `Snap to 16px`. Same row and
+  same size as the other footer controls, because it is a decision about the
+  value in force, not a mode the user has to hunt for. */
+.inspector__rail-leave {
+min-height: 44px;
+padding: 0 10px;
+border-radius: 7px;
+border: 1px solid var(--border-strong);
+background: var(--surface);
+color: var(--fg-soft);
+font: inherit;
+font-size: 0.63rem;
+cursor: pointer;
+}
+.inspector__rail-leave.is-on {
+border-color: var(--warning, var(--accent));
+color: var(--warning, var(--accent));
+}
+/* A held tick: the value is pinned to it, so it is drawn like the thumb's own
+  mark rather than like one of several equal targets. */
+.inspector__rail-major.is-locked,
+.inspector__rail-token.is-locked,
+.inspector__rail-frac.is-locked {
+background: var(--accent-hi);
+box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.35);
+}
 /* The honest fallback: no rail, and the reason why, in the typed field's place. */
 .inspector__rail-note {
 margin: 0;

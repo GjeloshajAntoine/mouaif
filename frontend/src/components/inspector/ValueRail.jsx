@@ -18,7 +18,7 @@
 // computed by valueRail.js, which is pure and unit-tested.
 import { h } from 'preact';
 import { useRef, useState } from 'preact/hooks';
-import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, fractionSnaps, timePresets, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
+import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, fractionSnaps, timePresets, dragStepFor, isDoubleTap, valueToRatio, ratioToValue, quantize, nudge, HOLD_MS, DOUBLE_TAP_MS } from './valueRail.js';
 import { classify, formatNumber, unitOptions } from './valueKinds.js';
 // THUMB — the visual and hit sizes. The thumb is 34 px (what a finger sees) and
 // the pointer target is the whole 60 px track, so a drag never needs pixel aim.
@@ -58,8 +58,23 @@ const prop = props.prop || '';
 const value = props.value || '';
 const ctx = props.ctx || {};
 const [precision, setPrecision] = useState(null);
+// fine — a slow drag is in progress. Held in state because the header has to say
+// so while it lasts: the same thumb moves in 1 px and in 4 px during one
+// gesture, and a readout that stayed silent would make the jump look like a bug.
+const [fine, setFine] = useState(false);
+// lock — the tick a hold pinned the value to, if any. Released by the next
+// gesture, because it describes the value in force rather than the rail's mode.
+const [lock, setLock] = useState(null);
+// leftScale — the user has dismissed the off-scale ghost. The value stays off the
+// page's scale because they said so, so the ring stops being drawn until they
+// ask for the scale back (see the footer's `leave scale` / `use scale`).
+const [leftScale, setLeftScale] = useState(false);
 const wrapRef = useRef(null);
 const dragRef = useRef(null);
+// The hold timer and the last tap, for the tick-hold lock and the double-tap
+// keypad. Refs rather than state: neither is rendered.
+const holdRef = useRef(null);
+const tapRef = useRef(null);
 const writable = railWritable(prop, value);
 // The range, and the step the drag uses: the user's chosen precision first, then
 // the page's own step, then a fine/coarse pair that adapts to the value's size.
@@ -84,7 +99,7 @@ const ratio = range ? valueToRatio(info.number, range) : 0;
 // draggable. `ctx.nearest` comes from the same snapValue reading the sheet's
 // hint uses, so the ring and the hint can never disagree.
 const ghost = (() => {
-if (!range || ctx.nearest == null) return null;
+if (!range || ctx.nearest == null || leftScale) return null;
 const n = Number(ctx.nearest);
 if (!Number.isFinite(n)) return null;
 if (n < range.min || n > range.max) return null;
@@ -97,9 +112,13 @@ const units = unitOptions(prop, value, ctx);
 // The conversion the footer prints beside the chips (`= 0.875rem`): read from
 // the same option list, so it is always a conversion a chip would really write.
 const equivalent = unitEquivalent(units);
-function write(n) {
+// write — the one place a gesture reaches the field. `at` overrides the step for
+// this write only, which is how a slow drag moves in the fine step without
+// changing the precision the user chose.
+function write(n, at) {
 if (!range) return;
-const clamped = quantize(n, null, range);
+const size = Number.isFinite(at) && at > 0 ? at : null;
+const clamped = size ? quantize(n, size, range) : quantize(n, null, range);
 // The range is already expressed in the value's own unit — `railRange` converts
 // a length's bounds through the page's real root font size for a rem value (see
 // toUnit), so a drag writes rem against that root and not against a hard-coded
@@ -119,9 +138,9 @@ const rect = el.getBoundingClientRect();
 if (!(rect.width > 0)) return 0;
 return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
 }
-function moveTo(clientX) {
+function moveTo(clientX, at) {
 if (!range) return;
-write(ratioToValue(ratioAt(clientX), range, step));
+write(ratioToValue(ratioAt(clientX), range, at == null ? step : at), at);
 }
 function onDown(e) {
 if (!range) return;
@@ -131,27 +150,94 @@ if (!range) return;
 if (e.currentTarget.setPointerCapture) {
 try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* older engines */ }
 }
-dragRef.current = { id: e.pointerId, moved: false };
+// A new gesture releases a held tick: the lock is a statement about the value
+// in force, and this gesture is about to change it.
+if (lock) setLock(null);
+const now = eventTime(e);
+dragRef.current = { id: e.pointerId, moved: false, x: e.clientX, t: now, speed: null };
 e.preventDefault();
-moveTo(e.clientX);
+moveTo(e.clientX, step);
 }
+// A drag changes step as it goes: a *slow* move means the user is aiming, so the
+// value follows the family's finest step (the mock's "drag slowly for fine"), and
+// a normal one keeps the coarse step that makes the gesture usable at all. The
+// speed is smoothed, because a single pointer event's timing is noisy enough to
+// flip the mode on every frame.
 function onMove(e) {
-if (!dragRef.current || dragRef.current.id !== e.pointerId) return;
-dragRef.current.moved = true;
+const drag = dragRef.current;
+if (!drag || drag.id !== e.pointerId) return;
+const now = eventTime(e);
+const dt = Math.max(1, now - drag.t);
+const speed = Math.abs(e.clientX - drag.x) / dt;
+drag.speed = drag.speed == null ? speed : drag.speed * 0.6 + speed * 0.4;
+drag.x = e.clientX;
+drag.t = now;
+drag.moved = true;
 e.preventDefault();
-moveTo(e.clientX);
+const use = dragStepFor(drag.speed, { family: range.family, step });
+if (use.fine !== fine) setFine(use.fine);
+moveTo(e.clientX, use.step);
 }
 function onUp(e) {
-if (!dragRef.current) return;
+const drag = dragRef.current;
+if (!drag) return;
 dragRef.current = null;
+if (fine) setFine(false);
 if (e.currentTarget.releasePointerCapture) {
 try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
 }
+// A tap (no movement) is the other half of the gesture set: one tap writes the
+// value under the finger, and two in quick succession at the same place ask for
+// the keypad — the value is close enough that typing it exactly is the next
+// move, and the field is already on screen.
+if (!drag.moved) {
+const next = { at: eventTime(e), x: e.clientX };
+if (isDoubleTap(tapRef.current, next)) {
+tapRef.current = null;
+if (props.onKeypad) props.onKeypad();
+} else {
+tapRef.current = next;
+}
+}
+}
+// eventTime — a pointer event's timestamp, with `performance.now()` as the
+// fallback for an engine that does not carry one.
+function eventTime(e) {
+if (e && Number.isFinite(e.timeStamp) && e.timeStamp > 0) return e.timeStamp;
+return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+}
+// Holding a tick locks to it (the mock's "tap-hold a tick locks to it"): the
+// value is written, the tick is marked, and the header says what it is locked to
+// until the next gesture releases it. A plain tap still just sets the value.
+const clearHold = () => {
+if (holdRef.current) {
+clearTimeout(holdRef.current);
+holdRef.current = null;
+}
+};
+function holdTick(n, label) {
+return {
+onPointerDown: () => {
+clearHold();
+holdRef.current = setTimeout(() => {
+holdRef.current = 'fired';
+write(n);
+setLock({ value: n, label: label });
+}, HOLD_MS);
+},
+onPointerUp: clearHold,
+onPointerCancel: clearHold,
+onPointerLeave: clearHold
+};
 }
 // Tapping the tick labels is the precise version of tapping the track: the label
 // carries the exact number, so the value lands on it whatever the mapping does.
 function tap(value) {
 if (!range) return;
+// A hold already wrote its value and set the lock; the click that follows it
+// (a pointerup after a long press still fires one) must not undo that.
+if (holdRef.current === 'fired') { holdRef.current = null; return; }
+if (lock) setLock(null);
 const n = Number(value);
 if (Number.isFinite(n)) write(n);
 }
@@ -170,8 +256,14 @@ h('span', { class: 'inspector__rail-now' }, label || value),
 h('span', { class: 'inspector__rail-ev' },
 // The step in force, named for where it came from: the page's own scale when
 // the index found one, the user's tapped precision when they chose one, and the
-// family's own step otherwise (see STEP_LADDER).
-step == null
+// family's own step otherwise (see STEP_LADDER). The two gestures that change
+// it mid-flight say so here, because the thumb moving 1 px and then 4 px in one
+// drag is otherwise indistinguishable from a bug.
+lock
+? 'locked · ' + lock.label
+: fine
+? 'fine ' + formatNumber(familyStep(0, range.family)) + (range.unit || '')
+: step == null
 ? 'fine'
 : precision != null
 ? formatNumber(precision) + (range.unit || '') + ' step'
@@ -207,24 +299,24 @@ class: 'inspector__rail-tick',
 key: 't' + v,
 style: markStyle(valueToRatio(v, range), 2)
 })),
-ticks.major.map((v) => h('button', {
-class: 'inspector__rail-major',
+ticks.major.map((v) => h('button', Object.assign({
+class: 'inspector__rail-major' + (lock && lock.value === v ? ' is-locked' : ''),
 type: 'button',
 key: 'm' + v,
 style: markStyle(valueToRatio(v, range), 2),
-title: 'Set ' + prop + ' to ' + formatNumber(v) + (range.unit || ''),
+title: 'Set ' + prop + ' to ' + formatNumber(v) + (range.unit || '') + ' — hold to lock',
 'aria-label': 'Set to ' + formatNumber(v) + (range.unit || ''),
 onClick: () => tap(v)
-})),
-ticks.tokens.map((t) => h('button', {
-class: 'inspector__rail-token',
+}, holdTick(v, formatNumber(v) + (range.unit || ''))))),
+ticks.tokens.map((t) => h('button', Object.assign({
+class: 'inspector__rail-token' + (lock && lock.value === t.number ? ' is-locked' : ''),
 type: 'button',
 key: 'k' + t.name,
 style: markStyle(t.ratio, 3),
-title: t.name + ' = ' + t.value,
+title: t.name + ' = ' + t.value + ' — hold to lock',
 'aria-label': 'Set to ' + t.name + ', which is ' + t.value,
 onClick: () => tap(t.number)
-})),
+}, holdTick(t.number, t.name)))),
 ghost
 ? h('span', {
 class: 'inspector__rail-ghost',
@@ -235,15 +327,15 @@ style: { left: pct(ghost.ratio) },
 // Box fractions — the third tick family. They sit between the round numbers and
 // the tokens in a drag's vocabulary: not a page value, not a token, but "half of
 // this element", which is a target a designer names out loud.
-fractions.map((f) => h('button', {
-class: 'inspector__rail-frac',
+fractions.map((f) => h('button', Object.assign({
+class: 'inspector__rail-frac' + (lock && lock.value === f.number ? ' is-locked' : ''),
 type: 'button',
 key: 'f' + f.fraction,
 style: markStyle(f.ratio, 2),
-title: f.label + ' of this element = ' + formatNumber(f.number) + (range.unit || ''),
+title: f.label + ' of this element = ' + formatNumber(f.number) + (range.unit || '') + ' — hold to lock',
 'aria-label': 'Set to ' + f.label + ' of this element, ' + formatNumber(f.number) + (range.unit || ''),
 onClick: () => tap(f.number)
-})),
+}, holdTick(f.number, f.label + ' of this element')))),
 h('span', {
 class: 'inspector__rail-thumb',
 style: { left: pct(ratio) },
@@ -312,6 +404,25 @@ title: 'Set ' + prop + ' to ' + p.label,
 onClick: () => write(p.number)
 }, p.label))
 )
+: null,
+// The other half of the mock's snap pair. The sheet's hint offers `Snap to 16px`
+// for a value that is off the page's scale; this offers the opposite — keep the
+// value as it is and stop judging it. Taking it switches the drag to the family's
+// finest step and stops drawing the ghost, and `use scale` puts both back.
+ctx.nearest != null && range.step
+? h('button', {
+class: 'inspector__rail-leave' + (leftScale ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(leftScale),
+title: leftScale
+? 'Snap the drag back to the page\'s ' + formatNumber(range.step) + (range.unit || '') + ' step'
+: 'Keep ' + value + ' — drag in ' + formatNumber(ladder[0]) + (range.unit || '') + ' steps instead of the page\'s ' + formatNumber(range.step) + (range.unit || ''),
+onClick: () => {
+if (leftScale) { setLeftScale(false); setPrecision(null); return; }
+setLeftScale(true);
+setPrecision(ladder[0]);
+}
+}, leftScale ? 'use scale' : 'leave scale')
 : null,
 ctx.scaleNote
 ? h('span', { class: 'inspector__rail-mini' }, ctx.scaleNote)
