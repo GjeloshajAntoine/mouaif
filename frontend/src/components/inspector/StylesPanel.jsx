@@ -35,8 +35,9 @@ import { h } from 'preact';
 import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
-import { alternatives, unitOptions } from './valueKinds.js';
-import { buildValueIndex } from './valueIndex.js';
+import { alternatives, unitOptions, classify } from './valueKinds.js';
+import { buildValueIndex, scaleFor } from './valueIndex.js';
+import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { Suggestions } from './Suggestions.jsx';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
@@ -225,17 +226,15 @@ const COMMON_CSS = [
 // unit. Deliberately narrow (`px`, `%`, `rem`, …) so the steppers only show
 // up for lengths and unitless numbers — never for colors, keywords, or
 // multi-part shorthands where "+1" would be meaningless.
+//
+// The step itself comes from snapping.js: the page's own numeric step when the
+// value index found one (a 4 px design scale nudges by 4, not by 1), and ±1
+// otherwise. Negative results clamp at 0 rather than producing an invalid
+// `-4px` for a padding.
 const STEP_RE = /^(-?\d+(?:\.\d+)?)(px|em|rem|%|vh|vw|pt|ch|ex)?$/;
-// stepValue — the value one step up or down, or null when the current value
-// isn't steppable. Negative results clamp at 0 rather than producing an
-// invalid `-4px` for a padding.
-function stepValue(value, dir) {
-const m = STEP_RE.exec(String(value == null ? '' : value).trim());
-if (!m) return null;
-const next = parseFloat(m[1]) + dir;
-if (!Number.isFinite(next)) return null;
-const n = next < 0 ? 0 : next;
-return String(Number(n.toFixed(2))) + (m[2] || '');
+function stepValue(value, dir, step) {
+if (!STEP_RE.test(String(value == null ? '' : value).trim())) return null;
+return stepValuePure(value, dir, step);
 }
 // StyleEditSheet — bottom sheet that edits one property. Shown when the
 // user taps a property row or an add-chip. Big inputs, a pinned preview of
@@ -267,8 +266,17 @@ setError('');
 setApplied(false);
 }, [props.prop, props.value]);
 const propName = (prop || '').trim();
-const down = stepValue(value, -1);
-const up = stepValue(value, 1);
+// The page's own step for this property, when it has one: the steppers move by
+// 4px on a 4px design scale instead of by 1, which is what makes −/+ land on
+// values the rest of the page actually uses (see snapping.js). The precision
+// segment and the rail (later parts) pass their own step and override this.
+const pageScale = (props.valueIndex && propName) ? scaleFor(props.valueIndex, propName) : null;
+const pageStep = stepFor(pageScale, null);
+const down = stepValue(value, -1, pageStep);
+const up = stepValue(value, 1, pageStep);
+// The snap reading for the typed value: reported by the Suggestions row, which
+// owns the hint, and computed once here so the Apply button and the hint agree.
+const snap = pageScale ? snapValue(propName, value, pageScale) : null;
 async function commit(p, v) {
 if (busy || !props.onApply) return;
 setBusy(true);
@@ -366,10 +374,14 @@ onChange: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
 // The page's own values and tokens for this property, once there is a property
 // to look up. Placed under the type switch so the order reads "what form, then
-// which value".
+// which value". `value` goes along so the row can place the value being typed on
+// the page's own scale, and `contrastCtx` carries the element's resolved
+// background and text colours for the colour chips' WCAG ratios.
 h(Suggestions, {
 index: props.valueIndex,
 prop: propName,
+value,
+contrastCtx: props.contrastCtx,
 onPick: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
 h('div', { class: 'inspector__style-valuerow' },h('button', {
@@ -377,7 +389,8 @@ class: 'inspector__style-step',
 type: 'button',
 disabled: busy || down == null,
 'aria-label': 'Decrease ' + (propName || 'value'),
-title: down == null ? 'Not a number' : 'Decrease to ' + down,
+title: down == null ? 'Not a number'
+: 'Decrease to ' + down + (pageStep ? ' — the page\'s ' + pageStep + (pageScale.unit || '') + ' step' : ''),
 onClick: () => nudge(down)
 }, '−'),
 h('input', {
@@ -395,10 +408,19 @@ class: 'inspector__style-step',
 type: 'button',
 disabled: busy || up == null,
 'aria-label': 'Increase ' + (propName || 'value'),
-title: up == null ? 'Not a number' : 'Increase to ' + up,
+title: up == null ? 'Not a number'
+: 'Increase to ' + up + (pageStep ? ' — the page\'s ' + pageStep + (pageScale.unit || '') + ' step' : ''),
 onClick: () => nudge(up)
 }, '+')
 ),
+// The page's step and where the typed value sits on it. The nudge pair moves in
+// whole steps, so this line is the answer to "why did + jump by 4?".
+pageStep && snap
+? h('p', { class: 'inspector__style-step-note' },
+'Stepping by ' + pageStep + (pageScale.unit || '') + ' — this page\'s own scale',
+snap.offScale && snap.nearest ? ' · nearest ' + snap.nearest.value : ''
+)
+: null,
 // The scope block states what Apply will and will not do, in numbers computed
 // from the element's real declarations (see scopeSummary): one property
 // changes, the rest are kept, no stylesheet rule is touched and no other
@@ -1432,6 +1454,23 @@ shotBusy,
 // The real base font sizes (root for rem, parent for em / font-size %) so the
 // value-type switch converts with numbers instead of assuming 16px.
 unitCtx: model.bases ? { rootFontSize: model.bases.root, parentFontSize: model.bases.parent, fontSize: model.bases.self } : undefined,
+// The element's resolved background and text colours: what a colour chip's
+// WCAG ratio is measured against (see contrast.js). Read from the computed
+// list the panel already has, so the badge costs no extra CDP call.
+contrastCtx: (() => {
+  const resolved = (name) => {
+    const row = computedRows.find((r) => r.prop === name);
+    return row ? row.value : '';
+  };
+  const bg = resolved('background-color');
+  return {
+    bg,
+    color: resolved('color'),
+    // A transparent background has nothing to measure against, so the ratio
+    // is read against the page's own background instead of against `rgba(0,0,0,0)`.
+    fallbackBg: /rgba?\(0,\s*0,\s*0,\s*0\)|transparent/i.test(bg) ? resolved('background-color') : ''
+  };
+})(),
 onRefreshShot: captureShot,
 onApply: applyEdit,
 onRemove: removeEdit,

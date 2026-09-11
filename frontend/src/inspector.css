@@ -1824,11 +1824,58 @@ min-width: 0;
    the field only — Apply still commits — so a suggestion is as reversible as a
    typed value. Same 44 px targets as the rest of the sheet. */
 .inspector__suggest {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 2px;
+display: flex;
+flex-direction: column;
+gap: 8px;
+margin-top: 2px;
 }
+/* The chip row. Each chip is a ≥44 px target (mobile-first rule) and the row
+wraps rather than scrolling: a horizontal scroller inside the sheet would steal
+the vertical drag. `.opt` / `.grp` are the suggestion row's own class names —
+they are not shared with the rest of the panel. */
+.inspector__suggest .grp {
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__suggest .gh {
+display: flex;
+align-items: baseline;
+gap: 4px;
+flex-wrap: wrap;
+font-size: 0.6rem;
+font-weight: 700;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+.inspector__suggest .gh span {
+letter-spacing: 0;
+text-transform: none;
+font-weight: 500;
+}
+.inspector__suggest .opts {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__suggest .opt {
+display: inline-flex;
+align-items: center;
+gap: 6px;
+min-height: 44px;
+padding: 0 11px;
+border-radius: 9px;
+border: 1px solid var(--border-strong);
+background: var(--surface-2);
+color: var(--fg);
+font: inherit;
+font-size: 0.72rem;
+font-family: var(--font-mono);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__suggest .opt:active { transform: scale(0.98); }
 .inspector__suggest-value {
   font-family: var(--font-mono);
   /* A shorthand value (`12px 10px 32px`) is a legitimate chip label but wider
@@ -1863,9 +1910,76 @@ min-width: 0;
   color: var(--accent-hi);
 }
 .inspector__suggest-note {
-  margin: 0;
-  font-size: 0.68rem;
-  color: var(--muted-2);
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+}
+/* ---- Inspector: scale + contrast guidance (Part V3) -----------------
+Two kinds of guidance on top of the suggestion chips, both of which have to
+work on one 360 px line:
+  * the snap hint — the page's step is `4px` and the typed value is `13px`,
+    so the line names the nearest value and offers a one-tap snap;
+  * the contrast badge — a colour candidate carries its WCAG ratio against
+    the element's resolved background.
+The hint wraps rather than scrolling, and the snap button is a ≥44 px target
+like every other control in the sheet. */
+.inspector__suggest-snap {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px 8px;
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+}
+.inspector__suggest-snap.is-on { color: var(--success); }
+.inspector__suggest-snap.is-off { color: var(--warning); }
+/* The value as typed, struck through when it is about to be replaced: the
+drag/step readout is the only way to know what changes. */
+.inspector__suggest-snap-ghost {
+font-family: var(--font-mono);
+color: var(--muted-2);
+text-decoration: line-through;
+}
+.inspector__suggest-snap-btn {
+min-height: 44px;
+padding: 0 10px;
+border-radius: 9px;
+border: 1px solid var(--warning);
+background: transparent;
+color: var(--warning);
+font: inherit;
+font-size: 0.68rem;
+font-weight: 600;
+}
+.inspector__suggest-snap-btn:active { transform: scale(0.98); }
+/* A colour chip: swatch, value, ratio. The swatch carries a border so a
+transparent or near-background colour is still visible as a chip. */
+.inspector__suggest-sw {
+width: 14px;
+height: 14px;
+border-radius: 4px;
+border: 1px solid rgba(255, 255, 255, 0.25);
+flex: 0 0 auto;
+}
+.inspector__suggest-colour { gap: 6px; }
+/* The contrast badge. `AA`/`AAA` is quiet (a pass is not news); a fail takes
+the danger colour, because an unreadable text colour is a warning. */
+.inspector__suggest-aa {
+font: inherit;
+font-size: 0.58rem;
+padding: 2px 4px;
+border-radius: 4px;
+background: var(--success-soft);
+color: var(--success);
+white-space: nowrap;
+}
+.inspector__suggest-aa.is-bad {
+background: var(--danger-soft);
+color: var(--danger);
+}
+.inspector__suggest-colour.is-unreadable {
+border-color: rgba(255, 138, 138, 0.4);
 }
 
 /* ---- Inspector: edit receipt + scope -------------------------------
@@ -3078,6 +3192,15 @@ cursor: pointer;
 }
 .inspector__style-step:disabled { opacity: 0.4; cursor: default; }
 .inspector__style-step:not(:disabled):active { transform: scale(0.96); }
+/* The step line under the −/+ pair: which step the nudge uses, and where the
+typed value sits on the page's scale. One small line, wrapped rather than
+scrolling, because "why did + jump by 4?" is otherwise unanswerable. */
+.inspector__style-step-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
 .inspector__style-applied {
 margin: 2px 0 0;
 font-size: 0.72rem;

@@ -269,8 +269,10 @@ check('property names are matched case-insensitively',
     }
   });
   vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), comp);
-  vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), comp);
-  vm.runInContext(strip(read('frontend/src/components/inspector/Suggestions.jsx')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/contrast.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/Suggestions.jsx')), comp);
   const walk = (n, out = []) => {
     if (n == null || typeof n !== 'object') return out;
     if (Array.isArray(n)) { n.forEach((x) => walk(x, out)); return out; }
@@ -346,14 +348,109 @@ check('a chip per page value, capped', chips.length === 4, String(chips.length))
 // ---- the sheet wiring --------------------------------------------------
 
 check('the sheet renders the suggestions',
-  /h\(Suggestions, \{/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+/h\(Suggestions, \{/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('the index is built from the rules and the computed style',
-  /buildValueIndex\(\{ rules: \(rules && rules\.rules\) \|\| \[\], computed: computedRows \}\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+/buildValueIndex\(\{ rules: \(rules && rules\.rules\) \|\| \[\], computed: computedRows \}\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('the index is memoised so a CDP rerender does not rebuild it',
-  /useMemo\(\s*\(\) => buildValueIndex/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+/useMemo\(\s*\(\) => buildValueIndex/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('picking a suggestion only rewrites the field',
-  /onPick: \(next\) => \{ setValue\(next\); setApplied\(false\); setError\(''\); \}/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+/onPick: \(next\) => \{ setValue\(next\); setApplied\(false\); setError\(''\); \}/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('the suggestion chips are styled', /\.inspector__suggest \{/.test(read('frontend/src/inspector.css')));
-
+// ---- Part V3: snapping and contrast in the same row ---------------------
+// The snap hint is rendered by this component too, so an off-scale value is
+// reported where the user is already looking for a value. Rendered in the same
+// hooks-free stub as above, with its own context.
+{
+const nodes = [];
+const comp = vm.createContext({
+h: (type, attrs, ...children) => {
+const props = Object.assign({}, attrs || {});
+if (typeof type === 'function') return type(Object.assign(props, { children }));
+const n = { type, props, children };
+nodes.push(n);
+return n;
+}
+});
+vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/contrast.js')), comp);
+vm.runInContext(strip(read('frontend/src/components/inspector/Suggestions.jsx')), comp);
+const walk3 = (n, out = []) => {
+if (n == null || typeof n !== 'object') return out;
+if (Array.isArray(n)) { n.forEach((x) => walk3(x, out)); return out; }
+out.push(n);
+(n.children || []).forEach((c) => walk3(c, out));
+return out;
+};
+const cls = (n) => String((n.props && n.props.class) || '');
+const byClass = (tree, c) => walk3(tree).filter((n) => cls(n).split(/\s+/).includes(c));
+const text = (node) => {
+if (node == null) return '';
+if (typeof node === 'string') return node;
+if (Array.isArray(node)) return node.map(text).join(' ');
+return (node.children || []).map(text).join(' ');
+};
+const withScale = comp.Suggestions({ index, prop: 'padding', value: '13px', onPick: () => {} });
+check('an off-scale typed value gets a snap hint',
+byClass(withScale, 'inspector__suggest-snap').length === 1,
+JSON.stringify(byClass(withScale, 'inspector__suggest-snap').length));
+check('the hint is marked as off-scale',
+byClass(withScale, 'inspector__suggest-snap').every((n) => cls(n).includes('is-off')));
+check('the hint names the nearest page value',
+/nearest 12px/.test(text(withScale)), text(withScale));
+check('the hint offers a one-tap snap',
+byClass(withScale, 'inspector__suggest-snap-btn').length === 1);
+check('the snap button is labelled with its target',
+byClass(withScale, 'inspector__suggest-snap-btn')[0].props['aria-label'] === 'Snap 13px to 12px',
+byClass(withScale, 'inspector__suggest-snap-btn')[0].props['aria-label']);
+check('tapping the snap button only rewrites the field', (() => {
+let picked = '';
+const t = comp.Suggestions({ index, prop: 'padding', value: '13px', onPick: (v) => { picked = v; } });
+byClass(t, 'inspector__suggest-snap-btn')[0].props.onClick();
+return picked === '12px';
+})());
+const onScale = comp.Suggestions({ index, prop: 'padding', value: '16px', onPick: () => {} });
+check('an on-scale value says so instead of nagging',
+byClass(onScale, 'inspector__suggest-snap').some((n) => cls(n).includes('is-on'))
+&& byClass(onScale, 'inspector__suggest-snap-btn').length === 0);
+const noScale = comp.Suggestions({ index, prop: 'z-index', value: '7', onPick: () => {} });
+check('no scale and no values emits nothing at all', noScale === null);
+const empty = comp.Suggestions({ index, prop: 'padding', value: '', onPick: () => {} });
+check('an empty field gets no snap hint',
+byClass(empty, 'inspector__suggest-snap').length === 0);
+// A colour property renders swatches with a WCAG badge instead of use counts,
+// so a legibility mistake is visible on the chip rather than after Apply.
+const colourTree = comp.Suggestions({
+index, prop: 'color', value: '#ffffff', onPick: () => {},
+contrastCtx: { bg: '#131824', color: '#ffffff' }
+});
+check('a colour property renders the palette group',
+/This page's palette/.test(text(colourTree)), text(colourTree));
+check('a colour chip carries a swatch',
+byClass(colourTree, 'inspector__suggest-sw').length >= 1);
+check('a colour chip carries a contrast ratio',
+byClass(colourTree, 'inspector__suggest-aa').length >= 1);
+check('the ratio is the WCAG one for white on the mock background',
+byClass(colourTree, 'inspector__suggest-aa').length >= 1
+&& byClass(colourTree, 'inspector__suggest-aa').every((n) => /\d/.test(text({ children: n.children }))),
+JSON.stringify(byClass(colourTree, 'inspector__suggest-aa').map((n) => text({ children: n.children }))));
+check('the contrast hint wraps rather than scrolling',
+/\.inspector__suggest-snap \{[\s\S]*?flex-wrap: wrap/.test(read('frontend/src/inspector.css')));
+check('the snap button is a ≥44 px target',
+/\.inspector__suggest-snap-btn \{[\s\S]*?min-height: 44px/.test(read('frontend/src/inspector.css')));
+check('the new guidance is styled',
+/\.inspector__suggest-aa \{/.test(read('frontend/src/inspector.css'))
+&& /\.inspector__suggest-sw \{/.test(read('frontend/src/inspector.css')));
+}
+// The steppers move by the page's own step when the index found one.
+check('the sheet derives the page step from the index',
+/const pageStep = stepFor\(pageScale, null\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the steppers use the page step',
+/const down = stepValue\(value, -1, pageStep\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx'))
+&& /const up = stepValue\(value, 1, pageStep\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the sheet states the step it is using',
+/Stepping by ' \+ pageStep/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the step line is styled', /\.inspector__style-step-note \{/.test(read('frontend/src/inspector.css')));
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-index assertion(s) failed');

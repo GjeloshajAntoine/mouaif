@@ -28,6 +28,7 @@ Tap any declared style row (or a quick-add chip) in the Styles panel to open the
 - **A percentage is refused where it means something else.** `padding: 14px → %` needs the containing block's width; `z-index: 3 → 3%` is not a stacking order; `flex-grow: 1 → 100%` is a different value. Each is disabled with its reason rather than converted.
 - **Custom properties are typed by what they hold.** `--space-card: 14px` gets the length switch (so a design token is editable as a length), while `var(--w)` used *as* a value is the custom form and gets no numeric switch.
 - **The base font sizes are read from the page**, not assumed: root for `rem`, the parent element for `em` and for a font-size percentage. They travel with every pick (`buildNodeModel`) and with every post-edit read (`readElementStyles`), so the switch is fully available the moment an element is selected — an earlier version read them only after an edit, which left `Percent` and `rem` disabled exactly when the user wanted them.
+- **The `−` / `+` steppers move by the page's own step.** When the value index finds a numeric scale for the property being edited (`steps of 4px`), a nudge moves by 4 and the line under the field says so (`Stepping by 4px — this page's own scale · nearest 12px`); without a scale the original ±1 behaviour is kept, and a caller that passes its own precision overrides both. See [Inspector value suggestions](./inspector-value-suggestions.md) for the snapping arithmetic.
 
 ## Implementation notes
 

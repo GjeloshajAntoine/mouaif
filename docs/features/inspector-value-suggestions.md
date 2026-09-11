@@ -2,26 +2,39 @@
 
 ## Overview
 
-The type switch changes *how* a value is written and the unit cycle rewrites the same value in another unit — but neither answers the question that actually stalls an edit: **what should this value be?** The edit sheet therefore lists the values and design tokens **this page already uses** for the property being edited, each with the evidence behind it: how many times it appears and which rule supplies it.
+The type switch changes *how* a value is written and the unit cycle rewrites the same value in another unit — but neither answers the question that actually stalls an edit: **what should this value be?** The edit sheet therefore lists the values and design tokens **this page already uses** for the property being edited, each with the evidence behind it: how many times it appears and which rule supplies it. On top of that list it adds two pieces of guidance the evidence alone cannot give: the value being typed is placed **on the page's own numeric scale** (with the nearest value and its distance named), and every **colour** candidate carries its **WCAG contrast ratio** against the element it would be applied to.
+
+![The snap hint and the contrast badges in the edit sheet at 360 px](./images/inspector/value-snap-contrast-360.png)
 
 ## Usage
 
 Open the edit sheet (tap a declared row or a quick-add chip). Below the value-type switch, for a property the page declares:
 
-```
+```text
 Value type — Length        [ Length 16px ][ Percent 100% ][ Number 16 ][ Keyword inherit ]
 On this page · 3 values · steps of 4px
   [ 16px 3× ]  [ 12px 1× ]  [ 8px 1× ]
 Tokens · from this page
   [ --space-4 = 16px ]  [ --space-3 = 12px ]
+Stepping by 4px — this page's own scale · nearest 16px
 4 values on this page · steps of 4px
 ```
 
 1. **On this page** — the values declared for this property anywhere in the page's stylesheets, most-used first. Each chip carries its count (`3×`) and, on its tooltip, the rule that supplies it (`used 3 times (.card)`) and its origin (`inherited from form.compare`).
 2. **The value in force** — the one the element already resolves to is highlighted, not sorted away: picking it back is a legitimate way to undo a pending edit.
 3. **Tokens** — custom properties (`--*`) whose value is valid for this property, shown as `--space-4 = 16px`. Picking one inserts the token **name**, so the declaration points at the design system rather than copying its value.
-4. **The step** — when the page's values for the property share a numeric scale, the group header states it (`steps of 4px`) and the note under the chips repeats the evidence: `4 values on this page · steps of 4px`.
-5. **Tapping a chip only rewrites the field.** Apply still commits, so a suggestion is exactly as reversible as anything typed — one property, one undo entry.
+4. **The step** — when the page's values for the property share a numeric scale, the group header states it (`steps of 4px`) and the note under the chips repeats the evidence: `4 values on this page · steps of 4px`. The `−` / `+` steppers on the value field move by that step instead of by 1, and the line under them says so: `Stepping by 4px — this page's own scale`.
+5. **The snap hint** — a value that is not one of the page's own values is marked with the value struck through, the nearest page value and how far off it is, and a **Snap to 16px** button:
+
+   ```text
+   13px  nearest 16px · 3px away    [ Snap to 16px ]
+   ```
+
+   An on-scale value says so quietly (`on scale · 4 px step`) and offers no button.
+6. **Colour contrast** — for a colour property the chip row becomes the page's palette, each swatch carrying its ratio against the element's resolved background: `#9cc2ff AA 8.7:1`, `#2b3a56 fail 2.4:1`. A chip that fails takes the danger styling, so a legibility mistake is visible before Apply rather than after. When the page offers fewer than three colours for the element, a **Readable on this element** group adds the higher-contrast of white and black.
+7. **Tapping a chip only rewrites the field.** Apply still commits, so a suggestion, a snap and a palette pick are exactly as reversible as anything typed — one property, one undo entry.
+
+![The colour palette with a WCAG contrast badge per swatch at 360 px](./images/inspector/value-contrast-360.png)
 
 ## Behaviour
 
@@ -32,14 +45,24 @@ Tokens · from this page
 - **An unresolved token is never offered.** A token declared as `var(--other)` is skipped until the computed style resolves it, because showing a token without knowing what it is worth is worse than showing nothing.
 - **No suggestion for a property the page knows nothing about.** With neither a declared value nor a resolved value there is nothing to type tokens against, so the whole group is omitted rather than guessed.
 - **The step is the GCD of the page's values** for the dominant unit: `4/8/12/16` reports `4px`, and `1.5/3/4.5` reports `1.5`. A single value has no step, and mixed units (a `50%` among `px` values) fall back to the unit used most rather than claiming one — and a shorthand value (`12px 10px 32px`) has no step at all, because it is not a number.
-- **Chips stay on one line.** A long shorthand ellipsizes (its full text is on the tooltip and in the accessible name), so the row never wraps and the sheet never scrolls sideways.
+- **Snapping is never silent.** `snapValue` reports the honest distance and returns the value untouched unless the caller explicitly asks for the snap, which is what the button does. The field is the source of truth and the only way to know what a write would change, so the user’s text stays in it until they decide.
+- **“On the scale” means one of the page’s values**, not a multiple of the step: on a 4 px scale whose page values are `4/8/16`, `12px` is off the scale and reports `nearest 8px · 4px away`. Saying otherwise would hide the nearest-value evidence the hint exists to show.
+- **A unit that the scale does not use is not compared.** `50%` against a px scale, or `1.5rem` where the page’s values are px, is reported with its reason (`the page's scale is in px, this value is in %`) instead of being converted with a base size the module does not have. A bare number adopts the scale’s unit, because the steppers write `14` under a `4 px step` header.
+- **The step beats ±1, and an explicit precision beats the step.** The steppers move by the page’s step when the index found one; a caller that passes its own precision (the rail’s 1 px / 4 px / 8 px segment) overrides it, because a deliberated choice outranks an inferred one. Without either, the original ±1 behaviour is kept.
+- **A tie in the nearest value resolves downward**, so the hint does not flicker between two candidates while the user types.
+- **The contrast ratio is the WCAG 2.1 one**, computed from relative luminance and composited for translucency: `#777` on white measures 4.478:1 and is shown as `fail 4.48:1`, not rounded up to a passing `4.5`. The badge only shortens to one decimal when the shorter form cannot misstate the level, so the common case reads as `AA 7.4:1`.
+- **A colour that cannot be read is still shown.** `var(--x)`, a gradient or an unknown name keeps its chip with the reason and no badge, rather than disappearing from the list.
+- **A transparent background has no ratio.** There is nothing to measure a text colour against, so `contrast` returns `ok: false` with the reason and the chip renders without a badge.
+- **Chips stay on one line.** A long shorthand ellipsizes (its full text is on the tooltip and in the accessible name), and the snap hint wraps instead of scrolling, so the sheet never scrolls sideways at 360 px.
 
 ## Implementation notes
 
 - **Pure model:** [`frontend/src/components/inspector/valueIndex.js`](../../frontend/src/components/inspector/valueIndex.js) exports `buildValueIndex`, `valuesFor`, `tokensFor`, `scaleFor`, `scaleNote`, `numericScale`, `siblingValues`, `parseNumber`, `valueKey`, `tokenFamily`, `tokenFitsProperty`, `FAMILY_WORDS`, `PROPERTY_FAMILY` and the caps. `siblingValues` groups a caller's sibling read into “the 2nd section.input-section uses 16px”; the read itself is a later change.
-- **Component:** [`frontend/src/components/inspector/Suggestions.jsx`](../../frontend/src/components/inspector/Suggestions.jsx) renders the two groups and the note; it emits nothing without an index, without a property, or when there is nothing to suggest. `StylesPanel.jsx` builds the index once per selection/edit and passes it into the sheet, whose `onPick` only rewrites its own value field.
-- **Mobile-first:** every chip is a ≥44 px target with its evidence beside the value, the groups wrap, and the value span is capped so one long shorthand cannot widen the sheet.
-- **Tests:** `npm run test:inspector` covers this with `scripts/test-inspector-value-index.js` (82 assertions): value counting with per-value selectors and counts, whitespace and case collapsing, the current-value marking, token typing and the name-family filter, the GCD scale including decimals and mixed units, number parsing, sibling grouping, the missing-declaration cases, and the component itself rendered in a stub (chips capped, evidence on the chip and in its accessible name, the value in force marked, token chips reporting the token name, and nothing emitted for an unknown property or a custom property).
+- **Snapping:** [`frontend/src/components/inspector/snapping.js`](../../frontend/src/components/inspector/snapping.js) exports `snapValue`, `isOnScale`, `nearestOnScale`, `stepFor`, `stepValue`, `snapNote`, `usableScale`, `roundTo`, `scaleStepFor` and `MIN_STEP`. It consumes the scale shape `numericScale` already produces (`{ unit, values, step, decimals }`), so the guidance costs no extra page read.
+- **Contrast:** [`frontend/src/components/inspector/contrast.js`](../../frontend/src/components/inspector/contrast.js) exports `contrast`, `contrastBadge`, `contrastLevel`, `parseColor`, `relativeLuminance`, `composite`, `contrastRatio`, `readableOn`, `suggestTextColor`, `hslToRgb`, `rgbToHsl`, `AA_MIN` and `AAA_MIN`. The colour rails reuse `hslToRgb` / `rgbToHsl`.
+- **Component:** [`frontend/src/components/inspector/Suggestions.jsx`](../../frontend/src/components/inspector/Suggestions.jsx) renders the groups, the snap row and the badges; it emits nothing without an index, without a property, or when there is nothing to suggest. `StylesPanel.jsx` builds the index once per selection/edit, passes `contrastCtx` (the element’s resolved `background-color` and `color`) into the sheet, derives the steppers’ step with `stepFor(scaleFor(index, prop), null)`, and every `onPick` — chip, snap or palette — only rewrites its own value field.
+- **Mobile-first:** every chip, the snap button and the steppers are ≥44 px targets, the groups wrap, the snap row is `flex-wrap: wrap`, and the value span is capped so one long shorthand cannot widen the sheet. Inline styles are used only for the data-driven swatch colour.
+- **Tests:** `npm run test:inspector` covers this with three suites. `scripts/test-inspector-value-index.js` (102 assertions) covers value counting with per-value selectors and counts, whitespace and case collapsing, the current-value marking, token typing and the name-family filter, the GCD scale including decimals and mixed units, number parsing, sibling grouping, the missing-declaration cases, the snap hint and its button, the colour palette with contrast badges, the stepper step, and the component itself rendered in a stub. `scripts/test-inspector-snapping.js` (59 assertions) covers exact hits, off-scale detection with the honest distance, tie-breaking, step selection and precedence, clamping, formatting, unit mismatch and the no-scale fallbacks. `scripts/test-inspector-contrast.js` (72 assertions) covers published luminance values, the known pairs (black on white 21:1, `#777` on white 4.478:1), the AA/AAA thresholds, hex/rgb/hsl/named parsing, alpha compositing, the badge text, and the palette wiring.
 
 ## Related
 
