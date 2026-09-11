@@ -208,14 +208,19 @@ check('response bodies are truncated before storing', /200000/.test(events));
 // Panels' own features.
 check('preview: text-input bar', /inspector__typebar/.test(preview));
 check('preview: pick-mode banner', /inspector__pickban/.test(preview));
-check('target bar: renders the element, its rules and the write target',
-  /inspector__targetbar/.test(read('frontend/src/components/inspector/TargetBar.jsx'))
-  && /TargetBar/.test(inspector));
-check('target bar: breadcrumb can walk to an ancestor',
-  /onSelectAncestor/.test(inspector));
-check('target bar: states where an edit lands', /onRuleTap/.test(inspector));
-check('styles panel publishes the selection to the target bar',
-  /onSelectionChange/.test(styles));
+// The target bar used to render directly above the panels, from a selection
+// the Inspector retained across a mode switch. On a phone it read as a second
+// navigation block that was not one of the app tabs and could not be closed
+// without collapsing it by hand, so it was removed. The Styles panel header,
+// its element tree and its Matched-rules section carry the same three answers
+// inside the tab that owns them; the receipt strip stays in that panel's own
+// scroll flow.
+check('no target bar above the panels',
+!/\bTargetBar\b/.test(inspector) && !/\bBarReceipt\b/.test(inspector));
+check('no breadcrumb that walks the tree from above the panels',
+!/onSelectAncestor/.test(inspector) && !/onRuleTap/.test(inspector));
+check('the timeline of the selection is still published by the styles panel',
+/onSelectionChange/.test(styles));
 check('the edit sheet switches value types', /inspector__kindseg/.test(styles));
 check('the edit sheet offers the unit cycle', /inspector__unitchip/.test(styles));
 check('the session receipt is shown with undo', /inspector__receipt/.test(styles));

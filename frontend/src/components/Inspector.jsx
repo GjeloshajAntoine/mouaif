@@ -14,8 +14,7 @@ import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
-import { TargetBar, BarReceipt } from './inspector/TargetBar.jsx';
-import { buildTargetBar, selectionAcrossModes } from './inspector/targetBar.js';
+import { selectionAcrossModes } from './inspector/targetBar.js';
 import { IntentPanel } from './inspector/IntentPanel.jsx';
 import { buildIntentPrompt } from './inspector/intent.js';
 import { activeProject } from '../api.js';
@@ -138,15 +137,6 @@ function loadPanelState() {
 }
 function savePanelState(set) {
   try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(Array.from(set))); } catch { /* ignore */ }
-}
-// TargetBar collapse state. Same persistence contract as the panel visibility
-// above: the user's choice survives a reload and a new target.
-const TARGETBAR_STATE_KEY = 'mouaif:inspector:targetbar:collapsed';
-function loadTargetBarCollapsed() {
-  try { return localStorage.getItem(TARGETBAR_STATE_KEY) === '1'; } catch { return false; }
-}
-function saveTargetBarCollapsed(value) {
-  try { localStorage.setItem(TARGETBAR_STATE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
 }
 // The Intent surface's own visibility. A separate key from the panel list
 // because it is a separate thing: PANELS is the five inspection views, and this
@@ -759,8 +749,8 @@ async function undoAllFromBar() {
   rerender();
 }
 // stylesHandlesRef — the Styles panel's own actions (selectAncestor / clear /
-// refresh), published so the TargetBar's breadcrumb and header buttons are
-// shortcuts into the panel instead of a second implementation. The selection
+// refresh), published so the identity strip inside that panel and any future
+// caller reach one implementation instead of two. The selection
 // stays owned by the panel: these calls land on exactly the same code path as
 // the panel's own controls, which is what keeps the highlight, the pinned
 // preview and the changed-set reset in sync.
@@ -778,19 +768,6 @@ saveIntentState(next);
 return next;
 });
 rerender();
-}
-// targetBarCollapsed — the path and origin rows are ~100 px of a 667 px
-// screen, so the bar can be closed down to its identity row plus the rule
-// chips. Persisted like the panel visibility, so a user who prefers the space
-// does not re-close it on every visit.
-const [targetBarCollapsed, setTargetBarCollapsed] = useState(() => loadTargetBarCollapsed());
-function toggleTargetBar() {
-  setTargetBarCollapsed((prev) => {
-    const next = !prev;
-    saveTargetBarCollapsed(next);
-    return next;
-  });
-  rerender();
 }
 
 // When a panel becomes hidden the corresponding virtual-list
@@ -1483,9 +1460,9 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // element that was selected, so undoing them against another element would
     // write to the wrong node.
     onSelectionReset: () => { setReceipt([]); },
-    // The TargetBar renders the element, its rule chips and its edit target
-    // from this snapshot. Optional on the panel side: without it the Styles
-    // panel is exactly what it was before.
+    // The Styles panel publishes its selection snapshot here so an unmount can
+    // be told apart from a cleared selection. Optional on the panel side:
+    // without it the Styles panel is exactly what it was before.
     onSelectionChange: (info) => setStylesSelection(info),
     pickMode: stylesActive,
     onPickModeChange: setStylesActive
@@ -1611,50 +1588,7 @@ h('span', { class: 'inspector__panelchip-label' }, 'Intent')
 ) : null
 ),
 h(StatusPill, { text: statusText }),
-      // TargetBar + the session receipt — "which element, which rule, where does
-      // my edit go, and what have I changed?". They sit directly above the
-      // panels because they describe their subject, and — since T4 — they render
-      // from the Inspector's retained selection rather than the Styles panel's
-      // live one, so switching that panel off or moving to Console keeps the
-      // element, its rules and its undo on screen.
-      (() => {
-      const selection = selectionAcrossModes(stylesSelection, selectionStore);
-      if (!selection) return null;
-      return h(Fragment, null,
-      h(TargetBar, {
-        model: buildTargetBar(selection),
-        pickMode: stylesActive,
-        collapsed: targetBarCollapsed,
-        onToggleCollapsed: toggleTargetBar,
-        onPick: () => { setStylesActive(!stylesActive); rerender(); },
-        onClear: () => {
-        setStylesSelection(null);
-        setSelectionStore(null);
-        if (stylesHandlesRef.current) stylesHandlesRef.current.clear();
-        rerender();
-        },
-        onRefresh: () => { if (stylesHandlesRef.current) stylesHandlesRef.current.refresh(); },
-        onSelectAncestor: (crumb) => {
-        // Walking the tree needs the panel that owns the selection; make
-        // sure it is on screen first, then ask it.
-        if (!visiblePanels.has('styles')) togglePanel('styles');
-        if (stylesHandlesRef.current) stylesHandlesRef.current.selectAncestor(crumb);
-        },
-        onRuleTap: () => {
-        // Reveal the full cascade rather than pretending the chip is the
-        // editor: the Styles panel's Matched rules section is where a
-        // rule's declarations — and the one-tap override — live.
-        if (!visiblePanels.has('styles')) togglePanel('styles');
-        }
-      }),
-      h(BarReceipt, {
-      receipt,
-      onUndo: (row) => undoEntryFromBar(row),
-      onUndoAll: () => undoAllFromBar()
-      })
-      );
-      })(),
-    // Intent (Part H) — the describe-a-change surface, directly above the panels
+// Intent (Part H) — the describe-a-change surface, directly above the panels
 // because it is a way to *make* an edit rather than a view of the page. It
 // renders from the same retained selection the target bar uses, so it works
 // with the Styles panel off. Unmounted while INTENT_SURFACE is false: with no
