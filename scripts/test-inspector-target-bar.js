@@ -484,27 +484,25 @@ check('the panel exposes its own clear / refresh / ancestor actions',
 check('the parent passes the selection change callback and the handles ref',
   /onSelectionChange: \(info\) => setStylesSelection\(info\)/.test(inspectorSource)
   && /panelHandlesRef: stylesHandlesRef/.test(inspectorSource));
-check('the parent builds the model from the merged snapshot',
-  /model: buildTargetBar\(selection\)/.test(inspectorSource)
-  && /const selection = selectionAcrossModes\(stylesSelection, selectionStore\)/.test(inspectorSource));
-check('the bar is rendered above the panels, under the panel chips',
-  inspectorSource.indexOf('h(TargetBar, {') > inspectorSource.indexOf('inspector__panelbar')
-  && inspectorSource.indexOf('h(TargetBar, {') < inspectorSource.indexOf("h('div', { class: 'inspector__panels' }"));
-check('the collapse choice persists like the panel visibility',
-  /TARGETBAR_STATE_KEY = 'mouaif:inspector:targetbar:collapsed'/.test(inspectorSource)
-  && /function loadTargetBarCollapsed/.test(inspectorSource)
-  && /function saveTargetBarCollapsed/.test(inspectorSource));
-check('the parent passes and toggles the collapse state',
-  /collapsed: targetBarCollapsed/.test(inspectorSource)
-  && /onToggleCollapsed: toggleTargetBar/.test(inspectorSource));
-check('the bar renders nothing when there is no selection at all',
-  /if \(!selection\) return null;/.test(inspectorSource));
+// The parent no longer builds or renders the bar above the panels — it read as
+// a second navigation block on a phone and duplicated the panel. What is left
+// in the parent is the retained selection (used by the Intent surface and by
+// `restoreObjectId`), the published handles ref, and the pick-mode flag.
+check('the parent keeps the retained selection for the Intent surface',
+  /selectionAcrossModes\(stylesSelection, selectionStore\)/.test(inspectorSource));
+check('the bar is not rendered above the panels any more',
+  !/h\(TargetBar, \{/.test(inspectorSource) && !/BarReceipt/.test(inspectorSource));
+check('the parent does not build the bar model',
+  !/buildTargetBar/.test(inspectorSource));
+check('the collapse state and its storage key went with the bar',
+  !/TARGETBAR_STATE_KEY/.test(inspectorSource) && !/targetBarCollapsed/.test(inspectorSource));
+check('nothing walks the tree from above the panels',
+  !/onSelectAncestor/.test(inspectorSource) && !/onRuleTap/.test(inspectorSource));
 check('the pick control toggles the same pick mode the preview uses',
-  /onPick: \(\) => \{ setStylesActive\(!stylesActive\); rerender\(\); \}/.test(inspectorSource));
-check('tapping a rule chip reveals the cascade instead of faking an editor',
-  /if \(!visiblePanels\.has\('styles'\)\) togglePanel\('styles'\)/.test(inspectorSource));
-check('clearing the bar also clears the panel selection',
-  /setStylesSelection\(null\);[\s\S]{0,120}stylesHandlesRef\.current\.clear\(\)/.test(inspectorSource));
+  /onPickModeChange: setStylesActive/.test(inspectorSource)
+  && /if \(!props\.onPickModeChange\) return;/.test(stylesSource));
+check('clearing the selection clears the panel through the handles ref',
+  /stylesHandlesRef\.current\.clear\(\)|clearPick\(\)/.test(stylesSource));
 
 // ---- mobile-first invariants ------------------------------------------
 
