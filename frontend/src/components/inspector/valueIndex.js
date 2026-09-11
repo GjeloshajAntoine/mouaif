@@ -299,6 +299,22 @@ export function scaleNote(scale) {
   return scale.values.length + ' values on this page · steps of ' + steps;
 }
 
+// valuesSeen — how much the page declares for one property, before the chip
+// list is capped.
+//
+// `valuesFor` returns the handful of chips a phone row can show, so a page with
+// thirty padding values and a page with six look the same in the list. The mock
+// prints the honest total in the group header (`On this page · 34 values seen`),
+// which is the difference between "this property has a scale" and "here are the
+// six values that happen to be most used". `uses` counts the declarations
+// themselves (a value declared three times counts three times), because that is
+// the evidence behind a chip's `12×`.
+export function valuesSeen(index, property) {
+const prop = String(property || '').trim().toLowerCase();
+const bucket = index && index.props && index.props[prop];
+if (!bucket || !bucket.values) return { values: 0, uses: 0 };
+return { values: bucket.values.length, uses: bucket.uses || 0 };
+}
 // siblingValues — values the sibling elements use for this property.
 //
 // `rows` is what the caller read from the page: one entry per sibling with the

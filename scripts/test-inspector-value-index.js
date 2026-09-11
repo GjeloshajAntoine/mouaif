@@ -22,7 +22,7 @@ const strip = (src) => src.replace(/^import .*;$/gm, '').replace(/^export /gm, '
 const context = vm.createContext({});
 vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), context);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js'))
-  + '\n;globalThis.VI = { MAX_VALUES, MAX_TOKENS, buildValueIndex, valuesFor, tokensFor, scaleFor, scaleNote, numericScale, parseNumber, valueKey, siblingValues, tokenFamily, tokenFitsProperty };\n', context);
+  + '\n;globalThis.VI = { MAX_VALUES, MAX_TOKENS, buildValueIndex, valuesFor, valuesSeen, tokensFor, scaleFor, scaleNote, numericScale, parseNumber, valueKey, siblingValues, tokenFamily, tokenFitsProperty };\n', context);
 const VI = context.VI;
 
 let passed = 0;
@@ -213,6 +213,31 @@ check('a calc does not parse', VI.parseNumber('calc(100% - 2px)') === null);
 check('the value key is trimmed and lower-cased', VI.valueKey('  16PX ') === '16px');
 check('the value key collapses inner whitespace', VI.valueKey('0px  0px 18px') === '0px 0px 18px');
 
+// ---- how many values were seen, not just shown -------------------------
+{
+// The K1 header: `On this page · 34 values seen`. The chips are capped, the
+// count is not — a page with thirty padding values must not look like one with
+// six.
+const many = VI.buildValueIndex({ rules: Array.from({ length: 20 }, (_, i) => ({
+selector: '.v' + i, props: [{ name: 'padding', value: (i + 1) * 4 + 'px' }]
+})) });
+check('the total is the page\'s own count', VI.valuesSeen(many, 'padding').values === 20,
+String(VI.valuesSeen(many, 'padding').values));
+check('the chip list is still capped', VI.valuesFor(many, 'padding').length === VI.MAX_VALUES);
+check('uses counts the declarations, not the distinct values',
+VI.valuesSeen(many, 'padding').uses === 20, String(VI.valuesSeen(many, 'padding').uses));
+check('a repeated value counts once as a value and twice as a use', (() => {
+const rep = VI.buildValueIndex({ rules: [
+{ selector: '.a', props: [{ name: 'padding', value: '16px' }] },
+{ selector: '.b', props: [{ name: 'padding', value: '16px' }] }
+] });
+const s = VI.valuesSeen(rep, 'padding');
+return s.values === 1 && s.uses === 2;
+})());
+check('an unknown property is zero, not undefined',
+VI.valuesSeen(VI.buildValueIndex({}), 'padding').values === 0);
+check('no index is zero, not a throw', VI.valuesSeen(null, 'padding').values === 0);
+}
 // ---- sibling values ----------------------------------------------------
 
 {
@@ -303,7 +328,20 @@ check('a chip per page value, capped', chips.length === 4, String(chips.length))
       chips.some((c) => /used 3 times \(\.card\)/.test(c.props.title || '')),
       JSON.stringify(chips.map((c) => c.props.title)));
     check('the group header says how many values were seen',
-      /On this page/.test(text(tree)) && /4 values/.test(text(tree)), text(tree));
+    /On this page/.test(text(tree)) && /4 values/.test(text(tree)), text(tree));
+    // Capped above MAX_CHIPS, the header switches to the honest total: the chip row
+    // is a sample, and `20 values seen` is what says so.
+    {
+    const many = VI.buildValueIndex({ rules: Array.from({ length: 20 }, (_, i) => ({
+    selector: '.v' + i, props: [{ name: 'padding', value: (i + 1) * 4 + 'px' }]
+    })) });
+    const capped = comp.Suggestions({ index: many, prop: 'padding', onPick: () => {} });
+    const cappedChips = byClass(capped, 'opt').filter(valueChips);
+    check('a capped list shows only the chips that fit', cappedChips.length === 6, String(cappedChips.length));
+    check('a capped header reports every value seen',
+    /20 values seen/.test(text(capped)), text(capped).slice(0, 200));
+    check('an uncapped header does not say "seen"', !/values seen/.test(text(tree)));
+    }
     check('a suggestion is a button with an accessible name',
       chips.every((c) => c.type === 'button' && /^Use /.test(c.props['aria-label'] || '')));
     check('tapping a chip reports the value', (() => {

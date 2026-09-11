@@ -24,7 +24,7 @@
 // Tapping any chip only rewrites the sheet's value field — Apply still commits —
 // so a suggestion is as reversible as anything typed.
 import { h } from 'preact';
-import { valuesFor, tokensFor, scaleFor, scaleNote } from './valueIndex.js';
+import { valuesFor, valuesSeen, tokensFor, scaleFor, scaleNote } from './valueIndex.js';
 import { snapValue, snapNote, usableScale } from './snapping.js';
 import { readableOn, suggestTextColor } from './contrast.js';
 // MAX_CHIPS — values shown. The list is a choice, not an inventory: a phone chip
@@ -99,6 +99,14 @@ const value = props.value || '';
 if (!index || !prop) return null;
 const scale = usableScale(scaleFor(index, prop)) ? scaleFor(index, prop) : null;
 const values = valuesFor(index, prop, MAX_CHIPS);
+// How many values the page declares, before the chip cap. A page with thirty
+// padding values would otherwise look exactly like one with three, which is the
+// difference between "this property has a scale" and "here are three chips".
+const seen = valuesSeen(index, prop);
+const total = Math.max(seen.values, values.length);
+const countText = total > values.length
+? ' · ' + total + ' values seen'
+: ' · ' + total + (total === 1 ? ' value' : ' values');
 const tokens = tokensFor(index, prop, MAX_TOKEN_CHIPS);
 // Snapping is a property-level question (does this page have a step for this
 // property?), so it is answered even when there is nothing to suggest: an
@@ -122,7 +130,7 @@ return h('div', { class: 'inspector__suggest' },
 values.length
 ? h('div', { class: 'grp' },
 h('div', { class: 'gh' }, colour ? 'This page\'s palette' : 'On this page',
-h('span', null, ' · ' + values.length + (values.length === 1 ? ' value' : ' values')
+h('span', null, countText
 + (scale && scale.step ? ' · steps of ' + scale.step + (scale.unit || '') : '')
 + (colour ? ' · contrast vs this element' : ''))
 ),
