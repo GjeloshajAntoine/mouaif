@@ -854,12 +854,12 @@ aspect ratio; the frame scrolls vertically for tall pages and the
 tap-to-click mapping in PreviewPanel scales coordinates back via
 naturalWidth/naturalHeight. */
 }
-/* Natural-size mode: render the capture at its intrinsic (device-pixel →
-CSS px 1:1) size so a wide page shows readable text and pans horizontally.
-The frame stops fitting width and becomes a pannable viewport instead of
-squashing a 1280px page down to a ~30% thumbnail. width:auto keeps the
-image at its natural CSS size; height:auto preserves aspect ratio and lets
-the frame scroll both axes. */
+/* Natural-size mode: a wide page shows readable text and pans horizontally
+instead of being squashed to a ~30% thumbnail. The width is set inline by the
+panel from the decoded capture (the page's CSS width — a 2x-retina capture is
+halved) because CSS cannot know the image's device pixel ratio; `width: auto`
+is the fallback for the first paint, before a capture has decoded. height:auto
+preserves the aspect ratio and lets the frame scroll both axes. */
 .inspector__preview-img--size,
 .inspector__preview-fs-img.inspector__preview-img--size {
 width: auto;

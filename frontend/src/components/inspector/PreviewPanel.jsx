@@ -106,6 +106,13 @@ const zoomInitial = (() => {
   try { return localStorage.getItem(ZOOM_STATE_KEY) === 'size' ? 'size' : 'fit'; } catch { return 'fit'; }
 })();
 const [zoom, setZoom] = useState(zoomInitial);
+// Natural size of the capture currently on screen, in device pixels (the
+// image's intrinsic size). Kept in state so the render below can pin the
+// natural-size width; `dimsRef` mirrors it so the capture loop can compare
+// before re-rendering (a capture that did not change size must not trigger a
+// re-render of the whole Inspector).
+const [dims, setDims] = useState({ w: 0, h: 0 });
+const dimsRef = useRef({ w: 0, h: 0 });
 // Gate for one-time auto-fit on the first decode: only switch to natural size
 // for a page that would otherwise be unreadable (very wide relative to the
 // frame) and only before the user explicitly toggles. A manual toggle clears
@@ -298,6 +305,15 @@ lastDims.current.h = cur.naturalHeight || lastDims.current.h;
 if (latestImage.current) {
 latestImage.current.width = cur.naturalWidth || 0;
 latestImage.current.height = cur.naturalHeight || 0;
+}
+// Publish the decoded size for natural-size ("100%") rendering. Only
+// when it actually changed: an unchanged capture must not re-render the
+// parent Inspector view.
+const decW = cur.naturalWidth || 0;
+const decH = cur.naturalHeight || 0;
+if (decW && decH && (decW !== dimsRef.current.w || decH !== dimsRef.current.h)) {
+dimsRef.current = { w: decW, h: decH };
+setDims(dimsRef.current);
 }
 // Smart default: on the first decode, if a wide page would be shrunk
 // below ~60% of the frame width in fit mode (text unreadable), switch to
@@ -506,6 +522,18 @@ for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
     props.clickAt(x, y);
   }
 
+  // Natural-size ("100%") rendering. A retina preset captures two device
+  // pixels per page CSS pixel, so painting the capture at its intrinsic width
+  // shows the page at twice its real size: wrong proportions, a soft 2x
+  // upscale of the screenshot, and a panning surface four times larger than
+  // it needs to be. Divide by the preset's device scale factor so 100% means
+  // one page CSS pixel per CSS pixel on screen (and 1:1 with the physical
+  // pixels of a screen whose ratio matches the capture). The height stays
+  // `auto`, so the image keeps its own aspect ratio.
+  const previewSizeStyle = (zoom === 'size' && dims.w)
+    ? { width: previewNaturalWidth(dims.w, currentDeviceScaleFactor(props.sizePresets, props.sizeId)) + 'px' }
+    : null;
+
   return h(Fragment, null,
 h('div', { class: 'inspector__preview' + (props.pickMode ? ' is-picking' : '') },
 // Pick-mode banner. Tap-to-select is armed from the Styles panel, whose
@@ -544,6 +572,7 @@ h('img', {
 ref: imgRef,
 src: imgSrc,
 class: 'inspector__preview-img' + (zoom === 'size' ? ' inspector__preview-img--size' : ''),
+style: previewSizeStyle,
 alt: 'Live page preview',
 draggable: 'false'
 })
@@ -747,10 +776,10 @@ h('img', {
 ref: fsImgRef,
 src: imgSrc,
 class: 'inspector__preview-fs-img' + (zoom === 'size' ? ' inspector__preview-img--size' : ''),
+style: previewSizeStyle,
 alt: 'Live page preview',
 draggable: 'false'
 })
-
 )
 ),
 document.body
@@ -793,4 +822,17 @@ if (!naturalWidth || !frameWidth) return 'fit';
 const pageWidth = naturalWidth / (deviceScaleFactor || 1);
 if (!pageWidth) return 'fit';
 return (frameWidth / pageWidth) < 0.6 ? 'size' : 'fit';
+}
+// previewNaturalWidth — the CSS width to paint a capture at in natural-size
+// ("100%") mode. `naturalWidth` is the capture's device-pixel width, which for
+// the retina Phone/Phone+ presets (deviceScaleFactor 2) is twice the page's CSS
+// width. Painting it at that intrinsic width would show a phone page at double
+// size — wrong proportions, a blurry 2x upscale, and four times the panning
+// area — so the capture is divided by the preset's scale factor. The result is
+// the page's own CSS width: 100% means one page CSS pixel per CSS pixel on
+// screen, which is also 1:1 with the physical pixels of a screen whose device
+// ratio matches the capture. Non-retina captures (dpr 1) are unchanged.
+function previewNaturalWidth(naturalWidth, deviceScaleFactor) {
+if (!naturalWidth) return 0;
+return Math.round(naturalWidth / (deviceScaleFactor || 1));
 }

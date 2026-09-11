@@ -3,12 +3,14 @@
 //
 // Wide pages (e.g. the Laptop 1280px preset) are otherwise squashed to ~30% of
 // the frame and become unreadable. The toggle switches the preview <img> between
-// `fit` (width:100%, scroll vertically) and `size` (natural size, pan both axes)
-// via the `inspector__preview-img--size` modifier class, and persists the choice
-// in localStorage so reconnects keep it. The panel also auto-selects natural
-// size on the first decode when a wide page would be unreadable in fit mode.
-// This test locks in the toggle behaviour, persistence, bootstrapping from a
-// stored choice, and the auto-fit decision.
+// `fit` (width:100%, scroll vertically) and `size` (page CSS pixels, pan both
+// axes) via the `inspector__preview-img--size` modifier class plus the inline
+// width the panel derives from the capture (see previewNaturalWidth), and
+// persists the choice in localStorage so reconnects keep it. The panel also
+// auto-selects natural size on the first decode when a wide page would be
+// unreadable in fit mode. This test locks in the toggle behaviour,
+// persistence, bootstrapping from a stored choice, the auto-fit decision, and
+// the retina-safe 100% width.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -71,6 +73,7 @@ function newHarness({ storedSeed = {}, naturalWidth = 1280, frameW = 366 } = {})
   return {
     stored, imgNode, frameNode,
     previewZoomForWidth: context.previewZoomForWidth,
+    previewNaturalWidth: context.previewNaturalWidth,
     render: () => { nodes = []; cursor = 0; context.PreviewPanel(props); return nodes; },
     zoomImg: (nodes) => nodes.find((n) => n.tag === 'img' && /preview-img/.test(n.attrs.class)),
     zoomBtn: (nodes) => nodes.find((n) => n.tag === 'button' && /^inspector__zoom/.test(n.attrs.class))
@@ -134,6 +137,22 @@ async function main() {
   assert.equal(h1.previewZoomForWidth(2560, 351, 2), 'size',
     'a truly wide retina page still selects natural size');
 
-  console.log('PASS preview fit/natural-size toggle, persistence, bootstrap, and auto-fit');
+  // Scenario 5: natural-size ("100%") rendering width. The capture's own
+  // width is in *device* pixels, so painting a 2x-retina capture at that
+  // width would show the page at double size — wrong proportions, a soft
+  // upscale, and four times the panning area. 100% is the page's own CSS
+  // width, i.e. the capture divided by the preset's scale factor.
+  assert.equal(h1.previewNaturalWidth(750, 2), 375,
+    'a 2x-retina phone capture paints at its 375 CSS px page width');
+  assert.equal(h1.previewNaturalWidth(828, 2), 414,
+    'a 2x-retina Phone+ capture paints at its 414 CSS px page width');
+  assert.equal(h1.previewNaturalWidth(1280, 1), 1280,
+    'a dpr 1 capture keeps its intrinsic width');
+  assert.equal(h1.previewNaturalWidth(1960, 2), 980,
+    'a retina capture of a wide page paints at its CSS content width');
+  assert.equal(h1.previewNaturalWidth(0, 2), 0,
+    'nothing decoded yet yields no pinned width');
+
+  console.log('PASS preview fit/natural-size toggle, persistence, bootstrap, auto-fit, and 100% width');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
