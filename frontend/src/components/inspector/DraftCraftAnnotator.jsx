@@ -99,6 +99,8 @@ const pointersRef = useRef(new Map());
 const pinchRef = useRef(null);
 const panRef = useRef(null);
 const markerDragRef = useRef(null);
+const markerListRef = useRef(null);
+const activeMarkerRowRef = useRef(null);
 const zoomRef = useRef(1);
 const lastFitZoomRef = useRef(null);
 const [color, setColor] = useState(COLORS[0]);
@@ -163,6 +165,18 @@ requestAnimationFrame(tryFit);
 if (ro) ro.observe(wrap);
 return () => { if (ro) ro.disconnect(); };
 }, [ready]);
+
+// Keep the selected marker's row visible inside the scrollable marker list
+// instead of letting the list scroll past it (newly dragged dots land last).
+useEffect(() => {
+const list = markerListRef.current;
+const row = activeMarkerRowRef.current;
+if (!list || !row) return;
+const top = row.offsetTop;
+const bottom = top + row.offsetHeight;
+if (top < list.scrollTop) list.scrollTop = top;
+else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+}, [activeMarker, markers.length]);
 
 function applyZoom(value, focus) {
 const wrap = wrapRef.current;
@@ -288,8 +302,8 @@ setMarkers((current) => {
 if (drag.markerId !== null) return current.map((item) => item.id === drag.markerId ? { ...item, ...point } : item);
 if (current.length >= MAX_MARKERS) return current;
 const next = [...current, { id: Date.now() + Math.random(), ...point, color, text: '' }];
-// Select the just-created dot so its text row appears without the list
-// needing to grow a row per marker.
+// Select the just-created dot so its row is highlighted and scrolled into
+// view inside the marker list.
 setActiveMarker(next[next.length - 1].id);
 return next;
 });
@@ -461,25 +475,38 @@ onPointerCancel: endMarkerDrag,
 }, markers.length >= MAX_MARKERS ? '✓' : markerLabel(markers.length, markerStyle))
 ),
 markers.length
-? h('span', { class: 'draft-craft__marker-chips', 'aria-label': 'Marked image annotations' }, markers.map((marker, index) => {
+// One row per dot in a vertically scrollable list: the label selects the
+// dot, the row's own text field labels it, and the row's remove button
+// deletes it. The list scrolls inside the tools panel so the canvas keeps
+// its height no matter how many dots are placed.
+? h('div', { class: 'draft-craft__marker-list', ref: markerListRef, role: 'list', 'aria-label': 'Marked image annotations' }, markers.map((marker, index) => {
 const label = markerLabel(index, markerStyle);
 const isActive = marker.id === activeMarker;
-return h('button', {
+return h('div', {
 key: marker.id,
+ref: isActive ? activeMarkerRowRef : null,
+role: 'listitem',
+class: 'draft-craft__marker-row' + (isActive ? ' is-active' : '')
+},
+h('button', {
 type: 'button',
-class: 'draft-craft__marker-chip' + (isActive ? ' is-active' : ''),
+class: 'draft-craft__marker-label',
 style: { background: marker.color, color: markerTextColor(marker.color) },
 onClick: () => setActiveMarker(marker.id),
 'aria-pressed': String(isActive),
-'aria-label': label + (marker.text.trim() ? ': ' + marker.text.trim() : ' (no text)') + (isActive ? ', selected' : '')
-}, label, marker.text.trim() ? h('span', { class: 'draft-craft__marker-chip-text' }, marker.text.trim()) : null);
+'aria-label': 'Select annotation ' + label + (marker.text.trim() ? ': ' + marker.text.trim() : ' (no text)')
+}, label),
+h('input', {
+class: 'input draft-craft__marker-input',
+value: marker.text,
+onInput: (event) => updateMarkerText(marker.id, event.currentTarget.value),
+placeholder: 'Text for ' + label,
+'aria-label': 'Text for annotation ' + label
+}),
+h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(marker.id), 'aria-label': 'Remove annotation ' + label }, '×')
+);
 }))
-: h('div', { class: 'draft-craft__marker-list draft-craft__marker-empty' }, 'No marker dots on the image yet.'),
-activeMarker != null ? h('div', { class: 'draft-craft__marker-edit' },
-h('span', { class: 'draft-craft__marker-label', style: { background: markers.find((item) => item.id === activeMarker)?.color || color, color: markerTextColor(markers.find((item) => item.id === activeMarker)?.color || color) } }, markerLabel(markers.findIndex((item) => item.id === activeMarker), markerStyle)),
-h('input', { class: 'input', value: markers.find((item) => item.id === activeMarker)?.text || '', onInput: (event) => updateMarkerText(activeMarker, event.currentTarget.value), placeholder: 'Text for ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle), 'aria-label': 'Text for annotation ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle) }),
-h('button', { type: 'button', class: 'draft-craft__marker-remove', onClick: () => removeMarker(activeMarker), 'aria-label': 'Remove annotation ' + markerLabel(Math.max(0, markers.findIndex((item) => item.id === activeMarker)), markerStyle) }, '×')
-) : null,
+: h('div', { class: 'draft-craft__marker-empty' }, 'No marker dots on the image yet.'),
 ),
 h('textarea', { class: 'input draft-craft__note', rows: 2, value: note, onInput: (event) => setNote(event.currentTarget.value), placeholder: 'Optional note about this image', 'aria-label': 'Image note' })
 ) : null),

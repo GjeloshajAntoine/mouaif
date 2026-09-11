@@ -28,11 +28,11 @@ Draft Craft adds material to a chat draft without sending it: an annotated image
 
 ### In the annotator
 
-![Numbered dots and the text row for the selected dot](./images/draft-craft/annotator-marker-edit-360.png)
+![Numbered dots and the scrollable list of dot texts](./images/draft-craft/annotator-marker-edit-360.png)
 
 - **Tools** collapses the zoom, color and marker controls so the image gets the full canvas.
 - **Fit** shows the whole picture; **−** / **+** change zoom and the pinch midpoint stays under your fingers; **Pan** moves a zoomed image.
-- **Marker dots** keeps one short chip per dot and a single text row for the selected chip, so the tools panel stays short no matter how many dots you place. Drag a dot to move it; edit or delete it from that row.
+- **Marker dots** lists one row per dot, scrolled inside the panel, so the tools panel keeps its height no matter how many dots you place. Each row holds the dot's label, a text field for that dot, and a delete button; tap a row's dot to select it, and a newly dragged dot scrolls its own row into view.
 - **Reset** appears once the image has an annotation and restores the untouched original.
 - An exported image that is too large is downscaled. An image that cannot be exported leaves the annotator open with an error instead of sending the message without it.
 

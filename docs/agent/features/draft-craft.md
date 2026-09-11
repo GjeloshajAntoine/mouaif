@@ -27,6 +27,10 @@ The annotator is reusable across surfaces. When a callback is provided (composer
 
 Annotated images are exported as PNG and downscaled when necessary to stay within the server's 12 MiB data-URL limit. An image that cannot be exported within that limit leaves the annotator open with an error rather than sending the message without the image.
 
+## Marker list
+
+Each dot gets one row in a vertically scrollable list (`.draft-craft__marker-list`, capped at `9rem`), so the tools panel height does not grow with the number of dots. A row is `[dot button | text input | remove button]`; the dot button selects the row for highlight and the input writes `marker.text` directly, replacing the old shared "text for the selected dot" row. Selecting a dot or dragging a new one onto the image scrolls its row into view (`markerListRef` / `activeMarkerRowRef`) so the last dot in a long list stays reachable.
+
 ## Loading behavior
 
 Project and chat loading are tracked independently, so an overlapping response cannot leave the picker in a permanent loading state. Requests time out with a retryable error instead of showing an endless spinner.
