@@ -399,6 +399,37 @@ if (o && !o.current && o.ok && o.value) return String(o.value);
 return '';
 }
 
+// BOX_FRACTIONS — the element's own box, offered as snap targets: ¼, ½ and 1 of
+// its size. They are the third source the mock names beside the page's values
+// and its tokens (`snap = page values + tokens + element box fractions`), and
+// they answer a question neither of those can: "half of *this* card is 56 px".
+export const BOX_FRACTIONS = [
+  { fraction: 0.25, label: '¼' },
+  { fraction: 0.5, label: '½' },
+  { fraction: 1, label: '1' }
+];
+// fractionSnaps — the box fractions that land inside this rail, as
+// `{ label, fraction, number, ratio }`.
+//
+// Only for a length, and only when the caller read the element's own size: the
+// fractions are a statement about *this* element, so falling back to the rail's
+// default basis would invent three targets that mean nothing. The value is
+// derived from the range rather than from the context, because `railRange` has
+// already expressed its maximum in the value's own unit — `range.max / 4` is the
+// element's size in that unit, whatever unit and conversion produced it.
+export function fractionSnaps(range, ctx) {
+const c = ctx || {};
+if (!range || range.family !== 'length') return [];
+if (!(Number.isFinite(c.size) && c.size > 0)) return [];
+const basis = range.max / 4;
+const out = [];
+for (const f of BOX_FRACTIONS) {
+const n = Math.round(basis * f.fraction * 1e4) / 1e4;
+if (n < range.min || n > range.max) continue;
+out.push({ label: f.label, fraction: f.fraction, number: n, ratio: valueToRatio(n, range) });
+}
+return out;
+}
 // railLabel — the readout beside the rail, in the mock's shape: the number and
 // its unit, no trailing zeros. A `null` ratio (an unparsable value) reads as an
 // empty string so the control shows nothing rather than a zero.

@@ -27,7 +27,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueRail.js'))
-+ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, stepLadder, familyStep, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
++ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, BOX_FRACTIONS, stepLadder, familyStep, fractionSnaps, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
 const VR = ctx.VR;
 check('the module loads', !!VR && typeof VR.railRange === 'function');
 // ---- per-family ranges -------------------------------------------------
@@ -381,6 +381,77 @@ check('the header names the step\'s origin',
 check('the segment label is formatted, so 0.05 is not 0.050000000000000006',
 /formatNumber\(n\) \+ ' ' \+ \(range\.unit \|\| ''\)/.test(src));
 }
+}
+// ---- box fractions (¼ / ½ / 1 of the element) ---------------------------
+//
+// The mock's third snap source: `page values + tokens + element box fractions`.
+// A fraction is a statement about *this* element, so it is only offered when the
+// sheet actually read the element's size — three invented targets are worse than
+// none.
+{
+const el = (size, unit) => VR.railRange('padding', (unit || 'px') === 'px' ? '16px' : '1rem', { size, rootFontSize: 16 });
+{
+const r = el(64);
+check('the rail is four times the element', r.max === 256, String(r.max));
+const f = VR.fractionSnaps(r, { size: 64 });
+check('a size yields all three fractions', f.length === 3, String(f.length));
+check('the fractions are ¼ / ½ / 1 of the element',
+f.map((x) => x.number).join(',') === '16,32,64', f.map((x) => x.number).join(','));
+check('they carry the glyph the mock uses', f.map((x) => x.label).join(',') === '¼,½,1');
+check('a quarter of a 64px element sits at 6.25% of the rail',
+near(f[0].ratio, 0.0625, 1e-9), String(f[0].ratio));
+check('half sits at 12.5%', near(f[1].ratio, 0.125, 1e-9), String(f[1].ratio));
+check('the whole element sits at 25%', near(f[2].ratio, 0.25, 1e-9), String(f[2].ratio));
+check('each fraction is tappable and lands on its own number',
+f.every((x) => x.number === VR.ratioToValue(x.ratio, r, null) || Math.abs(x.number - VR.ratioToValue(x.ratio, r, null)) < 1e-9),
+f.map((x) => x.number + '/' + VR.ratioToValue(x.ratio, r, null)).join(' '));
+}
+// The fractions follow the element, not a fixed 64.
+{
+const r = el(120);
+const f = VR.fractionSnaps(r, { size: 120 });
+check('a bigger element moves the fractions', f.map((x) => x.number).join(',') === '30,60,120',
+f.map((x) => x.number).join(','));
+}
+// Units: the range is already expressed in the value's own unit, so the
+// fractions are too — no px leaking into a rem rail.
+{
+const r = VR.railRange('padding', '1rem', { size: 64, rootFontSize: 16 });
+const f = VR.fractionSnaps(r, { size: 64 });
+check('a rem rail gets rem fractions', r.unit === 'rem' && f.map((x) => x.number).join(',') === '1,2,4',
+r.unit + ' ' + f.map((x) => x.number).join(','));
+}
+// No size read, no fractions: the fallback basis is the rail's default, not the
+// element's, so offering ¼ of it would be a made-up target.
+check('an unread size yields no fractions', VR.fractionSnaps(el(64), {}).length === 0);
+check('a zero size yields none', VR.fractionSnaps(el(64), { size: 0 }).length === 0);
+check('a negative size yields none', VR.fractionSnaps(el(64), { size: -8 }).length === 0);
+check('a non-numeric size yields none', VR.fractionSnaps(el(64), { size: 'wide' }).length === 0);
+check('no context at all yields none', VR.fractionSnaps(el(64)).length === 0);
+// Only a length: "half of this element" says nothing about an opacity.
+check('a non-length family gets no fractions',
+VR.fractionSnaps(VR.railRange('opacity', '0.5', { size: 64 }), { size: 64 }).length === 0);
+check('an angle gets no fractions',
+VR.fractionSnaps(VR.railRange('rotate', '45deg', { size: 64 }), { size: 64 }).length === 0);
+check('no range yields none', VR.fractionSnaps(null, { size: 64 }).length === 0);
+// A fraction outside the rail is dropped rather than drawn off the end.
+check('a fraction outside the range is dropped',
+VR.fractionSnaps({ min: 0, max: 40, family: 'length', unit: 'px' }, { size: 64 }).every((x) => x.number <= 40));
+check('the fraction table is the mock\'s three',
+VR.BOX_FRACTIONS.map((f) => f.fraction).join(',') === '0.25,0.5,1');
+}
+// The rail draws them, and says what they are.
+{
+const src = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the rail renders the fractions', /fractionSnaps\(range, ctx\)/.test(src) && /inspector__rail-frac/.test(src));
+check('a fraction tick is a button with an accessible name',
+/'aria-label': 'Set to ' \+ f\.label \+ ' of this element, '/.test(src));
+check('the fraction is labelled on the track', /class: 'is-fraction'/.test(src));
+check('tapping one sets the value', /onClick: \(\) => tap\(f\.number\)/.test(src));
+const css = read('frontend/src/inspector.css');
+check('fraction ticks are styled and hit-sized', /\.inspector__rail-frac \{/.test(css)
+&& /\.inspector__rail-frac::after \{/.test(css));
+check('their labels have their own colour', /span\.is-fraction \{/.test(css) && /--rail-fraction:/.test(css));
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-rail assertion(s) failed');

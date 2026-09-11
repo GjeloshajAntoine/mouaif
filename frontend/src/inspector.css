@@ -2010,6 +2010,10 @@ inside the track. */
   no token colour, and inventing one app-wide for a single control would make
   the palette harder to reason about. */
 --rail-token: #b98cff;
+/* Box fractions get their own mark colour for the same reason: three tick
+  families on one track have to be told apart at a glance, and this one is a
+  share of the element rather than a value the page declares. */
+--rail-fraction: #6fd49a;
 display: flex;
 flex-direction: column;
 gap: 2px;
@@ -2126,6 +2130,28 @@ right: -20px;
 top: -18px;
 bottom: -18px;
 }
+/* Box fractions (¼, ½, 1 of this element). The third tick family: a shorter,
+  cooler mark than a token's, because it is a share of the element rather than
+  a value the design system declares. Same 40 px hit area as the other ticks. */
+.inspector__rail-frac {
+position: absolute;
+top: 19px;
+width: 2px;
+height: 18px;
+padding: 0;
+border: 0;
+border-radius: 1px;
+background: var(--rail-fraction);
+cursor: pointer;
+}
+.inspector__rail-frac::after {
+content: '';
+position: absolute;
+left: -20px;
+right: -20px;
+top: -18px;
+bottom: -18px;
+}
 /* The page's nearest on-scale value while the field holds an off-scale one:
   dashed, not draggable — it is a hint, and the one-tap snap is in the sheet's
   value row. */
@@ -2173,6 +2199,13 @@ white-space: nowrap;
 }
 .inspector__rail-labels span.is-token {
 color: var(--rail-token);
+font-weight: 700;
+}
+/* The fraction labels are glyphs, not numbers: they read as shares of the
+  element, so they are mono-spaced with the other labels but not tinted as
+  loud as a token name. */
+.inspector__rail-labels span.is-fraction {
+color: var(--rail-fraction);
 font-weight: 700;
 }
 .inspector__rail-foot {

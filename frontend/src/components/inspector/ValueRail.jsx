@@ -18,7 +18,7 @@
 // computed by valueRail.js, which is pure and unit-tested.
 import { h } from 'preact';
 import { useRef, useState } from 'preact/hooks';
-import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
+import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, fractionSnaps, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
 import { classify, formatNumber, unitOptions } from './valueKinds.js';
 // THUMB — the visual and hit sizes. The thumb is 34 px (what a finger sees) and
 // the pointer target is the whole 60 px track, so a drag never needs pixel aim.
@@ -71,6 +71,10 @@ const ladder = stepLadder(range ? range.family : '');
 const chosen = precision != null ? precision : (range && range.step ? range.step : null);
 const step = chosen != null ? chosen : familyStep(info.number, range ? range.family : '');
 const ticks = range ? railTicks(range, { step, tokens: ctx.tokens || [] }) : { minor: [], major: [], tokens: [] };
+// The element's own box as targets (¼ / ½ / 1 of its size), which is the one
+// snap source that knows how big *this* element is. Only a length gets them, and
+// only when the sheet read a real size — see fractionSnaps.
+const fractions = range ? fractionSnaps(range, ctx) : [];
 const ratio = range ? valueToRatio(info.number, range) : 0;
 // The off-scale ghost: the page's nearest on-scale value, drawn dashed and not
 // draggable. `ctx.nearest` comes from the same snapValue reading the sheet's
@@ -224,6 +228,18 @@ style: { left: pct(ghost.ratio) },
 'aria-hidden': 'true'
 })
 : null,
+// Box fractions — the third tick family. They sit between the round numbers and
+// the tokens in a drag's vocabulary: not a page value, not a token, but "half of
+// this element", which is a target a designer names out loud.
+fractions.map((f) => h('button', {
+class: 'inspector__rail-frac',
+type: 'button',
+key: 'f' + f.fraction,
+style: markStyle(f.ratio, 2),
+title: f.label + ' of this element = ' + formatNumber(f.number) + (range.unit || ''),
+'aria-label': 'Set to ' + f.label + ' of this element, ' + formatNumber(f.number) + (range.unit || ''),
+onClick: () => tap(f.number)
+})),
 h('span', {
 class: 'inspector__rail-thumb',
 style: { left: pct(ratio) },
@@ -239,7 +255,8 @@ const r = valueToRatio(v, range);
 const shift = r <= 0.0001 ? '0' : r >= 0.9999 ? '-100%' : '-50%';
 return h('span', { key: 'l' + v, style: { left: pct(r), transform: 'translateX(' + shift + ')' } }, formatNumber(v));
 }),
-ticks.tokens.map((t) => h('span', { class: 'is-token', key: 'n' + t.name, style: { left: pct(t.ratio) } }, t.name))
+ticks.tokens.map((t) => h('span', { class: 'is-token', key: 'n' + t.name, style: { left: pct(t.ratio) } }, t.name),
+fractions.map((f) => h('span', { class: 'is-fraction', key: 'fl' + f.fraction, style: { left: pct(f.ratio) } }, f.label)))
 ),
 h('div', { class: 'inspector__rail-foot' },
 h('div', { class: 'inspector__rail-seg', role: 'group', 'aria-label': 'Snap step' },
