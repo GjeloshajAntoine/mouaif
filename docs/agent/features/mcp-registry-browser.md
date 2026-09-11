@@ -6,7 +6,7 @@
 
 - **Backend proxy**: `GET /api/mcp/registry?search=...&cursor=...&limit=...` in `src/index.js` → `handleMcp()` proxies requests to `registry.modelcontextprotocol.io/v0.1/servers`, enriches each entry with a `popularity` object, and returns the paginated response.
 - **Frontend component**: `frontend/src/components/SettingsMcpRegistry.jsx` — the "Browse Registry" view with search, pagination, popularity bars, and one-tap add.
-- **Router**: `#/settings/mcp/registry` route in `frontend/src/router.js`.
+- **Router**: `#/settings/mcp/registry` entry in the table in `frontend/src/routes.js`.
 - **Entry point**: "Browse Registry" button in the MCP server list view bar (`frontend/src/components/SettingsMcp.jsx`).
 
 ## API

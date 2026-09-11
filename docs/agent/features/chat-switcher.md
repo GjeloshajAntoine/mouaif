@@ -10,6 +10,6 @@
 - **Streaming indicator**: the current chat's row shows a pulsing accent dot while `runningVisible` is true (the same state that swaps the send button for the stop button). The preload refresh on running-state change also clears stale `running` flags from the list.
 - State uses React `useState` (`chatSwitcherOpen`, `chatSwitcherList`) so the component re-renders on toggle.
 - Outside-click handling is wired in the existing `onDocClick` event listener inside `useChatState.js`.
-- Navigation is done via `nav()` from `router.js`, which sets `window.location.hash`.
+- Navigation is done via `nav()` from [frontend/src/router.js](../../frontend/src/router.js), which sets `window.location.hash`; the hash → view table itself is [frontend/src/routes.js](../../frontend/src/routes.js).
 - The dropdown is absolutely positioned below the trigger, uses `max-height: 60vh` with overflow scroll, and sits above the chat content via `z-index: 10`.
 - The "No other chats" empty state is shown when the list is empty.

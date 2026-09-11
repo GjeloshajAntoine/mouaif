@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import vm from 'node:vm';
 import { createRequire } from 'node:module';
 // Import browser ESM explicitly so this test also runs on Node 18 in a CJS package.
 async function loadBrowserModule(name) {
@@ -13,11 +12,13 @@ const { createAgentAutosave } = await loadBrowserModule('agentAutosave');
 const { agentQuery, agentEditorPath, agentBackPath } = await loadBrowserModule('agentNavigation');
 
 const context = { projectDir: '/projects/a & b', from: 'settings/projects', chatId: 'chat-1', returnTo: 'project' };
-const source = fs.readFileSync(new URL('../frontend/src/router.js', import.meta.url), 'utf8');
+// The hash → route table lives in frontend/src/routes.js (pure, no imports);
+// router.js is only the browser wiring. Loading the table directly means this
+// test needs no window/route stubs.
+const routesSource = fs.readFileSync(new URL('../frontend/src/routes.js', import.meta.url), 'utf8');
+const routes = await import('data:text/javascript;base64,' + Buffer.from(routesSource).toString('base64'));
 function routeFor(hash) {
-  const sandbox = { URLSearchParams, route: {}, window: { location: { hash }, addEventListener() {} } };
-  vm.runInNewContext(source.replace("import { route } from './api.js';", '').replace('export function nav', 'function nav'), sandbox);
-  return sandbox.route.value;
+return routes.parseHash(hash);
 }
 for (const from of ['projects', 'settings/projects', '']) {
   for (const returnTo of ['project', '']) {

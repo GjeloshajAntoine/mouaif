@@ -46,10 +46,13 @@ assert.equal(afterRemove.length, 0, 'toggleChar removes an existing span');
 assert.equal(charSpanCount([{ startLine: 1, endLine: 1, startCol: 4, endCol: 9 }]), 6, 'single-line span counts characters');
 assert.equal(charSpanCount([{ startLine: 1, endLine: 3, startCol: 4, endCol: 9 }]), 2, 'multi-line span counts boundary lines');
 const routeContext = { projectDir: '/projects/a & b', from: 'settings/projects', filePath: 'src/a #?.js' };
-const routeSandbox = { URLSearchParams, route: {}, window: { location: { hash: '#/' + hiddenContentPath(routeContext) }, addEventListener() {} } };
-vm.runInNewContext(source('router.js').replace("import { route } from './api.js';", '').replace('export function nav', 'function nav'), routeSandbox);
-for (const field of Object.keys(routeContext)) assert.equal(routeSandbox.route.value[field], routeContext[field]);
-assert.equal(routeSandbox.route.value.name, 'settingsProjectHide');
+// The hash → route table is frontend/src/routes.js (pure, no imports);
+// router.js is only the browser wiring now, so there is nothing to stub.
+const routesSandbox = { URLSearchParams };
+vm.runInNewContext(source('routes.js').replace(/^export /gm, ''), routesSandbox);
+const hideRoute = routesSandbox.parseHash('#/' + hiddenContentPath(routeContext));
+for (const field of Object.keys(routeContext)) assert.equal(hideRoute[field], routeContext[field]);
+assert.equal(hideRoute.name, 'settingsProjectHide');
 console.log('PASS range merging, splitting, validation, char-span merge/contain/toggle, count, project-scoped file routing');
 
 // Execute the real component event handlers with a minimal hook harness.
