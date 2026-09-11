@@ -40,6 +40,8 @@ import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './va
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
+import { ValueKindsView } from './ValueKindsView.jsx';
+import { valueShape } from './valueShapes.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
 // Receipt — the changes this session made, newest first, each with the value the
@@ -253,6 +255,10 @@ const [value, setValue] = useState(props.value || '');
 const [busy, setBusy] = useState(false);
 const [error, setError] = useState('');
 const [applied, setApplied] = useState(false);
+// format — the colour format chips (hex / rgb / hsl). Held here so the choice
+// survives a drag on one of the colour rails: writing the value back in the
+// format the user picked is the difference between a view and a converter.
+const [format, setFormat] = useState(null);
 // Guards every post-await setState: the sheet unmounts on Done/Cancel while
 // an apply is still in flight.
 const alive = useRef(true);
@@ -265,6 +271,9 @@ setProp(props.prop || '');
 setValue(props.value || '');
 setError('');
 setApplied(false);
+// A different row means a different value: the colour format chips reset so
+// they start from whatever format the page itself uses.
+setFormat(null);
 }, [props.prop, props.value]);
 const propName = (prop || '').trim();
 // The page's own step for this property, when it has one: the steppers move by
@@ -313,6 +322,59 @@ rootFontSize: unitCtx.rootFontSize,
 nearest: snap && snap.offScale && snap.nearest ? snap.nearest.number : null
 };
 })();
+// The shape this sheet shows for the property.
+//
+// A sheet is one edit session, and the value in its field changes while it is
+// open — often with the view's own help. The one case where that would be
+// hostile is the fan-out: dragging one side with "link all" on turns
+// `10px 14px 18px 14px` into `12px`, and the four rails must not collapse into a
+// single slider under the user's finger. So once this sheet has shown a fan-out
+// for a property, it keeps showing one until the sheet closes.
+const shapeRef = useRef(null);
+const liveShape = valueShape(propName, value);
+if (shapeRef.current == null) shapeRef.current = { shape: liveShape };
+else if (shapeRef.current.shape !== 'fanout' || liveShape === 'fanout') shapeRef.current.shape = liveShape;
+const shape = shapeRef.current.shape;
+// The rail is the numeric changer; the per-kind views own the other shapes. Both
+// only rewrite the value field and neither writes to the page, so which one is
+// shown never changes what Apply will do.
+const railShape = shape === 'rail' || shape === 'time' || shape === 'angle';
+const onField = (next) => { setValue(next); setApplied(false); setError(''); };
+const valueChangers = [
+railShape
+? h(ValueRail, {
+key: 'rail',
+prop: propName,
+value,
+ctx: railCtx,
+from: props.from,
+onChange: onField
+})
+: null,
+// The per-kind views (R2): the colour rails and palette, the shorthand fan-out,
+// the enum segments, the per-argument rails of a function list, the image
+// candidates. Same `onChange` contract, so every kind's edit stays one property
+// and one undo entry.
+h(ValueKindsView, {
+key: 'shape',
+prop: propName,
+value,
+sticky: shape,
+format,
+onFormat: setFormat,
+ctx: railCtx,
+step: railCtx.step,
+// The keywords the page uses for the property *being edited*: the property field
+// is editable inside the sheet, so deriving this from the row it opened with
+// would rank a different property's values. The index is the panel's, so this
+// still costs no page read.
+used: props.valueIndex ? valuesFor(props.valueIndex, propName, 12) : [],
+candidates: props.colourCandidates,
+background: props.contrastCtx && props.contrastCtx.bg,
+contrastCtx: props.contrastCtx,
+onChange: onField
+})
+];
 async function commit(p, v) {
 if (busy || !props.onApply) return;
 setBusy(true);
@@ -413,26 +475,20 @@ onChange: (next) => { setValue(next); setApplied(false); setError(''); }
 // which value". `value` goes along so the row can place the value being typed on
 // the page's own scale, and `contrastCtx` carries the element's resolved
 // background and text colours for the colour chips' WCAG ratios.
+//
+// `ownColour` is set once the sheet has decided a colour value gets its own view:
+// the three rails and the palette below already show the palette with a ratio
+// badge per swatch, so this row drops its colour group rather than rendering the
+// same candidates twice.
 h(Suggestions, {
 index: props.valueIndex,
 prop: propName,
 value,
 contrastCtx: props.contrastCtx,
+ownColour: shape === 'colour',
 onPick: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
-// The value rail: the numeric changer, above the field it writes into. It only
-// ever rewrites `value`, so Apply is still the single commit point and a drag is
-// one property and one undo entry — the same contract as the type switch and the
-// suggestion chips. A value with no numeric range (a keyword, a colour, an
-// unparsable expression) gets the honest "no rail" line instead of a dead
-// control.
-h(ValueRail, {
-prop: propName,
-value,
-ctx: railCtx,
-from: props.from,
-onChange: (next) => { setValue(next); setApplied(false); setError(''); }
-}),
+...valueChangers,
 h('div', { class: 'inspector__style-valuerow' },h('button', {
 class: 'inspector__style-step',
 type: 'button',
@@ -1490,6 +1546,10 @@ onClick: () => setComputedSteps(0)
 emptyMessage({ query: computedQuery, filter: computedFilter }))
 ),
 edit ? h(StyleEditSheet, {
+// Keyed by property so a different row remounts the sheet: its own value state,
+// its colour format and its sticky shape all reset together, rather than leaking
+// between two different edits.
+key: 'sheet-' + edit.prop,
 prop: edit.prop,
 value: edit.value,
 isInline: true,
@@ -1500,6 +1560,10 @@ box: model.box,
 // keeps as well as what it changes (see scopeSummary).
 declared: inlineRows,
 valueIndex,
+// The colours this page uses for the property being edited: the colour view's
+// palette. It comes from the index the panel already built, so it costs no page
+// read. The keyword list is derived inside the sheet from the live property.
+colourCandidates: valuesFor(valueIndex, edit.prop, 8),
 // The value the property had before this session's first edit on it: the rail's
 // header prints it struck through, so a drag always shows what it replaced.
 from: (() => {

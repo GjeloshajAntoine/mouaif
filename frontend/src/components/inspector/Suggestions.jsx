@@ -107,9 +107,9 @@ const tokens = tokensFor(index, prop, MAX_TOKEN_CHIPS);
 const snap = scale ? snapValue(prop, value, scale) : null;
 // Colour candidates carry a contrast ratio against the element's own resolved
 // background, so the group is rendered as swatches with a badge instead of a
-// use count. The page palette comes first, then the always-safe default pair
-// when the page offers no text colour for this element.
-const colour = isColourProperty(prop, values);
+// use count. `ownColour` means the value's own view is already rendering this
+// palette, so the row does not render a second copy of it.
+const colour = !props.ownColour && isColourProperty(prop, values);
 const colourCtx = props.contrastCtx || {};
 const colours = colour
 ? readableOn(colourCtx.bg || props.bg || '', values.map((v) => ({ value: v.value, count: v.count, selector: v.selector, isCurrent: v.isCurrent })), colourCtx).slice(0, MAX_COLOUR_CHIPS)

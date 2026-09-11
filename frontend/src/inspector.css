@@ -2223,6 +2223,241 @@ font-size: 0.68rem;
 color: var(--muted-2);
 line-height: 1.35;
 }
+/* ---- Inspector: per-kind views (Part R2) -----------------------------
+Each value kind gets the view that fits it: three rails and a palette for a
+colour, one sub-rail per side for a shorthand, segments for an enum, one rail per
+argument for a function list, candidates for an image, and the typed field with
+its reason for anything else. Everything wraps; there is no horizontal scroller
+inside the sheet, and every control is a ≥44 px target. */
+.inspector__shape {
+display: flex;
+flex-direction: column;
+gap: 9px;
+}
+.inspector__railcard {
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+background: var(--surface-2);
+padding: 8px 9px 6px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+}
+.inspector__railhead {
+display: flex;
+align-items: baseline;
+gap: 7px;
+flex-wrap: wrap;
+}
+/* The short colour rails: same track and thumb language as the value rail, at
+  the height the three of them stacked can afford. */
+.inspector__railwrap--short {
+position: relative;
+height: 46px;
+margin-top: 2px;
+touch-action: none;
+cursor: pointer;
+}
+.inspector__rtrack {
+position: absolute;
+left: 0;
+right: 0;
+top: 19px;
+height: 8px;
+border-radius: 4px;
+background: var(--surface-3);
+}
+.inspector__rtrack-fill {
+position: absolute;
+left: 0;
+top: 19px;
+height: 8px;
+border-radius: 4px 0 0 4px;
+background: rgba(255, 255, 255, 0.18);
+}
+.inspector__rthumb {
+position: absolute;
+top: 8px;
+width: 30px;
+height: 30px;
+margin-left: -15px;
+border-radius: 50%;
+border: 3px solid #0d1119;
+box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+/* The fan-out rows: a name column, a rail, a value. The name column is fixed
+  and small (2.75rem) so four rows line up; the rail takes the rest. */
+.inspector__subrail-row { margin-top: 4px; }
+.inspector__subrail {
+display: flex;
+align-items: center;
+gap: 8px;
+min-height: 44px;
+}
+.inspector__subrail-name {
+flex: 0 0 2.75rem;
+font-size: 0.66rem;
+color: var(--muted);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__subrail-track {
+position: relative;
+flex: 1 1 auto;
+min-width: 0;
+height: 30px;
+touch-action: none;
+cursor: pointer;
+}
+.inspector__subrail-fill {
+position: absolute;
+left: 0;
+top: 11px;
+height: 8px;
+border-radius: 4px 0 0 4px;
+background: var(--accent);
+opacity: 0.5;
+}
+.inspector__subrail-track::before {
+content: '';
+position: absolute;
+left: 0;
+right: 0;
+top: 11px;
+height: 8px;
+border-radius: 4px;
+background: var(--surface-3);
+}
+.inspector__subrail-thumb {
+position: absolute;
+top: 5px;
+width: 20px;
+height: 20px;
+margin-left: -10px;
+border-radius: 50%;
+background: var(--accent);
+border: 3px solid #0d1119;
+}
+.inspector__subrail-value {
+flex: 0 0 auto;
+min-width: 3.25rem;
+text-align: right;
+font-family: var(--font-mono);
+font-size: 0.69rem;
+color: var(--accent);
+}
+.inspector__linkrow {
+display: flex;
+align-items: center;
+gap: 8px;
+font-size: 0.69rem;
+color: var(--fg-soft);
+min-height: 44px;
+}
+/* The "link all sides" switch: a 24 px visual inside a 44 px target, so the
+  row is tappable without the switch looking like a button. */
+.inspector__linktog {
+flex: 0 0 auto;
+width: 40px;
+height: 44px;
+padding: 0;
+border: 0;
+border-radius: 99px;
+background: none;
+position: relative;
+cursor: pointer;
+}
+.inspector__linktog::before {
+content: '';
+position: absolute;
+left: 0;
+right: 0;
+top: 10px;
+height: 24px;
+border-radius: 99px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+}
+.inspector__linktog.is-on::before {
+background: var(--accent);
+border-color: var(--accent);
+}
+.inspector__linktog-knob {
+position: absolute;
+top: 11px;
+left: 1px;
+width: 20px;
+height: 20px;
+border-radius: 50%;
+background: #0d1119;
+transition: transform 0.12s ease;
+}
+.inspector__linktog.is-on .inspector__linktog-knob { transform: translateX(16px); }
+/* The keyword segments: the enum's chips, the page's own values first. */
+.inspector__opts {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__shape-chip {
+min-height: 44px;
+padding: 0 12px;
+border-radius: 9px;
+border: 1px solid var(--border-strong);
+background: var(--surface-2);
+color: var(--fg);
+font: inherit;
+font-size: 0.72rem;
+font-family: var(--font-mono);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__shape-chip:active { transform: scale(0.98); }
+.inspector__shape-chip.is-on {
+border-color: var(--accent);
+background: var(--accent-soft);
+color: var(--accent-hi);
+}
+/* A value the page actually uses: marked, because it is the likelier choice. */
+.inspector__shape-chip.is-page { border-color: var(--accent); }
+.inspector__shape-chip.is-wide { color: var(--muted); }
+.inspector__shape-row {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__shape-line {
+margin: 0;
+font-family: var(--font-mono);
+font-size: 0.69rem;
+color: var(--fg-soft);
+overflow-wrap: anywhere;
+}
+.inspector__shape-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+.inspector__shape-thumb {
+width: 22px;
+height: 22px;
+border-radius: 5px;
+background: var(--surface-3) center / cover no-repeat;
+border: 1px solid var(--border-strong);
+flex: 0 0 auto;
+}
+.inspector__fn-remove {
+margin-left: auto;
+min-width: 44px;
+min-height: 44px;
+border: 0;
+background: none;
+color: var(--muted);
+font-size: 0.8rem;
+cursor: pointer;
+}
 
 /* ---- Inspector: edit receipt + scope -------------------------------
    Two answers the "changed" chip could not give: what exactly did I change

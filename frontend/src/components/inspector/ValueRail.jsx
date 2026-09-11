@@ -36,6 +36,19 @@ const MAX_DECIMALS = 4;
 function pct(ratio) {
 return (Math.max(0, Math.min(1, ratio)) * 100).toFixed(2) + '%';
 }
+// markStyle — where a *mark* (a tick, not a thumb) sits on the track.
+//
+// A mark has width, and a mark placed at exactly 100% hangs its own width past
+// the rail — which on a 360 px sheet is a real horizontal overflow of the sheet
+// body. The marks at the two ends are therefore shifted inside instead of
+// centred, the same fix the labels use. The thumb is left alone: it is a circle
+// centred on its value, and clipping it would be worse than the mark's 1 px.
+function markStyle(ratio, width) {
+const r = Math.max(0, Math.min(1, ratio));
+if (r <= 0.0001) return { left: pct(r) };
+if (r >= 0.9999) return { left: 'calc(100% - ' + width + 'px)' };
+return { left: 'calc(' + pct(r) + ' - ' + (width / 2) + 'px)' };
+}
 // asText — the value the rail writes into the field: a number and its unit.
 function asText(n, unit) {
 return formatNumber(n) + (unit || '');
@@ -170,13 +183,13 @@ h('div', { class: 'inspector__rail-fill', style: { width: pct(ratio) } }),
 ticks.minor.map((v) => h('span', {
 class: 'inspector__rail-tick',
 key: 't' + v,
-style: { left: pct(valueToRatio(v, range)) }
+style: markStyle(valueToRatio(v, range), 2)
 })),
 ticks.major.map((v) => h('button', {
 class: 'inspector__rail-major',
 type: 'button',
 key: 'm' + v,
-style: { left: pct(valueToRatio(v, range)) },
+style: markStyle(valueToRatio(v, range), 2),
 title: 'Set ' + prop + ' to ' + formatNumber(v) + (range.unit || ''),
 'aria-label': 'Set to ' + formatNumber(v) + (range.unit || ''),
 onClick: () => tap(v)
@@ -185,7 +198,7 @@ ticks.tokens.map((t) => h('button', {
 class: 'inspector__rail-token',
 type: 'button',
 key: 'k' + t.name,
-style: { left: pct(t.ratio) },
+style: markStyle(t.ratio, 3),
 title: t.name + ' = ' + t.value,
 'aria-label': 'Set to ' + t.name + ', which is ' + t.value,
 onClick: () => tap(t.number)
@@ -204,7 +217,14 @@ style: { left: pct(ratio) },
 }, info.number != null ? formatNumber(info.number) : '')
 ),
 h('div', { class: 'inspector__rail-labels' },
-ticks.major.map((v) => h('span', { key: 'l' + v, style: { left: pct(valueToRatio(v, range)) } }, formatNumber(v))),
+ticks.major.map((v) => {
+const r = valueToRatio(v, range);
+// The edge labels align to the edge instead of centring on it: a label centred
+// at 100% hangs half its width outside the rail, which is a horizontal overflow
+// on every range whose last round number is its maximum.
+const shift = r <= 0.0001 ? '0' : r >= 0.9999 ? '-100%' : '-50%';
+return h('span', { key: 'l' + v, style: { left: pct(r), transform: 'translateX(' + shift + ')' } }, formatNumber(v));
+}),
 ticks.tokens.map((t) => h('span', { class: 'is-token', key: 'n' + t.name, style: { left: pct(t.ratio) } }, t.name))
 ),
 h('div', { class: 'inspector__rail-foot' },
