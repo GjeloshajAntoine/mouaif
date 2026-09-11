@@ -15,6 +15,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
+import { useModal } from '../../hooks/useModal.js';
 import { CliScreen } from './utils.js';
 
 export function CliModal(props) {
@@ -168,17 +169,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     };
   }, [projectDir]);
 
-  // Close on Escape (same pattern as the Git modal).
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        if (onClose) onClose();
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Escape, the Tab cycle and focus restore come from the shared sheet hook
+  // (frontend/src/hooks/useModal.js); the backdrop is this component's own.
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 
   const [cmdText, setCmdText] = useState('');
 
@@ -205,7 +198,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   }
 
   return h('div', { class: 'cli__overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Command prompt' },
-    h('div', { class: 'cli__sheet' },
+    h('div', { class: 'cli__sheet', ref: sheetRef },
       h('div', { class: 'cli__head' },
         h('div', { class: 'cli__title-stack' },
           h('span', { class: 'cli__title' }, shellLabel ? ('CLI — ' + shellLabel) : 'CLI'),

@@ -39,7 +39,7 @@ A transient notice bar under the header shows the result of push / pull / checko
 
 The Cli item opens a full-screen overlay with a live terminal readout. The default working directory is the **project root** — type a command and press Enter to run it there. On Windows the shell is the classic **Command Prompt (`cmd.exe`)** (honoring `ComSpec`); on POSIX it is `$SHELL` or `/bin/sh`.
 
-Output streams in as the command runs; the prompt line stays at the bottom and re-focuses after each command. The header shows the shell label and the project path. The session closes when you tap the × button, press Escape, or leave the chat.
+Output streams in as the command runs; the prompt line stays at the bottom and re-focuses after each command. The header shows the shell label and the project path. The session closes when you tap the × button, press Escape, or leave the chat. Escape, the Tab cycle inside the session and the focus restore are the shared sheet behaviour — see [Modal sheets](modal-sheets.md).
 
 Note: the session is a **piped** (non-TTY) child process, so interactive programs (REPLs, prompts that read from a terminal) will not work — the same limitation as the model-facing `shell` tool. Non-interactive commands behave like a real Command Prompt.
 Each command line is terminated with the platform's native line ending: **CRLF** (`\r\n`) on Windows/cmd.exe and **LF** (`\n`) on POSIX sh/bash. The session records its platform (`windows`) when it starts and picks the terminator per write. This matters — written CRLF to a POSIX shell makes the trailing carriage return part of the command token, so bash reports `$'ls\r': command not found`.

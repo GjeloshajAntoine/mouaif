@@ -12,19 +12,12 @@
 // centered card on tablet/desktop. Tapping the backdrop, the close
 // button, or pressing Escape dismisses it.
 import { h } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { useModal } from '../../hooks/useModal.js';
 export function McpErrorModal({ error, onClose }) {
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        if (onClose) onClose();
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
-  function onBackdropClick(e) {
+// Escape, the Tab cycle and focus restore come from the shared sheet hook
+// (frontend/src/hooks/useModal.js).
+const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
+function onBackdropClick(e) {
     // Only close when the tap lands on the backdrop itself, not on
     // the sheet. Same pattern as the Git and webpreview modals.
     if (e.target === e.currentTarget && onClose) onClose();
@@ -50,7 +43,7 @@ const raw = result && Object.keys(result).length
     'aria-label': 'MCP error',
     onClick: onBackdropClick
   },
-  h('div', { class: 'mcp-err__sheet' },
+  h('div', { class: 'mcp-err__sheet', ref: sheetRef },
     h('div', { class: 'mcp-err__head' },
       h('span', { class: 'mcp-err__title' }, 'MCP error'),
       h('button', {

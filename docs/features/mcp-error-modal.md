@@ -11,7 +11,7 @@ No configuration is required.
 - Open **Settings → MCP servers** and start or restart a server.
 - If startup fails, the error modal opens immediately.
 - The full-width error row remains below the server and can be tapped to reopen the modal.
-- Dismiss the modal with its close button, the backdrop, or Escape.
+- Dismiss the modal with its close button, the backdrop, or Escape. Escape, the Tab cycle and focus restore come from the shared sheet hook — see [Modal sheets](modal-sheets.md).
 - Use the server row to edit its command or URL before retrying.
 
 ## Behavior

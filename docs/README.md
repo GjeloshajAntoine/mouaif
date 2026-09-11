@@ -25,6 +25,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Responsive layout](features/responsive-layout.md) — the app frame grows with the window instead of staying a 480 px phone column.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with, directive by directive.
 - [Routing](features/routing.md) — every hash the app answers, its query parameters, and the old names that still work.
+- [Modal sheets](features/modal-sheets.md) — Escape, Tab and focus behave the same in every full-screen sheet, including stacked ones.
 
 ## Build the documentation
 

@@ -21,6 +21,7 @@
 //                               is a preset id or a 'WIDTHxHEIGHT' string.
 import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import { useModal } from '../../hooks/useModal.js';
 // Keep this small list aligned with VIEWPORTS in src/tools/webpreview.js.
 const VIEWPORT_PRESETS = [
   { id: 'phone', label: 'Phone', width: 375, height: 667 },
@@ -58,16 +59,10 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const [customWidth, setCustomWidth] = useState(String(initialCustomSize.width));
   const [customHeight, setCustomHeight] = useState(String(initialCustomSize.height));
   const [customError, setCustomError] = useState('');
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        if (onClose) onClose();
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Escape, the Tab cycle and focus restore come from the shared sheet hook
+  // (frontend/src/hooks/useModal.js); the backdrop and the close button are
+  // this component's own.
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
   // Defensive: render the modal shell even when the preview payload
   // is missing — the close button still has to work and the body
   // shows the model-facing error so the user knows nothing useful
@@ -136,7 +131,7 @@ const [recapturing, setRecapturing] = useState(false);
     'aria-label': title,
     onClick: onBackdropClick
   },
-    h('div', { class: 'wp__sheet' },
+    h('div', { class: 'wp__sheet', ref: sheetRef },
 h('div', { class: 'wp__head' },
 h('div', { class: 'wp__head-text' },
 h('div', { class: 'wp__title', title: title }, title || 'Web preview'),

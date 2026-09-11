@@ -12,6 +12,7 @@
 
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useModal } from '../../hooks/useModal.js';
 import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 
@@ -282,23 +283,19 @@ const load = useCallback(async () => {
   }, [projectDir]);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        // If a commit-action confirm sheet is up, Escape dismisses it first
-        // (not the whole modal), mirroring how the sheet is top-most.
-        setPendingCommitAction((p) => {
-          if (p) return null;
-          if (onClose) onClose();
-          return p;
-        });
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+// Escape, the Tab cycle and focus restore come from the shared sheet hook
+// (frontend/src/hooks/useModal.js). A commit-action confirm sheet renders on
+// top of this modal, so it takes Escape first: it pushes its own modal, and
+// only the top-most sheet answers the key (see hooks/modalStack.js).
+const handleEscape = useCallback(() => {
+setPendingCommitAction((p) => {
+if (p) return null;
+if (onClose) onClose();
+return p;
+});
+}, [onClose]);
+const sheetRef = useModal({ onClose: handleEscape });
+const confirmSheetRef = useModal({ onClose: handleEscape, active: !!pendingCommitAction });
 
   async function doGit(action, args, message) {
     if (busy) return;
@@ -438,7 +435,7 @@ async function loadMoreCommits() {
   const hasMoreCommits = commitTotal > 0 ? allCommits.length < commitTotal : allCommits.length >= 20;
 
   return h('div', { class: 'gm__overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Git' },
-    h('div', { class: 'gm__sheet' },
+  h('div', { class: 'gm__sheet', ref: sheetRef },
       h('div', { class: 'gm__head' },
         h('label', { class: 'gm__branch-wrap' },
           h('span', { class: 'gm__branch-label' }, 'Branch'),
@@ -634,11 +631,12 @@ title: 'Stage all unstaged changes'
       )
     ),
     pendingCommitAction ? h(GitConfirm, {
-      commit: pendingCommitAction.commit,
-      action: pendingCommitAction.action,
-      busy: !!busy,
-      onCancel: () => setPendingCommitAction(null),
-      onConfirm: runPendingCommitAction
+    commit: pendingCommitAction.commit,
+    action: pendingCommitAction.action,
+    busy: !!busy,
+    sheetRef: confirmSheetRef,
+    onCancel: () => setPendingCommitAction(null),
+    onConfirm: runPendingCommitAction
     }) : null
   );
 }
@@ -649,7 +647,7 @@ title: 'Stage all unstaged changes'
 // the Git modal, honors the safe-area inset, and keeps both buttons ≥44px.
 // Rendered with its own classes rather than the Inspector's ConfirmSheet
 // because inspector.css is lazy-loaded and may not be present in the chat view.
-function GitConfirm({ commit, action, busy, onCancel, onConfirm }) {
+function GitConfirm({ commit, action, busy, onCancel, onConfirm, sheetRef }) {
 let title = 'Confirm git action';
 let message = '';
 if (action === 'checkout') {
@@ -664,7 +662,7 @@ message = 'Create a new commit that undoes ' + commit.short + (' "' + commit.sub
 }
 const confirmLabel = action === 'checkout' ? 'Checkout' : (action === 'cherry-pick' ? 'Cherry-pick' : 'Revert');
 return h('div', { class: 'gm__overlay gm__confirm', role: 'presentation', onClick: busy ? undefined : onCancel },
-h('div', { class: 'gm__sheet gm__confirm-sheet', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title, onClick: (e) => e.stopPropagation() },
+h('div', { class: 'gm__sheet gm__confirm-sheet', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title, ref: sheetRef, onClick: (e) => e.stopPropagation() },
 h('div', { class: 'gm__confirm-body' },
 h('strong', { class: 'gm__confirm-title' }, title),
 h('p', { class: 'gm__confirm-msg' }, message),

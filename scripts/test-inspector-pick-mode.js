@@ -126,6 +126,9 @@ function createHarness() {
       return [states[slot], (value) => { states[slot] = typeof value === 'function' ? value(states[slot]) : value; }];
     },
     useEffect: () => {},
+    // The shared sheet hook (Escape, Tab cycle, focus restore) returns a ref;
+    // it is exercised in scripts/test-modal-hook.js, not in this DOM harness.
+    useModal: () => ({ current: null }),
     h: (type, attrs, ...children) => {
       const node = { type, props: attrs || {}, children };
       nodes.push(node);

@@ -13,6 +13,7 @@
 // listed but greyed out, matching the file editor.
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
+import { useModal } from '../hooks/useModal.js';
 import { fetchJson } from '../api.js';
 
 async function listDir(projectDir, dir) {
@@ -56,12 +57,10 @@ export function AgentFilePicker(props) {
 
   useEffect(() => { loadDir(projectDir); }, [projectDir]);
 
-  // Close on Escape.
-  useEffect(() => {
-    function onKey(ev) { if (ev.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Escape, the Tab cycle and focus restore come from the shared sheet hook
+  // (frontend/src/hooks/useModal.js). This picker used to listen on `window`
+  // without capture, so an Escape it did not own could reach the app behind it.
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 
   function goUp() {
     const d = dir || '';
@@ -99,7 +98,7 @@ export function AgentFilePicker(props) {
     'aria-label': props.label || 'Pick an agent file',
     onClick: (ev) => { if (ev.target === ev.currentTarget) onClose(); }
   },
-    h('div', { class: 'afp__sheet' },
+    h('div', { class: 'afp__sheet', ref: sheetRef },
       h('div', { class: 'afp__head' },
         h('div', { class: 'afp__title' }, 'Pick a file'),
         h('div', { class: 'afp__sub' }, props.description || 'Tapping a file adds its project-relative path to the list.'),

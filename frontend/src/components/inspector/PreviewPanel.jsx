@@ -22,6 +22,7 @@
 import { h, Fragment } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
+import { useModal } from '../../hooks/useModal.js';
 import { pickBannerText } from './pickMode.js';
 
 export function PreviewPanel(props) {
@@ -78,20 +79,11 @@ submitType(typeValue, false);
   const fsFrameRef = useRef(null);
   const fsImgRef = useRef(null);
   const [fullscreen, setFullscreen] = useState(false);
-// Close the full-screen overlay on Escape (mirrors the webpreview /
-// Git / CLI overlay behaviour). Only listens while it is open so the
+// The full-screen overlay is a sheet like the webpreview / Git / CLI modals,
+// so Escape, the Tab cycle and focus restore come from the shared hook
+// (frontend/src/hooks/useModal.js). It is only active while open, so the
 // capture loop and the rest of the Inspector keep normal key handling.
-useEffect(() => {
-if (!fullscreen) return;
-function onKey(e) {
-if (e.key === 'Escape') {
-e.stopPropagation();
-setFullscreen(false);
-}
-}
-document.addEventListener('keydown', onKey, true);
-return () => document.removeEventListener('keydown', onKey, true);
-}, [fullscreen]);
+const fsSheetRef = useModal({ onClose: () => setFullscreen(false), active: fullscreen });
 const [imgSrc, setImgSrc] = useState('');
 const [note, setNote] = useState('capturing…');
 // Zoom mode for the preview. 'fit' scales the screenshot to the frame's
@@ -632,7 +624,7 @@ h('span', null, zoom === 'size' ? 'Fit' : '100%')
 ),
 fullscreen
 ? createPortal(
-h('div', { class: 'inspector__preview-fs', role: 'dialog', 'aria-modal': 'true', 'aria-label': liveTitle || liveUrl || 'Live page preview, full screen' },
+h('div', { class: 'inspector__preview-fs', role: 'dialog', 'aria-modal': 'true', 'aria-label': liveTitle || liveUrl || 'Live page preview, full screen', ref: fsSheetRef },
 h('div', { class: 'inspector__preview-fs-head' },
 // Live page identity on the left: title (one line, ellipsis)
 // with a small host subtitle underneath, mirroring the web

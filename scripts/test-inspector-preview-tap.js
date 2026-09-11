@@ -71,6 +71,9 @@ async function main() {
       return [hooks[i], (v) => { hooks[i] = typeof v === 'function' ? v(hooks[i]) : v; }];
     },
     useEffect: () => {},
+    // The shared sheet hook (Escape, Tab cycle, focus restore) returns a ref;
+    // it is exercised in scripts/test-modal-hook.js, not in this DOM harness.
+    useModal: () => ({ current: null }),
     Fragment: 'fragment', createPortal: (child) => child,
     h: (tag, attrs, ...children) => {
       const node = { tag, attrs, children };

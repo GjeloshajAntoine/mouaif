@@ -47,6 +47,9 @@ function newHarness({ storedSeed = {}, naturalWidth = 1280, frameW = 366 } = {})
       return [hooks[i].v, (value) => { hooks[i].v = typeof value === 'function' ? value(hooks[i].v) : value; }];
     },
     useEffect: () => {},
+    // The shared sheet hook (Escape, Tab cycle, focus restore) returns a ref;
+    // it is exercised in scripts/test-modal-hook.js, not in this DOM harness.
+    useModal: () => ({ current: null }),
     Fragment: 'fragment', createPortal: (child) => child,
     h: (tag, attrs, ...children) => {
       if (attrs && attrs.ref) {

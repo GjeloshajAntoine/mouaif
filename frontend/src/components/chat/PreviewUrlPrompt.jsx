@@ -17,22 +17,16 @@
 //   onClose  () => void             — dismiss the prompt
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { useModal } from '../../hooks/useModal.js';
 
 export function PreviewUrlPrompt({ onSubmit, onClose }) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        if (onClose) onClose();
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Escape, the Tab cycle and focus restore come from the shared sheet hook
+  // (frontend/src/hooks/useModal.js); this component owns the URL field's
+  // own focus-on-mount and the backdrop tap.
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 
   // Focus the field on mount so the user can type immediately.
   useEffect(() => {
@@ -75,7 +69,7 @@ export function PreviewUrlPrompt({ onSubmit, onClose }) {
     'aria-label': 'Preview a web page',
     onClick: onBackdropClick
   },
-  h('div', { class: 'wp__sheet wp__prompt-sheet' },
+  h('div', { class: 'wp__sheet wp__prompt-sheet', ref: sheetRef },
   h('div', { class: 'wp__head' },
   h('div', { class: 'wp__head-text' },
   h('div', { class: 'wp__title' }, 'Preview a web page'),
