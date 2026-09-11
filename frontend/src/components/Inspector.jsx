@@ -157,8 +157,15 @@ function loadIntentState() {
   try { return localStorage.getItem(INTENT_STATE_KEY) === '1'; } catch { return false; }
 }
 function saveIntentState(value) {
-  try { localStorage.setItem(INTENT_STATE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
+try { localStorage.setItem(INTENT_STATE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
 }
+// INTENT_SURFACE — the Intent chip is hidden. "Intent" is not one of the five
+// inspection views, and as a sixth chip it was the first thing to crowd the
+// panel bar at 360 px while being the rarest thing tapped, so the bar now
+// carries only PANELS. The surface itself is unchanged and still tested
+// (IntentPanel + intent.js, scripts/test-inspector-intent.js): flip this to
+// true and the chip and the panel come back exactly as they were.
+const INTENT_SURFACE = false;
 // Hoisted sub-components (module scope) so their identity is stable
 // across InspectorView re-renders. Defining them *inside* the render
 // function gave every render a brand-new component type, so Preact
@@ -1581,12 +1588,12 @@ showBadge
 : null
 );
 }),
-// Intent — the sixth chip, but not a sixth panel: it is the describe-a-change
-// surface (Part H), toggled here so it is reachable exactly where the other
-// surfaces are. It shares the chip's look and its localStorage-persisted state
-// (its own key), and it keeps its own aria-label because "Show Intent" is not a
-// panel visibility toggle.
-h('button', {
+// Intent — the describe-a-change surface (Part H). Its chip is hidden (see
+// INTENT_SURFACE): the panel bar carries PANELS only, so this renders nothing
+// unless the surface is switched back on. It is deliberately NOT folded into
+// PANELS — it is a request box and a cited diff, not a view of the connected
+// page, so it keeps its own toggle and its own storage key.
+INTENT_SURFACE ? h('button', {
 class: 'inspector__panelchip inspector__panelchip--intent' + (intentOpen ? ' is-on' : ''),
 type: 'button',
 'aria-label': (intentOpen ? 'Hide' : 'Show') + ' Intent — describe a change in words',
@@ -1597,7 +1604,7 @@ onClick: toggleIntent
 },
 h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, '✎'),
 h('span', { class: 'inspector__panelchip-label' }, 'Intent')
-)
+) : null
 ),
 h(StatusPill, { text: statusText }),
       // TargetBar + the session receipt — "which element, which rule, where does
@@ -1644,11 +1651,13 @@ h(StatusPill, { text: statusText }),
       );
       })(),
     // Intent (Part H) — the describe-a-change surface, directly above the panels
-    // because it is a way to *make* an edit rather than a view of the page. It
-    // renders from the same retained selection the target bar uses, so it works
-    // with the Styles panel off.
-    intentOpen
-    ? h('div', { class: 'inspector__panel inspector__panel--intent' },
+// because it is a way to *make* an edit rather than a view of the page. It
+// renders from the same retained selection the target bar uses, so it works
+// with the Styles panel off. Unmounted while INTENT_SURFACE is false: with no
+// chip to toggle it, a remembered `1` in localStorage would otherwise open a
+// surface the user could not close.
+INTENT_SURFACE && intentOpen
+? h('div', { class: 'inspector__panel inspector__panel--intent' },
     h(IntentPanel, {
     connected: !!selectionAcrossModes(stylesSelection, selectionStore),
     label: (selectionAcrossModes(stylesSelection, selectionStore) || {}).label || '',

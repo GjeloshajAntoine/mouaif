@@ -10,6 +10,11 @@ The model's answer is a *suggestion*, so the whole feature is built around makin
 
 ## Usage
 
+> **Not shown in the UI.** The surface is built, tested, and mounted behind a
+> switch in `Inspector.jsx` (`const INTENT_SURFACE = false`) — flip it to `true`
+> to get the **Intent** chip in the panel bar back. The rest of this page
+> describes the surface as it behaves when that switch is on.
+
 Open the **Intent** chip in the panel bar (it is toggled like a panel and its state is remembered). Select an element first — the description is about the element you picked.
 
 1. **Type the change.** One sentence: `make the spacing roomier`, `tighten the type`, `tone the colours down`. The three examples under the field are buttons, so the interaction is legible without a manual.
@@ -41,7 +46,7 @@ Open the **Intent** chip in the panel bar (it is toggled like a panel and its st
 - **"Off the page's scale" is not an error.** A value the page does not use is selectable and labelled `a new value`; the user is the one who decides whether the model is right.
 - **A property proposed twice becomes one write**, keeping the value the user saw last, so the diff cannot leave a property holding a value that scrolled past.
 - **The write path is the same one every other edit uses.** One `style.setProperty` per line against the retained element, and one receipt entry per property, so an intent is exactly as reversible as a hand-made edit — including restoring "was not declared" as a removal rather than an empty value.
-- **The surface is not a sixth panel.** `PANELS` stays the five inspection views (Preview, Styles, Console, Network, Info) that the feature inventory pins; Intent is a different kind of thing — a request box and a diff, not a view of the connected page — so it has its own toggle and its own storage key.
+- **The surface is not a sixth panel.** `PANELS` stays the five inspection views (Preview, Styles, Console, Network, Info) that the feature inventory pins; Intent is a different kind of thing — a request box and a diff, not a view of the connected page — so it has its own toggle and its own storage key. Its chip is not shown (see Usage): the panel bar renders `PANELS` only.
 - **A new selection invalidates the diff.** Its lines name properties of the element that was selected, so applying them to another element would write to the wrong node; the list is cleared and the field is left for a new request.
 - **With no model configured it says so.** The request fails with `No model configured. Add one in Settings → Models, then try again.` rather than a spinner that never resolves. The model used is whichever the project has configured for chat (the recent-model list first, then the model list), so the Inspector and the chat agree on the default without a second setting.
 - **A raw answer is shown when it parses to nothing.** If the model replies with prose, the text is displayed under a short error instead of vanishing, so a bad answer can be read and reported.
@@ -50,7 +55,7 @@ Open the **Intent** chip in the panel bar (it is toggled like a panel and its st
 
 - **Pure model:** [`frontend/src/components/inspector/intent.js`](../../frontend/src/components/inspector/intent.js) exports `buildIntentPrompt`, `parseProposals`, `extractJson`, `validateProposals`, `selectable`, `applyPlan`, `intentSummary`, `proposalLine`, `SYSTEM_PROMPT`, `MAX_PROPOSALS` and `MAX_CONTEXT_VALUES`. It imports `classify` / `propertyFamily` / `formatNumber` from `valueKinds.js`, so a proposal is typed by the same classifier the type switch and the suggestions use.
 - **Component:** [`frontend/src/components/inspector/IntentPanel.jsx`](../../frontend/src/components/inspector/IntentPanel.jsx) exports `IntentPanel`. It owns the field text, the parsed list and the per-line ticks, and it takes `onPropose` / `onApply` so the network and the credentials are not its business.
-- **Wiring:** `Inspector.jsx` renders the surface above the panels, builds the prompt from the retained selection (`selectionAcrossModes`), resolves the model from the project's own settings, and applies the ticked lines through the same `setInlineStyleProperty` handler the edit sheet uses, recording into the receipt it already owns. Its visibility persists under `mouaif:inspector:intent`.
+- **Wiring:** `Inspector.jsx` renders the surface above the panels, builds the prompt from the retained selection (`selectionAcrossModes`), resolves the model from the project's own settings, and applies the ticked lines through the same `setInlineStyleProperty` handler the edit sheet uses, recording into the receipt it already owns. Its visibility persists under `mouaif:inspector:intent`, and the whole surface is gated by `const INTENT_SURFACE = false`: with that switch off the chip is not rendered, so the surface is unreachable (the panel is gated on the same switch, and a remembered `1` cannot open a surface with no chip to close it).
 - **Prompt shape:** a system message stating the JSON schema and the rules (`One object per CSS declaration`, `Prefer values that appear in the page context`, `at most 8 changes`), and a user message carrying the element, its declarations, the page's values with their step, the tokens, and the request. Both are built by `buildIntentPrompt`, so they are asserted in tests rather than assembled at the call site.
 - **Transport:** the existing `POST /api/ai/chat` SSE endpoint is called with `modelId`, `projectDir` and the two messages; no new endpoint and no new credential path. The stream is consumed for its final text.
 - **Mobile-first:** the field is one line rather than a textarea (a growing box would push the diff off a 360 px screen), every line is a ≥44 px full-width row with the tick inside it, the examples wrap, and the diff is a single column with no horizontal scrolling.
