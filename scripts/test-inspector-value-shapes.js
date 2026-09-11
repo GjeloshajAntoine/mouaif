@@ -419,5 +419,93 @@ check('the reorder buttons are 44 px targets', /\.inspector__fn-move \{/.test(cs
 check('the add row wraps rather than scrolling', /\.inspector__fn-addrow \{[^}]*flex-wrap: wrap/.test(css));
 }
 }
+// ---- the color-mix() format ---------------------------------------------
+//
+// The mock's colour row lists four formats: `hex / rgb / hsl / color-mix()`. The
+// mix form is only worth a chip if it is an *exact* rewrite, which mixing with
+// `transparent` in sRGB is: the channels are untouched and the alpha is the
+// weight of the first stop. So it round-trips, and a value written as a mix is
+// still a colour the rails can drag.
+{
+{
+const p = VS.parseColourParts('rgba(110, 168, 254, 0.425)');
+const mix = VS.joinColourParts(p, 'mix');
+check('a mix names the interpolation space and the two stops',
+/^color-mix\(in srgb, #[0-9a-f]{6} [\d.]+%, transparent\)$/.test(mix), mix);
+check('the weight is the alpha as a percentage', mix.includes('42.5%'), mix);
+check('the opaque side is the colour, unchanged', mix.includes('#6ea8fe'), mix);
+const back = VS.parseColourParts(mix);
+check('a mix round-trips to the same channels', back.rgb.r === 110 && back.rgb.g === 168 && back.rgb.b === 254,
+JSON.stringify(back.rgb));
+check('a mix round-trips to the same alpha', Math.abs(back.a - 0.425) < 1e-9, String(back.a));
+check('a mix is recognised as its own format', back.format === 'mix', back.format);
+check('a mix keeps its hue for the rails', Math.round(back.h) === 216, String(back.h));
+}
+// An opaque colour writes 100% and resolves to itself, so the chip never changes
+// what the user is looking at.
+{
+const p = VS.parseColourParts('#6ea8fe');
+const mix = VS.joinColourParts(p, 'mix');
+check('an opaque colour mixes at 100%', / 100%, transparent\)$/.test(mix), mix);
+const back = VS.parseColourParts(mix);
+check('an opaque mix resolves to the same colour', back.a === 1 && back.rgb.r === 110);
+}
+// The parser handles a first stop that contains commas of its own.
+{
+const p = VS.parseColourParts('color-mix(in srgb, rgb(110, 168, 254) 40%, transparent)');
+check('an rgb() first stop is not split on its own commas', p && p.format === 'mix' && p.rgb.g === 168,
+JSON.stringify(p));
+check('its alpha is the weight', Math.abs(p.a - 0.4) < 1e-9, String(p.a));
+}
+// An hsl first stop keeps its own H/S/L rather than being round-tripped.
+{
+const p = VS.parseColourParts('color-mix(in srgb, hsl(220, 38%, 15%) 50%, transparent)');
+check('a mix of an hsl colour keeps the hue the user typed', Math.round(p.h) === 220, String(p.h));
+check('and writes back as hex, which is the mix\'s own first stop', VS.joinColourParts(p, 'mix').includes('#182135'),
+VS.joinColourParts(p, 'mix'));
+}
+// What the parser refuses, so the view can say why instead of guessing.
+check('another interpolation space is not read',
+VS.parseColourParts('color-mix(in oklab, red 40%, blue)').format === 'unknown');
+check('a mix that is not with transparent is not read',
+VS.parseColourParts('color-mix(in srgb, red 40%, blue)').format === 'unknown');
+check('a mix whose stops are malformed is not read',
+VS.parseColourParts('color-mix(in srgb, red, transparent)').format === 'unknown');
+check('a mix with no stops is not read',
+VS.parseColourParts('color-mix(in srgb)').format === 'unknown');
+check('an empty mix is not read', VS.parseColourParts('color-mix()').format === 'unknown');
+// A nested mix is still a mix (it recurses and terminates).
+check('a nested first stop is read', (() => {
+const p = VS.parseColourParts('color-mix(in srgb, color-mix(in srgb, #6ea8fe 50%, transparent) 50%, transparent)');
+return p && p.format === 'mix' && Math.abs(p.a - 0.25) < 1e-9;
+})());
+// Hex, rgb and hsl are unaffected by the new format.
+check('hex still writes hex', VS.joinColourParts(VS.parseColourParts('#6ea8fe'), 'hex') === '#6ea8fe');
+check('rgb still writes rgb', VS.joinColourParts(VS.parseColourParts('#6ea8fe'), 'rgb') === 'rgb(110, 168, 254)');
+check('hsl still writes hsl', VS.joinColourParts(VS.parseColourParts('#6ea8fe'), 'hsl') === 'hsl(216, 99%, 71%)',
+VS.joinColourParts(VS.parseColourParts('#6ea8fe'), 'hsl'));
+// A drag after switching to mix keeps the format (that is what makes the chips a
+// format rather than a converter).
+{
+const p = VS.parseColourParts('rgba(110, 168, 254, 0.425)');
+const dragged = VS.applyRailPart(p, 'h', 200);
+check('a drag keeps writing the mix format',
+VS.joinColourParts(dragged, 'mix').startsWith('color-mix(in srgb,'), VS.joinColourParts(dragged, 'mix'));
+check('and the dragged mix is still the dragged colour', (() => {
+const back = VS.parseColourParts(VS.joinColourParts(dragged, 'mix'));
+return Math.round(back.h) === 200;
+})());
+}
+// The view offers the chip.
+{
+const src = read('frontend/src/components/inspector/ValueKindsView.jsx');
+check('the colour view offers four formats', /key: 'mix', label: 'color-mix\(\)'/.test(src)
+&& /key: 'hex', label: 'hex'/.test(src) && /key: 'hsl', label: 'hsl'/.test(src));
+check('the chip is labelled as the CSS, not as "mix"', /color-mix\(\)/.test(src));
+check('the chips render their label', /\}, f\.label\)\)/.test(src));
+check('the mix chip explains what it will write', /the same colour, as a mix/.test(src));
+check('the chip reports its key, not its label', /onClick: \(\) => props\.onFormat\(f\.key\)/.test(src));
+}
+}
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-shape assertion(s) failed');

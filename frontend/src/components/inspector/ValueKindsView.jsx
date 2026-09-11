@@ -95,7 +95,16 @@ parts && parts.keyword === 'currentcolor'
 );
 }
 const rails = colourRailValues(parts);
-const formats = ['hex', 'rgb', 'hsl'];
+// The format chips. `mix` is written as `color-mix()` because that is the CSS,
+// and it is a real format rather than a converter: the rails keep writing in the
+// format the user picked, and a mix is an exact rewrite of an alpha (see
+// joinColourParts).
+const FORMATS = [
+{ key: 'hex', label: 'hex' },
+{ key: 'rgb', label: 'rgb' },
+{ key: 'hsl', label: 'hsl' },
+{ key: 'mix', label: 'color-mix()' }
+];
 // MAX_PALETTE — colour candidates get a swatch, a value and a ratio badge, which
 // is three times the width of a plain chip; five is what fits the sheet without
 // turning the palette into a wall. The Suggestions row above renders no colour
@@ -156,13 +165,16 @@ h('span', { class: 'inspector__rthumb', style: { left: (ratio * 100).toFixed(2) 
 );
 }),
 h('div', { class: 'inspector__shape-row', role: 'group', 'aria-label': 'Colour format' },
-formats.map((f) => h('button', {
-class: 'inspector__shape-chip' + ((props.format || parts.format) === f ? ' is-on' : ''),
+FORMATS.map((f) => h('button', {
+class: 'inspector__shape-chip' + ((props.format || parts.format) === f.key ? ' is-on' : ''),
 type: 'button',
-key: f,
-'aria-pressed': String((props.format || parts.format) === f),
-onClick: () => props.onFormat(f)
-}, f))
+key: f.key,
+'aria-pressed': String((props.format || parts.format) === f.key),
+title: f.key === 'mix'
+? 'Write this colour as a color-mix() of itself and transparent — the same colour, as a mix'
+: 'Write this colour as ' + f.label,
+onClick: () => props.onFormat(f.key)
+}, f.label))
 ),
 palette.length
 ? h('div', { class: 'grp' },

@@ -424,6 +424,37 @@ return next.map((f, i) => Object.assign({}, f, { index: i }));
 // properties that take it (`transform: none`), which is why it is a chip rather
 // than a delete-to-empty text field.
 export const FUNCTIONS_NONE = 'none';
+// parseColourMix — a `color-mix(in srgb, <colour> <pct>%, transparent)` value
+// read back as the colour it resolves to.
+//
+// The mix form is a *format*, so it has to round-trip: a value the view wrote as
+// a mix must come back as a colour the rails can keep dragging, or the sheet
+// would show "not a colour the inspector can read" for something it wrote
+// itself. Mixing with `transparent` in sRGB is an exact rewrite of an alpha —
+// the colour channels are unchanged and the alpha is the weight of the first
+// stop — which is why that is the one mix the parser accepts. Any other mix is
+// left to the typed field rather than approximated.
+function parseColourMix(raw) {
+const outer = /^color-mix\((.*)\)$/is.exec(String(raw || '').trim());
+if (!outer) return null;
+// Comma-splitting has to respect brackets: a first stop of `rgb(0, 0, 0)` has
+// two commas of its own.
+const parts = splitArgs(outer[1]);
+if (parts.length !== 3) return null;
+if (!/^in\s+srgb$/i.test(parts[0].trim())) return null;
+const stop = /^\s*(.+?)\s+([\d.]+)%\s*$/.exec(parts[1]);
+if (!stop) return null;
+if (!/^transparent$/i.test(parts[2].trim())) return null;
+const inner = parseColourParts(stop[1]);
+if (!inner || inner.format === 'unknown' || inner.keyword) return null;
+const pct = parseFloat(stop[2]);
+if (!Number.isFinite(pct)) return null;
+return Object.assign({}, inner, {
+a: Math.max(0, Math.min(1, (inner.a == null ? 1 : inner.a) * (pct / 100))),
+format: 'mix',
+raw: String(raw).trim()
+});
+}
 // enumValues — the keyword chips for a property, ranked: the values the page
 // actually uses first (in the order the index reports them), then the property's
 // own spec set, then the CSS-wide keywords last.
@@ -459,6 +490,12 @@ return out;
 export function parseColourParts(value) {
 const raw = String(value == null ? '' : value).trim();
 if (!raw) return null;
+// A mix the view itself wrote comes back as the colour it resolves to, so the
+// format survives a drag like hex/rgb/hsl do.
+if (/^color-mix\(/i.test(raw)) {
+const mixed = parseColourMix(raw);
+return mixed || { keyword: null, format: 'unknown', raw };
+}
 const lower = raw.toLowerCase();
 let rgb = null;
 let alpha = 1;
@@ -558,6 +595,17 @@ const l = formatNumber(Math.round((p.l || 0) * 100));
 return alpha < 1
 ? 'hsla(' + h + ', ' + s + '%, ' + l + '%, ' + formatNumber(alpha) + ')'
 : 'hsl(' + h + ', ' + s + '%, ' + l + '%)';
+}
+// The mix form: the opaque colour at the weight of its alpha, mixed with
+// `transparent`. In sRGB that is an exact rewrite — the channels are untouched
+// and the alpha is the weight — so a chip that switches to it does not change
+// the colour the user is looking at. The opaque side is written as hex because
+// that is what a mix's first stop is usually written as, and the percentage is
+// kept to four decimals so a 0.425 alpha round-trips instead of becoming 0.43.
+if (fmt === 'mix') {
+const opaque = '#' + two(rgb.r) + two(rgb.g) + two(rgb.b);
+const weight = formatNumber(Math.round(alpha * 1e4) / 1e2);
+return 'color-mix(in srgb, ' + opaque + ' ' + weight + '%, transparent)';
 }
 const hex = '#' + two(rgb.r) + two(rgb.g) + two(rgb.b);
 return alpha < 1 ? hex + two(alpha * 255) : hex;
