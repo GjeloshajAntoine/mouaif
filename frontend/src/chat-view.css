@@ -21,11 +21,9 @@ title stack, so the usage chips and the two dropdowns visually collided
 and the globe glyph sat between them. The padding is now explicit on all
 four sides instead of borrowed from a margin hack. */
 gap: 2px 4px;
-/* No top padding (the shell owns the space above the head) and 4px at the
-bottom, where the old layout had the model row's own +6px margin. The
-difference is small on purpose: the -6px tuck that used to sit here was
-not spacing, it was overlap. */
-padding: 0 8px 4px;
+/* No top padding (the shell owns the space above the head) and 6px at the
+bottom, so the model selects are not glued to the divider below them. */
+padding: 0 8px 6px;
 border-bottom: 1px solid var(--border);
 flex: 0 0 auto;
 position: relative;
@@ -264,26 +262,29 @@ padding: 0 6px;
 
 /* Chat switcher trigger: the entire title area is clickable */
 .chat-view__chat-switcher-trigger {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  /* 44 px minimum: this is the *only* way to switch chats from the chat
-     screen, and at 20 px it was the smallest target for the biggest
-     action. The row it sits in is already taller (the stacked icon
-     column beside it), so this fills the row instead of growing it. */
-  min-height: var(--tap);
-  flex: 1;
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  padding: 2px 4px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 80ms ease;
-  -webkit-tap-highlight-color: var(--accent-soft, transparent);
+display: flex;
+align-items: center;
+gap: 4px;
+min-width: 0;
+/* Dense-header size (--tap-sm), like the two glyph buttons in the same row.
+  The title text is 16px, so this leaves 8px of padding above and below it
+  instead of the 14px a 44px box would: the head's first row is already 66px
+  tall (the stacked icon column), so a taller trigger adds no reachable
+  area — it only pushes the usage chips 12px further from the title and
+  leaves them 4px above the model selects, which reads as a collision. The
+  target is still 260x32 on a phone, not a 32px square. */
+min-height: var(--tap-sm);
+flex: 1;
+font: inherit;
+color: inherit;
+background: transparent;
+border: 0;
+border-radius: var(--r-sm);
+padding: 2px 4px;
+cursor: pointer;
+text-align: left;
+transition: background 80ms ease;
+-webkit-tap-highlight-color: var(--accent-soft, transparent);
 }
 .chat-view__chat-switcher-trigger:hover { background: var(--surface-2); }
 .chat-view__chat-switcher-trigger:active { background: var(--surface-3); }

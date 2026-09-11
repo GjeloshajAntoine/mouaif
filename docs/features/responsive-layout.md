@@ -51,7 +51,7 @@ Touch targets: the frame, the tab bar and every row keep their ≥ 44 px sizing 
 
 | Control | Before | Now | Why it matters |
 | --- | --- | --- | --- |
-| Chat title (**Switch chat**) | 20 px tall | `--tap` | The only way to switch chats from the chat screen. It fills the row, so the head does not grow. |
+| Chat title (**Switch chat**) | 20 px tall | 32 px (`--tap-sm`) | The title is 16 px of text, so a 44 px box added 14 px of invisible padding and pushed the usage chips down to 4 px above the model selects. The head's first row is 66 px tall anyway (the stacked gear + globe), so the extra height bought no reachable area. Target is 260 × 32 on a phone. |
 | Chat **Back**, sub-page **Back** (`.view-back`) | 32 px | `--tap` | Navigation, and both sit alone at the start of a row, so the bigger target costs no layout. |
 | Project settings select | 32 px | `--tap` | Matches every other `.input` in the settings forms. |
 | PWA banner **Reload** / **Retry** | 65 × 28 | 44 px hit area | `.tap-target`, so the transient strip does not get taller. |
