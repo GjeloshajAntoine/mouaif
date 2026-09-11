@@ -4,7 +4,7 @@
 
 The **Inspector** tab provides a mobile-first DevTools experience for inspecting and debugging web pages directly from your phone or desktop browser. It connects to any Chrome or Chromium browser instance running with remote debugging enabled.
 
-![Inspector on a 360 px phone with all four optional panels visible](./images/inspector/mobile-360-all-on.png)
+![Inspector on a 360 px phone with every optional panel switched on](./images/inspector/mobile-360-all-on.png)
 
 ## Getting started
 

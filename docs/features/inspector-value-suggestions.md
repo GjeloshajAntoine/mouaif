@@ -4,7 +4,7 @@
 
 The type switch changes *how* a value is written and the unit cycle rewrites the same value in another unit — but neither answers the question that actually stalls an edit: **what should this value be?** The edit sheet therefore lists the values and design tokens **this page already uses** for the property being edited, each with the evidence behind it: how many times it appears and which rule supplies it. On top of that list it adds two pieces of guidance the evidence alone cannot give: the value being typed is placed **on the page's own numeric scale** (with the nearest value and its distance named), and every **colour** candidate carries its **WCAG contrast ratio** against the element it would be applied to.
 
-![The snap hint and the contrast badges in the edit sheet at 360 px](./images/inspector/value-snap-contrast-360.png)
+![The snap hint and the step note in the edit sheet, above the values this page uses for the property, at 360 px](./images/inspector/value-snap-contrast-360.png)
 
 ## Usage
 
