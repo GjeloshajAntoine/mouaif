@@ -1719,15 +1719,40 @@ query: computedQuery
 computedVisible.length
 ? [
 h('ul', { class: 'inspector__styles-list inspector__styles-list--computed', key: 'list' },
-computedPage.map((row) => h('li', {
-class: 'inspector__styles-row inspector__styles-row--computed'
-+ (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
-key: row.prop
-},
+computedPage.map((row) => {
+// The computed list is read-only by design — it is a ~400-row read-out, and a
+// tap target on every row would be 17 000 px of scrolling. A *changed* row is
+// the exception: there are only a handful, they are hoisted to the top, and the
+// row is the answer to "I just changed this — what is it now, and let me change
+// it again?". So it carries the same editor button a declared row does, with
+// the value the page reports now, which is also the shortest path into the
+// value sheet's type switch, unit chips and rail.
+const changedRow = isChanged(changed, row.prop);
+const cells = [
 h('span', { class: 'inspector__styles-prop' }, row.prop),
+changedRow ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
 valueSwatch(row.prop, row.value),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
-))
+];
+return h('li', {
+class: 'inspector__styles-row inspector__styles-row--computed'
++ (changedRow ? ' inspector__styles-row--changed' : ''),
+key: row.prop
+},
+changedRow
+? h('button', {
+class: 'inspector__styles-row-main',
+type: 'button',
+// Same label-in-name rule as a declared row: the row visibly reads
+// `{prop} {value}`, so the accessible name echoes both — plus the
+// changed state, which is colour-only for sighted users.
+'aria-label': 'Changed. Edit ' + row.prop + ', value ' + (row.value || ''),
+title: 'Edit ' + row.prop,
+onClick: () => setEdit({ prop: row.prop, value: row.value })
+}, cells)
+: cells
+);
+})
 ),
 computedMore > 0
 ? h('button', {

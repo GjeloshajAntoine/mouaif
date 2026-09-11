@@ -409,7 +409,22 @@ async function main() {
   assert.match(rowRule[1], /min-height:\s*calc\(var\(--tap\)\s*\+\s*2px\)/,
     'the row is --tap plus its 2 px of border, so the stretched button inside is a true 44 px target');
   assert.ok(!/padding:\s*\d+px\s+\d+px/.test(rowRule[1]),
-    'the row carries no vertical padding — padding shrinks the tappable area while the row still looks full height');
+  'the row carries no vertical padding — padding shrinks the tappable area while the row still looks full height');
+  // The computed list is read-only apart from the rows changed in this session:
+  // those open the value sheet, so they take the interactive 44 px row back while
+  // the other ~400 stay compact. If the exception rule ever stops outweighing the
+  // compact rule (or the hairline separator), a changed row silently drops back to
+  // a 3 px strip that looks tappable and is not.
+  const compactComputed = /\.inspector__styles-row--computed\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(compactComputed, 'the compact computed-row rule exists');
+  assert.match(compactComputed[1], /min-height:\s*0/,
+  'the plain computed row stays below the interactive minimum');
+  const changedComputed = /\.inspector__styles-list--computed > li \.inspector__styles-row--computed\.inspector__styles-row--changed\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(changedComputed, 'a changed computed row has its own rule');
+  assert.match(changedComputed[1], /min-height:\s*calc\(var\(--tap\)\s*\+\s*2px\)/,
+  'a changed computed row is a full 44 px tap target');
+  assert.match(changedComputed[1], /border:\s*1px solid var\(--accent\)/,
+  'its border is pinned in that rule, so the separators of the rows around it cannot leak in');
   // Chips clip their text on a child span: `text-overflow` does not apply to
   // the anonymous flex item a bare text child becomes, so the label used to
   // overflow the chip's rounded border.
@@ -419,7 +434,13 @@ async function main() {
     'the breadcrumb chip clips its label on a span too');
   const panelSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
   assert.ok(/inspector__styles-kid-label/.test(panelSrc) && /inspector__styles-crumb-label/.test(panelSrc),
-    'the panel renders those label spans');
+  'the panel renders those label spans');
+  // A changed computed row is an editor button on the value the page reports now
+  // — the only row in that ~400-row read-only list that is interactive.
+  assert.ok(/changedRow\s*\?\s*h\('button',\s*\{\s*class: 'inspector__styles-row-main'/.test(panelSrc),
+  'only the changed computed row is rendered as a button');
+  assert.ok(/onClick: \(\) => setEdit\(\{ prop: row\.prop, value: row\.value \}\)/.test(panelSrc),
+  'a changed computed row opens the editor on the value the page reports now');
 
   // --- the computed filter label never leaves its chips -----------------
   // The label ("Show") explains what the three chips under it do, so it has to

@@ -144,5 +144,18 @@ assert.ok(/removeEdit[\s\S]{0,900}?changedNamesFor\(prop\)[\s\S]{0,900}?unmarkCh
   'a removal drops the highlight for every name it took off the element');
 assert.ok(/function noteUndone\(prop\)[\s\S]{0,600}changedNamesFor\(prop\)[\s\S]{0,400}unmarkChanged/.test(panel),
   'an undo from the receipt drops the whole group too');
+// --- a changed row is also the way back into the editor --------------------
+// In the Computed list the highlight is what makes a row findable, and it is
+// the only row in that read-only wall that opens the value sheet — on the value
+// the page reports *now*, since the hoisted row is re-read after every edit.
+assert.ok(/const changedRow = isChanged\(changed, row\.prop\)/.test(panel),
+  'the computed render asks per row whether it changed');
+assert.ok(/changedRow[\s\S]{0,400}h\('button'[\s\S]{0,300}class: 'inspector__styles-row-main'/.test(panel),
+  'a changed computed row is rendered as an editor button');
+assert.ok(/setEdit\(\{ prop: row\.prop, value: row\.value \}\)/.test(panel),
+  'opening it carries the computed value into the sheet');
+assert.ok(/isChanged\(changed, row\.prop\) \? ' inspector__styles-row--changed'/.test(panel)
+  || /changedRow \? ' inspector__styles-row--changed'/.test(panel),
+  'the highlight class is still applied from the same predicate as the button');
 
 console.log('PASS inspector styles changed-first ordering (mark/unmark, hoist, stable remainder, highlighted rows)');

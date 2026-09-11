@@ -264,7 +264,9 @@ border-radius: var(--r-sm);
 44 px is the *interactive* minimum and is pure waste on them — at 44 px the
 ~400-row list is ~17 000 px of scrolling inside a ~350 px panel, which is what
 made the panel feel like an endless scroll. Declared rows keep the full 44 px
-target because they open the editor. */
+target because they open the editor, and a computed row changed in this session
+gets it back too (see the changed-row rule below): it is the one row in this
+list that opens the value sheet. */
 .inspector__styles-row--computed {
 min-height: 0;
 padding: 3px 0;
@@ -281,6 +283,21 @@ gap: 0;
 }
 .inspector__styles-list--computed > li + li .inspector__styles-row--computed {
 border-top: 1px solid var(--border);
+}
+/* …with one exception: a row changed in this session is the one row in this
+list worth tapping (it opens the value sheet on the value the page has now),
+and there are only ever a handful of them. It takes the interactive 44 px row
+back — the compact treatment above is what keeps the other ~400 rows scannable,
+not what a changed row needs — and keeps the accent bar the highlight already
+drew. Scoped through the list so it outweighs the hairline separator rule
+directly above it, which would otherwise leave a changed row that follows
+another row with a stray top border. */
+.inspector__styles-list--computed > li .inspector__styles-row--computed.inspector__styles-row--changed {
+min-height: calc(var(--tap) + 2px);
+padding: 0 8px;
+border: 1px solid var(--accent);
+border-radius: var(--r-sm);
+background: var(--accent-soft);
 }
 .inspector__styles-row-main {
 flex: 1 1 auto;
