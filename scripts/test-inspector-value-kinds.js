@@ -86,6 +86,36 @@ check('a custom property is custom', VK.propertyFamily('--brand') === 'custom');
 check('display has no numeric family', VK.propertyFamily('display') === 'keyword-only');
 check('an unknown property is unknown', VK.propertyFamily('will-change') === 'unknown');
 
+// A longhand inherits its shorthand's family. This is not a nicety: the rows the
+// Styles panel lists ARE longhands (the CSSOM stores `padding: 10px` as the four
+// sides), so before this a row's value page offered the Keyword form and nothing
+// else — no unit chips and no numeric controls on the sheet the user opened by
+// tapping the property they had just changed.
+check('padding-top is a length', VK.propertyFamily('padding-top') === 'length');
+check('padding-left is a length', VK.propertyFamily('padding-left') === 'length');
+check('margin-right is a length', VK.propertyFamily('margin-right') === 'length');
+check('inset-block-start is a length', VK.propertyFamily('inset-block-start') === 'length');
+check('margin-inline-start is a length', VK.propertyFamily('margin-inline-start') === 'length');
+check('border-top-left-radius is a length', VK.propertyFamily('border-top-left-radius') === 'length');
+check('border-bottom-right-radius is a length', VK.propertyFamily('border-bottom-right-radius') === 'length');
+check('border-top-width stays a length', VK.propertyFamily('border-top-width') === 'length');
+check('row-gap and column-gap stay lengths',
+  VK.propertyFamily('row-gap') === 'length' && VK.propertyFamily('column-gap') === 'length');
+check('a longhand of a colour shorthand is a colour',
+  VK.propertyFamily('border-top-color') === 'color');
+check('a longhand of a time property is a time',
+  VK.propertyFamily('transition-delay') === 'time' && VK.propertyFamily('animation-duration') === 'time');
+check('the side scan does not invent a family, nor steal one from a keyword set',
+  VK.propertyFamily('will-change') === 'unknown' && VK.propertyFamily('text-align') === 'keyword-only');
+check('a side-named property alone is not stripped',
+  VK.propertyFamily('top') === 'length' && VK.propertyFamily('left') === 'length');
+check('the family is what gives the switch its segments',
+  VK.kindsFor('padding-top').includes('length') && VK.kindsFor('margin-top').includes('number'));
+check('and what gives the unit cycle',
+  VK.unitOptions('padding-top', '24px', CTX).map((u) => u.unit).join(',') === 'px,rem,em');
+check('a side-suffixed longhand converts px ⇄ rem like its shorthand',
+  (VK.unitOptions('padding-top', '24px', CTX).find((u) => u.unit === 'rem') || {}).value === '1.5rem');
+
 // ---- the kinds offered per property ------------------------------------
 
 check('a padding offers length, percent, number, keyword',

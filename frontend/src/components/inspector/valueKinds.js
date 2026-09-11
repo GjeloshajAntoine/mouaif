@@ -167,10 +167,42 @@ const NAMED_COLORS = new Set([
   'currentcolor'
 ]);
 
-// isLengthProperty / isNumberProperty — property classification, with the
-// suffix heuristics CSS itself suggests (`border-*-width`, `*-color`,
-// `*-duration`, `*-delay`). `_all` style logical shorthand lists (`padding`,
-// `margin`) are covered by the explicit sets above.
+// SIDE_SEGMENTS — the side words CSS puts inside a longhand: the physical four,
+// the logical pairs, the two axes a shorthand can be split along, and the
+// start/end pair. Longest first, so `-top-left` is matched before `-top`.
+const SIDE_SEGMENTS = [
+  'top-left', 'top-right', 'bottom-right', 'bottom-left',
+  'block-start', 'block-end', 'inline-start', 'inline-end',
+  'top', 'right', 'bottom', 'left', 'block', 'inline', 'start', 'end',
+  'x', 'y', 'row', 'column'
+];
+// withoutSide — `padding-top` -> `padding`, `border-top-left-radius` ->
+// `border-radius`, `margin-inline-start` -> `margin`. The side is a middle
+// segment in the radius case and the trailing one everywhere else, so both are
+// tried. Returns '' when there is no side to take out.
+function withoutSide(prop) {
+  for (const side of SIDE_SEGMENTS) {
+    if (prop === side) continue;
+    if (prop.endsWith('-' + side)) return prop.slice(0, -(side.length + 1));
+    const mid = '-' + side + '-';
+    const at = prop.indexOf(mid);
+    if (at > 0) return prop.slice(0, at) + '-' + prop.slice(at + mid.length);
+  }
+  return '';
+}
+// propertyFamily — the family a property's value belongs to, which is what the
+// edit sheet's type switch is built from.
+//
+// Two layers, because a property is often the longhand of one that is already
+// known: the suffix heuristics CSS itself suggests (`border-*-width`,
+// `*-color`, `*-duration`, `*-delay`, `*-radius`) and, failing those, the
+// shorthand it was expanded from (`padding-top` is a length because `padding`
+// is, `border-top-left-radius` because `border-radius` is). Without the second
+// layer every side-suffixed longhand was `unknown`, so the type switch offered
+// the Keyword form and nothing else — and side-suffixed longhands are exactly
+// the rows the panel lists, because the CSSOM stores `padding: 10px` as
+// `padding-top/right/bottom/left`. That is what left a row's value page with no
+// unit chips and no numeric controls.
 export function propertyFamily(property) {
   const prop = String(property || '').trim().toLowerCase();
   if (!prop) return 'unknown';
@@ -181,8 +213,17 @@ export function propertyFamily(property) {
     || prop === 'rotate' || prop === 'transform') return 'angle-or-transform';
   if (prop.startsWith('--')) return 'custom';
   if (NUMBER_PROPERTIES.has(prop)) return 'number';
-  if (LENGTH_PROPERTIES.has(prop) || prop.endsWith('-width') || prop.endsWith('-size')) return 'length';
+  if (LENGTH_PROPERTIES.has(prop) || prop.endsWith('-width') || prop.endsWith('-size')
+    || prop.endsWith('-radius')) return 'length';
   if (KEYWORD_SETS[prop]) return 'keyword-only';
+  // The shorthand this longhand came from. One strip covers the shapes CSS
+  // writes (`padding-top`, `border-top-left-radius`), and the recursion
+  // terminates because every strip shortens the name.
+  const base = withoutSide(prop);
+  if (base) {
+    const inherited = propertyFamily(base);
+    if (inherited !== 'unknown') return inherited;
+  }
   return 'unknown';
 }
 
