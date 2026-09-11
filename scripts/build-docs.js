@@ -2,25 +2,32 @@
 // Build a static HTML site from docs/. No external dependencies; CommonJS so
 // it runs under plain `node` like every other script in this repo.
 //
-// Source layout:
-//   docs/README.md            -> docs-dist/index.html     (presentation landing page)
-//   docs/decisions.md         -> docs-dist/decisions.html
+// Source layout (public site — everything a user of the tool may see):
 //   docs/features/<slug>.md   -> docs-dist/features/<slug>.html
 //   docs/features/_<x>.md     -> skipped (templates / drafts)
+//   landing page + documentation index -> markup in this file (buildLandingPage,
+//   buildDocumentationPage); the public guide list is PUBLIC_GUIDE_SLUGS.
 //
-// Output layout:
+// Maintainer-only pages. These document the code and the architectural
+// decisions, so they are written to docs-dist/ ONLY with --with-internal and
+// are never linked from the public navigation:
+//   docs/decisions.md         -> docs-dist/decisions.html
+//   docs/agent/features/*.md  -> docs-dist/agent/<slug>.html + agent-notes.html
+//
+// Output layout (public build):
 //   docs-dist/
 //     index.html                  (presentation landing page)
-//     documentation.html          (feature card index)
-//     decisions.html
+//     documentation.html          (public guide index)
 //     assets/site.css
 //     features/<slug>.html
 //     features/images/...          (recursively copied from docs/features/images/)
 //
 // Usage:
-//   node scripts/build-docs.js
+//   node scripts/build-docs.js                   # public site only
+//   node scripts/build-docs.js --with-internal   # + decisions and agent notes
+//   node scripts/build-docs.js --out <dir>       # write somewhere else
 //   # or
-//   npm run docs:build
+//   npm run docs:build            / npm run docs:build:internal
 //
 // The renderer is intentionally small and safe for innerHTML: every text node
 // is HTML-escaped before inline patterns are re-introduced. It is not a full
@@ -46,6 +53,9 @@ const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
 const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities', 'draft-craft'];
+// Set by main(). When false (the default, published build) the maintainer
+// pages are not written and links to them are rendered as plain text.
+let includeInternalPages = false;
 
 // ---- Markdown renderer ------------------------------------------------
 
@@ -117,6 +127,9 @@ function renderInline(text, ctx) {
 //     file:, etc. from slipping into a static doc.
 //   - For .md links inside docs/, rewrite to .html so the static site
 //     navigates to the generated page instead of the raw source.
+//   - In a public build, links to maintainer pages (the decisions log and the
+//     agent notes) are dropped, so an anchor to a page that is not published
+//     never reaches the site. Returning '' leaves the link label as plain text.
 function sanitizeUrl(url, ctx) {
   if (!url) return '';
   // Strip any leading/trailing whitespace and angle brackets already in the
@@ -131,12 +144,20 @@ function sanitizeUrl(url, ctx) {
   if (url.startsWith('//')) return url;
   // Reject any other explicit scheme.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return '';
-  // Relative path. If it points to a .md file under docs/, rewrite to .html
-  // (only when we are inside a docs/ page — the caller sets ctx.rewriteMd).
-  if (ctx && ctx.rewriteMd && /\.md(#|$)/.test(url)) {
-    url = url.replace(/\.md(?=#|$)/, '.html');
-  }
-  return url;
+  // Maintainer pages (decisions log, agent notes) are not part of a public
+// build: render the label as plain text instead of a dead href.
+if (!includeInternalPages && isMaintainerPagePath(url)) return '';
+// Relative path. If it points to a .md file under docs/, rewrite to .html
+// (only when we are inside a docs/ page — the caller sets ctx.rewriteMd).
+if (ctx && ctx.rewriteMd && /\.md(#|$)/.test(url)) {
+url = url.replace(/\.md(?=#|$)/, '.html');
+}
+return url;
+}
+// True for a relative target inside docs/agent/... or the decisions log.
+function isMaintainerPagePath(url) {
+const p = url.replace(/^\.\//, '');
+return /(^|\/)decisions\.md(#|$)/.test(p) || /(^|\/)agent\//.test(p);
 }
 
 // Block parser. Splits the source on blank lines (and a few other block
@@ -1110,22 +1131,29 @@ function buildDecisionsPage(sidebarHtmlStr, outDir) {
 }
 
 function main() {
-  // Parse args: --out <dir> overrides the default docs-dist/.
+  // Parse args: --out <dir> overrides the default docs-dist/; --with-internal
+  // also emits the maintainer pages (decisions + agent notes), which are never
+  // part of the published site.
   const args = process.argv.slice(2);
   let outDir = OUT_DIR;
+  let withInternal = false;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--out' && i + 1 < args.length) {
-      outDir = path.resolve(args[++i]);
-    } else if (args[i] === '-h' || args[i] === '--help') {
-      process.stdout.write('Usage: node scripts/build-docs.js [--out <dir>]\n');
-      process.stdout.write('  Builds docs-dist/ from docs/. Default output: docs-dist/.\n');
-      process.exit(0);
-    }
+  if (args[i] === '--out' && i + 1 < args.length) {
+  outDir = path.resolve(args[++i]);
+  } else if (args[i] === '--with-internal' || args[i] === '--internal') {
+  withInternal = true;
+  } else if (args[i] === '-h' || args[i] === '--help') {
+  process.stdout.write('Usage: node scripts/build-docs.js [--out <dir>] [--with-internal]\n');
+  process.stdout.write('  Builds the public docs site from docs/. Default output: docs-dist/.\n');
+  process.stdout.write('  --with-internal  also write the maintainer pages (decisions, agent notes).\n');
+  process.exit(0);
+  }
   }
   if (!fs.existsSync(DOCS_DIR)) {
-    process.stderr.write('error: docs/ directory not found at ' + DOCS_DIR + '\n');
-    process.exit(2);
+  process.stderr.write('error: docs/ directory not found at ' + DOCS_DIR + '\n');
+  process.exit(2);
   }
+  includeInternalPages = withInternal;
 // Resolve feature links from docs/README.md when a maintainer source index is
 // present. Public guide order is defined separately by PUBLIC_GUIDE_SLUGS.
 const readmeSrc = readDocFile('README.md');
@@ -1208,14 +1236,20 @@ ${publicFeatures.map((f) => linkItem(f.slug, f.title)).join('\n')}
 
   buildLandingPage(outDir);
   buildDocumentationPage(features, renderSidebar('documentation'), outDir);
-  buildDecisionsPage(renderSidebar('decisions'), outDir);
   buildFeaturePages(features, renderSidebar, outDir);
-  buildAgentNotesPage(agentFeatures, outDir);
-  buildAgentFeaturePages(agentFeatures, outDir);
 
-  process.stdout.write('[docs] built landing + documentation + decisions + ' + features.length +
-    ' feature page(s) + ' + agentFeatures.length + ' agent note page(s) -> ' +
-    path.relative(ROOT, outDir) + '/\n');
+  let summary = 'landing + documentation + ' + features.length + ' feature page(s)';
+  if (withInternal) {
+    // Maintainer pages: documentation of the code and of the architectural
+    // decisions. Local builds only — the published site is the public subset.
+    buildDecisionsPage(renderSidebar('decisions'), outDir);
+    buildAgentNotesPage(agentFeatures, outDir);
+    buildAgentFeaturePages(agentFeatures, outDir);
+    summary += ' + decisions + ' + agentFeatures.length + ' agent note page(s)';
+  }
+
+  process.stdout.write('[docs] built ' + summary + ' -> ' + path.relative(ROOT, outDir) + '/\n');
+
 }
 
 main();

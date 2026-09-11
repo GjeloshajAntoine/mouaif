@@ -27,7 +27,10 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 ## Build the documentation
 
 ```bash
-npm run docs:build
+npm run docs:build            # public site -> docs-dist/
+npm run docs:build:internal   # + maintainer pages (decisions, agent notes)
 ```
 
-The generated public navigation links only to these user guides. Maintainer references remain in the repository for contributors but are not shown in the public navigation.
+- [Documentation site](features/docs-site.md) — what is published, what stays maintainer-only, and how GitHub Pages deploys it.
+
+The generated public navigation links only to the published guides (Getting started, Authentication, App abilities, Draft Craft). Maintainer references — `docs/decisions.md` and `docs/agent/features/*.md` — remain in the repository for contributors, are written into the site only by `npm run docs:build:internal`, and are never shown or linked on the published site.

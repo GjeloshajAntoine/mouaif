@@ -19,6 +19,7 @@
     "build:web": "vite build --config frontend/vite.config.js",
     "test:chat-view": "node scripts/test-chat-send-preparation.js && node scripts/test-chat-cost-summary.js && node scripts/test-chat-scroll-performance.js && node scripts/test-chat-draft-performance.js",
     "docs:build": "node scripts/build-docs.js",
+    "docs:build:internal": "node scripts/build-docs.js --with-internal",
     "test:hide-file-slices": "node scripts/test-hide-file-slices.js",
 "test:hide-file-char-spans": "node scripts/test-hide-file-char-spans.js",
 "test:hidden-content": "node scripts/test-project-settings-render.mjs && node scripts/test-hide-file-slices.js && node scripts/test-hide-file-char-spans.js && node scripts/test-hidden-content-editor.mjs && node scripts/test-hidden-content-list.mjs && node scripts/test-hidden-content-http.mjs",
