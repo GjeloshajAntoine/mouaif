@@ -3384,10 +3384,27 @@ border-radius: 999px;
 flex: 1 1 auto;
 min-width: 0;
 color: var(--muted);
-word-break: break-word;
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
+/* The value wraps instead of being cut off. A one-line ellipsis is the one
+  thing a read-only row cannot afford: there is no editor to open and no
+  tooltip on touch, so `transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1)`
+  (and every long `font-family` list, `grid-template-columns` and
+  `background-image` gradient) showed as `transition: opacity 200ms cub…` with
+  no way to read the rest. Rows grow a line or two instead. */
+white-space: normal;
+overflow-wrap: anywhere;
+}
+/* A colour value is also shown as a colour: at row size, `rgb(255, 230, 0)` is
+  the same width as three other colours and says nothing on its own. The swatch
+  is decorative — the text beside it stays the accessible content. */
+.inspector__styles-swatch {
+flex: 0 0 auto;
+width: 14px;
+height: 14px;
+border: 1px solid var(--border-strong);
+border-radius: 3px;
+/* Checkerboard-free: a transparent / currentcolor swatch still needs an edge
+  to be visible against the row's own background. */
+background-clip: padding-box;
 }
 .inspector__styles-row--computed .inspector__styles-val { color: var(--fg-soft); }
 .inspector__styles-none {

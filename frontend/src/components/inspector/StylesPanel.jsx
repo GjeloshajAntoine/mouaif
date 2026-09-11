@@ -44,6 +44,24 @@ import { ValueKindsView } from './ValueKindsView.jsx';
 import { valueShape } from './valueShapes.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
+// valueSwatch — a colour value gets a swatch in front of its text. `rgb(255,
+// 230, 0)` is the same length as three other colours at this row size, and the
+// inspector is exactly where colours are compared, so the row shows the colour
+// as well as its name. Non-colours render nothing (no empty box in front of
+// `12px`), and the swatch is decorative: the value text beside it is the
+// accessible content, so colour never becomes the only signal.
+function valueSwatch(prop, value) {
+const raw = String(value == null ? '' : value).trim();
+if (!raw) return null;
+const verdict = classify(prop, raw);
+if (!verdict || verdict.kind !== 'color') return null;
+return h('span', {
+class: 'inspector__styles-swatch',
+style: { background: raw },
+'aria-hidden': 'true'
+});
+}
+
 // Receipt — the changes this session made, newest first, each with the value the
 // property had **before the session touched it**. That is what makes one tap of
 // ↺ return to the original state rather than to the previous tap, and what lets
@@ -1542,6 +1560,7 @@ onClick: () => setEdit({ prop: row.prop, value: row.value })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 isChanged(changed, row.prop) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
+valueSwatch(row.prop, row.value),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 )
 ))
@@ -1647,6 +1666,7 @@ class: 'inspector__styles-row inspector__styles-row--computed'
 key: row.prop
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
+valueSwatch(row.prop, row.value),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 ))
 ),
