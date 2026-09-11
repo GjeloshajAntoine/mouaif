@@ -849,6 +849,13 @@ captureShot();
 // element is re-read through the same path as a Refresh — so switching to
 // Console and back, or undoing from the bar while this panel was hidden, lands
 // on the element that is still on screen above, rather than on an empty panel.
+//
+// The mark in `adoptedRef` is what keeps that from undoing **Clear**: clearing
+// leaves this panel in exactly the state the effect looks for (no model, a
+// retained id), so without the mark the element came straight back one
+// round-trip later and the ✕ read as a button that does nothing. `clearPick`
+// marks the id it dropped; a later mount starts with no mark, so a panel that
+// has just been switched back on still adopts.
 const adoptedRef = useRef('');
 useEffect(() => {
 const objectId = props.restoreObjectId || '';
@@ -1315,6 +1322,11 @@ loadModel(() => props.refreshNodeModel(objectId));
 }
 
 function clearPick() {
+// Mark the retained id as handled *before* dropping the model: with the model
+// gone this panel is in the state the adopt effect looks for, and without the
+// mark it re-reads the element the Inspector retained and the ✕ silently undoes
+// itself (see adoptRestored above).
+adoptedRef.current = props.restoreObjectId || adoptedRef.current;
 modelRef.current = null;
 shotSerial.current++;
 treeSerial.current++;

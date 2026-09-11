@@ -581,6 +581,21 @@ async function main() {
   assert.match(/\.inspector__rules-bar\s*\{([^}]*)\}/.exec(panelCss)[1], /flex-wrap:\s*wrap/,
     'the rules bar wraps rather than squeezing its labels at 320 px');
 
+  // --- Clear stays cleared ----------------------------------------------
+  // The panel re-reads the element the Inspector retained whenever it has no
+  // model of its own (see adoptRestored), which is exactly the state ✕ leaves it
+  // in — so the clear used to undo itself one round-trip later and the button
+  // read as broken (verified live: the element reappeared ~400 ms after the tap).
+  // The retained id is therefore marked as handled before the model is dropped.
+  assert.ok(/function clearPick\(\)[\s\S]{0,400}adoptedRef\.current/.test(panelSrc),
+    'clearPick marks the retained id it is dropping');
+  assert.ok(/function clearPick\(\)[\s\S]{0,600}modelRef\.current = null/.test(panelSrc),
+    'the mark is set before the model is dropped, or the re-read wins the race');
+  assert.ok(/const adoptedRef = useRef\(''\)[\s\S]{0,700}adoptedRef\.current === objectId/.test(panelSrc),
+    'the adopt path is still guarded by that mark, so switching the panel off and on still re-adopts');
+  assert.ok(/if \(modelRef\.current\) return;[\s\S]{0,120}adoptedRef\.current = objectId/.test(panelSrc),
+    'a panel that has just mounted still takes the element back on');
+
   console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
 }
 
