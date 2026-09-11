@@ -41,3 +41,4 @@ Connect to a page and select an element (tap the preview in pick mode, tap **Tap
 
 - [Inspector](./inspector.md) — the host tab and its other panels.
 - [Inspector Styles panel](./inspector-styles.md) — tap-to-select, inline editing, the element tree, matched rules and computed values.
+- [Inspector value suggestions](./inspector-value-suggestions.md) — the values and tokens the page already uses, with counts and origins.

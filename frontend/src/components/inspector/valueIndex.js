@@ -264,6 +264,10 @@ export function tokensFor(index, property, limit) {
   const wanted = bucket && bucket.values.length
     ? classify(prop, bucket.values[0].value).kind
     : (bucket && bucket.computed ? classify(prop, bucket.computed).kind : null);
+  // Without a single known value or resolved value for this property there is
+  // nothing to type the tokens against, and an untyped offer is a guess: a
+  // `--radius-md` would be suggested for a property that has never been used.
+  if (!wanted) return [];
   const out = [];
   for (const t of (index && index.tokens) || []) {
     const resolved = t.resolved || t.value;
@@ -272,7 +276,7 @@ export function tokensFor(index, property, limit) {
     // showing a token without knowing what it is worth.
     if (/^var\(/i.test(resolved)) continue;
     if (!tokenFitsProperty(prop, t.name)) continue;
-    if (wanted && classify(prop, resolved).kind !== wanted) continue;
+    if (classify(prop, resolved).kind !== wanted) continue;
     out.push({ name: t.name, value: resolved, declared: t.value, selector: t.selector, count: t.count || 0 });
   }
   out.sort((a, b) => (b.count - a.count) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

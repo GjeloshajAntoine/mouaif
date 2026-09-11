@@ -32,10 +32,12 @@
 //   - Long computed values ellipsize and expand on tap there, rather
 //     than inlining a monospace wall.
 import { h } from 'preact';
-import { useRef, useState, useEffect } from 'preact/hooks';
+import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
 import { alternatives, unitOptions } from './valueKinds.js';
+import { buildValueIndex } from './valueIndex.js';
+import { Suggestions } from './Suggestions.jsx';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
 // Receipt — the changes this session made, newest first, each with the value the
@@ -361,6 +363,14 @@ prop: propName,
 value,
 ctx: props.unitCtx,
 onChange: (next) => { setValue(next); setApplied(false); setError(''); }
+}),
+// The page's own values and tokens for this property, once there is a property
+// to look up. Placed under the type switch so the order reads "what form, then
+// which value".
+h(Suggestions, {
+index: props.valueIndex,
+prop: propName,
+onPick: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
 h('div', { class: 'inspector__style-valuerow' },h('button', {
 class: 'inspector__style-step',
@@ -1076,6 +1086,15 @@ error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null
 const label = elementLabel(model.node);
 const inlineRows = (model.inlineProps || []);
 const computedRows = (model.computed || []);
+// The value index: what values and tokens this page uses per property, built
+// from the rules and the computed style already in hand (see valueIndex.js).
+// Memoised because the panel re-renders on every CDP event (a console row, a
+// network response) while these two inputs change only on a selection or an
+// edit — and the index walks ~400 computed rows each time it is built.
+const valueIndex = useMemo(
+  () => buildValueIndex({ rules: (rules && rules.rules) || [], computed: computedRows }),
+  [rules, computedRows]
+);
 // Hoist the properties changed in this session to the top of both lists
 // (most recent first) so the edit you just made is the first thing you see,
 // rather than something to hunt for in the ~400-row computed wall.
@@ -1407,6 +1426,7 @@ isRemove: inlineRows.some((x) => x.prop === edit.prop),
 // What the element declares right now, so the sheet can count what the write
 // keeps as well as what it changes (see scopeSummary).
 declared: inlineRows,
+valueIndex,
 shot: shot && shot.src,
 shotBusy,
 // The real base font sizes (root for rem, parent for em / font-size %) so the

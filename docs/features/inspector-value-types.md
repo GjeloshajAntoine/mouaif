@@ -40,4 +40,5 @@ Tap any declared style row (or a quick-add chip) in the Styles panel to open the
 ## Related
 
 - [Inspector Styles panel](./inspector-styles.md) — tap-to-select, inline editing, matched rules, computed values.
+- [Inspector value suggestions](./inspector-value-suggestions.md) — the values and tokens the page already uses for the property being edited.
 - [Inspector target bar](./inspector-target-origin.md) — which element and which rule an edit lands on.

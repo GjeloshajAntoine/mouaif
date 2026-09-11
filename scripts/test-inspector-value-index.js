@@ -251,5 +251,109 @@ check('a declaration with no name is skipped', (() => {
 check('property names are matched case-insensitively',
   VI.valuesFor(VI.buildValueIndex({ rules: [{ selector: '.a', props: [{ name: 'Padding', value: '1px' }] }] }), 'padding').length === 1);
 
+// ---- the Suggestions component ----------------------------------------
+//
+// Rendering the real component in a hooks-free stub: it takes the index and a
+// property, and emits the chips. What matters is that a chip carries its
+// evidence, that the value in force is marked, and that nothing is emitted when
+// there is nothing to suggest.
+{
+  const nodes = [];
+  const comp = vm.createContext({
+    h: (type, attrs, ...children) => {
+      const props = Object.assign({}, attrs || {});
+      if (typeof type === 'function') return type(Object.assign(props, { children }));
+      const n = { type, props, children };
+      nodes.push(n);
+      return n;
+    }
+  });
+  vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), comp);
+  vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), comp);
+  vm.runInContext(strip(read('frontend/src/components/inspector/Suggestions.jsx')), comp);
+  const walk = (n, out = []) => {
+    if (n == null || typeof n !== 'object') return out;
+    if (Array.isArray(n)) { n.forEach((x) => walk(x, out)); return out; }
+    out.push(n);
+    (n.children || []).forEach((c) => walk(c, out));
+    return out;
+  };
+  const cls = (n) => String((n.props && n.props.class) || '');
+  const byClass = (tree, c) => walk(tree).filter((n) => cls(n).split(/\s+/).includes(c));
+  const text = (node) => {
+  // Text has to be collected recursively: a chip's label is a child <span>, not
+  // a bare string on the chip node.
+  if (node == null) return '';
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(text).join(' ');
+  return (node.children || []).map(text).join(' ');
+};
+const hasSuggestions = typeof comp.Suggestions === 'function';
+check('the Suggestions component exists', hasSuggestions);
+if (hasSuggestions) {
+const tree = comp.Suggestions({ index, prop: 'padding', onPick: () => {} });
+const valueChips = (c) => !cls(c).includes('inspector__suggest-token');
+const chips = byClass(tree, 'opt').filter(valueChips);
+check('a chip per page value, capped', chips.length === 4, String(chips.length));
+    check('each chip shows the value', text(tree).includes('16px'));
+    check('each chip shows its use count as evidence', /3×/.test(text(tree)), text(tree));
+    check('a chip names the rule that supplies it',
+      chips.some((c) => /used 3 times \(\.card\)/.test(c.props.title || '')),
+      JSON.stringify(chips.map((c) => c.props.title)));
+    check('the group header says how many values were seen',
+      /On this page/.test(text(tree)) && /4 values/.test(text(tree)), text(tree));
+    check('a suggestion is a button with an accessible name',
+      chips.every((c) => c.type === 'button' && /^Use /.test(c.props['aria-label'] || '')));
+    check('tapping a chip reports the value', (() => {
+      let picked = '';
+      const t2 = comp.Suggestions({ index, prop: 'padding', onPick: (v) => { picked = v; } });
+      byClass(t2, 'opt')[0].props.onClick();
+      return picked === '16px';
+    })());
+
+    // The value in force is marked rather than sorted away, so the user can see
+    // which of the page's values the element already resolves to.
+    const current = comp.Suggestions({ index, prop: 'padding', onPick: () => {} });
+    check('the value in force is marked',
+      byClass(current, 'opt').filter((c) => cls(c).includes('is-current')).length === 1,
+      JSON.stringify(byClass(current, 'opt').map((c) => cls(c))));
+
+    // Tokens are a separate group: they are a different kind of answer.
+    const tokTree = comp.Suggestions({ index, prop: 'padding', onPick: () => {} });
+    check('tokens are offered in their own group',
+      /Tokens/.test(text(tokTree)) && /--space-4/.test(text(tokTree)), text(tokTree));
+    check('a token chip shows what it resolves to', /=\s*16px/.test(text(tokTree)), text(tokTree));
+    check('a token chip reports the token name when picked', (() => {
+      let picked = '';
+      const t2 = comp.Suggestions({ index, prop: 'padding', onPick: (v) => { picked = v; } });
+      const tokenChip = byClass(t2, 'opt').find((c) => /--space/.test(text({ children: c.children })) || /--space/.test(c.props.title || ''));
+      if (!tokenChip) return false;
+      tokenChip.props.onClick();
+      return /^--space-/.test(picked);
+    })());
+
+    check('nothing is emitted without a property',
+      comp.Suggestions({ index, prop: '', onPick: () => {} }) === null);
+    check('nothing is emitted without an index',
+      comp.Suggestions({ prop: 'padding', onPick: () => {} }) === null);
+    check('a property the page never declares emits nothing',
+      comp.Suggestions({ index, prop: 'z-index', onPick: () => {} }) === null);
+    check('a custom property has no suggestions of its own',
+      comp.Suggestions({ index, prop: '--space-3', onPick: () => {} }) === null);
+  }
+}
+
+// ---- the sheet wiring --------------------------------------------------
+
+check('the sheet renders the suggestions',
+  /h\(Suggestions, \{/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the index is built from the rules and the computed style',
+  /buildValueIndex\(\{ rules: \(rules && rules\.rules\) \|\| \[\], computed: computedRows \}\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the index is memoised so a CDP rerender does not rebuild it',
+  /useMemo\(\s*\(\) => buildValueIndex/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('picking a suggestion only rewrites the field',
+  /onPick: \(next\) => \{ setValue\(next\); setApplied\(false\); setError\(''\); \}/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('the suggestion chips are styled', /\.inspector__suggest \{/.test(read('frontend/src/inspector.css')));
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-index assertion(s) failed');

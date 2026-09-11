@@ -1817,6 +1817,57 @@ width budget that ignores the level chip. */
 flex: 1 1 0;
 min-width: 0;
 }
+/* ---- Inspector: value suggestions (edit sheet) ----------------------
+   The page's own values and tokens for the property being edited, each with its
+   evidence: `16px · 3×` is a value the design already uses three times, and
+   `--space-4 = 16px` is a token that resolves to one. Tapping a chip rewrites
+   the field only — Apply still commits — so a suggestion is as reversible as a
+   typed value. Same 44 px targets as the rest of the sheet. */
+.inspector__suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+.inspector__suggest-value {
+  font-family: var(--font-mono);
+  /* A shorthand value (`12px 10px 32px`) is a legitimate chip label but wider
+     than a phone: the value ellipsizes and the evidence stays visible, so the
+     chip never wraps to a second line and the row keeps its rhythm. */
+  min-width: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__suggest-ev {
+  font: inherit;
+  font-size: 0.62rem;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+/* The value the element already resolves to: marked, not disabled — picking it
+   back is a legitimate way to undo a pending edit. */
+.inspector__suggest .opt.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+.inspector__suggest .opt.is-current .inspector__suggest-ev {
+  color: var(--accent-hi);
+}
+.inspector__suggest-token {
+  border-color: var(--border-strong);
+}
+.inspector__suggest-token .inspector__suggest-value {
+  color: var(--accent-hi);
+}
+.inspector__suggest-note {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--muted-2);
+}
+
 /* ---- Inspector: edit receipt + scope -------------------------------
    Two answers the "changed" chip could not give: what exactly did I change
    (with the value the property had before), and what did the write *not*
