@@ -40,6 +40,12 @@ node scripts/build-docs.js --out /tmp/site --with-internal
 
 Open `docs-dist/index.html` in a browser to read the result locally. The build has no dependencies beyond Node.js 18+.
 
+## Publishing to GitHub Pages
+
+The [docs-site workflow](../../.github/workflows/pages.yml) builds the public site and deploys it on every push to `master` that touches `docs/`, `scripts/build-docs.js`, or the workflow itself. It never passes `--with-internal`, so the decisions log and the agent notes cannot reach the published site.
+
+Enable it once per repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**. `docs-dist/` is gitignored; the workflow builds it fresh in CI. It can also be started by hand from the **Actions** tab (`workflow_dispatch`).
+
 ## Adding a page
 
 1. Copy [docs/features/_template.md](./_template.md) to `docs/features/<kebab-case-name>.md`.
