@@ -1981,6 +1981,248 @@ color: var(--danger);
 .inspector__suggest-colour.is-unreadable {
 border-color: rgba(255, 138, 138, 0.4);
 }
+/* ---- Inspector: the value rail (Part R1) ----------------------------
+One numeric changer for every numeric kind, with the page's own values as its
+ticks. From the K1 mock: a 60 px track, minor ticks at the page's step, major
+(label, tappable) ticks at round numbers, a violet tick per design token whose
+value lands in range, a 34 px thumb whose hit area is the whole track, the
+before → after readout in the header, and the precision segment plus unit chip
+in the footer. The rail only ever rewrites the sheet's value field: Apply still
+commits, so a drag is one property and one undo entry.
+Everything is proportional, so the rail fits a 360 px sheet with no horizontal
+scroll — no fixed container width, and the labels are absolutely positioned
+inside the track. */
+.inspector__rail {
+/* The violet that marks a design token, local to the rail: the global theme has
+  no token colour, and inventing one app-wide for a single control would make
+  the palette harder to reason about. */
+--rail-token: #b98cff;
+display: flex;
+flex-direction: column;
+gap: 2px;
+padding: 8px 9px 6px;
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+background: var(--surface-2);
+}
+.inspector__rail-head {
+display: flex;
+align-items: baseline;
+gap: 7px;
+flex-wrap: wrap;
+}
+.inspector__rail-kind {
+font-family: var(--font-mono);
+font-size: 0.69rem;
+color: var(--fg-soft);
+}
+/* The value the property had before this session: struck through, because the
+readout is the only way to know what a drag changed. */
+.inspector__rail-was {
+font-family: var(--font-mono);
+font-size: 0.69rem;
+color: var(--muted-2);
+text-decoration: line-through;
+}
+.inspector__rail-now {
+font-family: var(--font-mono);
+font-size: 0.94rem;
+font-weight: 700;
+color: var(--accent);
+}
+.inspector__rail-ev {
+margin-left: auto;
+font-size: 0.6rem;
+color: var(--muted);
+}
+/* The 60 px track. `touch-action: none` is what keeps the sheet's vertical
+scroller from claiming a horizontal drag, and it makes the pointer events the
+component uses reliable on iOS. */
+.inspector__rail-wrap {
+position: relative;
+height: 60px;
+margin-top: 4px;
+touch-action: none;
+cursor: pointer;
+}
+.inspector__rail-track {
+position: absolute;
+left: 0;
+right: 0;
+top: 27px;
+height: 8px;
+border-radius: 4px;
+background: var(--surface-3);
+}
+.inspector__rail-fill {
+position: absolute;
+left: 0;
+top: 27px;
+height: 8px;
+border-radius: 4px 0 0 4px;
+background: var(--accent);
+opacity: 0.55;
+}
+.inspector__rail-tick {
+position: absolute;
+top: 22px;
+width: 2px;
+height: 12px;
+border-radius: 1px;
+background: var(--border-strong);
+}
+/* The major ticks are real buttons (44 px tall hit area via the padding below),
+  so a round number is one tap away — that is the whole point of labelling. */
+.inspector__rail-major {
+position: absolute;
+top: 18px;
+width: 2px;
+height: 20px;
+padding: 0;
+border: 0;
+border-radius: 1px;
+background: #55607a;
+cursor: pointer;
+/* Widen the hit area without widening the mark: 2 px of ink, 44 px of target. */
+box-shadow: 0 0 0 0 transparent;
+}
+.inspector__rail-major::after {
+content: '';
+position: absolute;
+left: -21px;
+right: -21px;
+top: -22px;
+bottom: -22px;
+}
+.inspector__rail-token {
+position: absolute;
+top: 15px;
+width: 3px;
+height: 26px;
+padding: 0;
+border: 0;
+border-radius: 1px;
+background: var(--rail-token);
+cursor: pointer;
+}
+.inspector__rail-token::after {
+content: '';
+position: absolute;
+left: -20px;
+right: -20px;
+top: -18px;
+bottom: -18px;
+}
+/* The page's nearest on-scale value while the field holds an off-scale one:
+  dashed, not draggable — it is a hint, and the one-tap snap is in the sheet's
+  value row. */
+.inspector__rail-ghost {
+position: absolute;
+top: 14px;
+width: 34px;
+height: 34px;
+margin-left: -17px;
+border-radius: 50%;
+border: 2px dashed var(--accent);
+opacity: 0.65;
+}
+.inspector__rail-thumb {
+position: absolute;
+top: 14px;
+width: 34px;
+height: 34px;
+margin-left: -17px;
+border-radius: 50%;
+background: var(--accent);
+border: 3px solid #0d1119;
+box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+display: grid;
+place-items: center;
+font-family: var(--font-mono);
+font-size: 0.63rem;
+font-weight: 700;
+color: var(--on-accent);
+}
+/* The labels live under the track, absolutely positioned so they never widen
+  the rail; a long token name is clipped by the rail's own overflow. */
+.inspector__rail-labels {
+position: relative;
+height: 12px;
+font-size: 0.53rem;
+color: var(--muted-2);
+font-variant-numeric: tabular-nums;
+}
+.inspector__rail-labels span {
+position: absolute;
+top: 0;
+transform: translateX(-50%);
+white-space: nowrap;
+}
+.inspector__rail-labels span.is-token {
+color: var(--rail-token);
+font-weight: 700;
+}
+.inspector__rail-foot {
+display: flex;
+align-items: center;
+gap: 6px;
+flex-wrap: wrap;
+margin-top: 2px;
+}
+.inspector__rail-seg {
+display: inline-flex;
+border: 1px solid var(--border-strong);
+border-radius: 7px;
+overflow: hidden;
+}
+/* 44 px target: the segment is one tap, never a modifier key. */
+.inspector__rail-segbtn {
+min-height: 44px;
+padding: 0 9px;
+border: 0;
+background: none;
+color: var(--muted);
+font: inherit;
+font-size: 0.63rem;
+font-weight: 600;
+cursor: pointer;
+}
+.inspector__rail-segbtn.is-on {
+background: var(--accent);
+color: var(--on-accent);
+}
+.inspector__rail-units {
+display: inline-flex;
+gap: 4px;
+}
+.inspector__rail-unitchip {
+min-height: 44px;
+padding: 0 9px;
+border-radius: 7px;
+border: 1px solid var(--border-strong);
+background: var(--surface);
+color: var(--fg-soft);
+font-family: var(--font-mono);
+font-size: 0.63rem;
+cursor: pointer;
+}
+.inspector__rail-unitchip.is-on {
+border-color: var(--accent);
+color: var(--accent);
+}
+.inspector__rail-unitchip:disabled { opacity: 0.4; cursor: default; }
+.inspector__rail-mini {
+margin-left: auto;
+font-size: 0.6rem;
+color: var(--muted);
+}
+/* The honest fallback: no rail, and the reason why, in the typed field's place. */
+.inspector__rail-note {
+margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
 
 /* ---- Inspector: edit receipt + scope -------------------------------
    Two answers the "changed" chip could not give: what exactly did I change

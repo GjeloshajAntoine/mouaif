@@ -10,6 +10,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Inspector target bar](features/inspector-target-origin.md) — which element is selected, which rule a value comes from, and where an edit lands.
 - [Inspector value types](features/inspector-value-types.md) — switch a value between length, number, percentage and keyword, with the cost stated.
 - [Inspector value suggestions](features/inspector-value-suggestions.md) — the values and design tokens this page already uses, with the evidence.
+- [Inspector value rail](features/inspector-value-rail.md) — one numeric changer for every value kind, with the page's own values as its ticks.
 - [Inspector non-destructive editing](features/inspector-non-destructive-editing.md) — what an edit changes, what it keeps, and how to undo it.
 - [Restart from chat](features/chat-app-restart.md) — gracefully relaunch the app worker by asking the assistant.
 - [MCP server error modal](features/mcp-error-modal.md) — inspect complete server startup failures in Settings.

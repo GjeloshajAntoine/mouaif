@@ -36,9 +36,10 @@ import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage } from './computedFilter.js';
 import { alternatives, unitOptions, classify } from './valueKinds.js';
-import { buildValueIndex, scaleFor } from './valueIndex.js';
+import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { Suggestions } from './Suggestions.jsx';
+import { ValueRail } from './ValueRail.jsx';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 
 // Receipt — the changes this session made, newest first, each with the value the
@@ -277,6 +278,41 @@ const up = stepValue(value, 1, pageStep);
 // The snap reading for the typed value: reported by the Suggestions row, which
 // owns the hint, and computed once here so the Apply button and the hint agree.
 const snap = pageScale ? snapValue(propName, value, pageScale) : null;
+// The value rail's context: the page's step and tokens for this property (so the
+// rail's ticks are the values the index reports, not invented ones), the sizes
+// that turn a length range into the element's own scale, and the unit bases the
+// unit chip needs. Assembled once and handed to ValueRail, which is pure.
+const railCtx = (() => {
+if (!props.valueIndex || !propName) return {};
+const scale = scaleFor(props.valueIndex, propName);
+const tokens = tokensFor(props.valueIndex, propName).map((t) => ({ name: t.name, value: t.value }));
+// A length rail is 0…4× the element's own size, and *which* size is the
+// property's business: a box property (`width`, `top`, `max-height`) is measured
+// against the element's box, while a spacing, radius or type property is
+// measured against its type scale. Using the box width for `padding` would put a
+// 16px value on a 448px card at 0.9% of the rail — technically "4× its size"
+// and useless to drag.
+const BOX_MEASURED = /^(width|height|min-width|max-width|min-height|max-height|top|right|bottom|left|inset|inset-block|inset-inline|block-size|inline-size|flex-basis|outline-offset|text-indent)$/;
+const box = (props.box && props.box.width != null) ? props.box : {};
+const bases = props.unitCtx || {};
+const info = classify(propName, value);
+const size = info.kind === 'length'
+? (BOX_MEASURED.test(propName)
+? (Number(box.height) || Number(box.width))
+: bases.fontSize)
+: null;
+const unitCtx = props.unitCtx || {};
+return {
+step: stepFor(scale, null),
+tokens,
+scaleNote: scale && scale.step ? scaleNote(scale) : '',
+size: Number.isFinite(size) && size > 0 ? size : null,
+fontSize: unitCtx.fontSize,
+parentFontSize: unitCtx.parentFontSize,
+rootFontSize: unitCtx.rootFontSize,
+nearest: snap && snap.offScale && snap.nearest ? snap.nearest.number : null
+};
+})();
 async function commit(p, v) {
 if (busy || !props.onApply) return;
 setBusy(true);
@@ -383,6 +419,19 @@ prop: propName,
 value,
 contrastCtx: props.contrastCtx,
 onPick: (next) => { setValue(next); setApplied(false); setError(''); }
+}),
+// The value rail: the numeric changer, above the field it writes into. It only
+// ever rewrites `value`, so Apply is still the single commit point and a drag is
+// one property and one undo entry — the same contract as the type switch and the
+// suggestion chips. A value with no numeric range (a keyword, a colour, an
+// unparsable expression) gets the honest "no rail" line instead of a dead
+// control.
+h(ValueRail, {
+prop: propName,
+value,
+ctx: railCtx,
+from: props.from,
+onChange: (next) => { setValue(next); setApplied(false); setError(''); }
 }),
 h('div', { class: 'inspector__style-valuerow' },h('button', {
 class: 'inspector__style-step',
@@ -1445,10 +1494,18 @@ prop: edit.prop,
 value: edit.value,
 isInline: true,
 isRemove: inlineRows.some((x) => x.prop === edit.prop),
+// The element's own box, for the value rail's length range (0…4× its size).
+box: model.box,
 // What the element declares right now, so the sheet can count what the write
 // keeps as well as what it changes (see scopeSummary).
 declared: inlineRows,
 valueIndex,
+// The value the property had before this session's first edit on it: the rail's
+// header prints it struck through, so a drag always shows what it replaced.
+from: (() => {
+const entry = (props.receipt || []).find((r) => r.prop === edit.prop);
+return entry ? entry.from : null;
+})(),
 shot: shot && shot.src,
 shotBusy,
 // The real base font sizes (root for rem, parent for em / font-size %) so the
