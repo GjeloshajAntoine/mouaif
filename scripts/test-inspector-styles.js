@@ -356,13 +356,16 @@ async function main() {
   respond.set('DOM.requestNode', () => Promise.resolve({ nodeId: 17 }));
   respond.set('DOM.getDocument', () => Promise.resolve({ root: { nodeId: 1 } }));
 
-  // --- the panel must never scroll horizontally ------------------------
+  // --- the panel must not become a sideways page -----------------------
   // This is a UI invariant, not a detail: the Styles panel sits inside the
-  // page's vertical scroller, so any horizontal scroller in it hides its own
-  // content and steals the vertical gesture from a slightly diagonal swipe —
-  // which is exactly how a long list gets scrolled on a phone. Three rows
-  // (quick-add chips, breadcrumb, child chips) each had one, and each was
-  // removed in favour of wrapping. This guards against one creeping back.
+  // page's vertical scroller, so an accidental horizontal scroller in it hides
+  // its own content and drags the panel sideways on a slightly diagonal swipe —
+  // which is exactly how a long list gets scrolled on a phone. The quick-add
+  // chips, the breadcrumb and the child chips each had one by accident and each
+  // was removed in favour of wrapping. The breadcrumb has one *on purpose* now
+  // (a deep path wrapped into three or four 44 px lines), so it is checked
+  // separately below: it is one line that scrolls sideways with its vertical
+  // axis pinned, never a wrapping row that happens to scroll.
   // The Inspector CSS lives in per-panel parts behind frontend/src/inspector.css;
   // the helper inlines the @imports so the rule checks see the whole cascade.
   const { readInspectorCss } = require('./inspector-css.js');
@@ -370,7 +373,6 @@ async function main() {
   const panelCss = readInspectorCss();
   const H_SCROLL_CLASSES = [
     'inspector__styles-add',
-    'inspector__styles-crumbs',
     'inspector__styles-kids',
     'inspector__styles',
     'inspector__styles-list',
@@ -379,23 +381,66 @@ async function main() {
     'inspector__computed-searchrow',
     'inspector__rules-bar'
   ];
-  for (const cls of H_SCROLL_CLASSES) {
-    // Pull the rule bodies that mention this class as a selector, then check
-    // none of them turns on horizontal scrolling. `overflow-x: hidden` (the
-    // panel's belt-and-braces clip) is fine; `auto`/`scroll` is not.
-    const re = new RegExp('\\.' + cls + '[^{]*\\{([^}]*)\\}', 'g');
-    let m;
-    while ((m = re.exec(css))) {
-      const body = m[1];
-      const overflowX = /overflow-x:\s*([a-z]+)/.exec(body);
-      if (overflowX) {
-        assert.ok(overflowX[1] === 'hidden' || overflowX[1] === 'clip',
-          '.' + cls + ' must not scroll horizontally (found overflow-x: ' + overflowX[1] + ')');
-      }
-      assert.ok(!/overflow-y:\s*(auto|scroll)/.test(body) || /overflow-x:\s*(hidden|clip)/.test(body),
-        '.' + cls + ' sets overflow-y without pinning overflow-x — the computed overflow-x becomes auto and the panel can be dragged sideways');
+  // Each rule is attributed to the *subject* of its rightmost compound selector
+  // — the element the declaration actually applies to — rather than to whichever
+  // guarded class its selector text happens to mention first. The looser match
+  // read `.inspector__styles-tree-row--parents .inspector__styles-crumbs { ... }`
+  // as a rule about `.inspector__styles`, so a scroller on the breadcrumb strip
+  // was reported as the panel itself scrolling sideways.
+  const cssRules = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const last = part.trim().split(/[\s>+~]+/).pop() || '';
+      cssRules.push({
+        selector: part.trim(),
+        classes: (last.match(/\.[A-Za-z0-9_-]+/g) || []).map((c) => c.slice(1)),
+        body: m[2]
+      });
     }
   }
+  for (const cls of H_SCROLL_CLASSES) {
+    for (const rule of cssRules.filter((r) => r.classes.includes(cls))) {
+      const overflowX = /overflow-x:\s*([a-z]+)/.exec(rule.body);
+      if (overflowX) {
+        assert.ok(overflowX[1] === 'hidden' || overflowX[1] === 'clip',
+          '.' + cls + ' must not scroll horizontally (found overflow-x: ' + overflowX[1]
+          + ' on "' + rule.selector + '")');
+      }
+      assert.ok(!/overflow-y:\s*(auto|scroll)/.test(rule.body) || /overflow-x:\s*(hidden|clip)/.test(rule.body),
+        '.' + cls + ' sets overflow-y without pinning overflow-x — the computed overflow-x becomes auto and the panel can be dragged sideways ("'
+        + rule.selector + '")');
+    }
+  }
+
+  // The breadcrumb is the one intended horizontal scroller in the panel: the
+  // Parents row is a single line, so a deep path is bounded instead of wrapping
+  // into several 44 px lines above the property list. Three things make it safe
+  // — it pins its own vertical axis (overflow-y must not be auto, or the row
+  // swallows the panel's own vertical swipe), it is scrolled to its end by the
+  // panel so the current element is the chip on screen, and the child chips stay
+  // wrapped (a disclosure, not a path).
+  const parentsRow = /\.inspector__styles-tree-row--parents\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(parentsRow, 'the Parents row has its own rule');
+  assert.match(parentsRow[1], /display:\s*flex/,
+    'the Parents row puts its label and its path on one line');
+  const crumbStrip = /\.inspector__styles-tree-row--parents \.inspector__styles-crumbs\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(crumbStrip, 'the breadcrumb strip has a rule scoped to the Parents row');
+  assert.match(crumbStrip[1], /overflow-x:\s*auto/, 'the breadcrumb scrolls sideways');
+  assert.match(crumbStrip[1], /overflow-y:\s*hidden/,
+    'the breadcrumb pins its vertical axis, so a vertical swipe still scrolls the property list');
+  assert.match(crumbStrip[1], /flex-wrap:\s*nowrap/, 'the breadcrumb never wraps to a second line');
+  const plainCrumbs = cssRules.find((r) => r.selector === '.inspector__styles-crumbs');
+  assert.ok(plainCrumbs, 'the breadcrumb base rule still exists');
+  assert.ok(!/overflow-x:\s*(auto|scroll)/.test(plainCrumbs.body),
+    'the base breadcrumb rule does not scroll — only the Parents row does');
+  const panelJsx = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
+  assert.ok(/crumbsRef/.test(panelJsx) && /strip\.scrollLeft = strip\.scrollWidth/.test(panelJsx),
+    'the panel scrolls the breadcrumb to its end, so the current element is the chip in view');
+  assert.ok(/inspector__styles-tree-row--parents/.test(panelJsx),
+    'the Parents row renders with that modifier');
+  const kidsRule = /\.inspector__styles-kids\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(kidsRule && /flex-wrap:\s*wrap/.test(kidsRule[1]),
+    'the child chips still wrap');
 
   // --- tap targets: a row that *looks* 44 px must *be* 44 px ------------
   // The declared-styles row is a 44 px card whose button sat at its own 18 px

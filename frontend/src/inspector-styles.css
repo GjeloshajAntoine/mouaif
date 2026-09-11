@@ -532,11 +532,12 @@ phone — about two property rows — for navigation that is used deliberately a
 rarely, while reading values is the constant activity. Both are full 44 px tap
 targets (`--tap`), which they could not be while the pin had to stay small.
 
-Both *wrap* rather than scrolling sideways. A horizontal scroller inside a
-vertical list hides its own content and steals the vertical gesture: a
-slightly diagonal swipe — the normal case when scrolling a long list — pans
-the strip instead of the list. Wrapping shows everything at once and keeps the
-gesture vertical, which is the whole point on a phone. */
+The two rows are laid out differently now, because they are used differently.
+The Parents path is *one line* that scrolls sideways (see
+.inspector__styles-tree-row--parents below): wrapping a deep path cost three or
+four 44 px lines of pills, which is worse than the gesture it avoided, because
+that space comes straight out of the property rows. The child chips still wrap —
+they are a collapsed-by-default disclosure read all at once, not a path. */
 /* One row of the Element tree: a direction label ("↑ Parents" / "▸ ↓ Children
   13") on its own line, then the chips that belong to it. The label is what
   keeps "go up" and "go down" from reading as one undifferentiated list of
@@ -545,6 +546,44 @@ gesture vertical, which is the whole point on a phone. */
 display: block;
 min-width: 0;
 margin-top: 6px;
+}
+/* The Parents row is one line — direction label and path together — and the
+chip strip inside it scrolls sideways rather than wrapping. Wrapping was the
+first answer to "a horizontal scroller in a vertical list steals the gesture",
+but the measured cost was worse: a deep element turned the breadcrumb into three
+or four 44 px lines of pills, and the pinned block above the property list is
+fixed chrome, so those lines came straight out of the rows the panel exists to
+show. One line is bounded, and the strip is auto-scrolled to its end (the
+selected element) by the panel, so the chip that answers "where am I" is never
+the one off screen. */
+.inspector__styles-tree-row--parents {
+display: flex;
+align-items: center;
+gap: 6px;
+}
+.inspector__styles-tree-row--parents .inspector__styles-tree-label {
+flex: 0 0 auto;
+}
+.inspector__styles-tree-row--parents .inspector__styles-crumbs {
+flex: 1 1 auto;
+flex-wrap: nowrap;
+/* Only the horizontal axis scrolls. `overflow-x: auto` alone computes
+`overflow-y` to `auto` as well, which would make this a vertical scroller that
+eats the panel's own gesture; pinning it means a vertical swipe on the row
+scrolls the property list as usual. The scrollbar is hidden because a 4 px
+track in a 44 px row reads as a clipped chip. */
+overflow-x: auto;
+overflow-y: hidden;
+scrollbar-width: none;
+-webkit-overflow-scrolling: touch;
+margin-top: 0;
+}
+.inspector__styles-tree-row--parents .inspector__styles-crumbs::-webkit-scrollbar {
+display: none;
+}
+.inspector__styles-tree-row--parents .inspector__styles-crumb,
+.inspector__styles-tree-row--parents .inspector__styles-crumb-sep {
+flex: 0 0 auto;
 }
 .inspector__styles-tree-label {
 display: inline-flex;

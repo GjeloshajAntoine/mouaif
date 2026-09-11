@@ -869,6 +869,20 @@ const modelRef = useRef(null);
 // write to state, so a slow read for a previously selected element can
 // never overwrite the current element's breadcrumb.
 const treeSerial = useRef(0);
+// crumbsRef — the breadcrumb strip, which is one line that scrolls sideways
+// (see .inspector__styles-crumbs). The interesting end of a path is the current
+// element, i.e. the last chip, so the strip is scrolled to its end on every new
+// selection: a deep element would otherwise open on `html › body` while the
+// element itself sat off the right edge, which is the one chip the row exists to
+// show. Keyed on the selection *and* on the tree read, because the tree arrives
+// a round-trip after the selection does.
+const crumbsRef = useRef(null);
+const crumbsKey = (model && model.objectId) || '';
+useEffect(() => {
+const strip = crumbsRef.current;
+if (!strip) return;
+strip.scrollLeft = strip.scrollWidth;
+}, [crumbsKey, tree]);
 // rules — the cascade, read-only: every rule that matches the selected
 // element, plus the rules it inherits from its ancestors. Answering "which
 // class put this value here" is what makes the editable list above
@@ -1528,13 +1542,21 @@ h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
 // as a set of equal chips whose order the user has to work out. The last
 // chip is the selected element: it is not a tap target, so it is a static
 // accent chip rather than a button.
+//
+// It is *one line*, label included, and the chip strip inside it scrolls
+// sideways instead of wrapping (see .inspector__styles-tree-row--parents): a
+// deep element used to wrap into three or four 44 px lines of pills, which
+// pushed the property rows it is meant to introduce out of the panel. The strip
+// is auto-scrolled to its end, so the chip that answers "where am I" is on
+// screen. Child chips below still wrap — they are a disclosure the user opens on
+// purpose, and a browsing aid rather than a path.
 tree.ancestors && tree.ancestors.length
-? h('div', { class: 'inspector__styles-tree-row' },
+? h('div', { class: 'inspector__styles-tree-row inspector__styles-tree-row--parents' },
 h('span', { class: 'inspector__styles-tree-label' },
 h('span', { class: 'inspector__styles-tree-arrow', 'aria-hidden': 'true' }, '↑'),
 'Parents'
 ),
-h('div', { class: 'inspector__styles-crumbs', role: 'group', 'aria-label': 'Parent elements, root first' },
+h('div', { class: 'inspector__styles-crumbs', ref: crumbsRef, role: 'group', 'aria-label': 'Parent elements, root first' },
 tree.ancestors.slice().reverse().reduce((nodes, a) => nodes.concat([
 h('button', {
 class: 'inspector__styles-crumb',

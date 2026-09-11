@@ -31,7 +31,7 @@ Connect to a page and select an element (tap the preview in pick mode, tap **Tap
 - **The selection stays owned by the Styles panel.** The panel publishes a snapshot (`onSelectionChange`) after each selection or cascade read, and publishes its own actions through one handle ref (`panelHandlesRef`: `selectAncestor`, `clear`, `refresh`). It clears that snapshot on unmount, and the Inspector retains the last non-empty one, which is what the Intent surface and `restoreObjectId` read.
 - **Undo lives in the Styles panel.** The receipt strip and its **↺ Undo all** render inside that panel's own scroll flow (see [Inspector styles](./inspector-styles.md)). The Inspector still owns the receipt data, so switching the panel off cannot drop it, and reversing an entry re-reads the element afterwards.
 - **Tapping a rule chip reveals the cascade** rather than pretending the chip is an editor: the Styles panel's **Matched rules** section is where a rule's declarations and the one-tap override live, so the chip makes sure that panel is visible.
-- **No horizontal scrolling.** The breadcrumb and the child chips wrap (a horizontal scroller inside a vertical page steals the vertical gesture); the panel keeps the only vertical scroller.
+- **One horizontal scroller, and it is bounded.** The breadcrumb is a single line whose chip strip scrolls sideways, with its vertical axis pinned and auto-scrolled to the current element; the child chips wrap, since they are a disclosure rather than a path. Nothing else in the panel scrolls sideways, and the panel itself keeps the only vertical scroller.
 
 ## Implementation notes
 
