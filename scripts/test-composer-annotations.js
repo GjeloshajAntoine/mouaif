@@ -140,6 +140,17 @@ check('the size select is capped but wide enough for its longest option',
 check('the title block and Refresh are 44px tall in the row',
   /min-height:\s*44px/.test(narrowRule(HEAD + '-text')) &&
   /min-height:\s*44px/.test(baseRule('.wp__action')));
+// The Refresh action is the only control in this header whose contents are a
+// bare glyph on a phone (its label is hidden at <= 430px). `.wp__action` did
+// not centre its contents, so the 14px glyph sat at `padding-left: 4px`: 5px
+// from the left edge of the 44px square and 25px from the right, which is
+// visibly off-centre. Measured in Chrome at 360px the inset went 5/25 before
+// and 15/15 after. `.inspector__preview-fs-refresh` (the Inspector's mirrored
+// button) gets the same centring from its own rule in
+// frontend/src/inspector-pick-mode.css, and the base rule is asserted here
+// because the phone block must not have to re-declare it.
+check('the Refresh glyph is centred in its button',
+  /justify-content:\s*center/.test(baseRule('.wp__action')), baseRule('.wp__action') || 'no rule');
 check('the size select and close button are 44px tall',
   /min-height:\s*44px/.test(baseRule('.wp__size-select')) &&
   /min-height:\s*44px/.test(baseRule('.wp__close')));

@@ -39,6 +39,12 @@ const pickModeSource = strip(readSrc('frontend/src/components/inspector/pickMode
 const inspectorSource = readSrc('frontend/src/components/Inspector.jsx');
 const stylesSource = readSrc('frontend/src/components/inspector/StylesPanel.jsx');
 const css = readSrc('frontend/src/inspector.css');
+// Comment-blind CSS. Several rules in these files carry long explanatory
+// comments that quote the very declaration a check is looking for (the
+// Refresh-centring note below quotes `justify-content: center`), which would
+// let a source-regex check pass on its own prose after the declaration was
+// removed. Strip comments before matching.
+const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 let passed = 0;
 let failed = 0;
@@ -288,6 +294,17 @@ check('the wrapped close button never re-adds the safe-area inset',
 !/\.inspector__preview-fs-close \{[\s\S]{0,200}?top:\s*calc\(var\(--safe-top/.test(narrow));
 check('the mobile header still reserves the close-button band',
 /\.inspector__preview-fs-text \{[\s\S]{0,200}?flex:\s*0 0 calc\(100% - 52px\)/.test(narrow));
+
+// ---- F. The two mirrored Refresh buttons centre their glyph -------------
+// The full-screen preview's Refresh collapses to a bare 14px glyph on a phone
+// (its label is hidden in the <= 430px block). The Inspector copy happens to
+// inherit `justify-content: center` from `.btn`, but the viewer's twin
+// (`.wp__action` in chat-composer.css) is not a `.btn` and had no centring, so
+// its glyph sat at `padding-left: 4px` — 5px from the left edge of the 44px
+// square, 25px from the right. Each header now declares its own centring so
+// neither depends on a cross-file accident; this asserts the Inspector one.
+check('the preview Refresh glyph is centred in its button',
+/\.inspector__preview-fs-refresh \{[^}]*justify-content:\s*center/.test(cssNoComments));
 
 // ---- Summary -----------------------------------------------------------
 

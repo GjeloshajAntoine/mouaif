@@ -1399,10 +1399,19 @@ align-items: center;
 gap: 4px;
 }
 .wp__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 44px;
+display: inline-flex;
+align-items: center;
+/* Centre the contents, not just the cross axis. The Refresh action collapses
+  to a bare 14px glyph inside a 44 x 44 px button on a phone (the label is
+  hidden at <= 430px, see the phone block below), and without this the glyph
+  sits at `padding-left: 4px` — 5px from the left edge and 25px from the
+  right, i.e. visibly off-centre in the one control that has no text to
+  justify. `.inspector__preview-fs-refresh` gets the same centring for free
+  because it also carries `.btn` (frontend/src/forms.css), so the two
+  mirrored Refresh buttons now centre their glyphs the same way. */
+justify-content: center;
+gap: 4px;
+min-width: 44px;
 min-height: 44px;
 padding: 4px 10px;
   font-size: 0.74rem;

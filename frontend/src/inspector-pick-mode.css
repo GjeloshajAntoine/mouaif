@@ -280,6 +280,14 @@ gap: 4px;
 .inspector__preview-fs-refresh {
 display: inline-flex;
 align-items: center;
+/* Centre the contents. On a phone this button collapses to a bare 14px glyph
+  (its label is hidden in the ≤ 430 px block below), so an off-centre glyph is
+  immediately visible. It inherits `justify-content: center` from `.btn`
+  (frontend/src/forms.css) today, but this rule is the twin of `.wp__action`
+  in chat-composer.css — the viewer's Refresh, which is *not* a `.btn` — and
+  that one had no centring at all. Declaring it here keeps each header's
+  Refresh correct on its own instead of through a cross-file accident. */
+justify-content: center;
 gap: 4px;
 min-width: 44px;
 min-height: 44px;
