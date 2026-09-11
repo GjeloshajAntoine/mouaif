@@ -273,17 +273,11 @@ user-select: none;
 -webkit-user-drag: none;
 }
 .fe__media-svg {
-max-width: 100%;
-max-height: 100%;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-.fe__media-svg svg {
-max-width: 100%;
-max-height: 100%;
-height: auto;
-width: auto;
+  /* Kept as a no-op guard: the preview no longer renders SVG markup
+     inline (see FileEditor.jsx — SVG goes through .fe__media-img), so
+     this class should never be applied. Do not reintroduce a rule that
+     gives raw file markup a containing block here. */
+  display: none;
 }
 /* Image file row: tappable but visually distinct from text rows.
 The "image" meta pill uses a subtle accent so the user can

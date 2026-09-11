@@ -672,20 +672,22 @@ h('div', { class: 'fe__head' },
                     }, 'Close')
                   )
                 ),
+                // Every previewable image — SVG included — renders through
+                // this single <img>. An SVG loaded from a data: URL as an
+                // image is a separate, script-disabled document: no
+                // <script>, no on* handler, no <foreignObject> HTML, no
+                // external fetch. Decoding the file into markup with
+                // innerHTML instead (the previous `.fe__media-svg` branch)
+                // executed whatever a repo's .svg contained, inside the
+                // app's own origin. Keep this branch and the `img` alt as
+                // the only preview path.
                 h('div', { class: 'fe__media-host' },
-                  openMedia.mime === 'image/svg+xml'
-                    ? h('div', {
-                        class: 'fe__media-svg',
-                        role: 'img',
-                        'aria-label': openMedia.relPath,
-                        dangerouslySetInnerHTML: { __html: atob(openMedia.dataUrl.split(',')[1] || '') }
-                      })
-                    : h('img', {
-                        class: 'fe__media-img',
-                        src: openMedia.dataUrl,
-                        alt: openMedia.relPath,
-                        draggable: 'false'
-                      })
+                h('img', {
+                class: 'fe__media-img',
+                src: openMedia.dataUrl,
+                alt: openMedia.relPath,
+                draggable: 'false'
+                })
                 ),
                 h('div', { class: 'fe__editor-status' },
                   h('span', { class: 'status' }, mediaStatus || ' ')

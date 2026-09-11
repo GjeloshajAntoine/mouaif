@@ -4,7 +4,7 @@
 
 - **Text files** (`.js`, `.ts`, `.json`, `.md`, `.py`, `.yml`, `.sh`, …) open in the existing CodeMirror editor with syntax highlighting, save/revert, and Ctrl/Cmd+S.
 - **Unknown extensions** with text content (e.g. `LICENSE`, `.gitattributes`, dotfiles) are detected by an 8 KiB NUL-byte sniff and open in the editor too.
-- **Images** (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico`) open in a preview pane that renders the bytes inline (raster bitmaps as `<img>`, SVG inline at native resolution).
+- **Images** (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.ico`) open in a preview pane that renders the bytes through a single `<img>`; an SVG is a script-disabled image document there, exactly like a raster bitmap.
 - **SVG** is both text and image; the preview is the default, and the preview header has an **Edit** button to switch the same file into the CodeMirror editor.
 - **Other binaries** stay disabled in the file list, same as before.
 - **Layout toggle** — the modal opens in split view by default (file list on the left, editor/preview on the right) and has a toolbar button to switch to **full-editor mode** (the file list is hidden so the editor/preview takes the whole pane). Tapping the same button restores the split view.
@@ -26,7 +26,7 @@ The browser is **not capped at the project root**: you can navigate up (via the 
 ### Right-hand pane modes
 
 - **Editor** — header shows the relative path with a `•` when dirty, **Revert** + **Save** buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light `defaultHighlightStyle`.
-- **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type.
+- **Preview** — header shows the relative path, **Edit** (only for SVG) + **Close**, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one `<img>` whose `src` is the `data:` URL the server returned. An SVG loaded that way is a separate document with scripting disabled: `<script>`, `on*` handlers, `<foreignObject>` HTML content and external fetches do not run. See **Why the SVG preview is an image, not markup** below.
 - **Empty state** — "Pick a file from the list to start editing, or tap an image to preview it."
 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.
@@ -41,6 +41,16 @@ The toggle icon always shows the **next** state, not the current one:
 
 Tapping the toggle switches layouts without reloading or closing the currently open file, so flipping it mid-edit preserves the buffer, dirty flag, and save state.
 ## Implementation notes
+
+### Why the SVG preview is an image, not markup
+The preview used to render an SVG by base64-decoding the file and assigning the markup to a `<div>` with `dangerouslySetInnerHTML`. That put the file's markup inside the app's origin, with the access cookie and full `/api/*` reach — and a project folder is untrusted input the moment it contains a checked-out repository, a downloaded asset, or a file a model just wrote.
+
+The executing vector is the event-handler attribute, not the `<script>` element: a `<script>` element inserted through `innerHTML` does not run (that is the HTML/SVG insertion rule), but `on*` attributes on injected elements do. Verified in Chrome on a policy-free page — an injected `<svg>` with `<animate onbegin>` and `<foreignObject><img onerror>` ran both handlers in the page's origin. Under the app's Content-Security-Policy those handlers are blocked too, but the preview no longer injects anything at all.
+
+The preview is now a plain `<img src="data:image/svg+xml;base64,…">`. Browsers refuse to run scripts or event handlers in an SVG loaded as an image, so the file renders as a picture and nothing else; nested/external references do not resolve either, which is the same behaviour as the raster previews. Verified end-to-end at 360 px: an SVG containing both a `<script>` and an `onbegin` handler renders (canvas sample equals the file's own fill colour) with the handler never firing and no `<svg>` element in the DOM.
+
+This is covered by `scripts/test-file-preview-safety.js` (source guard plus a real `readMedia` round-trip): it fails if a preview path decodes file bytes for display, or if the `fe__media-svg` markup container comes back.
+
 The list is built server-side by `listDir` in `src/files.js`, which mirrors the `SKIP_DIRS` allowlist that the rest of the app uses (see the file-tagging and file-tools scans). - Hidden **dotfiles** that are text (`.gitignore`, `.env`, `.editorconfig`, `.mouaif.json`, …) are listed and open in the editor; they were previously hidden by a blanket `name.startsWith('.')` skip. - Hidden **dot directories** that are junk (`.git`, `.mouaif`, `.cache`, `.next`, `.turbo`, …) are still skipped via `SKIP_DIRS` so the list stays clean.
 
 ### Browse boundary (not the project root)
