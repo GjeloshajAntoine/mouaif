@@ -27,7 +27,7 @@ vm.runInContext(strip(read('frontend/src/components/inspector/valueKinds.js')), 
 vm.runInContext(strip(read('frontend/src/components/inspector/valueIndex.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/snapping.js')), ctx);
 vm.runInContext(strip(read('frontend/src/components/inspector/valueRail.js'))
-+ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
++ '\n;globalThis.VR = { LOG_RATIO, MAX_TICKS, MAX_MAJOR, STEP_LADDER, DRAG_STEP, stepLadder, familyStep, railRange, familyOf, valueToRatio, ratioToValue, quantize, snapStep, nudge, tickValues, majorValues, railTicks, railLabel, railWritable, isLogRange, fromUnit, unitEquivalent };\n', ctx);
 const VR = ctx.VR;
 check('the module loads', !!VR && typeof VR.railRange === 'function');
 // ---- per-family ranges -------------------------------------------------
@@ -260,6 +260,127 @@ const railSrc = read('frontend/src/components/inspector/ValueRail.jsx');
 check('the rail renders the equivalent', /inspector__rail-equiv/.test(railSrc)
 && /unitEquivalent\(units\)/.test(railSrc));
 check('the equivalent is styled', /\.inspector__rail-equiv \{/.test(read('frontend/src/inspector.css')));
+}
+// ---- per-family steps (the mock's step table) ---------------------------
+//
+// The fallback step used to be `{ fine: 1, coarse: 8 }` for every family, which
+// made an opacity rail a two-position switch: a 0…1 range quantized to 1 can
+// only ever write 0 or 1. The table is per family now, and it is also what the
+// precision segment shows.
+{
+// drag — the range and the step a thumb would use for a value.
+const drag = (prop, val) => {
+const range = VR.railRange(prop, val, {});
+const n = Number(String(val).replace(/[^\d.+-]/g, ''));
+return { range, step: VR.familyStep(n, range.family) };
+};
+// sweep — every value a full drag can land on, sampled finely enough that the
+// sample is not itself the limit (200 samples across a 2000 ms range is 10 ms).
+const sweep = (range, step, samples) => {
+const n = samples || 400;
+const out = [];
+for (let i = 0; i <= n; i++) out.push(VR.ratioToValue(i / n, range, step));
+return out;
+};
+// opacity: the mock's `0–1 at 0.05`.
+{
+const d = drag('opacity', '0.5');
+check('opacity takes the 0.05 step', d.step === 0.05, String(d.step));
+const out = sweep(d.range, d.step);
+check('opacity can reach 0.5', out.includes(0.5), out.slice(0, 6).join(','));
+check('opacity still reaches both ends', out.includes(0) && out.includes(1));
+check('the middle of an opacity rail is 0.5, not 1',
+VR.ratioToValue(0.5, d.range, d.step) === 0.5, String(VR.ratioToValue(0.5, d.range, d.step)));
+// The bug this table fixes: with a ±1 step the same drag writes only 0 and 1.
+const withOldStep = sweep(d.range, 1);
+check('the old flat step could only write 0 or 1',
+Array.from(new Set(withOldStep)).sort().join(',') === '0,1',
+Array.from(new Set(withOldStep)).sort().join(','));
+check('opacity lands on a step the page can use (0.05 multiples)',
+out.every((n) => Math.abs(Math.round(n / 0.05) - n / 0.05) < 1e-9), out.slice(0, 5).join(','));
+}
+// line-height: `0–3 at 0.05`.
+{
+const d = drag('line-height', '1.6');
+check('line-height takes the 0.05 step', d.step === 0.05, String(d.step));
+check('line-height can land on 1.6', sweep(d.range, d.step).includes(1.6));
+}
+// z-index: `−10…100 at 1` — a flat step, because an index is not a design scale.
+check('z-index steps by 1 at any magnitude',
+VR.familyStep(3, 'z-index') === 1 && VR.familyStep(45, 'z-index') === 1);
+// time: `step 10 ms / 50 ms`.
+{
+const short = drag('transition-duration', '180ms');
+check('a short duration steps by 10 ms', short.step === 10, String(short.step));
+check('a duration can land on 150 ms', sweep(short.range, short.step).includes(150),
+sweep(short.range, short.step).slice(0, 6).join(','));
+const long = drag('transition-duration', '1800ms');
+check('a long duration steps by 50 ms', long.step === 50, String(long.step));
+check('a long duration still lands on round presets', sweep(long.range, long.step).includes(1800));
+}
+// angle: `step 1° / 15°`, hue its own pair.
+check('an angle steps by 1° while it is small', VR.familyStep(45, 'angle') === 1);
+check('an angle steps by 15° when it is large', VR.familyStep(-170, 'angle') === 15);
+check('hue keeps its own ladder', VR.familyStep(200, 'hue') === 15 && VR.familyStep(20, 'hue') === 1);
+check('a length still steps 1/4/8', VR.familyStep(4, 'length') === 1 && VR.familyStep(40, 'length') === 8);
+check('a scale steps finely near 1', VR.familyStep(1, 'scale') === 0.01 && VR.familyStep(2.5, 'scale') === 0.05);
+// The ladders double as the precision segment.
+{
+check('the length ladder is the mock\'s 1/4/8', VR.stepLadder('length').join(',') === '1,4,8');
+check('the opacity ladder is 0.01/0.05/0.1', VR.stepLadder('opacity').join(',') === '0.01,0.05,0.1');
+check('the time ladder is 10/50/100', VR.stepLadder('time').join(',') === '10,50,100');
+check('an unknown family falls back to the length ladder',
+VR.stepLadder('nonsense').join(',') === '1,4,8' && VR.stepLadder(undefined).join(',') === '1,4,8');
+check('every ladder is three ascending steps', Object.entries(VR.STEP_LADDER).every(([k, l]) =>
+l.length === 3 && l[0] < l[1] && l[1] < l[2]), JSON.stringify(VR.STEP_LADDER));
+// Every family a rail can produce has its own rules — a family missing from the
+// table silently gets px steps, which is how the opacity bug happened. The list
+// is the families `familyOf` returns, plus the two `railRange` branches.
+const families = ['opacity', 'line-height', 'z-index', 'time', 'angle', 'hue', 'scale', 'percent', 'number', 'length'];
+check('every rail family has a ladder', families.every((f) => !!VR.STEP_LADDER[f]),
+families.filter((f) => !VR.STEP_LADDER[f]).join(','));
+check('every rail family has a drag step', families.every((f) => !!VR.DRAG_STEP[f]),
+families.filter((f) => !VR.DRAG_STEP[f]).join(','));
+check('every ladder step is positive', Object.values(VR.STEP_LADDER)
+.every((l) => l.every((n) => Number.isFinite(n) && n > 0)), JSON.stringify(VR.STEP_LADDER));
+check('every drag step is positive and no coarser than its ladder',
+Object.entries(VR.DRAG_STEP).every(([f, r]) => {
+const l = VR.STEP_LADDER[f];
+return r.fine > 0 && r.coarse >= r.fine && l.includes(r.fine) && l.includes(r.coarse);
+}), JSON.stringify(VR.DRAG_STEP));
+// The drag step must land on the ladder it advertises, or the segment shows one
+// thing and the thumb does another.
+check('the drag step is always one of the three the segment offers',
+families.every((f) => {
+const l = VR.STEP_LADDER[f];
+return [0, 1, 5, 50, 500].every((v) => l.includes(VR.familyStep(v, f)));
+}), families.filter((f) => {
+const l = VR.STEP_LADDER[f];
+return ![0, 1, 5, 50, 500].every((v) => l.includes(VR.familyStep(v, f)));
+}).join(','));
+}
+// A page step still outranks the family table: that is the whole point of the
+// "page" entry in the precision segment.
+check('a page step is carried on the range and beats the family default', (() => {
+const range = VR.railRange('padding', '14px', { step: 4 });
+return range.step === 4 && range.family === 'length';
+})());
+check('a boolean opacity value still gets a usable step',
+VR.familyStep(0, 'opacity') === 0.05 && VR.familyStep(Number('x'), 'opacity') === 0.05);
+// The component draws the family's ladder, not a hardcoded px one, and names
+// the step's origin in the header.
+{
+const src = read('frontend/src/components/inspector/ValueRail.jsx');
+check('the segment renders the family ladder',
+/const ladder = stepLadder\(range \? range\.family : ''\)/.test(src) && /ladder\.map\(/.test(src));
+check('the hardcoded px segment is gone', !/const PRECISIONS = \[1, 4, 8\]/.test(src));
+check('the drag step comes from the family',
+/familyStep\(info\.number, range \? range\.family : ''\)/.test(src));
+check('the header names the step\'s origin',
+/'page step ' \+ formatNumber\(range\.step\)/.test(src) && /'step ' \+ formatNumber\(step\)/.test(src));
+check('the segment label is formatted, so 0.05 is not 0.050000000000000006',
+/formatNumber\(n\) \+ ' ' \+ \(range\.unit \|\| ''\)/.test(src));
+}
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' value-rail assertion(s) failed');

@@ -18,12 +18,8 @@
 // computed by valueRail.js, which is pure and unit-tested.
 import { h } from 'preact';
 import { useRef, useState } from 'preact/hooks';
-import { railRange, railTicks, railLabel, railWritable, unitEquivalent, valueToRatio, ratioToValue, quantize, snapStep, nudge } from './valueRail.js';
+import { railRange, railTicks, railLabel, railWritable, unitEquivalent, stepLadder, familyStep, valueToRatio, ratioToValue, quantize, nudge } from './valueRail.js';
 import { classify, formatNumber, unitOptions } from './valueKinds.js';
-// PRECISIONS — the segment's steps. 1 px for a placed value, 4 px for a scale
-// value, 8 px for a coarse one; the page's own step is always available as a
-// "page" entry that uses the index's number.
-const PRECISIONS = [1, 4, 8];
 // THUMB — the visual and hit sizes. The thumb is 34 px (what a finger sees) and
 // the pointer target is the whole 60 px track, so a drag never needs pixel aim.
 const THUMB = 34;
@@ -68,10 +64,13 @@ const writable = railWritable(prop, value);
 // The range, and the step the drag uses: the user's chosen precision first, then
 // the page's own step, then a fine/coarse pair that adapts to the value's size.
 const range = writable.ok ? railRange(prop, value, Object.assign({ step: ctx.step }, ctx)) : null;
-const chosen = precision != null ? precision : (range && range.step ? range.step : null);
-const step = chosen != null ? chosen : snapStep(classify(prop, value).number, { fine: 1, coarse: 8 });
-const ticks = range ? railTicks(range, { step, tokens: ctx.tokens || [] }) : { minor: [], major: [], tokens: [] };
 const info = classify(prop, value);
+// The ladder this value's family offers: the precision segment, and the source
+// of the drag's step when the page has no scale (see STEP_LADDER).
+const ladder = stepLadder(range ? range.family : '');
+const chosen = precision != null ? precision : (range && range.step ? range.step : null);
+const step = chosen != null ? chosen : familyStep(info.number, range ? range.family : '');
+const ticks = range ? railTicks(range, { step, tokens: ctx.tokens || [] }) : { minor: [], major: [], tokens: [] };
 const ratio = range ? valueToRatio(info.number, range) : 0;
 // The off-scale ghost: the page's nearest on-scale value, drawn dashed and not
 // draggable. `ctx.nearest` comes from the same snapValue reading the sheet's
@@ -161,8 +160,16 @@ props.from != null && String(props.from) !== String(value)
 : null,
 h('span', { class: 'inspector__rail-now' }, label || value),
 h('span', { class: 'inspector__rail-ev' },
-step != null ? (precision != null ? precision + ' ' + (range.unit || '') + ' step' : (range.step ? 'page step ' + range.step + (range.unit || '') : 'fine 1'))
-: 'fine')
+// The step in force, named for where it came from: the page's own scale when
+// the index found one, the user's tapped precision when they chose one, and the
+// family's own step otherwise (see STEP_LADDER).
+step == null
+? 'fine'
+: precision != null
+? formatNumber(precision) + (range.unit || '') + ' step'
+: range.step
+? 'page step ' + formatNumber(range.step) + (range.unit || '')
+: 'step ' + formatNumber(step) + (range.unit || ''))
 ),
 h('div', {
 class: 'inspector__rail-wrap',
@@ -236,14 +243,14 @@ ticks.tokens.map((t) => h('span', { class: 'is-token', key: 'n' + t.name, style:
 ),
 h('div', { class: 'inspector__rail-foot' },
 h('div', { class: 'inspector__rail-seg', role: 'group', 'aria-label': 'Snap step' },
-PRECISIONS.map((n) => h('button', {
+ladder.map((n) => h('button', {
 class: 'inspector__rail-segbtn' + (step === n ? ' is-on' : ''),
 type: 'button',
 key: 'p' + n,
 'aria-pressed': String(step === n),
-title: 'Snap to ' + n + (range.unit || '') + ' steps',
+title: 'Snap to ' + formatNumber(n) + (range.unit || '') + ' steps',
 onClick: () => { setPrecision(n); if (range) write(quantize(info.number, n, range)); }
-}, n + ' ' + (range.unit || ''))),
+}, formatNumber(n) + ' ' + (range.unit || ''))),
 range && range.step
 ? h('button', {
 class: 'inspector__rail-segbtn' + (precision == null ? ' is-on' : ''),

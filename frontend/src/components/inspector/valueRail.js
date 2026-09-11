@@ -226,6 +226,61 @@ out = Math.max(lo, Math.min(hi, out));
 }
 return Math.round(out * 1e4) / 1e4;
 }
+// STEP_LADDER — the three steps a rail's precision segment offers, fine → coarse.
+//
+// One fallback cannot serve every family: `opacity` is 0…1, so a 1 unit step
+// makes the thumb a two-position switch (only 0 and 1 are reachable), while a
+// 0…2000 ms rail needs a coarse step or the whole gesture is 2 px of travel.
+// So the segment is per family, and `1 px | 4 px | 8 px` in K1 is simply the
+// length entry — an opacity rail offers `0.01 | 0.05 | 0.1` in the same place.
+export const STEP_LADDER = {
+  length: [1, 4, 8],
+  number: [1, 5, 10],
+  opacity: [0.01, 0.05, 0.1],
+  'line-height': [0.05, 0.1, 0.5],
+  'z-index': [1, 5, 10],
+  time: [10, 50, 100],
+  angle: [1, 15, 45],
+  hue: [1, 15, 30],
+  scale: [0.01, 0.05, 0.1],
+  percent: [1, 5, 10]
+};
+// DRAG_STEP — the step a *drag* uses by default, and the value magnitude above
+// which it switches to the coarse one. Kept separate from the ladder because
+// they answer different questions: the ladder is the three taps the user can
+// choose between, this is which of them the thumb starts on.
+//
+// The threshold is on the value's own magnitude rather than a multiple of the
+// step: an opacity of 0.5 is "large" next to a 0.05 step and must still move in
+// 0.05, so a family whose range is inherently small states it with no switch at
+// all (the mock's flat `0–1 at 0.05` and `0–3 at 0.05`).
+export const DRAG_STEP = {
+  length: { fine: 1, coarse: 8, above: 32 },
+  number: { fine: 1, coarse: 10, above: 50 },
+  opacity: { fine: 0.05, coarse: 0.05 },
+  'line-height': { fine: 0.05, coarse: 0.05 },
+  'z-index': { fine: 1, coarse: 1 },
+  time: { fine: 10, coarse: 50, above: 200 },
+  angle: { fine: 1, coarse: 15, above: 90 },
+  hue: { fine: 1, coarse: 15, above: 90 },
+  scale: { fine: 0.01, coarse: 0.05, above: 1 },
+  percent: { fine: 1, coarse: 5, above: 50 }
+};
+// stepLadder — the segment's three steps for a family, or the length ones. A
+// family the table does not list still gets a usable segment rather than an
+// empty control.
+export function stepLadder(family) {
+return STEP_LADDER[String(family || '')] || STEP_LADDER.length;
+}
+// familyStep — the drag's step for a value when the page has no scale of its
+// own. `value` is the number in force, so a large one moves in the coarse step
+// and a small one stays reachable at the fine step.
+export function familyStep(value, family) {
+const rule = DRAG_STEP[String(family || '')] || DRAG_STEP.length;
+const n = Math.abs(Number(value));
+if (!Number.isFinite(n) || !Number.isFinite(rule.above) || n <= rule.above) return rule.fine;
+return rule.coarse;
+}
 // snapStep — which step a drag should use, given a fine and a coarse option.
 //
 // The rule: use the fine step while the value is small enough that a coarse one
