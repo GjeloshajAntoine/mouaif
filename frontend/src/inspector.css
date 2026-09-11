@@ -3530,6 +3530,31 @@ vertical list hides its own content and steals the vertical gesture: a
 slightly diagonal swipe — the normal case when scrolling a long list — pans
 the strip instead of the list. Wrapping shows everything at once and keeps the
 gesture vertical, which is the whole point on a phone. */
+/* One row of the Element tree: a direction label ("↑ Parents" / "▸ ↓ Children
+  13") on its own line, then the chips that belong to it. The label is what
+  keeps "go up" and "go down" from reading as one undifferentiated list of
+  pills — the two rows used to look identical. */
+.inspector__styles-tree-row {
+display: block;
+min-width: 0;
+margin-top: 6px;
+}
+.inspector__styles-tree-label {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+font-size: 0.62rem;
+font-weight: 600;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--muted-2);
+}
+/* Direction glyph: ↑ the parents, ↓ the children. Decorative (aria-hidden). */
+.inspector__styles-tree-arrow {
+font-size: 0.72rem;
+line-height: 1;
+color: var(--muted-2);
+}
 .inspector__styles-crumbs {
 display: flex;
 flex-wrap: wrap;
@@ -3537,6 +3562,14 @@ align-items: center;
 gap: 4px;
 min-width: 0;
 margin-top: 6px;
+}
+/* The chevron between two crumbs turns a row of equal chips into a readable
+  path: html › body › div#app. Decorative, so it is never announced and has no
+  tap target of its own. */
+.inspector__styles-crumb-sep {
+flex: 0 0 auto;
+font-size: 0.72rem;
+color: var(--muted-2);
 }
 .inspector__styles-crumb {
 display: inline-flex;
@@ -3584,6 +3617,8 @@ gap: 6px;
 min-width: 0;
 margin-top: 6px;
 }
+/* Inside a tree row the label line above the chips already carries the gap. */
+.inspector__styles-tree-row .inspector__styles-kids { margin-top: 2px; }
 /* The "Children 13" disclosure is the first item and a full tap target, so the
 child chips stay collapsed to one line until asked for. */
 .inspector__styles-kids-toggle {

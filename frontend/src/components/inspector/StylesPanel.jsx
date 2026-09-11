@@ -1417,25 +1417,43 @@ onUndoAll: () => { setChanged([]); if (props.onUndoAll) props.onUndoAll(); }
 (tree && ((tree.ancestors && tree.ancestors.length) || (tree.children && tree.children.length)))
 ? h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
+// Parents — one labelled row ("↑ Parents") with a chevron between the
+// crumbs, so the row reads as the path `html › body › div#app` instead of
+// as a set of equal chips whose order the user has to work out. The last
+// chip is the selected element: it is not a tap target, so it is a static
+// accent chip rather than a button.
 tree.ancestors && tree.ancestors.length
-? h('div', { class: 'inspector__styles-crumbs', role: 'group', 'aria-label': 'Element ancestors' },
-tree.ancestors.slice().reverse().map((a) => h('button', {
+? h('div', { class: 'inspector__styles-tree-row' },
+h('span', { class: 'inspector__styles-tree-label' },
+h('span', { class: 'inspector__styles-tree-arrow', 'aria-hidden': 'true' }, '↑'),
+'Parents'
+),
+h('div', { class: 'inspector__styles-crumbs', role: 'group', 'aria-label': 'Parent elements, root first' },
+tree.ancestors.slice().reverse().reduce((nodes, a) => nodes.concat([
+h('button', {
 class: 'inspector__styles-crumb',
 type: 'button',
 key: 'anc-' + a.levels,
 title: 'Select ' + a.label,
-'aria-label': 'Select ancestor element ' + a.label,
+'aria-label': 'Select parent element ' + a.label,
 onClick: () => selectAncestor(a.levels)
 },
 h('span', { class: 'inspector__styles-crumb-label' }, a.label)
-)),
+),
+h('span', { class: 'inspector__styles-crumb-sep', 'aria-hidden': 'true', key: 'sep-' + a.levels }, '›')
+]), []).concat([
 h('span', { class: 'inspector__styles-crumb is-here', key: 'here' },
 h('span', { class: 'inspector__styles-crumb-label' }, label)
 )
+]))
 )
 : null,
+// Children — a labelled disclosure ("▸ Children 13") with its chips in
+// their own wrapped row below it. The chips are collapsed by default;
+// separating the label from the chips keeps "go up" and "go down" from
+// looking like one undifferentiated list of pills.
 tree.children && tree.children.length
-? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
+? h('div', { class: 'inspector__styles-tree-row' },
 h('button', {
 class: 'inspector__styles-kids-toggle',
 type: 'button',
@@ -1446,11 +1464,13 @@ title: kidsOpen ? 'Hide children' : 'Show children',
 onClick: () => setKidsOpen(!kidsOpen)
 },
 h('span', { class: 'inspector__styles-kids-caret', 'aria-hidden': 'true' }, kidsOpen ? '▾' : '▸'),
+h('span', { class: 'inspector__styles-tree-arrow', 'aria-hidden': 'true' }, '↓'),
 h('span', { class: 'inspector__styles-kids-label' }, 'Children'),
 h('span', { class: 'inspector__styles-kids-n', 'aria-hidden': 'true' }, String(tree.childCount))
 ),
 kidsOpen
-? tree.children.map((c, i) => h('button', {
+? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
+tree.children.map((c, i) => h('button', {
 class: 'inspector__styles-kid',
 type: 'button',
 key: 'kid-' + i,
@@ -1462,10 +1482,11 @@ onClick: () => selectChild(i)
 // apply to the anonymous flex item a bare text child becomes, so the text
 // overflowed the chip's rounded border instead of being clipped.
 h('span', { class: 'inspector__styles-kid-label' }, c.label)
-))
-: null,
-kidsOpen && tree.childCount > tree.children.length
+)),
+tree.childCount > tree.children.length
 ? h('span', { class: 'inspector__styles-kids-more' }, '+' + (tree.childCount - tree.children.length) + ' more')
+: null
+)
 : null
 )
 : null
