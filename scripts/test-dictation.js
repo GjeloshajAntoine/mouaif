@@ -481,6 +481,103 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
     assert.equal(dictation.formatDuration('nonsense'), '0:00');
   });
 
+  // ---- Live (as-you-speak) transcription --------------------------------
+  //
+  // The live path sends a *segment* of the take per chunk, so the transcript is
+  // the concatenation of the segments. The three things that can go wrong are
+  // all decided from values alone, which is why they are tested here rather
+  // than through a fake recorder: results arriving out of order, the seam
+  // between two segments being said twice, and a chunk that recognised nothing.
+  check('liveDictationEnabled defaults on and only an explicit false turns it off', () => {
+    assert.equal(dictation.liveDictationEnabled({}), true, 'a fresh install dictates live');
+    assert.equal(dictation.liveDictationEnabled({ modelId: 'whisper-1' }), true);
+    assert.equal(dictation.liveDictationEnabled({ live: true }), true);
+    assert.equal(dictation.liveDictationEnabled({ live: false }), false);
+    assert.equal(dictation.liveDictationEnabled(null), true);
+    // Anything that is not `false` reads as on: a value the page wrote as a
+    // string ("off") must not silently disable the feature.
+    assert.equal(dictation.liveDictationEnabled({ live: 'off' }), true);
+  });
+
+  check('joinTranscript concatenates segments in order', () => {
+    assert.equal(dictation.joinTranscript(['one two', 'three four']), 'one two three four');
+    assert.equal(dictation.joinTranscript(['  one  ', 'two ']), 'one two');
+    assert.equal(dictation.joinTranscript([]), '');
+    assert.equal(dictation.joinTranscript(null), '');
+    assert.equal(dictation.joinTranscript(['', '   ']), '', 'silent segments contribute nothing');
+    assert.equal(dictation.joinTranscript(['one', '', 'two']), 'one two');
+    assert.equal(dictation.joinTranscript(['one']), 'one');
+  });
+
+  check('joinTranscript drops a seam the two segments both heard', () => {
+    // The provider restarts its context at every chunk, so the words at the
+    // boundary are commonly transcribed twice. Longest run first: `the note` is
+    // dropped whole rather than leaving `the the note`.
+    assert.equal(
+      dictation.joinTranscript(['please save the note', 'the note is saved']),
+      'please save the note is saved'
+    );
+    assert.equal(
+      dictation.joinTranscript(['we should schedule the deployment', 'the deployment tomorrow morning']),
+      'we should schedule the deployment tomorrow morning'
+    );
+    // A single repeated word at the boundary is the commonest chunk artifact
+    // ("… the note" / "note is saved"), so it is dropped: without that, every
+    // live take grows a stutter wherever the timeslice fell.
+    assert.equal(dictation.joinTranscript(['that is fine', 'fine by me']), 'that is fine by me');
+    assert.equal(dictation.joinTranscript(['save the note', 'note is saved']), 'save the note is saved');
+    // A two-word run is dropped whole, not just its last word.
+    assert.equal(dictation.joinTranscript(['is this the note', 'the note that matters']), 'is this the note that matters');
+    // No repeat at all: the two halves are simply joined.
+    assert.equal(dictation.joinTranscript(['hello there', 'how are you']), 'hello there how are you');
+    // A repeat that is not a real seam (a coincidental run of letters) must not
+    // eat the start of a word.
+    assert.equal(dictation.joinTranscript(['within', 'income for the year']), 'within income for the year');
+  });
+
+  check('seamOverlap returns a character offset into the next segment', () => {
+    assert.equal(dictation.seamOverlap('save the note', 'the note is saved'), 'the note'.length);
+    assert.equal(dictation.seamOverlap('hello', 'world'), 0);
+    assert.equal(dictation.seamOverlap('', 'anything'), 0);
+    assert.equal(dictation.seamOverlap('anything', ''), 0);
+    // Case and punctuation do not count against a match, and the offset covers
+    // the whole repeated run rather than just the last word.
+    assert.equal(dictation.seamOverlap('Save The Note', 'the note is saved'), 'the note'.length);
+  });
+
+  check('createLiveSegments keeps speaking order when answers arrive out of order', () => {
+    const take = dictation.createLiveSegments();
+    take.set(0, 'first words');
+    take.set(2, 'third words');           // chunk 1 is still in flight
+    assert.equal(take.text(), 'first words third words', 'a missing chunk is simply absent');
+    assert.equal(take.pending(3), 1, 'one answer still outstanding');
+    take.set(1, 'second words');
+    assert.equal(take.text(), 'first words second words third words');
+    assert.equal(take.pending(3), 0);
+    assert.equal(take.answered(), 3);
+    // Re-setting an index (a retry of the same chunk) replaces it rather than
+    // appending a second copy.
+    take.set(1, 'second words again');
+    assert.equal(take.text(), 'first words second words again third words');
+    assert.equal(take.answered(), 3);
+    // `pending` never goes negative when a chunk is answered without being
+    // counted (an event from a recorder that restarted its numbering).
+    assert.equal(take.pending(1), 0);
+  });
+
+  check('createLiveSegments applies the seam rule across arriving chunks', () => {
+    const take = dictation.createLiveSegments();
+    take.set(0, 'the build is red');
+    take.set(2, 'on the note');
+    take.set(1, 'red again');
+    assert.equal(take.text(), 'the build is red again on the note', 'the word said twice at the seam is dropped');
+
+    const seam = dictation.createLiveSegments();
+    seam.set(0, 'please read the note');
+    seam.set(1, 'the note that matters');
+    assert.equal(seam.text(), 'please read the note that matters', 'longest run first');
+  });
+
   await checkAsync('blobToBase64 uses FileReader when present and arrayBuffer otherwise', async () => {
     const bytes = Buffer.from([1, 2, 3, 250]);
     const expected = bytes.toString('base64');

@@ -26,7 +26,7 @@ const bundle = await build({
   stdin: {
     contents: `
 import { h, render } from 'preact';
-import { useState } from 'preact/hooks';
+import { useState, useRef } from 'preact/hooks';
 import { DictationView } from './frontend/src/components/DictationPage.jsx';
 import { MicButton } from './frontend/src/components/chat/MicButton.jsx';
 import { setActiveProject } from './frontend/src/api.js';
@@ -54,6 +54,14 @@ const KINDS = [
 window.fixture = {
   failTranscribe: false,
   recorded: [],
+  // The composer-mic scenario transcribes as you speak: the fake recorder
+  // hands over a chunk every liveChunkMs (a stand-in for the real 3 s), and
+  // the first two answers repeat the word 'sentence' at the seam so the join
+  // rule is visible in the draft.
+  liveTakes: true,
+  liveChunkMs: 250,
+  liveChunks: 2,
+  transcribeCount: 0,
   // Derived from the hash, not only from the click handler: opening
   // #live-only directly (the normal way to look at one scenario) has to select
   // it too.
@@ -86,13 +94,13 @@ window.fetch = async (input, options = {}) => {
   const url = new URL(input, location.origin);
   let body = {}, status = 200;
   if (url.pathname === '/api/settings') {
-    if (options.method === 'PUT') {
-      const patch = JSON.parse(options.body);
-      Object.assign(window.fixture.settings, patch.dictation ? { dictation: patch.dictation } : {});
-      body = { app: window.fixture.settings };
-    } else {
-      body = { app: window.fixture.settings, defaults: {}, home: '/tmp/mouaif' };
-    }
+    body = { app: window.fixture.settings, defaults: {}, home: '/tmp/mouaif' };
+  } else if (url.pathname === '/api/settings/app') {
+    // The real route the page writes through (saveApp in api.js). A shallow
+    // merge into the app store, key by key, exactly like the server's PUT.
+    const patch = JSON.parse(options.body || '{}');
+    Object.assign(window.fixture.settings, patch);
+    body = { app: window.fixture.settings };
   } else if (url.pathname === '/api/ai/transcribe/models') {
     const live = url.searchParams.get('live') !== '0';
     if (window.fixture.scenario === 'mixed') {
@@ -110,13 +118,21 @@ window.fetch = async (input, options = {}) => {
   } else if (url.pathname === '/api/ai/transcribe') {
     const payload = JSON.parse(options.body || '{}');
     window.fixture.recorded.push(payload);
+    const runs = (window.fixture.transcribeCount = (window.fixture.transcribeCount || 0) + 1);
     if (window.fixture.failTranscribe) { status = 401; body = { error: 'Incorrect API key provided', code: 'ENOAUTH' }; }
     // A priced run, so the page's "Last run" line shows what the feature does
     // with a real answer (a provider report plus a known price). Setting
     // fixture.unpriced = true in the console shows the unknown case, which is
     // what a per-minute model really returns.
+    //
+    // A live take is answered per chunk, so the fixture answers the way a
+    // provider does for chunked audio: consecutive segments that repeat the
+    // word at the seam ('... dictated sentence' / 'sentence about ...'). That
+    // is what makes the join rule visible in the composer, not just in a test.
     else body = {
-    text: 'This is a dictated sentence about mouaif and the MediaRecorder API.',
+    text: window.fixture.liveTakes
+      ? (runs === 1 ? 'This is a dictated sentence' : 'sentence about mouaif and the MediaRecorder API.')
+      : 'This is a dictated sentence about mouaif and the MediaRecorder API.',
     model: { id: payload.modelId, provider: payload.providerId || 'openai-compatible' },
     kind: 'openai-compatible', bytes: 4096, durationMs: 812,
     usage: { promptTokens: 1000, completionTokens: 100 },
@@ -133,17 +149,42 @@ window.fetch = async (input, options = {}) => {
 };
 
 // ---- Fake microphone ---------------------------------------------------
+//
+// The recorder hands over audio on its timeslice, which is the whole of what
+// "live" means from the browser's side: start(ms) emits a chunk every ms,
+// and stop() emits the final (empty) one the real recorder also produces.
+// The fake drives that on a short timer rather than waiting 3 seconds, so the
+// composer-mic scenario shows the as-you-speak path in a couple of seconds.
 class FakeMediaRecorder {
   constructor(stream, options = {}) {
     this.stream = stream;
     this.mimeType = options.mimeType || 'audio/webm';
     this.state = 'inactive';
+    this.chunks = 0;
+    this.timer = null;
+    window.fixture.lastRecorder = this;
   }
   static isTypeSupported(type) { return type.indexOf('mp4') < 0; }
-  start() { this.state = 'recording'; if (this.onstart) this.onstart(); }
+  start(timeslice) {
+    this.state = 'recording';
+    if (this.onstart) this.onstart();
+    if (timeslice) {
+      this.timer = setInterval(() => {
+        if (this.state !== 'recording') return;
+        // A handful of timeslices, then the recorder stops being fed audio —
+        // the same shape as a real take that ends without the user tapping.
+        if (this.chunks >= (window.fixture.liveChunks || 2)) { clearInterval(this.timer); this.timer = null; return; }
+        this.chunks += 1;
+        if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
+      }, window.fixture.liveChunkMs || 250);
+    }
+  }
   stop() {
     this.state = 'inactive';
-    if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    // The recorder's final chunk carries no audio.
+    if (this.ondataavailable) this.ondataavailable({ data: new Blob([], { type: this.mimeType }) });
+    if (this.ondataavailable && !this.chunks) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
     if (this.onstop) this.onstop();
   }
 }
@@ -157,6 +198,35 @@ function Host() {
   const [view, setView] = useState(location.hash.replace(/^#\\/?/, '') || 'page');
   const [micText, setMicText] = useState('');
   const [micStatus, setMicStatus] = useState('');
+  // The real chat view remembers the live region of the draft and replaces it
+  // on the take's final hand-off (see onTranscript in Chat.jsx). The fixture
+  // keeps the same two facts so the composer-mic scenario shows the real
+  // behaviour rather than a second implementation's: a live chunk replaces the
+  // tail while the take runs, the settled hand-off replaces it once, and
+  // anything that is not a live take appends.
+  const tailRef = useRef(null);
+  const onTranscript = (text, meta) => {
+    const live = !!(meta && meta.live);
+    const tail = tailRef.current;
+    if (live) {
+      setMicText((prev) => {
+        const base = tail ? prev.slice(0, tail.start) : prev;
+        return (base && !/\\s$/.test(base) ? base + ' ' : base) + text;
+      });
+      tailRef.current = { start: tail ? tail.start : micText.length, text };
+      setMicStatus('live: ' + text);
+      return;
+    }
+    if (tail) {
+      const next = micText.slice(0, tail.start) + (text && micText.slice(0, tail.start) ? ' ' : '') + text;
+      setMicText(next);
+      tailRef.current = null;
+      setMicStatus('added');
+      return;
+    }
+    setMicText((prev) => (prev && !/\\s$/.test(prev) ? prev + ' ' : prev) + text);
+    setMicStatus('added');
+  };
   return h('div', { class: 'fixture' },
     h('nav', { class: 'fixture__switch' },
       ['page', 'composer', 'live-only', 'mixed'].map((name) => h('button', {
@@ -173,7 +243,10 @@ function Host() {
           h('div', { class: 'chat-view__composer' },
             h(MicButton, {
               projectDir: '/fixture/project',
-              onTranscript: (text) => { setMicText(micText ? micText + ' ' + text : text); setMicStatus('added'); }
+              promptRef: { current: null },
+              onTranscript,
+              onStatus: (message) => setMicStatus(message),
+              onProgress: (message) => setMicStatus(message)
             }),
             h('textarea', { class: 'input chat-view__textarea', value: micText, rows: 3, onInput: (e) => setMicText(e.target.value) })
           ),

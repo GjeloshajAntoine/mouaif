@@ -174,6 +174,153 @@ export async function transcribeAudio(options) {
   return r.body || {};
 }
 
+// ---- Live (as-you-speak) transcription ---------------------------------
+//
+// The composer's microphone can send audio *while* the user is still talking:
+// the recorder is given a timeslice, every chunk it emits is POSTed to the
+// same `/api/ai/transcribe`, and the answers are stitched into one transcript
+// that lands in the draft as it grows. Three facts shape the helpers below and
+// the component that uses them:
+//
+//   * a chunk is transcribed as if it were a whole recording, so a chunk is a
+//     *segment* of the take — the transcript is the concatenation of the
+//     segments, in the order the audio was spoken, which is why the component
+//     keeps one slot per chunk index instead of pushing results as they land
+//     (two in-flight chunks can finish out of order);
+//   * the browser emits a final chunk while the recorder is being torn down
+//     and it carries no audio — a container header at best. Sending it costs a
+//     request and answers with an empty string, so the component drops the
+//     tail chunk rather than transcribing it;
+//   * nothing is repeated. Consecutive results from one microphone often share
+//     the words at the seam (the model hears the boundary twice), so the join
+//     drops a repeated prefix/suffix before appending.
+
+// LIVE_CHUNK_MS — how much audio one live request carries. Three seconds is a
+// compromise the provider catalogue forces: a chunk is standalone, so it has to
+// be long enough to hold a couple of words with context, and short enough that
+// the model does not tidy up a sentence across the gap. `MAX_RECORDING_MS`
+// caps the take at two minutes, so this is at most ~40 requests.
+export const LIVE_CHUNK_MS = 3000;
+
+// LIVE_OVERLAP_WORDS — the shortest repeated run, in words, that is treated as
+// a seam between two chunks rather than as the speaker genuinely repeating
+// themselves. One: contiguous timeslices are transcribed as separate
+// recordings, so the word at the boundary is routinely written twice ("… the
+// note" / "note is saved"), and that artifact is far more common than a
+// deliberate repetition that happens to straddle a boundary — which loses one
+// copy of itself, and can be typed back.
+export const LIVE_OVERLAP_WORDS = 1;
+
+// matchWords(text) — every word in a segment with where it sits, so a seam can
+// be matched word-aligned while the text written back stays exactly what the
+// provider returned. Punctuation is not part of a word (`three,` matches
+// `three`), and digits and inner apostrophes are (`don't`, `2:30` → `2`, `30`).
+function matchWords(text) {
+  const re = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+  const out = [];
+  let match;
+  while ((match = re.exec(String(text || ''))) !== null) {
+    out.push({ word: match[0].toLowerCase(), end: match.index + match[0].length });
+  }
+  return out;
+}
+
+// seamOverlap(previous, next) — how many characters at the start of `next`
+// repeat the end of `previous`, or 0 when nothing does.
+//
+// Longest run first: every word-run that ends `previous` and opens `next` is a
+// candidate, and the longest one (≥ `LIVE_OVERLAP_WORDS`) wins, so
+// "…save the note" / "the note is saved" drops `the note`, not just `note`.
+// The returned count is a *character* offset into `next` — everything up to
+// the end of the last matched word — so the caller can splice the raw provider
+// text rather than a normalised copy of it.
+export function seamOverlap(previous, next) {
+  const prevWords = matchWords(previous).map((w) => w.word);
+  const nextWords = matchWords(next);
+  const max = Math.min(prevWords.length, nextWords.length);
+  for (let size = max; size >= LIVE_OVERLAP_WORDS; size--) {
+    let same = true;
+    for (let i = 0; i < size; i++) {
+      if (prevWords[prevWords.length - size + i] !== nextWords[i].word) { same = false; break; }
+    }
+    if (same) return nextWords[size - 1].end;
+  }
+  return 0;
+}
+
+// joinTranscript(segments) — the transcript built from a take's segments.
+//
+// Empty entries are skipped: a chunk the model heard as silence, and a slot
+// whose result has not arrived yet, both contribute nothing. Each remaining
+// segment is appended after dropping a seam it repeats, and the result is a
+// plain function of the list — so recomputing it after every arriving chunk
+// can never make the draft drift or double up.
+export function joinTranscript(segments) {
+  const list = Array.isArray(segments) ? segments : [];
+  let out = '';
+  for (const raw of list) {
+    const text = String(raw || '').trim();
+    if (!text) continue;
+    if (!out) { out = text; continue; }
+    const overlap = seamOverlap(out, text);
+    // Past a seam the separators between the two segments are ours, not the
+    // provider's: `… the note` + `is saved` reads as one sentence.
+    const rest = overlap ? text.slice(overlap).replace(/^[\s\p{P}]+/u, '') : text;
+    if (rest) out += ' ' + rest;
+  }
+  return out;
+}
+
+// liveDictationEnabled(saved) — whether a take should be transcribed as the
+// user speaks rather than on stop. Read from the app-level `dictation` key the
+// dictation page owns (the same record the model choice comes from), default
+// **on**: live dictation is what a user expects from a microphone button, and
+// the page's switch is there for the setups that cannot afford a request every
+// few seconds (a per-minute model, a metered link) or that reject chunked
+// audio outright.
+export function liveDictationEnabled(saved) {
+const rec = saved || {};
+return rec.live !== false;
+}
+// createLiveSegments() — the transcript slots for one take, as data.
+//
+// Exported and separate from the button so the ordering rules can be tested
+// without a recorder. The store owes its caller exactly one thing: the text
+// that belongs in the draft now, in speaking order, with each chunk's result
+// kept under the index the recorder wrote it in — a chunk that lands after a
+// later one must never be appended at the end.
+//
+//   const take = createLiveSegments();
+//   take.set(0, 'first words');
+//   take.set(2, 'third words');   // chunk 1 is still in flight
+//   take.set(1, 'second words');
+//   take.text() === 'first words second words third words'
+export function createLiveSegments() {
+const slots = new Map();
+return {
+set(index, text) {
+slots.set(Number(index) || 0, String(text || '').trim());
+},
+text() {
+const order = Array.from(slots.keys()).sort((a, b) => a - b);
+return joinTranscript(order.map((key) => slots.get(key)));
+},
+// pending(issued) — how many chunks were sent but have not been answered.
+// The caller counts what it sent; the store counts what came back, and the
+// difference is what keeps a take from being closed with its last words
+// still in flight.
+pending(issued) {
+return Math.max(0, (Number(issued) || 0) - slots.size);
+},
+// answered() — how many chunks came back at all. Callers that must not save
+// an empty draft check this rather than `text()`.
+answered() {
+return slots.size;
+}
+};
+}
+
+
 // loadDictationModels(projectDir, opts) -> { models, kinds, total, providers, liveFailures }
 //
 // `models` is what this project can dictate with: the project's own model

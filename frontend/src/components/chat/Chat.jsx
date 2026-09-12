@@ -52,6 +52,15 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 
   const { projectDir, chatId } = props;
 const [FileEditor, setFileEditor] = useState(null);
+// dictationTailRef — the live region of the composer, as the last dictation
+// write left it: where it started and what it said. A second write for the
+// *same* take (each chunk of a live transcript, then the finished one) replaces
+// that region instead of appending again, so dictating while talking edits one
+// growing tail rather than stacking transcript on transcript.
+//
+// Only a run that was handed a `live` flag participates: every other caller
+// appends and clears the ref, which is exactly the old behaviour.
+const dictationTailRef = useRef(null);
 // onTranscript(text, meta) — append an inserted transcript to the in-progress
 // composer draft, and report the run in the chat's status row.
 //
@@ -65,18 +74,45 @@ const [FileEditor, setFileEditor] = useState(null);
 // line because a transcription is not a chat turn: nothing else in the chat
 // totals covers it, so this is the only place the user sees what dictating
 // just cost. An unpriced run (`known: false` — a per-minute model reports no
-// tokens) says nothing extra rather than `$0.00`.
+// tokens) says nothing extra rather than `$0.00` — which is why a live chunk,
+// whose price nobody knows until the take ends, passes `null`.
 function onTranscript(text, meta) {
   const el = refs.promptInput.current;
   if (!el) return;
-  const at = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
-  const before = el.value.slice(0, at);
-  const after = el.value.slice(at);
+  // A live chunk that recognised nothing changes nothing: rewriting the draft
+  // around an empty transcript would delete the tail that is already there.
+  if (meta && meta.live && !String(text || '').trim()) return;
+  const value = el.value;
+  const remembered = dictationTailRef.current;
+  const tail = (remembered && remembered.text) ? remembered : null;
+  // Where this write lands. For a live take the answer owns the region the
+  // previous answer wrote — found at the recorded offset, or wherever it moved
+  // to if the user typed in front of it. When it cannot be found at all (the
+  // user edited the tail by hand, or selected and deleted it) the write falls
+  // back to the caret and appends, which is the honest reading of "the text I
+  // was given is no longer here".
+  let at = null;
+  if (tail) {
+    if (value.slice(tail.start, tail.start + tail.text.length) === tail.text) at = tail.start;
+    else {
+      const found = value.indexOf(tail.text);
+      if (found >= 0) at = found;
+    }
+  }
+  const owned = at !== null && tail ? tail.text.length : 0;
+  if (at === null) at = (typeof el.selectionStart === 'number' ? el.selectionStart : value.length);
+  const before = value.slice(0, at);
+  const after = value.slice(at + owned);
   // Separate the transcript from surrounding text with a single space, not a
   // newline: a dictation dropped mid-sentence should not break the paragraph.
   const lead = before && !/\s$/.test(before) ? ' ' : '';
-  const tail = after && !/^\s/.test(after) ? ' ' : '';
-  const next = before + lead + text + tail + after;
+  const tailSpace = after && !/^\s/.test(after) ? ' ' : '';
+  const next = before + lead + text + tailSpace + after;
+  // Remember the region this write owns while the run is live (a chunk), and
+  // forget it for the finished hand-off.
+  dictationTailRef.current = (meta && meta.live)
+    ? { start: at, text: lead + text }
+    : null;
   syncComposer(next);
   if (updateChat) {
     saveComposerDraftNow(next, refs, updateChat).catch(() => {});
@@ -86,10 +122,15 @@ function onTranscript(text, meta) {
     el.focus({ preventScroll: true });
     el.setSelectionRange(caret, caret);
   } catch { /* a detached textarea cannot take a caret */ }
-  // `setStatus` takes the ref, not the bag of them: passing `refs` made the
-  // write a no-op (`ref.current` was undefined), which is why the chat's status
-  // row never showed "dictation added" at all (docs/…/dictation.md promises it).
-  setStatus(refs.status, 'dictation added' + dictationCostSuffix(meta), 'success');
+  // A live chunk is not a finished run: it must not claim a cost, and it must
+  // not call the take "added" once per chunk while the user is still talking.
+  // The button's own status row owns that narrative until the take settles.
+  if (!meta || !meta.live) {
+    // `setStatus` takes the ref, not the bag of them: passing `refs` made the
+    // write a no-op (`ref.current` was undefined), which is why the chat's status
+    // row never showed "dictation added" at all (docs/…/dictation.md promises it).
+    setStatus(refs.status, 'dictation added' + dictationCostSuffix(meta), 'success');
+  }
 }
 
 // dictationCostSuffix(meta) — " · $0.00012" when the run was priced, and
@@ -110,6 +151,19 @@ return ' · ' + formatCost(cost.total);
 // Errors and progress now land here; the success hand-off keeps this row for
 // itself (see onTranscript above), so the two never overwrite each other.
 function onMicStatus(message, state) {
+setStatus(refs.status, message, state);
+}
+
+// onMicProgress(message, state) — a live take's running total, written without
+// moving the caret.
+//
+// The status element's text is set imperatively (`setStatus`), which Preact
+// does not diff against, so a chunk's re-render leaves the note alone. That is
+// the point: the draft write focuses the composer and puts the caret at the end
+// of the transcript, and doing that twice per chunk (once for the draft, once
+// for an unrelated node) is how a live take fights the user. The button's own
+// tooltip is still updated, which is where the clock lives.
+function onMicProgress(message, state) {
 setStatus(refs.status, message, state);
 }
 
@@ -459,7 +513,7 @@ onRefreshCustomActions: refreshCustomActions
           )
         ),
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
-h(MicButton, { projectDir, onTranscript, onStatus: onMicStatus }),
+        h(MicButton, { projectDir, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress }),
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },

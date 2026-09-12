@@ -579,12 +579,30 @@ function useCase(caseOptions) {
   const toggle = find(nodes, (n) => buttonClass(n).includes('dictation__options-toggle'));
   assert.equal(toggle.attrs['aria-expanded'], 'false');
   assert.deepEqual(toggle.children[0].children, ['Options']);
+  // The collapsed row carries the live switch's state as well as the hints:
+  // live transcription is the setting users come back for, so a value that is
+  // only visible inside an open disclosure looks lost.
+  assert.deepEqual(find(nodes, (n) => buttonClass(n).includes('dictation__options-summary')).children, ['live on']);
 
   toggle.attrs.onClick();
   const open = view.render();
   const languageInput = find(open, (n) => n.attrs && n.attrs.id === 'dictation-language');
   assert.ok(languageInput, 'the hint fields appear on tap');
   assert.equal(find(open, (n) => n.attrs && n.attrs.id === 'dictation-prompt').attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
+  // The live switch lives here, on by default — the chat composer's mic reads
+  // it before it opens the microphone.
+  const liveSwitch = find(open, (n) => n.attrs && n.attrs.id === 'dictation-live');
+  assert.ok(liveSwitch, 'the live switch appears with the other options');
+  assert.equal(liveSwitch.attrs.type, 'checkbox');
+  assert.equal(liveSwitch.attrs.checked, true, 'live dictation is on until it is turned off');
+  liveSwitch.attrs.onChange({ target: { checked: false } });
+  const off = view.render();
+  assert.equal(find(off, (n) => n.attrs && n.attrs.id === 'dictation-live').attrs.checked, false);
+  assert.deepEqual(
+    find(off, (n) => buttonClass(n).includes('dictation__options-summary')).children,
+    ['live off'],
+    'the switch state reads in the row while the fields are open, too'
+  );
   languageInput.attrs.onInput({ target: { value: 'fr' } });
 
   const closing = find(view.render(), (n) => buttonClass(n).includes('dictation__options-toggle'));
@@ -595,7 +613,7 @@ function useCase(caseOptions) {
   // user typed must not look lost.
   assert.deepEqual(
     find(collapsed, (n) => buttonClass(n).includes('dictation__options-summary')).children,
-    ['fr']
+    ['live off · fr']
   );
 }
 

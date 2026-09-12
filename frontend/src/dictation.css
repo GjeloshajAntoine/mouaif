@@ -195,6 +195,36 @@ font-size: 0.9rem;
 color: var(--muted-2);
 }
 
+/* Live transcription: a switch inside the Options disclosure.
+  Full width, ≥44px tall, the whole row tappable — a phone targets the row,
+  not the 16px box. The box is first so it reads as a control, the two lines
+  of text are the label and the explanation. */
+.dictation__switch {
+display: flex;
+align-items: flex-start;
+gap: 10px;
+width: 100%;
+min-height: 44px;
+padding: 6px 2px;
+cursor: pointer;
+}
+.dictation__switch input {
+width: 20px;
+height: 20px;
+margin: 2px 0 0;
+flex: 0 0 auto;
+accent-color: var(--accent);
+}
+.dictation__switch-body {
+display: flex;
+flex-direction: column;
+gap: 2px;
+min-width: 0;
+}
+.dictation__switch-title {
+font-size: 0.9rem;
+}
+
 /* The per-run hints, folded away. The row is a real touch target (44px) and
   reads as a summary line rather than a form control: the label, whatever is
   set, and a caret. Folding it keeps the transcript — the point of the page —

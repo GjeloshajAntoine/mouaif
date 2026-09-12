@@ -35,6 +35,7 @@ import {
   kindLabel,
   kindShortLabel,
   lastRunLine,
+  liveDictationEnabled,
   loadDictationModels,
   pickRecorderMime,
   modelBadge,
@@ -52,6 +53,18 @@ import {
 // model list is still the source of the models on offer.
 const APP_KEY = 'dictation';
 
+// hintSummaryLine({ live, language, prompt }) — the collapsed Options row's
+// one line. Live transcription is the switch users actually come back for, so
+// the state it is in must survive folding the fields away; the two hints
+// follow, and an empty string means "nothing set" (the row then shows nothing).
+export function hintSummaryLine(opts) {
+  const o = opts || {};
+  const parts = [o.live === false ? 'live off' : 'live on'];
+  if (String(o.language || '').trim()) parts.push(String(o.language).trim());
+  if (String(o.prompt || '').trim()) parts.push(String(o.prompt).trim());
+  return parts.join(' · ');
+}
+
 export function DictationView() {
   // ---- Settings / catalog -------------------------------------------------
   const [models, setModels] = useState([]);
@@ -60,6 +73,12 @@ export function DictationView() {
   const [providerId, setProviderId] = useState('');
   const [language, setLanguage] = useState('');
   const [prompt, setPrompt] = useState('');
+  // Live transcription: send audio as it is spoken, so the chat composer's draft
+  // grows while the user talks. App-level with the model (both live in the same
+  // `dictation` record), default on, and only meaningful in the chat: this page
+  // records a take and transcribes it once, on purpose.
+  const [live, setLive] = useState(true);
+
   // The two hint inputs are the exception rather than the rule, so they live
   // behind a disclosure (see the Options row below the picker).
   const [showHints, setShowHints] = useState(false);
@@ -177,9 +196,11 @@ function applyCatalog(catalog, saved, opts) {
       setCatalogError('');
       let saved = {};
       try {
-        const app = await fetchJson('/api/settings');
-        if (app.status === 200 && app.body && app.body.app) saved = app.body.app[APP_KEY] || {};
-      } catch { /* a settings read failure must not block the recorder */ }
+const app = await fetchJson('/api/settings');
+if (app.status === 200 && app.body && app.body.app) saved = app.body.app[APP_KEY] || {};
+} catch { /* a settings read failure must not block the recorder */ }
+if (!cancelled) setLive(liveDictationEnabled(saved));
+
       let catalog = { models: [], kinds: [], total: 0 };
       try {
         catalog = await loadDictationModels(projectDir, { live: false });
@@ -559,12 +580,20 @@ function onPickModel(next) {
   // Persisting the choice is best-effort: a failure to remember the model must
   // never look like a failure to record, so nothing here reports an error.
   async function remember(patch) {
-    try {
-      const app = await fetchJson('/api/settings');
-      const current = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
-      await saveApp({ [APP_KEY]: Object.assign({}, current, patch) });
-    } catch { /* the picker still works for this session */ }
+  try {
+  const app = await fetchJson('/api/settings');
+  const current = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
+  await saveApp({ [APP_KEY]: Object.assign({}, current, patch) });
+  } catch { /* the picker still works for this session */ }
   }
+  // onToggleLive(next) — the chat's live dictation, remembered next to the model
+  // it applies to. The switch moves immediately (it is a preference, not a
+  // network operation) and the write is best-effort like `onPickModel`'s.
+  function onToggleLive(next) {
+  setLive(next);
+  remember({ live: next });
+  }
+
 
   const selectedRow = models.find((m) => m.id === modelId && (m.provider || '') === providerId) || null;
   // Why the selected model is on the list, when its name does not say. Shown
@@ -577,7 +606,7 @@ function onPickModel(next) {
 
   // The per-run hints as one line, for the collapsed Options row: a value the
   // user set must stay visible when the fields are folded away.
-  const hintSummary = [language.trim(), prompt.trim()].filter(Boolean).join(' · ');
+  const hintSummary = hintSummaryLine({ live, language, prompt });
   // The project whose models these are, when it is worth naming (see scopeNote).
   const scope = scopeNote(project, projectDir);
 
@@ -706,6 +735,25 @@ function onPickModel(next) {
         ),
         showHints
           ? h('div', { class: 'dictation__fields' },
+            // Live transcription is a chat-side behaviour, and this page is
+            // where it is set because this page owns dictation settings. The
+            // note says where it takes effect, so nobody waits for this page's
+            // transcript to appear word by word.
+            h('label', { class: 'dictation__switch', for: 'dictation-live' },
+              h('input', {
+                id: 'dictation-live',
+                type: 'checkbox',
+                checked: live,
+                onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
+              }),
+              h('span', { class: 'dictation__switch-body' },
+                h('span', { class: 'dictation__switch-title' }, 'Live transcription'),
+                // The switch is folded into the collapsed row's summary too, so a
+                // value the user changed is not hidden behind a closed disclosure.
+                h('span', { class: 'hint hint--compact' },
+                  'In a chat, the composer fills in as you speak instead of waiting for you to stop. This page still records and transcribes once.')
+              )
+            ),
             h('div', { class: 'dictation__field' },
               h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
               h('input', {
