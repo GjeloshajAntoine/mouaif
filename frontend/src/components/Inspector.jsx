@@ -23,6 +23,7 @@ import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
+import { InspectorProfilesSheet } from './inspector/InspectorProfilesSheet.jsx';
 // Short human label for a Chrome DevTools target type. Chrome uses a
 // handful of types: `page` (a normal tab), `iframe`, `webview`,
 // `service_worker`, `background_page` (extension), and a few rarely-seen
@@ -503,6 +504,16 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
   });
   const [phase, setPhase] = useState('setup');
   const [, setTick] = useState(0);
+  // Chrome profile management (see src/inspectorProfiles.js). The sheet is
+  // only reachable from the setup phase, and the scan is read-only and
+  // cheap, so this state lives here rather than in a store. `activeProfile`
+  // is mirrored from /api/inspector/config so the setup screen can name the
+  // active profile without opening the sheet.
+  const [profilesOpen, setProfilesOpen] = useState(false);
+  const [profilesList, setProfilesList] = useState(null);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState('');
+  const [activeProfile, setActiveProfile] = useState(null);
   const consoleEntries = useRef([]);
   const networkEntries = useRef([]);
   const consoleVL = useRef(null);
@@ -940,7 +951,8 @@ useEffect(() => {
       if (r.status !== 200) { setStatus('HTTP ' + r.status); return; }
     setDebuggerUrl(r.body.url || '');
     if (urlInput.current) urlInput.current.value = r.body.url || '';
-      setStatus((r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl);
+    setActiveProfile(r.body.activeProfile || null);
+    setStatus((r.body.url || '') ? ('current: ' + r.body.url) : 'using default: ' + r.body.defaultUrl);
       rerender();
       // Auto-discover on mount when a debugger URL is already saved.
       // Returning users land on the targets list directly instead of
@@ -971,7 +983,133 @@ useEffect(() => {
     if (saveBtn.current) saveBtn.current.disabled = false;
     if (r.status !== 200) { setStatus('HTTP ' + r.status); return; }
     setDebuggerUrl(r.body.url || next);
+    // The server drops the active profile when the URL is typed by hand;
+    // mirror that so the setup screen stops naming a profile it no longer
+    // describes (see inspectorProfiles.clearActive).
+    setActiveProfile((r.body && r.body.activeProfile) || null);
     setStatus('saved.');
+  }
+
+  // ---- Chrome profiles -------------------------------------------------
+  // loadProfiles — fetch the discovered profile list. Read-only on the
+  // server (it scans user-data-dirs and the settings store); no Chrome
+  // needs to be running for this to succeed.
+  async function loadProfiles() {
+    setProfilesLoading(true);
+    setProfilesError('');
+    let r;
+    try { r = await fetchJson('/api/inspector/profiles'); }
+    catch (e) {
+      setProfilesLoading(false);
+      setProfilesError('network error loading profiles');
+      return;
+    }
+    setProfilesLoading(false);
+    if (r.status !== 200 || !r.body) {
+      setProfilesError((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
+      return;
+    }
+    setProfilesList(r.body);
+    rerender();
+  }
+
+  // openProfiles — the sheet is opened immediately and filled when the
+  // scan returns, so a slow filesystem never looks like a dead button.
+  function openProfiles() {
+    setProfilesOpen(true);
+    setProfilesError('');
+    loadProfiles();
+  }
+
+  // switchProfile — make a profile the attach point. The server writes
+  // that profile's endpoint into the global debugger URL, which is the
+  // same value every other Inspector path already reads, so the URL field
+  // is refreshed from the response rather than assumed.
+  async function switchProfile(row) {
+    if (!row || !row.id) return;
+    if (row.active) { setProfilesOpen(false); return; }
+    setStatus('switching to ' + row.label + '…');
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/profiles/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: row.id })
+      });
+    } catch (e) { setStatus('network error switching profile'); return; }
+    if (r.status !== 200 || !r.body || !r.body.url) {
+      setStatus((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
+      return;
+    }
+    setDebuggerUrl(r.body.url);
+    if (urlInput.current) urlInput.current.value = r.body.url;
+    setActiveProfile(r.body.profile ? { id: r.body.profile.id, label: r.body.profile.label } : { id: row.id, label: row.label });
+    setStatus('now using ' + row.label + ' at ' + r.body.url);
+    setProfilesOpen(false);
+    await loadProfiles();
+    loadTargets();
+  }
+
+  // saveProfileEndpoint — remember a port for a profile without attaching
+  // to it, so the user can pre-configure the second Chrome before
+  // starting it.
+  async function saveProfileEndpoint(row, url) {
+    if (!row || !row.id) return;
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/profiles/endpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: row.id, url })
+      });
+    } catch (e) { setProfilesError('network error saving endpoint'); return; }
+    if (r.status !== 200 || !r.body || !r.body.url) {
+      setProfilesError((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
+      return;
+    }
+    setProfilesError('');
+    setStatus('saved endpoint for ' + row.label);
+    await loadProfiles();
+  }
+
+  async function addProfileDir(dir) {
+    let r;
+    try {
+      r = await fetchJson('/api/inspector/profiles/dirs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir })
+      });
+    } catch (e) { setProfilesError('network error adding folder'); return; }
+    if (r.status !== 200) {
+      setProfilesError((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
+      return;
+    }
+    setProfilesError('');
+    setStatus(r.body.profiles + ' profile(s) in that folder');
+    await loadProfiles();
+  }
+
+  async function removeProfileDir(dir) {
+    let r;
+    try { r = await fetchJson('/api/inspector/profiles/dirs?dir=' + encodeURIComponent(dir), { method: 'DELETE' }); }
+    catch (e) { setProfilesError('network error removing folder'); return; }
+    if (r.status !== 200) {
+      setProfilesError((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
+      return;
+    }
+    setProfilesError('');
+    await loadProfiles();
+  }
+
+  // pickProfileUrl — copy a profile's endpoint into the URL field without
+  // saving it. This is the escape hatch for "this profile is not the one
+  // I want active, but its endpoint is what I need to type".
+  function pickProfileUrl(url) {
+    if (!url) return;
+    if (urlInput.current) urlInput.current.value = url;
+    setStatus('copied ' + url + ' into the URL field — tap Save & discover');
+    setProfilesOpen(false);
   }
 
   async function loadTargets() {
@@ -1241,18 +1379,49 @@ useEffect(() => {
       h('section', null,
         h('p', { class: 'hint' }, 'Start Chrome with ', h('code', null, '--remote-debugging-port=9222'), ' and paste its debugger URL below.'),
         h('div', { class: 'row' },
-          h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
-          h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
+        h('label', { class: 'label', for: 'inspectorUrl' }, 'Chrome debugger URL'),
+        h('input', { ref: urlInput, class: 'input', id: 'inspectorUrl', type: 'text', placeholder: 'http://127.0.0.1:9222' })
+        ),
+        // Chrome profile entry point. Shown above the actions because it *fills*
+        // the URL field above: the one thing a user with two Chrome profiles
+        // needs is "which of my profiles is this port", and that answer is not
+        // something a URL field can give.
+        h('div', { class: 'inspector__profiles-row' },
+        h('button', {
+        class: 'btn inspector__profiles-open',
+        type: 'button',
+        'aria-haspopup': 'dialog',
+        'aria-expanded': String(profilesOpen),
+        onClick: (e) => { e.stopPropagation(); openProfiles(); }
+        }, 'Chrome profiles'),
+        activeProfile
+        ? h('span', { class: 'inspector__profiles-active', title: 'Active Chrome profile' },
+        'active: ', h('strong', null, activeProfile.label))
+        : h('span', { class: 'inspector__profiles-active inspector__profiles-active--none' }, 'no profile selected')
         ),
         h('div', { class: 'row row--actions' },
-          h(StatusPill, { text: statusText }),
-          h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
-          h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
+        h(StatusPill, { text: statusText }),
+        h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
+        h('button', { class: 'btn', type: 'button', onClick: loadTargets }, 'Discover')
         )
-      ),
-      h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.')
-    );
-  }
+        ),
+        h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.'),
+        profilesOpen
+        ? h(InspectorProfilesSheet, {
+        list: profilesList,
+        loading: profilesLoading,
+        error: profilesError,
+        onSwitch: switchProfile,
+        onSaveEndpoint: saveProfileEndpoint,
+        onAddDir: addProfileDir,
+        onRemoveDir: removeProfileDir,
+        onRefresh: loadProfiles,
+        onPickUrl: pickProfileUrl,
+        onClose: () => setProfilesOpen(false)
+        })
+        : null
+        );
+        }
 
   if (phase === 'targets') {
     return h(Fragment, null,

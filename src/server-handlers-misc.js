@@ -17,6 +17,7 @@ chats,
 liveChat,
 mcp,
 inspector,
+inspectorProfiles,
 safeDecode
 } = require('./server-shared.js');
 const { requestRestart } = require('./restart.js');
@@ -330,9 +331,16 @@ async function handleInspector(req, res, parsed) {
   const method = req.method;
   const q = parsed.query || {};
 
-  // GET /api/inspector/config  -> { url, defaultUrl }
+  // GET /api/inspector/config  -> { url, defaultUrl, activeProfile }
+  // `activeProfile` is `{ id, label }` or null. It is read from the store
+  // (no scan), so the setup screen can name the active Chrome profile on
+  // mount without a second round-trip.
   if (urlPath === '/api/inspector/config' && method === 'GET') {
-    return sendJSON(res, 200, { url: inspector.getDebuggerUrl(), defaultUrl: inspector.defaultDebuggerUrl() });
+    return sendJSON(res, 200, {
+      url: inspector.getDebuggerUrl(),
+      defaultUrl: inspector.defaultDebuggerUrl(),
+      activeProfile: inspectorProfiles.activeProfile()
+    });
   }
 
   // PUT /api/inspector/config  body: { url }  -> { url }
@@ -351,7 +359,11 @@ async function handleInspector(req, res, parsed) {
       return sendJSON(res, 400, { error: 'url must be http or https' });
     }
     inspector.setDebuggerUrl(body.url);
-    return sendJSON(res, 200, { url: inspector.getDebuggerUrl() });
+    // A hand-typed URL is no longer attributable to a Chrome profile, so
+    // drop the active badge rather than leave it claiming the profile
+    // still owns this endpoint (see inspectorProfiles.clearActive).
+    inspectorProfiles.clearActive();
+    return sendJSON(res, 200, { url: inspector.getDebuggerUrl(), activeProfile: null });
   }
 
   // GET /api/inspector/version  -> Chrome /json/version
@@ -475,16 +487,100 @@ async function handleInspector(req, res, parsed) {
     }
   }
 
+  // GET /api/inspector/profiles  -> discovered Chrome profiles + endpoints
+  // Read-only discovery (see src/inspectorProfiles.js). Each profile
+  // carries the debug endpoint Inspector would attach to, so the UI can
+  // show the port and switch in one tap.
+  if (urlPath === '/api/inspector/profiles' && method === 'GET') {
+    try {
+      return sendJSON(res, 200, inspectorProfiles.listProfiles());
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'EPROFILES' });
+    }
+  }
+
+  // POST /api/inspector/profiles/switch  body: { id } -> { url, profile }
+  // Makes a profile the Inspector's attach point by writing its endpoint
+  // into the existing global debugger URL. No Chrome is started or stopped.
+  if (urlPath === '/api/inspector/profiles/switch' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (typeof body.id !== 'string' || !body.id.trim()) {
+      return sendJSON(res, 400, { error: 'id is required' });
+    }
+    try {
+      const result = inspectorProfiles.switchProfile(body.id.trim());
+      return sendJSON(res, 200, {
+        url: result.url,
+        profile: { id: result.profile.id, key: result.profile.key, label: result.profile.label }
+      });
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EPROFILES' });
+    }
+  }
+
+  // POST /api/inspector/profiles/endpoint  body: { id, url } -> { url }
+  // Remembers the endpoint for ONE profile without switching to it, so a
+  // user can pre-configure ports before the other Chrome is running.
+  if (urlPath === '/api/inspector/profiles/endpoint' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (typeof body.id !== 'string' || !body.id.trim()) {
+      return sendJSON(res, 400, { error: 'id is required' });
+    }
+    if (typeof body.url !== 'string' || !body.url.trim()) {
+      return sendJSON(res, 400, { error: 'url is required' });
+    }
+    try {
+      const result = inspectorProfiles.setProfileEndpoint(body.id.trim(), body.url.trim());
+      return sendJSON(res, 200, {
+        url: result.url,
+        profile: { id: result.profile.id, key: result.profile.key, label: result.profile.label }
+      });
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EPROFILES' });
+    }
+  }
+
+  // POST /api/inspector/profiles/dirs  body: { dir } -> { dir, profiles }
+  // Registers an extra Chrome user-data-dir the automatic scan does not
+  // know about (portable Chrome, a profile tree on another volume).
+  if (urlPath === '/api/inspector/profiles/dirs' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (typeof body.dir !== 'string' || !body.dir.trim()) {
+      return sendJSON(res, 400, { error: 'dir is required' });
+    }
+    try {
+      return sendJSON(res, 200, inspectorProfiles.addDir(body.dir.trim()));
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EPROFILES' });
+    }
+  }
+
+  // DELETE /api/inspector/profiles/dirs?dir=<abs path> -> { dir, removed }
+  if (urlPath === '/api/inspector/profiles/dirs' && method === 'DELETE') {
+    const dir = q.dir ? safeDecode(q.dir) : '';
+    if (!dir) return sendJSON(res, 400, { error: 'dir is required' });
+    return sendJSON(res, 200, inspectorProfiles.removeDir(dir));
+  }
+
   return sendJSON(res, 404, { error: 'Not found', scope: 'inspector' });
 }
 
 function inspectorErrorStatus(err) {
-  switch (err && err.code) {
-    case 'EBADURL':
-    case 'EBADINPUT':
-      return 400;
-    case 'ECHROME_UNREACHABLE':
-      return 502;
+switch (err && err.code) {
+case 'EBADURL':
+case 'EBADINPUT':
+return 400;
+// A profile id the scan does not know: the UI is holding a stale
+// list (Chrome profile removed, or another mouaif window changed the
+// active one), which is a 404 and not a server fault.
+case 'EPROFILE_NOT_FOUND':
+case 'ENOTPROFILEDIR':
+return 404;
+case 'ECHROME_UNREACHABLE':
+return 502;
     case 'ETARGET_NOT_FOUND':
       return 404;
     case 'EUPSTREAM':

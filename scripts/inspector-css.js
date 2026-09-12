@@ -1,7 +1,7 @@
 'use strict';
 
 // The Inspector styles are the biggest CSS surface in the app, so
-// `frontend/src/inspector.css` is an entry point that `@import`s twelve
+// `frontend/src/inspector.css` is an entry point that `@import`s thirteen
 // per-panel parts (see docs/features/inspector.md). Vite inlines those
 // imports into one bundle.
 //

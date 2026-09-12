@@ -1,0 +1,223 @@
+/* Inspector profiles — split out of inspector.css.
+
+   The Chrome-profile manager: a 44 px row per discovered profile plus the
+   per-row endpoint form and the user-data-dir list. Mobile-first: single
+   column, full-width tap targets, no hover-only affordance.
+
+   This file holds one contiguous slice of the cascade. The @import order
+   in inspector.css is the original rule order — do not reorder the
+   imports or move a chunk between files without checking the cascade,
+   because several sections override each other by coming later.
+   See docs/features/inspector-profiles.md. */
+
+/* Entry point on the setup screen: a button plus the active profile's
+   name. The name wraps rather than pushing the button off the row — at
+   360 px a long profile name ("Personal (work laptop)") would otherwise
+   scroll the button out of reach. */
+.inspector__profiles-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0 2px;
+}
+.inspector__profiles-open {
+  flex: 0 0 auto;
+  min-height: var(--tap, 44px);
+}
+.inspector__profiles-active {
+  flex: 1 1 120px;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--fg-soft);
+  overflow-wrap: anywhere;
+}
+.inspector__profiles-active strong { color: var(--fg); }
+.inspector__profiles-active--none { font-style: italic; }
+
+/* The sheet is content-driven and can outgrow 80 dvh with several
+   profiles, so the body is the single scroller (the shared
+   .inspector__sheet-body already owns overflow-y). */
+.inspector__sheet--profiles { max-height: 85dvh; }
+.inspector__sheet-body--profiles { padding: 8px 12px calc(16px + var(--safe-bottom, 0px)) 12px; }
+.inspector__profiles-lead {
+  margin: 4px 2px 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--fg-soft);
+}
+.inspector__profiles-lead code {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+.inspector__profiles-hint {
+  margin: 2px 2px 6px;
+  font-size: 0.75rem;
+  color: var(--fg-soft);
+  line-height: 1.4;
+}
+.inspector__profiles-error {
+  margin: 0 2px 10px;
+  font-size: 0.8rem;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.inspector__profiles-empty {
+  margin: 8px 2px;
+  color: var(--fg-soft);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.inspector__profiles-empty-hint { font-size: 0.76rem; }
+.inspector__profiles-empty code { font-family: var(--font-mono); font-size: 0.72rem; }
+
+/* One profile. The card is the tap target's container; the *whole* main
+   row is one button so the name, the account line and the marker are all
+   inside the same ≥44 px target (a row that is only tappable on its text
+   is the classic mobile miss). */
+.inspector__profile {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.inspector__profile.is-active { border-color: var(--accent); }
+.inspector__profile-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap, 44px);
+  padding: 8px 10px;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--fg);
+  font: inherit;
+}
+.inspector__profile-mark {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--fg-soft);
+}
+.inspector__profile.is-active .inspector__profile-mark { color: var(--accent); }
+.inspector__profile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.inspector__profile-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__profile-sub {
+  font-size: 0.72rem;
+  color: var(--fg-soft);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector__profile-badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.inspector__profile-badge--port { color: var(--fg-soft); }
+
+/* Secondary actions live on their own row under the main button, so the
+   main tap (attach) can never be hit by accident while aiming for
+   "Endpoint". */
+.inspector__profile-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+  flex-wrap: wrap;
+}
+.inspector__profile-action {
+  min-height: var(--tap, 44px);
+  padding: 0 12px;
+  font-size: 0.76rem;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.inspector__profile-action[aria-expanded="true"] {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+/* The per-row endpoint form. It sits inside the card, directly under the
+   row it belongs to, so the field is never ambiguous about which profile
+   it edits. */
+.inspector__profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+.inspector__profile-form-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--fg-soft);
+}
+.inspector__profile-form-actions { display: flex; gap: 6px; }
+.inspector__profile-form-actions .btn { min-height: var(--tap, 44px); flex: 1 1 auto; }
+.inspector__profile-form-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--fg-soft);
+}
+
+/* User-data-dir list. The path is the long part, so it wraps instead of
+   forcing the kind/Remove controls off-screen. */
+.inspector__profile-dir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: var(--tap, 44px);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  margin-bottom: 6px;
+}
+.inspector__profile-dir-path {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.inspector__profile-dir-kind {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fg-soft);
+}
+.inspector__profiles-add {
+  width: 100%;
+  min-height: var(--tap, 44px);
+  margin-top: 2px;
+}
+.inspector__profiles-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.inspector__profiles-foot .btn { min-height: var(--tap, 44px); }

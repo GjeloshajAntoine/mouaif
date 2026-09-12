@@ -290,6 +290,44 @@ for (const name of endpoints) {
 check('the debugger default port is unchanged (9222)',
   /9222/.test(inspector) || /9222/.test(read('src/inspector.js')));
 
+// ---- 7. Chrome profile management --------------------------------------
+// The profile manager is the Inspector's only new surface in this round,
+// and it is a dialog reachable from the setup phase — exactly the kind of
+// thing a layout refactor drops without any behavioural test noticing.
+
+const profilesSheet = read('frontend/src/components/inspector/InspectorProfilesSheet.jsx');
+const profilesModule = read('src/inspectorProfiles.js');
+const profilesCss = read('frontend/src/inspector-profiles.css');
+
+check('setup screen offers the Chrome profiles entry point',
+  /inspector__profiles-open/.test(inspector) && /Chrome profiles/.test(inspector));
+check('the profiles sheet is mounted from Inspector.jsx',
+  /h\(InspectorProfilesSheet/.test(inspector));
+check('the sheet is a dialog sheet with the shared overlay',
+  /inspector__overlay/.test(profilesSheet) && /role: 'dialog'/.test(profilesSheet));
+check('the sheet uses the shared modal behaviour hook',
+  /useModal\(/.test(profilesSheet));
+check('each profile row is one button (whole row is a tap target)',
+  /inspector__profile-main/.test(profilesSheet) && /aria-pressed/.test(profilesSheet));
+check('switching a profile is a per-row action', /onSwitch/.test(profilesSheet));
+check('saving an endpoint is separate from switching',
+  /onSaveEndpoint/.test(profilesSheet) && /profiles\/endpoint/.test(inspector));
+check('profile folders can be added and removed',
+  /onAddDir/.test(profilesSheet) && /onRemoveDir/.test(profilesSheet));
+check('the active profile is named on the setup screen',
+  /activeProfile/.test(inspector) && /activeProfile: inspectorProfiles\.activeProfile\(\)/.test(server));
+check('profile rows meet the 44 px tap minimum',
+  /min-height: var\(--tap, 44px\)/.test(profilesCss));
+check('the profiles sheet part is imported by the entry point',
+  // Read the raw entry point: `read()` inlines the @imports, so the
+  // import line itself is only visible in the file on disk.
+  /@import '\.\/inspector-profiles\.css'/.test(fs.readFileSync(path.join(root, 'frontend/src/inspector.css'), 'utf8')));
+check('discovery never writes outside the app store',
+  !/fs\.writeFileSync/.test(profilesModule) && !/fs\.mkdirSync/.test(profilesModule));
+check('the server exposes the profiles, switch, endpoint and dirs routes',
+  ['/api/inspector/profiles\'', '/api/inspector/profiles/switch', '/api/inspector/profiles/endpoint', '/api/inspector/profiles/dirs']
+    .every((r) => server.includes(r)));
+
 // ---- Summary -----------------------------------------------------------
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

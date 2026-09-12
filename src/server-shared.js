@@ -47,6 +47,7 @@ const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');
 const inspector = require('./inspector.js');
+const inspectorProfiles = require('./inspectorProfiles.js');
 const prompts = require('./prompts.js');
 const promptProfiles = require('./promptProfiles.js');
 const tags = require('./tags.js');
@@ -657,6 +658,7 @@ module.exports = {
   messages,
   trace,
   inspector,
+  inspectorProfiles,
   prompts,
   promptProfiles,
   tags,
