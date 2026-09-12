@@ -105,6 +105,19 @@ Effects   opacity · shadow · border style · border width
   is the card sheet;
   [`frontend/src/inspector-touch.css`](../../frontend/src/inspector-touch.css) is
   the styling, imported by `frontend/src/inspector.css`.
+- **The card picture is `inspector__propcard`, not `inspector__preview`.** The
+  card sheet's thumbnail was originally `.inspector__preview` — the name the
+  Preview panel already uses for its live page screenshot. Because
+  `inspector-touch.css` is imported *after* `inspector-targets.css`, the card
+  rule won: the live preview became a 52 × 52 card, and its
+  `overflow: hidden` clipped the preview frame to a ~38 px column — which in
+  turn collapsed the type bar into a 20 px input and pushed its Send button off
+  the left edge of the panel, and tripped the preview's auto-fit heuristic into
+  permanently choosing natural (panned) size. One stylesheet section silently
+  re-laid out a different panel. The classes are namespaced
+  (`.inspector__propcard`, `-box`, `-mark`, `-glyph`) so the two surfaces cannot
+  collide again, and `scripts/test-inspector-touch-controls.js` asserts that the
+  touch sheet contains no `.inspector__preview` selector at all.
 - **Ranges and steps** live in `RANGE_SPECS` (per property, side longhands
   resolving to their shorthand), and `specForValue` handles the one property whose
   authored and resolved forms disagree: `line-height` is written as a multiplier
