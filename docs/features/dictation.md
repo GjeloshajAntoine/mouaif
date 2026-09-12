@@ -22,9 +22,10 @@ performs the upstream call.
   transcribes is selected for you.
 3. Tap **Record**. The timer and the level meter confirm the microphone is
    live. Recording stops on the second tap, or automatically at 2:00.
-4. Tap **Transcribe**. The transcript appears in an editable field.
+4. Tap **Transcribe**. The transcript appears in an editable field, and the
+  line under it reports the run — model, size, duration and **what it cost**.
 5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest
-   chat's draft), **Send to chat** (same, labelled for a send), or **Clear**.
+  chat's draft), **Send to chat** (same, labelled for a send), or **Clear**.
 
 Optional per-run hints sit under the picker, folded away behind an **Options**
 row (it shows whatever is set, so a value the user typed never looks lost):
@@ -39,8 +40,42 @@ row (it shows whatever is set, so a value the user typed never looks lost):
 Inside a chat, the microphone button next to the image button records and
 transcribes with the same remembered model, appending the text at the caret of
 the draft. Nothing is sent: dictation produces a draft, and sending stays a
-user decision. If no dictation model has been chosen yet, the button says so
+user decision. The chat's own status line under the composer confirms the
+hand-off (`dictation added`), and the button's tooltip says the same in words.
+If no dictation model has been chosen yet, the button says so
 and points at **Settings → App defaults → Dictation**.
+
+### What a run cost
+
+A transcription is billed work, so both surfaces report what it cost:
+
+- the **Dictation page** ends its "Last run" line with `cost $0.00055`;
+- the **composer microphone** appends it to the chat's status line
+  (`dictation added · $0.00055`) and repeats it in the button's tooltip.
+
+The number is resolved server-side with the same pricing table the chat uses —
+the model record's own `pricing`, then the app-level table, then the built-in
+defaults — so a per-model override in `.mouaif.json` applies here too. See
+[Usage metrics](usage-metrics.md).
+
+`--` means *unknown*, not free, and it is the common answer:
+
+| Situation | Cost line |
+| --- | --- |
+| the provider reported tokens, and the model has a price | `$0.00055` |
+| the provider reported no tokens (`whisper-1` bills per minute and answers with the transcript alone) | `--` |
+| no pricing record for the model anywhere | `--` |
+
+The provider's report is normalized to `promptTokens` / `completionTokens`, so
+the audio counts as input: Gemini's `usageMetadata` (audio rides in the prompt)
+and the OpenAI-shaped `usage` block are both understood. A run that reports
+nothing stays `null` all the way to the UI rather than becoming `0`.
+
+**Dictation cost is not part of any chat or project total.** It is not a chat
+turn, so the chat header's Total, the chat list and the project total are
+unchanged by dictating — which is why the cost is printed at the point of use
+instead. (Folding it into those sums would mean attributing a dictation run to a
+chat, and is deliberately not done here.)
 
 ### The layout of the page
 
@@ -200,6 +235,12 @@ chat cannot appear here unless it can transcribe. See
 - **Failures name their cause.** A rejected key surfaces the provider's own
   message with HTTP 401, an unreachable provider is 502, a stalled one is 504
   after 60s, and a recording that is too long is 413.
+- **A run reports what it cost, and says `--` when it cannot know.** The
+  transcription response carries `usage` (the provider's own token report, or
+  `null`) and `cost` (priced by the server from the same table the chat uses,
+  with `known: false` when there is nothing to price). Both surfaces render the
+  same `--` convention the chat's cost line uses; neither ever shows `$0.00`
+  for work that was merely not reported.
 - **A provider that could not list its models is named and explained.** The
   connection is called what Settings calls it (*OpenAI compatible*, not
   `openai-compatible`), the provider's own message is kept because it is the
@@ -220,17 +261,28 @@ chat cannot appear here unless it can transcribe. See
 - `src/transcribe.js` — the two request families, the response parsers, the
   family inference, and the candidate filter. Pure: multipart bodies are built
   by hand (not with `FormData`) so the wire shape can be asserted byte-for-byte
-  in a test.
+  in a test. `usageFromResponse` reads the provider's token report for both
+  families; `parseTranscribeResponse` carries it through as `usage` (or `null`).
+- `src/usage.js` prices a run: the handler calls the same `computeCost` the chat
+  uses, with the resolved model record (which already carries a live catalog
+  entry's provider pricing) so a per-model override applies identically. No
+  transcription ids are added to the built-in table: speech-to-text is usually
+  billed per minute of audio, which `inputPer1K` / `outputPer1K` cannot express,
+  and inventing a token price for it would be worse than `--`.
 - `src/ai-endpoints.js` carries OpenRouter's `architecture.input_modalities`
   through to the model record as `inputModalities`. That is the capability
   signal the candidate filter uses for models whose names say nothing.
 - `src/server-handlers-transcribe.js` — `GET /api/ai/transcribe/models` and
   `POST /api/ai/transcribe`. Resolves the model through the shared
   `resolveModel`, injects the credential server-side, applies the 60s deadline,
-  and maps typed codes onto HTTP statuses. Mounted before the generic
+  prices the provider's usage report, and maps typed codes onto HTTP statuses.
+  Mounted before the generic
   `/api/ai/` branch in `src/http-server.js`. The catalog merges the project
   models with the live lists; `?live=0` serves the project models alone (the
   page's fast first paint) and `?refresh=1` bypasses the live cache.
+  `POST /api/ai/transcribe` answers `{ text, model, kind, bytes, durationMs,
+  usage, cost }` — `usage: null` and `cost.known: false` when the provider
+  reported nothing.
 - `src/modelList.js` — the per-provider live model fetch and its hour-long
   cache, extracted from the `/api/ai/models/live` handler so the dictation
   catalog and the chat picker share one cache and one set of typed errors.
@@ -265,15 +317,27 @@ node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
 node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
   # `--write <dir>` emits it to serve statically
+node scripts/test-dictation-chat.cjs  # the composer mic inside the real
+  # ChatView (needs debug Chrome; see CDP_URL below)
 ```
 
 The UI fixture has two scenarios, selected from its top bar (or by opening
 `#live-only`): a project with its own model records, and a project with none
 whose models come entirely from the provider's live list.
 
+`test-dictation-chat.cjs` mounts the real `App` → `ChatView` in an isolated
+browser target with a stubbed `fetch`, a fake microphone and the real
+stylesheet, then taps the composer microphone twice. It pins the four things
+only that path can break: the model comes from the app-level `dictation` key
+(not from the chat), the transcript is appended to the draft *and* persisted,
+the run's cost reaches the chat's status line, and an unpriced run adds no
+figure at all. It needs a debug Chrome (`CDP_URL`, default
+`http://127.0.0.1:9222`), like the model-picker browser tests.
+
 ## Related
 
 - [AI client](ai-client.md) — the chat proxy this endpoint sits beside.
+- [Usage metrics](usage-metrics.md) — the pricing table a run's cost is resolved from.
 - [Model picker](model-picker.md) — where the models come from.
 - [App and project settings](app-and-project-settings.md) — the `dictation`
   app-level key and the project `models` array.

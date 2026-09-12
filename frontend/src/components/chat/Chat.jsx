@@ -79,7 +79,10 @@ function onTranscript(text) {
     el.focus({ preventScroll: true });
     el.setSelectionRange(caret, caret);
   } catch { /* a detached textarea cannot take a caret */ }
-  setStatus(refs, 'dictation added', 'success');
+  // `setStatus` takes the ref, not the bag of them: passing `refs` made this a
+  // no-op (`ref.current` was undefined), so "dictation added" never reached the
+  // status line under the composer.
+  setStatus(refs.status, 'dictation added', 'success');
 }
 
 // onDraftCraftAdded(result) — apply a Draft Craft hand-off to this chat's
