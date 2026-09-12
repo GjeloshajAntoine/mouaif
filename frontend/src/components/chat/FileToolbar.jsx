@@ -17,6 +17,7 @@ import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { formatCount } from './gitCount.js';
+import { orbCountFont } from './fileOrb.js';
 // The folder silhouette, as one path. Orb mode draws it twice — the same
 // shape offset down as the extruded side, then the light top face — so both
 // copies come from this constant rather than two hand-kept strings.
@@ -175,20 +176,34 @@ const statsLabel = hasStats
 // The counts are *siblings* of the SVG in both shapes, never children: they
 // are HTML text (so the browser can color and letter-space them) and the
 // stats box is positioned over the folder box by CSS.
-function counts(glow) {
+function counts(glow, fontSize) {
 if (!hasStats) return null;
 const suffix = glow ? ' file-toolbar__count--3d' : '';
-return h('span', { class: 'file-toolbar__git-stats' },
+const addText = '+' + formatCount(added);
+const delText = '−' + formatCount(deleted);
+// The orb's emboss steps are set in `em`, so they scale with the font the
+// sizer picked: a 1px extrusion on 7.5px digits is a smear, and a 0.4px one on
+// 14px digits is invisible. `--orb-count` is read by every emboss rule.
+const style = glow ? { '--orb-count': fontSize || orbCountFont(2) } : null;
+return h('span', { class: 'file-toolbar__git-stats', style },
 showAdditions ? h('span', { class: 'file-toolbar__git-additions' + suffix },
-glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, '+' + formatCount(added)) : null,
-h('span', { class: 'file-toolbar__count-face' }, '+' + formatCount(added))
+glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, addText) : null,
+h('span', { class: 'file-toolbar__count-face' }, addText)
 ) : null,
 showDeletions ? h('span', { class: 'file-toolbar__git-deletions' + suffix },
-glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, '−' + formatCount(deleted)) : null,
-h('span', { class: 'file-toolbar__count-face' }, '−' + formatCount(deleted))
+glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, delText) : null,
+h('span', { class: 'file-toolbar__count-face' }, delText)
 ) : null
 );
 }
+
+// The orb sets the count font from the longest count actually drawn, so the
+// digits stay as large as the folder allows (see orbCountFont); the flat
+// variant keeps its fixed `0.46rem` from CSS.
+const orbMaxLen = orb && hasStats
+? Math.max(showAdditions ? ('+' + formatCount(added)).length : 0, showDeletions ? ('−' + formatCount(deleted)).length : 0)
+: 0;
+const orbFont = orbMaxLen ? orbCountFont(orbMaxLen) : null;
 
 const folderGlyph = orb
 ? h('span', { class: 'file-toolbar__plate' },
@@ -215,7 +230,7 @@ h('svg', { class: 'file-toolbar__folder-shine', viewBox: '0 0 20 16', width: 28,
 h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' }),
 h('path', { d: 'M2.8 12.6h14.4' })
 ),
-counts(true)
+counts(true, orbFont)
 ),
 h('svg', { class: 'file-toolbar__defs', viewBox: '0 0 0 0', 'aria-hidden': 'true' },
 h('linearGradient', { id: 'fileToolbarFolderSide', x1: '0', y1: '0', x2: '0.3', y2: '1' },
@@ -228,15 +243,21 @@ h('stop', { offset: '0', 'stop-color': '#eef0fb' }),
 h('stop', { offset: '0.4', 'stop-color': '#c9ccdd' }),
 h('stop', { offset: '1', 'stop-color': '#8d92ab' })
 ),
-h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.55', y2: '1' },
+h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.62', y2: '1' },
+/* A glossy solid does not ramp evenly: it holds near-white across the
+   crown of the dome, then falls off quickly past the terminator. The
+   near-flat 0 -> 0.62 zone is that crown; the last two stops are the
+   fast fall-off. */
 h('stop', { offset: '0', 'stop-color': '#ffffff' }),
-h('stop', { offset: '0.34', 'stop-color': '#f4f4fb' }),
-h('stop', { offset: '0.72', 'stop-color': '#d8dae8' }),
-h('stop', { offset: '1', 'stop-color': '#a7acc2' })
+h('stop', { offset: '0.44', 'stop-color': '#fdfdff' }),
+h('stop', { offset: '0.62', 'stop-color': '#ebeCF6' }),
+h('stop', { offset: '0.82', 'stop-color': '#c6c9dc' }),
+h('stop', { offset: '1', 'stop-color': '#9ba1ba' })
 ),
-h('radialGradient', { id: 'fileToolbarFolderShade', cx: '0.62', cy: '0.72', r: '0.72' },
-h('stop', { offset: '0', 'stop-color': '#5b6280', 'stop-opacity': '0.55' }),
-h('stop', { offset: '0.55', 'stop-color': '#5b6280', 'stop-opacity': '0.16' }),
+h('radialGradient', { id: 'fileToolbarFolderShade', cx: '0.7', cy: '0.86', r: '0.82' },
+h('stop', { offset: '0', 'stop-color': '#464d6b', 'stop-opacity': '0.72' }),
+h('stop', { offset: '0.42', 'stop-color': '#4d5474', 'stop-opacity': '0.34' }),
+h('stop', { offset: '0.78', 'stop-color': '#5b6280', 'stop-opacity': '0.08' }),
 h('stop', { offset: '1', 'stop-color': '#5b6280', 'stop-opacity': '0' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderSheen', x1: '0', y1: '0', x2: '0.35', y2: '0.85' },

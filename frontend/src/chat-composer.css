@@ -329,8 +329,12 @@ transition: transform 90ms ease-out;
 .file-toolbar--orb .file-toolbar__plate {
 position: relative;
 display: block;
-width: 30px;
-height: 24px;
+/* 28x22 rather than 30x24: the folder GLYPH is only 28x22 inside a 34-wide
+   viewBox, so a wider plate paints glass where the folder is not, and the
+   digits then overhang the solid. Matching the plate to the silhouette keeps
+   the counts on the folder. */
+width: 28px;
+height: 22px;
 transform: translateZ(var(--orb-depth)) scale(1.06);
 transform-style: preserve-3d;
 will-change: transform;
@@ -338,7 +342,9 @@ will-change: transform;
 .file-toolbar--orb .file-toolbar__plate-face {
 position: absolute;
 inset: 0;
-border-radius: 5px;
+/* Sized to the folder silhouette (28x22), so a small radius follows its
+  corners rather than a bigger rectangle's. */
+border-radius: 3px;
 background:
 /* its own top-edge highlight, so the slab catches the same light as the ball */
 linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 40%),
@@ -497,16 +503,30 @@ mix-blend-mode: screen;
 .file-toolbar--orb .file-toolbar__git-stats {
 z-index: 4;
 inset: 0;
-padding: 4px 3px 3px;
+/* Top pad clears the folder's flap, which is the lowest part of the
+   silhouette's top edge. */
+padding: 2px 2px 1px;
 display: flex;
 flex-direction: column;
 justify-content: space-between;
-/* The reference render's digits fill the folder. 0.56rem = 8.96px, up from
-   7.36px in the flat look, which is as large as two 3-digit counts can be
-   before they collide. */
-font-size: 0.56rem;
+/* Two stacked counts share the folder's ~20px content box, so the line box is
+   the binding constraint, not just the glyph width: at line-height 1 a 12px
+   pair needs 24px and `overflow: hidden` silently cuts the bottom of every
+   glyph (measured 4.3px off the descender side), which is what stripped the
+   texture off the digits. 0.85 is tight enough to fit two lines while still
+   clearing the cap height — the counts are `+`/`-` and digits, so there is no
+   descender to collide with. */
+line-height: 0.85;
+/* `--orb-count` is set inline by FileToolbar from the longest count actually
+   drawn — 14px for `+0`, down to 7.5px for `+995k` — because one fixed size
+   cannot serve a 2-glyph and a 5-glyph count inside a 28x22 folder. Sized for
+   the worst case the digits are ~9px, where the emboss is sub-pixel mush;
+   sized for the common case they are chunky enough to read as a solid. The
+   fallback is the widest step, so a render without the inline style (or a
+   future caller that forgets it) is small rather than overflowing. */
+font-size: var(--orb-count, 7.5px);
 font-weight: 800;
-letter-spacing: -0.005em;
+letter-spacing: -0.01em;
 }
 .file-toolbar--orb .file-toolbar__git-additions,
 .file-toolbar--orb .file-toolbar__git-deletions {
@@ -517,26 +537,55 @@ display: block;
 .file-toolbar__count--3d {
 position: relative;
 }
+/* The emboss. Every offset is in `em`, so it scales with `--orb-count`: at
+   14px the digits get a 1.5px extrusion and a 1.4px lip, at 7.5px they get
+   0.8px and 0.75px. A fixed 0.6px step — the previous rule — is a visible
+   bevel on 14px digits and an invisible smear on 7.5px ones, which is why the
+   chunky case could not be reached by tuning this rule alone.
+
+   Three parts, and the order matters: the echo under the glyph (the shadow the
+   letterpress casts), the white lip on the *far* side of the light (the
+   highlight the solid's edge catches), then the bloom in the glyph's own hue.
+   The bloom is a glow rather than a different ink, so the 6:1 contrast the
+   colors are tuned for is unchanged. */
 .file-toolbar__count-echo {
 position: absolute;
-left: 0.6px;
-top: 0.6px;
-color: rgba(4, 8, 16, 0.72);
+left: 0.115em;
+top: 0.115em;
+color: rgba(2, 6, 14, 0.82);
 }
 .file-toolbar__count-face {
 position: relative;
 }
+/* Five stacked shadows per glyph, and the ORDER is the material. Read top to
+   bottom as the light travels over a raised letter:
+     1. the bevel: a dark bite along the glyph's top-inner edge, where a
+        raised solid turns away from an overhead light. This is the shadow
+        that makes the digits look milled rather than printed, and it is the
+        one the flat version had none of.
+     2. the lip: a bright edge on the far side, where the solid's base meets
+        the plate.
+     3. the bloom, in the glyph's own hue. Deliberately modest — at a higher
+        opacity it lifts the fill toward pastel and the saturated green/red
+        the colors are chosen for is lost (measured: the glyph core read
+        rgb(39,134,45) instead of #006600's rgb(0,102,0)).
+     4. a wide, soft halo so the glow reaches the plate rather than stopping
+        at the glyph's edge. */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 1px 0 rgba(255, 255, 255, 0.65),
-0 0 3px rgba(0, 255, 90, 0.95),
-0 0 6px rgba(0, 210, 70, 0.60);
+0 -0.055em 0 rgba(0, 40, 0, 0.55),
+0 0.1em 0 rgba(255, 255, 255, 0.72),
+0 0 0.2em rgba(0, 210, 70, 0.6),
+0 0 0.42em rgba(0, 190, 60, 0.42),
+0 0 0.8em rgba(0, 170, 50, 0.28);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 1px 0 rgba(255, 255, 255, 0.60),
-0 0 3px rgba(255, 80, 80, 0.95),
-0 0 6px rgba(230, 40, 40, 0.60);
+0 -0.055em 0 rgba(60, 0, 0, 0.55),
+0 0.1em 0 rgba(255, 255, 255, 0.68),
+0 0 0.2em rgba(235, 55, 55, 0.6),
+0 0 0.42em rgba(215, 35, 35, 0.42),
+0 0 0.8em rgba(190, 20, 20, 0.28);
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced

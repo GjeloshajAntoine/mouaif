@@ -48,7 +48,7 @@ function check(name, fn) {
 
 // ---- 1. the preference reader -------------------------------------------
 
-const { fileOrbFromApp, FILE_ORB_DEFAULT, FILE_ORB_KEY } = await import(
+const { fileOrbFromApp, FILE_ORB_DEFAULT, FILE_ORB_KEY, orbCountFont, ORB_FONT_MAX } = await import(
   'data:text/javascript;base64,' + Buffer.from(read('frontend/src/components/chat/fileOrb.js')).toString('base64')
 );
 
@@ -144,6 +144,9 @@ async function renderToolbar(orb) {
   });
   const strip = (src) => src.replace(/^import .*;$/gm, '').replace(/^export /gm, '');
   vm.runInContext(strip(read('frontend/src/components/chat/gitCount.js')), context);
+  // fileOrb.js exports the count sizer FileToolbar calls, so it has to be in
+  // the same context (the import lines are stripped, not resolved).
+  vm.runInContext(strip(read('frontend/src/components/chat/fileOrb.js')), context);
   // `useClickOutside` is the only import FileToolbar reaches for that the stub
   // context already provides, so nothing else needs loading.
   vm.runInContext(strip(read('frontend/src/components/chat/FileToolbar.jsx')), context);
@@ -212,6 +215,81 @@ check('both styles announce the same label — the orb is a skin, not a behaviou
   const echoes = cls(orbNodes, 'file-toolbar__count-echo');
   assert.equal(echoes.length, 2, 'one echo per count');
   for (const echo of echoes) assert.equal(echo.attrs['aria-hidden'], 'true', 'the emboss copy is decorative');
+});
+
+// ---- 3b. the count sizer -------------------------------------------------
+
+check('orbCountFont shrinks as the longest count grows', () => {
+  // Monotonically non-increasing: a longer count can never be drawn larger
+  // than a shorter one, or the widest string would overflow.
+  const sizes = [2, 3, 4, 5].map((n) => parseFloat(orbCountFont(n)));
+  for (let i = 1; i < sizes.length; i++) {
+    assert.ok(sizes[i] <= sizes[i - 1], 'step ' + (i + 2) + ' must not exceed step ' + (i + 1));
+  }
+  // And the size actually drops at the point width starts to bind.
+  assert.ok(sizes[0] > sizes[sizes.length - 1], 'the 2-glyph step is the largest');
+  assert.ok(parseFloat(orbCountFont(2)) <= ORB_FONT_MAX, 'the ceiling is respected');
+});
+
+check('orbCountFont is clamped, never undefined', () => {
+  // Anything the formatter cannot emit still has to produce a usable length:
+  // an `undefined` here becomes `font-size: undefined`, which drops the whole
+  // declaration and leaves the count at the inherited size.
+  for (const input of [0, 1, 2, 3, 4, 5, 6, 99, -1, NaN, undefined, null, '3', 'junk']) {
+    const out = orbCountFont(input);
+    assert.match(String(out), /^\d+(\.\d+)?px$/, 'orbCountFont(' + JSON.stringify(input) + ') = ' + out);
+  }
+  assert.equal(orbCountFont(1), orbCountFont(2), 'below the floor clamps up');
+  assert.equal(orbCountFont(99), orbCountFont(5), 'above the ceiling clamps down');
+  assert.equal(orbCountFont('3'), orbCountFont(3), 'a numeric string is accepted');
+});
+
+check('every step clears the folder on BOTH axes', () => {
+  // The two budgets the sizer has to satisfy, from the CSS and from widths
+  // measured in the running app at weight 800 with tabular figures. Width is
+  // per-string rather than per-glyph: `.` is far narrower than a digit, so
+  // `+9.9k` (2.63em) is wider than `+995k` at the size it is drawn.
+  const CONTENT_W = 25.7;
+  const CONTENT_H = 20.6;
+  const LINE_HEIGHT = 0.85;
+  const WIDTH_EM = { 2: 1.19, 3: 1.77, 4: 2.63, 5: 2.92 };
+  const label = { 2: '+0', 3: '+99', 4: '+9.9k', 5: '+995k' };
+  for (const [lenStr, em] of Object.entries(WIDTH_EM)) {
+    const size = parseFloat(orbCountFont(Number(lenStr)));
+    const width = em * size;
+    const height = 2 * LINE_HEIGHT * size;
+    assert.ok(width <= CONTENT_W, label[lenStr] + ' at ' + size + 'px is ' + width.toFixed(1) + 'px wide, budget ' + CONTENT_W);
+    assert.ok(height <= CONTENT_H, label[lenStr] + ' at ' + size + 'px needs ' + height.toFixed(1) + 'px of height, budget ' + CONTENT_H);
+  }
+  // The steps must not be needlessly conservative. Steps 4 and 5 are
+  // width-bound, so for each of them the next 0.5px up has to bust the width
+  // budget — otherwise the sizer is leaving chunkiness on the table for no
+  // reason. (Steps 2 and 3 are height-bound, where a 0.5px rise also busts,
+  // but that is the height row above, not this one.)
+  for (const lenStr of ['4', '5']) {
+    const size = parseFloat(orbCountFont(Number(lenStr)));
+    assert.ok(WIDTH_EM[lenStr] * (size + 0.5) > CONTENT_W,
+      label[lenStr] + ': ' + (size + 0.5) + 'px would be ' +
+      (WIDTH_EM[lenStr] * (size + 0.5)).toFixed(1) + 'px wide, so ' + size + 'px is maximal');
+  }
+});
+
+check('the emboss scales with the font instead of being a fixed length', () => {
+  // A fixed 0.6px extrusion is a visible bevel on 11px digits and an
+  // invisible smear on 8px ones, so every emboss offset must be in `em` and
+  // the font size must come from `--orb-count`.
+  // The emboss block: from the echo rule to the defs rule (the folder rules
+  // sit above it, so these two are the right bounds).
+  const from = css.indexOf('.file-toolbar__count-echo');
+  const to = css.indexOf('.file-toolbar__defs');
+  const block = css.slice(from, to);
+  assert.ok(from > -1 && to > from, 'found the emboss block');
+  assert.match(block, /left:\s*0\.\d+em;/, 'the echo offset is in em');
+  assert.match(block, /top:\s*0\.\d+em;/, 'the echo offset is in em');
+  assert.match(block, /0\.1em 0 rgba\(255, 255, 255/, 'the white lip is in em');
+  const statsRule = css.match(/\.file-toolbar--orb \.file-toolbar__git-stats \{([^}]*)\}/);
+  assert.ok(statsRule, 'found the orb stats rule');
+  assert.match(statsRule[1], /font-size:\s*var\(--orb-count/, 'the size is driven by the inline variable');
 });
 
 // ---- 4. the CSS invariants ---------------------------------------------

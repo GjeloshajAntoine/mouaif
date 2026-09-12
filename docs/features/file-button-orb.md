@@ -18,7 +18,7 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 |---------|---------------|-----|
 | Painted circle | Flat `--surface-2` with a 1px border | Shaded sphere: sheen, specular hotspot, cool bounce along the lower edge, outer bloom |
 | Folder | One flat silhouette | Extruded solid: deep side, lit face, ambient occlusion, rim light, specular streak |
-| Counts | Flat colored glyphs at `0.46rem` | Embossed at `0.56rem`, with a dark under-copy, a white lip and a two-stop bloom |
+| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, and sized per render from the longest count drawn (11.5px down to 8.5px) |
 | Motion | None | Orbit on two axes, the slab breathing in Z, the sphere sheen drifting, the folder streak breathing |
 | Tap target | `44 × 44` | `44 × 44` (unchanged) |
 | `aria-label` | Exact counts in words | Exact counts in words (unchanged) |
@@ -72,7 +72,46 @@ Four techniques, in the order they contribute:
 3. **The slab** (`__plate`) is a soft dark glass tile that floats `--orb-depth` in front of the chevrons. It is deliberately *not* white: a white folder on a white slab is one white blob, and the counts would lose the dark backing their contrast is tuned against. The slab only darkens and diffuses what is behind it, which is what makes the lighter folder read as a separate object in front.
 4. **The folder** is an extruded solid built from stacked silhouettes of one shared path — a contact shadow on the slab, the deep side 2px lower, the mid-tone body 1px lower, ambient occlusion, the lit face, a diagonal specular streak, and a rim light along the top edges and the pocket fold. At 28 × 22 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z.
 
-The counts are embossed with four layers per count: a near-black copy offset 0.6px down-right, the colored face, a white lip directly *under* the face, and a two-stop bloom in the glyph's own hue. The bloom widens the shape at 9px without changing its color, so the 6:1 contrast (`#006600` / `#b30000` on the light face) is unchanged.
+The counts are embossed, and the emboss has **five** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
+
+1. the **bevel** — a dark bite along the glyph's top-inner edge, where a raised solid turns away from an overhead light. This is the shadow that makes the digits look milled rather than printed;
+2. the **lip** — a bright edge on the far side, where the solid's base meets the plate;
+3. the **bloom**, in the glyph's own hue, kept modest on purpose;
+4. a wide soft **halo**, so the glow reaches the plate rather than stopping at the glyph's edge;
+5. the **echo** — a near-black copy of the whole count offset down-right, the letterpress shadow the raised glyph casts on the plate.
+
+The bloom is a glow rather than a different ink, so the 6:1 contrast (`#006600` / `#b30000` on the light face) is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
+
+### The count size is adaptive, and it has to be
+
+The formatter ([`gitCount.js`](../../frontend/src/components/chat/gitCount.js)) can emit anything from 2 glyphs (`+0`) to 5 (`+995k`), and one fixed size cannot serve both inside a 28 × 22 folder:
+
+- sized for the 5-glyph worst case, the digits render at ~9px, where every emboss offset is sub-pixel and melts into mush — this is exactly the "no depth, no texture" the first fixed size produced. `+995k` also measured **26.9px against a 23.7px box**, so the worst case was being *clipped*, not merely drawn small;
+- sized for `+0` / `−0` — by far the common case, and the state the reference render shows — there is room for genuinely chunky digits.
+
+So `orbCountFont(maxLen)` picks the step from the longest count actually drawn, and `FileToolbar` passes it in as the `--orb-count` custom property. Each step has to clear **two** budgets:
+
+| Budget | Constraint | Binds at |
+|--------|-----------|----------|
+| Width | the widest string of `maxLen` glyphs inside the 25.7px content box | 4–5 glyphs |
+| Height | two stacked line boxes at `line-height: 0.85` inside the 20.6px content box | 2–3 glyphs |
+
+Width is per-**string**, not per-glyph — `.` is far narrower than a digit, so `+9.9k` (2.63em) is wider than `+995k` (2.92em) would be at the same size. The measured em widths, at weight 800 with tabular figures:
+
+```text
++0      1.19em      +9.9k   2.63em
++99     1.77em      +995k   2.92em
+```
+
+Which gives:
+
+```js
+const ORB_FONT_STEPS = Object.freeze({ 2: 11.5, 3: 11, 4: 9.5, 5: 8.5 });
+```
+
+The height budget is the one that is easy to miss, and missing it is invisible in a screenshot: two 12px lines need 24px but the content box is only 20.6px, and `overflow: hidden` then silently cuts ~4.3px off the descender side of both counts. That is what stripped the texture off the digits before the line-height was tightened. Each step is also checked to be *maximal* — the next 0.5px up has to bust its budget — so the sizer is not leaving chunkiness on the table.
+
+Every emboss offset is in `em`, so it scales with the chosen size: a 1.5px extrusion on 11.5px digits becomes 1.1px on 8.5px ones. The echo was previously a fixed `0.6px`, which is a visible bevel at one end of the range and an invisible smear at the other — tuning that single rule could never have reached the chunky case.
 
 ### One animated number
 
@@ -127,7 +166,8 @@ Every gradient-fill rule therefore carries the variant class:
 - the preference reader — absent key, missing bag, failed fetch, string forms, junk values;
 - the plumbing — the key is in `DEFAULTS`, in the client allowlist, and round-trips through the real `settings.js` + `settingsForClient()` against a throwaway store;
 - the render — running the actual `FileToolbar` component through a hook-harness in both modes, asserting the orb layers exist only when asked, every referenced gradient is defined, the decorative echo copies are `aria-hidden`, and both modes emit an identical `aria-label` and `title`;
-- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, the animation lives inside `prefers-reduced-motion: no-preference`, no keyframe animates a layout property, and the rest pose carries a perspective and a base tilt.
+- the count sizer — monotonic steps, clamping for inputs the formatter cannot emit (`undefined` would drop the whole `font-size` declaration and silently fall back to the inherited size), every step clearing both the width and the height budget, and each width-bound step being maximal;
+- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, the animation lives inside `prefers-reduced-motion: no-preference`, no keyframe animates a layout property, the emboss is in `em` rather than fixed px, and the rest pose carries a perspective and a base tilt.
 
 It is wired into `npm run lint` and `npm test`.
 
