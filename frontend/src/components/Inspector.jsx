@@ -24,6 +24,31 @@ import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
 import { InspectorProfilesSheet } from './inspector/InspectorProfilesSheet.jsx';
+// copyText — write a string to the clipboard, falling back to execCommand for
+// embedded web views that block navigator.clipboard. Returns true on success.
+// Mirrors the helper in chat/GitModal.jsx: the clipboard is never the only
+// path to the value (the element label is on screen and in the panel's
+// aria-labels), so a refusal is reported rather than thrown.
+async function copyText(text) {
+try {
+await navigator.clipboard.writeText(text || '');
+return true;
+} catch (_) {
+try {
+const ta = document.createElement('textarea');
+ta.value = text || '';
+ta.style.position = 'fixed';
+ta.style.opacity = '0';
+document.body.appendChild(ta);
+ta.select();
+const ok = document.execCommand('copy');
+document.body.removeChild(ta);
+return ok;
+} catch (_) {
+return false;
+}
+}
+}
 // Short human label for a Chrome DevTools target type. Chrome uses a
 // handful of types: `page` (a normal tab), `iframe`, `webview`,
 // `service_worker`, `background_page` (extension), and a few rarely-seen
@@ -300,6 +325,32 @@ class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (pro
 h('div', { class: 'inspector__panel-head' },
 h('div', { class: 'inspector__panel-head-left' },
 labelNode,
+// Element button — the selected element's identity (`div#id.class` plus
+// its box size) as a compact button in the card header, where the row had
+// empty space. It used to be a third, flexible column inside the Styles
+// panel's own action row, competing for a 360 px line with three labelled
+// buttons (Clear / Refresh / Pick), which left it about 100 px and made
+// the one label that answers "what am I editing?" the first thing to
+// ellipsize. Tapping it copies the selector, which is how the label
+// leaves the inspector and reaches an editor: it is the header's
+// read-out *and* the shortest way to reuse it, and it does not duplicate
+// any of the three buttons below. The result is reported in the status
+// pill above the panels (props.onCopyElement), so a refused clipboard
+// write is visible instead of silent.
+props.element && props.element.label
+? h('button', {
+class: 'inspector__panel-elem',
+type: 'button',
+title: 'Copy the selector ' + props.element.label + (props.element.size ? ' · ' + props.element.size : ''),
+'aria-label': 'Copy selector ' + props.element.label,
+onClick: (e) => { e.stopPropagation(); if (props.onCopyElement) props.onCopyElement(props.element.label); }
+},
+h('span', { class: 'inspector__panel-elem-name' }, props.element.label),
+props.element.size
+? h('span', { class: 'inspector__panel-elem-size' }, props.element.size)
+: null
+)
+: null,
 props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
 ),
       h('div', { class: 'inspector__panel-head-actions' },
@@ -758,6 +809,19 @@ async function undoAllFromBar() {
   }
   setReceipt([]);
   rerender();
+}
+// copyElementSelector — what the element button in the Styles panel header
+// does on tap: copy `div#id.class` to the clipboard (the desktop Styles pane's
+// "Copy selector"). The label is the panel's own `tag#id.class` string, so no
+// second selector builder exists here, and the outcome goes to the status pill
+// above the panels rather than a toast — that pill is already the one line in
+// the view that reports the result of a tap, and it is where a refused
+// clipboard write has to be visible.
+async function copyElementSelector(label) {
+const text = String(label || '');
+if (!text) return;
+const ok = await copyText(text);
+setStatus(ok ? 'copied selector ' + text : 'could not copy the selector');
 }
 // stylesHandlesRef — the Styles panel's own actions (selectAncestor / clear /
 // refresh), published so the identity strip inside that panel and any future
@@ -1629,6 +1693,13 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // element that was selected, so undoing them against another element would
     // write to the wrong node.
     onSelectionReset: () => { setReceipt([]); },
+    // The ✕ in the panel's action row. `onSelectionReset` above fires on a new
+    // selection too, so the Inspector keeps a separate signal for "nothing is
+    // selected any more": it drops the retained snapshot, which is what removes
+    // the element button from the panel header. Without it the header went on
+    // naming an element the user had just cleared, because the store is
+    // deliberately sticky across the panel being switched off.
+    onCleared: () => { setStylesSelection(null); setSelectionStore(null); },
     // The Styles panel publishes its selection snapshot here so an unmount can
     // be told apart from a cleared selection. Optional on the panel side:
     // without it the Styles panel is exactly what it was before.
@@ -1646,6 +1717,15 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
   // URL and pressing Go — sits in the always-visible nav row below.
   // The `…` button mirrors the same overflow pattern used by the
   // target rows in TargetMenu and the project cards in Projects.jsx.
+
+  // elementInfo — the Styles panel's element as the panel header button needs
+  // it. Read through selectionAcrossModes so the header shows the retained
+  // element while that panel is switched off, and `null` when nothing is
+  // selected, which simply leaves the header without a chip.
+  const stylesElement = selectionAcrossModes(stylesSelection, selectionStore);
+  const elementInfo = (stylesElement && String(stylesElement.label || '').trim())
+  ? { label: stylesElement.label, size: stylesElement.size || '' }
+  : null;
   return h(Fragment, null,
     h('div', { class: 'view-head inspector__viewhead' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
@@ -1794,7 +1874,14 @@ INTENT_SURFACE && intentOpen
               solo: visibleIds.length === 1,
               isVisible: visiblePanels.has(id),
               onToggle: togglePanel,
-sizeId: viewportId,
+              // The Styles panel header's element button: the identity of
+              // whatever that panel has selected, read from the snapshot it
+              // publishes (falling back to the retained copy, so a remount of
+              // the panel — or a chip tap that switches it back on — shows the
+              // element that is still selected rather than an empty header).
+              element: id === 'styles' ? elementInfo : null,
+              onCopyElement: id === 'styles' ? copyElementSelector : null,
+              sizeId: viewportId,
 onSizeChange: id === 'preview' ? applyViewport : null,
 onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
 onFullscreen: id === 'preview' ? () => previewFullscreenRef.current && previewFullscreenRef.current() : null,

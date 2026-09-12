@@ -1433,6 +1433,12 @@ setError('');
 // Inspector owns it: with no selection there is nothing to undo, so it is
 // cleared there rather than here.
 if (props.onSelectionReset) props.onSelectionReset();
+// `onCleared` is the *clear* signal, not the new-selection one `onSelectionReset`
+// also fires for: the Inspector retains the last non-empty snapshot (so the
+// element's identity survives switching this panel off), and an explicit ✕ is
+// the one event that has to drop it. Without this the panel header kept showing
+// the element the user had just cleared.
+if (props.onCleared) props.onCleared();
 setChanged([]);
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
@@ -1530,10 +1536,20 @@ const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreRows(computedVisible.length, computedSteps);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
-// Sticky block: the element header and the pinned preview stay at the top
+// Sticky block: the action row and the pinned preview stay at the top
 // of the panel's scroller while the property list below scrolls. Without
 // this the header (and the only read-out of the edit's result) scrolled
 // away as soon as the user reached the "Declared styles" rows.
+//
+// The action row deliberately carries *only* the three actions (clear,
+// refresh, pick). The selected element's identity — `tag#id.class` plus its
+// box size — used to be a third, flexible column wedged between them, and on
+// a 360 px screen the three labels left it about 100 px, so the label that
+// answers "what am I editing?" was the first thing to ellipsize. It is
+// published upward instead (see onSelectionChange) and rendered as the panel
+// header's own element button (Inspector.jsx PanelCard), where the row had
+// empty space and the identity is on screen even when this panel's scroller
+// has been moved: one row of the pinned block, not two.
 h('div', { class: 'inspector__styles-pin' },
 h('div', { class: 'inspector__styles-head' },
 h('button', {
@@ -1547,10 +1563,6 @@ h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
 h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
 ),
 h('span', { class: 'icon-btn__label' }, 'Clear')
-),
-h('div', { class: 'inspector__styles-elem' },
-h('span', { class: 'inspector__styles-tag' }, label),
-h('span', { class: 'inspector__styles-size' }, boxSummary(model.box))
 ),
 h('div', { class: 'inspector__styles-tools' },
 h('button', {

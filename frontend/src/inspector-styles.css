@@ -165,17 +165,21 @@ min-width: 64px;
 padding: 0 12px;
 font-size: 0.82rem;
 }
-/* Selected-element header: clear (X) on the left, the element label +
-box size in the middle, refresh + pick tools on the right. The header
-buttons are compact (.icon-btn--labeled) so the whole row stays on one
-line; the element label ellipsizes if the tag is long. */
+/* Selected-element action row: clear (X) on the left, refresh + pick tools
+on the right. The header buttons are compact (.icon-btn--labeled) so the
+whole row stays on one line. The element's identity is *not* here any more:
+it is the panel header's element button (see .inspector__panel-elem in
+inspector-chrome.css), because a third flexible column between three
+labelled buttons left the label that answers "what am I editing?" about
+100 px wide at 360 px. `margin-left: auto` is what keeps the two tools at
+the far end now that nothing separates them from Clear. */
 .inspector__styles-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+display: flex;
+align-items: center;
+gap: 8px;
 }
 .inspector__styles-clear {
-  flex-shrink: 0;
+flex-shrink: 0;
 }
 /* Selected-element header icon buttons (clear ✕, refresh, and pick
 mode) get full-size 44 px touch targets rather than the 32 px
@@ -187,37 +191,17 @@ it, so the fixed `--tap` sizing only applies to the glyph-only form. */
 .icon-btn.inspector__styles-clear:not(.icon-btn--labeled),
 .icon-btn.inspector__styles-refresh:not(.icon-btn--labeled),
 .icon-btn.inspector__styles-pick:not(.icon-btn--labeled) {
-  width: var(--tap);
-  min-width: var(--tap);
-  height: var(--tap);
-  min-height: var(--tap);
-}
-.inspector__styles-elem {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.inspector__styles-tag {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.inspector__styles-size {
-  font-size: 0.68rem;
-  color: var(--muted-2);
-  font-family: var(--font-mono);
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+min-height: var(--tap);
 }
 .inspector__styles-tools {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+margin-left: auto;
+display: flex;
+align-items: center;
+gap: 4px;
+flex-shrink: 0;
 }
 .inspector__styles-pick[aria-pressed="true"] {
 color: var(--accent);

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **target bar** no longer renders above the Inspector's panels. On a phone it read as a second navigation block that was not one of the app tabs (Chats / Dictate / Inspector / Settings), it could not be dismissed, and it duplicated answers the Styles panel already gives. The three answers it existed for — *which element* is selected, *which rule* a value comes from, and *where the edit lands* — now live inside the Styles panel: its sticky element header, its **Element tree** section, its **Matched rules** section (which marks `element.style` as the write target) and its **Receipt** strip.
+The **target bar** no longer renders above the Inspector's panels. On a phone it read as a second navigation block that was not one of the app tabs (Chats / Dictate / Inspector / Settings), it could not be dismissed, and it duplicated answers the Styles panel already gives. The three answers it existed for — *which element* is selected, *which rule* a value comes from, and *where the edit lands* — now live inside the Styles panel: the element chip in its **panel header**, its **Element tree** section, its **Matched rules** section (which marks `element.style` as the write target) and its **Receipt** strip.
 
 `targetBar.js` (pure model) and `TargetBar.jsx` (layout) are kept, and `selectionAcrossModes` from that module is still used by the Intent surface, which needs a selection that survives the Styles panel being switched off.
 

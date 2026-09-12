@@ -260,6 +260,13 @@ check('styles: declared styles list', /Declared styles/.test(styles));
 check('styles: computed list + filter', /Computed/.test(styles) && /inspector__computed-filter/.test(styles));
 check('styles: matched rules section', /MatchedRulesSection/.test(styles));
 check('styles: pinned element preview', /inspector__styles-shot/.test(styles));
+// The element's identity is the panel header's own chip, not a column of the
+// Styles action row: the header chip is the inventory entry now, and it taps to
+// copy the selector (the only way the label leaves the inspector).
+check('styles: element identity is the panel header chip', /inspector__panel-elem/.test(inspector) && /inspector__panel-elem/.test(css));
+check('styles: the header chip copies the selector', /onCopyElement/.test(inspector) && /copyElementSelector/.test(inspector));
+check('styles: the panel action row is actions only', /inspector__styles-head/.test(styles) && !/inspector__styles-elem/.test(styles));
+check('styles: clearing the selection drops the retained element', /onCleared/.test(styles) && /onCleared/.test(inspector));
 check('styles: inline edit sheet', /StyleEditSheet/.test(styles));
 check('styles: quick-add chips', /COMMON_CSS/.test(styles));
 check('styles: changed-first ordering', /orderChangedFirst/.test(styles));
