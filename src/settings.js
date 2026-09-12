@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 const MOUAIF_HOME = process.env.MOUAIF_HOME || path.join(os.homedir(), '.mouaif');
@@ -468,7 +469,30 @@ function readJsonFile(filePath) {
 function writeJsonFile(filePath, obj) {
   ensureDir(path.dirname(filePath));
   // 2-space indent so the file is hand-editable and diff-friendly.
-  fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+  const body = JSON.stringify(obj, null, 2) + '\n';
+  // Stage next to the target, fsync, then rename over it. A bare
+  // writeFileSync that dies mid-write (crash, full disk, killed process)
+  // leaves a truncated `.mouaif.json` behind, and a truncated project file is
+  // not a small failure: readProjectJson() reports
+  // MOUAIF_PROJECT_PARSE_ERROR, so settings AND every chat route for that
+  // project answer 422 until the user repairs the file by hand. rename(2) is
+  // atomic within a directory, so a reader sees either the old file or the
+  // complete new one. The staging name is unique per write so two processes
+  // cannot clobber each other's, and it is removed on failure.
+  const tmpPath = filePath + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
+  let fd = null;
+  try {
+    fd = fs.openSync(tmpPath, 'w');
+    fs.writeFileSync(fd, body, 'utf8');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tmpPath, filePath);
+  } catch (e) {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+    try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
+    throw e;
+  }
 }
 
 // ---- Shared project-file I/O -------------------------------------------

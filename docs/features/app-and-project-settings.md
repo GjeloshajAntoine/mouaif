@@ -25,7 +25,7 @@ Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never
 ## How settings work
 
 - **Global app settings** — configured once in the **Settings** tab. These include connected AI provider credentials, global model pricing, default prompt styles, and default tool permissions.
-- **Project settings** — configured per project in **Settings → Projects → [Project Name]** (or via the project card menu). These include project custom prompts, prompt size preferences, agent personas, and specific tool permissions.
+- **Project settings** — configured per project in **Settings → Projects → [Project Name]** (or via the project card menu). These include project custom prompts, prompt size preferences, agent personas, and specific tool permissions. They are written **atomically** (stage + fsync + rename), so an interrupted save can never leave a half-written `.mouaif.json` that would break every settings and chat route for that project.
 - **Merge order** — defaults apply first, global settings override defaults, and project settings override global settings. The merged object is a **fresh copy**: nested objects merge key by key (an `app` value of `toolOutput.size` keeps the built-in `toolOutput.structure`), arrays are replaced rather than concatenated, and nothing in the result aliases the built-in defaults, the stored app object, or the project file — so a caller may edit the resolved object freely.
 
 ## Managing settings in the UI

@@ -21,3 +21,7 @@ Thumbs.db
 .mouaif.json
 .mouaif.messages.*.json
 .mouaif/
+# Transient staging files from the atomic project-file writes (see
+# src/settings.js writeJsonFile). They exist only between the write and the
+# rename; a crash can leave one behind.
+.mouaif*.tmp-*
