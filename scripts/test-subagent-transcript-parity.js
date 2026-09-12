@@ -161,11 +161,21 @@ function loadTranscript(globals) {
     JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     // The paths under test only care about the rows this module builds, so
-    // the imported helpers are reduced to identity passthroughs.
+    // the imported helpers are reduced to deterministic stand-ins:
+    // `coerceToolResult` parses a JSON string body the way the real one
+    // does (a nested tool result arrives as a JSON string), and
+    // `formatToolArgs` / `formatResultSummary` are reduced to stable
+    // strings so an assertion can compare the live and settled rows.
     renderMarkdown: (s) => String(s || ''),
-    coerceToolResult: (raw) => raw,
+    coerceToolResult: (raw) => {
+      if (typeof raw !== 'string') return raw;
+      try { return JSON.parse(raw); } catch { return raw; }
+    },
     normalizeToolName: (n) => n,
     isSubagentTool: () => true,
+    formatToolArgs: (args) => (args && typeof args === 'object' ? JSON.stringify(args) : String(args == null ? '' : args)),
+    formatResultSummary: (name, r) => (r && r.lines != null ? r.lines + ' lines' : null),
+    cssEscape: (s) => String(s == null ? '' : s).replace(/["\\]/g, '\\$&'),
     afterTranscriptAppend() {},
     scrollToolBodyToBottom() {},
     updateUsageSummary() {},
@@ -330,6 +340,164 @@ function main() {
     check('the bubble accumulates the deltas',
       rows.length === 1 && rows[0].querySelector('.chat-msg__answer').textContent === 'Working…',
       rows.length === 1 && rows[0].querySelector('.chat-msg__answer').textContent);
+  }
+
+  // ---- 8. A nested tool row is the main card's row, not a lookalike --
+  //
+  // The nested name/args/summary/status classes are the ones the main card
+  // head uses, so a delegated call renders at the same type scale, casing,
+  // truncation budget and dot size. The old nested row had its own
+  // uppercase 0.7rem label class and a 160-char arg budget.
+  {
+    const card = makeCard();
+    // A nested chat whose tool result carries a summarisable body (the
+    // real `read_file` result reports `lines`, which the main card head
+    // shows as "42 lines" without the user tapping the card open).
+    mod.renderSubagentChat(card, { name: 'subagent', result: subagentResult({ chat: [
+      { role: 'user', content: 'Read src/index.js and report the port.' },
+      { role: 'tool', tool_call_id: 'c1', name: 'read_file', content: '{"ok":true,"lines":42,"text":"const PORT = 5732"}' },
+      { role: 'assistant', content: 'The port is 5732.' }
+    ] }) });
+    const wrap = card.querySelector('.tool-card__subagent-chat');
+    const toolRow = wrap.querySelector('.tool-card__subagent-tool');
+    check('the nested row keeps the shared row container class', !!toolRow);
+    const label = toolRow.querySelector('.tool-card__name');
+    check('the nested tool label uses the main card\'s .tool-card__name',
+    !!label && !toolRow.querySelector('.tool-card__subagent-tool-name'),
+    label ? label.className : 'no .tool-card__name');
+    const result = toolRow.querySelector('.tool-card__subagent-preview') ? toolRow : null;
+    const rowPill = toolRow.querySelector('.tool-card__pill');
+    check('the nested row shows the status dot the live view shows',
+    !!rowPill,
+    toolRow.children.map((c) => c.className).join(' | '));
+    const rowSummary = toolRow.querySelector('.tool-card__result-summary');
+    check('a settled nested row gets the collapsed result summary',
+    !!rowSummary && rowSummary.textContent === '42 lines',
+    rowSummary ? rowSummary.textContent : 'no result summary');
+    const pill = toolRow.querySelector('.tool-card__pill');
+    check('the summary and the dot agree the call succeeded',
+    !!pill && pill.classList.contains('tool-card__pill--ok'),
+    pill ? pill.className : 'no status dot');
+    check('the preview is a child of the row, below the label', !!result);
+  }
+
+  // ---- 9. Live and settled render of one call are the same row ------
+  //
+  // The live stream wraps a call and its result into ONE row (dot flips
+  // busy → ok). The persisted nested chat splits them into two messages, so
+  // the settled render must pair them by call id instead of appending a
+  // second, status-less row. This compares the two paths field by field.
+  {
+    const callArgs = { path: 'src/index.js' };
+    const resultBody = '{"ok":true,"lines":42,"text":"const PORT = 5732"}';
+
+    // Live path: tool_call then tool_result into the same card.
+    const liveCard = makeCard();
+    const transcript = createElement('div');
+    transcript.className = 'chat-view__transcript';
+    transcript.appendChild(liveCard);
+    const refs = { transcript: { current: transcript } };
+    const callHandled = mod.handleSubagentStreamEvent(
+      { eventName: 'tool_call' },
+      { parentCallId: 'call_1', id: 'c1', name: 'read_file', args: callArgs },
+      refs
+    );
+    const resultHandled = mod.handleSubagentStreamEvent(
+      { eventName: 'tool_result' },
+      { parentCallId: 'call_1', id: 'c1', name: 'read_file', ok: true, result: { ok: true, lines: 42, text: 'const PORT = 5732' } },
+      refs
+    );
+    check('the live path consumes the nested call and result', callHandled && resultHandled);
+    const liveRow = liveCard.querySelector('.tool-card__subagent-tool');
+
+    // Settled path: the same call and result as two persisted messages.
+    const settledCard = makeCard();
+    mod.renderSubagentChat(settledCard, {
+      name: 'subagent',
+      result: {
+        ok: true,
+        text: 'done',
+        chat: [
+          { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify(callArgs) } }] },
+          { role: 'tool', tool_call_id: 'c1', name: 'read_file', content: resultBody },
+          { role: 'assistant', content: 'done' }
+        ]
+      }
+    });
+    const settledWrap = settledCard.querySelector('.tool-card__subagent-chat');
+    const settledRows = nestedToolRows(settledWrap);
+    check('a call and its result render as ONE nested row after settle',
+      settledRows.length === 1,
+      'rows=' + settledRows.length);
+    const settledRow = settledRows[0];
+
+    const rowFacts = (row) => ({
+      label: row.querySelector('.tool-card__name') && row.querySelector('.tool-card__name').textContent,
+      args: row.querySelector('.tool-card__args') && row.querySelector('.tool-card__args').textContent,
+      pill: row.querySelector('.tool-card__pill') && row.querySelector('.tool-card__pill').className,
+      summary: row.querySelector('.tool-card__result-summary') && row.querySelector('.tool-card__result-summary').textContent,
+      order: row.children.map((c) => c.className).join('>')
+    });
+    const liveFacts = rowFacts(liveRow || createElement('div'));
+    const settledFacts = rowFacts(settledRow || createElement('div'));
+    check('the live nested row carries the shared row markup',
+    liveFacts.label === 'Read'
+    && liveFacts.args === JSON.stringify(callArgs)
+    && liveFacts.pill === 'tool-card__pill tool-card__pill--ok'
+    && liveFacts.order.startsWith('tool-card__name>tool-card__args>'),
+    JSON.stringify(liveFacts));
+    check('live and settled rows are identical (label, args, dot, summary)',
+      JSON.stringify(liveFacts) === JSON.stringify(settledFacts),
+      'live=' + JSON.stringify(liveFacts) + ' settled=' + JSON.stringify(settledFacts));
+    check('the settled row is no longer a label-only row without a status dot',
+      settledFacts.pill === 'tool-card__pill tool-card__pill--ok' && settledFacts.summary === '42 lines',
+      JSON.stringify(settledFacts));
+    check('an assistant turn that only asks for tools adds no empty bubble',
+      chatRows(settledWrap).length === 1,
+      'chat rows=' + chatRows(settledWrap).length);
+  }
+
+  // ---- 10. A tool result whose call is absent still renders ---------
+  {
+    const card = makeCard();
+    mod.renderSubagentChat(card, {
+      name: 'subagent',
+      result: {
+        ok: true,
+        text: 'done',
+        chat: [
+          { role: 'tool', tool_call_id: 'orphan', name: 'read_file', content: '{"ok":true,"lines":7}' },
+          { role: 'assistant', content: 'done' }
+        ]
+      }
+    });
+    const wrap = card.querySelector('.tool-card__subagent-chat');
+    const rows = nestedToolRows(wrap);
+    check('a result with no matching call row still appends one',
+      rows.length === 1 && rows[0].querySelector('.tool-card__pill').classList.contains('tool-card__pill--ok'),
+      rows.map((r) => r.children.map((c) => c.className).join('>')).join(' | '));
+  }
+
+  // ---- 11. Id-less calls still pair (providers may omit ids) --------
+  {
+    const card = makeCard();
+    mod.renderSubagentChat(card, {
+      name: 'subagent',
+      result: {
+        ok: true,
+        text: 'done',
+        chat: [
+          { role: 'assistant', content: null, tool_calls: [{ id: undefined, type: 'function', function: { name: 'list_files', arguments: '{"path":"."}' } }] },
+          { role: 'tool', name: 'list_files', content: '{"ok":true,"entryCount":3}' },
+          { role: 'assistant', content: 'done' }
+        ]
+      }
+    });
+    const wrap = card.querySelector('.tool-card__subagent-chat');
+    const rows = nestedToolRows(wrap);
+    check('a call without an id is still settled into one row',
+      rows.length === 1 && rows[0].querySelector('.tool-card__pill').classList.contains('tool-card__pill--ok'),
+      'rows=' + rows.length + ' ' + rows.map((r) => r.children.map((c) => c.className).join('>')).join(' | '));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

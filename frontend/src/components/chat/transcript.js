@@ -457,6 +457,82 @@ function shortToolText(text, max) {
   return s.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
 }
 
+// One-line argument budget shared by the main tool card head and the
+// nested subagent tool rows: the same call must not be truncated at two
+// different lengths depending on where it is read.
+const TOOL_ARGS_PREVIEW_CHARS = 220;
+
+// buildSubagentToolRow(name, id, argsText, argsObj)
+//
+// The nested row a delegated run shows for one of its tool calls. It
+// reuses the main card head's classes — `.tool-card__name` for the verb
+// label, `.tool-card__args` for the one-line arguments,
+// `.tool-card__result-summary` and `.tool-card__pill` — so the tool name
+// and its content render at the main transcript's type scale, casing,
+// truncation budget and status-dot size instead of on a private style
+// scale. The row is NOT a `.tool-card__head`: a nested row has no
+// expand/collapse of its own (the parent subagent card owns that), so it
+// carries no chevron and no tap target.
+function buildSubagentToolRow(name, id, argsText, argsObj) {
+  const row = document.createElement('div');
+  row.className = 'tool-card__subagent-tool';
+  if (id) row.dataset.nestedToolId = String(id);
+  const callName = document.createElement('span');
+  callName.className = 'tool-card__name';
+  callName.textContent = toolCardLabel(name);
+  row.appendChild(callName);
+  if (argsText) {
+    const callArgs = document.createElement('pre');
+    callArgs.className = 'tool-card__args';
+    callArgs.textContent = shortToolText(argsText, TOOL_ARGS_PREVIEW_CHARS);
+    if (callArgs.textContent !== argsText) callArgs.title = argsText;
+    row.appendChild(callArgs);
+  }
+  const status = document.createElement('span');
+  status.className = 'tool-card__pill tool-card__pill--busy';
+  status.textContent = 'running';
+  row.appendChild(status);
+  // Keep the call's args on the row so its result preview and summary can
+  // use them (a nested write_file renders the content it wrote).
+  if (argsObj && typeof argsObj === 'object') row._toolArgs = argsObj;
+  return row;
+}
+
+// fillSubagentToolRow(row, name, raw, args, okHint)
+//
+// Settle one nested row in place: flip the status dot busy → ok/error,
+// add the collapsed result summary the main card shows, and render the
+// per-tool preview. Call and result are two messages in the persisted
+// nested transcript but ONE row on screen — both the live stream and the
+// final render go through here, so the two views cannot disagree.
+// `okHint` is the live result frame's authoritative ok flag; the settled
+// transcript has no such flag and falls back to inspecting the body.
+function fillSubagentToolRow(row, name, raw, args, okHint) {
+  if (!row) return null;
+  const toolName = normalizeToolName(name);
+  const r = coerceToolResult(raw, toolName);
+  const ok = typeof okHint === 'boolean' ? okHint : !(r && r.error);
+  const status = row.querySelector('.tool-card__pill');
+  if (status) {
+    status.className = 'tool-card__pill ' + (ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
+    status.textContent = ok ? 'ok' : 'error';
+  }
+  const summary = ok ? formatResultSummary(name, r) : null;
+  if (summary) {
+    let summaryEl = row.querySelector('.tool-card__result-summary');
+    if (!summaryEl) {
+      summaryEl = document.createElement('span');
+      summaryEl.className = 'tool-card__result-summary';
+      row.insertBefore(summaryEl, status || null);
+    }
+    summaryEl.textContent = summary;
+  }
+  const oldPreview = row.querySelector('.tool-card__subagent-preview');
+  if (oldPreview) oldPreview.remove();
+  renderSubagentToolPreview(row, name, raw, args);
+  return r;
+}
+
 // buildToolCardHead(toolName, args, pillClass, pillText, resultSummary)
 //
 // The compact header row shared by tool_call and tool_result cards:
@@ -489,7 +565,7 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   if (argText) {
     const argsEl = document.createElement('pre');
     argsEl.className = 'tool-card__args';
-    argsEl.textContent = shortToolText(argText, 220);
+    argsEl.textContent = shortToolText(argText, TOOL_ARGS_PREVIEW_CHARS);
     if (argsEl.textContent !== argText) argsEl.title = argText;
     head.appendChild(argsEl);
   }
@@ -753,42 +829,20 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   if (ev.eventName === 'tool_call') {
     const hint = live.querySelector('.tool-card__subagent-live-hint');
     if (hint) hint.remove();
-    const row = document.createElement('div');
-    row.className = 'tool-card__subagent-tool';
-    if (data.id) row.dataset.nestedToolId = data.id;
-    const callName = document.createElement('span');
-    callName.className = 'tool-card__subagent-tool-name';
-    callName.textContent = toolCardLabel(data.name);
-    const callArgsText = formatToolArgs(data.args, data.name);
-    const callArgs = document.createElement('pre');
-    callArgs.className = 'tool-card__subagent-text';
-    callArgs.textContent = shortToolText(callArgsText, 160);
-    if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
-    // Keep the nested call's args on the row so its result preview can use
-    // them (nested write_file renders the written content).
-    if (data.args && typeof data.args === 'object') row._toolArgs = data.args;
-    const status = document.createElement('span');
-    status.className = 'tool-card__pill tool-card__pill--busy';
-    status.textContent = 'running…';
-    row.appendChild(callName); row.appendChild(callArgs); row.appendChild(status);
+    // Same row builder the settled render uses, so the live view and the
+    // final view of one call cannot differ in label, args or status dot.
+    const row = buildSubagentToolRow(data.name, data.id, formatToolArgs(data.args, data.name), data.args);
     live.appendChild(row);
     scrollToolBodyToBottom(live);
     afterTranscriptAppend(refs, false);
     return true;
   }
   if (ev.eventName === 'tool_result') {
-    let row = data.id ? live.querySelector('[data-nested-tool-id="' + cssEscape(data.id) + '"]') : null;
+    let row = data.id ? live.querySelector('[data-nested-tool-id="' + cssEscape(String(data.id)) + '"]') : null;
     if (!row) row = live.querySelector('.tool-card__subagent-tool:last-child');
-    if (row) {
-      const status = row.querySelector('.tool-card__pill');
-      if (status) {
-        status.className = 'tool-card__pill ' + (data.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
-        status.textContent = data.ok ? 'ok' : 'error';
-      }
-      const oldPreview = row.querySelector('.tool-card__subagent-preview');
-      if (oldPreview) oldPreview.remove();
-      renderSubagentToolPreview(row, data.name, data.result, row._toolArgs);
-    }
+    // The live result frame carries the authoritative ok flag; the settled
+    // transcript only has the result body, so the flag is a hint here.
+    fillSubagentToolRow(row, data.name, data.result, row && row._toolArgs, data.ok);
     scrollToolBodyToBottom(live);
     afterTranscriptAppend(refs, false);
     return true;
@@ -923,41 +977,45 @@ function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSu
 }
 
 // appendSubagentNestedToolCall(parent, tc)
+//
+// Render one nested tool CALL as a row. Returns the row so the caller can
+// remember it by call id and merge the matching tool result into it
+// instead of appending a second row for the same call.
 function appendSubagentNestedToolCall(parent, tc) {
   const fn = (tc && tc.function) || tc || {};
-  const call = document.createElement('div');
-  call.className = 'tool-card__subagent-tool';
-  if (tc && tc.id) call.dataset.nestedToolId = tc.id;
-  const callName = document.createElement('span');
-  callName.className = 'tool-card__subagent-tool-name';
-  callName.textContent = toolCardLabel(fn.name);
-  const callArgs = document.createElement('pre');
-  callArgs.className = 'tool-card__subagent-text';
   const rawArgs = fn.arguments != null ? fn.arguments : (tc && tc.args);
   let parsedArgs = rawArgs;
   if (typeof rawArgs === 'string') { try { parsedArgs = JSON.parse(rawArgs); } catch { /* keep raw string */ } }
   const callArgsText = typeof parsedArgs === 'object' && parsedArgs !== null
     ? formatToolArgs(parsedArgs, fn.name)
     : String(rawArgs || '');
-  callArgs.textContent = shortToolText(callArgsText, 160);
-  if (callArgsText && callArgs.textContent !== callArgsText) callArgs.title = callArgsText;
-  // Same contract as the live nested rows: keep the args so a result that
-  // lands on this row later can render them.
-  if (parsedArgs && typeof parsedArgs === 'object') call._toolArgs = parsedArgs;
-  call.appendChild(callName); call.appendChild(callArgs);
+  // Same builder as the live path: the row carries the main card's name
+  // and args classes, so the settled view of a call reads exactly like the
+  // streamed one.
+  const call = buildSubagentToolRow(fn.name, tc && tc.id, callArgsText,
+    (parsedArgs && typeof parsedArgs === 'object') ? parsedArgs : null);
   parent.appendChild(call);
   return call;
 }
 
-function appendSubagentToolResult(parent, m, args) {
-  const call = document.createElement('div');
-  call.className = 'tool-card__subagent-tool';
-  const callName = document.createElement('span');
-  callName.className = 'tool-card__subagent-tool-name';
-  callName.textContent = toolCardLabel(m.name);
-  call.appendChild(callName);
-  renderSubagentToolPreview(call, m.name, m.content, args);
+// appendSubagentToolResult(parent, m, args[, row])
+//
+// Settle a nested tool RESULT. When the caller already has the row its
+// matching call created (`row`), the result fills that row in place —
+// the same one-row-per-call shape the live stream builds. Without a match
+// (a result whose call is not in the transcript) a fresh row is appended
+// so nothing is dropped.
+function appendSubagentToolResult(parent, m, args, row) {
+  if (row) {
+    row._settled = true;
+    fillSubagentToolRow(row, m.name, m.content, args);
+    return row;
+  }
+  const call = buildSubagentToolRow(m.name, m.tool_call_id, null, args);
+  call._settled = true;
   parent.appendChild(call);
+  fillSubagentToolRow(call, m.name, m.content, args);
+  return call;
 }
 
 // renderSubagentToolPreview(parent, name, raw, args)
@@ -1032,6 +1090,26 @@ export function renderSubagentChat(card, toolResult) {
   // card's expand/collapse toggle.
   wrap.addEventListener('click', (e) => e.stopPropagation());
   const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
+  // One row per tool CALL, keyed by call id. The persisted nested chat
+  // splits a call and its result into two messages (an assistant turn with
+  // `tool_calls`, then a `role: 'tool'` turn); the live stream shows them
+  // as a single row whose status dot flips. Pairing them here reproduces
+  // the live shape instead of doubling every row on settle.
+  const rowsByCallId = new Map();
+  // Rows whose result has not landed yet, in creation order. A provider may
+  // omit tool-call ids entirely; the live path then settles the run's last
+  // row, and this list keeps the settled render just as deterministic
+  // instead of appending an unpaired row beside the call.
+  const pendingCallRows = [];
+  const appendCallRows = (parent, toolCalls) => {
+    for (const tc of toolCalls) {
+      const callRow = appendSubagentNestedToolCall(parent, tc);
+      const id = tc && (tc.id || (tc.function && tc.function.id));
+      if (callRow && id) rowsByCallId.set(id, callRow);
+      if (callRow) pendingCallRows.push(callRow);
+    }
+  };
+  const takePendingCallRow = () => pendingCallRows.find((r) => !r._settled) || null;
   // The model that actually ran the delegated call, when the result
   // carries it. Nested assistant turns are labelled with it, the same way
   // the top-level transcript labels an assistant turn with its model id.
@@ -1061,9 +1139,10 @@ export function renderSubagentChat(card, toolResult) {
       // bubble rhythm for the user/assistant turns around them.
       const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
       if (toolCalls.length) {
-        for (const tc of toolCalls) appendSubagentNestedToolCall(wrap, tc);
+        appendCallRows(wrap, toolCalls);
       } else {
-        appendSubagentToolResult(wrap, m, argsByCallId.get(m.tool_call_id) || null);
+      appendSubagentToolResult(wrap, m, argsByCallId.get(m.tool_call_id) || null,
+      rowsByCallId.get(m.tool_call_id) || takePendingCallRow());
       }
       continue;
     }
@@ -1076,10 +1155,21 @@ export function renderSubagentChat(card, toolResult) {
     if (role === 'system') {
       const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg');
       const sysCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
-      for (const tc of sysCalls) appendSubagentNestedToolCall(sysRow, tc);
+      appendCallRows(sysRow, sysCalls);
       wrap.appendChild(sysRow);
       continue;
     }
+    const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+    // An assistant turn that only asked for tools carries no text of its
+    // own (the rebuilt nested chat stores `content: null` for it) — the same
+    // empty assistant turn the top-level transcript skips. Rendering it
+    // produced an empty bubble wrapped around the tool rows, a shape the
+    // live view never shows.
+    if (role === 'assistant' && !text && toolCalls.length) {
+      appendCallRows(wrap, toolCalls);
+      continue;
+    }
+    if (role === 'assistant' && !text) continue;
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
     // Same head as appendMessageToTranscript — role label left, timestamp
@@ -1105,11 +1195,11 @@ export function renderSubagentChat(card, toolResult) {
       body.textContent = text || '';
     }
     row.appendChild(head); row.appendChild(body);
-    // Inline any tool calls attached to this assistant turn so the
-    // bubble shows the full assistant→tool→assistant loop.
-    const toolCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
-    for (const tc of toolCalls) appendSubagentNestedToolCall(row, tc);
     wrap.appendChild(row);
+    // Tool rows are appended flat, at the same level as the bubbles — the
+    // level the live container uses — so a call reads in the same place
+    // while streaming and after the run settles.
+    appendCallRows(wrap, toolCalls);
   }
   // Append inside the card's body so the body's max-height,
   // overflow, and expand/collapse mask control the nested chat.

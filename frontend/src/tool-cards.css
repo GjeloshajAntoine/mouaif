@@ -286,36 +286,19 @@ color: var(--fg-soft);
   color: var(--muted);
   line-height: 1.35;
 }
+/* Nested subagent tool rows. The row itself only owns the flex layout and
+   the wrap for its preview; the label, one-line arguments, result summary
+   and status dot reuse the main card head's own classes
+   (.tool-card__name / .tool-card__args / .tool-card__result-summary /
+   .tool-card__pill) so a delegated call is not rendered on a private type
+   scale, casing or truncation budget. */
 .tool-card__subagent-tool {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
   padding: 2px 0;
   min-width: 0;
-}
-.tool-card__subagent-tool-name {
-  flex: 0 0 auto;
-  font-weight: 600;
-  font-size: 0.7rem;
-  color: var(--fg-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.tool-card__subagent-text {
-  flex: 1 1 auto;
-  margin: 0;
-  padding: 0;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  line-height: 1.25;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tool-card__subagent-tool .tool-card__pill {
-  flex: 0 0 auto;
-  width: 6px; height: 6px;
 }
 .tool-card__subagent-preview {
   flex: 1 0 100%;
