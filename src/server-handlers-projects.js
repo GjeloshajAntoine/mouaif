@@ -104,8 +104,12 @@ async function handleProjects(req, res, parsed) {
     const row = projects.registerProject(body.dir);
     // Opt the project into DB-backed settings before seeding the cost so
     // the working tree is never touched (see project-settings-storage.md).
+    // Use the REGISTERED path (projects.js canonicalizes it) rather than the
+    // raw request value: a trailing slash or a `..` segment would otherwise
+    // key the DB row under a path nothing else looks up, and the opt-in
+    // would silently do nothing.
     if (body.dbBacked === true) {
-      settings.setDbBacked(body.dir, true);
+    settings.setDbBacked(row.path, true);
     }
     // Seed persisted chat and project totals once for existing histories.
     try { chats.recomputeProjectTotalCost(body.dir); } catch { /* non-fatal */ }

@@ -15,10 +15,11 @@ Toggling **on** copies the current project object into the DB and leaves any exi
 
 ## Behavior
 - **Storage location**: DB-backed settings are stored in the `project_settings` table of the app store, keyed by canonical `project_dir`. The value is the full raw project object (same shape as `.mouaif.json`).
+- **Canonical keys**: the directory key is resolved to an absolute path before every read and write, so `/home/me/app`, `/home/me/app/` and `/home/me/app/../app` are one project rather than three. Rows written by older builds are folded onto their canonical key by the `2026-09-12-canonicalize-project-keys` migration (duplicates merged: an opted-in row wins, then the most recent MCP cache, then the newest recent-model timestamp). The same canonicalization applies to the `mcp_tool_cache` and `model_recent` tables. Writes with a non-absolute `projectDir` are rejected instead of creating an unreachable row.
 - **Marker**: a `__dbBacked: true` field on the stored object is the opt-in flag. It is internal bookkeeping and never exposed to the client or written to `.mouaif.json`.
 - **Read/write routing**: `getProject`, `setProject`, `unsetProjectKeys`, and `getResolved` all route to the DB row when the project is DB-backed; otherwise they use the file. Callers that need the on-disk file specifically (e.g. the one-shot trace export) keep using the raw file helpers.
 - **No destructive delete**: toggling the switch on never removes an existing `.mouaif.json`. Toggling off overwrites the file with the DB copy.
-- **Existing file wins on first opt-in**: if the project already has a `.mouaif.json`, that content seeds the DB row so nothing is lost.
+- **Existing file wins on first opt-in**: if the project already has a `.mouaif.json`, that content seeds the DB row so nothing is lost. This holds for both opt-in paths — the storage switch and registering a project with "store settings in the app DB" already enabled.
 ## Related
 - [App and project settings](./app-and-project-settings.md)
 - [Folder picker](./folder-picker.md)

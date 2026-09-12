@@ -257,7 +257,10 @@ async function handleSettings(req, res, parsed) {
     if (!body) return;
     const { projectDir, provider, modelId } = body || {};
     if (!projectDir || !provider || !modelId) {
-      return sendJSON(res, 400, { error: 'projectDir, provider, and modelId are required' });
+    return sendJSON(res, 400, { error: 'projectDir, provider, and modelId are required' });
+    }
+    if (!settings.canonicalProjectDir(projectDir)) {
+    return sendJSON(res, 400, { error: 'projectDir must be an absolute path' });
     }
     settings.touchRecentModel(projectDir, provider, modelId);
     return sendJSON(res, 200, { ok: true });

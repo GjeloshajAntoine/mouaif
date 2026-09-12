@@ -102,6 +102,36 @@ function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+// ---- Project-dir canonicalization --------------------------------------
+//
+// Every project-scoped table in the app store (project_settings,
+// mcp_tool_cache, model_recent) is keyed by the project directory. Callers
+// hand us whatever the client sent — `/home/me/app`, `/home/me/app/` or
+// `/home/me/app/../app` are three spellings of one directory, and used to be
+// three rows. The damage was not only duplicated data: a project could be
+// opted into DB-backed settings under a key that no other code path ever
+// looked up, so it kept reading `.mouaif.json` and the opt-in appeared to do
+// nothing. Keys are therefore normalized to an absolute path at every
+// boundary in this module, reads included (a read under a non-canonical key
+// must not find a row the write would not have created).
+function canonicalProjectDir(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') return null;
+  if (!path.isAbsolute(projectDir)) return null;
+  return path.resolve(projectDir);
+}
+
+// Same as canonicalProjectDir(), but for write paths: an unusable directory
+// is a programming error there, not a miss.
+function requireCanonicalProjectDir(projectDir) {
+  const canonical = canonicalProjectDir(projectDir);
+  if (!canonical) {
+    const e = new TypeError('projectDir must be an absolute path');
+    e.code = 'EBADPROJECTDIR';
+    throw e;
+  }
+  return canonical;
+}
+
 function openDb(home) {
   ensureDir(home);
   const dbPath = path.join(home, APP_DB);
@@ -178,7 +208,8 @@ function ensureModelRecentTable() {
 }
 
 function getRecentModels(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return [];
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return [];
   ensureModelRecentTable();
   const rows = db()
     .prepare(
@@ -188,12 +219,13 @@ function getRecentModels(projectDir) {
        ORDER BY ts DESC
        LIMIT ?`
     )
-    .all(projectDir, MODEL_RECENT_CAP);
+    .all(dir, MODEL_RECENT_CAP);
   return rows;
 }
 
 function touchRecentModel(projectDir, provider, modelId) {
-  if (!projectDir || !provider || !modelId) return;
+  if (!provider || !modelId) return;
+  const dir = requireCanonicalProjectDir(projectDir);
   ensureModelRecentTable();
   const now = Date.now();
   db()
@@ -201,7 +233,7 @@ function touchRecentModel(projectDir, provider, modelId) {
       `INSERT INTO ${MODEL_RECENT_TABLE} (project_dir, provider, model_id, ts) VALUES (?, ?, ?, ?)
        ON CONFLICT(project_dir, provider, model_id) DO UPDATE SET ts = excluded.ts`
     )
-    .run(projectDir, provider, modelId, now);
+    .run(dir, provider, modelId, now);
   // Reap any entries beyond the cap (oldest first)
   db()
     .prepare(
@@ -209,15 +241,110 @@ function touchRecentModel(projectDir, provider, modelId) {
          SELECT rowid FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ? ORDER BY ts DESC LIMIT ?
        )`
     )
-    .run(projectDir, projectDir, MODEL_RECENT_CAP);
+    .run(dir, dir, MODEL_RECENT_CAP);
 }
 
 function clearRecentModels(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return;
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return;
   ensureModelRecentTable();
   db()
     .prepare(`DELETE FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ?`)
-    .run(projectDir);
+    .run(dir);
+}
+
+// ---- Legacy key normalization -------------------------------------------
+//
+// Rows written before the canonicalization fix can hold `/a/b/`, `/a/./b`
+// and `/a/c/../b` as three distinct keys for one directory. This rewrites
+// each project-scoped table once, merging duplicates deterministically:
+//   - project_settings: a row whose value carries `__dbBacked: true` wins
+//     (that is the opt-in the user actually made, seeded from their file);
+//     otherwise the earliest row wins.
+//   - mcp_tool_cache: the most recently updated row wins per server.
+//   - model_recent: the newest timestamp wins per (provider, model).
+// Keys that are not absolute paths cannot be canonicalized; they are carried
+// over verbatim rather than dropped.
+
+function projectKeysNeedRewrite(rows) {
+  return rows.some((row) => {
+    const dir = canonicalProjectDir(row.project_dir);
+    return dir && dir !== row.project_dir;
+  });
+}
+
+function canonicalizeProjectKeys() {
+  const d = db();
+  ensureModelRecentTable();
+
+  // --- project_settings -------------------------------------------------
+  const projRows = d.prepare(`SELECT rowid, project_dir, value FROM ${PROJECT_SETTINGS_TABLE}`).all();
+  if (projectKeysNeedRewrite(projRows)) {
+    const groups = new Map();
+    for (const row of projRows) {
+      const dir = canonicalProjectDir(row.project_dir) || row.project_dir;
+      const group = groups.get(dir);
+      if (!group) groups.set(dir, [row]);
+      else group.push(row);
+    }
+    const replace = d.transaction(() => {
+      d.prepare(`DELETE FROM ${PROJECT_SETTINGS_TABLE}`).run();
+      const insert = d.prepare(`INSERT INTO ${PROJECT_SETTINGS_TABLE} (project_dir, value) VALUES (?, ?)`);
+      for (const [dir, group] of groups) {
+        const winner = group.find((r) => {
+          try { return JSON.parse(r.value).__dbBacked === true; } catch { return false; }
+        }) || group[0];
+        insert.run(dir, winner.value);
+      }
+    });
+    replace();
+  }
+
+  // --- mcp_tool_cache ---------------------------------------------------
+  const cacheRows = d.prepare(`SELECT project_dir, server_id, tools, updated_at FROM ${MCP_TOOL_CACHE_TABLE}`).all();
+  if (projectKeysNeedRewrite(cacheRows)) {
+    const groups = new Map();
+    for (const row of cacheRows) {
+      const dir = canonicalProjectDir(row.project_dir) || row.project_dir;
+      const key = dir + '\0' + row.server_id;
+      const prev = groups.get(key);
+      if (!prev || String(row.updated_at) > String(prev.updated_at)) {
+        groups.set(key, { ...row, project_dir: dir });
+      }
+    }
+    const replace = d.transaction(() => {
+      d.prepare(`DELETE FROM ${MCP_TOOL_CACHE_TABLE}`).run();
+      const insert = d.prepare(
+        `INSERT INTO ${MCP_TOOL_CACHE_TABLE} (project_dir, server_id, tools, updated_at) VALUES (?, ?, ?, ?)`
+      );
+      for (const row of groups.values()) {
+        insert.run(row.project_dir, row.server_id, row.tools, row.updated_at);
+      }
+    });
+    replace();
+  }
+
+  // --- model_recent -----------------------------------------------------
+  const recentRows = d.prepare(`SELECT project_dir, provider, model_id, ts FROM ${MODEL_RECENT_TABLE}`).all();
+  if (projectKeysNeedRewrite(recentRows)) {
+    const groups = new Map();
+    for (const row of recentRows) {
+      const dir = canonicalProjectDir(row.project_dir) || row.project_dir;
+      const key = dir + '\0' + row.provider + '\0' + row.model_id;
+      const prev = groups.get(key);
+      if (!prev || row.ts > prev.ts) groups.set(key, { ...row, project_dir: dir });
+    }
+    const replace = d.transaction(() => {
+      d.prepare(`DELETE FROM ${MODEL_RECENT_TABLE}`).run();
+      const insert = d.prepare(
+        `INSERT INTO ${MODEL_RECENT_TABLE} (project_dir, provider, model_id, ts) VALUES (?, ?, ?, ?)`
+      );
+      for (const row of groups.values()) {
+        insert.run(row.project_dir, row.provider, row.model_id, row.ts);
+      }
+    });
+    replace();
+  }
 }
 
 // ---- Migrations ----------------------------------------------------------
@@ -306,6 +433,13 @@ if (!project || !project.path) continue;
 try { chats.recomputeProjectTotalCost(project.path); }
 catch (e) { console.error('  [migration] cost total failed for ' + project.path + ': ' + e.message); }
 }
+}
+},
+{
+name: '2026-09-12-canonicalize-project-keys',
+description: 'Normalize project directory keys in the project-scoped app tables',
+run() {
+canonicalizeProjectKeys();
 }
 }
 ];
@@ -455,10 +589,11 @@ function getProjectRaw(projectDir) {
 // of <projectDir>/.mouaif.json so the working tree is never touched. The
 // value is the same raw project object the file would have carried.
 function projectSettingsRow(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return null;
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return null;
   return db()
     .prepare(`SELECT value FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
-    .get(projectDir) || null;
+    .get(dir) || null;
 }
 function getDbProjectRaw(projectDir) {
   const row = projectSettingsRow(projectDir);
@@ -474,16 +609,25 @@ function setDbProject(projectDir, next) {
   if (!next || typeof next !== 'object' || Array.isArray(next)) {
     throw new TypeError('setDbProject() expects an object');
   }
+  const dir = requireCanonicalProjectDir(projectDir);
   db()
     .prepare(
       `INSERT INTO ${PROJECT_SETTINGS_TABLE} (project_dir, value) VALUES (?, ?)
 ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
     )
-    .run(projectDir, JSON.stringify(next));
+    .run(dir, JSON.stringify(next));
   return next;
 }
 function setDbBacked(projectDir, dbBacked) {
-  const next = { ...getDbProjectRaw(projectDir), __dbBacked: !!dbBacked };
+  // Opting in seeds from the project's existing `.mouaif.json` (when there is
+  // no DB row yet) so no hand-written setting is silently ignored. This is the
+  // same guarantee the storage toggle documents; the register-time opt-in used
+  // to write a bare `{ __dbBacked: true }` and leave every project setting
+  // behind in the file it had just stopped reading.
+  const hasRow = !!projectSettingsRow(projectDir);
+  const next = dbBacked
+    ? { ...(hasRow ? getDbProjectRaw(projectDir) : getProjectRaw(projectDir)), __dbBacked: true }
+    : { ...getDbProjectRaw(projectDir) };
   if (!dbBacked) delete next.__dbBacked;
   setDbProject(projectDir, next);
   return next;
@@ -556,15 +700,18 @@ function getResolved(projectDir) {
 // why it lives here and not in <projectDir>/.mcp.json.
 
 function getMcpToolCache(projectDir, serverId) {
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return null;
   const row = db()
     .prepare(`SELECT tools FROM ${MCP_TOOL_CACHE_TABLE} WHERE project_dir = ? AND server_id = ?`)
-    .get(projectDir, serverId);
+    .get(dir, serverId);
   if (!row) return null;
   try { return JSON.parse(row.tools); } catch { return null; }
 }
 
 function setMcpToolCache(projectDir, serverId, tools) {
   if (!Array.isArray(tools)) throw new TypeError('tools must be an array');
+  const dir = requireCanonicalProjectDir(projectDir);
   db()
     .prepare(
       `INSERT INTO ${MCP_TOOL_CACHE_TABLE} (project_dir, server_id, tools, updated_at)
@@ -572,13 +719,15 @@ function setMcpToolCache(projectDir, serverId, tools) {
        ON CONFLICT(project_dir, server_id)
        DO UPDATE SET tools = excluded.tools, updated_at = excluded.updated_at`
     )
-    .run(projectDir, serverId, JSON.stringify(tools), new Date().toISOString());
+    .run(dir, serverId, JSON.stringify(tools), new Date().toISOString());
 }
 
 function deleteMcpToolCache(projectDir, serverId) {
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return;
   db()
     .prepare(`DELETE FROM ${MCP_TOOL_CACHE_TABLE} WHERE project_dir = ? AND server_id = ?`)
-    .run(projectDir, serverId);
+    .run(dir, serverId);
 }
 
 function close() {
@@ -625,6 +774,8 @@ module.exports = {
   clearRecentModels,
   // migrations
   runMigrations,
+  // project-dir canonicalization (exported for the migration + tests)
+  canonicalProjectDir,
   // lifecycle (mostly for tests)
   close
 };
