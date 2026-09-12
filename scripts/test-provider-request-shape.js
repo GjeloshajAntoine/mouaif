@@ -122,8 +122,11 @@ function delegatedCostChecks() {
   const source = fs.readFileSync(path.join(__dirname, '../src/ai-stream.js'), 'utf8');
   const start = source.indexOf('function delegatedCostForResult(');
   assert.ok(start > 0, 'delegatedCostForResult must still exist');
-  const end = source.indexOf('function addDelegatedUsage(', start);
-  assert.ok(end > start, 'addDelegatedUsage must follow it');
+  // End of the helper: the next 2-space-indented member function of
+  // streamChat. Deliberately not tied to a particular neighbour's name so
+  // renaming a sibling helper does not break this extraction.
+  const end = source.indexOf('\n  function ', start);
+  assert.ok(end > start, 'delegatedCostForResult must be followed by another streamChat helper');
   const chunk = source.slice(start, end);
 
   const context = vm.createContext(new Proxy({

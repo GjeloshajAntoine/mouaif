@@ -103,8 +103,7 @@ async function* readNDJSON(stream) {
 //   modelContentForTool,                // (name, exec) -> string
 //   dispatchTool, firstStringArgument, toolResultImageParts, // helpers
 //   getLastToolCallKey/setLastToolCallKey,
-//   getRepeatedToolCallCount/setRepeatedToolCallCount, REPEATED_TOOL_CALL_LIMIT,
-//   onDelegatedUsage                    // optional subagent usage hook
+//   getRepeatedToolCallCount/setRepeatedToolCallCount, REPEATED_TOOL_CALL_LIMIT
 // }
 async function runSingleToolCall(c, cx) {
   const { opts, onEvent, convo, toolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
@@ -378,8 +377,6 @@ async function runSingleToolCall(c, cx) {
     }
   }
 
-  if (c.name === 'subagent' && typeof cx.onDelegatedUsage === 'function') cx.onDelegatedUsage(exec && exec.result);
-
   onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
 
   pushToolMessage(c.name, modelContentForTool(c.name, exec));
@@ -412,7 +409,7 @@ function promptCacheKeyFor(opts) {
 }
 
 async function streamChat(opts) {
-  const { model, messages, signal, onEvent, onRoundUsage, thinkingLevel, maxOutputTokens } = opts || {};
+  const { model, messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
   if (!model || !model.provider) {
     return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
   }
@@ -728,8 +725,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         setLastToolCallKey: (k) => { lastToolCallKey = k; },
         getRepeatedToolCallCount: () => repeatedToolCallCount,
         setRepeatedToolCallCount: (n) => { repeatedToolCallCount = n; },
-        REPEATED_TOOL_CALL_LIMIT,
-        onDelegatedUsage: (result) => addDelegatedUsage(result)
+        REPEATED_TOOL_CALL_LIMIT
       });
       const imageParts = out && out.imageParts;
       if (imageParts && imageParts.length) {
@@ -1106,6 +1102,26 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         });
       } catch { /* listener errors must not abort the stream */ }
     }
+    if (typeof onRoundCommit === 'function') {
+    // Fires exactly once per round — when the round's upstream stream has
+    // ended — with the round's final token/cost snapshot. Unlike
+    // onRoundUsage (a snapshot stream that providers reporting usage per
+    // delta fire several times per round), this is a per-round boundary:
+    // the subagent dispatcher bills each nested round the moment it
+    // finishes so the parent chat's running total grows while the
+    // delegated run is still working.
+    try {
+      onRoundCommit({
+      promptTokens,
+      completionTokens,
+      cacheReadTokens: roundCacheReadTokens || 0,
+      cacheCreationTokens: roundCacheCreationTokens || 0,
+      providerCost: hasCost ? roundProviderCost : null,
+      providerCostInput: roundProviderCostInput,
+      providerCostOutput: roundProviderCostOutput
+      });
+    } catch { /* listener errors must not abort the stream */ }
+    }
     roundUsageCommitted = true;
     roundPromptTokens = null;
     roundCompletionTokens = null;
@@ -1178,27 +1194,45 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       return estimate && estimate.known ? estimate.total : null;
     } catch { return null; }
   }
-  function addDelegatedUsage(result) {
-    if (!result || !result.ok) return;
-    delegatedUsage.count++;
-    if (result.usage && typeof result.usage === 'object') {
-      const promptTokens = Number(result.usage.promptTokens);
-      const completionTokens = Number(result.usage.completionTokens);
-      if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
-      if (isFinite(completionTokens) && completionTokens > 0) delegatedUsage.completionTokens += completionTokens;
-    }
-    const cost = delegatedCostForResult(result);
+  // reportDelegatedUsage(report)
+  //
+  // A nested subagent is one or more *separate* billed upstream calls, so
+  // its tokens and cost ride on top of the parent turn. Reports arrive as
+  // deltas and are folded in as they land:
+  //
+  //   - every nested round that finishes reports its own increment (see the
+  //     `subagent` branch of dispatchTool), so the chat's live "Total" pill
+  //     grows while the delegated run is still working instead of jumping
+  //     when the whole run returns;
+  //   - the completion report (report.complete) commits the run's `count` —
+  //     and `costCount` when the run's cost is known — and adds only the
+  //     cost the round reports did not already cover. Only a run that
+  //     actually returned is counted; a delegated run that failed mid-way
+  //     keeps the cost its finished rounds already reported (those tokens
+  //     were really billed and are already on screen) without entering the
+  //     counts, mirroring the pre-existing rule that a failed subagent is
+  //     not a priced unit.
+  //
+  // `delegatedCostTotal()` requires one known-cost report per counted run,
+  // so the counters are only touched on completion: a run in flight must
+  // not make the aggregate look "known" while rounds are still unbilled.
+  function reportDelegatedUsage(report) {
+    if (!report) return;
+    const promptTokens = Number(report.promptTokens);
+    const completionTokens = Number(report.completionTokens);
+    if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
+    if (isFinite(completionTokens) && completionTokens > 0) delegatedUsage.completionTokens += completionTokens;
+    const cost = (typeof report.cost === 'number' && isFinite(report.cost) && report.cost > 0) ? report.cost : null;
     if (cost != null) {
-      delegatedUsage.costCount++;
       delegatedProviderCost = (delegatedProviderCost || 0) + cost;
-      // Surface the new subagent cost to the SSE stream so the
-      // chat's "Total" pill updates immediately. The wire shape
-      // matches the persisted `cost` block on assistant messages
-      // ({ known, total, input, output, currency }) so the client
-      // can drop it into the live running total with no extra
-      // plumbing. The final `done` event folds the same number
-      // into the parent remainder; the client clears the running
-      // delta at that point so nothing is double-counted.
+      // Surface the increment to the SSE stream so the chat's "Total"
+      // pill updates immediately. The wire shape matches the persisted
+      // `cost` block on assistant messages
+      // ({ known, total, input, output, currency }) so the client can
+      // drop it into the live running total with no extra plumbing. The
+      // final `done` event folds the same number into the parent
+      // remainder; the client clears the running delta at that point so
+      // nothing is double-counted.
       onEvent('usage_update', {
         cost: {
           known: true,
@@ -1208,8 +1242,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           currency: 'USD'
         },
         source: 'subagent',
-        modelId: result.model && result.model.id ? result.model.id : undefined
+        modelId: report.modelId
       });
+    }
+    if (report.complete && report.ok) {
+      delegatedUsage.count++;
+      if (report.costKnown) delegatedUsage.costCount++;
     }
   }
 
@@ -1515,6 +1553,85 @@ return { ok: false, content: JSON.stringify(r), result: r };
         if (nestedThinkingLevel === '') delete nestedModel.thinkingLevel;
         else nestedModel.thinkingLevel = nestedThinkingLevel;
       }
+      // ---- live delegated billing ---------------------------------------
+      // A delegated run is several separate billed upstream calls. Billing
+      // it only when the whole run returns leaves the chat's live "Total"
+      // frozen for the entire subagent — which, with tool-using subagents,
+      // can be a long time. So every nested round reports its own increment
+      // the moment it finishes, and the completion below only adds what the
+      // round reports did not cover.
+      //
+      // `mirror` reproduces the nested run's own usage aggregation (see
+      // commitRoundUsage: prompt tokens are last-round-wins because every
+      // round re-sends the conversation, while completion, cache and
+      // provider-reported cost accumulate), so `nestedCostSoFar()` is
+      // exactly the cost the nested run reports when it returns.
+      // `forwarded` tracks what has already been handed to the parent, so
+      // the deltas can never bill a round twice.
+      const nestedModelRef = nestedModel && nestedModel.id
+        ? { id: nestedModel.id, pricing: nestedModel.pricing }
+        : null;
+      const mirror = {
+        lastPromptTokens: 0,
+        completionTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        providerCost: null
+      };
+      const forwarded = { promptTokens: 0, completionTokens: 0, cost: 0 };
+      let runCostKnown = false;
+
+      // Cost of the nested run as reported so far, resolved the same way
+      // the completion path resolves it: provider-reported cost when a
+      // round carried one, otherwise an estimate priced with the nested
+      // model. Null while pricing is unknown.
+      function nestedCostSoFar() {
+        const usageSoFar = {
+          promptTokens: mirror.lastPromptTokens,
+          completionTokens: mirror.completionTokens
+        };
+        if (mirror.cacheReadTokens) usageSoFar.cacheReadTokens = mirror.cacheReadTokens;
+        if (mirror.cacheCreationTokens) usageSoFar.cacheCreationTokens = mirror.cacheCreationTokens;
+        return delegatedCostForResult({
+          ok: true,
+          model: nestedModelRef,
+          providerCost: mirror.providerCost,
+          usage: usageSoFar
+        });
+      }
+
+      // One nested round finished (streamChat's onRoundCommit): mirror its
+      // usage and forward the increments to the parent's delegated totals,
+      // which also updates the chat UI's running total.
+      function forwardNestedRound(round) {
+        if (!round) return;
+        const promptTokens = Number(round.promptTokens);
+        const completionTokens = Number(round.completionTokens);
+        if (isFinite(promptTokens) && promptTokens > 0) mirror.lastPromptTokens = promptTokens;
+        if (isFinite(completionTokens) && completionTokens > 0) mirror.completionTokens += completionTokens;
+        mirror.cacheReadTokens += Number(round.cacheReadTokens) || 0;
+        mirror.cacheCreationTokens += Number(round.cacheCreationTokens) || 0;
+        // `providerCost: null` means "no provider-reported cost", NOT $0 —
+        // Number(null) is 0, which would look like a real (free) price and
+        // shadow the estimate for every round.
+        const roundCost = round.providerCost == null ? NaN : Number(round.providerCost);
+        if (isFinite(roundCost) && roundCost >= 0) mirror.providerCost = (mirror.providerCost || 0) + roundCost;
+        const promptDelta = Math.max(0, mirror.lastPromptTokens - forwarded.promptTokens);
+        const completionDelta = isFinite(completionTokens) && completionTokens > 0 ? completionTokens : 0;
+        const costSoFar = nestedCostSoFar();
+        if (costSoFar != null) runCostKnown = true;
+        const costDelta = costSoFar == null ? 0 : Math.max(0, costSoFar - forwarded.cost);
+        forwarded.promptTokens += promptDelta;
+        forwarded.completionTokens += completionDelta;
+        if (costSoFar != null && costSoFar > forwarded.cost) forwarded.cost = costSoFar;
+        reportDelegatedUsage({
+          promptTokens: promptDelta,
+          completionTokens: completionDelta,
+          cost: costDelta,
+          modelId: nestedModelRef ? nestedModelRef.id : undefined
+        });
+      }
+
       const nestedEvents = [];
       const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
       let nestedEnabled = parentEnabled
@@ -1550,6 +1667,8 @@ promptSize: callOpts && callOpts.promptSize,
 
         toolOutput: callOpts && callOpts.toolOutput,
         enabledTools: nestedEnabled,
+        // Per-round billing for the live delegated cost (see above).
+        onRoundCommit: forwardNestedRound,
         // Marker the shell dispatcher reads to re-emit live output
         // chunks as subagent_event so they render inside this card.
         nestedSubagent: true,
@@ -1632,12 +1751,26 @@ promptSize: callOpts && callOpts.promptSize,
         flushCalls();
       }
       chat.push({ role: 'assistant', content: text });
-      const nestedModelRef = nestedModel && nestedModel.id
-        ? { id: nestedModel.id, pricing: nestedModel.pricing }
-        : null;
       const r = nested && nested.ok
         ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost ?? null, totalCost: nested.totalCost ?? null, model: nestedModelRef }
         : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+      // Commit the run. The round reports above already billed every nested
+      // round, so this only adds what they missed — a run whose rounds
+      // never reported usage, or a cost estimate that only became
+      // resolvable from the full result — and marks the run as counted so
+      // delegatedCostTotal() can be known again.
+      const finalCost = delegatedCostForResult(r);
+      if (finalCost != null) {
+        runCostKnown = true;
+        if (finalCost > forwarded.cost) {
+          reportDelegatedUsage({
+            cost: finalCost - forwarded.cost,
+            modelId: nestedModelRef ? nestedModelRef.id : undefined
+          });
+          forwarded.cost = finalCost;
+        }
+      }
+      reportDelegatedUsage({ complete: true, ok: !!(nested && nested.ok), costKnown: runCostKnown });
       return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
     }
 

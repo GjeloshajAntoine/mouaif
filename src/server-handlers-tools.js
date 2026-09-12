@@ -497,9 +497,8 @@ try {
           setLastToolCallKey: () => {},
           getRepeatedToolCallCount: () => 0,
           setRepeatedToolCallCount: () => {},
-          REPEATED_TOOL_CALL_LIMIT: 3,
-          onDelegatedUsage: null
-        }
+          REPEATED_TOOL_CALL_LIMIT: 3
+          }
       );
       const exec = out && out.exec;
       const result = exec && exec.result;
