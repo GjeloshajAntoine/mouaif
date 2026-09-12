@@ -27,14 +27,12 @@ import { fetchJson, activeProject, saveApp } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import {
   MAX_RECORDING_MS,
-  autoKindId,
   blobToBase64,
   dictationFilename,
   formatDuration,
   kindLabel,
   kindShortLabel,
   loadDictationModels,
-  modelsForKind,
   pickRecorderMime,
   modelBadge,
   pickerModels,
@@ -44,21 +42,18 @@ import {
   transcriptActions
 } from '../dictation.js';
 
-// Where the chosen dictation model / request shape live. App-level, not
-// project-level: dictation is usually a one-off ("let me talk at this
-// machine") and a project that never dictates should not grow a settings key
-// for it. The project's model list is still the source of the models on offer.
+// Where the chosen dictation model lives. App-level, not project-level:
+// dictation is usually a one-off ("let me talk at this machine") and a project
+// that never dictates should not grow a settings key for it. The project's
+// model list is still the source of the models on offer.
 const APP_KEY = 'dictation';
 
 export function DictationView() {
   // ---- Settings / catalog -------------------------------------------------
   const [models, setModels] = useState([]);
   const [kinds, setKinds] = useState([]);
-  const [totalModels, setTotalModels] = useState(0);
   const [modelId, setModelId] = useState('');
   const [providerId, setProviderId] = useState('');
-  const [kindId, setKindId] = useState('');
-  const [kindTouched, setKindTouched] = useState(false);
   const [language, setLanguage] = useState('');
   const [prompt, setPrompt] = useState('');
   const [catalogBusy, setCatalogBusy] = useState(true);
@@ -109,9 +104,6 @@ export function DictationView() {
   // becoming an effect dependency: the shape the user has explicitly picked,
   // and the model currently selected. Reading state directly would work but
   // would also close the catalog effect over stale values on its second pass.
-  const kindTouchedRef = useRef(false);
-  const kindIdRef = useRef('');
-  kindIdRef.current = kindId;
   const modelIdRef = useRef('');
   modelIdRef.current = modelId;
 
@@ -148,38 +140,22 @@ const [catalogProviders, setCatalogProviders] = useState([]);
   // applyCatalog(catalog, saved, opts) — fold one catalog response into the page
 // state.
 //
-// Which request shape is selected is decided here, once, from three inputs in
-// priority order:
-//
-//   1. the shape the user picked in this session (they are looking at the
-//      chips; nothing may move under them);
-//   2. the shape that actually has models — this is what the second, live pass
-//      usually changes, because the project's own rows may have been empty;
-//   3. `saved.kind`, the shape remembered from a previous session.
-//
-// `opts.onlyIfEmpty` additionally protects a model the user has picked since
-// the first pass resolved, so a slow live response cannot overwrite it.
+// There is no request shape to choose: the shape follows from the model's
+// provider connection (see kindForModel on the server), which is the only
+// thing that knows how to address it. So a catalog response only has to pick a
+// sensible default model — `opts.onlyIfEmpty` protects a model the user has
+// picked since the first pass resolved, so a slow live response cannot
+// overwrite it.
 function applyCatalog(catalog, saved, opts) {
   const onlyIfEmpty = !!(opts && opts.onlyIfEmpty);
   const rows = catalog.models;
   setModels(rows);
   setKinds(catalog.kinds);
-  setTotalModels(catalog.total);
   setLiveFailures(Array.isArray(catalog.liveFailures) ? catalog.liveFailures : []);
   setCatalogProviders(Array.isArray(catalog.providers) ? catalog.providers : []);
-
-  // The family to show. `autoKindId` weighs the models by family, so a
-  // project whose models are all Gemini opens on Gemini rather than on the
-  // first entry of the family list. A remembered shape is only honoured when
-  // it still has rows — an empty `preferred` must fall through, not "match"
-  // every row.
-  const preferred = (saved && saved.kind) || '';
-  const remembered = preferred && modelsForKind(rows, preferred).length ? preferred : '';
-  const family = remembered || autoKindId(catalog.kinds, rows);
-  const nextKind = kindTouchedRef.current ? (kindIdRef.current || family) : family;
-  setKindId(nextKind);
-
-  const fallback = resolveDefaultModel(rows, saved, nextKind);
+  // The remembered model wins if it still exists; otherwise a lone candidate is
+  // adopted; otherwise the picker asks.
+  const fallback = resolveDefaultModel(rows, saved);
   if (fallback && (!onlyIfEmpty || !modelIdRef.current)) {
     setModelId(fallback.modelId);
     setProviderId(fallback.providerId);
@@ -464,8 +440,9 @@ function applyCatalog(catalog, saved, opts) {
   }
 
   // ---- Derived ------------------------------------------------------------
-const kindModels = modelsForKind(models, kindId);
-const pickerList = pickerModels(kindModels);
+// One list, no family filter: every row can be transcribed, and each row
+// carries the shape its own connection speaks.
+const pickerList = pickerModels(models);
 const selection = modelId ? { providerId, modelId } : null;
 const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRecording: !!recordingBlob });
 // The note above the picker distinguishes the two sources it merges.
@@ -483,7 +460,7 @@ async function refreshCatalog() {
   setStatusState('');
   try {
     const catalog = await loadDictationModels(projectDir, { refresh: true });
-    applyCatalog(catalog, { kind: kindId, modelId, providerId }, { onlyIfEmpty: false });
+    applyCatalog(catalog, { modelId, providerId }, { onlyIfEmpty: false });
   } catch (e) {
     setStatus((e && e.message) || 'Could not refresh the model list.');
     setStatusState('error');
@@ -509,34 +486,14 @@ function onPickModel(next) {
     } catch { /* the picker still works for this session */ }
   }
 
-  function onPickKind(next) {
-    // Recorded in the ref as well as in state: the catalog callbacks compare
-    // against the ref, and a state update would not be visible to a response
-    // that is already in flight.
-    kindTouchedRef.current = true;
-    setKindTouched(true);
-    setKindId(next);
-    // The row list is filtered by family, so a model from the previous family
-    // can silently vanish. Clearing it makes the empty picker honest instead
-    // of leaving a stale id that no longer has a row.
-    modelIdRef.current = '';
-    setModelId('');
-    setProviderId('');
-    remember({ kind: next });
-  }
-
   const selectedRow = models.find((m) => m.id === modelId && (m.provider || '') === providerId) || null;
   // Why the selected model is on the list, when its name does not say. Shown
   // under the catalog note so a row like `openai/gpt-audio` is explained.
   const selectedBadge = selectedRow && selectedRow.source === 'live' ? modelBadge(selectedRow) : '';
-  // While the user has not touched the control, the shape is the selected
-  // model's own: that is what the request will actually use. After a tap, the
-  // chip is the user's answer and wins — including when it disagrees with the
-  // model they then pick, which is exactly how a mis-inferred model gets
-  // overridden.
-  const effectiveKind = kindTouched
-    ? kindId
-    : ((selectedRow && selectedRow.kind) || kindId);
+  // The shape the transcription will actually use. It is read-only here: it
+  // follows from the model's provider connection, and is shown so the user can
+  // see what a given model will do rather than choose it.
+  const effectiveKind = (selectedRow && selectedRow.kind) || '';
 
   // The record button's own caption. Recording beats every other state, then
   // "stop is available" beats "transcribe".
@@ -589,7 +546,7 @@ function onPickModel(next) {
         : null
     ),
 
-    // ---- 2. Model + request shape -----------------------------------------
+    // ---- 2. Model ---------------------------------------------------------
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Model', h('span', { class: 'group__title-note' }, projectDir ? (project.name || 'this project') : 'no project')),
       h('div', { class: 'dictation__fields' },
@@ -600,7 +557,7 @@ function onPickModel(next) {
           value: selection,
           onChange: onPickModel,
           onOpen: () => { /* the catalog is already loaded */ },
-          placeholder: catalogBusy ? 'Loading models…' : (emptyHint(kindModels, totalModels) || 'Pick a model'),
+          placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
           ariaLabel: 'Pick dictation model',
           // 'sheet' rather than 'dropdown': on a phone the dropdown popup
           // renders in flow and covers the transcript directly beneath it,
@@ -610,30 +567,27 @@ function onPickModel(next) {
           refreshEmpty: 'No dictation models'
         })
         ),
-        h('div', { class: 'dictation__field' },
-        h('span', { class: 'label' }, 'Request shape'),
-        kinds.length
-          ? h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Transcription request shape' },
-            kinds.map((k) =>
-            h('label', { key: k.id, class: 'seg__item' + (effectiveKind === k.id ? ' seg__item--on' : '') },
-              h('input', {
-              type: 'radio',
-              name: 'dictation-kind',
-              value: k.id,
-              checked: effectiveKind === k.id,
-              onChange: () => onPickKind(k.id)
-              }),
-              h('span', { class: 'seg__pill', title: k.label }, kindShortLabel(k.id))
-            )
-            )
-          )
-          // With no catalog there is no shape to choose between, so the
-          // control is replaced by a dash rather than a single fake
-          // "unknown" chip — a one-option radio group is just decoration.
-          : h('span', { class: 'dictation__kind-empty' }, '—'),
-        h('span', { class: 'hint hint--compact dictation__kind-hint' },
-          kinds.length ? (kindLabel(kinds, effectiveKind) || 'Pick a request shape') : 'No request shape to choose')
+        // Read-only. The shape a transcription will use is not a user choice:
+        // it follows from the model's provider connection (Gemini speaks
+        // generateContent, every other provider speaks the OpenAI multipart
+        // form), and the two are not interchangeable — pointing a Gemini
+        // connection at /audio/transcriptions, or an OpenRouter connection at
+        // /v1beta/models/…:generateContent, is a 404. Showing it means the
+        // user can see what a given model will do; letting them set it only
+        // offered a way to break it.
+        //
+        // With no model picked there is nothing to report — the picker's own
+        // placeholder already says what the first step is, and repeating it in
+        // a second row read as a broken control.
+        selectedRow && effectiveKind
+        ? h('div', { class: 'dictation__field' },
+        h('span', { class: 'label' }, 'Sends as'),
+        h('span', {
+        class: 'dictation__kind-readout',
+        title: kindLabel(kinds, effectiveKind) || effectiveKind
+        }, kindShortLabel(effectiveKind))
         )
+        : null
       ),
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
@@ -740,12 +694,12 @@ function onPickModel(next) {
   );
 }
 
-// emptyHint(models, total) — the *placeholder* text on the model trigger when
-// there is nothing to pick. Kept out of the render body so the three distinct
-// reasons (no models at all, none in this request shape, catalog still
-// loading) each get a sentence instead of a generic "none".
-function emptyHint(models, total) {
+// emptyHint(models) — the *placeholder* text on the model trigger when there is
+// nothing to pick. Kept out of the render body so the two distinct reasons (no
+// models at all, catalog still loading) each get a sentence instead of a
+// generic "none". A non-empty list means the placeholder is the plain
+// "Pick a model" prompt, which the caller supplies.
+function emptyHint(models) {
   if (models && models.length) return '';
-  if (!total) return 'No models in this project';
-  return 'No model in this request shape';
+  return 'No models in this project';
 }

@@ -2,7 +2,7 @@
 //
 // A Vite build cannot catch a render expression that reads a name that no
 // longer exists, and the page's first paint has to be right *before* anything
-// is recorded (the model picker, the request-shape control, the disabled
+// is recorded (the model picker, the transcription read-out, the disabled
 // action chips). So the module is evaluated in a VM with its imports stripped
 // and re-supplied as context globals, then rendered twice: once cold (the
 // catalog is still loading) and once after it resolves.
@@ -10,8 +10,8 @@
 // Two deliberate choices:
 //   * `frontend/src/dictation.js` is loaded as a *real* module (through a
 //     data: URL), not stubbed. Its preselect rule — remembered model, else the
-//     single candidate in the family — is exactly the kind of logic that looks
-//     fine in a hand-written stub and is wrong in the browser.
+//     single candidate — is exactly the kind of logic that looks fine in a
+//     hand-written stub and is wrong in the browser.
 //   * One `fetchJson` serves the whole file. The page and the helper both call
 //     it, so a single dispatcher keeps the two from disagreeing about what the
 //     server returns, which is what a per-module stub would hide.
@@ -182,7 +182,9 @@ const selectionOf = (node) => {
   const v = node.attrs.value;
   return v ? { providerId: v.providerId, modelId: v.modelId } : null;
 };
-const radios = (nodes) => all(nodes, (n) => n.tag === 'label' && buttonClass(n).startsWith('seg__item'));
+// The dialect read-out: one line under the picker, only once a model is
+// selected, with the full family label kept as the tooltip.
+const kindReadouts = (nodes) => all(nodes, (n) => buttonClass(n).includes('dictation__kind-readout'));
 const chipLabels = (nodes) => buttons(nodes)
   .filter((n) => buttonClass(n).startsWith('btn'))
   .map((n) => n.children.join(''));
@@ -251,20 +253,14 @@ function useCase(caseOptions) {
   await view.settle();
   const nodes = view.render();
   assert.equal(picker(nodes).placeholder, 'Pick a model', 'the loading placeholder is gone');
-  // The list is the rows of the family currently selected; the family control
-  // switches the list, the picker does not. Here the OpenAI-shaped family has
-  // exactly one row, so it is preselected — the "pick a model" prompt only
-  // appears when the *selected* family has more than one candidate.
-  assert.deepEqual(picker(nodes).models.map((m) => m.id), ['whisper-1'],
-    'the OpenAI-shaped family is listed while that shape is selected');
-  assert.deepEqual(selectionOf(pickerNodes(nodes)[0]), { providerId: 'openai-compatible', modelId: 'whisper-1' });
-
-  const shape = radios(nodes);
-  assert.equal(shape.length, 2, 'one chip per request family');
-  assert.equal(shape[0].children[1].children.join(''), 'OpenAI-shaped', 'the chip shows the short label');
-  assert.equal(shape[0].children[1].attrs.title, CATALOG.kinds[0].label, 'the full label survives as the tooltip');
-  assert.ok(buttonClass(shape[0]).includes('seg__item--on'), 'the auto-picked family is the checked one');
-  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__kind-hint')).children.join(''), CATALOG.kinds[0].label);
+  // Every row is offered: there is no family filter to hide half the catalog
+  // behind, and each row carries the shape its own connection speaks.
+  assert.deepEqual(picker(nodes).models.map((m) => m.id), ['whisper-1', 'gemini-2.5-flash'],
+    'the whole catalog is offered, in the order the server sent it');
+  assert.equal(selectionOf(pickerNodes(nodes)[0]), null, 'two candidates is a decision the user makes');
+  // Nothing is picked, so there is nothing to report about the transport: the
+  // read-out must not repeat the picker's own placeholder.
+  assert.deepEqual(kindReadouts(nodes), []);
   // The read order matters: settings once, then the fast project pass, then
   // the live pass. The page must not block its first paint on the live list,
   // and it must not re-read settings for it.
@@ -284,12 +280,19 @@ function useCase(caseOptions) {
   });
   view.render();
   await view.settle();
-  assert.deepEqual(selectionOf(pickerNodes(view.render())[0]), { providerId: 'openai-compatible', modelId: 'whisper-1' },
+  const nodes = view.render();
+  assert.deepEqual(selectionOf(pickerNodes(nodes)[0]), { providerId: 'openai-compatible', modelId: 'whisper-1' },
     'a single candidate needs no decision');
+  // A selected model is the only case that renders the read-out, and it shows
+  // the two-word form with the full label as the tooltip — the transport is a
+  // fact about the connection, not a second control the user could mis-set.
+  const readouts = kindReadouts(nodes);
+  assert.equal(readouts.length, 1, 'the read-out exists once a model is selected');
+  assert.equal(readouts[0].children.join(''), 'OpenAI-shaped', 'the two-word form fits a phone');
+  assert.equal(readouts[0].attrs.title, CATALOG.kinds[0].label, 'the full label survives as the tooltip');
 }
 
-// ---- A remembered model beats the family default -----------------------
-
+// ---- A remembered model is selected again ------------------------------
 {
   const view = useCase({
     projectDir: '/fixture/project',
@@ -300,9 +303,10 @@ function useCase(caseOptions) {
   await view.settle();
   const nodes = view.render();
   assert.deepEqual(selectionOf(pickerNodes(nodes)[0]), { providerId: 'gemini', modelId: 'gemini-2.5-flash' });
-  assert.deepEqual(picker(nodes).models.map((m) => m.id), ['gemini-2.5-flash'], 'the remembered family filters the list');
-  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__kind-hint')).children.join(''), 'Gemini (inline audio)');
-  assert.ok(buttonClass(radios(nodes)[1]).includes('seg__item--on'), 'the remembered shape is checked');
+  assert.ok(picker(nodes).models.some((m) => m.id === 'gemini-2.5-flash'), 'the remembered model has a row');
+  const readouts = kindReadouts(nodes);
+  assert.equal(readouts[0].children.join(''), 'Gemini');
+  assert.equal(readouts[0].attrs.title, 'Gemini (inline audio)');
 }
 
 // ---- A model that no longer exists is never preselected ----------------
@@ -337,7 +341,7 @@ function useCase(caseOptions) {
   assert.deepEqual(all(nodes, (n) => buttonClass(n) === 'group__title-note').map((n) => n.children.join('')),
     ['alpha'], 'the adopted project is named');
   assert.equal(picker(nodes).placeholder, 'Pick a model', "the adopted project's catalog is on offer");
-  assert.equal(picker(nodes).models.length, 1);
+  assert.equal(picker(nodes).models.length, 2, 'both of the adopted project rows are offered');
   assert.ok(calls.some((c) => new URL(c.url, 'http://fixture').pathname === '/api/projects/registered'));
   assert.ok(calls.some((c) => String(c.url).includes('projectDir=%2Ffixture%2Falpha')),
     'the catalog is read for the adopted project');
@@ -446,9 +450,8 @@ function useCase(caseOptions) {
 // ---- The case that made the page unusable: no project models at all ----
 //
 // A fresh install: nothing in .mouaif.json, one connected provider. The first
-// (fast) pass has no rows, so it must not lock the request shape to the first
-// family in the list — the live pass supplies Gemini rows, and the shape has
-// to follow them.
+// (fast) pass has no rows and must not settle the page on an empty list — the
+// live pass supplies the rows.
 {
   const view = useCase({
     projectDir: '/fixture/project',
@@ -464,41 +467,14 @@ function useCase(caseOptions) {
   view.render();
   await view.settle();
   const nodes = view.render();
-  const shape = radios(nodes);
-  assert.ok(buttonClass(shape[1]).includes('seg__item--on'),
-    'the shape follows the only family with models, not the order of the family list');
-  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__kind-hint')).children.join(''),
-    'Gemini (inline audio)');
-  // Two candidates in the family, so the model itself is still the user's
-  // call — but the list is no longer empty.
+  // Two candidates and no remembered model, so the model itself is still the
+  // user's call — but the list is no longer empty.
   assert.deepEqual(picker(nodes).models.map((m) => m.id), ['gemini-2.5-flash', 'gemini-2.5-pro']);
   assert.equal(selectionOf(pickerNodes(nodes)[0]), null);
-}
-
-// ---- A remembered shape survives the live pass -------------------------
-
-{
-  const view = useCase({
-    projectDir: '/fixture/project',
-    projectModels: [],
-    app: { dictation: { kind: 'gemini' } },
-    catalog: {
-      models: [
-        { id: 'gemini-2.5-flash', provider: 'gemini', kind: 'gemini', source: 'live', connected: true },
-        { id: 'whisper-large-v3', provider: 'groq', kind: 'openai-compatible', source: 'live', connected: true }
-      ],
-      kinds: KINDS, total: 0, providers: ['gemini', 'groq'], liveFailures: []
-    }
-  });
-  view.render();
-  await view.settle();
-  const nodes = view.render();
-  assert.ok(buttonClass(radios(nodes)[1]).includes('seg__item--on'),
-    'the shape remembered from the last session wins over the first family');
+  assert.deepEqual(kindReadouts(nodes), [], 'nothing is reported before a model is picked');
 }
 
 // ---- The preselect rule on its own -------------------------------------
-
 {
   const { resolveDefaultModel, modelsForKind } = dictation;
   assert.equal(resolveDefaultModel([], { modelId: 'x' }, 'openai-compatible'), null);

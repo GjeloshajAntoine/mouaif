@@ -169,29 +169,30 @@
   font-size: 0.95rem;
 }
 
-/* ---- Model / request shape ------------------------------------------ */
-
+/* ---- Model ---------------------------------------------------------- */
 .dictation__fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px 10px 4px;
+display: flex;
+flex-wrap: wrap;
+gap: 10px;
+padding: 8px 10px 4px;
 }
-
 .dictation__field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  /* Full width on a phone: the request-shape control (`OpenAI-shaped` +
-     `Gemini` chips) needs ~176px, and sharing a 390px row with the model
-     picker leaves it ~158px, which clipped the second chip. Two-up is the
-     wider-screen layout, not the default — mobile first. */
-  flex: 1 1 100%;
-  min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 4px;
+/* Full width on a phone: the model trigger and its read-out each need the
+whole row to stay legible at 360px. Two-up is the wider-screen layout, not
+the default — mobile first. */
+flex: 1 1 100%;
+min-width: 0;
 }
-
-.dictation__kind-hint {
-  min-height: 1.2em;
+/* The dialect the selected model will actually be sent in. A read-out, not a
+control: muted, one line, and only rendered once there is a model to report
+(see DictationPage.jsx). It inherits the input's text size so the row does not
+look like a form field that lost its border. */
+.dictation__kind-readout {
+font-size: 0.9rem;
+color: var(--muted-2);
 }
 
 /* The catalog note: how many models, where they came from, and the refresh
@@ -226,16 +227,6 @@
 .dictation__refresh:hover:not(:disabled)  { background: var(--surface-2); border-color: var(--border-strong); }
 .dictation__refresh:active:not(:disabled) { background: var(--surface-3); }
 .dictation__refresh:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* The placeholder that replaces the request-shape control when there is
-   nothing to choose between. Muted and left-aligned so the row keeps the
-   height of the control it stands in for, instead of collapsing. */
-.dictation__kind-empty {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  color: var(--muted-2);
-}
 
 .dictation__error {
   color: var(--danger);

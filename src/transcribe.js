@@ -47,36 +47,41 @@ const DEFAULT_TIMEOUT_MS = 60 * 1000;
 // declared one. Checked in order; the first hit wins.
 const OPENAI_MODEL_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral', 'parakeet'];
 
-// kindForModel(model) — the dialect for one model record. Explicit
-// configuration always wins over inference:
+// OPENAI_SHAPED_PROVIDERS — every provider whose base URL speaks the
+// OpenAI-shaped multipart form. This is what decides the transport: which API a
+// base URL speaks is a property of the *connection*, not of the model id.
+const OPENAI_SHAPED_PROVIDERS = [
+  'openai-compatible', 'openrouter', 'azure', 'mistral', 'groq', 'deepseek',
+  'ollama', 'github-copilot', 'anthropic'
+];
+
+// kindForModel(model) — the dialect for one model record, in strict precedence:
 //
-//   model.transcription = { kind: 'gemini', language: 'fr', prompt: '…' }
+//   1. an explicit `transcription.kind` on the model. This is the escape hatch
+//      for an endpoint that is not the convention — a self-hosted server that
+//      really does serve Gemma behind a generateContent path, say. It is the
+//      only thing that overrides the connection.
+//   2. the *provider connection*: `gemini` speaks Gemini, everything else in
+//      the shipped registry speaks the OpenAI shape.
+//   3. only when the provider is unknown, the id: `google/…` means Gemini.
 //
-// Otherwise the family comes from the provider, then from the id:
-//
-//   * a Gemini *provider* (`gemini`) is the Gemini family;
-//   * an OpenRouter slug for a Google model (`google/…`) is the Gemini family,
-//     because OpenRouter routes it to the same API;
-//   * the OpenAI family's id hints (whisper, voxtral, …);
-//   * the OpenAI shape otherwise, because it is the only shape that works
-//     against an arbitrary base URL.
-//
-// Deliberately NOT a substring match on "gemini" anywhere in the id. That
-// looked harmless and was not: OpenRouter carries dozens of Google/Fireworks
-// entries whose ids contain it (…-gemini-…, gemini-flash-lite-latest, …), which
-// re-classified them as Gemini. A slug that is not `google/…` is not a Gemini
-// model this client can address, however its name reads.
+// The order matters, and getting it wrong is not cosmetic. An earlier version
+// keyed off the id first, so an OpenRouter model called `google/gemini-2.5-flash`
+// resolved to the Gemini family and produced
+// `https://openrouter.ai/api/v1/v1beta/models/…:generateContent` — a URL that
+// cannot exist, because OpenRouter has no generateContent API. The model *name*
+// says which Google model it is; the *connection* says how to talk to it.
 function kindForModel(model) {
-const m = model || {};
-const explicit = m.transcription && typeof m.transcription.kind === 'string'
-? m.transcription.kind
-: '';
-if (KIND_IDS.includes(explicit)) return explicit;
-if (m.provider === 'gemini') return 'gemini';
-const id = String(m.id || '').toLowerCase();
-if (id.startsWith('google/')) return 'gemini';
-if (OPENAI_MODEL_HINTS.some((hint) => id.includes(hint))) return 'openai-compatible';
-return DEFAULT_KIND;
+  const m = model || {};
+  const explicit = m.transcription && typeof m.transcription.kind === 'string'
+    ? m.transcription.kind
+    : '';
+  if (KIND_IDS.includes(explicit)) return explicit;
+  if (m.provider === 'gemini') return 'gemini';
+  if (OPENAI_SHAPED_PROVIDERS.includes(m.provider)) return 'openai-compatible';
+  const id = String(m.id || '').toLowerCase();
+  if (id.startsWith('google/')) return 'gemini';
+  return DEFAULT_KIND;
 }
 
 // markedForTranscription(model) — the user said so, either with the short form

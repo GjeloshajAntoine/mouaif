@@ -113,8 +113,13 @@ check('isTranscriptionModel recognises the four signals', () => {
 check('kindForModel only calls a model Gemini when it really is one', () => {
   // The provider decides.
   assert.equal(transcribe.kindForModel({ id: 'x', provider: 'gemini' }), 'gemini');
-  // An OpenRouter slug for a Google model routes to the same API.
-  assert.equal(transcribe.kindForModel({ id: 'google/gemini-2.5-flash', provider: 'openrouter' }), 'gemini');
+  // …and the *connection* decides when the provider is one we know: an
+  // OpenRouter slug for a Google model still goes to OpenRouter, which has no
+  // generateContent API. Reading `google/` as "Gemini" here produced
+  // `openrouter.ai/api/v1/v1beta/models/…:generateContent` — a URL that cannot
+  // exist. The `google/` prefix only decides for a provider we do not know.
+  assert.equal(transcribe.kindForModel({ id: 'google/gemini-2.5-flash', provider: 'openrouter' }), 'openai-compatible');
+  assert.equal(transcribe.kindForModel({ id: 'google/gemini-2.5-flash', provider: 'custom-gateway' }), 'gemini');
   // Regression: an id that merely *contains* "gemini" is not a Gemini model.
   // A substring test here classified dozens of OpenRouter rows (Fireworks'
   // naruto-…-gemini-…, gemini-flash-lite-latest, …) as Gemini, which both sent
@@ -262,7 +267,7 @@ check('parseTranscribeResponse reads both families, including self-hosted spelli
 check('a no-project catalog offers nothing but still names the shapes', () => {
   // Covered by the http test's project-less case; here the pure part: an
   // empty model list must not lose the family list, which is what the
-  // "Request shape" control renders.
+  // read-out under the picker names.
   assert.deepEqual(transcribe.transcriptionCandidates([]), []);
   assert.deepEqual(transcribe.transcriptionCandidates(null), []);
   assert.equal(transcribe.TRANSCRIBE_KINDS.length, 2);

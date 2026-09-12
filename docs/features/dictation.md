@@ -15,8 +15,9 @@ performs the upstream call.
 ### The Dictation page
 
 1. Open **Settings → App defaults → Dictation** (or `#/settings/dictation`).
-2. Pick a **dictation model** (a model from the active project) and, if the
-   model's provider uses a different dialect, the **request shape**.
+2. Pick a **dictation model** (a model from the active project, or one the
+  connected providers offer). The dialect it will be sent in is shown
+  underneath, read-only.
 3. Tap **Record**. The timer and the level meter confirm the microphone is
    live. Recording stops on the second tap, or automatically at 2:00.
 4. Tap **Transcribe**. The transcript appears in an editable field.
@@ -71,15 +72,25 @@ configure anything for the first one:
 }
 ```
 
-Four signals decide whether a model is offered, and the request shape follows
-from the first of them that applies:
+Four signals decide whether a model is **offered**, cheapest first:
+
+| Signal | Example |
+| --- | --- |
+| `transcription` is set | `"transcription": { "kind": "gemini" }` |
+| the id looks like speech-to-text | `whisper-1`, `mistralai/voxtral-…`, `parakeet` |
+| it resolves to the Gemini family | `gemini-2.5-flash` |
+| the provider reports audio input | `openai/gpt-audio`, `meta/muse-spark-1.3` |
+
+When none of them matches, everything is offered rather than nothing — a
+self-hosted `my-asr` is exactly the case nothing can infer.
+
+The **request shape** follows from the first of these that applies:
 
 | Signal | Example | Shape |
 | --- | --- | --- |
-| `transcription` is set | `"transcription": { "kind": "gemini" }` | as declared |
-| the provider is Gemini, or the id is `google/…` | `gemini-2.5-flash` | Gemini |
-| the id looks like speech-to-text | `whisper-1`, `mistralai/voxtral-…`, `parakeet` | OpenAI-shaped |
-| the provider reports audio input | `openai/gpt-audio`, `meta/muse-spark-1.3` | OpenAI-shaped |
+| `transcription.kind` is set | `"transcription": { "kind": "gemini" }` | as declared |
+| the provider is one we ship | `gemini-2.5-flash` on `gemini` | the connection decides: Gemini on `gemini`, OpenAI-shaped on every other shipped provider |
+| the provider is unknown and the id starts with `google/` | `google/gemini-2.5-flash` on a custom gateway | Gemini |
 | nothing matches | — | OpenAI-shaped |
 
 The last two matter on OpenRouter, which carries **no `whisper-*` at all**: its
@@ -89,24 +100,22 @@ It advertises each model's input modalities, so the catalog selects on that
 capability instead of guessing from the name, and the picker labels such a row
 `from provider · audio in`.
 
-A project with no recognisable models is offered all of them rather than none,
-because a self-hosted `my-asr` is exactly the case nothing can infer. Note that
-"is this a Gemini model" is decided by the **provider** and the `google/` slug
-prefix — never by a substring of the id; see the test note below.
+When none of them matches the model is still offered, and "is this a Gemini
+model" is decided by the **provider** (and, for a provider we do not ship, by a
+`google/` slug prefix) — never by a substring of the id. A substring test looked
+harmless and was not: it swept up dozens of OpenRouter entries whose names merely
+contain "gemini", which sent them to an endpoint that does not exist there.
 
-`Request shape` overrides the inference per run: tap **Gemini** for a model that
-would otherwise be sent as multipart, or the reverse. The shape follows the
-selected model until you touch the control, after which your choice wins and is
-remembered along with the model.
+There is no request-shape control: the shape follows from the model's provider
+connection, which is the only thing that knows how to address it.
 
 | Provider | Model id example | Request shape used |
 | --- | --- | --- |
 | OpenAI, Groq, Mistral, OpenRouter, self-hosted `/v1` | `whisper-1`, `whisper-large-v3`, `voxtral-mini-latest` | OpenAI-shaped (multipart) |
 | Google Gemini | `gemini-2.5-flash` | Gemini (inline audio) |
 
-The chosen model and request shape are remembered app-wide in the app store
-under the `dictation` key, so the next session — and the composer microphone —
-use the same one.
+The **Dictation model** picker lists the union of both sources, and the
+read-only line under it names the dialect the selected model will be sent in.
 
 ## Behavior
 
@@ -131,11 +140,13 @@ use the same one.
 - **One unreachable provider does not empty the list.** Its failure is reported
   with the provider's own message, and the rows from the providers that did
   answer are still offered.
-- **Nothing is preselected when the choice is real.** With one candidate in the
-  selected shape it is selected; with two, the picker asks.
-- **The request shape follows the models**, not the order of the family list:
-  in a project whose only dictation models are Gemini, the control starts on
-  Gemini even if the project's first model is OpenAI-shaped.
+- **Nothing is preselected when the choice is real.** With one candidate it is
+  selected; with two, the picker asks.
+- **There is no request-shape control.** The dialect a model is sent with is a
+  property of its provider connection, and the two families are not
+  interchangeable — a Gemini connection pointed at `/audio/transcriptions`, or
+  an OpenRouter connection pointed at `/v1beta/models/…:generateContent`, is a
+  404. The page reports the shape it will use instead of letting it be set.
 - **Failures name their cause.** A rejected key surfaces the provider's own
   message with HTTP 401, an unreachable provider is 502, a stalled one is 504
   after 60s, and a recording that is too long is 413.
@@ -175,7 +186,7 @@ use the same one.
   (`#/settings/dictation`; `#/dictation` is the legacy alias), reached from
   Settings → App defaults, and `frontend/src/components/chat/MicButton.jsx` — the
   composer microphone. Both use the same helper module, so the two surfaces
-  cannot disagree about the model or the request shape.
+  cannot disagree about the model or the dialect it is sent in.
 - `frontend/src/dictation.css` — the page and the microphone button. Mobile
   first: one column, a 56px primary control, ≥44px taps, `dvh` for the iOS
   keyboard, and a `prefers-reduced-motion` branch for the pulse.
