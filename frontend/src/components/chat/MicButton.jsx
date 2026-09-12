@@ -9,8 +9,10 @@
 // Which model transcribes is *not* chosen here. The app-wide dictation choice
 // (Settings-free, remembered in the app store under `dictation`, picked on the
 // dictation page) is honoured the same way the chat picker remembers a model;
-// tapping the button reports "No dictation model yet" and points at the page
-// when nothing is configured. One place decides, every surface obeys.
+// tapping the button with nothing configured reports the reason in the chat's
+// status row and points at the page. That check happens *before* the
+// microphone opens, so the user is never asked to record a take that cannot be
+// sent. One place decides, every surface obeys.
 //
 // The server owns the credential: this component records locally and POSTs
 // base64 to /api/ai/transcribe (docs/decisions.md section 10).
@@ -32,30 +34,50 @@ import {
   transcribeCost
 } from '../../dictation.js';
 
+// NO_MODEL_MESSAGE — the one wording for "nothing is configured", shared by the
+// pre-flight check (a tap that cannot transcribe) and the transcribe fallback.
+// It names the destination, because the chat's status row is the only place a
+// phone user will read it. `dictationPageHint` owns the "where to go" half, so
+// this copy and the exported hint cannot drift apart.
+const NO_MODEL_MESSAGE = 'No dictation model yet — ' + dictationPageHint();
+
 // rememberDictationChoice() — nothing to persist here: the page owns the
 // remembered model. This button only reads it, so a user who dictates mostly
 // in the chat never has to open the page after the first setup.
-
 export function MicButton(props) {
-  const { language = '', onTranscript } = props;
-  const [recording, setRecording] = useState(false);
-  const [status, setStatus] = useState('');
-  const [statusState, setStatusState] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const recorderRef = useRef(null);
-  const streamRef = useRef(null);
-  const chunksRef = useRef([]);
-  const stopTimerRef = useRef(null);
-  const startedAtRef = useRef(0);
-
-  // The status line under the composer is owned by the chat view; this
-  // component keeps its own last message so it can be rendered in the
-  // button's title/aria-label without reaching into the chat's refs.
-  function say(message, state) {
-    setStatus(message || '');
-    setStatusState(state || '');
-  }
+const { language = '', onTranscript, onStatus } = props;
+const [recording, setRecording] = useState(false);
+const [status, setStatus] = useState('');
+const [statusState, setStatusState] = useState('');
+const [busy, setBusy] = useState(false);
+const recorderRef = useRef(null);
+const streamRef = useRef(null);
+const chunksRef = useRef([]);
+const stopTimerRef = useRef(null);
+const startedAtRef = useRef(0);
+// The model this take will be sent to, resolved before the microphone opens
+// (see start()). Held in a ref so the recorder's onstop callback — registered
+// when recording began — reads the row that was resolved for *this* take.
+const modelRef = useRef(null);
+// say(message, state) — report on both surfaces: the button (title and
+// aria-label, which is all a sighted user gets on hover) and the chat's status
+// row under the composer, which is the one line a phone can actually see.
+// Before this reached the chat, a tap with nothing configured recorded,
+// stopped, and then left the screen exactly as it was: the only report was a
+// `title` no phone displays. See onStatus in Chat.jsx.
+function say(message, state) {
+setStatus(message || '');
+setStatusState(state || '');
+if (onStatus) onStatus(message || '', state || '');
+}
+// sayLocal(message, state) — the button's own line only. Used by the success
+// branch, where the chat writes its own message ("dictation added" plus the
+// run's cost) and must not be overwritten by a second wording of the same
+// event.
+function sayLocal(message, state) {
+setStatus(message || '');
+setStatusState(state || '');
+}
 
   function releaseMic() {
     const stream = streamRef.current;
@@ -81,26 +103,17 @@ export function MicButton(props) {
   }, []);
 
   async function transcribe(blob, mime) {
-    setBusy(true);
-    say('Transcribing…', 'busy');
-    try {
-      // Model choice: the remembered app-level dictation choice if it is still
-      // in this project's list, else the one candidate, else the single row
-      // whose name says it transcribes. `defaultDictationModel` owns that
-      // order, so this button and the dictation page cannot disagree about
-      // which model a tap uses.
-      const app = await fetchJson('/api/settings');
-      const saved = (app.status === 200 && app.body && app.body.app && app.body.app.dictation) || {};
-      const catalog = await loadDictationModels(props.projectDir || '');
-      const picked = defaultDictationModel(catalog.models, saved);
-      const match = picked
-      ? catalog.models.find((m) => m.id === picked.modelId && (m.provider || '') === picked.providerId) || null
-      : null;
-      if (!match) {
-      say('No dictation model yet — open Settings → App defaults → Dictation and pick one.', 'error');
-      setBusy(false);
-      return;
-      }
+  setBusy(true);
+  say('Transcribing…', 'busy');
+  try {
+  // The row resolved when recording started; the fallback covers a take that
+  // reached here without one (a caller that constructs the button differently).
+  const match = modelRef.current || await resolveModel();
+  if (!match) {
+  say(NO_MODEL_MESSAGE, 'error');
+  setBusy(false);
+  return;
+  }
       const audioBase64 = await blobToBase64(blob);
       const out = await transcribeAudio({
         projectDir: props.projectDir || '',
@@ -123,8 +136,12 @@ export function MicButton(props) {
       // tooltip/aria-label. Both stay quiet when the run is unpriced: a
       // `$0.00` would read as "free" for a per-minute model that simply does
       // not report tokens.
+      //
+      // The success wording is local-only on purpose: the chat has already
+      // written its own line for the same event, and a second version of it
+      // would replace the cost with a sentence.
       const label = transcribeCost(out).label;
-      say(label === '--'
+      sayLocal(label === '--'
       ? 'Added to the composer — review it, then send.'
       : 'Added to the composer (' + label + ') — review it, then send.', 'success');
     } catch (e) {
@@ -134,13 +151,47 @@ export function MicButton(props) {
     }
   }
 
+  // resolveModel() — the row this take will be sent to.
+  //
+  // Model choice: the remembered app-level dictation choice if it is still in
+  // this project's list, else the one candidate, else the single row whose name
+  // says it transcribes. `defaultDictationModel` owns that order, so this button
+  // and the dictation page cannot disagree about which model a tap uses.
+  async function resolveModel() {
+  const app = await fetchJson('/api/settings');
+  const saved = (app.status === 200 && app.body && app.body.app && app.body.app.dictation) || {};
+  const catalog = await loadDictationModels(props.projectDir || '');
+  const picked = defaultDictationModel(catalog.models, saved);
+  return picked
+  ? catalog.models.find((m) => m.id === picked.modelId && (m.provider || '') === picked.providerId) || null
+  : null;
+  }
   async function start() {
-    const win = typeof window !== 'undefined' ? window : null;
-    if (!recorderSupported(win)) {
-      say('This browser cannot record audio.', 'error');
-      return;
-    }
-    let stream;
+  const win = typeof window !== 'undefined' ? window : null;
+  if (!recorderSupported(win)) {
+  say('This browser cannot record audio.', 'error');
+  return;
+  }
+  // The model is resolved *before* the microphone opens: a take the app cannot
+  // transcribe is a take the user should not be asked to record. `busy` is held
+  // across the two reads so a double tap cannot start two recorders while the
+  // catalog is in flight.
+  setBusy(true);
+  let match = null;
+  try {
+  match = await resolveModel();
+  } catch (e) {
+  setBusy(false);
+  say((e && e.message) || 'Could not load the dictation model list.', 'error');
+  return;
+  }
+  setBusy(false);
+  if (!match) {
+  say(NO_MODEL_MESSAGE, 'error');
+  return;
+  }
+  modelRef.current = match;
+  let stream;
     try {
       stream = await win.navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {

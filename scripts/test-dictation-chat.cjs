@@ -20,7 +20,10 @@
 //      the only place the user sees what dictating cost;
 //   5. an unpriced run (`whisper-1` bills per minute and reports no tokens)
 //      says nothing about cost rather than `$0.00`, and the button never claims
-//      a price it was not given.
+//      a price it was not given;
+//   6. a tap with nothing configured reports *why* in the chat's status row and
+//      never opens the microphone — the button's own report is a `title`, which
+//      no phone displays, so this state used to look like a dead button.
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -105,6 +108,11 @@ function installFixture(data) {
     ],
     total: 0, providers: ['gemini'], liveFailures: []
   };
+  // Both halves of "what a tap can use" are switchable, so a later check can
+  // put the app in the state a fresh install is in (nothing remembered, nothing
+  // offered) without a second page load.
+  test.dictationChoice = { modelId: 'gemini-2.5-flash', providerId: 'gemini' };
+  test.catalogModels = dictationCatalog.models;
 
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, 'https://fixture.invalid');
@@ -140,12 +148,13 @@ function installFixture(data) {
     if (method === 'GET') {
       const bodies = {
         '/api/settings': {
-          app: {
-            providers,
-            enterForNewline: true,
-            // Remembered on the dictation page, honoured here.
-            dictation: { modelId: 'gemini-2.5-flash', providerId: 'gemini' }
-          }
+        app: {
+        providers,
+        enterForNewline: true,
+            // Remembered on the dictation page, honoured here. Switchable, so the
+      // "nothing configured" state can be reached without a reload.
+        dictation: test.dictationChoice
+        }
         },
         '/api/ai/models': { models: [{ provider: 'gemini', id: 'gemini-2.5-flash' }] },
         '/api/ai/models/providers': { providers },
@@ -154,7 +163,7 @@ function installFixture(data) {
         '/api/ai/models/live': { models: [{ id: 'gemini-2.5-flash' }], cached: false },
         '/api/ai/provider-credit': { supported: false },
         '/api/settings/models/recent': { recent: [] },
-        '/api/ai/transcribe/models': dictationCatalog,
+        '/api/ai/transcribe/models': Object.assign({}, dictationCatalog, { models: test.catalogModels }),
         '/api/chats': { chats: [chat], total: 1 },
         ['/api/chats/' + chat.id]: { chat },
         ['/api/chats/' + chat.id + '/messages']: { messages, nextSeq: messages.length },
@@ -386,6 +395,30 @@ async function main() {
     check('the button does not claim a price either',
       unpriced.title === 'Added to the composer — review it, then send.');
     check('two runs, two upstream calls', await evaluate('dictationTest.runs === 2'));
+
+    // ---- A tap with nothing configured must say so, and must not record ----
+    //
+    // The state a fresh install is in: nothing remembered under the app-level
+    // `dictation` key, and a catalog that offers nothing the selection rules
+    // would adopt. The mic used to record, stop, fail to match a row, and write
+    // the reason to its own `title` — which no phone shows, so the tap looked
+    // like nothing happened at all. The check is that the chat's own status row
+    // carries the reason, and that the microphone is never opened for a take
+    // that cannot be sent.
+    const streamsBefore = await evaluate('dictationTest.streamStopped');
+    await evaluate('dictationTest.dictationChoice = null; dictationTest.catalogModels = [];');
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__status').textContent.indexOf('No dictation model yet') === 0`,
+      'the missing model is reported in the chat');
+    const noModel = await read();
+    check('a tap with no dictation model says so in the chat status line',
+      noModel.status === 'No dictation model yet — Open Settings → App defaults → Dictation to pick a dictation model.');
+    check('and marks the line as an error', noModel.statusState === 'error');
+    check('the recorder never started', noModel.recording === 'false');
+    check('the microphone was never opened', await evaluate('dictationTest.streamStopped') === streamsBefore);
+    check('and no transcription was attempted', await evaluate('dictationTest.runs === 2'));
+    check('the draft the user already had is untouched',
+      noModel.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
   });
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }

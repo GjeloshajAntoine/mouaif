@@ -1050,11 +1050,17 @@ pointer-events: none;
   min-height: 0;
 }
 .chat-view__status:empty {
-  display: block;
-  min-height: 6px;
-  font-size: 0;
-  line-height: 0;
+display: block;
+min-height: 6px;
+font-size: 0;
+line-height: 0;
 }
+/* The same one line is where the composer's own failures land — a dictation
+  that found no model, a provider that refused the key — so a state has to be
+  legible at 390px, not just present in `data-state`. */
+.chat-view__status[data-state="error"]   { color: var(--danger); }
+.chat-view__status[data-state="success"] { color: var(--success); }
+.chat-view__status[data-state="busy"]    { color: var(--accent); }
 
 .chat-view__image-btn {
   width: var(--tap-sm); height: var(--tap-sm); padding: 0; min-height: var(--tap-sm);

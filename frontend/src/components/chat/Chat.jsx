@@ -96,9 +96,21 @@ function onTranscript(text, meta) {
 // nothing at all when it was not. The chat's status row is one short line under
 // the composer, so an unpriced run must not spend it on `--`.
 function dictationCostSuffix(meta) {
-  const cost = meta && meta.cost;
-  if (!cost || !cost.known || !isFinite(Number(cost.total))) return '';
-  return ' · ' + formatCost(cost.total);
+const cost = meta && meta.cost;
+if (!cost || !cost.known || !isFinite(Number(cost.total))) return '';
+return ' · ' + formatCost(cost.total);
+}
+
+// onMicStatus(message, state) — what the dictation button is doing, or why it
+// stopped, written to the chat's own status row.
+//
+// The button cannot reach that row itself (`refs.status` belongs to this
+// component) and its own report is a `title`, which no phone shows: a tap that
+// found nothing configured recorded, stopped, and left the screen unchanged.
+// Errors and progress now land here; the success hand-off keeps this row for
+// itself (see onTranscript above), so the two never overwrite each other.
+function onMicStatus(message, state) {
+setStatus(refs.status, message, state);
 }
 
 // onDraftCraftAdded(result) — apply a Draft Craft hand-off to this chat's
@@ -447,7 +459,7 @@ onRefreshCustomActions: refreshCustomActions
           )
         ),
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
-h(MicButton, { projectDir, onTranscript }),
+h(MicButton, { projectDir, onTranscript, onStatus: onMicStatus }),
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },

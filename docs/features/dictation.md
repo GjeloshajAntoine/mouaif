@@ -41,9 +41,16 @@ Inside a chat, the microphone button next to the image button records and
 transcribes with the same remembered model, appending the text at the caret of
 the draft. Nothing is sent: dictation produces a draft, and sending stays a
 user decision. The chat's own status line under the composer confirms the
-hand-off (`dictation added`), and the button's tooltip says the same in words.
-If no dictation model has been chosen yet, the button says so
-and points at **Settings → App defaults → Dictation**.
+hand-off (`dictation added`, plus the run's cost when it is priced), and the
+button's tooltip says the same in words.
+
+The model is resolved **before** the microphone opens, so a chat with no
+dictation model configured reports the reason in that same status line —
+`No dictation model yet — Open Settings → App defaults → Dictation to pick a
+dictation model.`, marked as an error and with nothing recorded. Everything the
+button does or fails to do (recording, transcribing, a provider rejection) is
+written there too: the button's own `title` is a hover affordance, and a phone
+has none.
 
 ### What a run cost
 
@@ -201,6 +208,11 @@ chat cannot appear here unless it can transcribe. See
   wins, and the recorder's own `mimeType` is used afterwards.
 - **Nothing is auto-sent.** The composer hand-off fills a draft; the dictate
   page fills the newest chat's draft.
+- **A failure is visible where the run happened.** The composer microphone
+  writes its progress and its errors to the chat's status line, which is the
+  only feedback a phone shows — its own report is a `title`. It also resolves
+  the model *before* opening the microphone, so a chat with nothing configured
+  says so instead of recording a take it cannot send.
 - **The model list is the union of two sources**: the project's `models`
   (filtered to the ones that can plausibly transcribe) and the connected
   providers' live catalogs (filtered the same way, and labelled as coming from
@@ -309,9 +321,19 @@ chat cannot appear here unless it can transcribe. See
   cannot disagree about the model or the dialect it is sent in. The page reuses
   `chat/modelPicker.js` for its pins and recents rather than reimplementing
   them, so a pin means the same thing on both surfaces.
+- `frontend/src/components/chat/Chat.jsx` — owns the chat's status line, so the
+  microphone takes an `onStatus(message, state)` callback and writes its
+  progress and failures there (`Chat.jsx` → `setStatus`). The success hand-off
+  is the one message the button keeps to itself: `onTranscript` has already
+  written the chat's own `dictation added · $…` line, and a second wording of
+  the same event would replace the cost with a sentence.
 - `frontend/src/dictation.css` — the page and the microphone button. Mobile
   first: one column, a 56px primary control, ≥44px taps, `dvh` for the iOS
-  keyboard, and a `prefers-reduced-motion` branch for the pulse.
+  keyboard, and a `prefers-reduced-motion` branch for the pulse. The chat's
+  status line carries the microphone's messages, so
+  `frontend/src/chat-composer.css` gives that line a colour per `data-state`
+  (`error`, `success`, `busy`): a failure written there in the same muted grey
+  as everything else is a failure nobody notices at 0.7rem.
 - `src/server-shared.js` — `'dictation'` in `CLIENT_SETTINGS_KEYS` (the
   allowlist every `/api/settings` response is filtered through) and in
   `RESETTABLE_APP_KEYS`. The app store holds the key either way; without the
@@ -339,11 +361,12 @@ whose models come entirely from the provider's live list.
 
 `test-dictation-chat.cjs` mounts the real `App` → `ChatView` in an isolated
 browser target with a stubbed `fetch`, a fake microphone and the real
-stylesheet, then taps the composer microphone twice. It pins the four things
-only that path can break: the model comes from the app-level `dictation` key
-(not from the chat), the transcript is appended to the draft *and* persisted,
-the run's cost reaches the chat's status line, and an unpriced run adds no
-figure at all. It needs a debug Chrome (`CDP_URL`, default
+stylesheet, then taps the composer microphone twice. It pins the things only
+that path can break: the model comes from the app-level `dictation` key (not
+from the chat), the transcript is appended to the draft *and* persisted, the
+run's cost reaches the chat's status line, an unpriced run adds no figure at
+all, and a tap with nothing configured reports why in that same line without
+opening the microphone. It needs a debug Chrome (`CDP_URL`, default
 `http://127.0.0.1:9222`), like the model-picker browser tests.
 
 ## Related
